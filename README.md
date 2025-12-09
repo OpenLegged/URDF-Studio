@@ -24,7 +24,6 @@
 
 This platform orchestrates the entire robotic modeling lifecycle—from kinematic skeleton definition to high-fidelity geometric detailing and precise hardware specification. Enhanced by **Generative AI**, UrdfArchitect accelerates prototyping and ensures compatibility with industry-standard simulation ecosystems like MuJoCo.
 
-UrdfArchitect is now available online at https://urdf.d-robotics.cc/ for in-browser use.
 
 ## ✨ Core Capabilities
 
