@@ -71,7 +71,7 @@ Includes a built-in library of popular robot actuators:
 - **AI Integration**: Google GenAI SDK
 - **Utilities**: JSZip, Lucide React
 
-## 🚀 Getting Started
+## 🚀 Run Locally
 
 ### Prerequisites
 
