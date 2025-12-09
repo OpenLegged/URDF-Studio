@@ -1,8 +1,10 @@
 <div align="center">
 
-# UrdfArchitect
+# URDF Architect
 
 **Next-Generation Visual Robot Design Platform**
+
+**Live demo:** https://urdf.d-robotics.cc/
 
 [![React](https://img.shields.io/badge/React-19.2-blue?logo=react)](https://reactjs.org/)
 [![Three.js](https://img.shields.io/badge/Three.js-0.181-black?logo=three.js)](https://threejs.org/)
@@ -21,6 +23,8 @@
 **UrdfArchitect** is a state-of-the-art, web-based visual environment engineered for the seamless creation, manipulation, and export of Unified Robot Description Format (URDF) models. By abstracting the complexities of raw XML authoring into an intuitive graphical interface, it empowers roboticists to focus on design and innovation.
 
 This platform orchestrates the entire robotic modeling lifecycle—from kinematic skeleton definition to high-fidelity geometric detailing and precise hardware specification. Enhanced by **Generative AI**, UrdfArchitect accelerates prototyping and ensures compatibility with industry-standard simulation ecosystems like MuJoCo.
+
+UrdfArchitect is now available online at https://urdf.d-robotics.cc/ for in-browser use.
 
 ## ✨ Core Capabilities
 
