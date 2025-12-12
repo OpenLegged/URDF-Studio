@@ -1,0 +1,167 @@
+{
+  "name": "@monogrid/gainmap-js",
+  "version": "3.4.0",
+  "description": "A Javascript (TypeScript) Port of Adobe Gainmap Technology for storing HDR Images using an SDR Image + a gain map",
+  "keywords": [
+    "hdr",
+    "gain map",
+    "gainmap",
+    "three",
+    "threejs"
+  ],
+  "homepage": "https://github.com/MONOGRID/gainmap-js#readme",
+  "bugs": {
+    "url": "https://github.com/MONOGRID/gainmap-js/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+ssh://git@github.com/MONOGRID/gainmap-js.git"
+  },
+  "license": "MIT",
+  "author": "MONOGRID <gainmap@monogrid.com>",
+  "sideEffects": false,
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/decode.d.ts",
+      "import": "./dist/decode.js",
+      "default": "./dist/decode.umd.cjs"
+    },
+    "./webgpu": {
+      "types": "./dist/decode/webgpu/index.d.ts",
+      "import": "./dist/decode.webgpu.js",
+      "default": "./dist/decode.webgpu.umd.cjs"
+    },
+    "./encode": {
+      "types": "./dist/encode.d.ts",
+      "import": "./dist/encode.js",
+      "default": "./dist/encode.umd.cjs"
+    },
+    "./libultrahdr": {
+      "types": "./dist/libultrahdr.d.ts",
+      "import": "./dist/libultrahdr.js",
+      "default": "./dist/libultrahdr.umd.cjs"
+    },
+    "./worker": {
+      "types": "./dist/worker.d.ts",
+      "import": "./dist/worker.js",
+      "default": "./dist/worker.umd.cjs"
+    },
+    "./worker-interface": {
+      "types": "./dist/worker-interface.d.ts",
+      "import": "./dist/worker-interface.js",
+      "default": "./dist/worker-interface.umd.cjs"
+    }
+  },
+  "main": "dist/decode.umd.cjs",
+  "module": "dist/decode.js",
+  "types": "dist/decode.d.ts",
+  "typesVersions": {
+    "*": {
+      ".": [
+        "./dist/decode.d.ts"
+      ],
+      "decode/webgpu": [
+        "./dist/decode/webgpu/index.d.ts"
+      ],
+      "decode/webgl": [
+        "./dist/decode/webgl/index.d.ts"
+      ],
+      "encode": [
+        "./dist/encode.d.ts"
+      ],
+      "libultrahdr": [
+        "./dist/libultrahdr.d.ts"
+      ],
+      "worker": [
+        "./dist/worker.d.ts"
+      ],
+      "worker-interface": [
+        "./dist/worker-interface.d.ts"
+      ]
+    }
+  },
+  "scripts": {
+    "build": "rollup -c",
+    "check": "concurrently -c auto npm:check:*",
+    "check:eslint-examples": "eslint \"examples/**/*.{ts,html}\"",
+    "check:eslint-src": "eslint \"src/**/*.ts\"",
+    "check:eslint-tests": "eslint \"tests/**/*.ts\"",
+    "check:typecheck-examples": "tsc -p examples",
+    "check:typecheck-src": "tsc -p src",
+    "check:typecheck-tests": "tsc -p tests",
+    "ci:check": "concurrently npm:ci:check:*",
+    "ci:check:eslint-examples": "eslint --format json --output-file reports/eslint-examples.json \"examples/**/*.{ts,html}\"",
+    "ci:check:eslint-src": "eslint --format json --output-file reports/eslint-src.json \"src/**/*.ts\"",
+    "ci:check:eslint-tests": "eslint --format json --output-file reports/eslint-tests.json \"tests/**/*.ts\"",
+    "ci:check:typecheck-examples": "tsc --pretty false -p examples > reports/typecheck-examples.log",
+    "ci:check:typecheck-src": "tsc --pretty false -p src > reports/typecheck.log",
+    "ci:check:typecheck-tests": "tsc --pretty false -p tests > reports/typecheck-tests.log",
+    "dev": "concurrently -n rollup,servez -c magenta,green \"rollup -c -w\" \"servez\"",
+    "prepack": "npm run build",
+    "start": "concurrently -n rollup,servez -c magenta,green \"rollup -c -w\" \"servez\"",
+    "test": "nyc --reporter=text --reporter=lcov playwright test",
+    "test:codegen": "playwright codegen http://localhost:8080",
+    "test:docker": "docker run --rm --network host -v $(pwd):/work -w /work -it -u $(id -u ${USER}):$(id -g ${USER}) mcr.microsoft.com/playwright:v1.56.1-jammy /bin/bash",
+    "test:startserver": "rollup -c && servez"
+  },
+  "config": {
+    "commitizen": {
+      "path": "./node_modules/cz-conventional-changelog"
+    }
+  },
+  "browserslist": [
+    "> 1%, not dead, not ie 11, not op_mini all"
+  ],
+  "dependencies": {
+    "promise-worker-transferable": "^1.0.4"
+  },
+  "devDependencies": {
+    "@eslint/eslintrc": "^3.3.1",
+    "@playwright/test": "^1.56.1",
+    "@rollup/plugin-commonjs": "^29.0.0",
+    "@rollup/plugin-json": "^6.1.0",
+    "@rollup/plugin-node-resolve": "^16.0.3",
+    "@rollup/plugin-terser": "^0.4.4",
+    "@rollup/plugin-typescript": "^12.3.0",
+    "@semantic-release/changelog": "^6.0.3",
+    "@semantic-release/commit-analyzer": "^13.0.1",
+    "@semantic-release/git": "github:semantic-release/git",
+    "@semantic-release/github": "^12.0.0",
+    "@semantic-release/npm": "^13.1.1",
+    "@semantic-release/release-notes-generator": "^14.1.0",
+    "@types/node": "^22.18.12",
+    "@types/three": "^0.181.0",
+    "concurrently": "^9.2.1",
+    "conventional-changelog-conventionalcommits": "^9.1.0",
+    "cz-conventional-changelog": "^3.3.0",
+    "eslint": "^9.38.0",
+    "eslint-config-mdcs": "^5.0.0",
+    "eslint-plugin-html": "^8.1.3",
+    "eslint-plugin-simple-import-sort": "^12.1.1",
+    "eslint-plugin-unused-imports": "^4.3.0",
+    "globals": "^16.4.0",
+    "neostandard": "^0.12.2",
+    "nyc": "^17.1.0",
+    "rollup": "^4.52.5",
+    "rollup-plugin-copy": "^3.5.0",
+    "rollup-plugin-delete": "^3.0.1",
+    "rollup-plugin-istanbul": "^5.0.0",
+    "rollup-plugin-license": "^3.6.0",
+    "semantic-release": "^25.0.1",
+    "servez": "^2.3.2",
+    "sharp": "^0.34.4",
+    "three": "^0.181.1",
+    "typedoc": "^0.28.14",
+    "typedoc-github-wiki-theme": "^2.1.0",
+    "typedoc-plugin-markdown": "^4.9.0",
+    "typescript": "~5.9.0"
+  },
+  "peerDependencies": {
+    "three": ">= 0.159.0"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  }
+}

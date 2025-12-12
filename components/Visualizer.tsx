@@ -130,11 +130,11 @@ const JointAxesVisual = ({ joint }: { joint: UrdfJoint }) => {
       <arrowHelper args={[new THREE.Vector3(0, 0, 1), new THREE.Vector3(0, 0, 0), 0.35, color, 0.08, 0.05]} />
       {(type === JointType.REVOLUTE || type === JointType.CONTINUOUS) && (
         <group>
-            <mesh rotation={[Math.PI / 2, 0, 0]}>
+            <mesh>
                 <torusGeometry args={[0.15, 0.005, 8, 32, type === JointType.REVOLUTE ? Math.PI * 1.5 : Math.PI * 2]} />
                 <meshBasicMaterial color={color} />
             </mesh>
-            <mesh position={[0.15, 0, 0]} rotation={[0, 0, -Math.PI / 2]}>
+            <mesh position={[0.15, 0, 0]}>
                 <coneGeometry args={[0.015, 0.04, 8]} />
                 <meshBasicMaterial color={color} />
             </mesh>

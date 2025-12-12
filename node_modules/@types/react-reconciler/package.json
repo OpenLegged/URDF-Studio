@@ -1,0 +1,38 @@
+{
+    "name": "@types/react-reconciler",
+    "version": "0.32.3",
+    "description": "TypeScript definitions for react-reconciler",
+    "homepage": "https://github.com/DefinitelyTyped/DefinitelyTyped/tree/master/types/react-reconciler",
+    "license": "MIT",
+    "contributors": [
+        {
+            "name": "Nathan Bierema",
+            "githubUsername": "Methuselah96",
+            "url": "https://github.com/Methuselah96"
+        },
+        {
+            "name": "Zhang Haocong",
+            "githubUsername": "zhanghaocong",
+            "url": "https://github.com/zhanghaocong"
+        },
+        {
+            "name": "Mathieu Dutour",
+            "githubUsername": "mathieudutour",
+            "url": "https://github.com/mathieudutour"
+        }
+    ],
+    "main": "",
+    "types": "index.d.ts",
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/DefinitelyTyped/DefinitelyTyped.git",
+        "directory": "types/react-reconciler"
+    },
+    "scripts": {},
+    "dependencies": {},
+    "peerDependencies": {
+        "@types/react": "*"
+    },
+    "typesPublisherContentHash": "1fa395e497fe63ec372c2099e144c62c64e45c2f38d71dd6f58a1298d8fd331d",
+    "typeScriptVersion": "5.2"
+}

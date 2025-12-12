@@ -1,0 +1,78 @@
+import { MeshBasicNodeMaterial, Texture } from 'three/webgpu';
+import { GainMapMetadata } from '../../../core/types';
+import { type GainmapDecodingParameters } from '../../shared';
+/**
+ * A Material which is able to decode the Gainmap into a full HDR Representation using TSL (Three.js Shading Language)
+ *
+ * @category Materials
+ * @group Materials
+ */
+export declare class GainMapDecoderMaterial extends MeshBasicNodeMaterial {
+    private _maxDisplayBoost;
+    private _hdrCapacityMin;
+    private _hdrCapacityMax;
+    private _gammaUniform;
+    private _offsetHdrUniform;
+    private _offsetSdrUniform;
+    private _gainMapMinUniform;
+    private _gainMapMaxUniform;
+    private _weightFactorUniform;
+    private _sdrTexture;
+    private _gainMapTexture;
+    /**
+     *
+     * @param params
+     */
+    constructor({ gamma, offsetHdr, offsetSdr, gainMapMin, gainMapMax, maxDisplayBoost, hdrCapacityMin, hdrCapacityMax, sdr, gainMap }: GainMapMetadata & GainmapDecodingParameters & {
+        sdr: Texture;
+        gainMap: Texture;
+    });
+    get sdr(): Texture;
+    set sdr(value: Texture);
+    get gainMap(): Texture;
+    set gainMap(value: Texture);
+    /**
+     * @see {@link GainMapMetadata.offsetHdr}
+     */
+    get offsetHdr(): [number, number, number];
+    set offsetHdr(value: [number, number, number]);
+    /**
+     * @see {@link GainMapMetadata.offsetSdr}
+     */
+    get offsetSdr(): [number, number, number];
+    set offsetSdr(value: [number, number, number]);
+    /**
+     * @see {@link GainMapMetadata.gainMapMin}
+     */
+    get gainMapMin(): [number, number, number];
+    set gainMapMin(value: [number, number, number]);
+    /**
+     * @see {@link GainMapMetadata.gainMapMax}
+     */
+    get gainMapMax(): [number, number, number];
+    set gainMapMax(value: [number, number, number]);
+    /**
+     * @see {@link GainMapMetadata.gamma}
+     */
+    get gamma(): [number, number, number];
+    set gamma(value: [number, number, number]);
+    /**
+     * @see {@link GainMapMetadata.hdrCapacityMin}
+     * @remarks Logarithmic space
+     */
+    get hdrCapacityMin(): number;
+    set hdrCapacityMin(value: number);
+    /**
+     * @see {@link GainMapMetadata.hdrCapacityMax}
+     * @remarks Logarithmic space
+     */
+    get hdrCapacityMax(): number;
+    set hdrCapacityMax(value: number);
+    /**
+     * @see {@link GainmapDecodingParameters.maxDisplayBoost}
+     * @remarks Non Logarithmic space
+     */
+    get maxDisplayBoost(): number;
+    set maxDisplayBoost(value: number);
+    private calculateWeight;
+}

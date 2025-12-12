@@ -1,0 +1,26 @@
+import * as THREE from 'three';
+import { ForwardRefComponent } from '../helpers/ts-utils';
+import { ThreeElements } from '@react-three/fiber';
+export type Args<T> = T extends new (...args: any) => any ? ConstructorParameters<T> : T;
+export type ShapeProps<T> = Omit<ThreeElements['mesh'], 'ref' | 'args'> & {
+    args?: Args<T>;
+};
+export declare const Box: ForwardRefComponent<ShapeProps<typeof THREE.BoxGeometry>, THREE.Mesh<THREE.BufferGeometry<THREE.NormalBufferAttributes>, THREE.Material | THREE.Material[], THREE.Object3DEventMap>>;
+export declare const Circle: ForwardRefComponent<ShapeProps<typeof THREE.CircleGeometry>, THREE.Mesh<THREE.BufferGeometry<THREE.NormalBufferAttributes>, THREE.Material | THREE.Material[], THREE.Object3DEventMap>>;
+export declare const Cone: ForwardRefComponent<ShapeProps<typeof THREE.ConeGeometry>, THREE.Mesh<THREE.BufferGeometry<THREE.NormalBufferAttributes>, THREE.Material | THREE.Material[], THREE.Object3DEventMap>>;
+export declare const Cylinder: ForwardRefComponent<ShapeProps<typeof THREE.CylinderGeometry>, THREE.Mesh<THREE.BufferGeometry<THREE.NormalBufferAttributes>, THREE.Material | THREE.Material[], THREE.Object3DEventMap>>;
+export declare const Sphere: ForwardRefComponent<ShapeProps<typeof THREE.SphereGeometry>, THREE.Mesh<THREE.BufferGeometry<THREE.NormalBufferAttributes>, THREE.Material | THREE.Material[], THREE.Object3DEventMap>>;
+export declare const Plane: ForwardRefComponent<ShapeProps<typeof THREE.PlaneGeometry>, THREE.Mesh<THREE.BufferGeometry<THREE.NormalBufferAttributes>, THREE.Material | THREE.Material[], THREE.Object3DEventMap>>;
+export declare const Tube: ForwardRefComponent<ShapeProps<typeof THREE.TubeGeometry>, THREE.Mesh<THREE.BufferGeometry<THREE.NormalBufferAttributes>, THREE.Material | THREE.Material[], THREE.Object3DEventMap>>;
+export declare const Torus: ForwardRefComponent<ShapeProps<typeof THREE.TorusGeometry>, THREE.Mesh<THREE.BufferGeometry<THREE.NormalBufferAttributes>, THREE.Material | THREE.Material[], THREE.Object3DEventMap>>;
+export declare const TorusKnot: ForwardRefComponent<ShapeProps<typeof THREE.TorusKnotGeometry>, THREE.Mesh<THREE.BufferGeometry<THREE.NormalBufferAttributes>, THREE.Material | THREE.Material[], THREE.Object3DEventMap>>;
+export declare const Tetrahedron: ForwardRefComponent<ShapeProps<typeof THREE.TetrahedronGeometry>, THREE.Mesh<THREE.BufferGeometry<THREE.NormalBufferAttributes>, THREE.Material | THREE.Material[], THREE.Object3DEventMap>>;
+export declare const Ring: ForwardRefComponent<ShapeProps<typeof THREE.RingGeometry>, THREE.Mesh<THREE.BufferGeometry<THREE.NormalBufferAttributes>, THREE.Material | THREE.Material[], THREE.Object3DEventMap>>;
+export declare const Polyhedron: ForwardRefComponent<ShapeProps<typeof THREE.PolyhedronGeometry>, THREE.Mesh<THREE.BufferGeometry<THREE.NormalBufferAttributes>, THREE.Material | THREE.Material[], THREE.Object3DEventMap>>;
+export declare const Icosahedron: ForwardRefComponent<ShapeProps<typeof THREE.IcosahedronGeometry>, THREE.Mesh<THREE.BufferGeometry<THREE.NormalBufferAttributes>, THREE.Material | THREE.Material[], THREE.Object3DEventMap>>;
+export declare const Octahedron: ForwardRefComponent<ShapeProps<typeof THREE.OctahedronGeometry>, THREE.Mesh<THREE.BufferGeometry<THREE.NormalBufferAttributes>, THREE.Material | THREE.Material[], THREE.Object3DEventMap>>;
+export declare const Dodecahedron: ForwardRefComponent<ShapeProps<typeof THREE.DodecahedronGeometry>, THREE.Mesh<THREE.BufferGeometry<THREE.NormalBufferAttributes>, THREE.Material | THREE.Material[], THREE.Object3DEventMap>>;
+export declare const Extrude: ForwardRefComponent<ShapeProps<typeof THREE.ExtrudeGeometry>, THREE.Mesh<THREE.BufferGeometry<THREE.NormalBufferAttributes>, THREE.Material | THREE.Material[], THREE.Object3DEventMap>>;
+export declare const Lathe: ForwardRefComponent<ShapeProps<typeof THREE.LatheGeometry>, THREE.Mesh<THREE.BufferGeometry<THREE.NormalBufferAttributes>, THREE.Material | THREE.Material[], THREE.Object3DEventMap>>;
+export declare const Capsule: ForwardRefComponent<ShapeProps<typeof THREE.CapsuleGeometry>, THREE.Mesh<THREE.BufferGeometry<THREE.NormalBufferAttributes>, THREE.Material | THREE.Material[], THREE.Object3DEventMap>>;
+export declare const Shape: ForwardRefComponent<ShapeProps<typeof THREE.ShapeGeometry>, THREE.Mesh<THREE.BufferGeometry<THREE.NormalBufferAttributes>, THREE.Material | THREE.Material[], THREE.Object3DEventMap>>;
