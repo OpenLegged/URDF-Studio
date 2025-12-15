@@ -76,7 +76,7 @@
 1. **克隆项目**
    ```bash
    git clone https://github.com/OpenLegged/URDF-Architect.git
-   cd Urdf-Architect
+   cd URDF-Architect
    ```
 
 2. **安装依赖**
