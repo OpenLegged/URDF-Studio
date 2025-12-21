@@ -103,6 +103,7 @@ export const parseURDF = (xmlString: string): RobotState | null => {
       const inertialEl = linkEl.querySelector("inertial");
       const massEl = inertialEl?.querySelector("mass");
       const inertiaEl = inertialEl?.querySelector("inertia");
+      const inertialOriginEl = inertialEl?.querySelector("origin");
 
       links[id] = {
           id,
@@ -127,6 +128,10 @@ export const parseURDF = (xmlString: string): RobotState | null => {
           },
           inertial: {
               mass: parseFloat(massEl?.getAttribute("value") || "0"),
+              origin: inertialOriginEl ? {
+                  xyz: parseVec3(inertialOriginEl.getAttribute("xyz")),
+                  rpy: parseRPY(inertialOriginEl.getAttribute("rpy"))
+              } : undefined,
               inertia: {
                   ixx: parseFloat(inertiaEl?.getAttribute("ixx") || "0"),
                   ixy: parseFloat(inertiaEl?.getAttribute("ixy") || "0"),

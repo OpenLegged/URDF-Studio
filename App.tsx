@@ -347,9 +347,10 @@ export default function App() {
         } else {
             alert("Failed to get a response from AI.");
         }
-    } catch (e) {
+    } catch (e: any) {
         console.error("AI Generation Error", e);
-        alert("An error occurred during generation.");
+        const errorMessage = e?.message || '未知错误';
+        alert(`生成失败: ${errorMessage}\n\n请检查浏览器控制台获取详细信息。`);
     } finally {
         setIsGeneratingAI(false);
     }
@@ -387,6 +388,25 @@ export default function App() {
       <header className="h-14 bg-slate-900 border-b border-slate-800 flex items-center justify-between px-4 shrink-0 relative">
         <div className="flex items-center gap-2">
             <h1 className="text-lg font-bold text-white tracking-tight">{t.appName}</h1>
+            
+            <button 
+                onClick={() => setLang(prev => prev === 'en' ? 'zh' : 'en')}
+                className="flex items-center justify-center p-2 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded transition-colors"
+                title="Switch Language"
+            >
+                <Globe className="w-4 h-4" />
+                <span className="ml-1 text-xs font-bold">{lang === 'en' ? 'EN' : '中'}</span>
+            </button>
+
+            <a 
+                href="https://github.com/OpenLegged/URDF-Architect"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center justify-center p-2 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded transition-colors"
+                title="View on GitHub"
+            >
+                <Github className="w-4 h-4" />
+            </a>
         </div>
 
         {/* Mode Switcher */}
@@ -415,25 +435,6 @@ export default function App() {
         </div>
 
         <div className="flex items-center gap-2">
-            <button 
-                onClick={() => setLang(prev => prev === 'en' ? 'zh' : 'en')}
-                className="flex items-center justify-center p-2 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded transition-colors"
-                title="Switch Language"
-            >
-                <Globe className="w-4 h-4" />
-                <span className="ml-1 text-xs font-bold">{lang === 'en' ? 'EN' : '中'}</span>
-            </button>
-
-            <a 
-                href="https://github.com/OpenLegged/URDF-Architect"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex items-center justify-center p-2 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded transition-colors"
-                title="View on GitHub"
-            >
-                <Github className="w-4 h-4" />
-            </a>
-
             <button
                 onClick={() => { setIsAIModalOpen(true); setAiResponse(null); setAiPrompt(''); }}
                 className="flex items-center gap-2 px-3 py-1.5 bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-500 hover:to-blue-500 text-white rounded text-sm transition-all shadow-md"

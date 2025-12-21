@@ -42,7 +42,7 @@ This platform orchestrates the entire robotic modeling lifecycle—from kinemati
 
 ### 🤖 AI-Augmented Engineering
 
-Leveraging **Google Gemini AI**, UrdfArchitect introduces a natural language interface for robotic design:
+Leveraging **OpenAI-compatible AI models** (including DeepSeek), UrdfArchitect introduces a natural language interface for robotic design:
 - *"Generate a quadrupedal locomotion platform"*
 - *"Integrate a LiDAR sensor array onto the base_link"*
 - *"Recommend optimal actuation for the hip joint based on torque requirements"*
@@ -68,7 +68,7 @@ Includes a built-in library of popular robot actuators:
 - **Frontend**: React 19, TypeScript, Tailwind CSS
 - **3D Engine**: Three.js, React Three Fiber, @react-three/drei
 - **Build Tool**: Vite
-- **AI Integration**: Google GenAI SDK
+- **AI Integration**: OpenAI SDK (supports OpenAI-compatible APIs)
 - **Utilities**: JSZip, Lucide React
 
 ## 🚀 Run Locally
@@ -94,8 +94,24 @@ Includes a built-in library of popular robot actuators:
 3. **Configure API Key (Optional)**
    To use AI features, create a `.env.local` file in the root directory:
    ```env
-   API_KEY=your_google_gemini_api_key
+   OPENAI_API_KEY=your_openai_api_key
+   OPENAI_BASE_URL=https://your-proxy-url/v1
+   OPENAI_MODEL=bce/deepseek-v3.2
    ```
+   
+   **Configuration Details:**
+   - `OPENAI_API_KEY`: Your OpenAI API key or proxy API key
+   - `OPENAI_BASE_URL`: (Optional) Custom API endpoint URL. Defaults to `https://api.openai.com/v1` if not set
+   - `OPENAI_MODEL`: (Optional) Model name to use. Defaults to `bce/deepseek-v3.2` if not set
+   
+   **Example for using a proxy server:**
+   ```env
+   OPENAI_API_KEY=sk-your-proxy-api-key
+   OPENAI_BASE_URL=https://aiproxy.d-robotics.cc/v1
+   OPENAI_MODEL=bce/deepseek-v3.2
+   ```
+   
+   **Note:** The `.env.local` file is ignored by git and will not be committed to the repository.
 
 4. **Run the development server**
    ```bash

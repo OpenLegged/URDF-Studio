@@ -495,6 +495,47 @@ export const PropertyEditor: React.FC<PropertyEditorProps> = ({
                           />
                       </InputGroup>
                       
+                      {/* Center of Mass (Origin) */}
+                      <InputGroup label={t.centerOfMass || "Center of Mass"}>
+                          <div className="space-y-2">
+                              <div>
+                                  <span className="text-[10px] text-slate-500 mb-0.5 block">Position (xyz)</span>
+                                  <Vec3Input
+                                      value={(data as UrdfLink).inertial.origin?.xyz || { x: 0, y: 0, z: 0 }}
+                                      onChange={(xyz: any) => onUpdate('link', selection.id!, {
+                                          ...data,
+                                          inertial: {
+                                              ...(data as UrdfLink).inertial,
+                                              origin: {
+                                                  xyz: xyz,
+                                                  rpy: (data as UrdfLink).inertial.origin?.rpy || { r: 0, p: 0, y: 0 }
+                                              }
+                                          }
+                                      })}
+                                      labels={['X', 'Y', 'Z']}
+                                  />
+                              </div>
+                              <div>
+                                  <span className="text-[10px] text-slate-500 mb-0.5 block">Orientation (rpy)</span>
+                                  <Vec3Input
+                                      value={(data as UrdfLink).inertial.origin?.rpy || { r: 0, p: 0, y: 0 }}
+                                      onChange={(rpy: any) => onUpdate('link', selection.id!, {
+                                          ...data,
+                                          inertial: {
+                                              ...(data as UrdfLink).inertial,
+                                              origin: {
+                                                  xyz: (data as UrdfLink).inertial.origin?.xyz || { x: 0, y: 0, z: 0 },
+                                                  rpy: rpy
+                                              }
+                                          }
+                                      })}
+                                      labels={['R', 'P', 'Y']}
+                                      keys={['r', 'p', 'y']}
+                                  />
+                              </div>
+                          </div>
+                      </InputGroup>
+                      
                       <h4 className="text-xs font-bold text-slate-400 mt-4 mb-2">{t.inertiaTensor}</h4>
                       <div className="grid grid-cols-3 gap-2">
                           <NumberInput 

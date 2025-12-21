@@ -27,6 +27,7 @@ export interface UrdfVisual {
 
 export interface UrdfInertial {
     mass: number;
+    origin?: { xyz: Vector3; rpy: Euler }; // Center of mass position and orientation
     inertia: {
         ixx: number;
         ixy: number;
@@ -104,6 +105,7 @@ export const DEFAULT_LINK: UrdfLink = {
   },
   inertial: {
       mass: 1.0,
+      origin: { xyz: { x: 0, y: 0, z: 0 }, rpy: { r: 0, p: 0, y: 0 } },
       inertia: { ixx: 0.1, ixy: 0, ixz: 0, iyy: 0.1, iyz: 0, izz: 0.1 }
   }
 };

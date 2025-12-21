@@ -4,7 +4,7 @@ export type Language = 'en' | 'zh';
 export const translations = {
   en: {
     // Header
-    appName: "URDF Designer",
+    appName: "UrdfArchitect",
     skeleton: "Skeleton",
     detail: "Detail",
     hardware: "Hardware",
@@ -39,6 +39,7 @@ export const translations = {
     selected: "Selected",
     inertial: "Inertial",
     mass: "Mass (kg)",
+    centerOfMass: "Center of Mass",
     inertiaTensor: "Inertia Tensor",
     kinematics: "Kinematics",
     axisRotation: "Axis of Rotation/Motion",
@@ -133,6 +134,7 @@ export const translations = {
     selected: "已选",
     inertial: "惯性参数",
     mass: "质量 (kg)",
+    centerOfMass: "质心",
     inertiaTensor: "惯性张量",
     kinematics: "运动学",
     axisRotation: "旋转/运动轴",

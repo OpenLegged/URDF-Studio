@@ -63,6 +63,9 @@ export const generateURDF = (robot: RobotState, extended: boolean = false): stri
 
     // Inertial
     xml += `    <inertial>\n`;
+    if (link.inertial.origin) {
+      xml += `      <origin xyz="${vecStr(link.inertial.origin.xyz)}" rpy="${rotStr(link.inertial.origin.rpy)}" />\n`;
+    }
     xml += `      <mass value="${link.inertial.mass}" />\n`;
     xml += `      <inertia ixx="${f(link.inertial.inertia.ixx)}" ixy="${f(link.inertial.inertia.ixy)}" ixz="${f(link.inertial.inertia.ixz)}" iyy="${f(link.inertial.inertia.iyy)}" iyz="${f(link.inertial.inertia.iyz)}" izz="${f(link.inertial.inertia.izz)}" />\n`; 
     xml += `    </inertial>\n`;
