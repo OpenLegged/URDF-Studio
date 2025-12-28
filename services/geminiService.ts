@@ -184,12 +184,29 @@ export const generateRobotFromPrompt = async (
       }
     }
     
-    // Check if robotData exists, or if the result itself is the robot data
-    const data = result.robotData || (result.links || result.joints ? result : null);
+    // Check multiple possible data locations
+    // Support formats: {robotData: {...}}, {robot: {...}}, {links: [...], joints: [...]}, or direct robot structure
+    const data = result.robotData || result.robot || (result.links || result.joints ? result : null);
     
     console.log("[AI Service] Extracted data:", data ? "Found robot data" : "No robot data");
     if (data) {
       console.log("[AI Service] Data keys:", Object.keys(data));
+      console.log("[AI Service] Data content:", data);
+    }
+    
+    // Extract explanation from various possible fields
+    let explanationText = result.explanation;
+    if (!explanationText) {
+      // Try to build explanation from recommendation, analysis, or suggestions
+      if (result.recommendation) {
+        explanationText = result.recommendation;
+      } else if (result.analysis) {
+        explanationText = typeof result.analysis === 'string' ? result.analysis : JSON.stringify(result.analysis);
+      } else if (result.suggestions && Array.isArray(result.suggestions) && result.suggestions.length > 0) {
+        explanationText = "建议的电机选项：\n" + result.suggestions.map((s: any, i: number) => 
+          `${i + 1}. ${s.name || s.model || '未知'}: ${s.torque || s.effort || 'N/A'} Nm`
+        ).join('\n');
+      }
     }
 
     // If there is data, parse it back to our full State format
@@ -332,13 +349,18 @@ export const generateRobotFromPrompt = async (
         actionType = result.actionType || (Object.keys(currentRobot.links).length === 0 ? 'generation' : 'modification');
     }
     
-    // Generate explanation if missing
-    let explanation = result.explanation;
+    // Use extracted explanation or generate one if missing
+    let explanation = explanationText;
     if (!explanation) {
         if (finalRobotState) {
             explanation = `已${actionType === 'generation' ? '生成' : '修改'}机器人结构。包含 ${Object.keys(finalRobotState.links || {}).length} 个链接和 ${Object.keys(finalRobotState.joints || {}).length} 个关节。`;
         } else {
-            explanation = 'AI 已处理您的请求，但未返回机器人数据。';
+            // For advice responses, try to provide more context
+            if (result.suggestions && Array.isArray(result.suggestions)) {
+                explanation = 'AI 已处理您的请求，但未返回机器人数据。';
+            } else {
+                explanation = 'AI 已处理您的请求，但未返回机器人数据。';
+            }
         }
     }
     
