@@ -148,6 +148,8 @@ export const generateRobotFromPrompt = async (
     let result;
     try {
       result = JSON.parse(content);
+      console.log("[AI Service] Parsed JSON result:", result);
+      console.log("[AI Service] Result keys:", Object.keys(result));
     } catch (parseError: any) {
       console.error("Failed to parse JSON response", parseError);
       console.error("Content that failed to parse:", content);
@@ -182,7 +184,13 @@ export const generateRobotFromPrompt = async (
       }
     }
     
-    const data = result.robotData;
+    // Check if robotData exists, or if the result itself is the robot data
+    const data = result.robotData || (result.links || result.joints ? result : null);
+    
+    console.log("[AI Service] Extracted data:", data ? "Found robot data" : "No robot data");
+    if (data) {
+      console.log("[AI Service] Data keys:", Object.keys(data));
+    }
 
     // If there is data, parse it back to our full State format
     let finalRobotState: Partial<RobotState> | undefined = undefined;
@@ -191,14 +199,45 @@ export const generateRobotFromPrompt = async (
         const newLinks: Record<string, any> = {};
         const newJoints: Record<string, any> = {};
 
-        if (data.links && Array.isArray(data.links)) {
-            data.links.forEach((l: any) => {
-                const visualType = l.visualType as GeometryType;
-                const dimensions = { x: l.dimensions?.[0] || 0.1, y: l.dimensions?.[1] || 0.1, z: l.dimensions?.[2] || 0.1 };
+        // Handle links - support both array and object formats
+        if (data.links) {
+            let linksToProcess: any[] = [];
+            if (Array.isArray(data.links)) {
+                linksToProcess = data.links;
+            } else if (typeof data.links === 'object') {
+                // Convert object to array
+                linksToProcess = Object.values(data.links);
+            }
+            
+            linksToProcess.forEach((l: any) => {
+                if (!l || !l.id) {
+                    console.warn('[AI Service] Skipping invalid link:', l);
+                    return;
+                }
+                
+                // Handle different dimension formats
+                let dimensions: { x: number, y: number, z: number };
+                if (l.dimensions) {
+                    if (Array.isArray(l.dimensions)) {
+                        dimensions = { x: l.dimensions[0] || 0.1, y: l.dimensions[1] || 0.1, z: l.dimensions[2] || 0.1 };
+                    } else if (typeof l.dimensions === 'object') {
+                        dimensions = { 
+                            x: l.dimensions.x || l.dimensions[0] || 0.1, 
+                            y: l.dimensions.y || l.dimensions[1] || 0.1, 
+                            z: l.dimensions.z || l.dimensions[2] || 0.1 
+                        };
+                    } else {
+                        dimensions = { x: 0.1, y: 0.1, z: 0.1 };
+                    }
+                } else {
+                    dimensions = { x: 0.1, y: 0.1, z: 0.1 };
+                }
+                
+                const visualType = (l.visualType || l.visual?.type || 'box') as GeometryType;
                 
                 newLinks[l.id] = {
                     id: l.id,
-                    name: l.name,
+                    name: l.name || l.id,
                     inertial: {
                         mass: l.mass || 1.0,
                         inertia: { ixx: 0.1, ixy: 0, ixz: 0, iyy: 0.1, iyz: 0, izz: 0.1 }
@@ -206,7 +245,7 @@ export const generateRobotFromPrompt = async (
                     visual: {
                         type: visualType,
                         dimensions: dimensions,
-                        color: l.color || '#3b82f6',
+                        color: l.color || l.visual?.color || '#3b82f6',
                         origin: { xyz: {x:0,y:0,z:0}, rpy: {r:0,p:0,y:0} }
                     },
                     collision: {
@@ -219,24 +258,50 @@ export const generateRobotFromPrompt = async (
             });
         }
 
-        if (data.joints && Array.isArray(data.joints)) {
-            data.joints.forEach((j: any) => {
+        // Handle joints - support both array and object formats
+        if (data.joints) {
+            let jointsToProcess: any[] = [];
+            if (Array.isArray(data.joints)) {
+                jointsToProcess = data.joints;
+            } else if (typeof data.joints === 'object') {
+                // Convert object to array
+                jointsToProcess = Object.values(data.joints);
+            }
+            
+            jointsToProcess.forEach((j: any) => {
+                if (!j || !j.id) {
+                    console.warn('[AI Service] Skipping invalid joint:', j);
+                    return;
+                }
+                
                 newJoints[j.id] = {
                     id: j.id,
-                    name: j.name,
-                    type: j.type as JointType,
-                    parentLinkId: j.parentLinkId,
-                    childLinkId: j.childLinkId,
+                    name: j.name || j.id,
+                    type: (j.type || 'fixed') as JointType,
+                    parentLinkId: j.parentLinkId || j.parent,
+                    childLinkId: j.childLinkId || j.child,
                     origin: {
-                        xyz: { x: j.originXYZ?.[0] || 0, y: j.originXYZ?.[1] || 0, z: j.originXYZ?.[2] || 0 },
-                        rpy: { r: j.originRPY?.[0] || 0, p: j.originRPY?.[1] || 0, y: j.originRPY?.[2] || 0 }
+                        xyz: { 
+                            x: j.originXYZ?.[0] || j.origin?.xyz?.x || j.origin?.xyz?.[0] || 0, 
+                            y: j.originXYZ?.[1] || j.origin?.xyz?.y || j.origin?.xyz?.[1] || 0, 
+                            z: j.originXYZ?.[2] || j.origin?.xyz?.z || j.origin?.xyz?.[2] || 0 
+                        },
+                        rpy: { 
+                            r: j.originRPY?.[0] || j.origin?.rpy?.r || j.origin?.rpy?.[0] || 0, 
+                            p: j.originRPY?.[1] || j.origin?.rpy?.p || j.origin?.rpy?.[1] || 0, 
+                            y: j.originRPY?.[2] || j.origin?.rpy?.y || j.origin?.rpy?.[2] || 0 
+                        }
                     },
-                    axis: { x: j.axis?.[0] || 0, y: j.axis?.[1] || 0, z: j.axis?.[2] || 1 },
+                    axis: { 
+                        x: j.axis?.[0] || j.axis?.x || 0, 
+                        y: j.axis?.[1] || j.axis?.y || 0, 
+                        z: j.axis?.[2] || j.axis?.z || 1 
+                    },
                     limit: { 
-                        lower: j.lowerLimit ?? -1.57, 
-                        upper: j.upperLimit ?? 1.57, 
-                        effort: j.effortLimit ?? 100, 
-                        velocity: j.velocityLimit ?? 10 
+                        lower: j.lowerLimit ?? j.limit?.lower ?? -1.57, 
+                        upper: j.upperLimit ?? j.limit?.upper ?? 1.57, 
+                        effort: j.effortLimit ?? j.limit?.effort ?? 100, 
+                        velocity: j.velocityLimit ?? j.limit?.velocity ?? 10 
                     },
                     dynamics: { damping: 0, friction: 0 },
                     hardware: { 
@@ -248,6 +313,9 @@ export const generateRobotFromPrompt = async (
                 };
             });
         }
+        
+        console.log('[AI Service] Processed links:', Object.keys(newLinks).length);
+        console.log('[AI Service] Processed joints:', Object.keys(newJoints).length);
 
         finalRobotState = {
             name: data.name || "modified_robot",
@@ -257,9 +325,32 @@ export const generateRobotFromPrompt = async (
         };
     }
 
+    // Determine action type based on data presence
+    let actionType: 'modification' | 'generation' | 'advice' = result.actionType || 'advice';
+    if (finalRobotState && (finalRobotState.links || finalRobotState.joints)) {
+        // If we have robot data, it's either generation or modification
+        actionType = result.actionType || (Object.keys(currentRobot.links).length === 0 ? 'generation' : 'modification');
+    }
+    
+    // Generate explanation if missing
+    let explanation = result.explanation;
+    if (!explanation) {
+        if (finalRobotState) {
+            explanation = `已${actionType === 'generation' ? '生成' : '修改'}机器人结构。包含 ${Object.keys(finalRobotState.links || {}).length} 个链接和 ${Object.keys(finalRobotState.joints || {}).length} 个关节。`;
+        } else {
+            explanation = 'AI 已处理您的请求，但未返回机器人数据。';
+        }
+    }
+    
+    console.log("[AI Service] Final response:", {
+        explanation: explanation?.substring(0, 50) + "...",
+        actionType,
+        hasRobotData: !!finalRobotState
+    });
+
     return {
-        explanation: result.explanation,
-        actionType: result.actionType,
+        explanation: explanation,
+        actionType: actionType,
         robotData: finalRobotState
     };
 

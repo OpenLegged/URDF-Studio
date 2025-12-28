@@ -337,40 +337,92 @@ export default function App() {
     setIsGeneratingAI(true);
     setAiResponse(null); // Clear previous
     try {
+        console.log('[AI] 开始生成，检查环境变量:', {
+          hasApiKey: !!process.env.API_KEY,
+          baseURL: process.env.OPENAI_BASE_URL,
+          model: process.env.OPENAI_MODEL
+        });
+        
         const response = await generateRobotFromPrompt(aiPrompt, robot, motorLibrary);
+        console.log('[AI] 收到响应:', response);
+        
         if (response) {
             setAiResponse({
-                explanation: response.explanation,
-                type: response.actionType,
+                explanation: response.explanation || '未收到有效响应',
+                type: response.actionType || 'advice',
                 data: response.robotData
             });
         } else {
-            alert("Failed to get a response from AI.");
+            setAiResponse({
+                explanation: 'AI 服务未返回响应，请重试。',
+                type: 'advice',
+                data: undefined
+            });
         }
     } catch (e: any) {
         console.error("AI Generation Error", e);
         const errorMessage = e?.message || '未知错误';
-        alert(`生成失败: ${errorMessage}\n\n请检查浏览器控制台获取详细信息。`);
+        setAiResponse({
+            explanation: `生成失败: ${errorMessage}\n\n请检查浏览器控制台获取详细信息。`,
+            type: 'advice',
+            data: undefined
+        });
     } finally {
         setIsGeneratingAI(false);
     }
   };
 
   const applyAIChanges = () => {
+      console.log('[Apply Changes] aiResponse:', aiResponse);
+      console.log('[Apply Changes] aiResponse.data:', aiResponse?.data);
+      
       if (aiResponse?.data) {
           const generated = aiResponse.data;
-          setRobot(prev => ({
-            ...prev,
-            name: generated.name || prev.name,
-            links: generated.links as Record<string, UrdfLink>,
-            joints: generated.joints as Record<string, UrdfJoint>,
-            rootLinkId: generated.rootLinkId || prev.rootLinkId,
-            selection: { type: 'link', id: generated.rootLinkId || prev.rootLinkId }
-          }));
-          setAppMode('skeleton');
-          setIsAIModalOpen(false);
-          setAiPrompt('');
-          setAiResponse(null);
+          console.log('[Apply Changes] Generated data:', {
+            name: generated.name,
+            linksCount: generated.links ? Object.keys(generated.links).length : 0,
+            jointsCount: generated.joints ? Object.keys(generated.joints).length : 0,
+            rootLinkId: generated.rootLinkId,
+            links: generated.links,
+            joints: generated.joints
+          });
+          
+          if (!generated.links || Object.keys(generated.links).length === 0) {
+              console.warn('[Apply Changes] No links found in generated data');
+              alert('生成的机器人数据中没有链接，无法应用更改。');
+              return;
+          }
+          
+          try {
+              setRobot(prev => {
+                  const newState = {
+                    ...prev,
+                    name: generated.name || prev.name,
+                    links: generated.links as Record<string, UrdfLink>,
+                    joints: generated.joints as Record<string, UrdfJoint>,
+                    rootLinkId: generated.rootLinkId || prev.rootLinkId,
+                    selection: { type: 'link' as const, id: generated.rootLinkId || prev.rootLinkId }
+                  };
+                  console.log('[Apply Changes] New robot state:', {
+                    name: newState.name,
+                    linksCount: Object.keys(newState.links).length,
+                    jointsCount: Object.keys(newState.joints).length,
+                    rootLinkId: newState.rootLinkId
+                  });
+                  return newState;
+              });
+              setAppMode('skeleton');
+              setIsAIModalOpen(false);
+              setAiPrompt('');
+              setAiResponse(null);
+              console.log('[Apply Changes] Changes applied successfully');
+          } catch (error) {
+              console.error('[Apply Changes] Error applying changes:', error);
+              alert(`应用更改时出错: ${error instanceof Error ? error.message : '未知错误'}`);
+          }
+      } else {
+          console.warn('[Apply Changes] No data in aiResponse');
+          alert('没有可应用的数据。');
       }
   };
 
@@ -531,10 +583,12 @@ export default function App() {
                               <div className="bg-purple-900/20 p-3 rounded border border-purple-500/30">
                                   <div className="flex items-center gap-2 mb-1">
                                       <Sparkles className="w-3 h-3 text-purple-400" />
-                                      <div className="text-xs text-purple-300 uppercase font-bold">{t.aiResponse} ({aiResponse.type})</div>
+                                      <div className="text-xs text-purple-300 uppercase font-bold">
+                                          {t.aiResponse} {aiResponse.type ? `(${aiResponse.type})` : ''}
+                                      </div>
                                   </div>
                                   <div className="text-sm text-slate-200 whitespace-pre-wrap leading-relaxed">
-                                      {aiResponse.explanation}
+                                      {aiResponse.explanation || '正在处理...'}
                                   </div>
                               </div>
                               
