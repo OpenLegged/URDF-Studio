@@ -1,7 +1,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { RobotState, JointType, GeometryType, AppMode, UrdfLink, MotorSpec } from '../types';
-import { Upload, File, Wand, ExternalLink } from 'lucide-react';
+import { Upload, File, Wand, ExternalLink, ChevronRight, PanelRightOpen } from 'lucide-react';
 import * as THREE from 'three';
 import { translations, Language } from '../services/i18n';
 
@@ -13,6 +13,8 @@ interface PropertyEditorProps {
   onUploadAsset: (file: File) => void;
   motorLibrary: Record<string, MotorSpec[]>;
   lang: Language;
+  collapsed?: boolean;
+  onToggle?: () => void;
 }
 
 const InputGroup = ({ label, children }: { label: string, children?: React.ReactNode }) => (
@@ -306,7 +308,9 @@ export const PropertyEditor: React.FC<PropertyEditorProps> = ({
   assets,
   onUploadAsset,
   motorLibrary,
-  lang
+  lang,
+  collapsed,
+  onToggle
 }) => {
   const { selection } = robot;
   const isLink = selection.type === 'link';
@@ -340,10 +344,38 @@ export const PropertyEditor: React.FC<PropertyEditorProps> = ({
     }
   }, [selection.id, isLink, data, motorLibrary]);
 
+  // Collapsed state - show only expand button
+  if (collapsed) {
+    return (
+      <div className="w-10 bg-slate-800 border-l border-slate-700 flex flex-col items-center py-4 shrink-0">
+        <button
+          onClick={onToggle}
+          className="p-2 text-slate-400 hover:text-white hover:bg-slate-700 rounded transition-colors"
+          title={t.properties}
+        >
+          <PanelRightOpen className="w-5 h-5" />
+        </button>
+      </div>
+    );
+  }
+
   if (!data) {
     return (
-      <div className="w-80 bg-slate-800 border-l border-slate-700 p-8 flex flex-col items-center justify-center text-slate-500 text-center h-full">
-        <p>{t.selectLinkOrJoint}</p>
+      <div className="w-80 bg-slate-800 border-l border-slate-700 flex flex-col h-full">
+        {/* Header with collapse button */}
+        <div className="flex items-center justify-between px-4 py-2 border-b border-slate-700 shrink-0">
+          <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">{t.properties}</span>
+          <button
+            onClick={onToggle}
+            className="p-1 text-slate-400 hover:text-white hover:bg-slate-700 rounded transition-colors"
+            title="Collapse sidebar"
+          >
+            <ChevronRight className="w-4 h-4" />
+          </button>
+        </div>
+        <div className="flex-1 flex items-center justify-center p-8 text-slate-500 text-center">
+          <p>{t.selectLinkOrJoint}</p>
+        </div>
       </div>
     );
   }
@@ -433,13 +465,21 @@ export const PropertyEditor: React.FC<PropertyEditorProps> = ({
 
   return (
     <div className="w-80 bg-slate-800 border-l border-slate-700 flex flex-col h-full overflow-y-auto custom-scrollbar">
-      <div className="p-4 border-b border-slate-700 bg-slate-900">
-        <div className="flex items-center gap-2 mb-1">
-             <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold uppercase ${isLink ? 'bg-blue-900 text-blue-200' : 'bg-orange-900 text-orange-200'}`}>
-                {selection.type}
-             </span>
-             <h2 className="font-semibold text-slate-100 truncate">{data.name}</h2>
+      {/* Header with collapse button */}
+      <div className="flex items-center justify-between px-4 py-2 border-b border-slate-700 bg-slate-900 shrink-0">
+        <div className="flex items-center gap-2">
+           <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold uppercase ${isLink ? 'bg-blue-900 text-blue-200' : 'bg-orange-900 text-orange-200'}`}>
+              {selection.type}
+           </span>
+           <h2 className="font-semibold text-slate-100 truncate">{data.name}</h2>
         </div>
+        <button
+          onClick={onToggle}
+          className="p-1 text-slate-400 hover:text-white hover:bg-slate-700 rounded transition-colors shrink-0"
+          title="Collapse sidebar"
+        >
+          <ChevronRight className="w-4 h-4" />
+        </button>
       </div>
 
       <div className="p-4 space-y-6">

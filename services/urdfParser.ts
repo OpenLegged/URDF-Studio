@@ -1,6 +1,26 @@
 
 import { RobotState, UrdfLink, UrdfJoint, GeometryType, JointType, DEFAULT_LINK, DEFAULT_JOINT } from '../types';
 
+const GAZEBO_COLORS: Record<string, string> = {
+    'Gazebo/Black': '#000000',
+    'Gazebo/Blue': '#0000FF',
+    'Gazebo/Green': '#00FF00',
+    'Gazebo/Red': '#FF0000',
+    'Gazebo/White': '#FFFFFF',
+    'Gazebo/Yellow': '#FFFF00',
+    'Gazebo/Grey': '#808080',
+    'Gazebo/DarkGrey': '#333333',
+    'Gazebo/LightGrey': '#CCCCCC',
+    'Gazebo/Orange': '#FFA500',
+    'Gazebo/Purple': '#800080',
+    'Gazebo/Turquoise': '#40E0D0',
+    'Gazebo/Gold': '#FFD700',
+    'Gazebo/Indigo': '#4B0082',
+    'Gazebo/SkyBlue': '#87CEEB',
+    'Gazebo/Wood': '#8B4513',
+    'Gazebo/FlatBlack': '#000000',
+};
+
 export const parseURDF = (xmlString: string): RobotState | null => {
   const parser = new DOMParser();
   const xmlDoc = parser.parseFromString(xmlString, "text/xml");
@@ -69,6 +89,55 @@ export const parseURDF = (xmlString: string): RobotState | null => {
       return defaultGeo;
   };
 
+  const parseColor = (materialEl: Element | null): string | undefined => {
+      if (!materialEl) return undefined;
+      const colorEl = materialEl.querySelector("color");
+      if (!colorEl) return undefined;
+      
+      const rgba = colorEl.getAttribute("rgba");
+      if (!rgba) return undefined;
+      
+      const parts = rgba.trim().split(/\s+/).map(Number);
+      if (parts.length < 3) return undefined;
+      
+      // Convert RGB to Hex
+      const r = Math.floor(parts[0] * 255);
+      const g = Math.floor(parts[1] * 255);
+      const b = Math.floor(parts[2] * 255);
+      
+      return "#" + ((1 << 24) + (r << 16) + (g << 8) + b).toString(16).slice(1);
+  };
+
+  // 0. Parse Global Materials
+  const globalMaterials: Record<string, string> = {};
+  // Select direct children materials of robot to avoid nested ones inside links (though URDF spec says materials are global or local)
+  // But querySelectorAll("robot > material") is not valid standard CSS selector for XML in all browsers/parsers, 
+  // so we iterate all and check parent.
+  Array.from(robotEl.children).forEach(child => {
+      if (child.tagName === 'material') {
+          const name = child.getAttribute("name");
+          const color = parseColor(child);
+          if (name && color) {
+              globalMaterials[name] = color;
+          }
+      }
+  });
+
+  // 0.5 Parse Gazebo Materials
+  const linkGazeboMaterials: Record<string, string> = {};
+  robotEl.querySelectorAll("gazebo").forEach(gazeboEl => {
+      const reference = gazeboEl.getAttribute("reference");
+      if (reference) {
+          const materialEl = gazeboEl.querySelector("material");
+          if (materialEl && materialEl.textContent) {
+              const gazeboColorName = materialEl.textContent.trim();
+              if (GAZEBO_COLORS[gazeboColorName]) {
+                  linkGazeboMaterials[reference] = GAZEBO_COLORS[gazeboColorName];
+              }
+          }
+      }
+  });
+
   // 1. Parse Links
   robotEl.querySelectorAll("link").forEach(linkEl => {
       const linkName = linkEl.getAttribute("name");
@@ -80,11 +149,35 @@ export const parseURDF = (xmlString: string): RobotState | null => {
       const visualOriginEl = visualEl?.querySelector("origin");
       
       let visualGeo;
+      let visualColor = '#3b82f6'; // Default Blue
+
+      let hasExplicitMaterial = false;
       if (visualEl) {
           visualGeo = parseGeometry(visualEl.querySelector("geometry"), DEFAULT_LINK.visual);
+          
+          // Parse Material Color
+          const materialEl = visualEl.querySelector("material");
+          const parsedColor = parseColor(materialEl);
+          
+          if (parsedColor) {
+              visualColor = parsedColor;
+              hasExplicitMaterial = true;
+          } else if (materialEl) {
+              // Handle named material reference
+              const matName = materialEl.getAttribute("name");
+              if (matName && globalMaterials[matName]) {
+                  visualColor = globalMaterials[matName];
+                  hasExplicitMaterial = true;
+              }
+          }
       } else {
           // If no visual tag exists, map to NONE
           visualGeo = { type: GeometryType.NONE, dimensions: { x:0, y:0, z:0 } };
+      }
+
+      // Fallback to Gazebo material if no explicit URDF material found
+      if (!hasExplicitMaterial && linkGazeboMaterials[linkName]) {
+          visualColor = linkGazeboMaterials[linkName];
       }
       
       // Collision
@@ -115,8 +208,7 @@ export const parseURDF = (xmlString: string): RobotState | null => {
                   xyz: parseVec3(visualOriginEl?.getAttribute("xyz")),
                   rpy: parseRPY(visualOriginEl?.getAttribute("rpy"))
               },
-              // Attempt to recover color if material is simple (rudimentary check)
-              color: '#3b82f6' 
+              color: visualColor
           },
           collision: {
               ...DEFAULT_LINK.collision,

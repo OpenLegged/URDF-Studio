@@ -21,6 +21,7 @@ export const translations = {
     deleteBranch: "Delete Branch",
     
     // Property Editor
+    properties: "Properties",
     selectLinkOrJoint: "Select a Link or Joint to edit its properties.",
     name: "Name",
     visualGeometry: "Visual Geometry",
@@ -117,6 +118,7 @@ export const translations = {
     deleteBranch: "删除分支",
 
     // Property Editor
+    properties: "属性",
     selectLinkOrJoint: "选择连杆或关节以编辑其属性。",
     name: "名称",
     visualGeometry: "可视化几何",

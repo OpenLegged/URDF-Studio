@@ -1,7 +1,7 @@
 
 import React, { useState } from 'react';
 import { RobotState, AppMode } from '../types';
-import { Box, ArrowRightLeft, Plus, Trash2, ChevronDown, ChevronRight } from 'lucide-react';
+import { Box, ArrowRightLeft, Plus, Trash2, ChevronDown, ChevronRight, ChevronLeft, PanelLeftOpen } from 'lucide-react';
 import { translations, Language } from '../services/i18n';
 
 interface TreeEditorProps {
@@ -12,6 +12,8 @@ interface TreeEditorProps {
   onNameChange: (name: string) => void;
   mode: AppMode;
   lang: Language;
+  collapsed?: boolean;
+  onToggle?: () => void;
 }
 
 // --- Structure View Components ---
@@ -135,14 +137,41 @@ const TreeNode = ({
   );
 };
 
-export const TreeEditor: React.FC<TreeEditorProps> = ({ robot, onSelect, onAddChild, onDelete, onNameChange, mode, lang }) => {
+export const TreeEditor: React.FC<TreeEditorProps> = ({ robot, onSelect, onAddChild, onDelete, onNameChange, mode, lang, collapsed, onToggle }) => {
   const t = translations[lang];
+
+  // Collapsed state - show only expand button
+  if (collapsed) {
+    return (
+      <div className="w-10 bg-[#0b1120] border-r border-slate-800 flex flex-col items-center py-4 shrink-0">
+        <button
+          onClick={onToggle}
+          className="p-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded transition-colors"
+          title={t.structure}
+        >
+          <PanelLeftOpen className="w-5 h-5" />
+        </button>
+      </div>
+    );
+  }
 
   return (
     <div className="w-72 bg-[#0b1120] border-r border-slate-800 flex flex-col h-full shrink-0">
       
+      {/* Collapse button */}
+      <div className="flex items-center justify-between px-2 pt-2 shrink-0">
+        <span className="text-[10px] text-slate-500 uppercase font-bold tracking-wider">{t.structure}</span>
+        <button
+          onClick={onToggle}
+          className="p-1 text-slate-400 hover:text-white hover:bg-slate-800 rounded transition-colors"
+          title="Collapse sidebar"
+        >
+          <ChevronLeft className="w-4 h-4" />
+        </button>
+      </div>
+
       {/* 1. Robot Name Input */}
-      <div className="px-4 pt-4 pb-2 bg-[#0b1120] border-b border-slate-800 shrink-0">
+      <div className="px-4 pt-2 pb-2 bg-[#0b1120] border-b border-slate-800 shrink-0">
          <label className="text-[10px] text-slate-500 uppercase font-bold tracking-wider mb-1 block">{t.robotName}</label>
          <input 
             type="text" 

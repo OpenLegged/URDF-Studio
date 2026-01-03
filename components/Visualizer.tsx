@@ -81,6 +81,33 @@ interface RobotNodeProps extends CommonVisualizerProps {
   depth: number;
 }
 
+const useLoadingManager = (assets: Record<string, string>) => {
+  const manager = useMemo(() => {
+    const m = new THREE.LoadingManager();
+    m.setURLModifier((url) => {
+      if (url.startsWith('blob:') || url.startsWith('data:')) return url;
+      
+      // Normalize path separators
+      const normalizedUrl = url.replace(/\\/g, '/');
+      const filename = normalizedUrl.split('/').pop();
+      
+      if (filename) {
+          // Try exact match in assets
+          if (assets[filename]) return assets[filename];
+          
+          // Try case-insensitive match
+          const lowerFilename = filename.toLowerCase();
+          const foundKey = Object.keys(assets).find(k => k.toLowerCase().endsWith(lowerFilename));
+          if (foundKey) return assets[foundKey];
+      }
+      
+      return url;
+    });
+    return m;
+  }, [assets]);
+  return manager;
+};
+
 const STLRenderer = ({ url, material }: { url: string, material: THREE.Material }) => {
     const geometry = useLoader(STLLoader, url);
     const clone = useMemo(() => geometry.clone(), [geometry]);
@@ -88,13 +115,21 @@ const STLRenderer = ({ url, material }: { url: string, material: THREE.Material 
     return <mesh geometry={clone} material={material} rotation={[0, 0, 0]} />;
 };
 
-const OBJRenderer = ({ url, material, color }: { url: string, material: THREE.Material, color: string }) => {
-    const obj = useLoader(OBJLoader, url);
+const OBJRenderer = ({ url, material, color, assets }: { url: string, material: THREE.Material, color: string, assets: Record<string, string> }) => {
+    const manager = useLoadingManager(assets);
+    const obj = useLoader(OBJLoader, url, (loader) => {
+        loader.manager = manager;
+    });
     const clone = useMemo(() => {
         const c = obj.clone();
         c.traverse((child) => {
             if ((child as THREE.Mesh).isMesh) {
-                (child as THREE.Mesh).material = material;
+                // Only override if the mesh doesn't have a texture map
+                const mesh = child as THREE.Mesh;
+                const mat = mesh.material as THREE.MeshStandardMaterial;
+                if (!mat || !mat.map) {
+                    mesh.material = material;
+                }
             }
         });
         return c;
@@ -103,15 +138,33 @@ const OBJRenderer = ({ url, material, color }: { url: string, material: THREE.Ma
     return <group rotation={[0, 0, 0]}><primitive object={clone} /></group>;
 };
 
-const DAERenderer = ({ url, material }: { url: string, material: THREE.Material }) => {
+const DAERenderer = ({ url, material, assets }: { url: string, material: THREE.Material, assets: Record<string, string> }) => {
+    const manager = useLoadingManager(assets);
     // Load DAE file - note: newer versions of ColladaLoader may not support options
     // The coordinate system conversion is handled via rotation below
-    const dae = useLoader(ColladaLoader, url);
+    const dae = useLoader(ColladaLoader, url, (loader) => {
+        loader.manager = manager;
+    });
     const clone = useMemo(() => {
         const c = dae.scene.clone();
-        c.traverse((child) => {
-            if ((child as THREE.Mesh).isMesh) {
-                (child as THREE.Mesh).material = material;
+        c.traverse((child: any) => {
+            if (child.isMesh) {
+                const mesh = child as THREE.Mesh;
+                const originalMat = mesh.material;
+                
+                // Check if original material has texture
+                let hasTexture = false;
+                if (Array.isArray(originalMat)) {
+                    hasTexture = originalMat.some((m: any) => m.map || m.emissiveMap);
+                } else {
+                    const mat = originalMat as any;
+                    hasTexture = !!mat.map || !!mat.emissiveMap;
+                }
+
+                // If no texture, apply URDF material
+                if (!hasTexture) {
+                    mesh.material = material;
+                }
             }
         });
         return c;
@@ -340,8 +393,8 @@ function RobotNode({
 
     const isSkeleton = mode === 'skeleton';
     
-    // Collision styling
-    const colColor = '#ef4444';
+    // Collision styling - Purple wireframe
+    const colColor = '#a855f7'; // Purple-500
     const matOpacity = isCollision ? 0.3 : (isSkeleton ? 0.2 : 1.0);
     const matWireframe = isCollision ? true : isSkeleton;
     const finalColor = isCollision ? colColor : (isSelected ? '#60a5fa' : color);
@@ -355,7 +408,10 @@ function RobotNode({
         transparent: isSkeleton || isCollision,
         opacity: matOpacity,
         wireframe: matWireframe,
-        side: THREE.DoubleSide
+        side: isCollision ? THREE.FrontSide : THREE.DoubleSide,
+        polygonOffset: isCollision,
+        polygonOffsetFactor: -1,
+        polygonOffsetUnits: -1
     });
 
     const wrapperProps = {
@@ -369,11 +425,13 @@ function RobotNode({
     let rotation: [number, number, number] = [0, 0, 0];
 
     if (type === GeometryType.BOX) {
-         geometryNode = <mesh rotation={rotation} geometry={new THREE.BoxGeometry(dimensions.x, dimensions.y, dimensions.z)} material={material} />;
+         // Reduced segments to avoid obscuring the mesh
+         geometryNode = <mesh rotation={rotation} geometry={new THREE.BoxGeometry(dimensions.x, dimensions.y, dimensions.z, 2, 2, 2)} material={material} />;
     } else if (type === GeometryType.CYLINDER) {
          // IMPORTANT: Rotate cylinder 90 deg on X to align with URDF Z-axis standard
          rotation = [Math.PI / 2, 0, 0];
-         geometryNode = <mesh rotation={rotation} geometry={new THREE.CylinderGeometry(dimensions.x, dimensions.x, dimensions.y, 32)} material={material} />;
+         // Reduced height segments
+         geometryNode = <mesh rotation={rotation} geometry={new THREE.CylinderGeometry(dimensions.x, dimensions.x, dimensions.y, 32, 1)} material={material} />;
     } else if (type === GeometryType.SPHERE) {
          geometryNode = <mesh rotation={rotation} geometry={new THREE.SphereGeometry(dimensions.x, 32, 32)} material={material} />;
     } else if (type === GeometryType.MESH) {
@@ -393,9 +451,9 @@ function RobotNode({
              if (ext === 'stl') {
                  geometryNode = <STLRenderer url={url} material={material} />;
              } else if (ext === 'obj') {
-                 geometryNode = <OBJRenderer url={url} material={material} color={finalColor} />;
+                 geometryNode = <OBJRenderer url={url} material={material} color={finalColor} assets={assets} />;
              } else if (ext === 'dae') {
-                 geometryNode = <DAERenderer url={url} material={material} />;
+                 geometryNode = <DAERenderer url={url} material={material} assets={assets} />;
              } else {
                  // Fallback for unknown extension
                  geometryNode = <mesh geometry={new THREE.BoxGeometry(0.1, 0.1, 0.1)} material={material} />;
@@ -548,8 +606,57 @@ export const Visualizer = ({ robot, onSelect, onUpdate, mode, assets, lang }: { 
   const [showHardwareOrigin, setShowHardwareOrigin] = useState(false);
   const [showHardwareLabels, setShowHardwareLabels] = useState(false);
 
+  // Draggable panel state
+  const containerRef = React.useRef<HTMLDivElement>(null);
+  const optionsPanelRef = React.useRef<HTMLDivElement>(null);
+  const [optionsPanelPos, setOptionsPanelPos] = React.useState<{ x: number; y: number } | null>(null);
+  const [dragging, setDragging] = React.useState(false);
+  const dragStartRef = React.useRef<{ mouseX: number; mouseY: number; panelX: number; panelY: number } | null>(null);
+  const [isOptionsCollapsed, setIsOptionsCollapsed] = React.useState(false);
+
+  const handleMouseDown = React.useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    
+    if (!optionsPanelRef.current || !containerRef.current) return;
+    
+    const rect = optionsPanelRef.current.getBoundingClientRect();
+    const containerRect = containerRef.current.getBoundingClientRect();
+
+    dragStartRef.current = {
+      mouseX: e.clientX,
+      mouseY: e.clientY,
+      panelX: rect.left - containerRect.left,
+      panelY: rect.top - containerRect.top
+    };
+    setDragging(true);
+  }, []);
+
+  const handleMouseMove = React.useCallback((e: React.MouseEvent) => {
+    if (!dragging || !dragStartRef.current) return;
+    
+    const deltaX = e.clientX - dragStartRef.current.mouseX;
+    const deltaY = e.clientY - dragStartRef.current.mouseY;
+    
+    setOptionsPanelPos({
+      x: dragStartRef.current.panelX + deltaX,
+      y: dragStartRef.current.panelY + deltaY
+    });
+  }, [dragging]);
+
+  const handleMouseUp = React.useCallback(() => {
+    setDragging(false);
+    dragStartRef.current = null;
+  }, []);
+
   return (
-    <div className="flex-1 relative bg-slate-900 h-full overflow-hidden">
+    <div 
+      ref={containerRef}
+      className="flex-1 relative bg-slate-900 h-full overflow-hidden"
+      onMouseMove={handleMouseMove}
+      onMouseUp={handleMouseUp}
+      onMouseLeave={handleMouseUp}
+    >
         <div className="absolute top-4 left-4 z-10 pointer-events-none select-none">
              <div className="text-slate-400 text-xs bg-slate-900/50 backdrop-blur px-2 py-1 rounded border border-slate-800">
               {t.instruction} <br/>
@@ -557,86 +664,165 @@ export const Visualizer = ({ robot, onSelect, onUpdate, mode, assets, lang }: { 
            </div>
         </div>
 
-        <div className="absolute top-4 right-4 z-10 flex flex-col gap-2 items-end">
+        <div 
+           ref={optionsPanelRef}
+           className="absolute z-10 pointer-events-auto"
+           style={optionsPanelPos 
+             ? { left: optionsPanelPos.x, top: optionsPanelPos.y, right: 'auto' }
+             : { top: '16px', right: '16px' }
+           }
+        >
            {mode === 'skeleton' && (
-              <div className="bg-slate-800/80 backdrop-blur p-2 rounded border border-slate-700 pointer-events-auto flex flex-col gap-2 w-48 shadow-xl">
-                 <div className="text-[10px] text-slate-500 uppercase font-bold tracking-wider px-1 mb-1">{t.skeletonOptions}</div>
-                 
-                 <div className="flex bg-slate-700 rounded p-0.5 mb-2">
-                    <button 
-                        onClick={() => setTransformMode('translate')}
-                        className={`flex-1 py-1 text-xs rounded ${transformMode === 'translate' ? 'bg-blue-600 text-white shadow' : 'text-slate-400 hover:text-white'}`}
-                    >
-                        {t.move}
-                    </button>
-                    <button 
-                        onClick={() => setTransformMode('rotate')}
-                        className={`flex-1 py-1 text-xs rounded ${transformMode === 'rotate' ? 'bg-blue-600 text-white shadow' : 'text-slate-400 hover:text-white'}`}
-                    >
-                        {t.rotate}
-                    </button>
+              <div className="bg-slate-800/80 backdrop-blur rounded border border-slate-700 flex flex-col w-48 shadow-xl overflow-hidden">
+                 <div 
+                   className="text-[10px] text-slate-500 uppercase font-bold tracking-wider px-3 py-2 cursor-move bg-slate-700/50 hover:bg-slate-700 select-none flex items-center justify-between"
+                   onMouseDown={handleMouseDown}
+                 >
+                   <div className="flex items-center gap-2">
+                     <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
+                       <path d="M7 2a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM7 8a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM7 14a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM13 2a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM13 8a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM13 14a2 2 0 1 0 0 4 2 2 0 0 0 0-4z"/>
+                     </svg>
+                     {t.skeletonOptions}
+                   </div>
+                   <button 
+                     onClick={(e) => { e.stopPropagation(); setIsOptionsCollapsed(!isOptionsCollapsed); }}
+                     className="text-slate-400 hover:text-white p-1 hover:bg-slate-600 rounded"
+                   >
+                     {isOptionsCollapsed ? (
+                       <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
+                     ) : (
+                       <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" /></svg>
+                     )}
+                   </button>
                  </div>
+                 
+                 {!isOptionsCollapsed && (
+                 <div className="p-2 flex flex-col gap-2">
+                   <div className="flex bg-slate-700 rounded p-0.5 mb-1">
+                      <button 
+                          onClick={() => setTransformMode('translate')}
+                          className={`flex-1 py-1 text-xs rounded ${transformMode === 'translate' ? 'bg-blue-600 text-white shadow' : 'text-slate-400 hover:text-white'}`}
+                      >
+                          {t.move}
+                      </button>
+                      <button 
+                          onClick={() => setTransformMode('rotate')}
+                          className={`flex-1 py-1 text-xs rounded ${transformMode === 'rotate' ? 'bg-blue-600 text-white shadow' : 'text-slate-400 hover:text-white'}`}
+                      >
+                          {t.rotate}
+                      </button>
+                   </div>
 
-                 <label className="flex items-center gap-2 cursor-pointer text-sm text-slate-200 select-none hover:text-white">
-                    <input type="checkbox" checked={showGeometry} onChange={(e) => setShowGeometry(e.target.checked)} className="rounded border-slate-600 bg-slate-700 text-blue-600" />
-                    {t.showGeometry}
-                 </label>
-                 <label className="flex items-center gap-2 cursor-pointer text-sm text-slate-200 select-none hover:text-white">
-                    <input type="checkbox" checked={showLabels} onChange={(e) => setShowLabels(e.target.checked)} className="rounded border-slate-600 bg-slate-700 text-blue-600" />
-                    {t.showLabels}
-                 </label>
-                 <label className="flex items-center gap-2 cursor-pointer text-sm text-slate-200 select-none hover:text-white">
-                    <input type="checkbox" checked={showJointAxes} onChange={(e) => setShowJointAxes(e.target.checked)} className="rounded border-slate-600 bg-slate-700 text-blue-600" />
-                    {t.showJointAxes}
-                 </label>
+                   <label className="flex items-center gap-2 cursor-pointer text-sm text-slate-200 select-none hover:text-white">
+                      <input type="checkbox" checked={showGeometry} onChange={(e) => setShowGeometry(e.target.checked)} className="rounded border-slate-600 bg-slate-700 text-blue-600" />
+                      {t.showGeometry}
+                   </label>
+                   <label className="flex items-center gap-2 cursor-pointer text-sm text-slate-200 select-none hover:text-white">
+                      <input type="checkbox" checked={showLabels} onChange={(e) => setShowLabels(e.target.checked)} className="rounded border-slate-600 bg-slate-700 text-blue-600" />
+                      {t.showLabels}
+                   </label>
+                   <label className="flex items-center gap-2 cursor-pointer text-sm text-slate-200 select-none hover:text-white">
+                      <input type="checkbox" checked={showJointAxes} onChange={(e) => setShowJointAxes(e.target.checked)} className="rounded border-slate-600 bg-slate-700 text-blue-600" />
+                      {t.showJointAxes}
+                   </label>
+                 </div>
+                 )}
               </div>
            )}
 
            {mode === 'detail' && (
-              <div className="bg-slate-800/80 backdrop-blur p-2 rounded border border-slate-700 pointer-events-auto flex flex-col gap-2 w-48 shadow-xl">
-                 <div className="text-[10px] text-slate-500 uppercase font-bold tracking-wider px-1 mb-1">{t.detailOptions}</div>
-                 
-                  <div className="flex bg-slate-700 rounded p-0.5 mb-2">
-                    <button 
-                        onClick={() => setTransformMode('translate')}
-                        className={`flex-1 py-1 text-xs rounded ${transformMode === 'translate' ? 'bg-blue-600 text-white shadow' : 'text-slate-400 hover:text-white'}`}
-                    >
-                        {t.move}
-                    </button>
-                    <button 
-                        onClick={() => setTransformMode('rotate')}
-                        className={`flex-1 py-1 text-xs rounded ${transformMode === 'rotate' ? 'bg-blue-600 text-white shadow' : 'text-slate-400 hover:text-white'}`}
-                    >
-                        {t.rotate}
-                    </button>
+              <div className="bg-slate-800/80 backdrop-blur rounded border border-slate-700 flex flex-col w-48 shadow-xl overflow-hidden">
+                 <div 
+                   className="text-[10px] text-slate-500 uppercase font-bold tracking-wider px-3 py-2 cursor-move bg-slate-700/50 hover:bg-slate-700 select-none flex items-center justify-between"
+                   onMouseDown={handleMouseDown}
+                 >
+                   <div className="flex items-center gap-2">
+                     <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
+                       <path d="M7 2a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM7 8a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM7 14a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM13 2a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM13 8a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM13 14a2 2 0 1 0 0 4 2 2 0 0 0 0-4z"/>
+                     </svg>
+                     {t.detailOptions}
+                   </div>
+                   <button 
+                     onClick={(e) => { e.stopPropagation(); setIsOptionsCollapsed(!isOptionsCollapsed); }}
+                     className="text-slate-400 hover:text-white p-1 hover:bg-slate-600 rounded"
+                   >
+                     {isOptionsCollapsed ? (
+                       <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
+                     ) : (
+                       <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" /></svg>
+                     )}
+                   </button>
                  </div>
+                 
+                 {!isOptionsCollapsed && (
+                 <div className="p-2 flex flex-col gap-2">
+                   <div className="flex bg-slate-700 rounded p-0.5 mb-1">
+                      <button 
+                          onClick={() => setTransformMode('translate')}
+                          className={`flex-1 py-1 text-xs rounded ${transformMode === 'translate' ? 'bg-blue-600 text-white shadow' : 'text-slate-400 hover:text-white'}`}
+                      >
+                          {t.move}
+                      </button>
+                      <button 
+                          onClick={() => setTransformMode('rotate')}
+                          className={`flex-1 py-1 text-xs rounded ${transformMode === 'rotate' ? 'bg-blue-600 text-white shadow' : 'text-slate-400 hover:text-white'}`}
+                      >
+                          {t.rotate}
+                      </button>
+                   </div>
 
-                 <label className="flex items-center gap-2 cursor-pointer text-sm text-slate-200 select-none hover:text-white">
-                    <input type="checkbox" checked={showDetailOrigin} onChange={(e) => setShowDetailOrigin(e.target.checked)} className="rounded border-slate-600 bg-slate-700 text-blue-600" />
-                    {t.showOrigin}
-                 </label>
-                 <label className="flex items-center gap-2 cursor-pointer text-sm text-slate-200 select-none hover:text-white">
-                    <input type="checkbox" checked={showDetailLabels} onChange={(e) => setShowDetailLabels(e.target.checked)} className="rounded border-slate-600 bg-slate-700 text-blue-600" />
-                    {t.showLabels}
-                 </label>
-                 <label className="flex items-center gap-2 cursor-pointer text-sm text-slate-200 select-none hover:text-white">
-                    <input type="checkbox" checked={showCollision} onChange={(e) => setShowCollision(e.target.checked)} className="rounded border-slate-600 bg-slate-700 text-blue-600" />
-                    {t.showCollision}
-                 </label>
+                   <label className="flex items-center gap-2 cursor-pointer text-sm text-slate-200 select-none hover:text-white">
+                      <input type="checkbox" checked={showDetailOrigin} onChange={(e) => setShowDetailOrigin(e.target.checked)} className="rounded border-slate-600 bg-slate-700 text-blue-600" />
+                      {t.showOrigin}
+                   </label>
+                   <label className="flex items-center gap-2 cursor-pointer text-sm text-slate-200 select-none hover:text-white">
+                      <input type="checkbox" checked={showDetailLabels} onChange={(e) => setShowDetailLabels(e.target.checked)} className="rounded border-slate-600 bg-slate-700 text-blue-600" />
+                      {t.showLabels}
+                   </label>
+                   <label className="flex items-center gap-2 cursor-pointer text-sm text-slate-200 select-none hover:text-white">
+                      <input type="checkbox" checked={showCollision} onChange={(e) => setShowCollision(e.target.checked)} className="rounded border-slate-600 bg-slate-700 text-blue-600" />
+                      {t.showCollision}
+                   </label>
+                 </div>
+                 )}
               </div>
            )}
 
            {mode === 'hardware' && (
-              <div className="bg-slate-800/80 backdrop-blur p-2 rounded border border-slate-700 pointer-events-auto flex flex-col gap-2 w-48 shadow-xl">
-                 <div className="text-[10px] text-slate-500 uppercase font-bold tracking-wider px-1 mb-1">{t.hardwareOptions}</div>
-                 <label className="flex items-center gap-2 cursor-pointer text-sm text-slate-200 select-none hover:text-white">
-                    <input type="checkbox" checked={showHardwareOrigin} onChange={(e) => setShowHardwareOrigin(e.target.checked)} className="rounded border-slate-600 bg-slate-700 text-blue-600" />
-                    {t.showOrigin}
-                 </label>
-                 <label className="flex items-center gap-2 cursor-pointer text-sm text-slate-200 select-none hover:text-white">
-                    <input type="checkbox" checked={showHardwareLabels} onChange={(e) => setShowHardwareLabels(e.target.checked)} className="rounded border-slate-600 bg-slate-700 text-blue-600" />
-                    {t.showLabels}
-                 </label>
+              <div className="bg-slate-800/80 backdrop-blur rounded border border-slate-700 flex flex-col w-48 shadow-xl overflow-hidden">
+                 <div 
+                   className="text-[10px] text-slate-500 uppercase font-bold tracking-wider px-3 py-2 cursor-move bg-slate-700/50 hover:bg-slate-700 select-none flex items-center justify-between"
+                   onMouseDown={handleMouseDown}
+                 >
+                   <div className="flex items-center gap-2">
+                     <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
+                       <path d="M7 2a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM7 8a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM7 14a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM13 2a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM13 8a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM13 14a2 2 0 1 0 0 4 2 2 0 0 0 0-4z"/>
+                     </svg>
+                     {t.hardwareOptions}
+                   </div>
+                   <button 
+                     onClick={(e) => { e.stopPropagation(); setIsOptionsCollapsed(!isOptionsCollapsed); }}
+                     className="text-slate-400 hover:text-white p-1 hover:bg-slate-600 rounded"
+                   >
+                     {isOptionsCollapsed ? (
+                       <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
+                     ) : (
+                       <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" /></svg>
+                     )}
+                   </button>
+                 </div>
+                 {!isOptionsCollapsed && (
+                 <div className="p-2 flex flex-col gap-2">
+                   <label className="flex items-center gap-2 cursor-pointer text-sm text-slate-200 select-none hover:text-white">
+                      <input type="checkbox" checked={showHardwareOrigin} onChange={(e) => setShowHardwareOrigin(e.target.checked)} className="rounded border-slate-600 bg-slate-700 text-blue-600" />
+                      {t.showOrigin}
+                   </label>
+                   <label className="flex items-center gap-2 cursor-pointer text-sm text-slate-200 select-none hover:text-white">
+                      <input type="checkbox" checked={showHardwareLabels} onChange={(e) => setShowHardwareLabels(e.target.checked)} className="rounded border-slate-600 bg-slate-700 text-blue-600" />
+                      {t.showLabels}
+                   </label>
+                 </div>
+                 )}
               </div>
            )}
         </div>
@@ -644,10 +830,10 @@ export const Visualizer = ({ robot, onSelect, onUpdate, mode, assets, lang }: { 
       <Canvas shadows camera={{ position: [2, 2, 2], up: [0, 0, 1], fov: 50 }} onCreated={(state) => console.log('Canvas created', state)}>
         <Suspense fallback={null}>
             <OrbitControls makeDefault />
-            <ambientLight intensity={0.5} />
-            <directionalLight position={[10, 10, 5]} intensity={1} />
-            {/* Environment preset="city" - 需要从外部下载资源，可能导致加载问题，暂时注释 */}
-            {/* <Environment preset="city" /> */}
+            <ambientLight intensity={0.8} />
+            <directionalLight position={[10, 10, 10]} intensity={1.5} />
+            <directionalLight position={[-10, -10, -5]} intensity={1} />
+            <Environment preset="city" />
             
             <group position={[0, 0, 0]}>
                  <RobotNode 

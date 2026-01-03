@@ -16,7 +16,8 @@
     "openai": "^4.0.0",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
-    "three": "^0.181.2"
+    "three": "^0.181.2",
+    "urdf-loader": "^0.12.6"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.1.18",

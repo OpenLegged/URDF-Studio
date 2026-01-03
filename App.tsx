@@ -3,6 +3,7 @@ import React, { useState, useRef } from 'react';
 import { TreeEditor } from './components/TreeEditor';
 import { PropertyEditor } from './components/PropertyEditor';
 import { Visualizer } from './components/Visualizer';
+import { URDFViewer } from './components/URDFViewer';
 import { RobotState, DEFAULT_LINK, DEFAULT_JOINT, UrdfLink, UrdfJoint, GeometryType, MotorSpec } from './types';
 import { generateURDF } from './services/urdfGenerator';
 import { generateMujocoXML } from './services/mujocoGenerator';
@@ -32,9 +33,14 @@ export default function App() {
   const [appMode, setAppMode] = useState<AppMode>('skeleton');
   const [assets, setAssets] = useState<Record<string, string>>({});
   const [motorLibrary, setMotorLibrary] = useState<Record<string, MotorSpec[]>>(DEFAULT_MOTOR_LIBRARY);
+  const [originalUrdfContent, setOriginalUrdfContent] = useState<string>('');
   const importInputRef = useRef<HTMLInputElement>(null);
   const importFolderInputRef = useRef<HTMLInputElement>(null);
   const [isDragOver, setIsDragOver] = useState(false);
+
+  // Sidebar collapse state
+  const [leftSidebarCollapsed, setLeftSidebarCollapsed] = useState(false);
+  const [rightSidebarCollapsed, setRightSidebarCollapsed] = useState(false);
 
   // Language State
   const [lang, setLang] = useState<Language>('en');
@@ -278,6 +284,9 @@ export default function App() {
 
         const newState = parseURDF(urdfFile.content);
         if (newState) {
+            // Save original URDF content for URDFViewer
+            setOriginalUrdfContent(urdfFile.content);
+            
             // 2. Load Assets
             const newAssets: Record<string, string> = {};
             const assetPromises = assetFiles.map(async f => {
@@ -296,7 +305,7 @@ export default function App() {
             
             setAssets(newAssets);
             setRobot(newState);
-            setAppMode('skeleton');
+            setAppMode('detail'); // Start with detail mode
         } else {
             alert("Failed to parse URDF.");
         }
@@ -679,16 +688,27 @@ export default function App() {
             onNameChange={handleNameChange}
             mode={appMode}
             lang={lang}
+            collapsed={leftSidebarCollapsed}
+            onToggle={() => setLeftSidebarCollapsed(!leftSidebarCollapsed)}
         />
         
-        <Visualizer 
-            robot={robot} 
-            onSelect={handleSelect}
-            onUpdate={handleUpdate}
-            mode={appMode}
-            assets={assets}
-            lang={lang}
-        />
+        {(appMode === 'detail' || appMode === 'hardware') && originalUrdfContent ? (
+            <URDFViewer
+                urdfContent={originalUrdfContent}
+                assets={assets}
+                lang={lang}
+                mode={appMode}
+            />
+        ) : (
+            <Visualizer 
+                robot={robot} 
+                onSelect={handleSelect}
+                onUpdate={handleUpdate}
+                mode={appMode}
+                assets={assets}
+                lang={lang}
+            />
+        )}
         
         <PropertyEditor 
             robot={robot} 
@@ -698,6 +718,8 @@ export default function App() {
             onUploadAsset={handleUploadAsset}
             motorLibrary={motorLibrary}
             lang={lang}
+            collapsed={rightSidebarCollapsed}
+            onToggle={() => setRightSidebarCollapsed(!rightSidebarCollapsed)}
         />
       </div>
 
