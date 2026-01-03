@@ -10,6 +10,7 @@ export const translations = {
     hardware: "Hardware",
     aiAssistant: "AI Assistant",
     import: "Import",
+    importFolder: "Import Folder",
     export: "Export",
     
     // Tree Editor
@@ -105,6 +106,7 @@ export const translations = {
     hardware: "硬件",
     aiAssistant: "AI 助手",
     import: "导入",
+    importFolder: "导入文件夹",
     export: "导出",
 
     // Tree Editor

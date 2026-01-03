@@ -33,6 +33,7 @@ export default function App() {
   const [assets, setAssets] = useState<Record<string, string>>({});
   const [motorLibrary, setMotorLibrary] = useState<Record<string, MotorSpec[]>>(DEFAULT_MOTOR_LIBRARY);
   const importInputRef = useRef<HTMLInputElement>(null);
+  const importFolderInputRef = useRef<HTMLInputElement>(null);
   const [isDragOver, setIsDragOver] = useState(false);
 
   // Language State
@@ -369,6 +370,7 @@ export default function App() {
         alert("Failed to import. Please check if the file(s) are valid.");
     } finally {
         if (importInputRef.current) importInputRef.current.value = "";
+        if (importFolderInputRef.current) importFolderInputRef.current.value = "";
     }
   };
 
@@ -582,6 +584,14 @@ export default function App() {
         // Removed webkitdirectory to allow file selection (including zip). 
         // Folder upload is supported via Drag & Drop.
       />
+      <input 
+        type="file" 
+        ref={importFolderInputRef} 
+        onChange={handleImport} 
+        className="hidden" 
+        multiple
+        {...({ webkitdirectory: "", directory: "" } as any)}
+      />
 
       {/* Header */}
       <header className="h-14 bg-slate-900 border-b border-slate-800 flex items-center justify-between px-4 shrink-0 relative">
@@ -642,9 +652,9 @@ export default function App() {
                 {t.aiAssistant}
             </button>
             <button 
-                onClick={() => importInputRef.current?.click()}
+                onClick={() => importFolderInputRef.current?.click()}
                 className="flex items-center gap-2 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded text-sm transition-colors"
-                title={t.import}
+                title={t.importFolder}
             >
                 <Download className="w-4 h-4" />
                 {t.import}
