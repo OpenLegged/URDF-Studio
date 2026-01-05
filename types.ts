@@ -89,7 +89,7 @@ export interface MotorSpec {
 }
 
 export interface InspectionIssue {
-  type: 'error' | 'warning' | 'suggestion';
+  type: 'error' | 'warning' | 'suggestion' | 'pass';
   title: string;
   description: string;
   relatedIds?: string[]; // IDs of links/joints involved

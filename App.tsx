@@ -11,7 +11,7 @@ import { generateRobotFromPrompt, runRobotInspection } from './services/geminiSe
 import { DEFAULT_MOTOR_LIBRARY } from './services/motorLibrary';
 import { translations, Language } from './services/i18n';
 import { INSPECTION_CRITERIA, getInspectionCategory } from './services/inspectionCriteria';
-import { Download, Activity, Box, Cpu, Upload, Sparkles, X, Loader2, Check, ArrowRight, Github, Globe, ScanSearch, AlertTriangle, Info, AlertCircle, Move, ChevronDown, ChevronRight, FileText, RefreshCw, Wand2, MessageCircle, Send, Minimize2, Maximize2 } from 'lucide-react';
+import { Download, Activity, Box, Cpu, Upload, Sparkles, X, Loader2, Check, ArrowRight, Github, Globe, ScanSearch, AlertTriangle, Info, AlertCircle, Move, ChevronDown, ChevronRight, FileText, RefreshCw, MessageCircle, Send } from 'lucide-react';
 import JSZip from 'jszip';
 import jsPDF from 'jspdf';
 
@@ -68,11 +68,10 @@ export default function App() {
   } | null>(null);
   // Report generation timer
   const [reportGenerationTimer, setReportGenerationTimer] = useState<number | null>(null);
-  // Chat dialog state
-  const [isChatOpen, setIsChatOpen] = useState(false);
-  const [isChatMinimized, setIsChatMinimized] = useState(false);
-  const [chatMessages, setChatMessages] = useState<Array<{ role: 'user' | 'assistant'; content: string }>>([]);
-  const [chatInput, setChatInput] = useState('');
+  // Chat state for inspection report
+  const [isReportChatOpen, setIsReportChatOpen] = useState(false);
+  const [reportChatMessages, setReportChatMessages] = useState<Array<{ role: 'user' | 'assistant'; content: string }>>([]);
+  const [reportChatInput, setReportChatInput] = useState('');
   const [isChatGenerating, setIsChatGenerating] = useState(false);
   // Single item retest state
   const [retestingItem, setRetestingItem] = useState<{ categoryId: string; itemId: string } | null>(null);
@@ -623,60 +622,26 @@ export default function App() {
     }
   };
 
-  // Handle AI fix for a specific issue
-  const handleFixIssue = async (issue: InspectionIssue) => {
-    if (!issue.category || !issue.itemId) return;
+  // Handle chat message for inspection report
+  const handleReportChatSend = async () => {
+    if (!reportChatInput.trim() || isChatGenerating || !inspectionReport) return;
     
-    setIsGeneratingAI(true);
-    try {
-      const category = INSPECTION_CRITERIA.find(c => c.id === issue.category);
-      const item = category?.items.find(i => i.id === issue.itemId);
-      const itemName = lang === 'zh' ? item?.nameZh : item?.name;
-      const categoryName = lang === 'zh' ? category?.nameZh : category?.name;
-      
-      const prompt = lang === 'zh' 
-        ? `请修复以下URDF问题：\n\n问题类别：${categoryName}\n检查项：${itemName}\n问题描述：${issue.title}\n${issue.description}\n\n相关的链接/关节ID：${issue.relatedIds?.join(', ') || '无'}\n\n请直接修复这个问题，返回完整的修复后的机器人结构。`
-        : `Please fix the following URDF issue:\n\nCategory: ${categoryName}\nItem: ${itemName}\nIssue: ${issue.title}\n${issue.description}\n\nRelated link/joint IDs: ${issue.relatedIds?.join(', ') || 'none'}\n\nPlease fix this issue directly and return the complete fixed robot structure.`;
-      
-      const response = await generateRobotFromPrompt(prompt, robot, motorLibrary);
-      if (response?.data) {
-        setAiResponse({
-          explanation: response.explanation || (lang === 'zh' ? '修复完成，请查看并应用更改。' : 'Fix completed. Please review and apply changes.'),
-          type: response.actionType || 'modification',
-          data: response.robotData
-        });
-        setIsAIModalOpen(true);
-      } else {
-        alert(lang === 'zh' ? '修复失败，请重试。' : 'Fix failed, please try again.');
-      }
-    } catch (e) {
-      console.error("Fix Error", e);
-      alert(lang === 'zh' ? '修复过程中出错。' : 'Error during fix.');
-    } finally {
-      setIsGeneratingAI(false);
-    }
-  };
-
-  // Handle chat message
-  const handleChatSend = async () => {
-    if (!chatInput.trim() || isChatGenerating) return;
-    
-    const userMessage = chatInput.trim();
-    setChatInput('');
-    setChatMessages(prev => [...prev, { role: 'user', content: userMessage }]);
+    const userMessage = reportChatInput.trim();
+    setReportChatInput('');
+    setReportChatMessages(prev => [...prev, { role: 'user', content: userMessage }]);
     setIsChatGenerating(true);
     
     try {
       const contextPrompt = lang === 'zh'
-        ? `当前机器人结构：\n${JSON.stringify(robot, null, 2)}\n\n${inspectionReport ? `当前检测报告摘要：\n${inspectionReport.summary}\n问题列表：\n${inspectionReport.issues.map(i => `- ${i.title}: ${i.description}`).join('\n')}\n\n` : ''}用户问题：${userMessage}\n\n请回答用户关于URDF的问题，提供建议和帮助。`
-        : `Current robot structure:\n${JSON.stringify(robot, null, 2)}\n\n${inspectionReport ? `Current inspection report summary:\n${inspectionReport.summary}\nIssues:\n${inspectionReport.issues.map(i => `- ${i.title}: ${i.description}`).join('\n')}\n\n` : ''}User question: ${userMessage}\n\nPlease answer the user's question about URDF and provide suggestions and help.`;
+        ? `当前机器人结构：\n${JSON.stringify(robot, null, 2)}\n\n检测报告摘要：\n${inspectionReport.summary}\n\n检测报告中的问题列表：\n${inspectionReport.issues.map(i => `- ${i.title} (${i.type}): ${i.description}${i.relatedIds ? ` [相关ID: ${i.relatedIds.join(', ')}]` : ''}`).join('\n')}\n\n用户问题：${userMessage}\n\n请回答用户关于检测报告中问题的询问，提供详细的解释、原因分析和建议。`
+        : `Current robot structure:\n${JSON.stringify(robot, null, 2)}\n\nInspection report summary:\n${inspectionReport.summary}\n\nIssues in inspection report:\n${inspectionReport.issues.map(i => `- ${i.title} (${i.type}): ${i.description}${i.relatedIds ? ` [Related IDs: ${i.relatedIds.join(', ')}]` : ''}`).join('\n')}\n\nUser question: ${userMessage}\n\nPlease answer the user's question about issues in the inspection report, providing detailed explanations, cause analysis, and suggestions.`;
       
       const response = await generateRobotFromPrompt(contextPrompt, robot, motorLibrary);
       const assistantMessage = response?.explanation || (lang === 'zh' ? '抱歉，无法生成回复。' : 'Sorry, unable to generate response.');
-      setChatMessages(prev => [...prev, { role: 'assistant', content: assistantMessage }]);
+      setReportChatMessages(prev => [...prev, { role: 'assistant', content: assistantMessage }]);
     } catch (e) {
       console.error("Chat Error", e);
-      setChatMessages(prev => [...prev, { 
+      setReportChatMessages(prev => [...prev, { 
         role: 'assistant', 
         content: lang === 'zh' ? '发送消息时出错，请重试。' : 'Error sending message, please try again.' 
       }]);
@@ -1067,6 +1032,10 @@ export default function App() {
                                                    colorClass = "bg-blue-900/20 border-blue-800/50";
                                                    icon = <Sparkles className="w-4 h-4 text-blue-500" />;
                                                    titleColor = "text-blue-300";
+                                               } else if (issue.type === 'pass') {
+                                                   colorClass = "bg-green-900/20 border-green-800/50";
+                                                   icon = <Check className="w-4 h-4 text-green-500" />;
+                                                   titleColor = "text-green-300";
                                                }
 
                                                const isRetesting = retestingItem?.categoryId === issue.category && retestingItem?.itemId === issue.itemId;
@@ -1081,29 +1050,19 @@ export default function App() {
                                                                    <div className={`text-xs font-bold ${getScoreColor(issueScore)}`}>
                                                                        {issueScore.toFixed(1)}/10
                                                                    </div>
-                                                                   {issue.category && issue.itemId && (
-                                                                       <div className="flex items-center gap-1">
-                                                                           <button
-                                                                               onClick={() => handleRetestItem(issue.category!, issue.itemId!)}
-                                                                               disabled={isRetesting || isGeneratingAI}
-                                                                               className="px-2 py-1 bg-slate-700 hover:bg-slate-600 text-slate-300 text-[10px] rounded transition-colors disabled:opacity-50 flex items-center gap-1"
-                                                                               title={t.retestItem}
-                                                                           >
-                                                                               {isRetesting ? (
-                                                                                   <Loader2 className="w-3 h-3 animate-spin" />
-                                                                               ) : (
-                                                                                   <RefreshCw className="w-3 h-3" />
-                                                                               )}
-                                                                           </button>
-                                                                           <button
-                                                                               onClick={() => handleFixIssue(issue)}
-                                                                               disabled={isGeneratingAI}
-                                                                               className="px-2 py-1 bg-purple-600 hover:bg-purple-500 text-white text-[10px] rounded transition-colors disabled:opacity-50 flex items-center gap-1"
-                                                                               title={t.fixWithAI}
-                                                                           >
-                                                                               <Wand2 className="w-3 h-3" />
-                                                                           </button>
-                                                                       </div>
+                                                                   {issue.category && issue.itemId && issue.type !== 'pass' && (
+                                                                       <button
+                                                                           onClick={() => handleRetestItem(issue.category!, issue.itemId!)}
+                                                                           disabled={isRetesting || isGeneratingAI}
+                                                                           className="px-2 py-1 bg-slate-700 hover:bg-slate-600 text-slate-300 text-[10px] rounded transition-colors disabled:opacity-50 flex items-center gap-1"
+                                                                           title={t.retestItem}
+                                                                       >
+                                                                           {isRetesting ? (
+                                                                               <Loader2 className="w-3 h-3 animate-spin" />
+                                                                           ) : (
+                                                                               <RefreshCw className="w-3 h-3" />
+                                                                           )}
+                                                                       </button>
                                                                    )}
                                                                </div>
                                                            </div>
@@ -1496,7 +1455,106 @@ export default function App() {
                           </>
                       ) : (
                           <>
-                            {inspectionReport && renderInspectionReport()}
+                            {inspectionReport && (
+                              <div className="relative">
+                                {renderInspectionReport()}
+                                
+                                {/* Chat Dialog - Bottom Right of Report */}
+                                {isReportChatOpen && (
+                                  <div className="fixed bottom-4 right-4 z-50 w-96 h-[500px] flex flex-col bg-slate-900/95 backdrop-blur-md shadow-2xl rounded-lg border border-slate-600">
+                                    <div className="flex items-center justify-between p-3 border-b border-slate-700 shrink-0 bg-slate-800/50 rounded-t-lg">
+                                      <div className="flex items-center gap-2">
+                                        <MessageCircle className="w-4 h-4 text-blue-400" />
+                                        <h3 className="text-sm font-bold text-white">{t.chatTitle}</h3>
+                                      </div>
+                                      <button
+                                        onClick={() => {
+                                          setIsReportChatOpen(false);
+                                          setReportChatMessages([]);
+                                          setReportChatInput('');
+                                        }}
+                                        className="text-slate-400 hover:text-white"
+                                      >
+                                        <X className="w-4 h-4" />
+                                      </button>
+                                    </div>
+
+                                    <div className="flex-1 overflow-y-auto p-4 space-y-4 custom-scrollbar">
+                                      {reportChatMessages.length === 0 ? (
+                                        <div className="text-sm text-slate-400 text-center py-8">
+                                          {lang === 'zh' ? '询问检测报告中的问题...' : 'Ask about issues in the inspection report...'}
+                                        </div>
+                                      ) : (
+                                        reportChatMessages.map((msg, idx) => (
+                                          <div
+                                            key={idx}
+                                            className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
+                                          >
+                                            <div
+                                              className={`max-w-[80%] rounded-lg p-3 ${
+                                                msg.role === 'user'
+                                                  ? 'bg-blue-600 text-white'
+                                                  : 'bg-slate-800 text-slate-200'
+                                              }`}
+                                            >
+                                              <div className="text-xs whitespace-pre-wrap leading-relaxed">{msg.content}</div>
+                                            </div>
+                                          </div>
+                                        ))
+                                      )}
+                                      {isChatGenerating && (
+                                        <div className="flex justify-start">
+                                          <div className="bg-slate-800 rounded-lg p-3">
+                                            <Loader2 className="w-4 h-4 animate-spin text-blue-400" />
+                                          </div>
+                                        </div>
+                                      )}
+                                    </div>
+
+                                    <div className="p-3 border-t border-slate-700 shrink-0">
+                                      <div className="flex gap-2">
+                                        <input
+                                          type="text"
+                                          value={reportChatInput}
+                                          onChange={(e) => setReportChatInput(e.target.value)}
+                                          onKeyPress={(e) => {
+                                            if (e.key === 'Enter' && !e.shiftKey) {
+                                              e.preventDefault();
+                                              handleReportChatSend();
+                                            }
+                                          }}
+                                          placeholder={t.chatPlaceholder}
+                                          className="flex-1 bg-slate-800 border border-slate-700 rounded px-3 py-2 text-slate-200 text-sm focus:border-blue-500 focus:outline-none"
+                                          disabled={isChatGenerating}
+                                        />
+                                        <button
+                                          onClick={handleReportChatSend}
+                                          disabled={isChatGenerating || !reportChatInput.trim()}
+                                          className="px-4 py-2 bg-blue-600 hover:bg-blue-500 disabled:bg-slate-700 disabled:text-slate-500 text-white rounded transition-colors flex items-center gap-2"
+                                        >
+                                          {isChatGenerating ? (
+                                            <Loader2 className="w-4 h-4 animate-spin" />
+                                          ) : (
+                                            <Send className="w-4 h-4" />
+                                          )}
+                                        </button>
+                                      </div>
+                                    </div>
+                                  </div>
+                                )}
+
+                                {/* Chat Button - Bottom Right of Report */}
+                                {!isReportChatOpen && (
+                                  <button
+                                    onClick={() => setIsReportChatOpen(true)}
+                                    className="fixed bottom-4 right-4 z-40 w-14 h-14 bg-blue-600 hover:bg-blue-500 text-white rounded-full shadow-lg flex items-center justify-center transition-colors"
+                                    title={t.chatWithAI}
+                                  >
+                                    <MessageCircle className="w-6 h-6" />
+                                  </button>
+                                )}
+                              </div>
+                            )}
                             
                             {aiResponse && (
                                 <div className="space-y-4">
@@ -1580,113 +1638,6 @@ export default function App() {
           </div>
       )}
 
-      {/* Chat Dialog - Bottom Right */}
-      {isChatOpen && (
-        <div className={`fixed bottom-4 right-4 z-50 flex flex-col bg-slate-900/95 backdrop-blur-md shadow-2xl rounded-lg border border-slate-600 ${isChatMinimized ? 'w-80' : 'w-96'} ${isChatMinimized ? 'h-12' : 'h-[500px]'} transition-all`}>
-          <div className="flex items-center justify-between p-3 border-b border-slate-700 shrink-0 bg-slate-800/50 rounded-t-lg">
-            <div className="flex items-center gap-2">
-              <MessageCircle className="w-4 h-4 text-purple-400" />
-              <h3 className="text-sm font-bold text-white">{t.chatTitle}</h3>
-            </div>
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => setIsChatMinimized(!isChatMinimized)}
-                className="text-slate-400 hover:text-white"
-              >
-                {isChatMinimized ? <Maximize2 className="w-4 h-4" /> : <Minimize2 className="w-4 h-4" />}
-              </button>
-              <button
-                onClick={() => {
-                  setIsChatOpen(false);
-                  setIsChatMinimized(false);
-                  setChatMessages([]);
-                  setChatInput('');
-                }}
-                className="text-slate-400 hover:text-white"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-          </div>
-
-          {!isChatMinimized && (
-            <>
-              <div className="flex-1 overflow-y-auto p-4 space-y-4 custom-scrollbar">
-                {chatMessages.length === 0 ? (
-                  <div className="text-sm text-slate-400 text-center py-8">
-                    {lang === 'zh' ? '开始与AI对话，讨论URDF问题...' : 'Start a conversation with AI to discuss URDF issues...'}
-                  </div>
-                ) : (
-                  chatMessages.map((msg, idx) => (
-                    <div
-                      key={idx}
-                      className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
-                    >
-                      <div
-                        className={`max-w-[80%] rounded-lg p-3 ${
-                          msg.role === 'user'
-                            ? 'bg-purple-600 text-white'
-                            : 'bg-slate-800 text-slate-200'
-                        }`}
-                      >
-                        <div className="text-xs whitespace-pre-wrap leading-relaxed">{msg.content}</div>
-                      </div>
-                    </div>
-                  ))
-                )}
-                {isChatGenerating && (
-                  <div className="flex justify-start">
-                    <div className="bg-slate-800 rounded-lg p-3">
-                      <Loader2 className="w-4 h-4 animate-spin text-purple-400" />
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              <div className="p-3 border-t border-slate-700 shrink-0">
-                <div className="flex gap-2">
-                  <input
-                    type="text"
-                    value={chatInput}
-                    onChange={(e) => setChatInput(e.target.value)}
-                    onKeyPress={(e) => {
-                      if (e.key === 'Enter' && !e.shiftKey) {
-                        e.preventDefault();
-                        handleChatSend();
-                      }
-                    }}
-                    placeholder={t.chatPlaceholder}
-                    className="flex-1 bg-slate-800 border border-slate-700 rounded px-3 py-2 text-slate-200 text-sm focus:border-purple-500 focus:outline-none"
-                    disabled={isChatGenerating}
-                  />
-                  <button
-                    onClick={handleChatSend}
-                    disabled={isChatGenerating || !chatInput.trim()}
-                    className="px-4 py-2 bg-purple-600 hover:bg-purple-500 disabled:bg-slate-700 disabled:text-slate-500 text-white rounded transition-colors flex items-center gap-2"
-                  >
-                    {isChatGenerating ? (
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                    ) : (
-                      <Send className="w-4 h-4" />
-                    )}
-                  </button>
-                </div>
-              </div>
-            </>
-          )}
-        </div>
-      )}
-
-      {/* Chat Button - Bottom Right */}
-      {!isChatOpen && (
-        <button
-          onClick={() => setIsChatOpen(true)}
-          className="fixed bottom-4 right-4 z-40 w-14 h-14 bg-purple-600 hover:bg-purple-500 text-white rounded-full shadow-lg flex items-center justify-center transition-colors"
-          title={t.chatWithAI}
-        >
-          <MessageCircle className="w-6 h-6" />
-        </button>
-      )}
     </div>
   );
 }

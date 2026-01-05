@@ -617,6 +617,44 @@ ${criteriaDescription}
       return issue;
     });
 
+    // 为所有选中的检查项生成完整的列表，包括通过的项
+    const allIssues: typeof issues = [...issues];
+    const reportedItems = new Set<string>(); // categoryId:itemId 格式
+    
+    // 记录已报告的项
+    issues.forEach((issue: any) => {
+      if (issue.category && issue.itemId) {
+        reportedItems.add(`${issue.category}:${issue.itemId}`);
+      }
+    });
+    
+    // 为所有选中的但未报告的项创建通过的项
+    if (selectedItems) {
+      Object.keys(selectedItems).forEach(categoryId => {
+        const selectedItemIds = selectedItems[categoryId] || [];
+        selectedItemIds.forEach(itemId => {
+          const key = `${categoryId}:${itemId}`;
+          if (!reportedItems.has(key)) {
+            const item = getInspectionItem(categoryId, itemId);
+            if (item) {
+              const itemName = lang === 'zh' ? item.nameZh : item.name;
+              const itemDesc = lang === 'zh' ? item.descriptionZh : item.description;
+              allIssues.push({
+                type: 'pass',
+                title: lang === 'zh' ? `${itemName} - 通过` : `${itemName} - Passed`,
+                description: lang === 'zh' 
+                  ? `该检查项已通过：${itemDesc}` 
+                  : `This check item passed: ${itemDesc}`,
+                category: categoryId,
+                itemId: itemId,
+                score: 10
+              });
+            }
+          }
+        });
+      });
+    }
+
     // 计算章节得分
     const categoryScores: Record<string, number[]> = {};
     INSPECTION_CRITERIA.forEach(category => {
@@ -624,7 +662,7 @@ ${criteriaDescription}
     });
 
     // 收集每个章节的得分
-    issues.forEach((issue: any) => {
+    allIssues.forEach((issue: any) => {
       if (issue.category && issue.score !== undefined) {
         if (!categoryScores[issue.category]) {
           categoryScores[issue.category] = [];
@@ -647,7 +685,7 @@ ${criteriaDescription}
 
     // 收集所有检查项的得分用于累加计算总分
     const allItemScores: number[] = [];
-    issues.forEach((issue: any) => {
+    allIssues.forEach((issue: any) => {
       if (issue.score !== undefined) {
         allItemScores.push(issue.score);
       }
@@ -661,7 +699,7 @@ ${criteriaDescription}
 
     return {
       summary: result.summary || "Inspection completed.",
-      issues: issues,
+      issues: allIssues,
       overallScore: Math.round(overallScore * 10) / 10, // 保留一位小数
       categoryScores: categoryScoreMap,
       maxScore: maxScore
