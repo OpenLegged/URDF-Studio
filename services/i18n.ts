@@ -109,10 +109,12 @@ export const translations = {
     points: "points",
         expand: "Expand",
         collapse: "Collapse",
-        error: "Error",
-        warning: "Warning",
-        suggestion: "Suggestion",
-        inspectionItems: "Inspection Items"
+    error: "Error",
+    warning: "Warning",
+    suggestion: "Suggestion",
+    inspectionItems: "Inspection Items",
+    downloadReport: "Download Report",
+    downloadReportPDF: "Download PDF Report"
   },
   zh: {
     // Header
@@ -224,6 +226,8 @@ export const translations = {
         error: "错误",
         warning: "警告",
         suggestion: "建议",
-        inspectionItems: "检查项目"
+        inspectionItems: "检查项目",
+        downloadReport: "下载报告",
+        downloadReportPDF: "下载PDF报告"
   }
 };

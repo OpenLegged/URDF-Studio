@@ -11,6 +11,8 @@
   "dependencies": {
     "@react-three/drei": "^10.7.7",
     "@react-three/fiber": "^9.4.2",
+    "html2canvas": "^1.4.1",
+    "jspdf": "^4.0.0",
     "jszip": "^3.10.1",
     "lucide-react": "^0.555.0",
     "openai": "^4.0.0",

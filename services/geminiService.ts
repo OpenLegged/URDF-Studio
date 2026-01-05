@@ -416,7 +416,7 @@ const getContextRobot = (robot: RobotState) => {
   };
 };
 
-export const runRobotInspection = async (robot: RobotState, selectedItems?: Record<string, string[]>): Promise<InspectionReport | null> => {
+export const runRobotInspection = async (robot: RobotState, selectedItems?: Record<string, string[]>, lang: 'en' | 'zh' = 'en'): Promise<InspectionReport | null> => {
   if (!process.env.API_KEY) {
     console.error("API Key missing");
     return {
@@ -439,19 +439,61 @@ export const runRobotInspection = async (robot: RobotState, selectedItems?: Reco
     const selectedItemIds = selectedItems?.[category.id] || [];
     if (selectedItemIds.length === 0) return null;
     
+    const categoryName = lang === 'zh' ? category.nameZh : category.name;
     const itemsDesc = category.items
       .filter(item => selectedItemIds.includes(item.id))
-      .map(item => 
-        `    - ${item.name} (${item.id}): ${item.description}`
-      ).join('\n');
+      .map(item => {
+        const itemName = lang === 'zh' ? item.nameZh : item.name;
+        const itemDesc = lang === 'zh' ? item.descriptionZh : item.description;
+        return `    - ${itemName} (${item.id}): ${itemDesc}`;
+      }).join('\n');
     
     if (itemsDesc) {
-      return `  ${category.id} (${category.nameZh}, weight: ${category.weight * 100}%):\n${itemsDesc}`;
+      return `  ${category.id} (${categoryName}, weight: ${category.weight * 100}%):\n${itemsDesc}`;
     }
     return null;
   }).filter(Boolean).join('\n\n');
 
-  const systemPrompt = `
+  const languageInstruction = lang === 'zh' 
+    ? '请使用中文生成所有报告内容，包括总结、问题标题和描述。'
+    : 'Please generate all report content in English, including summary, issue titles and descriptions.';
+
+  const systemPrompt = lang === 'zh' ? `
+  你是一位专业的URDF机器人检查专家。你的工作是分析提供的机器人结构，识别潜在的错误、警告和改进建议。
+
+  **评估标准:**
+${criteriaDescription}
+
+  **评分指南:**
+  - 对于每个检查项，分配一个分数（0-10）：
+    - 发现错误：0-3分
+    - 发现警告：4-6分
+    - 建议/改进：7-9分
+    - 通过（无问题）：10分
+
+  **输出格式:**
+  返回一个纯JSON对象，结构如下：
+  {
+    "summary": "总体检查总结（使用中文）",
+    "issues": [
+      {
+        "type": "error" | "warning" | "suggestion",
+        "title": "问题标题（使用中文）",
+        "description": "详细描述（使用中文）",
+        "category": "category_id (例如: 'physical', 'kinematics', 'naming', 'symmetry', 'hardware')",
+        "itemId": "item_id (例如: 'mass_check', 'axis_zero')",
+        "score": 0-10,
+        "relatedIds": ["link_id1", "joint_id1"]
+      }
+    ]
+  }
+
+  **重要提示:**
+  - 每个问题必须包含与上述标准匹配的 'category' 和 'itemId' 字段
+  - 根据严重程度分配适当的分数
+  - 当问题特定于某些链接/关节时，包含 relatedIds
+  - ${languageInstruction}
+  ` : `
   You are an expert URDF Robot Inspector. Your job is to analyze the provided robot structure and identify potential errors, warnings, and improvements.
 
   **EVALUATION CRITERIA:**
@@ -485,6 +527,7 @@ ${criteriaDescription}
   - Each issue MUST include 'category' and 'itemId' fields matching the criteria above
   - Assign appropriate scores based on severity
   - Include relatedIds when the issue is specific to certain links/joints
+  - ${languageInstruction}
   `;
 
   try {
@@ -571,15 +614,26 @@ ${criteriaDescription}
       }
     });
 
-    // 计算总分
-    const overallScore = calculateOverallScore(categoryScoreMap);
+    // 收集所有检查项的得分用于累加计算总分
+    const allItemScores: number[] = [];
+    issues.forEach((issue: any) => {
+      if (issue.score !== undefined) {
+        allItemScores.push(issue.score);
+      }
+    });
+
+    // 计算总分（累加所有检查项得分）
+    const overallScore = calculateOverallScore(categoryScoreMap, allItemScores);
+    
+    // 计算满分：所有检查项的数量 * 10（每个检查项满分10分）
+    const maxScore = allItemScores.length > 0 ? allItemScores.length * 10 : 100;
 
     return {
       summary: result.summary || "Inspection completed.",
       issues: issues,
       overallScore: Math.round(overallScore * 10) / 10, // 保留一位小数
       categoryScores: categoryScoreMap,
-      maxScore: 100
+      maxScore: maxScore
     } as InspectionReport;
 
   } catch (e: any) {
