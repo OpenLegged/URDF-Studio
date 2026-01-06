@@ -1,7 +1,7 @@
 
-import React, { Suspense, useState, useMemo, useRef, useEffect } from 'react';
+import React, { Suspense, useState, useMemo, useEffect } from 'react';
 import { Canvas, useLoader } from '@react-three/fiber';
-import { OrbitControls, Grid, Environment, GizmoHelper, GizmoViewport, Html, Line, TransformControls } from '@react-three/drei';
+import { OrbitControls, Grid, GizmoHelper, GizmoViewport, Html, Line, TransformControls } from '@react-three/drei';
 import { RobotState, GeometryType, UrdfJoint, JointType } from '../types';
 import * as THREE from 'three';
 // @ts-ignore - three.js loaders are JS files without type definitions
@@ -68,17 +68,20 @@ interface CommonVisualizerProps {
   transformMode: 'translate' | 'rotate';
   assets: Record<string, string>;
   lang: Language;
+  onRegisterJointPivot?: (jointId: string, pivot: THREE.Group | null) => void;
 }
 
 interface JointNodeProps extends CommonVisualizerProps {
   joint: UrdfJoint;
   depth: number;
   key?: React.Key;
+  onRegisterJointPivot?: (jointId: string, pivot: THREE.Group | null) => void;
 }
 
 interface RobotNodeProps extends CommonVisualizerProps {
   linkId: string;
   depth: number;
+  onRegisterJointPivot?: (jointId: string, pivot: THREE.Group | null) => void;
 }
 
 const STLRenderer = ({ url, material }: { url: string, material: THREE.Material }) => {
@@ -174,7 +177,8 @@ function JointNode({
   transformMode,
   depth,
   assets,
-  lang
+  lang,
+  onRegisterJointPivot
 }: JointNodeProps) {
   
   if (depth > 50) return null;
@@ -186,22 +190,24 @@ function JointNode({
   const showAxes = mode === 'skeleton' || (mode === 'detail' && showDetailOrigin) || (mode === 'hardware' && showHardwareOrigin);
   const showJointLabel = (mode === 'skeleton' && showLabels) || (mode === 'hardware' && showHardwareLabels);
   
-  // Use state ref for TransformControls target
+  // Joint pivot: represents joint origin in parent-local space
+  // TransformControls attaches to this, modifying its position in parent-local frame
+  const [jointPivot, setJointPivot] = useState<THREE.Group | null>(null);
+  // Joint group: contains visualization, positioned at [0,0,0] relative to pivot
   const [jointGroup, setJointGroup] = useState<THREE.Group | null>(null);
-
-  const handleTransformEnd = () => {
-    if (jointGroup) {
-      const pos = jointGroup.position;
-      const rot = jointGroup.rotation;
-      onUpdate('joint', joint.id, {
-        ...joint,
-        origin: {
-          xyz: { x: pos.x, y: pos.y, z: pos.z },
-          rpy: { r: rot.x, p: rot.y, y: rot.z }
-        }
-      });
+  
+  // Register pivot with parent Visualizer component
+  useEffect(() => {
+    if (onRegisterJointPivot && isSelected) {
+      onRegisterJointPivot(joint.id, jointPivot);
     }
-  };
+    return () => {
+      if (onRegisterJointPivot) {
+        onRegisterJointPivot(joint.id, null);
+      }
+    };
+  }, [jointPivot, joint.id, isSelected, onRegisterJointPivot]);
+  
 
   return (
     <group>
@@ -215,80 +221,81 @@ function JointNode({
             />
         )}
 
+        {/* Joint pivot: represents joint origin in parent-local space */}
+        {/* TransformControls attaches here, modifies position in parent-local frame */}
         <group 
-            ref={setJointGroup}
+            ref={setJointPivot}
             position={[x, y, z]} 
             rotation={[r, p, yaw]}
         >
-            {showAxes && <axesHelper args={[0.2]} />}
+            {/* Joint group: at origin relative to pivot, contains visualization and child link */}
+            <group 
+                ref={setJointGroup}
+                position={[0, 0, 0]} 
+                rotation={[0, 0, 0]}
+            >
+                {showAxes && <axesHelper args={[0.2]} />}
 
-            {(mode === 'skeleton' || mode === 'hardware') && (
-                <group>
-                    {showJointLabel && (
-                        <Html position={[0.25, 0, 0]} className="pointer-events-none">
-                            <div 
-                                onClick={(e) => { 
-                                    e.stopPropagation(); 
-                                    onSelect('joint', joint.id); 
-                                }}
-                                className={`
-                                    px-1.5 py-0.5 text-[10px] font-mono rounded border whitespace-nowrap shadow-xl 
-                                    pointer-events-auto cursor-pointer select-none transition-colors
-                                    ${isSelected 
-                                        ? 'bg-blue-600 text-white border-blue-400 z-50' 
-                                        : 'bg-slate-900/90 text-orange-200 border-orange-900/50 hover:bg-slate-800'
-                                    }
-                                `}
-                            >
-                                {joint.name}
-                            </div>
-                        </Html>
-                    )}
-                    {mode === 'skeleton' && showJointAxes && <JointAxesVisual joint={joint} />}
-                </group>
-            )}
+                {(mode === 'skeleton' || mode === 'hardware') && (
+                    <group>
+                        {showJointLabel && (
+                            <Html position={[0.25, 0, 0]} className="pointer-events-none">
+                                <div 
+                                    onClick={(e) => { 
+                                        e.stopPropagation(); 
+                                        onSelect('joint', joint.id); 
+                                    }}
+                                    className={`
+                                        px-1.5 py-0.5 text-[10px] font-mono rounded border whitespace-nowrap shadow-xl 
+                                        pointer-events-auto cursor-pointer select-none transition-colors
+                                        ${isSelected 
+                                            ? 'bg-blue-600 text-white border-blue-400 z-50' 
+                                            : 'bg-slate-900/90 text-orange-200 border-orange-900/50 hover:bg-slate-800'
+                                        }
+                                    `}
+                                >
+                                    {joint.name}
+                                </div>
+                            </Html>
+                        )}
+                        {mode === 'skeleton' && showJointAxes && <JointAxesVisual joint={joint} />}
+                    </group>
+                )}
 
-            {mode !== 'skeleton' && (
-                 <mesh onClick={(e) => { e.stopPropagation(); onSelect('joint', joint.id); }}>
-                    <sphereGeometry args={[0.02, 16, 16]} />
-                    <meshBasicMaterial color={isSelected ? "orange" : "transparent"} opacity={isSelected ? 1 : 0} transparent />
-                </mesh>
-            )}
+                {mode !== 'skeleton' && (
+                     <mesh onClick={(e) => { e.stopPropagation(); onSelect('joint', joint.id); }}>
+                        <sphereGeometry args={[0.02, 16, 16]} />
+                        <meshBasicMaterial color={isSelected ? "orange" : "transparent"} opacity={isSelected ? 1 : 0} transparent />
+                    </mesh>
+                )}
 
-            <RobotNode 
-                linkId={joint.childLinkId} 
-                robot={robot} 
-                onSelect={onSelect} 
-                onUpdate={onUpdate}
-                mode={mode}
-                showGeometry={showGeometry}
-                showLabels={showLabels}
-                showJointAxes={showJointAxes}
-                showDetailOrigin={showDetailOrigin}
-                showDetailLabels={showDetailLabels}
-                showCollision={showCollision}
-                showHardwareOrigin={showHardwareOrigin}
-                showHardwareLabels={showHardwareLabels}
-                transformMode={transformMode}
-                depth={depth + 1}
-                assets={assets}
-                lang={lang}
-            />
+                <RobotNode 
+                    linkId={joint.childLinkId} 
+                    robot={robot} 
+                    onSelect={onSelect} 
+                    onUpdate={onUpdate}
+                    mode={mode}
+                    showGeometry={showGeometry}
+                    showLabels={showLabels}
+                    showJointAxes={showJointAxes}
+                    showDetailOrigin={showDetailOrigin}
+                    showDetailLabels={showDetailLabels}
+                    showCollision={showCollision}
+                    showHardwareOrigin={showHardwareOrigin}
+                    showHardwareLabels={showHardwareLabels}
+                    transformMode={transformMode}
+                    depth={depth + 1}
+                    assets={assets}
+                    lang={lang}
+                    onRegisterJointPivot={onRegisterJointPivot}
+                />
+            </group>
         </group>
 
-        {/* Transform Controls - must be outside jointGroup to control it */}
-        {isSelected && mode === 'skeleton' && jointGroup && (
-            <TransformControls 
-                object={jointGroup}
-                mode={transformMode}
-                size={0.7}
-                space="world"
-                onMouseUp={handleTransformEnd}
-            />
-        )}
     </group>
   );
 }
+
 
 function RobotNode({ 
   linkId, 
@@ -307,7 +314,8 @@ function RobotNode({
   transformMode,
   depth,
   assets,
-  lang
+  lang,
+  onRegisterJointPivot
 }: RobotNodeProps) {
   
   if (depth > 50) return null;
@@ -524,6 +532,7 @@ function RobotNode({
             depth={depth + 1}
             assets={assets}
             lang={lang}
+            onRegisterJointPivot={onRegisterJointPivot}
          />
       ))}
     </group>
@@ -547,6 +556,17 @@ export const Visualizer = ({ robot, onSelect, onUpdate, mode, assets, lang }: { 
   // Hardware Settings
   const [showHardwareOrigin, setShowHardwareOrigin] = useState(false);
   const [showHardwareLabels, setShowHardwareLabels] = useState(false);
+  
+  // Joint pivot refs for TransformControls at root level
+  const [jointPivots, setJointPivots] = useState<Record<string, THREE.Group | null>>({});
+  
+  const handleRegisterJointPivot = (jointId: string, pivot: THREE.Group | null) => {
+    setJointPivots(prev => ({ ...prev, [jointId]: pivot }));
+  };
+  
+  const selectedJointPivot = robot.selection.type === 'joint' && robot.selection.id 
+    ? jointPivots[robot.selection.id] 
+    : null;
 
   return (
     <div className="flex-1 relative bg-slate-900 h-full overflow-hidden">
@@ -668,16 +688,53 @@ export const Visualizer = ({ robot, onSelect, onUpdate, mode, assets, lang }: { 
                     depth={0}
                     assets={assets}
                     lang={lang}
+                    onRegisterJointPivot={handleRegisterJointPivot}
                  />
             </group>
+            
+            {/* TransformControls at root Canvas level - not nested in hierarchy */}
+            {mode === 'skeleton' && selectedJointPivot && robot.selection.type === 'joint' && robot.selection.id && (() => {
+              const jointId = robot.selection.id!;
+              const joint = robot.joints[jointId];
+              
+              if (!joint) return null;
+              
+              const handleTransformEnd = () => {
+                if (selectedJointPivot) {
+                  // selectedJointPivot.position is the joint origin in parent-local space
+                  const pos = selectedJointPivot.position;
+                  const rot = selectedJointPivot.rotation;
+                  
+                  // Update joint origin directly from pivot's local position
+                  onUpdate('joint', jointId, {
+                    ...joint,
+                    origin: {
+                      xyz: { x: pos.x, y: pos.y, z: pos.z },
+                      rpy: { r: rot.x, p: rot.y, y: rot.z }
+                    }
+                  });
+                }
+              };
+              
+              return (
+                <TransformControls 
+                    object={selectedJointPivot}
+                    mode={transformMode}
+                    size={0.7}
+                    space="local"
+                    onMouseUp={handleTransformEnd}
+                />
+              );
+            })()}
 
             <Grid 
                 infiniteGrid 
-                fadeDistance={10} 
+                fadeDistance={30} 
+                cellSize={1}
                 cellColor={'#475569'} 
                 sectionColor={'#64748b'} 
                 rotation={[Math.PI / 2, 0, 0]}
-                position={[0, 0, -0.01]} 
+                position={[0, 0, 0]} 
             />
             
             <GizmoHelper alignment="bottom-right" margin={[80, 80]}>
