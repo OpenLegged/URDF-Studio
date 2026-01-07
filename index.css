@@ -1,9 +1,19 @@
 @import "tailwindcss";
 
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme {
+  --color-google-dark-bg: #1f1f1f;
+  --color-google-dark-surface: #2d2d2d;
+  --color-google-dark-border: #444444;
+  --color-google-blue: #1a73e8;
+  --color-google-light-bg: #f8f9fa;
+  --color-google-light-surface: #ffffff;
+}
+
 body {
   font-family: 'Inter', sans-serif;
-  background-color: #0f172a;
-  color: white;
+  @apply bg-google-light-bg dark:bg-google-dark-bg text-slate-900 dark:text-slate-200;
   overflow: hidden;
 }
 
@@ -14,15 +24,29 @@ body {
 }
 
 ::-webkit-scrollbar-track {
-  background: #1e293b;
+  background: transparent;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #475569;
+  background: #94a3b8; /* slate-400 */
   border-radius: 3px;
 }
 
-::-webkit-scrollbar-thumb:hover {
-  background: #64748b;
+.dark ::-webkit-scrollbar-thumb {
+  background: #475569; /* slate-600 */
 }
 
+::-webkit-scrollbar-thumb:hover {
+  background: #64748b; /* slate-500 */
+}
+
+/* Hide number input spinners */
+input::-webkit-outer-spin-button,
+input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+input[type=number] {
+  -moz-appearance: textfield;
+}

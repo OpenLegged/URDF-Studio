@@ -4,11 +4,11 @@ export type Language = 'en' | 'zh';
 export const translations = {
   en: {
     // Header
-    appName: "UrdfArchitect",
+    appName: "URDF Studio",
     skeleton: "Skeleton",
     detail: "Detail",
     hardware: "Hardware",
-    aiAssistant: "AI Assistant",
+    aiAssistant: "AI Inspector",
     import: "Import",
     importFolder: "Import Folder",
     export: "Export",
@@ -85,27 +85,50 @@ export const translations = {
     enableLabels: "Enable labels to select.",
     clickLabels: "Click labels to select.",
     
-    // AI Modal
-    aiTitle: "AI Assistant",
-    aiIntro: "I can help you generate new robots, modify your current design, or provide hardware advice.",
-    aiExamples: "Examples:\n- \"Create a 4-legged robot\"\n- \"Add a lidar sensor to the base_link\"\n- \"Suggest a motor for the hip joint\"",
-    aiPlaceholder: "How can I help you today?",
+    // AI Inspector
+    aiTitle: "AI Inspector",
+    aiIntro: "I can verify your robot design, checking for physical plausibility, naming conventions, and common errors.",
+    aiExamples: "Checks performed:\n- Inertia Matrix (Physical validity)\n- Zero Axis vectors\n- Naming Duplication\n- Symmetry consistency",
+    aiPlaceholder: "Describe any specific concerns or just click 'Run Inspection'...",
     yourRequest: "Your Request",
-    aiResponse: "AI Response",
+    aiResponse: "Inspection Report",
     actionWarning: "This action will replace or update your robot structure.",
     back: "Back",
     applyChanges: "Apply Changes",
-    cancel: "Cancel",
-    send: "Send",
-    thinking: "Thinking..."
+    cancel: "Close",
+    send: "Ask AI",
+    runInspection: "Run Inspection",
+    thinking: "Analyzing...",
+    inspectorSummary: "Inspector Summary",
+    overallScore: "Overall Score",
+    downloadReport: "Download",
+    downloadReportPDF: "Download Report as PDF",
+    inspectionItems: "Inspection Items",
+    retestItem: "Retest",
+    chatTitle: "Chat with AI",
+    chatPlaceholder: "Ask a question...",
+    chatWithAI: "Chat with AI",
+    
+    // Additional UI
+    collapseSidebar: "Collapse sidebar",
+    switchUnit: "Switch Unit",
+    showJointControls: "Show Joint Controls",
+    showVisual: "Show Visual",
+    showCenterOfMass: "Show Center of Mass",
+    jointControls: "Joint Controls",
+    viewOptions: "View Options",
+    loadingRobot: "Loading robot...",
+    enterRobotName: "Enter robot name...",
+    enterMotorType: "Enter motor type...",
+    modeLabel: "Mode"
   },
   zh: {
     // Header
-    appName: "UrdfArchitect",
+    appName: "URDF Studio",
     skeleton: "骨架",
     detail: "细节",
     hardware: "硬件",
-    aiAssistant: "AI 助手",
+    aiAssistant: "AI审阅",
     import: "导入",
     importFolder: "导入文件夹",
     export: "导出",
@@ -183,7 +206,7 @@ export const translations = {
     clickLabels: "点击标签进行选择。",
     
     // AI Modal
-    aiTitle: "AI 助手",
+    aiTitle: "AI审阅",
     aiIntro: "我可以帮你生成新机器人，修改当前设计，或提供硬件建议。",
     aiExamples: "示例：\n- \"创建一个四足机器人\"\n- \"在 base_link 添加激光雷达\"\n- \"为髋关节推荐电机\"",
     aiPlaceholder: "今天我能帮你做什么？",
@@ -194,6 +217,29 @@ export const translations = {
     applyChanges: "应用更改",
     cancel: "取消",
     send: "发送",
-    thinking: "思考中..."
+    thinking: "思考中...",
+        // AI Inspector
+    inspectionItems: "检查项目",
+    runInspection: "运行检查",
+    overallScore: "总分",
+    downloadReport: "下载",
+    downloadReportPDF: "下载报告 PDF",
+    inspectorSummary: "总结",
+    retestItem: "重新检查",
+    chatTitle: "与 AI 对话",
+    chatPlaceholder: "输入问题...",
+    chatWithAI: "与 AI 对话",
+        // Additional UI
+    collapseSidebar: "收起侧栏",
+    switchUnit: "切换单位",
+    showJointControls: "显示关节控制",
+    showVisual: "显示可视化",
+    showCenterOfMass: "显示质心",
+    jointControls: "关节控制",
+    viewOptions: "视图选项",
+    loadingRobot: "加载机器人中...",
+    enterRobotName: "输入机器人名称...",
+    enterMotorType: "输入电机型号...",
+    modeLabel: "模式"
   }
 };

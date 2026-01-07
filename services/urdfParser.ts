@@ -80,9 +80,23 @@ export const parseURDF = (xmlString: string): RobotState | null => {
           const filename = mesh.getAttribute("filename") || "";
           // Extract just the filename from package paths like "package://robot/meshes/file.stl"
           const cleanName = filename.split('/').pop() || "";
+          
+          // Parse scale attribute (supports "0.001 0.001 0.001" format with multiple spaces)
+          const scaleAttr = mesh.getAttribute("scale");
+          let scale = { x: 1, y: 1, z: 1 };
+          if (scaleAttr) {
+              const scaleParts = scaleAttr.trim().split(/\s+/).map(Number);
+              if (scaleParts.length >= 3 && scaleParts.every(v => !isNaN(v))) {
+                  scale = { x: scaleParts[0], y: scaleParts[1], z: scaleParts[2] };
+              } else if (scaleParts.length === 1 && !isNaN(scaleParts[0])) {
+                  // Uniform scale
+                  scale = { x: scaleParts[0], y: scaleParts[0], z: scaleParts[0] };
+              }
+          }
+          
           return {
               type: GeometryType.MESH,
-              dimensions: { x: 1, y: 1, z: 1 }, // Scale not supported in this simple parser yet
+              dimensions: scale,
               meshPath: cleanName
           };
       }

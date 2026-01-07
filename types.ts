@@ -88,6 +88,24 @@ export interface MotorSpec {
     description?: string;
 }
 
+export interface InspectionIssue {
+  type: 'error' | 'warning' | 'suggestion' | 'pass';
+  title: string;
+  description: string;
+  relatedIds?: string[]; // IDs of links/joints involved
+  category?: string; // 所属章节 ID
+  itemId?: string; // 检查条目 ID
+  score?: number; // 得分（0-10）
+}
+
+export interface InspectionReport {
+  summary: string;
+  issues: InspectionIssue[];
+  overallScore?: number; // 总分（0-100）
+  categoryScores?: Record<string, number>; // 各章节得分
+  maxScore?: number; // 满分（默认 100）
+}
+
 export const DEFAULT_LINK: UrdfLink = {
   id: '',
   name: 'link',
@@ -124,3 +142,4 @@ export const DEFAULT_JOINT: UrdfJoint = {
 };
 
 export type AppMode = 'skeleton' | 'detail' | 'hardware';
+export type Theme = 'light' | 'dark';
