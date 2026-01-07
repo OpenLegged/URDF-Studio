@@ -1296,7 +1296,7 @@ export default function App() {
                 <Github className="w-4 h-4" />
             </a>
             <a
-                href="https://www.d-robotics.cn/"
+                href="https://www.d-robotics.cc/"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="flex items-center justify-center p-2 border rounded transition-colors bg-slate-100 dark:bg-google-dark-bg hover:bg-slate-200 dark:hover:bg-google-dark-border text-blue-700 dark:text-blue-300 border-blue-300 dark:border-blue-700 font-bold gap-1"
@@ -1412,11 +1412,11 @@ export default function App() {
             {isAIModalOpen && (
                     <div 
                         style={{ left: aiPanelPos.x, top: aiPanelPos.y }}
-                        className="fixed z-50 w-[900px] flex flex-col bg-slate-100 dark:bg-[#181c20] backdrop-blur-md shadow-2xl rounded-lg border border-slate-300 dark:border-slate-700"
+                        className="fixed z-50 w-[720px] h-[560px] flex flex-col bg-slate-100 dark:bg-[#181c20] backdrop-blur-md shadow-2xl rounded-lg border border-slate-300 dark:border-slate-700"
                     >
                             <div 
                                 onMouseDown={handleDragStart}
-                                className="flex items-center justify-between p-3 border-b border-slate-200 dark:border-slate-700 shrink-0 cursor-move bg-slate-200/80 dark:bg-[#23272b] rounded-t-lg select-none"
+                                className="flex items-center justify-between p-2 border-b border-slate-200 dark:border-slate-700 shrink-0 cursor-move bg-slate-200/80 dark:bg-[#23272b] rounded-t-lg select-none"
                             >
                   <div className="flex items-center gap-2">
                       <ScanSearch className="w-4 h-4 text-purple-600 dark:text-purple-300" />
@@ -1432,20 +1432,20 @@ export default function App() {
               
               <div className="flex flex-1 overflow-hidden bg-white dark:bg-[#181c20]">
                   {/* 左侧：检查项目选择器和运行按钮 */}
-                  <div className="w-64 border-r border-slate-200 dark:border-slate-700 flex flex-col bg-slate-50/30 dark:bg-[#23272b]">
-                      <div className="p-3 border-b border-slate-200 dark:border-slate-700">
-                          <h3 className="text-xs font-bold text-slate-500 dark:text-slate-300 uppercase mb-2">{t.inspectionItems}</h3>
+                  <div className="w-52 border-r border-slate-200 dark:border-slate-700 flex flex-col bg-slate-50/30 dark:bg-[#23272b]">
+                      <div className="p-2 border-b border-slate-200 dark:border-slate-700">
+                          <h3 className="text-xs font-bold text-slate-500 dark:text-slate-300 uppercase mb-1.5">{t.inspectionItems}</h3>
                           <button
                               onClick={handleRunInspection}
                               disabled={isGeneratingAI}
-                              className="w-full py-2 bg-slate-800 dark:bg-[#23272b] hover:bg-slate-700 dark:hover:bg-[#181c20] text-white rounded text-sm flex items-center justify-center gap-2 transition-colors border border-slate-700 dark:border-slate-600 disabled:opacity-50"
+                              className="w-full py-1.5 bg-slate-800 dark:bg-[#23272b] hover:bg-slate-700 dark:hover:bg-[#181c20] text-white rounded text-xs flex items-center justify-center gap-1.5 transition-colors border border-slate-700 dark:border-slate-600 disabled:opacity-50"
                           >
                               {isGeneratingAI ? <Loader2 className="w-4 h-4 animate-spin" /> : <ScanSearch className="w-4 h-4" />}
                               {isGeneratingAI ? t.thinking : t.runInspection}
                           </button>
                       </div>
                       
-                      <div className="flex-1 overflow-y-auto custom-scrollbar p-3 space-y-2">
+                      <div className="flex-1 overflow-y-auto custom-scrollbar p-2 space-y-1.5">
                           {INSPECTION_CRITERIA.map(category => {
                               const categoryName = lang === 'zh' ? category.nameZh : category.name;
                               const selectedItemIds = selectedItems[category.id] || new Set();
@@ -1532,7 +1532,8 @@ export default function App() {
                   </div>
                   
                   {/* 右侧：检查结果 */}
-                  <div className="flex-1 p-4 overflow-y-auto custom-scrollbar max-h-[60vh] bg-white dark:bg-[#181c20]">
+                  <div className="flex-1 flex flex-col min-h-0 bg-white dark:bg-[#181c20]">
+                      <div className="flex-1 overflow-y-auto custom-scrollbar p-4">
                       {inspectionProgress ? (
                           <div className="space-y-4">
                               <div className="bg-slate-100 dark:bg-[#23272b] border border-slate-300 dark:border-slate-700 rounded-lg p-4">
@@ -1651,7 +1652,7 @@ export default function App() {
                                 
                                 {/* Chat Dialog - Bottom Right of Report */}
                                 {isReportChatOpen && (
-                                  <div className="fixed bottom-4 right-4 z-50 w-96 h-[500px] flex flex-col bg-white/95 dark:bg-slate-900/95 backdrop-blur-md shadow-2xl rounded-lg border border-slate-300 dark:border-slate-600">
+                                  <div className="fixed bottom-4 right-4 z-50 w-80 h-[400px] flex flex-col bg-white/95 dark:bg-slate-900/95 backdrop-blur-md shadow-2xl rounded-lg border border-slate-300 dark:border-slate-600">
                                     <div className="flex items-center justify-between p-3 border-b border-slate-200 dark:border-slate-700 shrink-0 bg-slate-100/50 dark:bg-slate-800/50 rounded-t-lg">
                                         <div className="flex items-center gap-2">
                                             <MessageCircle className="w-4 h-4 text-blue-500 dark:text-blue-400" />
@@ -1775,6 +1776,7 @@ export default function App() {
                             )}
                           </>
                       )}
+                      </div>
                   </div>
               </div>
 
