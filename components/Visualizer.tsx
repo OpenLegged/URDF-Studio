@@ -1028,21 +1028,6 @@ export const Visualizer = ({ robot, onSelect, onUpdate, mode, assets, lang, them
                  
                  <div className={`transition-all duration-200 ease-in-out overflow-hidden ${isOptionsCollapsed ? 'max-h-0 opacity-0' : 'max-h-96 opacity-100'}`}>
                    <div className="p-2 flex flex-col gap-2">
-                     <div className="flex bg-slate-100 dark:bg-google-dark-bg rounded-lg p-0.5 mb-1">
-                        <button 
-                            onClick={() => setTransformMode('translate')}
-                            className={`flex-1 py-1 text-xs rounded-md ${transformMode === 'translate' ? 'bg-google-blue text-white shadow' : 'text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'}`}
-                        >
-                            {t.move}
-                        </button>
-                        <button 
-                            onClick={() => setTransformMode('rotate')}
-                            className={`flex-1 py-1 text-xs rounded-md ${transformMode === 'rotate' ? 'bg-google-blue text-white shadow' : 'text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'}`}
-                        >
-                            {t.rotate}
-                        </button>
-                     </div>
-
                      <label className="flex items-center gap-2 cursor-pointer text-sm text-slate-700 dark:text-slate-200 select-none hover:text-slate-900 dark:hover:text-white">
                         <input type="checkbox" checked={showDetailOrigin} onChange={(e) => setShowDetailOrigin(e.target.checked)} className="rounded border-slate-300 dark:border-google-dark-border bg-white dark:bg-google-dark-bg text-google-blue" />
                         {t.showOrigin}
