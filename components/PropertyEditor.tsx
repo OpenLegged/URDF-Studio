@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { RobotState, JointType, GeometryType, AppMode, UrdfLink, MotorSpec, Theme } from '../types';
-import { Upload, File, Wand, ExternalLink, ChevronRight, PanelRightOpen, Eye, Box } from 'lucide-react';
+import { Upload, File, Wand, ExternalLink, ChevronRight, PanelRightOpen, Eye, Box, ChevronDown, ChevronLeft } from 'lucide-react';
 import * as THREE from 'three';
 import { translations, Language } from '../services/i18n';
 
@@ -19,12 +19,43 @@ interface PropertyEditorProps {
   theme: Theme;
 }
 
-const InputGroup = ({ label, children }: { label: string, children?: React.ReactNode }) => (
-  <div className="mb-4">
-    <label className="block text-xs uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1">{label}</label>
+const InputGroup = ({ label, children, className = "" }: { label: string, children?: React.ReactNode, className?: string }) => (
+  <div className={`mb-3 ${className}`}>
+    <label className="block text-[10px] uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1 font-semibold">{label}</label>
     {children}
   </div>
 );
+
+const CollapsibleSection = ({ title, children, defaultOpen = true, className = "", storageKey }: { title: string, children: React.ReactNode, defaultOpen?: boolean, className?: string, storageKey?: string }) => {
+  const [isOpen, setIsOpen] = useState(() => {
+    if (storageKey && typeof window !== 'undefined') {
+      const saved = localStorage.getItem(`collapse_state_${storageKey}`);
+      if (saved !== null) return saved === 'true';
+    }
+    return defaultOpen;
+  });
+
+  const toggle = () => {
+    const newState = !isOpen;
+    setIsOpen(newState);
+    if (storageKey && typeof window !== 'undefined') {
+      localStorage.setItem(`collapse_state_${storageKey}`, String(newState));
+    }
+  };
+
+  return (
+    <div className={`border border-slate-200 dark:border-slate-700 rounded-lg overflow-hidden ${className}`}>
+      <button 
+        className="w-full flex items-center justify-between p-2 bg-slate-50 dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors text-xs font-bold text-slate-700 dark:text-slate-300"
+        onClick={toggle}
+      >
+        <span>{title}</span>
+        {isOpen ? <ChevronDown className="w-3 h-3 opacity-60" /> : <ChevronRight className="w-3 h-3 opacity-60" />}
+      </button>
+      {isOpen && <div className="p-3 bg-white dark:bg-google-dark-surface border-t border-slate-200 dark:border-slate-700">{children}</div>}
+    </div>
+  );
+};
 
 const NumberInput = ({ value, onChange, label, step = 0.1 }: { value: number, onChange: (val: number) => void, label?: string, step?: number }) => {
   const [localValue, setLocalValue] = useState<string>(value?.toString() || '0');
@@ -421,13 +452,14 @@ export const PropertyEditor: React.FC<PropertyEditorProps> = ({
 
   // Width state for resizable sidebar
   const [width, setWidth] = useState(320);
+  const [isDragging, setIsDragging] = useState(false);
   const isResizing = useRef(false);
   const startX = useRef(0);
   const startWidth = useRef(0);
 
   // Compute the actual width to use based on collapsed state
   // Force a minimum width of 280px when expanded to prevent "squashed" content
-  const displayWidth = collapsed ? 40 : Math.max(width, 280);
+  const displayWidth = collapsed ? 0 : Math.max(width, 280);
 
   // Local state for Motor Brand selection
   const [motorBrand, setMotorBrand] = useState<string>('');
@@ -459,6 +491,7 @@ export const PropertyEditor: React.FC<PropertyEditorProps> = ({
   // Resize handler callback
   const handleResizeMouseDown = useCallback((e: React.MouseEvent) => {
     isResizing.current = true;
+    setIsDragging(true);
     startX.current = e.clientX;
     startWidth.current = width;
     document.body.style.cursor = 'col-resize';
@@ -476,6 +509,7 @@ export const PropertyEditor: React.FC<PropertyEditorProps> = ({
 
     const handleMouseUp = () => {
       isResizing.current = false;
+      setIsDragging(false);
       document.body.style.cursor = '';
       document.body.style.userSelect = '';
     };
@@ -567,41 +601,38 @@ export const PropertyEditor: React.FC<PropertyEditorProps> = ({
 
   return (
     <div 
-      className={`bg-slate-50 dark:bg-google-dark-bg border-l border-slate-200 dark:border-google-dark-border flex flex-col h-full z-20 relative ${collapsed ? 'items-center py-4' : ''}`}
+      className={`bg-slate-50 dark:bg-google-dark-bg border-l border-slate-200 dark:border-google-dark-border flex flex-col h-full z-20 relative ${isDragging ? '' : 'transition-all duration-300 ease-in-out'}`}
       style={{ 
         width: `${displayWidth}px`, 
         minWidth: `${displayWidth}px`, 
         flex: `0 0 ${displayWidth}px`,
-        overflow: 'hidden'
+        overflow: 'visible'
       }}
     >
-      {collapsed ? (
-        <button
+      {/* Side Toggle Button (Centered & Protruding Left) */}
+      <button
           onClick={(e) => { e.stopPropagation(); onToggle?.(); }}
-          className="p-2 text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-200 dark:hover:bg-google-dark-surface rounded transition-colors relative z-50 cursor-pointer"
-          title={t.properties}
-        >
-          <PanelRightOpen className="w-5 h-5" />
-        </button>
-      ) : (
+          className="absolute -left-4 top-1/2 -translate-y-1/2 w-4 h-16 bg-white dark:bg-slate-800 hover:bg-blue-500 dark:hover:bg-blue-600 hover:text-white border border-slate-300 dark:border-slate-600 rounded-l-lg shadow-md flex flex-col items-center justify-center z-50 cursor-pointer text-slate-400 hover:text-white transition-all group"
+          title={collapsed ? t.properties : t.collapseSidebar}
+      >
+          <div className="flex flex-col gap-0.5 items-center">
+            <div className="w-1 h-1 rounded-full bg-slate-300 dark:bg-slate-600 group-hover:bg-blue-200" />
+            {collapsed ? <ChevronLeft className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
+            <div className="w-1 h-1 rounded-full bg-slate-300 dark:bg-slate-600 group-hover:bg-blue-200" />
+          </div>
+      </button>
+
+      {!collapsed && (
         <>
           <div className="w-full flex items-center justify-between px-4 py-2 border-b border-slate-200 dark:border-google-dark-border bg-white dark:bg-google-dark-surface shrink-0 relative z-30">
-            <button
-              onClick={(e) => { e.stopPropagation(); onToggle?.(); }}
-              className="p-1 text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-200 dark:hover:bg-google-dark-surface rounded transition-colors shrink-0 cursor-pointer"
-              title={t.collapseSidebar}
-            >
-              <ChevronRight className="w-4 h-4" />
-            </button>
-            {data ? (
+            <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">{t.properties}</span>
+            {data && (
               <div className="flex items-center gap-2 flex-1 min-w-0 ml-2">
                 <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold uppercase shrink-0 ${isLink ? 'bg-blue-100 dark:bg-blue-900/50 text-blue-700 dark:text-blue-200' : 'bg-orange-100 dark:bg-orange-900/50 text-orange-700 dark:text-orange-200'}`}>
                   {selection.type}
                 </span>
                 <h2 className="font-semibold text-slate-900 dark:text-white truncate">{data.name}</h2>
               </div>
-            ) : (
-              <span className="text-xs font-bold text-slate-500 uppercase tracking-wider ml-2">{t.properties}</span>
             )}
           </div>
 
@@ -610,7 +641,7 @@ export const PropertyEditor: React.FC<PropertyEditorProps> = ({
               <p>{t.selectLinkOrJoint}</p>
             </div>
           ) : (
-            <div className="w-full flex-1 overflow-y-auto custom-scrollbar p-4 space-y-6">
+            <div className="w-full flex-1 overflow-y-auto custom-scrollbar p-3 space-y-4">
         
         {/* --- LINK PROPERTIES --- */}
         
@@ -632,99 +663,79 @@ export const PropertyEditor: React.FC<PropertyEditorProps> = ({
                 {/* Detail Mode: Visual & Collision Tabs */}
                 {mode === 'detail' && (
                   <>
-                      {/* Tab Navigation - High Contrast & Icons */}
-                      <div className="flex p-1 bg-slate-200 dark:bg-slate-800 rounded-lg mb-5 select-none gap-1">
-                          {/* Only show Visual tab if NOT in collision mode */}
-                          {selection.subType !== 'collision' && (
-                              <button
-                                  onClick={() => handleTabChange('visual')}
-                                  onMouseEnter={() => onHover?.('link', selection.id, 'visual')}
-                                  onMouseLeave={() => onHover?.(null, null)}
-                                  className={`flex-1 flex items-center justify-center gap-2 py-2 text-xs font-bold rounded-md transition-all duration-200 relative ${
-                                      linkTab === 'visual'
-                                          ? 'bg-google-blue text-white shadow-md'
-                                          : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 hover:bg-slate-300/50 dark:hover:bg-slate-700/50'
-                                  }`}
-                              >
-                                  <Eye className="w-3.5 h-3.5" />
-                                  {t.visualGeometry}
-                                  {/* Dot indicator if Visual exists */}
-                                  {(data as UrdfLink).visual?.type && (data as UrdfLink).visual.type !== GeometryType.NONE && (
-                                    <span className={`absolute top-1.5 right-1.5 w-1.5 h-1.5 rounded-full ${linkTab === 'visual' ? 'bg-blue-200' : 'bg-google-blue'}`} />
-                                  )}
-                              </button>
-                          )}
-                          
-                          {/* Only show Collision tab if we are in collision mode, OR if we are in visual mode we can still switch to it? 
-                              User said "When selection mode is collision... click collision... show its detailed config".
-                              And "In collision mode... visual no need to display".
-                              So if subType is collision, HIDE visual tab. 
-                              If subType is visual, we probably should keep Collision tab visible so user can switch? 
-                              Or should we hide Collision tab in Visual mode too? 
-                              Let's stick to: If Collision Mode -> Only Collision Tab.
-                          */}
-                          <button
-                              onClick={() => handleTabChange('collision')}
-                              onMouseEnter={() => onHover?.('link', selection.id, 'collision')}
-                              onMouseLeave={() => onHover?.(null, null)}
-                              className={`flex-1 flex items-center justify-center gap-2 py-2 text-xs font-bold rounded-md transition-all duration-200 relative ${
-                                  (linkTab === 'collision' || selection.subType === 'collision')
-                                      ? 'bg-google-blue text-white shadow-md'
-                                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 hover:bg-slate-300/50 dark:hover:bg-slate-700/50'
-                              }`}
-                          >
-                              <Box className="w-3.5 h-3.5" />
-                              {t.collisionGeometry}
-                              {/* Dot indicator if Collision exists */}
-                              {(data as UrdfLink).collision?.type && (data as UrdfLink).collision.type !== GeometryType.NONE && (
-                                <span className={`absolute top-1.5 right-1.5 w-1.5 h-1.5 rounded-full ${(linkTab === 'collision' || selection.subType === 'collision') ? 'bg-blue-200' : 'bg-google-blue'}`} />
-                              )}
-                          </button>
+                      {/* Tab Navigation - Folder Style */}
+                      <div className="flex items-end gap-1 border-t border-x border-b border-slate-200 dark:border-slate-700 mb-0 bg-slate-100/50 dark:bg-slate-900/20 pt-1 px-1 rounded-t-lg">
+                        <div className="w-px"></div>
+                        <button
+                          onClick={() => handleTabChange('visual')}
+                          className={`flex-1 py-2 text-xs font-bold rounded-t-lg transition-all flex items-center justify-center gap-2 relative border-t border-x ${
+                            linkTab === 'visual'
+                              ? 'bg-white dark:bg-google-dark-surface text-blue-600 dark:text-blue-400 border-slate-200 dark:border-slate-700 -mb-px pb-2.5 z-10'
+                              : 'bg-transparent border-transparent text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 hover:bg-slate-200/50 dark:hover:bg-slate-800/50'
+                          }`}
+                        >
+                          <Eye className="w-3.5 h-3.5" />
+                          {t.visualGeometry}
+                        </button>
+                        <button
+                          onClick={() => handleTabChange('collision')}
+                          className={`flex-1 py-2 text-xs font-bold rounded-t-lg transition-all flex items-center justify-center gap-2 relative border-t border-x ${
+                            linkTab === 'collision'
+                              ? 'bg-white dark:bg-google-dark-surface text-blue-600 dark:text-blue-400 border-slate-200 dark:border-slate-700 -mb-px pb-2.5 z-10'
+                              : 'bg-transparent border-transparent text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 hover:bg-slate-200/50 dark:hover:bg-slate-800/50'
+                          }`}
+                        >
+                          <Box className="w-3.5 h-3.5" />
+                          {t.collisionGeometry}
+                        </button>
                       </div>
 
-                      {/* Visual Tab Content - Only if Visual Tab is active/visible */}
-                      <div className={linkTab === 'visual' && selection.subType !== 'collision' ? 'block animate-in fade-in slide-in-from-bottom-1 duration-200' : 'hidden'}>
-                          <InputGroup label={t.name}>
-                              <input
-                                  type="text"
-                                  value={data.name}
-                                  onChange={(e) => onUpdate('link', selection.id!, { ...data, name: e.target.value })}
-                                  className="bg-white dark:bg-google-dark-surface border border-slate-300 dark:border-google-dark-border rounded-lg px-2 py-1 text-sm text-slate-900 dark:text-white w-full focus:border-google-blue focus:outline-none"
-                              />
-                          </InputGroup>
-                          
-                          <GeometryEditor 
-                            data={data}
-                            robot={robot} 
-                            category="visual" 
-                            onUpdate={(d) => onUpdate('link', selection.id!, d)}
-                            assets={assets}
-                            onUploadAsset={onUploadAsset}
-                            t={t}
-                            isTabbed={true}
-                          />
-                      </div>
+                      {/* Visual Tab Content */}
+                      {linkTab === 'visual' && (
+                        <div className="animate-in fade-in slide-in-from-bottom-1 duration-200 bg-white dark:bg-google-dark-surface border-x border-b border-slate-200 dark:border-slate-700 rounded-b-lg p-3 shadow-sm mb-4">
+                            <InputGroup label={t.name}>
+                                <input
+                                    type="text"
+                                    value={data.name}
+                                    onChange={(e) => onUpdate('link', selection.id!, { ...data, name: e.target.value })}
+                                    className="bg-white dark:bg-google-dark-surface border border-slate-300 dark:border-google-dark-border rounded-lg px-2 py-1 text-sm text-slate-900 dark:text-white w-full focus:border-google-blue focus:outline-none"
+                                />
+                            </InputGroup>
+                            
+                            <GeometryEditor 
+                                data={data}
+                                robot={robot} 
+                                category="visual" 
+                                onUpdate={(d) => onUpdate('link', selection.id!, d)}
+                                assets={assets}
+                                onUploadAsset={onUploadAsset}
+                                t={t}
+                                isTabbed={true}
+                            />
+                        </div>
+                      )}
 
                       {/* Collision Tab Content */}
-                      <div className={(linkTab === 'collision' || selection.subType === 'collision') ? 'block animate-in fade-in slide-in-from-bottom-1 duration-200' : 'hidden'}>
-                          <GeometryEditor 
-                            data={data}
-                            robot={robot} 
-                            category="collision" 
-                            onUpdate={(d) => onUpdate('link', selection.id!, d)}
-                            assets={assets}
-                            onUploadAsset={onUploadAsset} 
-                            t={t}
-                            isTabbed={true}
-                          />
-                      </div>
+                      {linkTab === 'collision' && (
+                        <div className="animate-in fade-in slide-in-from-bottom-1 duration-200 bg-white dark:bg-google-dark-surface border-x border-b border-slate-200 dark:border-slate-700 rounded-b-lg p-3 shadow-sm mb-4">
+                            <GeometryEditor 
+                                data={data}
+                                robot={robot} 
+                                category="collision" 
+                                onUpdate={(d) => onUpdate('link', selection.id!, d)}
+                                assets={assets}
+                                onUploadAsset={onUploadAsset} 
+                                t={t}
+                                isTabbed={true}
+                            />
+                        </div>
+                      )}
                   </>
                 )}
                 
                 {/* Hardware Mode: Inertial */}
                 {mode === 'hardware' && (
-                  <div className="border-t border-slate-200 dark:border-slate-700 pt-4">
-                      <h3 className="text-sm font-bold text-slate-900 dark:text-slate-200 mb-3">{t.inertial}</h3>
+                  <CollapsibleSection title={t.inertial} storageKey="inertial">
                       <InputGroup label={t.mass}>
                           <NumberInput 
                               value={(data as UrdfLink).inertial.mass}
@@ -776,58 +787,60 @@ export const PropertyEditor: React.FC<PropertyEditorProps> = ({
                           </div>
                       </InputGroup>
                       
-                      <h4 className="text-xs font-bold text-slate-500 dark:text-slate-400 mt-4 mb-2">{t.inertiaTensor}</h4>
-                      <div className="grid grid-cols-3 gap-2">
-                          <NumberInput 
-                              label="ixx" 
-                              value={(data as UrdfLink).inertial.inertia.ixx} 
-                              onChange={(v) => onUpdate('link', selection.id!, { 
-                                  ...data, 
-                                  inertial: { ...(data as UrdfLink).inertial, inertia: { ...(data as UrdfLink).inertial.inertia, ixx: v } }
-                              })} 
-                          />
-                          <NumberInput 
-                              label="ixy" 
-                              value={(data as UrdfLink).inertial.inertia.ixy} 
-                              onChange={(v) => onUpdate('link', selection.id!, { 
-                                  ...data, 
-                                  inertial: { ...(data as UrdfLink).inertial, inertia: { ...(data as UrdfLink).inertial.inertia, ixy: v } }
-                              })} 
-                          />
-                          <NumberInput 
-                              label="ixz" 
-                              value={(data as UrdfLink).inertial.inertia.ixz} 
-                              onChange={(v) => onUpdate('link', selection.id!, { 
-                                  ...data, 
-                                  inertial: { ...(data as UrdfLink).inertial, inertia: { ...(data as UrdfLink).inertial.inertia, ixz: v } }
-                              })} 
-                          />
-                          <NumberInput 
-                              label="iyy" 
-                              value={(data as UrdfLink).inertial.inertia.iyy} 
-                              onChange={(v) => onUpdate('link', selection.id!, { 
-                                  ...data, 
-                                  inertial: { ...(data as UrdfLink).inertial, inertia: { ...(data as UrdfLink).inertial.inertia, iyy: v } }
-                              })} 
-                          />
-                          <NumberInput 
-                              label="iyz" 
-                              value={(data as UrdfLink).inertial.inertia.iyz} 
-                              onChange={(v) => onUpdate('link', selection.id!, { 
-                                  ...data, 
-                                  inertial: { ...(data as UrdfLink).inertial, inertia: { ...(data as UrdfLink).inertial.inertia, iyz: v } }
-                              })} 
-                          />
-                          <NumberInput 
-                              label="izz" 
-                              value={(data as UrdfLink).inertial.inertia.izz} 
-                              onChange={(v) => onUpdate('link', selection.id!, { 
-                                  ...data, 
-                                  inertial: { ...(data as UrdfLink).inertial, inertia: { ...(data as UrdfLink).inertial.inertia, izz: v } }
-                              })} 
-                          />
+                      <div className="mt-3 pt-2 border-t border-slate-100 dark:border-slate-800">
+                        <h4 className="text-[10px] font-bold text-slate-500 dark:text-slate-400 mb-2 uppercase">{t.inertiaTensor}</h4>
+                        <div className="grid grid-cols-3 gap-2">
+                            <NumberInput 
+                                label="ixx" 
+                                value={(data as UrdfLink).inertial.inertia.ixx} 
+                                onChange={(v) => onUpdate('link', selection.id!, { 
+                                    ...data, 
+                                    inertial: { ...(data as UrdfLink).inertial, inertia: { ...(data as UrdfLink).inertial.inertia, ixx: v } }
+                                })} 
+                            />
+                            <NumberInput 
+                                label="ixy" 
+                                value={(data as UrdfLink).inertial.inertia.ixy} 
+                                onChange={(v) => onUpdate('link', selection.id!, { 
+                                    ...data, 
+                                    inertial: { ...(data as UrdfLink).inertial, inertia: { ...(data as UrdfLink).inertial.inertia, ixy: v } }
+                                })} 
+                            />
+                            <NumberInput 
+                                label="ixz" 
+                                value={(data as UrdfLink).inertial.inertia.ixz} 
+                                onChange={(v) => onUpdate('link', selection.id!, { 
+                                    ...data, 
+                                    inertial: { ...(data as UrdfLink).inertial, inertia: { ...(data as UrdfLink).inertial.inertia, ixz: v } }
+                                })} 
+                            />
+                            <NumberInput 
+                                label="iyy" 
+                                value={(data as UrdfLink).inertial.inertia.iyy} 
+                                onChange={(v) => onUpdate('link', selection.id!, { 
+                                    ...data, 
+                                    inertial: { ...(data as UrdfLink).inertial, inertia: { ...(data as UrdfLink).inertial.inertia, iyy: v } }
+                                })} 
+                            />
+                            <NumberInput 
+                                label="iyz" 
+                                value={(data as UrdfLink).inertial.inertia.iyz} 
+                                onChange={(v) => onUpdate('link', selection.id!, { 
+                                    ...data, 
+                                    inertial: { ...(data as UrdfLink).inertial, inertia: { ...(data as UrdfLink).inertial.inertia, iyz: v } }
+                                })} 
+                            />
+                            <NumberInput 
+                                label="izz" 
+                                value={(data as UrdfLink).inertial.inertia.izz} 
+                                onChange={(v) => onUpdate('link', selection.id!, { 
+                                    ...data, 
+                                    inertial: { ...(data as UrdfLink).inertial, inertia: { ...(data as UrdfLink).inertial.inertia, izz: v } }
+                                })} 
+                            />
+                        </div>
                       </div>
-                  </div>
+                  </CollapsibleSection>
                 )}
             </>
         ) : (
@@ -861,8 +874,7 @@ export const PropertyEditor: React.FC<PropertyEditorProps> = ({
                             </select>
                         </InputGroup>
 
-                        <div className="border-t border-slate-200 dark:border-slate-700 pt-4">
-                            <h3 className="text-sm font-bold text-slate-900 dark:text-slate-200 mb-3">{t.kinematics}</h3>
+                        <CollapsibleSection title={t.kinematics} storageKey="kinematics">
                             <InputGroup label={t.originRelativeParent + " (XYZ)"}>
                                 <Vec3Input 
                                     value={(data as any).origin.xyz}
@@ -894,17 +906,15 @@ export const PropertyEditor: React.FC<PropertyEditorProps> = ({
                                     />
                                 </InputGroup>
                             )}
-                        </div>
+                        </CollapsibleSection>
                     </>
                 )}
 
                 {/* Hardware Mode: Limits, Dynamics, Motor */}
                 {mode === 'hardware' && (data as any).type !== JointType.FIXED && (
-                    <>
-                         {/* 1. Hardware Section (Moved to Top) */}
-                        <div className="border-t border-slate-200 dark:border-google-dark-border pt-4">
-                            <h3 className="text-sm font-bold text-slate-900 dark:text-slate-200 mb-3">{t.hardwareConfig}</h3>
-                            
+                    <div className="space-y-3">
+                         {/* 1. Hardware Section */}
+                        <CollapsibleSection title={t.hardwareConfig} storageKey="hardware_config">
                             <InputGroup label={t.motorSource}>
                                 <select
                                     value={motorSource}
@@ -918,7 +928,7 @@ export const PropertyEditor: React.FC<PropertyEditorProps> = ({
                             </InputGroup>
 
                             {motorSource === 'Library' && (
-                                <div className="space-y-4 pl-2 border-l-2 border-slate-200 dark:border-google-dark-border mb-4">
+                                <div className="space-y-3 pl-2 border-l-2 border-slate-200 dark:border-google-dark-border mb-3">
                                      <InputGroup label={t.brand}>
                                         <select
                                             value={motorBrand}
@@ -1009,11 +1019,10 @@ export const PropertyEditor: React.FC<PropertyEditorProps> = ({
                                     </InputGroup>
                                 </>
                             )}
-                        </div>
+                        </CollapsibleSection>
 
                         {/* 2. Limits */}
-                        <div className="border-t border-slate-200 dark:border-google-dark-border pt-4">
-                            <h3 className="text-sm font-bold text-slate-900 dark:text-slate-200 mb-3">{t.limits}</h3>
+                        <CollapsibleSection title={t.limits} storageKey="limits">
                             <div className="grid grid-cols-2 gap-2">
                                 <InputGroup label={t.lower}>
                                     <NumberInput 
@@ -1048,11 +1057,10 @@ export const PropertyEditor: React.FC<PropertyEditorProps> = ({
                                     />
                                 </InputGroup>
                             </div>
-                        </div>
+                        </CollapsibleSection>
 
                         {/* 3. Dynamics */}
-                        <div className="border-t border-slate-200 dark:border-google-dark-border pt-4">
-                            <h3 className="text-sm font-bold text-slate-900 dark:text-slate-200 mb-3">{t.dynamics}</h3>
+                        <CollapsibleSection title={t.dynamics} defaultOpen={false} storageKey="dynamics">
                             <div className="grid grid-cols-2 gap-2">
                                 <InputGroup label={t.friction}>
                                     <NumberInput 
@@ -1071,8 +1079,8 @@ export const PropertyEditor: React.FC<PropertyEditorProps> = ({
                                     />
                                 </InputGroup>
                             </div>
-                        </div>
-                    </>
+                        </CollapsibleSection>
+                    </div>
                 )}
             </>
         )}

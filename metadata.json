@@ -1,5 +1,5 @@
 {
-  "name": "UrdfArchitect - Visual Robot Designer",
+  "name": "URDF Studio - Visual Robot Designer",
   "description": "A visual, top-down URDF design tool. Start with stick-figure kinematics and refine into detailed designs. Features rapid prototyping.",
   "requestFramePermissions": []
 }

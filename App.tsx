@@ -13,7 +13,7 @@ import { generateRobotFromPrompt, runRobotInspection } from './services/geminiSe
 import { DEFAULT_MOTOR_LIBRARY } from './services/motorLibrary';
 import { translations, Language } from './services/i18n';
 import { INSPECTION_CRITERIA, getInspectionCategory } from './services/inspectionCriteria';
-import { Download, Activity, Box, Cpu, Upload, Sparkles, X, Loader2, Check, ArrowRight, Github, Globe, ScanSearch, AlertTriangle, Info, AlertCircle, Move, ChevronDown, ChevronRight, FileText, RefreshCw, MessageCircle, Send, FileJson, Folder, Heart, Sun, Moon } from 'lucide-react';
+import { Download, Activity, Box, Cpu, Upload, Sparkles, X, Loader2, Check, ArrowRight, Github, Globe, ScanSearch, AlertTriangle, Info, AlertCircle, Move, ChevronDown, ChevronRight, FileText, RefreshCw, MessageCircle, Send, FileJson, Folder, Heart, Sun, Moon, Briefcase } from 'lucide-react';
 import JSZip from 'jszip';
 import jsPDF from 'jspdf';
 
@@ -26,7 +26,7 @@ const INITIAL_STATE: RobotState = {
   },
   joints: {},
   rootLinkId: INITIAL_ID,
-  selection: { type: 'link', id: INITIAL_ID },
+  selection: { type: null, id: null },
 };
 
 export type AppMode = 'skeleton' | 'detail' | 'hardware';
@@ -42,8 +42,20 @@ export default function App() {
   const [isDragOver, setIsDragOver] = useState(false);
 
   // Sidebar collapse state
-  const [leftSidebarCollapsed, setLeftSidebarCollapsed] = useState(false);
-  const [rightSidebarCollapsed, setRightSidebarCollapsed] = useState(false);
+  const [leftSidebarCollapsed, setLeftSidebarCollapsed] = useState(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('leftSidebarCollapsed');
+      return saved === 'true';
+    }
+    return false;
+  });
+  const [rightSidebarCollapsed, setRightSidebarCollapsed] = useState(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('rightSidebarCollapsed');
+      return saved === 'true';
+    }
+    return false;
+  });
 
   // Language State
   const [lang, setLang] = useState<Language>(() => {
@@ -51,6 +63,10 @@ export default function App() {
       const saved = localStorage.getItem('language');
       if (saved === 'en' || saved === 'zh') {
         return saved;
+      }
+      const systemLang = navigator.language || (navigator as any).userLanguage;
+      if (systemLang && systemLang.toLowerCase().startsWith('zh')) {
+        return 'zh';
       }
     }
     return 'en';
@@ -70,6 +86,16 @@ export default function App() {
     }
     return 'light';
   });
+
+  // OS Detection
+  const [os, setOs] = useState<'mac' | 'win'>('win');
+  useEffect(() => {
+    if (typeof navigator !== 'undefined') {
+        if (navigator.platform.toUpperCase().indexOf('MAC') >= 0) {
+            setOs('mac');
+        }
+    }
+  }, []);
 
   // AI Inspector Window State
   const [isAIModalOpen, setIsAIModalOpen] = useState(false);
@@ -107,6 +133,23 @@ export default function App() {
   // Single item retest state
   const [retestingItem, setRetestingItem] = useState<{ categoryId: string; itemId: string } | null>(null);
 
+  // Toast Notification State
+  const [toast, setToast] = useState<{ show: boolean; message: string; type: 'info' | 'success' }>({ show: false, message: '', type: 'info' });
+  const [isFileMenuOpen, setIsFileMenuOpen] = useState(false);
+  const [isToolboxOpen, setIsToolboxOpen] = useState(false);
+  const [isAboutMenuOpen, setIsAboutMenuOpen] = useState(false);
+
+  const showPrivacyToast = () => {
+      setToast({ 
+          show: true, 
+          message: lang === 'zh' 
+            ? "提示：所有数据仅在您的本地浏览器中处理，不会上传到云端服务器，您的数据是安全的。" 
+            : "Note: All data is processed locally in your browser and will NOT be uploaded to any cloud server. Your data is safe.",
+          type: 'success'
+      });
+      setTimeout(() => setToast(prev => ({ ...prev, show: false })), 10000);
+  };
+
   // Update theme class on document element
   useEffect(() => {
     localStorage.setItem('theme', theme);
@@ -120,12 +163,32 @@ export default function App() {
   // Save language preference
   useEffect(() => {
     localStorage.setItem('language', lang);
+    document.title = lang === 'zh' 
+        ? "URDF Studio - 专业机器人设计与可视化工具" 
+        : "URDF Studio - Professional Robot Design & Visualization Tool";
   }, [lang]);
+
+  // Save sidebar collapse states
+  useEffect(() => {
+    localStorage.setItem('leftSidebarCollapsed', String(leftSidebarCollapsed));
+  }, [leftSidebarCollapsed]);
+
+  useEffect(() => {
+    localStorage.setItem('rightSidebarCollapsed', String(rightSidebarCollapsed));
+  }, [rightSidebarCollapsed]);
 
   // --- Actions ---
 
   const handleSelect = (type: 'link' | 'joint', id: string, subType?: 'visual' | 'collision') => {
     setRobot(prev => ({ ...prev, selection: { type, id, subType } }));
+  };
+
+  const [focusTarget, setFocusTarget] = useState<string | null>(null);
+  
+  const handleFocus = (id: string) => {
+    setFocusTarget(id);
+    // Clear it after a short delay so we can trigger it again even if clicking same item
+    setTimeout(() => setFocusTarget(null), 100);
   };
 
   const handleNameChange = (name: string) => {
@@ -324,6 +387,9 @@ export default function App() {
   };
 
   const handleImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    // Show privacy toast when import starts (after user confirms file selection)
+    showPrivacyToast();
+    
     const files = e.target.files;
     if (!files || files.length === 0) return;
 
@@ -1283,44 +1349,133 @@ export default function App() {
       {/* Header */}
       <header className="h-14 border-b flex items-center justify-between px-4 shrink-0 relative bg-white dark:bg-google-dark-surface border-slate-200 dark:border-google-dark-border">
         <div className="flex items-center gap-2">
-            <h1 className="text-lg font-bold tracking-tight text-slate-800 dark:text-white">{t.appName}</h1>
+            <h1 className="text-lg font-bold tracking-tight text-slate-800 dark:text-white mr-4">{t.appName}</h1>
             
-            <button 
-                onClick={() => setLang(prev => prev === 'en' ? 'zh' : 'en')}
-                className="flex items-center justify-center p-2 border rounded transition-colors bg-slate-100 dark:bg-google-dark-bg hover:bg-slate-200 dark:hover:bg-google-dark-border text-slate-600 dark:text-slate-300 border-slate-300 dark:border-google-dark-border"
-                title={lang === 'zh' ? "切换语言" : "Switch Language"}
-            >
-                <Globe className="w-4 h-4" />
-                <span className="ml-1 text-xs font-bold">{lang === 'en' ? 'EN' : '中'}</span>
-            </button>
+            <div className="relative">
+                <button 
+                    onClick={() => setIsFileMenuOpen(!isFileMenuOpen)}
+                    className="flex items-center gap-2 px-3 py-1.5 border rounded text-sm transition-colors bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border-slate-300 dark:border-slate-600"
+                    title={t.file}
+                >
+                    <FileText className="w-4 h-4" />
+                    {t.file}
+                    <ChevronDown className="w-3 h-3 ml-0.5 opacity-70" />
+                </button>
+                
+                {isFileMenuOpen && (
+                    <>
+                        <div 
+                            className="fixed inset-0 z-40" 
+                            onClick={() => setIsFileMenuOpen(false)}
+                        />
+                        <div className="absolute top-full left-0 mt-1 w-48 bg-white dark:bg-slate-800 rounded-md shadow-lg border border-slate-200 dark:border-slate-700 z-50 overflow-hidden py-1">
+                            <button
+                                onClick={() => {
+                                    setIsFileMenuOpen(false);
+                                    setTimeout(() => importFolderInputRef.current?.click(), 0);
+                                }}
+                                className="w-full text-left px-4 py-2 text-xs hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 flex items-center gap-2"
+                            >
+                                <Folder className="w-3.5 h-3.5" />
+                                {t.importFolder}
+                            </button>
+                            <button
+                                onClick={() => {
+                                    setIsFileMenuOpen(false);
+                                    setTimeout(() => importInputRef.current?.click(), 0);
+                                }}
+                                className="w-full text-left px-4 py-2 text-xs hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 flex items-center gap-2"
+                            >
+                                <Download className="w-3.5 h-3.5" />
+                                {lang === 'zh' ? '导入 ZIP / 文件' : 'Import ZIP / File'}
+                            </button>
+                            <div className="h-px bg-slate-200 dark:bg-slate-700 my-1 mx-2" />
+                            <button
+                                onClick={() => {
+                                    setIsFileMenuOpen(false);
+                                    handleExport();
+                                }}
+                                className="w-full text-left px-4 py-2 text-xs hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 flex items-center gap-2"
+                            >
+                                <Upload className="w-3.5 h-3.5" />
+                                {t.export}
+                            </button>
+                        </div>
+                    </>
+                )}
+            </div>
 
-            <button
-                onClick={() => setTheme(prev => prev === 'dark' ? 'light' : 'dark')}
-                className="flex items-center justify-center p-2 border rounded transition-colors bg-slate-100 dark:bg-google-dark-bg hover:bg-slate-200 dark:hover:bg-google-dark-border text-slate-600 dark:text-slate-300 border-slate-300 dark:border-google-dark-border"
-                title={lang === 'zh' ? "切换主题" : "Toggle Theme"}
-            >
-                {theme === 'dark' ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
-            </button>
+            <div className="relative">
+                <button 
+                    onClick={() => setIsToolboxOpen(!isToolboxOpen)}
+                    className={`flex items-center gap-2 px-3 py-1.5 border rounded text-sm transition-all ${isToolboxOpen ? 'bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800 text-blue-600 dark:text-blue-300 shadow-sm ring-2 ring-blue-100 dark:ring-blue-900/30' : 'bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border-slate-300 dark:border-slate-600'}`}
+                    title={t.toolbox}
+                >
+                    <Briefcase className="w-4 h-4" />
+                    {t.toolbox}
+                    <ChevronDown className={`w-3 h-3 ml-0.5 opacity-70 transition-transform duration-200 ${isToolboxOpen ? 'rotate-180' : ''}`} />
+                </button>
+                
+                {isToolboxOpen && (
+                    <>
+                        <div 
+                            className="fixed inset-0 z-40" 
+                            onClick={() => setIsToolboxOpen(false)}
+                        />
+                        <div className="absolute top-full left-0 mt-3 w-[340px] bg-white/95 dark:bg-slate-800/95 backdrop-blur-md rounded-xl shadow-2xl border border-slate-200 dark:border-slate-700 z-50 overflow-hidden p-3 animate-in fade-in zoom-in-95 duration-100 origin-top-left">
+                            <div className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-2 px-1">
+                                {lang === 'zh' ? '可用工具' : 'Available Tools'}
+                            </div>
+                            <div className="grid grid-cols-3 gap-2">
+                                <button
+                                    onClick={() => {
+                                        setIsToolboxOpen(false);
+                                        setIsAIModalOpen(true);
+                                        setAiResponse(null); 
+                                        setInspectionReport(null); 
+                                        setAiPrompt('');
+                                        setInspectionProgress(null); 
+                                        setReportGenerationTimer(null);
+                                    }}
+                                    className="flex flex-col items-center justify-center p-3 gap-2 rounded-lg border border-transparent hover:border-purple-200 dark:hover:border-purple-800/50 bg-slate-50 dark:bg-slate-800/50 hover:bg-purple-50 dark:hover:bg-purple-900/20 transition-all group"
+                                >
+                                    <div className="p-2 bg-white dark:bg-slate-700 rounded-lg shadow-sm group-hover:shadow text-purple-600 dark:text-purple-400 group-hover:scale-110 transition-transform">
+                                        <ScanSearch className="w-5 h-5" />
+                                    </div>
+                                    <span className="text-xs font-medium text-slate-700 dark:text-slate-200 text-center leading-tight">{t.aiAssistant}</span>
+                                </button>
+                                
+                                <button
+                                    onClick={() => {
+                                        setIsToolboxOpen(false);
+                                        setToast({ show: true, message: t.featureInDevelopment, type: 'info' });
+                                        setTimeout(() => setToast(prev => ({ ...prev, show: false })), 2000);
+                                    }}
+                                    className="flex flex-col items-center justify-center p-3 gap-2 rounded-lg border border-transparent hover:border-blue-200 dark:hover:border-blue-800/50 bg-slate-50 dark:bg-slate-800/50 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-all group opacity-80 hover:opacity-100"
+                                >
+                                    <div className="p-2 bg-white dark:bg-slate-700 rounded-lg shadow-sm group-hover:shadow text-blue-600 dark:text-blue-400 group-hover:scale-110 transition-transform">
+                                        <RefreshCw className="w-5 h-5" />
+                                    </div>
+                                    <span className="text-xs font-medium text-slate-700 dark:text-slate-200 text-center leading-tight">{t.robotRedirect}</span>
+                                </button>
 
-            <a 
-                href="https://github.com/OpenLegged/URDF-Studio"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex items-center justify-center p-2 border rounded transition-colors bg-slate-100 dark:bg-google-dark-bg hover:bg-slate-200 dark:hover:bg-google-dark-border text-slate-600 dark:text-slate-300 border-slate-300 dark:border-google-dark-border"
-                title={lang === 'zh' ? "查看 GitHub" : "View on GitHub"}
-            >
-                <Github className="w-4 h-4" />
-            </a>
-            <a
-                href="https://www.d-robotics.cc/"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex items-center justify-center p-2 border rounded transition-colors bg-slate-100 dark:bg-google-dark-bg hover:bg-slate-200 dark:hover:bg-google-dark-border text-blue-700 dark:text-blue-300 border-blue-300 dark:border-blue-700 font-bold gap-1"
-                title={lang === 'zh' ? "感谢地瓜机器人!" : "Thanks to D-Robotics!"}
-            >
-                <Heart className="w-3 h-3 text-red-500 fill-red-500" />
-                <span className="text-xs font-bold">{lang === 'zh' ? '地瓜机器人' : 'D-Robotics'}</span>
-            </a>
+                                <button
+                                    onClick={() => {
+                                        setIsToolboxOpen(false);
+                                        window.open('https://motion-editor.cyoahs.dev/', '_blank');
+                                    }}
+                                    className="flex flex-col items-center justify-center p-3 gap-2 rounded-lg border border-transparent hover:border-green-200 dark:hover:border-green-800/50 bg-slate-50 dark:bg-slate-800/50 hover:bg-green-50 dark:hover:bg-green-900/20 transition-all group opacity-80 hover:opacity-100"
+                                >
+                                    <div className="p-2 bg-white dark:bg-slate-700 rounded-lg shadow-sm group-hover:shadow text-green-600 dark:text-green-400 group-hover:scale-110 transition-transform">
+                                        <Activity className="w-5 h-5" />
+                                    </div>
+                                    <span className="text-xs font-medium text-slate-700 dark:text-slate-200 text-center leading-tight">{t.trajectoryEditing}</span>
+                                </button>
+                            </div>
+                        </div>
+                    </>
+                )}
+            </div>
         </div>
 
         {/* Mode Switcher */}
@@ -1349,27 +1504,30 @@ export default function App() {
         </div>
 
         <div className="flex items-center gap-2">
+            <button 
+                onClick={() => setLang(prev => prev === 'en' ? 'zh' : 'en')}
+                className="flex items-center justify-center p-2 border rounded transition-colors bg-slate-100 dark:bg-google-dark-bg hover:bg-slate-200 dark:hover:bg-google-dark-border text-slate-600 dark:text-slate-300 border-slate-300 dark:border-google-dark-border"
+                title={lang === 'zh' ? "切换语言" : "Switch Language"}
+            >
+                <Globe className="w-4 h-4" />
+                <span className="ml-1 text-xs font-bold">{lang === 'en' ? 'EN' : '中'}</span>
+            </button>
+
+            <button 
+                onClick={() => setIsAboutMenuOpen(true)}
+                className="flex items-center justify-center gap-2 px-3 py-1.5 border rounded transition-colors bg-slate-100 dark:bg-google-dark-bg hover:bg-slate-200 dark:hover:bg-google-dark-border text-slate-600 dark:text-slate-300 border-slate-300 dark:border-google-dark-border text-sm font-medium"
+                title={lang === 'zh' ? "关于" : "About"}
+            >
+                <Info className="w-4 h-4" />
+                {lang === 'zh' ? "关于" : "About"}
+            </button>
+
             <button
-                onClick={() => { setIsAIModalOpen(true); setAiResponse(null); setInspectionReport(null); setAiPrompt(''); setInspectionProgress(null); setReportGenerationTimer(null); }}
-                className="flex items-center gap-2 px-3 py-1.5 bg-slate-900 dark:bg-purple-900/40 hover:bg-slate-800 dark:hover:bg-purple-900/60 text-white dark:text-purple-100 rounded text-sm transition-all shadow-sm border border-slate-900 dark:border-purple-500/30"
+                onClick={() => setTheme(prev => prev === 'dark' ? 'light' : 'dark')}
+                className="flex items-center justify-center p-2 border rounded transition-colors bg-slate-100 dark:bg-google-dark-bg hover:bg-slate-200 dark:hover:bg-google-dark-border text-slate-600 dark:text-slate-300 border-slate-300 dark:border-google-dark-border"
+                title={lang === 'zh' ? "切换主题" : "Toggle Theme"}
             >
-                <ScanSearch className="w-4 h-4" />
-                {t.aiAssistant}
-            </button>
-            <button 
-                onClick={() => importFolderInputRef.current?.click()}
-                className="flex items-center gap-2 px-3 py-1.5 border rounded text-sm transition-colors bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border-slate-300 dark:border-slate-600"
-                title={t.importFolder}
-            >
-                <Download className="w-4 h-4" />
-                {t.import}
-            </button>
-            <button 
-                onClick={handleExport}
-                className="flex items-center gap-2 px-3 py-1.5 border rounded text-sm transition-colors bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-800 dark:text-white border-slate-300 dark:border-slate-500"
-            >
-                <Upload className="w-4 h-4" />
-                {t.export}
+                {theme === 'dark' ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
             </button>
         </div>
       </header>
@@ -1379,6 +1537,7 @@ export default function App() {
         <TreeEditor 
             robot={robot} 
             onSelect={handleSelect} 
+            onFocus={handleFocus}
             onAddChild={handleAddChild}
             onDelete={handleDelete}
             onNameChange={handleNameChange}
@@ -1398,6 +1557,7 @@ export default function App() {
                 onSelect={handleSelect}
                 selection={robot.selection}
                 hoveredSelection={hoveredSelection}
+                focusTarget={focusTarget}
                 theme={theme}
                 robotLinks={robot.links}
             />
@@ -1410,6 +1570,7 @@ export default function App() {
                 assets={assets}
                 lang={lang}
                 theme={theme}
+                os={os}
             />
         )}
         
@@ -1845,6 +2006,133 @@ export default function App() {
                         </button>
                       </>
                   )}
+              </div>
+          </div>
+      )}
+
+      {/* About Modal */}
+      {isAboutMenuOpen && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center">
+              <div 
+                  className="absolute inset-0 bg-black/50 backdrop-blur-sm"
+                  onClick={() => setIsAboutMenuOpen(false)}
+              />
+              <div className="relative bg-white dark:bg-slate-800 rounded-xl shadow-2xl border border-slate-200 dark:border-slate-700 w-[400px] overflow-hidden">
+                  {/* Header */}
+                  <div className="bg-gradient-to-r from-slate-100 to-slate-50 dark:from-slate-800 dark:to-slate-900 px-6 py-5 border-b border-slate-200 dark:border-slate-700">
+                      <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-3">
+                              <img src="/logo.png" alt="URDF Studio" className="w-10 h-10 object-contain" />
+                              <div>
+                                  <h2 className="text-lg font-bold text-slate-800 dark:text-white">URDF Studio</h2>
+                                  <p className="text-xs text-slate-500 dark:text-slate-400">v1.0.0</p>
+                              </div>
+                          </div>
+                          <button 
+                              onClick={() => setIsAboutMenuOpen(false)}
+                              className="p-1.5 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors"
+                          >
+                              <X className="w-4 h-4" />
+                          </button>
+                      </div>
+                  </div>
+                  
+                  {/* Content */}
+                  <div className="p-6 space-y-4">
+                      <p className="text-sm text-slate-600 dark:text-slate-300 leading-relaxed">
+                          {lang === 'zh' 
+                              ? '专业的机器人 URDF 设计与可视化工作站，支持快速编辑，碰撞优化，参数配置，AI审阅和实用工具。' 
+                              : 'Professional robot URDF design and visualization workstation, supporting fast editing, collision optimization, parameter configuration, AI review and utility tools.'}
+                      </p>
+                      
+                      {/* Links */}
+                      <div className="space-y-2">
+                          <a 
+                              href="https://github.com/OpenLegged/URDF-Studio"
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="flex items-center gap-3 p-3 rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors group"
+                          >
+                              <div className="w-9 h-9 bg-slate-900 dark:bg-slate-700 rounded-lg flex items-center justify-center">
+                                  <Github className="w-4 h-4 text-white" />
+                              </div>
+                              <div className="flex-1">
+                                  <div className="text-sm font-medium text-slate-800 dark:text-white group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">GitHub</div>
+                                  <div className="text-xs text-slate-500 dark:text-slate-400">OpenLegged/URDF-Studio</div>
+                              </div>
+                              <ArrowRight className="w-4 h-4 text-slate-400 group-hover:text-blue-500 group-hover:translate-x-0.5 transition-all" />
+                          </a>
+                          
+                          <a 
+                              href="https://www.d-robotics.cc/"
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="flex items-center gap-3 p-3 rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors group"
+                          >
+                              <div className="w-9 h-9 bg-white dark:bg-slate-700 rounded-lg flex items-center justify-center overflow-hidden border border-slate-100 dark:border-slate-600">
+                                  <img src="/d-robotics-logo.jpg" alt="D-Robotics" className="w-full h-full object-cover" />
+                              </div>
+                              <div className="flex-1">
+                                  <div className="text-sm font-medium text-slate-800 dark:text-white group-hover:text-orange-600 dark:group-hover:text-orange-400 transition-colors">
+                                      {lang === 'zh' ? '地瓜机器人' : 'D-Robotics'}
+                                  </div>
+                                  <div className="text-xs text-slate-500 dark:text-slate-400">
+                                      {lang === 'zh' ? '感谢支持' : 'Thanks for support'}
+                                  </div>
+                              </div>
+                              <ArrowRight className="w-4 h-4 text-slate-400 group-hover:text-orange-500 group-hover:translate-x-0.5 transition-all" />
+                          </a>
+
+                          <a 
+                              href="https://engine.bridgedp.com/"
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="flex items-center gap-3 p-3 rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors group"
+                          >
+                              <div className="w-9 h-9 bg-white dark:bg-slate-700 rounded-lg flex items-center justify-center overflow-hidden border border-slate-100 dark:border-slate-600">
+                                  <img src="/bridgedp-logo.png" alt="BridgeDP" className="w-full h-full object-contain p-1" />
+                              </div>
+                              <div className="flex-1">
+                                  <div className="text-sm font-medium text-slate-800 dark:text-white group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">
+                                      {lang === 'zh' ? '桥介引擎' : 'Bridgedp Engine'}
+                                  </div>
+                                  <div className="text-xs text-slate-500 dark:text-slate-400">
+                                      {lang === 'zh' ? '训练你的机器人' : 'Train your robot'}
+                                  </div>
+                              </div>
+                              <ArrowRight className="w-4 h-4 text-slate-400 group-hover:text-blue-500 group-hover:translate-x-0.5 transition-all" />
+                          </a>
+                      </div>
+                  </div>
+                  
+                  {/* Footer */}
+                  <div className="px-6 py-4 bg-slate-50 dark:bg-slate-900/50 border-t border-slate-200 dark:border-slate-700">
+                      <p className="text-xs text-slate-500 dark:text-slate-400 text-center">
+                          {lang === 'zh' 
+                              ? '© 2025 OpenLegged. 基于 MIT 协议开源。' 
+                              : '© 2025 OpenLegged. Open sourced under MIT License.'}
+                      </p>
+                  </div>
+              </div>
+          </div>
+      )}
+
+      {/* Toast Notification */}
+      {toast.show && (
+          <div className="fixed top-20 left-1/2 -translate-x-1/2 z-[100] animate-in fade-in slide-in-from-top-4 duration-300">
+              <div className="bg-white dark:bg-slate-800 shadow-xl rounded-lg border border-green-200 dark:border-green-900 px-4 py-3 flex items-center gap-3 max-w-md">
+                  <div className="bg-green-100 dark:bg-green-900/30 p-1.5 rounded-full shrink-0">
+                      <Check className="w-4 h-4 text-green-600 dark:text-green-400" />
+                  </div>
+                  <div className="text-sm text-slate-700 dark:text-slate-200 font-medium">
+                      {toast.message}
+                  </div>
+                  <button 
+                      onClick={() => setToast(prev => ({ ...prev, show: false }))}
+                      className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 ml-2"
+                  >
+                      <X className="w-4 h-4" />
+                  </button>
               </div>
           </div>
       )}

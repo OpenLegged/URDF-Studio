@@ -6,6 +6,7 @@ import { translations, Language } from '../services/i18n';
 interface TreeEditorProps {
   robot: RobotState;
   onSelect: (type: 'link' | 'joint', id: string) => void;
+  onFocus?: (id: string) => void;
   onAddChild: (parentId: string) => void;
   onDelete: (id: string) => void;
   onNameChange: (name: string) => void;
@@ -22,6 +23,7 @@ const TreeNode = ({
   linkId, 
   robot, 
   onSelect, 
+  onFocus,
   onAddChild, 
   onDelete,
   mode,
@@ -30,6 +32,7 @@ const TreeNode = ({
   linkId: string; 
   robot: RobotState; 
   onSelect: any; 
+  onFocus?: any;
   onAddChild: any;
   onDelete: any;
   mode: AppMode;
@@ -53,6 +56,7 @@ const TreeNode = ({
       <div 
         className={`relative flex items-center py-1.5 pr-8 pl-1 cursor-pointer transition-colors group whitespace-nowrap ${isSelected ? 'bg-google-blue text-white' : 'text-slate-500 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-google-dark-surface hover:text-slate-900 dark:hover:text-slate-200'}`}
         onClick={() => onSelect('link', linkId)}
+        onDoubleClick={() => onFocus && onFocus(linkId)}
       >
         {/* Expand/Collapse Toggle */}
         <div 
@@ -123,6 +127,7 @@ const TreeNode = ({
                             linkId={joint.childLinkId} 
                             robot={robot} 
                             onSelect={onSelect}
+                            onFocus={onFocus}
                             onAddChild={onAddChild}
                             onDelete={onDelete}
                             mode={mode}
@@ -137,15 +142,17 @@ const TreeNode = ({
   );
 };
 
-export const TreeEditor: React.FC<TreeEditorProps> = ({ robot, onSelect, onAddChild, onDelete, onNameChange, mode, lang, collapsed, onToggle, theme }) => {
+export const TreeEditor: React.FC<TreeEditorProps> = ({ robot, onSelect, onFocus, onAddChild, onDelete, onNameChange, mode, lang, collapsed, onToggle, theme }) => {
   const t = translations[lang];
   const [width, setWidth] = useState(288); // 72 * 4 = 288px (w-72)
+  const [isDragging, setIsDragging] = useState(false);
   const isResizing = useRef(false);
   const startX = useRef(0);
   const startWidth = useRef(0);
 
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
     isResizing.current = true;
+    setIsDragging(true);
     startX.current = e.clientX;
     startWidth.current = width;
     document.body.style.cursor = 'col-resize';
@@ -162,6 +169,7 @@ export const TreeEditor: React.FC<TreeEditorProps> = ({ robot, onSelect, onAddCh
 
     const handleMouseUp = () => {
       isResizing.current = false;
+      setIsDragging(false);
       document.body.style.cursor = '';
       document.body.style.userSelect = '';
     };
@@ -175,33 +183,31 @@ export const TreeEditor: React.FC<TreeEditorProps> = ({ robot, onSelect, onAddCh
   }, []);
 
   // Compute actual width based on collapsed state
-  const actualWidth = collapsed ? 40 : width;
+  const actualWidth = collapsed ? 0 : width;
 
   return (
     <div 
-      className={`bg-slate-50 dark:bg-google-dark-bg border-r border-slate-200 dark:border-google-dark-border flex flex-col h-full shrink-0 relative ${collapsed ? 'items-center py-4' : ''}`}
-      style={{ width: `${actualWidth}px`, minWidth: `${actualWidth}px`, flex: `0 0 ${actualWidth}px`, overflow: 'hidden' }}
+      className={`bg-slate-50 dark:bg-google-dark-bg border-r border-slate-200 dark:border-google-dark-border flex flex-col h-full shrink-0 relative ${isDragging ? '' : 'transition-all duration-300 ease-in-out'}`}
+      style={{ width: `${actualWidth}px`, minWidth: `${actualWidth}px`, flex: `0 0 ${actualWidth}px`, overflow: 'visible' }}
     >
-      {collapsed ? (
-        <button
+      {/* Side Toggle Button (Centered & Protruding) */}
+      <button
           onClick={onToggle}
-          className="p-2 text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-200 dark:hover:bg-google-dark-surface rounded transition-colors"
-          title={t.structure}
-        >
-          <PanelLeftOpen className="w-5 h-5" />
-        </button>
-      ) : (
+          className="absolute -right-4 top-1/2 -translate-y-1/2 w-4 h-16 bg-white dark:bg-slate-800 hover:bg-blue-500 dark:hover:bg-blue-600 hover:text-white border border-slate-300 dark:border-slate-600 rounded-r-lg shadow-md flex flex-col items-center justify-center z-50 cursor-pointer text-slate-400 hover:text-white transition-all group"
+          title={collapsed ? t.structure : t.collapseSidebar}
+      >
+          <div className="flex flex-col gap-0.5 items-center">
+            <div className="w-1 h-1 rounded-full bg-slate-300 dark:bg-slate-600 group-hover:bg-blue-200" />
+            {collapsed ? <ChevronRight className="w-3.5 h-3.5" /> : <ChevronLeft className="w-3.5 h-3.5" />}
+            <div className="w-1 h-1 rounded-full bg-slate-300 dark:bg-slate-600 group-hover:bg-blue-200" />
+          </div>
+      </button>
+
+      {!collapsed && (
         <>
-          {/* Collapse button */}
+          {/* Header without toggle */}
           <div className="flex items-center justify-between px-2 pt-2 shrink-0">
             <span className="text-[10px] text-slate-500 uppercase font-bold tracking-wider">{t.structure}</span>
-            <button
-              onClick={onToggle}
-              className="p-1 text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-slate-200 dark:hover:bg-google-dark-surface rounded transition-colors"
-              title={t.collapseSidebar}
-            >
-              <ChevronLeft className="w-4 h-4" />
-            </button>
           </div>
 
           {/* 1. Robot Name Input */}
@@ -245,6 +251,7 @@ export const TreeEditor: React.FC<TreeEditorProps> = ({ robot, onSelect, onAddCh
                 linkId={robot.rootLinkId} 
                 robot={robot} 
                 onSelect={onSelect} 
+                onFocus={onFocus}
                 onAddChild={onAddChild}
                 onDelete={onDelete}
                 mode={mode}

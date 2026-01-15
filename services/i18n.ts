@@ -9,6 +9,7 @@ export const translations = {
     detail: "Detail",
     hardware: "Hardware",
     aiAssistant: "AI Inspector",
+    file: "File",
     import: "Import",
     importFolder: "Import Folder",
     export: "Export",
@@ -85,6 +86,8 @@ export const translations = {
     showOrigin: "Show Origin",
     showCollision: "Show Collision",
     instruction: "Left Click: Rotate | Right Click: Pan | Scroll: Zoom",
+    instructionWin: "Left Click: Rotate | Right Click: Pan | Scroll: Zoom",
+    instructionMac: "Click: Rotate | Two-Finger Click: Pan | Scroll: Zoom",
     clickToSelect: "Click objects to select.",
     enableLabels: "Enable labels to select.",
     clickLabels: "Click labels to select.",
@@ -133,7 +136,11 @@ export const translations = {
     modeLabel: "Mode",
     highlightMode: "Selection Mode",
     linkMode: "Link",
-    collisionMode: "Collision"
+    collisionMode: "Collision",
+    toolbox: "Toolbox",
+    robotRedirect: "Robot Redirect",
+    trajectoryEditing: "Trajectory Editing",
+    featureInDevelopment: "Feature in development"
   },
   zh: {
     // Header
@@ -142,6 +149,7 @@ export const translations = {
     detail: "细节",
     hardware: "硬件",
     aiAssistant: "AI审阅",
+    file: "文件",
     import: "导入",
     importFolder: "导入文件夹",
     export: "导出",
@@ -218,6 +226,8 @@ export const translations = {
     showOrigin: "显示原点",
     showCollision: "显示碰撞体",
     instruction: "左键: 旋转 | 右键: 平移 | 滚轮: 缩放",
+    instructionWin: "左键: 旋转 | 右键: 平移 | 滚轮: 缩放",
+    instructionMac: "点击: 旋转 | 双指点击: 平移 | 滚轮: 缩放",
     clickToSelect: "点击物体进行选择。",
     enableLabels: "启用标签以进行选择。",
     clickLabels: "点击标签进行选择。",
@@ -266,6 +276,10 @@ export const translations = {
     modeLabel: "模式",
     highlightMode: "选择模式",
     linkMode: "连杆",
-    collisionMode: "碰撞体"
+    collisionMode: "碰撞体",
+    toolbox: "工具箱",
+    robotRedirect: "机器人重定向",
+    trajectoryEditing: "轨迹编辑",
+    featureInDevelopment: "功能开发中"
   }
 };

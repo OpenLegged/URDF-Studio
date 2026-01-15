@@ -531,7 +531,7 @@ function RobotNode({
         if (!isCollision && !showVisual) return null;
     } else {
         if (isCollision && !showCollision) return null;
-        if (isCollision && mode !== 'detail') return null;
+        if (isCollision) return null;
     }
 
     const { type, dimensions, color, origin, meshPath } = data;
@@ -828,7 +828,7 @@ function RobotNode({
   );
 }
 
-export const Visualizer = ({ robot, onSelect, onUpdate, mode, assets, lang, theme }: { robot: RobotState; onSelect: any; onUpdate: any; mode: 'skeleton' | 'detail' | 'hardware', assets: Record<string, string>, lang: Language, theme: Theme }) => {
+export const Visualizer = ({ robot, onSelect, onUpdate, mode, assets, lang, theme, os }: { robot: RobotState; onSelect: any; onUpdate: any; mode: 'skeleton' | 'detail' | 'hardware', assets: Record<string, string>, lang: Language, theme: Theme, os?: 'mac' | 'win' }) => {
   const t = translations[lang];
 
   // Skeleton Settings
@@ -868,7 +868,21 @@ export const Visualizer = ({ robot, onSelect, onUpdate, mode, assets, lang, them
   const [optionsPanelPos, setOptionsPanelPos] = React.useState<{ x: number; y: number } | null>(null);
   const [dragging, setDragging] = React.useState(false);
   const dragStartRef = React.useRef<{ mouseX: number; mouseY: number; panelX: number; panelY: number } | null>(null);
-  const [isOptionsCollapsed, setIsOptionsCollapsed] = React.useState(false);
+  const [isOptionsCollapsed, setIsOptionsCollapsed] = React.useState(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('visualizer_options_collapsed');
+      return saved === 'true';
+    }
+    return false;
+  });
+
+  const toggleOptionsCollapsed = () => {
+    setIsOptionsCollapsed(prev => {
+      const newState = !prev;
+      localStorage.setItem('visualizer_options_collapsed', String(newState));
+      return newState;
+    });
+  };
 
   const handleMouseDown = React.useCallback((e: React.MouseEvent) => {
     e.preventDefault();
@@ -929,7 +943,7 @@ export const Visualizer = ({ robot, onSelect, onUpdate, mode, assets, lang, them
     >
         <div className="absolute top-4 left-4 z-10 pointer-events-none select-none">
              <div className="text-slate-500 dark:text-slate-400 text-xs bg-white/50 dark:bg-google-dark-surface/50 backdrop-blur px-2 py-1 rounded border border-slate-200 dark:border-google-dark-border">
-              {t.instruction} <br/>
+              {os === 'mac' ? t.instructionMac : t.instructionWin} <br/>
               {mode === 'skeleton' ? (showLabels ? t.clickLabels : t.enableLabels) : t.clickToSelect}
            </div>
         </div>
@@ -956,7 +970,7 @@ export const Visualizer = ({ robot, onSelect, onUpdate, mode, assets, lang, them
                    </div>
                    <button 
                      onMouseDown={(e) => e.stopPropagation()}
-                     onClick={(e) => { e.stopPropagation(); setOptionsPanelPos(null); setIsOptionsCollapsed(!isOptionsCollapsed); }}
+                     onClick={(e) => { e.stopPropagation(); setOptionsPanelPos(null); toggleOptionsCollapsed(); }}
                      className="text-slate-400 hover:text-slate-900 dark:hover:text-white p-1 hover:bg-slate-200 dark:hover:bg-google-dark-border rounded"
                    >
                      {isOptionsCollapsed ? (
@@ -1015,7 +1029,7 @@ export const Visualizer = ({ robot, onSelect, onUpdate, mode, assets, lang, them
                    </div>
                    <button 
                      onMouseDown={(e) => e.stopPropagation()}
-                     onClick={(e) => { e.stopPropagation(); setOptionsPanelPos(null); setIsOptionsCollapsed(!isOptionsCollapsed); }}
+                     onClick={(e) => { e.stopPropagation(); setOptionsPanelPos(null); toggleOptionsCollapsed(); }}
                      className="text-slate-400 hover:text-slate-900 dark:hover:text-white p-1 hover:bg-slate-200 dark:hover:bg-google-dark-border rounded"
                    >
                      {isOptionsCollapsed ? (
@@ -1086,7 +1100,7 @@ export const Visualizer = ({ robot, onSelect, onUpdate, mode, assets, lang, them
                    </div>
                    <button 
                      onMouseDown={(e) => e.stopPropagation()}
-                     onClick={(e) => { e.stopPropagation(); setOptionsPanelPos(null); setIsOptionsCollapsed(!isOptionsCollapsed); }}
+                     onClick={(e) => { e.stopPropagation(); setOptionsPanelPos(null); toggleOptionsCollapsed(); }}
                      className="text-slate-400 hover:text-slate-900 dark:hover:text-white p-1 hover:bg-slate-200 dark:hover:bg-google-dark-border rounded"
                    >
                      {isOptionsCollapsed ? (

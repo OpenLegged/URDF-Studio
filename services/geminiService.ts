@@ -97,7 +97,7 @@ export const generateRobotFromPrompt = async (
   }));
 
   const systemPrompt = `
-  You are an expert Robotics Engineer and URDF Architect.
+  You are an expert Robotics Engineer and URDF Studio Expert.
   
   Your capabilities:
   1. **Generate**: Create new robot structures from scratch.

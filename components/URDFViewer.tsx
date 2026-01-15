@@ -26,6 +26,7 @@ interface URDFViewerProps {
     selection?: { type: 'link' | 'joint' | null; id: string | null; subType?: 'visual' | 'collision' };
     hoveredSelection?: { type: 'link' | 'joint' | null; id: string | null; subType?: 'visual' | 'collision' };
     robotLinks?: Record<string, UrdfLink>; // Link data from the app state, contains inertial info
+    focusTarget?: string | null;
 }
 
 // Clean file path (remove '..' and '.', normalize slashes)
@@ -298,7 +299,7 @@ interface RobotModelProps {
     onRobotLoaded?: (robot: any) => void;
     showCollision?: boolean;
     showVisual?: boolean;
-    onSelect?: (type: 'link' | 'joint', id: string) => void;
+    onSelect?: (type: 'link' | 'joint', id: string, subType?: 'visual' | 'collision') => void;
     onJointChange?: (name: string, angle: number) => void;
     jointAngles?: Record<string, number>;
     setIsDragging?: (dragging: boolean) => void;
@@ -312,6 +313,7 @@ interface RobotModelProps {
     showOrigins?: boolean;
     showJointAxes?: boolean;
     robotLinks?: Record<string, UrdfLink>; // Link data from the app state, contains inertial info
+    focusTarget?: string | null;
 }
 
 // Empty raycast function to disable raycast on collision meshes
@@ -323,6 +325,7 @@ const highlightMaterial = new THREE.MeshPhongMaterial({
     color: 0x60a5fa, // Blue-400
     emissive: 0x60a5fa,
     emissiveIntensity: 0.25,
+    side: THREE.DoubleSide,
 });
 
 const collisionHighlightMaterial = new THREE.MeshPhongMaterial({
@@ -343,11 +346,11 @@ const collisionBaseMaterial = new THREE.MeshBasicMaterial({
     depthTest: false
 });
 
-function RobotModel({ urdfContent, assets, onRobotLoaded, showCollision = false, showVisual = true, onSelect, onJointChange, jointAngles, setIsDragging, setActiveJoint, justSelectedRef, t, mode, selection, hoveredSelection, highlightMode = 'link', showInertia = false, showCenterOfMass = false, showOrigins = false, showJointAxes = false, robotLinks }: RobotModelProps & { selection?: URDFViewerProps['selection'], hoveredSelection?: URDFViewerProps['selection'] }) {
+function RobotModel({ urdfContent, assets, onRobotLoaded, showCollision = false, showVisual = true, onSelect, onJointChange, jointAngles, setIsDragging, setActiveJoint, justSelectedRef, t, mode, selection, hoveredSelection, highlightMode = 'link', showInertia = false, showCenterOfMass = false, showOrigins = false, showJointAxes = false, robotLinks, focusTarget }: RobotModelProps & { selection?: URDFViewerProps['selection'], hoveredSelection?: URDFViewerProps['selection'] }) {
     const [robot, setRobot] = useState<THREE.Object3D | null>(null);
     const [error, setError] = useState<string | null>(null);
     const [robotVersion, setRobotVersion] = useState(0); // Track async loading updates
-    const { scene, camera, gl, invalidate } = useThree();
+    const { scene, camera, gl, invalidate, controls } = useThree();
     const mouseRef = useRef(new THREE.Vector2(-1000, -1000));
     const raycasterRef = useRef(new THREE.Raycaster());
     const hoveredLinkRef = useRef<string | null>(null);
@@ -369,6 +372,81 @@ function RobotModel({ urdfContent, assets, onRobotLoaded, showCollision = false,
     // Refs for visibility to use inside loadRobot (avoiding stale closures without triggering re-loads)
     const showVisualRef = useRef(showVisual);
     const showCollisionRef = useRef(showCollision);
+
+    // Focus animation state
+    const focusTargetRef = useRef<THREE.Vector3 | null>(null);
+    const cameraTargetPosRef = useRef<THREE.Vector3 | null>(null);
+    const isFocusingRef = useRef(false);
+
+    // Handle focus target change
+    useEffect(() => {
+        if (!focusTarget || !robot) return;
+
+        // Find the target object
+        let targetObj: THREE.Object3D | undefined;
+        
+        // Search in links
+        if ((robot as any).links && (robot as any).links[focusTarget]) {
+            targetObj = (robot as any).links[focusTarget];
+        } 
+        // Search in joints (if focusTarget is a joint ID, though TreeEditor passes link IDs mostly)
+        else if ((robot as any).joints && (robot as any).joints[focusTarget]) {
+            targetObj = (robot as any).joints[focusTarget];
+        }
+        // Fallback: search by name in graph
+        else {
+            targetObj = robot.getObjectByName(focusTarget);
+        }
+
+        if (targetObj) {
+            // Calculate target center in world coordinates
+            const box = new THREE.Box3().setFromObject(targetObj);
+            const center = box.getCenter(new THREE.Vector3());
+            const size = box.getSize(new THREE.Vector3());
+            const maxDim = Math.max(size.x, size.y, size.z);
+            
+            // Determine optimal camera distance based on object size
+            // Avoid getting too close for small objects or too far for large ones
+            const distance = Math.max(maxDim * 2, 0.5);
+            
+            // Calculate new camera position
+            // Keep current camera direction relative to target, just adjust distance/center
+            const direction = new THREE.Vector3().subVectors(camera.position, controls ? (controls as any).target : new THREE.Vector3(0,0,0)).normalize();
+            
+            // If direction is zero (camera at target), pick a default direction
+            if (direction.lengthSq() < 0.001) direction.set(1, 1, 1).normalize();
+            
+            const newPos = center.clone().add(direction.multiplyScalar(distance));
+
+            focusTargetRef.current = center;
+            cameraTargetPosRef.current = newPos;
+            isFocusingRef.current = true;
+            invalidate();
+        }
+    }, [focusTarget, robot, camera, controls, invalidate]);
+
+    // Animate camera focus
+    useFrame((state, delta) => {
+        if (isFocusingRef.current && focusTargetRef.current && cameraTargetPosRef.current && controls) {
+            const orbitControls = controls as any;
+            const step = 5 * delta; // Animation speed
+            
+            // Interpolate controls target (lookAt)
+            orbitControls.target.lerp(focusTargetRef.current, step);
+            
+            // Interpolate camera position
+            camera.position.lerp(cameraTargetPosRef.current, step);
+            
+            orbitControls.update();
+            invalidate();
+
+            // Check if close enough to stop
+            if (camera.position.distanceTo(cameraTargetPosRef.current) < 0.01 && 
+                orbitControls.target.distanceTo(focusTargetRef.current) < 0.01) {
+                isFocusingRef.current = false;
+            }
+        }
+    });
     useEffect(() => { showVisualRef.current = showVisual; }, [showVisual]);
     useEffect(() => { showCollisionRef.current = showCollision; }, [showCollision]);
     
@@ -380,43 +458,68 @@ function RobotModel({ urdfContent, assets, onRobotLoaded, showCollision = false,
             // Use provided subType or fall back to current highlight mode
             const targetSubType = subType || (highlightMode === 'collision' ? 'collision' : 'visual');
             
-            // If reverting, we need to restore all meshes that have __origMaterial
-            if (revert) {
-                robot.traverse((c: any) => {
-                    if (c.isMesh && c.__origMaterial !== undefined) {
-                        c.material = c.__origMaterial;
-                        delete c.__origMaterial;
+            const revertMesh = (c: any) => {
+                if (c.isMesh && c.__origMaterial !== undefined) {
+                    c.material = c.__origMaterial;
+                    delete c.__origMaterial;
+                    
+                    // Restore visibility state
+                    const isCollider = c.isURDFCollider || c.userData.isCollisionMesh;
+                    if (isCollider) {
+                        c.visible = showCollision;
+                        // Ensure parent group is visible if needed (collision groups are isURDFCollider)
+                        if (c.parent && c.parent.isURDFCollider) c.parent.visible = showCollision;
                         
-                        // Restore visibility state
-                        const isCollider = c.isURDFCollider || c.userData.isCollisionMesh;
-                        if (isCollider) {
-                            c.visible = showCollision;
-                            // Ensure parent group is visible if needed (collision groups are isURDFCollider)
-                            if (c.parent && c.parent.isURDFCollider) c.parent.visible = showCollision;
-                            
-                            // Handle both single material and array of materials
-                            const materials = Array.isArray(c.material) ? c.material : [c.material];
-                            materials.forEach((m: any) => {
-                                if (m) {
-                                    m.transparent = true;
-                                    m.opacity = 0.4;
-                                }
-                            });
-                            c.renderOrder = 999;
-                        } else {
-                            // Restore visual mesh visibility
-                            c.visible = showVisual;
-                            // Restore parent visual group visibility
-                            if (c.parent && c.parent.parent && c.parent.parent.isURDFLink && !c.parent.isURDFCollider) {
-                                c.parent.visible = showVisual;
+                        // Handle both single material and array of materials
+                        const materials = Array.isArray(c.material) ? c.material : [c.material];
+                        materials.forEach((m: any) => {
+                            if (m) {
+                                m.transparent = true;
+                                m.opacity = 0.4;
                             }
+                        });
+                        c.renderOrder = 999;
+                    } else {
+                        // Restore visual mesh visibility
+                        c.visible = showVisual;
+                        // Restore parent visual group visibility
+                        if (c.parent && c.parent.parent && c.parent.parent.isURDFLink && !c.parent.isURDFCollider) {
+                            c.parent.visible = showVisual;
                         }
                     }
-                });
+                }
+            };
+
+            const linkObj = linkName ? (robot as any).links?.[linkName] : null;
+
+            // If reverting, we need to restore meshes
+            if (revert) {
+                if (meshToHighlight) {
+                    revertMesh(meshToHighlight);
+                    // Also traverse children of the mesh if any (though usually meshToHighlight is a leaf-ish mesh)
+                    meshToHighlight.traverse((child: any) => {
+                        if (child !== meshToHighlight) revertMesh(child);
+                    });
+                } else if (linkObj) {
+                    // Targeted revert: only revert this link's meshes
+                    const traverseRevert = (c: any, isRoot: boolean) => {
+                        // Stop if we hit another joint (not the root)
+                        if (!isRoot && c.isURDFJoint) return;
+                        
+                        revertMesh(c);
+                        
+                        c.children.forEach((child: any) => {
+                            traverseRevert(child, false);
+                        });
+                    };
+                    traverseRevert(linkObj, true);
+                } else {
+                    // Global revert (fallback)
+                    robot.traverse(revertMesh);
+                }
                 return;
             }
 
-            const linkObj = linkName ? (robot as any).links?.[linkName] : null;
             if (!linkObj && !meshToHighlight) return;
             
             // Traverse the link and its children, applying highlight
@@ -637,8 +740,11 @@ function RobotModel({ urdfContent, assets, onRobotLoaded, showCollision = false,
                     if (p.userData?.isGizmo) return false;
                     p = p.parent;
                 }
-                const isCollider = (hit.object as any).isURDFCollider || hit.object.userData.isCollisionMesh;
-                return isCollisionMode ? isCollider : !isCollider;
+                // Determine if we should filter based on mode.
+                // WE REMOVED STRICT FILTERING: If it's visible and hit, it's selectable.
+                // This fixes issues where "clicking the front object" fails if the front object
+                // type doesn't match the current mode (e.g. clicking a visible collider in visual mode).
+                return true;
             });
             
             if (validHits.length > 0) {
@@ -647,7 +753,7 @@ function RobotModel({ urdfContent, assets, onRobotLoaded, showCollision = false,
                 // Mark that we just selected something - prevent onPointerMissed from deselecting
                 if (justSelectedRef) {
                     justSelectedRef.current = true;
-                    setTimeout(() => { justSelectedRef.current = false; }, 100);
+                    // We clear this in handleMouseUp to handle long clicks correctly
                 }
                 
                 // Find the link that was clicked for selection
@@ -655,6 +761,7 @@ function RobotModel({ urdfContent, assets, onRobotLoaded, showCollision = false,
                 
                 // Handle link selection
                 if (linkObj && onSelect) {
+                    // Use current mode to determine subtype, regardless of what was clicked
                     const subType = isCollisionMode ? 'collision' : 'visual';
 
                     if (mode === 'detail') {
@@ -674,6 +781,13 @@ function RobotModel({ urdfContent, assets, onRobotLoaded, showCollision = false,
                     if (mode === 'detail' || !((linkObj.parent as any)?.isURDFJoint)) {
                         highlightGeometry(linkObj.name, false, subType);
                     }
+                    
+                    // CRITICAL: Clear hoveredLinkRef to prevent useFrame from incorrectly
+                    // removing the highlight due to race condition with async React state update.
+                    // Without this, useFrame may see hoveredLinkRef !== selection?.id (stale)
+                    // and revert the highlight we just applied.
+                    hoveredLinkRef.current = null;
+                    (hoveredLinkRef as any).currentMesh = null;
                 }
                 
                 // Find nearest movable joint for dragging (like urdf-loader's approach)
@@ -704,10 +818,27 @@ function RobotModel({ urdfContent, assets, onRobotLoaded, showCollision = false,
                 dragJoint.current = null;
                 setIsDraggingRef.current?.(false);
             }
+
+            // Clear selection protection on mouse up with a small delay
+            // to ensure onPointerMissed (which fires on click) sees the flag
+            if (justSelectedRef) {
+                setTimeout(() => {
+                    justSelectedRef.current = false;
+                }, 100);
+            }
         };
         
         const handleMouseLeave = () => {
             mouseRef.current.set(-1000, -1000);
+            
+            // Force clear hover if active (to prevent stuck highlights)
+            if (hoveredLinkRef.current && hoveredLinkRef.current !== currentSelectionRef.current.id) {
+                const isCollisionMode = highlightMode === 'collision';
+                highlightGeometry(hoveredLinkRef.current, true, isCollisionMode ? 'collision' : 'visual', (hoveredLinkRef as any).currentMesh);
+                hoveredLinkRef.current = null;
+                (hoveredLinkRef as any).currentMesh = null;
+            }
+
             handleMouseUp();
         };
         
@@ -730,6 +861,10 @@ function RobotModel({ urdfContent, assets, onRobotLoaded, showCollision = false,
         
         // If dragging joint, do not update hover highlight
         if (isDraggingJoint.current) return;
+        
+        // Skip hover processing briefly after selection to avoid race condition
+        // with async React state update (selection?.id may be stale)
+        if (justSelectedRef?.current) return;
 
         raycasterRef.current.setFromCamera(mouseRef.current, camera);
         
@@ -753,8 +888,8 @@ function RobotModel({ urdfContent, assets, onRobotLoaded, showCollision = false,
                     if (p.userData?.isGizmo) return false;
                     p = p.parent;
                 }
-                const isCollider = (hit.object as any).isURDFCollider || hit.object.userData.isCollisionMesh;
-                return isCollisionMode ? isCollider : !isCollider;
+                // Relaxed filtering for hover as well
+                return true;
             });
 
             if (validHits.length > 0) {
@@ -1223,15 +1358,34 @@ function RobotModel({ urdfContent, assets, onRobotLoaded, showCollision = false,
             highlightGeometry(currentSelectionRef.current.id, true, currentSelectionRef.current.subType as any);
         }
         
-        // Apply new selection highlight
+        let targetId: string | null = null;
+        let targetSubType = selection?.subType;
+
+        // Determine what to highlight based on selection type
         if (selection?.type === 'link' && selection.id) {
+            targetId = selection.id;
+        } else if (selection?.type === 'joint' && selection.id) {
+            // If a joint is selected, highlight its child link
+            // Find the joint object in the robot hierarchy
+            const jointObj = robot.getObjectByName(selection.id);
+            if (jointObj) {
+                // Find the child that is a URDFLink
+                const childLink = jointObj.children.find((c: any) => c.isURDFLink);
+                if (childLink) {
+                    targetId = childLink.name;
+                }
+            }
+        }
+        
+        // Apply new selection highlight
+        if (targetId) {
             // Pass selection.subType (can be undefined), allow highlightGeometry to fallback to highlightMode
-            highlightGeometry(selection.id, false, selection.subType);
-            currentSelectionRef.current = { id: selection.id, subType: selection.subType || null };
+            highlightGeometry(targetId, false, targetSubType);
+            currentSelectionRef.current = { id: targetId, subType: targetSubType || null };
         } else {
             currentSelectionRef.current = { id: null, subType: null };
         }
-    }, [robot, selection?.id, selection?.subType, highlightGeometry, robotVersion, highlightMode, showCollision]);
+    }, [robot, selection?.type, selection?.id, selection?.subType, highlightGeometry, robotVersion, highlightMode, showCollision]);
 
     // Effect to handle external hover highlighting (Moved here to run AFTER visibility effects)
     useEffect(() => {
@@ -1515,7 +1669,6 @@ const JointInteraction = ({ joint, value, onChange }: { joint: any, value: numbe
                 onMouseDown={() => { isDragging.current = true; }}
                 onMouseUp={() => { isDragging.current = false; }}
                 onObjectChange={handleChange}
-                depthTest={false}
             />
         </>
     );
@@ -1620,7 +1773,8 @@ const JointControlItem = ({
     angleUnit, 
     activeJoint, 
     setActiveJoint, 
-    handleJointAngleChange 
+    handleJointAngleChange,
+    onSelect
 }: { 
     name: string, 
     joint: any, 
@@ -1628,7 +1782,8 @@ const JointControlItem = ({
     angleUnit: 'rad' | 'deg', 
     activeJoint: string | null, 
     setActiveJoint: (name: string | null) => void, 
-    handleJointAngleChange: (name: string, val: number) => void 
+    handleJointAngleChange: (name: string, val: number) => void,
+    onSelect?: (type: 'link' | 'joint', id: string) => void
 }) => {
     const limit = joint.limit || { lower: -Math.PI, upper: Math.PI };
     const value = jointAngles[name] || 0;
@@ -1669,37 +1824,51 @@ const JointControlItem = ({
 
         return (
 
-            <div 
+                        <div 
 
-                ref={itemRef}
+                            ref={itemRef}
 
-                className={`space-y-1 p-2 rounded-lg transition-colors ${
+                            onClick={() => {
 
-                    activeJoint === name 
+                                setActiveJoint(name);
 
-                        ? 'bg-blue-100/50 dark:bg-google-blue/20 border border-blue-300 dark:border-google-blue/50' 
+                                onSelect?.('joint', name);
 
-                        : 'bg-white/50 dark:bg-google-dark-bg/30 border border-transparent hover:bg-slate-100 dark:hover:bg-google-dark-bg/50'
+                            }}
 
-                }`}
+                            className={`space-y-1 p-2 rounded-lg transition-colors cursor-pointer ${
 
-            >
+                                activeJoint === name 
+
+                                    ? 'bg-blue-100/50 dark:bg-google-blue/20 border border-blue-300 dark:border-google-blue/50' 
+
+                                    : 'bg-white/50 dark:bg-google-dark-bg/30 border border-transparent hover:bg-slate-100 dark:hover:bg-google-dark-bg/50'
+
+                            }`}
+
+                        >
 
                 <div className="flex justify-between text-xs items-center">
 
-                    <span 
+                                        <span 
 
-                        className={`truncate cursor-pointer font-medium ${activeJoint === name ? 'text-blue-600 dark:text-google-blue' : 'text-slate-700 dark:text-slate-200'}`} 
+                                            className={`truncate cursor-pointer font-medium ${activeJoint === name ? 'text-blue-600 dark:text-google-blue' : 'text-slate-700 dark:text-slate-200'}`} 
 
-                        title={name}
+                                            title={name}
 
-                        onClick={() => setActiveJoint(name)}
+                                            onClick={() => {
 
-                    >
+                                                setActiveJoint(name);
 
-                        {name}
+                                                onSelect?.('joint', name);
 
-                    </span>
+                                            }}
+
+                                        >
+
+                                            {name}
+
+                                        </span>
 
                     <div className="flex items-center gap-1">
 
@@ -1763,7 +1932,7 @@ const JointControlItem = ({
 
     };
 
-export function URDFViewer({ urdfContent, assets, onJointChange, lang, mode = 'detail', onSelect, theme, selection, hoveredSelection, robotLinks }: URDFViewerProps) {
+export function URDFViewer({ urdfContent, assets, onJointChange, lang, mode = 'detail', onSelect, theme, selection, hoveredSelection, robotLinks, focusTarget }: URDFViewerProps) {
     const t = translations[lang];
     const [robot, setRobot] = useState<any>(null);
     const [selectedJoint, setSelectedJoint] = useState<string | null>(null);
@@ -1782,15 +1951,15 @@ export function URDFViewer({ urdfContent, assets, onJointChange, lang, mode = 'd
     
     // Automatically show collisions when collision highlight mode is selected
     useEffect(() => {
-        if (highlightMode === 'collision') {
-            setShowCollision(true);
-        }
+        // if (highlightMode === 'collision') {
+        //     setShowCollision(true);
+        // }
     }, [highlightMode]);
     
     // Automatically show collisions when collision tab is selected (legacy support for PropertyEditor)
     useEffect(() => {
         if (selection?.subType === 'collision') {
-            setShowCollision(true);
+            // setShowCollision(true);
             setHighlightMode('collision');
         } else if (selection?.subType === 'visual') {
             setHighlightMode('link');
@@ -1805,8 +1974,36 @@ export function URDFViewer({ urdfContent, assets, onJointChange, lang, mode = 'd
     const [jointPanelPos, setJointPanelPos] = useState<{ x: number; y: number } | null>(null);
     const [dragging, setDragging] = useState<'options' | 'joints' | null>(null);
     const dragStartRef = useRef<{ mouseX: number; mouseY: number; panelX: number; panelY: number } | null>(null);
-    const [isOptionsCollapsed, setIsOptionsCollapsed] = useState(false);
-    const [isJointsCollapsed, setIsJointsCollapsed] = useState(false);
+    const [isOptionsCollapsed, setIsOptionsCollapsed] = useState(() => {
+        if (typeof window !== 'undefined') {
+            const saved = localStorage.getItem('urdf_viewer_options_collapsed');
+            return saved === 'true';
+        }
+        return false;
+    });
+    const [isJointsCollapsed, setIsJointsCollapsed] = useState(() => {
+        if (typeof window !== 'undefined') {
+            const saved = localStorage.getItem('urdf_viewer_joints_collapsed');
+            return saved === 'true';
+        }
+        return false;
+    });
+
+    const toggleOptionsCollapsed = () => {
+        setIsOptionsCollapsed(prev => {
+            const newState = !prev;
+            localStorage.setItem('urdf_viewer_options_collapsed', String(newState));
+            return newState;
+        });
+    };
+
+    const toggleJointsCollapsed = () => {
+        setIsJointsCollapsed(prev => {
+            const newState = !prev;
+            localStorage.setItem('urdf_viewer_joints_collapsed', String(newState));
+            return newState;
+        });
+    };
     
     // Joint control state
     const [jointAngles, setJointAngles] = useState<Record<string, number>>({});
@@ -1864,7 +2061,8 @@ export function URDFViewer({ urdfContent, assets, onJointChange, lang, mode = 'd
             // Find the joint that drives this link
             // In urdf-loader, joint.child is the link object
             const jointName = Object.keys(robot.joints).find(name => {
-                return robot.joints[name].child.name === id && robot.joints[name].jointType !== 'fixed';
+                const joint = robot.joints[name];
+                return joint?.child?.name === id && joint?.jointType !== 'fixed';
             });
             if (jointName) {
                 setActiveJoint(jointName);
@@ -1878,6 +2076,28 @@ export function URDFViewer({ urdfContent, assets, onJointChange, lang, mode = 'd
         }
     }, [onSelect, robot, selection?.subType]);
     
+    // Sync activeJoint with external selection
+    useEffect(() => {
+        if (!robot) return;
+
+        if (selection?.type === 'joint' && selection.id) {
+            setActiveJoint(selection.id);
+        } else if (selection?.type === 'link' && selection.id) {
+            // Find the joint that drives this link
+            const jointName = Object.keys(robot.joints).find(name => {
+                const joint = robot.joints[name];
+                return joint?.child?.name === selection.id && joint?.jointType !== 'fixed';
+            });
+            if (jointName) {
+                setActiveJoint(jointName);
+            } else {
+                setActiveJoint(null);
+            }
+        } else {
+            setActiveJoint(null);
+        }
+    }, [selection, robot]);
+
     // Drag handlers for panels - fixed offset calculation
     const handleMouseDown = useCallback((panel: 'options' | 'joints', e: React.MouseEvent) => {
         e.preventDefault();
@@ -1970,7 +2190,7 @@ export function URDFViewer({ urdfContent, assets, onJointChange, lang, mode = 'd
                             {mode === 'hardware' ? t.hardwareOptions : t.detailOptions}
                         </div>
                         <button 
-                            onClick={(e) => { e.stopPropagation(); setIsOptionsCollapsed(!isOptionsCollapsed); }}
+                            onClick={(e) => { e.stopPropagation(); toggleOptionsCollapsed(); }}
                             className="text-slate-400 hover:text-slate-900 dark:hover:text-white p-1 hover:bg-slate-200 dark:hover:bg-google-dark-border rounded"
                         >
                             {isOptionsCollapsed ? (
@@ -2122,11 +2342,10 @@ export function URDFViewer({ urdfContent, assets, onJointChange, lang, mode = 'd
                             >
                                 {angleUnit.toUpperCase()}
                             </button>
-                            <button 
-                                onClick={(e) => { e.stopPropagation(); setIsJointsCollapsed(!isJointsCollapsed); }}
-                                className="text-slate-400 hover:text-slate-900 dark:hover:text-white p-1 hover:bg-slate-200 dark:hover:bg-google-dark-border rounded"
-                            >
-                                {isJointsCollapsed ? (
+                                                    <button 
+                                                        onClick={(e) => { e.stopPropagation(); toggleJointsCollapsed(); }}
+                                                        className="text-slate-400 hover:text-slate-900 dark:hover:text-white p-1 hover:bg-slate-200 dark:hover:bg-google-dark-border rounded"
+                                                    >                                {isJointsCollapsed ? (
                                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
                                 ) : (
                                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" /></svg>
@@ -2149,6 +2368,7 @@ export function URDFViewer({ urdfContent, assets, onJointChange, lang, mode = 'd
                                     activeJoint={activeJoint}
                                     setActiveJoint={setActiveJoint}
                                     handleJointAngleChange={handleJointAngleChange}
+                                    onSelect={onSelect}
                                 />
                             ))}
                     </div>
@@ -2203,6 +2423,7 @@ export function URDFViewer({ urdfContent, assets, onJointChange, lang, mode = 'd
                         showOrigins={showOrigins}
                         showJointAxes={showJointAxes}
                         robotLinks={robotLinks}
+                        focusTarget={focusTarget}
                     />
                 </Suspense>
                 
