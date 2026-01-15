@@ -138,9 +138,16 @@ export const translations = {
     linkMode: "Link",
     collisionMode: "Collision",
     toolbox: "Toolbox",
-    robotRedirect: "Robot Redirect",
+    robotRedirect: "Motion Tracking",
     trajectoryEditing: "Trajectory Editing",
-    featureInDevelopment: "Feature in development"
+    featureInDevelopment: "Feature in development",
+    
+    // Toolbox Descriptions
+    aiAssistantDesc: "Analyze robot structure and physics with AI",
+    motionTrackingDesc: "Analyze and follow motion trajectories",
+    trajectoryEditingDesc: "Visual motion sequence editor",
+    bridgedpEngine: "BridgeDP Engine",
+    bridgedpEngineDesc: "Online robot training platform",
   },
   zh: {
     // Header
@@ -278,8 +285,15 @@ export const translations = {
     linkMode: "连杆",
     collisionMode: "碰撞体",
     toolbox: "工具箱",
-    robotRedirect: "机器人重定向",
+    robotRedirect: "轨迹跟踪",
     trajectoryEditing: "轨迹编辑",
-    featureInDevelopment: "功能开发中"
+    featureInDevelopment: "功能开发中",
+
+    // 工具箱描述
+    aiAssistantDesc: "使用 AI 分析机器人结构和物理合理性",
+    motionTrackingDesc: "分析和跟踪运动轨迹",
+    trajectoryEditingDesc: "可视化运动序列编辑器",
+    bridgedpEngine: "桥介引擎",
+    bridgedpEngineDesc: "在线训练机器人",
   }
 };

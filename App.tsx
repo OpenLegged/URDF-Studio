@@ -1347,187 +1347,196 @@ export default function App() {
       />
 
       {/* Header */}
-      <header className="h-14 border-b flex items-center justify-between px-4 shrink-0 relative bg-white dark:bg-google-dark-surface border-slate-200 dark:border-google-dark-border">
-        <div className="flex items-center gap-2">
-            <h1 className="text-lg font-bold tracking-tight text-slate-800 dark:text-white mr-4">{t.appName}</h1>
+      <header className="h-12 border-b flex items-center justify-between px-3 shrink-0 relative bg-white dark:bg-[#1a1d21] border-slate-200/80 dark:border-slate-700/50">
+        {/* Left Section - Logo & Menus */}
+        <div className="flex items-center gap-1">
+            {/* Logo */}
+            <div className="flex items-center gap-2 pr-3 mr-1 border-r border-slate-200 dark:border-slate-700/50">
+                <img src="/logo.png" alt="Logo" className="w-7 h-7 object-contain" />
+            </div>
             
-            <div className="relative">
-                <button 
-                    onClick={() => setIsFileMenuOpen(!isFileMenuOpen)}
-                    className="flex items-center gap-2 px-3 py-1.5 border rounded text-sm transition-colors bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border-slate-300 dark:border-slate-600"
-                    title={t.file}
-                >
-                    <FileText className="w-4 h-4" />
-                    {t.file}
-                    <ChevronDown className="w-3 h-3 ml-0.5 opacity-70" />
-                </button>
-                
-                {isFileMenuOpen && (
-                    <>
-                        <div 
-                            className="fixed inset-0 z-40" 
-                            onClick={() => setIsFileMenuOpen(false)}
-                        />
-                        <div className="absolute top-full left-0 mt-1 w-48 bg-white dark:bg-slate-800 rounded-md shadow-lg border border-slate-200 dark:border-slate-700 z-50 overflow-hidden py-1">
-                            <button
-                                onClick={() => {
-                                    setIsFileMenuOpen(false);
-                                    setTimeout(() => importFolderInputRef.current?.click(), 0);
-                                }}
-                                className="w-full text-left px-4 py-2 text-xs hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 flex items-center gap-2"
-                            >
-                                <Folder className="w-3.5 h-3.5" />
-                                {t.importFolder}
-                            </button>
-                            <button
-                                onClick={() => {
-                                    setIsFileMenuOpen(false);
-                                    setTimeout(() => importInputRef.current?.click(), 0);
-                                }}
-                                className="w-full text-left px-4 py-2 text-xs hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 flex items-center gap-2"
-                            >
-                                <Download className="w-3.5 h-3.5" />
-                                {lang === 'zh' ? '导入 ZIP / 文件' : 'Import ZIP / File'}
-                            </button>
-                            <div className="h-px bg-slate-200 dark:bg-slate-700 my-1 mx-2" />
-                            <button
-                                onClick={() => {
-                                    setIsFileMenuOpen(false);
-                                    handleExport();
-                                }}
-                                className="w-full text-left px-4 py-2 text-xs hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 flex items-center gap-2"
-                            >
-                                <Upload className="w-3.5 h-3.5" />
-                                {t.export}
-                            </button>
-                        </div>
-                    </>
-                )}
-            </div>
-
-            <div className="relative">
-                <button 
-                    onClick={() => setIsToolboxOpen(!isToolboxOpen)}
-                    className={`flex items-center gap-2 px-3 py-1.5 border rounded text-sm transition-all ${isToolboxOpen ? 'bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800 text-blue-600 dark:text-blue-300 shadow-sm ring-2 ring-blue-100 dark:ring-blue-900/30' : 'bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-200 border-slate-300 dark:border-slate-600'}`}
-                    title={t.toolbox}
-                >
-                    <Briefcase className="w-4 h-4" />
-                    {t.toolbox}
-                    <ChevronDown className={`w-3 h-3 ml-0.5 opacity-70 transition-transform duration-200 ${isToolboxOpen ? 'rotate-180' : ''}`} />
-                </button>
-                
-                {isToolboxOpen && (
-                    <>
-                        <div 
-                            className="fixed inset-0 z-40" 
-                            onClick={() => setIsToolboxOpen(false)}
-                        />
-                        <div className="absolute top-full left-0 mt-3 w-[340px] bg-white/95 dark:bg-slate-800/95 backdrop-blur-md rounded-xl shadow-2xl border border-slate-200 dark:border-slate-700 z-50 overflow-hidden p-3 animate-in fade-in zoom-in-95 duration-100 origin-top-left">
-                            <div className="text-xs font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider mb-2 px-1">
-                                {lang === 'zh' ? '可用工具' : 'Available Tools'}
-                            </div>
-                            <div className="grid grid-cols-3 gap-2">
+            {/* Menu Buttons */}
+            <div className="flex items-center">
+                <div className="relative">
+                    <button 
+                        onClick={() => setIsFileMenuOpen(!isFileMenuOpen)}
+                        className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium transition-all ${isFileMenuOpen ? 'bg-slate-100 dark:bg-slate-700 text-slate-900 dark:text-white' : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-white'}`}
+                    >
+                        <FileText className="w-3.5 h-3.5" />
+                        {t.file}
+                        <ChevronDown className={`w-3 h-3 opacity-60 transition-transform ${isFileMenuOpen ? 'rotate-180' : ''}`} />
+                    </button>
+                    
+                    {isFileMenuOpen && (
+                        <>
+                            <div className="fixed inset-0 z-40" onClick={() => setIsFileMenuOpen(false)} />
+                            <div className="absolute top-full left-0 mt-1 w-52 bg-white dark:bg-slate-800 rounded-lg shadow-xl border border-slate-200 dark:border-slate-700 z-50 overflow-hidden py-1">
                                 <button
-                                    onClick={() => {
-                                        setIsToolboxOpen(false);
-                                        setIsAIModalOpen(true);
-                                        setAiResponse(null); 
-                                        setInspectionReport(null); 
-                                        setAiPrompt('');
-                                        setInspectionProgress(null); 
-                                        setReportGenerationTimer(null);
-                                    }}
-                                    className="flex flex-col items-center justify-center p-3 gap-2 rounded-lg border border-transparent hover:border-purple-200 dark:hover:border-purple-800/50 bg-slate-50 dark:bg-slate-800/50 hover:bg-purple-50 dark:hover:bg-purple-900/20 transition-all group"
+                                    onClick={() => { setIsFileMenuOpen(false); setTimeout(() => importFolderInputRef.current?.click(), 0); }}
+                                    className="w-full text-left px-3 py-2 text-xs hover:bg-slate-50 dark:hover:bg-slate-700/50 text-slate-700 dark:text-slate-200 flex items-center gap-2.5"
                                 >
-                                    <div className="p-2 bg-white dark:bg-slate-700 rounded-lg shadow-sm group-hover:shadow text-purple-600 dark:text-purple-400 group-hover:scale-110 transition-transform">
-                                        <ScanSearch className="w-5 h-5" />
-                                    </div>
-                                    <span className="text-xs font-medium text-slate-700 dark:text-slate-200 text-center leading-tight">{t.aiAssistant}</span>
+                                    <Folder className="w-4 h-4 text-slate-400" />
+                                    {t.importFolder}
                                 </button>
-                                
                                 <button
-                                    onClick={() => {
-                                        setIsToolboxOpen(false);
-                                        setToast({ show: true, message: t.featureInDevelopment, type: 'info' });
-                                        setTimeout(() => setToast(prev => ({ ...prev, show: false })), 2000);
-                                    }}
-                                    className="flex flex-col items-center justify-center p-3 gap-2 rounded-lg border border-transparent hover:border-blue-200 dark:hover:border-blue-800/50 bg-slate-50 dark:bg-slate-800/50 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-all group opacity-80 hover:opacity-100"
+                                    onClick={() => { setIsFileMenuOpen(false); setTimeout(() => importInputRef.current?.click(), 0); }}
+                                    className="w-full text-left px-3 py-2 text-xs hover:bg-slate-50 dark:hover:bg-slate-700/50 text-slate-700 dark:text-slate-200 flex items-center gap-2.5"
                                 >
-                                    <div className="p-2 bg-white dark:bg-slate-700 rounded-lg shadow-sm group-hover:shadow text-blue-600 dark:text-blue-400 group-hover:scale-110 transition-transform">
-                                        <RefreshCw className="w-5 h-5" />
-                                    </div>
-                                    <span className="text-xs font-medium text-slate-700 dark:text-slate-200 text-center leading-tight">{t.robotRedirect}</span>
+                                    <Download className="w-4 h-4 text-slate-400" />
+                                    {lang === 'zh' ? '导入 ZIP / 文件' : 'Import ZIP / File'}
                                 </button>
-
+                                <div className="h-px bg-slate-100 dark:bg-slate-700 my-1" />
                                 <button
-                                    onClick={() => {
-                                        setIsToolboxOpen(false);
-                                        window.open('https://motion-editor.cyoahs.dev/', '_blank');
-                                    }}
-                                    className="flex flex-col items-center justify-center p-3 gap-2 rounded-lg border border-transparent hover:border-green-200 dark:hover:border-green-800/50 bg-slate-50 dark:bg-slate-800/50 hover:bg-green-50 dark:hover:bg-green-900/20 transition-all group opacity-80 hover:opacity-100"
+                                    onClick={() => { setIsFileMenuOpen(false); handleExport(); }}
+                                    className="w-full text-left px-3 py-2 text-xs hover:bg-slate-50 dark:hover:bg-slate-700/50 text-slate-700 dark:text-slate-200 flex items-center gap-2.5"
                                 >
-                                    <div className="p-2 bg-white dark:bg-slate-700 rounded-lg shadow-sm group-hover:shadow text-green-600 dark:text-green-400 group-hover:scale-110 transition-transform">
-                                        <Activity className="w-5 h-5" />
-                                    </div>
-                                    <span className="text-xs font-medium text-slate-700 dark:text-slate-200 text-center leading-tight">{t.trajectoryEditing}</span>
+                                    <Upload className="w-4 h-4 text-slate-400" />
+                                    {t.export}
                                 </button>
                             </div>
-                        </div>
-                    </>
-                )}
+                        </>
+                    )}
+                </div>
+
+                <div className="relative">
+                    <button 
+                        onClick={() => setIsToolboxOpen(!isToolboxOpen)}
+                        className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium transition-all ${isToolboxOpen ? 'bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-300' : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-white'}`}
+                    >
+                        <Briefcase className="w-3.5 h-3.5" />
+                        {t.toolbox}
+                        <ChevronDown className={`w-3 h-3 opacity-60 transition-transform ${isToolboxOpen ? 'rotate-180' : ''}`} />
+                    </button>
+                    
+                    {isToolboxOpen && (
+                        <>
+                            <div className="fixed inset-0 z-40" onClick={() => setIsToolboxOpen(false)} />
+                            <div className="absolute top-full left-0 mt-1 w-[280px] bg-white dark:bg-slate-800 rounded-lg shadow-xl border border-slate-200 dark:border-slate-700 z-50 p-2">
+                                <div className="space-y-1">
+                                    <button
+                                        onClick={() => {
+                                            setIsToolboxOpen(false);
+                                            setIsAIModalOpen(true);
+                                            setAiResponse(null); setInspectionReport(null); setAiPrompt('');
+                                            setInspectionProgress(null); setReportGenerationTimer(null);
+                                        }}
+                                        className="w-full flex items-center gap-3 px-2.5 py-2 rounded-md hover:bg-purple-50 dark:hover:bg-purple-900/20 transition-all group"
+                                    >
+                                        <div className="w-9 h-9 flex items-center justify-center bg-purple-100 dark:bg-purple-900/40 rounded-lg text-purple-600 dark:text-purple-400 shrink-0">
+                                            <ScanSearch className="w-5 h-5" />
+                                        </div>
+                                        <div className="flex-1 text-left">
+                                            <div className="text-xs font-medium text-slate-700 dark:text-slate-200">{t.aiAssistant}</div>
+                                            <div className="text-[10px] text-slate-400 dark:text-slate-500">{t.aiAssistantDesc}</div>
+                                        </div>
+                                    </button>
+                                    
+                                    <button
+                                        onClick={() => {
+                                            setIsToolboxOpen(false);
+                                            window.open('https://motion-tracking.axell.top/', '_blank');
+                                        }}
+                                        className="w-full flex items-center gap-3 px-2.5 py-2 rounded-md hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-all group"
+                                    >
+                                        <div className="w-9 h-9 flex items-center justify-center bg-blue-100 dark:bg-blue-900/40 rounded-lg text-blue-600 dark:text-blue-400 shrink-0">
+                                            <RefreshCw className="w-5 h-5" />
+                                        </div>
+                                        <div className="flex-1 text-left">
+                                            <div className="text-xs font-medium text-slate-700 dark:text-slate-200">{t.robotRedirect}</div>
+                                            <div className="text-[10px] text-slate-400 dark:text-slate-500">{t.motionTrackingDesc}</div>
+                                        </div>
+                                    </button>
+
+                                    <button
+                                        onClick={() => { setIsToolboxOpen(false); window.open('https://motion-editor.cyoahs.dev/', '_blank'); }}
+                                        className="w-full flex items-center gap-3 px-2.5 py-2 rounded-md hover:bg-green-50 dark:hover:bg-green-900/20 transition-all group opacity-60"
+                                    >
+                                        <div className="w-9 h-9 flex items-center justify-center bg-green-100 dark:bg-green-900/40 rounded-lg text-green-600 dark:text-green-400 shrink-0">
+                                            <Activity className="w-5 h-5" />
+                                        </div>
+                                        <div className="flex-1 text-left">
+                                            <div className="text-xs font-medium text-slate-700 dark:text-slate-200">{t.trajectoryEditing}</div>
+                                            <div className="text-[10px] text-slate-400 dark:text-slate-500">{t.trajectoryEditingDesc}</div>
+                                        </div>
+                                    </button>
+
+                                    <button
+                                        onClick={() => {
+                                            setIsToolboxOpen(false);
+                                            window.open('https://engine.bridgedp.com/', '_blank');
+                                        }}
+                                        className="w-full flex items-center gap-3 px-2.5 py-2 rounded-md hover:bg-orange-50 dark:hover:bg-orange-900/20 transition-all group"
+                                    >
+                                        <div className="w-9 h-9 rounded-lg overflow-hidden border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-700 p-1.5 shrink-0">
+                                            <img src="/bridgedp-logo.png" alt="BridgeDP" className="w-full h-full object-contain" />
+                                        </div>
+                                        <div className="flex-1 text-left">
+                                            <div className="text-xs font-medium text-slate-700 dark:text-slate-200">{t.bridgedpEngine}</div>
+                                            <div className="text-[10px] text-slate-400 dark:text-slate-500">{t.bridgedpEngineDesc}</div>
+                                        </div>
+                                    </button>
+                                </div>
+                            </div>
+                        </>
+                    )}
+                </div>
             </div>
         </div>
 
-        {/* Mode Switcher */}
-        <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 flex rounded-lg p-1 border bg-slate-200 dark:bg-google-dark-bg border-slate-300 dark:border-google-dark-border">
-            <button 
-                onClick={() => setAppMode('skeleton')}
-                className={`flex items-center gap-2 px-4 py-1.5 rounded-md text-sm font-medium transition-all ${appMode === 'skeleton' ? 'bg-white dark:bg-google-dark-surface text-slate-800 dark:text-white shadow-sm' : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'}`}
-            >
-                <Activity className="w-4 h-4" />
-                {t.skeleton}
-            </button>
-            <button 
-                onClick={() => setAppMode('detail')}
-                className={`flex items-center gap-2 px-4 py-1.5 rounded-md text-sm font-medium transition-all ${appMode === 'detail' ? 'bg-white dark:bg-google-dark-surface text-slate-800 dark:text-white shadow-sm' : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'}`}
-            >
-                <Box className="w-4 h-4" />
-                {t.detail}
-            </button>
-            <button 
-                onClick={() => setAppMode('hardware')}
-                className={`flex items-center gap-2 px-4 py-1.5 rounded-md text-sm font-medium transition-all ${appMode === 'hardware' ? 'bg-white dark:bg-google-dark-surface text-slate-800 dark:text-white shadow-sm' : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'}`}
-            >
-                <Cpu className="w-4 h-4" />
-                {t.hardware}
-            </button>
+        {/* Center - Mode Switcher */}
+        <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2">
+            <div className="flex items-center bg-slate-100 dark:bg-slate-800 rounded-lg p-0.5">
+                <button 
+                    onClick={() => setAppMode('skeleton')}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all ${appMode === 'skeleton' ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-sm' : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'}`}
+                >
+                    <Activity className="w-3.5 h-3.5" />
+                    <span className="hidden sm:inline">{t.skeleton}</span>
+                </button>
+                <button 
+                    onClick={() => setAppMode('detail')}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all ${appMode === 'detail' ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-sm' : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'}`}
+                >
+                    <Box className="w-3.5 h-3.5" />
+                    <span className="hidden sm:inline">{t.detail}</span>
+                </button>
+                <button 
+                    onClick={() => setAppMode('hardware')}
+                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all ${appMode === 'hardware' ? 'bg-white dark:bg-slate-700 text-slate-900 dark:text-white shadow-sm' : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'}`}
+                >
+                    <Cpu className="w-3.5 h-3.5" />
+                    <span className="hidden sm:inline">{t.hardware}</span>
+                </button>
+            </div>
         </div>
 
-        <div className="flex items-center gap-2">
+        {/* Right Section - Actions */}
+        <div className="flex items-center gap-0.5">
             <button 
                 onClick={() => setLang(prev => prev === 'en' ? 'zh' : 'en')}
-                className="flex items-center justify-center p-2 border rounded transition-colors bg-slate-100 dark:bg-google-dark-bg hover:bg-slate-200 dark:hover:bg-google-dark-border text-slate-600 dark:text-slate-300 border-slate-300 dark:border-google-dark-border"
+                className="flex items-center justify-center gap-1 px-2 py-1.5 rounded-md text-xs font-medium text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-700 dark:hover:text-slate-200 transition-all"
                 title={lang === 'zh' ? "切换语言" : "Switch Language"}
             >
-                <Globe className="w-4 h-4" />
-                <span className="ml-1 text-xs font-bold">{lang === 'en' ? 'EN' : '中'}</span>
-            </button>
-
-            <button 
-                onClick={() => setIsAboutMenuOpen(true)}
-                className="flex items-center justify-center gap-2 px-3 py-1.5 border rounded transition-colors bg-slate-100 dark:bg-google-dark-bg hover:bg-slate-200 dark:hover:bg-google-dark-border text-slate-600 dark:text-slate-300 border-slate-300 dark:border-google-dark-border text-sm font-medium"
-                title={lang === 'zh' ? "关于" : "About"}
-            >
-                <Info className="w-4 h-4" />
-                {lang === 'zh' ? "关于" : "About"}
+                <Globe className="w-3.5 h-3.5" />
+                <span className="text-[10px] font-semibold">{lang === 'en' ? 'EN' : '中'}</span>
             </button>
 
             <button
                 onClick={() => setTheme(prev => prev === 'dark' ? 'light' : 'dark')}
-                className="flex items-center justify-center p-2 border rounded transition-colors bg-slate-100 dark:bg-google-dark-bg hover:bg-slate-200 dark:hover:bg-google-dark-border text-slate-600 dark:text-slate-300 border-slate-300 dark:border-google-dark-border"
+                className="flex items-center justify-center w-8 h-8 rounded-md text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-700 dark:hover:text-slate-200 transition-all"
                 title={lang === 'zh' ? "切换主题" : "Toggle Theme"}
             >
                 {theme === 'dark' ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
+            </button>
+
+            <div className="w-px h-5 bg-slate-200 dark:bg-slate-700 mx-1" />
+
+            <button 
+                onClick={() => setIsAboutMenuOpen(true)}
+                className="flex items-center justify-center w-8 h-8 rounded-md text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-700 dark:hover:text-slate-200 transition-all"
+                title={lang === 'zh' ? "关于" : "About"}
+            >
+                <Info className="w-4 h-4" />
             </button>
         </div>
       </header>
@@ -2097,7 +2106,7 @@ export default function App() {
                                       {lang === 'zh' ? '桥介引擎' : 'Bridgedp Engine'}
                                   </div>
                                   <div className="text-xs text-slate-500 dark:text-slate-400">
-                                      {lang === 'zh' ? '训练你的机器人' : 'Train your robot'}
+                                      {lang === 'zh' ? '感谢支持' : 'Thanks for support'}
                                   </div>
                               </div>
                               <ArrowRight className="w-4 h-4 text-slate-400 group-hover:text-blue-500 group-hover:translate-x-0.5 transition-all" />
