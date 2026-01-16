@@ -145,6 +145,11 @@ export const translations = {
     robotRedirect: "Motion Tracking",
     trajectoryEditing: "Trajectory Editing",
     featureInDevelopment: "Feature in development",
+    transformMode: "Transform Mode",
+    translateMode: "Translate",
+    rotateMode: "Rotate",
+    universalMode: "Universal",
+    selectMode: "Select",
     
     // Toolbox Descriptions
     aiAssistantDesc: "Analyze robot structure and physics with AI",
@@ -296,6 +301,11 @@ export const translations = {
     robotRedirect: "轨迹跟踪",
     trajectoryEditing: "轨迹编辑",
     featureInDevelopment: "功能开发中",
+    transformMode: "变换模式",
+    translateMode: "移动",
+    rotateMode: "旋转",
+    universalMode: "万能",
+    selectMode: "选择",
 
     // 工具箱描述
     aiAssistantDesc: "使用 AI 分析机器人结构和物理合理性",

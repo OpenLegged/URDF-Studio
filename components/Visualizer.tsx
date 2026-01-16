@@ -768,13 +768,13 @@ function RobotNode({
         </group>
       )}
 
-      {/* Visual Geometry - key forces re-render on data change */}
-      <React.Fragment key={`visual-${link.visual?.type}-${link.visual?.dimensions?.x}-${link.visual?.dimensions?.y}-${link.visual?.dimensions?.z}`}>
+      {/* Visual Geometry - key forces re-render on data change (includes origin for undo support) */}
+      <React.Fragment key={`visual-${link.visual?.type}-${link.visual?.dimensions?.x}-${link.visual?.dimensions?.y}-${link.visual?.dimensions?.z}-${link.visual?.origin?.xyz?.x}-${link.visual?.origin?.xyz?.y}-${link.visual?.origin?.xyz?.z}-${link.visual?.origin?.rpy?.r}-${link.visual?.origin?.rpy?.p}-${link.visual?.origin?.rpy?.y}-${link.visual?.meshPath || ''}`}>
         {renderGeometry(false)}
       </React.Fragment>
       
-      {/* Collision Geometry - key forces re-render on data change */}
-      <React.Fragment key={`collision-${link.collision?.type}-${link.collision?.dimensions?.x}-${link.collision?.dimensions?.y}-${link.collision?.dimensions?.z}`}>
+      {/* Collision Geometry - key forces re-render on data change (includes origin for undo support) */}
+      <React.Fragment key={`collision-${link.collision?.type}-${link.collision?.dimensions?.x}-${link.collision?.dimensions?.y}-${link.collision?.dimensions?.z}-${link.collision?.origin?.xyz?.x}-${link.collision?.origin?.xyz?.y}-${link.collision?.origin?.xyz?.z}-${link.collision?.origin?.rpy?.r}-${link.collision?.origin?.rpy?.p}-${link.collision?.origin?.rpy?.y}-${link.collision?.meshPath || ''}`}>
         {renderGeometry(true)}
       </React.Fragment>
 

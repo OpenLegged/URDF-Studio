@@ -27,6 +27,7 @@ interface URDFViewerProps {
     hoveredSelection?: { type: 'link' | 'joint' | null; id: string | null; subType?: 'visual' | 'collision' };
     robotLinks?: Record<string, UrdfLink>; // Link data from the app state, contains inertial info
     focusTarget?: string | null;
+    onCollisionTransform?: (linkName: string, position: {x: number, y: number, z: number}, rotation: {r: number, p: number, y: number}) => void;
 }
 
 // Clean file path (remove '..' and '.', normalize slashes)
@@ -314,6 +315,8 @@ interface RobotModelProps {
     showJointAxes?: boolean;
     robotLinks?: Record<string, UrdfLink>; // Link data from the app state, contains inertial info
     focusTarget?: string | null;
+    transformMode?: 'select' | 'translate' | 'rotate' | 'universal';
+    onCollisionTransformEnd?: (linkName: string, position: {x: number, y: number, z: number}, rotation: {r: number, p: number, y: number}) => void;
 }
 
 // Empty raycast function to disable raycast on collision meshes
@@ -346,7 +349,7 @@ const collisionBaseMaterial = new THREE.MeshBasicMaterial({
     depthTest: false
 });
 
-function RobotModel({ urdfContent, assets, onRobotLoaded, showCollision = false, showVisual = true, onSelect, onJointChange, jointAngles, setIsDragging, setActiveJoint, justSelectedRef, t, mode, selection, hoveredSelection, highlightMode = 'link', showInertia = false, showCenterOfMass = false, showOrigins = false, showJointAxes = false, robotLinks, focusTarget }: RobotModelProps & { selection?: URDFViewerProps['selection'], hoveredSelection?: URDFViewerProps['selection'] }) {
+function RobotModel({ urdfContent, assets, onRobotLoaded, showCollision = false, showVisual = true, onSelect, onJointChange, jointAngles, setIsDragging, setActiveJoint, justSelectedRef, t, mode, selection, hoveredSelection, highlightMode = 'link', showInertia = false, showCenterOfMass = false, showOrigins = false, showJointAxes = false, robotLinks, focusTarget, transformMode = 'select', onCollisionTransformEnd }: RobotModelProps & { selection?: URDFViewerProps['selection'], hoveredSelection?: URDFViewerProps['selection'] }) {
     const [robot, setRobot] = useState<THREE.Object3D | null>(null);
     const [error, setError] = useState<string | null>(null);
     const [robotVersion, setRobotVersion] = useState(0); // Track async loading updates
@@ -979,7 +982,8 @@ function RobotModel({ urdfContent, assets, onRobotLoaded, showCollision = false,
                         // CRITICAL: Ensure async loaded meshes are marked as collision meshes
                         inner.userData.isCollisionMesh = true;
                         
-                        inner.raycast = highlightMode === 'collision' 
+                        // Only enable raycast for collision meshes if both in collision mode AND collision is visible
+                        inner.raycast = (highlightMode === 'collision' && showCollision) 
                             ? THREE.Mesh.prototype.raycast 
                             : emptyRaycast;
                     }
@@ -1561,7 +1565,27 @@ function RobotModel({ urdfContent, assets, onRobotLoaded, showCollision = false,
     }
     
     // Note: onClick and onPointerDown are now handled via DOM events in the useEffect above
-    return <primitive object={robot} />;
+    return (
+        <>
+            <primitive object={robot} />
+            {/* Collision Transform Controls - shown when in collision mode with transform enabled */}
+            {(() => {
+                const shouldShow = mode === 'detail' && highlightMode === 'collision' && transformMode !== 'select' && selection?.subType === 'collision';
+                console.log('[RobotModel] Transform controls check:', { mode, highlightMode, transformMode, selectionId: selection?.id, selectionSubType: selection?.subType, shouldShow });
+                return shouldShow ? (
+                    <CollisionTransformControls
+                        robot={robot}
+                        selection={selection}
+                        transformMode={transformMode}
+                        setIsDragging={(dragging) => setIsDraggingRef.current?.(dragging)}
+                        onTransformEnd={onCollisionTransformEnd}
+                        robotLinks={robotLinks}
+                        lang={t === translations['zh'] ? 'zh' : 'en'}
+                    />
+                ) : null;
+            })()}
+        </>
+    );
 }
 
 const JointInteraction = ({ joint, value, onChange }: { joint: any, value: number, onChange: (val: number) => void }) => {
@@ -1804,6 +1828,474 @@ function SceneLighting() {
     );
 }
 
+// Fusion360-style Transform Controls with visual gizmo + confirm/cancel UI
+interface CollisionTransformControlsProps {
+    robot: THREE.Object3D | null;
+    selection: URDFViewerProps['selection'];
+    transformMode: 'select' | 'translate' | 'rotate' | 'universal';
+    setIsDragging: (dragging: boolean) => void;
+    onTransformEnd?: (linkId: string, position: {x: number, y: number, z: number}, rotation: {r: number, p: number, y: number}) => void;
+    robotLinks?: Record<string, UrdfLink>;
+    lang?: Language;
+}
+
+function CollisionTransformControls({ robot, selection, transformMode, setIsDragging, onTransformEnd, robotLinks, lang = 'en' }: CollisionTransformControlsProps) {
+    const transformRef = useRef<any>(null);
+    const { invalidate } = useThree();
+    const [targetObject, setTargetObject] = useState<THREE.Object3D | null>(null);
+    
+    // Debug log
+    console.log('[CollisionTransformControls] Rendered with:', { 
+        hasRobot: !!robot, 
+        selectionId: selection?.id, 
+        selectionSubType: selection?.subType,
+        transformMode 
+    });
+    
+    // Pending edit state - shown after drag ends, waiting for confirm/cancel
+    const [pendingEdit, setPendingEdit] = useState<{
+        axis: string;
+        value: number;
+        startValue: number;
+        isRotate: boolean;
+    } | null>(null);
+    
+    // Force re-render when pendingEdit changes
+    const [, forceUpdate] = useState(0);
+    
+    // Store original transform for cancel
+    const originalPositionRef = useRef<THREE.Vector3>(new THREE.Vector3());
+    const originalRotationRef = useRef<THREE.Euler>(new THREE.Euler());
+    
+    // Track if currently dragging
+    const isDraggingRef = useRef(false);
+    const currentAxisRef = useRef<string | null>(null);
+    const startValueRef = useRef<number>(0);
+    
+    // Setup event listeners for TransformControls
+    useEffect(() => {
+        const controls = transformRef.current;
+        if (!controls || !targetObject) return;
+        
+        console.log('[CollisionTransformControls] Setting up event listeners');
+        
+        const handleDraggingChange = (event: any) => {
+            const dragging = event.value;
+            console.log('[CollisionTransformControls] dragging-changed event:', { dragging, isDragging: isDraggingRef.current });
+            
+            if (dragging) {
+                // Start dragging
+                isDraggingRef.current = true;
+                setIsDragging(true);
+                
+                // Store original position/rotation
+                originalPositionRef.current.copy(targetObject.position);
+                originalRotationRef.current.copy(targetObject.rotation);
+                
+                // Get current axis from controls
+                const axis = controls.axis;
+                currentAxisRef.current = axis;
+                console.log('[CollisionTransformControls] Drag started on axis:', axis);
+                
+                // Get start value
+                const isRotate = transformMode === 'rotate';
+                if (isRotate) {
+                    const val = axis === 'X' ? targetObject.rotation.x : 
+                               axis === 'Y' ? targetObject.rotation.y : 
+                               axis === 'Z' ? targetObject.rotation.z : 0;
+                    startValueRef.current = val;
+                } else {
+                    const val = axis === 'X' ? targetObject.position.x : 
+                               axis === 'Y' ? targetObject.position.y : 
+                               axis === 'Z' ? targetObject.position.z : 0;
+                    startValueRef.current = val;
+                }
+            } else if (isDraggingRef.current) {
+                // End dragging
+                isDraggingRef.current = false;
+                setIsDragging(false);
+                
+                const axis = currentAxisRef.current;
+                const isRotate = transformMode === 'rotate';
+                
+                // Get current value after drag
+                let currentVal = 0;
+                if (isRotate) {
+                    currentVal = axis === 'X' ? targetObject.rotation.x : 
+                                axis === 'Y' ? targetObject.rotation.y : 
+                                axis === 'Z' ? targetObject.rotation.z : 0;
+                } else {
+                    currentVal = axis === 'X' ? targetObject.position.x : 
+                                axis === 'Y' ? targetObject.position.y : 
+                                axis === 'Z' ? targetObject.position.z : 0;
+                }
+                
+                const delta = currentVal - startValueRef.current;
+                console.log('[CollisionTransformControls] Drag ended:', { 
+                    axis, 
+                    currentVal, 
+                    startVal: startValueRef.current,
+                    delta,
+                    absDetla: Math.abs(delta),
+                    shouldShowUI: Math.abs(delta) > 0.0001 && !!axis
+                });
+                
+                // Show confirm UI if value changed (check for any change, positive or negative)
+                if (Math.abs(delta) > 0.0001 && axis) {
+                    console.log('[CollisionTransformControls] Setting pendingEdit for axis:', axis);
+                    setPendingEdit({
+                        axis,
+                        value: currentVal,
+                        startValue: startValueRef.current,
+                        isRotate
+                    });
+                    forceUpdate(n => n + 1);
+                } else {
+                    console.log('[CollisionTransformControls] NOT setting pendingEdit:', { delta, axis });
+                }
+            }
+            invalidate();
+        };
+        
+        controls.addEventListener('dragging-changed', handleDraggingChange);
+        
+        return () => {
+            controls.removeEventListener('dragging-changed', handleDraggingChange);
+        };
+    }, [targetObject, transformMode, setIsDragging, invalidate, pendingEdit]);
+    
+    // Find the selected collision mesh
+    useEffect(() => {
+        if (!robot || !selection?.id || selection.subType !== 'collision' || transformMode === 'select') {
+            setTargetObject(null);
+            setPendingEdit(null);
+            return;
+        }
+        
+        const linkName = selection.id;
+        const linkObj = (robot as any).links?.[linkName];
+        
+        if (!linkObj) {
+            setTargetObject(null);
+            return;
+        }
+        
+        let collisionGroup: THREE.Object3D | null = null;
+        linkObj.traverse((child: any) => {
+            if (!collisionGroup && child.isURDFCollider) {
+                collisionGroup = child;
+            }
+        });
+        
+        if (collisionGroup) {
+            setTargetObject(collisionGroup);
+            // Store original position/rotation when target changes
+            originalPositionRef.current.copy(collisionGroup.position);
+            originalRotationRef.current.copy(collisionGroup.rotation);
+        } else {
+            setTargetObject(null);
+        }
+    }, [robot, selection, transformMode]);
+    
+    // Clear pending edit when selection changes
+    useEffect(() => {
+        setPendingEdit(null);
+    }, [selection?.id]);
+    
+    // Track hovered axis for single-axis highlight effect
+    const [hoveredAxis, setHoveredAxis] = useState<string | null>(null);
+    
+    // Customize TransformControls appearance - thicker axes and single-axis highlight
+    useEffect(() => {
+        const controls = transformRef.current;
+        if (!controls) return;
+        
+        // Access the gizmo to customize axis appearance
+        const gizmo = (controls as any).children?.[0];
+        if (!gizmo) return;
+        
+        // Make axes thicker by scaling line width
+        const updateAxisAppearance = () => {
+            gizmo.traverse((child: any) => {
+                if (child.isMesh || child.isLine) {
+                    // Make lines thicker
+                    if (child.material) {
+                        if (child.material.linewidth !== undefined) {
+                            child.material.linewidth = 3;
+                        }
+                        // Scale up the geometry for thicker appearance
+                        if (!child.userData.scaled) {
+                            if (child.isLine) {
+                                child.scale.multiplyScalar(1.5);
+                            }
+                            child.userData.scaled = true;
+                        }
+                    }
+                }
+            });
+        };
+        
+        updateAxisAppearance();
+        
+        // Listen for axis changes to update transparency
+        const handleAxisChanged = (event: any) => {
+            const axis = event.value;
+            setHoveredAxis(axis);
+            
+            // Update opacity of non-active axes
+            gizmo.traverse((child: any) => {
+                if (child.material && child.material.color) {
+                    // Check axis by material color (R=X, G=Y, B=Z)
+                    const color = child.material.color;
+                    const isXAxis = color.r > 0.8 && color.g < 0.3 && color.b < 0.3;
+                    const isYAxis = color.g > 0.8 && color.r < 0.3 && color.b < 0.3;
+                    const isZAxis = color.b > 0.8 && color.r < 0.3 && color.g < 0.3;
+                    
+                    const isActiveAxis = !axis || 
+                        (axis === 'X' && isXAxis) ||
+                        (axis === 'Y' && isYAxis) ||
+                        (axis === 'Z' && isZAxis);
+                    
+                    if (axis && !isActiveAxis) {
+                        child.material.opacity = 0.15;
+                        child.material.transparent = true;
+                    } else {
+                        child.material.opacity = 1;
+                        child.material.transparent = false;
+                    }
+                    child.material.needsUpdate = true;
+                }
+            });
+            invalidate();
+        };
+        
+        controls.addEventListener('axis-changed', handleAxisChanged);
+        
+        return () => {
+            controls.removeEventListener('axis-changed', handleAxisChanged);
+        };
+    }, [targetObject, transformMode, invalidate, pendingEdit]);
+    
+    // Handle transform change (live update during drag)
+    const handleObjectChange = useCallback(() => {
+        invalidate();
+    }, [invalidate]);
+    
+    // Handle confirm - save to history
+    const handleConfirm = useCallback(() => {
+        if (!targetObject || !selection?.id || !onTransformEnd || !pendingEdit) return;
+        
+        // Apply the edited value (in case user modified in text field)
+        const axis = pendingEdit.axis;
+        if (pendingEdit.isRotate) {
+            if (axis === 'X') targetObject.rotation.x = pendingEdit.value;
+            else if (axis === 'Y') targetObject.rotation.y = pendingEdit.value;
+            else if (axis === 'Z') targetObject.rotation.z = pendingEdit.value;
+        } else {
+            if (axis === 'X') targetObject.position.x = pendingEdit.value;
+            else if (axis === 'Y') targetObject.position.y = pendingEdit.value;
+            else if (axis === 'Z') targetObject.position.z = pendingEdit.value;
+        }
+        
+        // Call onTransformEnd to save to history
+        const pos = targetObject.position;
+        const euler = new THREE.Euler().setFromQuaternion(targetObject.quaternion, 'XYZ');
+        
+        console.log('CollisionTransformControls: Confirming transform', {
+            linkId: selection.id,
+            position: { x: pos.x, y: pos.y, z: pos.z },
+            rotation: { r: euler.x, p: euler.y, y: euler.z }
+        });
+        
+        onTransformEnd(
+            selection.id,
+            { x: pos.x, y: pos.y, z: pos.z },
+            { r: euler.x, p: euler.y, y: euler.z }
+        );
+        
+        // Update original refs for next operation
+        originalPositionRef.current.copy(targetObject.position);
+        originalRotationRef.current.copy(targetObject.rotation);
+        
+        setPendingEdit(null);
+        invalidate();
+    }, [targetObject, selection?.id, onTransformEnd, pendingEdit, invalidate]);
+    
+    // Handle cancel - restore original transform
+    const handleCancel = useCallback(() => {
+        if (targetObject) {
+            targetObject.position.copy(originalPositionRef.current);
+            targetObject.rotation.copy(originalRotationRef.current);
+        }
+        setPendingEdit(null);
+        invalidate();
+    }, [targetObject, invalidate]);
+    
+    // Convert radians to degrees for display
+    const radToDeg = (rad: number) => rad * (180 / Math.PI);
+    const degToRad = (deg: number) => deg * (Math.PI / 180);
+    
+    // Get display value (degrees for rotation, meters for translation)
+    const getDisplayValue = useCallback(() => {
+        if (!pendingEdit) return '0';
+        if (pendingEdit.isRotate) {
+            return radToDeg(pendingEdit.value).toFixed(2);
+        }
+        return pendingEdit.value.toFixed(4);
+    }, [pendingEdit]);
+    
+    // Get delta display value
+    const getDeltaDisplay = useCallback(() => {
+        if (!pendingEdit) return '0';
+        const delta = pendingEdit.value - pendingEdit.startValue;
+        if (pendingEdit.isRotate) {
+            const degDelta = radToDeg(delta);
+            return (degDelta >= 0 ? '+' : '') + degDelta.toFixed(2);
+        }
+        return (delta >= 0 ? '+' : '') + delta.toFixed(4);
+    }, [pendingEdit]);
+    
+    // Handle value change in text field
+    const handleValueChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+        const inputVal = parseFloat(e.target.value);
+        if (!isNaN(inputVal) && pendingEdit) {
+            // Convert degrees to radians for rotation
+            const val = pendingEdit.isRotate ? degToRad(inputVal) : inputVal;
+            setPendingEdit({ ...pendingEdit, value: val });
+            
+            // Live preview
+            if (targetObject) {
+                const axis = pendingEdit.axis;
+                if (pendingEdit.isRotate) {
+                    if (axis === 'X') targetObject.rotation.x = val;
+                    else if (axis === 'Y') targetObject.rotation.y = val;
+                    else if (axis === 'Z') targetObject.rotation.z = val;
+                } else {
+                    if (axis === 'X') targetObject.position.x = val;
+                    else if (axis === 'Y') targetObject.position.y = val;
+                    else if (axis === 'Z') targetObject.position.z = val;
+                }
+                invalidate();
+            }
+        }
+    }, [pendingEdit, targetObject, invalidate]);
+    
+    // Handle Enter key to confirm
+    const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            handleConfirm();
+        } else if (e.key === 'Escape') {
+            e.preventDefault();
+            handleCancel();
+        }
+    }, [handleConfirm, handleCancel]);
+    
+    if (!targetObject || transformMode === 'select') {
+        return null;
+    }
+    
+    // Get axis color
+    const getAxisColor = (axis: string | null) => {
+        if (axis === 'X') return '#ef4444';
+        if (axis === 'Y') return '#22c55e';
+        if (axis === 'Z') return '#3b82f6';
+        return '#94a3b8';
+    };
+    
+    // Determine the mode for TransformControls
+    const getControlMode = () => {
+        if (transformMode === 'translate') return 'translate';
+        if (transformMode === 'rotate') return 'rotate';
+        return 'translate';
+    };
+    
+    return (
+        <>
+            {/* Main TransformControls - disabled when pending edit exists */}
+            {!pendingEdit && (
+                <TransformControls
+                    ref={transformRef}
+                    object={targetObject}
+                    mode={getControlMode()}
+                    size={0.8}
+                    onChange={handleObjectChange}
+                />
+            )}
+            
+            {/* For universal mode, add rotation gizmo */}
+            {transformMode === 'universal' && !pendingEdit && (
+                <TransformControls
+                    object={targetObject}
+                    mode="rotate"
+                    size={1.2}
+                    onChange={handleObjectChange}
+                />
+            )}
+            
+            {/* Confirm/Cancel UI after drag ends - Fusion360 style */}
+            {pendingEdit && (
+                <Html
+                    position={targetObject.position.toArray()}
+                    style={{ pointerEvents: 'auto' }}
+                    center
+                    zIndexRange={[100, 0]}
+                >
+                    <div 
+                        className="flex flex-col items-center gap-1 transform -translate-y-16"
+                        onClick={(e) => e.stopPropagation()}
+                        onPointerDown={(e) => e.stopPropagation()}
+                    >
+                        {/* Compact input with axis indicator */}
+                        <div className="flex items-center gap-1">
+                            <span 
+                                className="w-5 h-5 rounded text-white text-xs font-bold flex items-center justify-center shadow"
+                                style={{ backgroundColor: getAxisColor(pendingEdit.axis) }}
+                            >
+                                {pendingEdit.axis}
+                            </span>
+                            <input
+                                type="number"
+                                step={pendingEdit.isRotate ? "1" : "0.001"}
+                                value={getDisplayValue()}
+                                onChange={handleValueChange}
+                                onKeyDown={handleKeyDown}
+                                autoFocus
+                                className="w-20 px-1.5 py-0.5 text-xs font-mono bg-white/90 dark:bg-slate-800/90 border border-slate-300 dark:border-slate-600 rounded text-slate-800 dark:text-white focus:outline-none focus:border-blue-500 shadow"
+                            />
+                            <span className="text-[10px] text-slate-500 dark:text-slate-400">
+                                {pendingEdit.isRotate ? '°' : 'm'} ({getDeltaDisplay()})
+                            </span>
+                        </div>
+                        
+                        {/* Compact confirm/cancel buttons */}
+                        <div className="flex gap-1">
+                            <button
+                                onClick={handleConfirm}
+                                className="w-6 h-6 bg-green-500 hover:bg-green-600 text-white rounded shadow flex items-center justify-center transition-colors"
+                                title="Confirm (Enter)"
+                            >
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                                </svg>
+                            </button>
+                            <button
+                                onClick={handleCancel}
+                                className="w-6 h-6 bg-red-500 hover:bg-red-600 text-white rounded shadow flex items-center justify-center transition-colors"
+                                title="Cancel (Esc)"
+                            >
+                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                </svg>
+                            </button>
+                        </div>
+                    </div>
+                </Html>
+            )}
+        </>
+    );
+}
+
 // Component for individual joint control to handle local input state
 const JointControlItem = ({ 
     name, 
@@ -1971,7 +2463,7 @@ const JointControlItem = ({
 
     };
 
-export function URDFViewer({ urdfContent, assets, onJointChange, lang, mode = 'detail', onSelect, theme, selection, hoveredSelection, robotLinks, focusTarget }: URDFViewerProps) {
+export function URDFViewer({ urdfContent, assets, onJointChange, lang, mode = 'detail', onSelect, theme, selection, hoveredSelection, robotLinks, focusTarget, onCollisionTransform }: URDFViewerProps) {
     const t = translations[lang];
     const [robot, setRobot] = useState<any>(null);
     const [selectedJoint, setSelectedJoint] = useState<string | null>(null);
@@ -1987,6 +2479,9 @@ export function URDFViewer({ urdfContent, assets, onJointChange, lang, mode = 'd
     
     // Highlight mode: 'link' (default) or 'collision'
     const [highlightMode, setHighlightMode] = useState<'link' | 'collision'>('link');
+    
+    // Transform mode for collision editing: 'select' | 'translate' | 'rotate' | 'universal'
+    const [transformMode, setTransformMode] = useState<'select' | 'translate' | 'rotate' | 'universal'>('select');
     
     // Automatically show collisions when collision highlight mode is selected
     useEffect(() => {
@@ -2260,6 +2755,47 @@ export function URDFViewer({ urdfContent, assets, onJointChange, lang, mode = 'd
                             </div>
                         </div>
 
+                        {/* Transform Mode - only shown in collision mode */}
+                        {highlightMode === 'collision' && mode === 'detail' && (
+                        <div className="border-b border-slate-200 dark:border-slate-700 pb-2 mb-1">
+                            <div className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase mb-1.5 px-1">{t.transformMode || "Transform Mode"}</div>
+                            <div className="grid grid-cols-4 gap-0.5 bg-slate-100 dark:bg-google-dark-bg rounded p-0.5">
+                                <button
+                                    onClick={() => setTransformMode('select')}
+                                    className={`flex flex-col items-center justify-center py-1.5 text-[9px] font-medium rounded transition-all ${transformMode === 'select' ? 'bg-white dark:bg-google-dark-surface text-google-blue shadow-sm' : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'}`}
+                                    title={t.selectMode || "Select"}
+                                >
+                                    <svg className="w-3.5 h-3.5 mb-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 15l-2 5L9 9l11 4-5 2zm0 0l5 5M7.188 2.239l.777 2.897M5.136 7.965l-2.898-.777M13.95 4.05l-2.122 2.122m-5.657 5.656l-2.12 2.122" /></svg>
+                                    {t.selectMode || "Select"}
+                                </button>
+                                <button
+                                    onClick={() => setTransformMode('translate')}
+                                    className={`flex flex-col items-center justify-center py-1.5 text-[9px] font-medium rounded transition-all ${transformMode === 'translate' ? 'bg-white dark:bg-google-dark-surface text-google-blue shadow-sm' : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'}`}
+                                    title={t.translateMode || "Translate"}
+                                >
+                                    <Move className="w-3.5 h-3.5 mb-0.5" />
+                                    {t.translateMode || "Move"}
+                                </button>
+                                <button
+                                    onClick={() => setTransformMode('rotate')}
+                                    className={`flex flex-col items-center justify-center py-1.5 text-[9px] font-medium rounded transition-all ${transformMode === 'rotate' ? 'bg-white dark:bg-google-dark-surface text-google-blue shadow-sm' : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'}`}
+                                    title={t.rotateMode || "Rotate"}
+                                >
+                                    <RotateCcw className="w-3.5 h-3.5 mb-0.5" />
+                                    {t.rotateMode || "Rotate"}
+                                </button>
+                                <button
+                                    onClick={() => setTransformMode('universal')}
+                                    className={`flex flex-col items-center justify-center py-1.5 text-[9px] font-medium rounded transition-all ${transformMode === 'universal' ? 'bg-white dark:bg-google-dark-surface text-google-blue shadow-sm' : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'}`}
+                                    title={t.universalMode || "Universal"}
+                                >
+                                    <svg className="w-3.5 h-3.5 mb-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" /></svg>
+                                    {t.universalMode || "All"}
+                                </button>
+                            </div>
+                        </div>
+                        )}
+
                         <div className="space-y-1">
                             <label className="flex items-center gap-2 text-xs text-slate-700 dark:text-slate-300 cursor-pointer hover:text-slate-900 dark:hover:text-white px-1 py-0.5 rounded hover:bg-slate-50 dark:hover:bg-google-dark-bg/50">
                                 <input 
@@ -2463,6 +2999,8 @@ export function URDFViewer({ urdfContent, assets, onJointChange, lang, mode = 'd
                         showJointAxes={showJointAxes}
                         robotLinks={robotLinks}
                         focusTarget={focusTarget}
+                        transformMode={transformMode}
+                        onCollisionTransformEnd={onCollisionTransform}
                     />
                 </Suspense>
                 

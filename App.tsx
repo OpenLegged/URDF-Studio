@@ -44,6 +44,13 @@ export default function App() {
   const [assets, setAssets] = useState<Record<string, string>>({});
   const [motorLibrary, setMotorLibrary] = useState<Record<string, MotorSpec[]>>(DEFAULT_MOTOR_LIBRARY);
   const [originalUrdfContent, setOriginalUrdfContent] = useState<string>('');
+  
+  // Compute URDF content based on current robotData - this ensures undo/redo updates the 3D view
+  const urdfContentForViewer = useMemo(() => {
+    if (!originalUrdfContent) return '';
+    // Regenerate URDF from current robotData to reflect any changes (including undo/redo)
+    return generateURDF({ ...robotData, selection });
+  }, [robotData, selection, originalUrdfContent]);
   const importInputRef = useRef<HTMLInputElement>(null);
   const importFolderInputRef = useRef<HTMLInputElement>(null);
   const [isDragOver, setIsDragOver] = useState(false);
@@ -248,12 +255,6 @@ export default function App() {
           [id]: data
         }
       };
-      
-      // If we have imported URDF content, regenerate it to reflect changes
-      if (originalUrdfContent) {
-        const newUrdf = generateURDF({ ...newState, selection });
-        setTimeout(() => setOriginalUrdfContent(newUrdf), 0);
-      }
       
       return newState;
     });
@@ -523,7 +524,7 @@ export default function App() {
             
             const { selection: newSelection, ...newData } = newState;
             resetRobotData(newData);
-            setSelection(newSelection);
+            setSelection({ type: null, id: null });
             
             setAppMode('detail'); // Start with detail mode
         } else {
@@ -1645,9 +1646,9 @@ export default function App() {
             onToggle={() => setLeftSidebarCollapsed(!leftSidebarCollapsed)}
         />
         
-        {(appMode === 'detail' || appMode === 'hardware') && originalUrdfContent ? (
+        {(appMode === 'detail' || appMode === 'hardware') && urdfContentForViewer ? (
             <URDFViewer
-                urdfContent={originalUrdfContent}
+                urdfContent={urdfContentForViewer}
                 assets={assets}
                 lang={lang}
                 mode={appMode}
@@ -1657,6 +1658,31 @@ export default function App() {
                 focusTarget={focusTarget}
                 theme={theme}
                 robotLinks={robot.links}
+                onCollisionTransform={(linkId, position, rotation) => {
+                    // linkId is the selection.id which is the link's ID (not name)
+                    console.log('App.tsx onCollisionTransform called:', { linkId, position, rotation });
+                    console.log('Available links:', Object.keys(robot.links));
+                    
+                    if (linkId && robot.links[linkId]) {
+                        const link = robot.links[linkId];
+                        console.log('Found link, updating collision origin:', link.name);
+                        
+                        const updatedLink = {
+                            ...link,
+                            collision: {
+                                ...link.collision,
+                                origin: {
+                                    xyz: position,
+                                    rpy: rotation
+                                }
+                            }
+                        };
+                        console.log('Updated link data:', updatedLink);
+                        handleUpdate('link', linkId, updatedLink);
+                    } else {
+                        console.warn('Link not found for ID:', linkId);
+                    }
+                }}
             />
         ) : (
             <Visualizer 
