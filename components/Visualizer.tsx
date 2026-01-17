@@ -1,5 +1,5 @@
 import React, { Suspense, useState, useMemo, useRef, useEffect } from 'react';
-import { Canvas, useLoader } from '@react-three/fiber';
+import { Canvas, useLoader, useThree } from '@react-three/fiber';
 import { OrbitControls, Grid, Environment, GizmoHelper, GizmoViewport, Html, Line, TransformControls } from '@react-three/drei';
 import { RobotState, GeometryType, UrdfJoint, JointType, Theme } from '../types';
 import * as THREE from 'three';
@@ -11,6 +11,62 @@ import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader.js';
 import { ColladaLoader } from 'three/examples/jsm/loaders/ColladaLoader.js';
 import { translations, Language } from '../services/i18n';
 import { MathUtils as DataUtils } from '../services/mathUtils';
+
+import { RotateCcw, Move, ArrowUpRight } from 'lucide-react';
+
+// Snapshot Manager (Duplicated for independence)
+const SnapshotManager = ({ actionRef, robotName }: { actionRef?: React.MutableRefObject<(() => void) | null>, robotName: string }) => {
+    const { gl, scene, camera } = useThree();
+
+    useEffect(() => {
+        if (!actionRef) return;
+
+        actionRef.current = () => {
+            // 1. Hide Gizmos, Grid and Helpers
+            const hiddenObjects: THREE.Object3D[] = [];
+            scene.traverse((obj) => {
+                if (obj.userData.isGizmo || 
+                    obj.name === 'ReferenceGrid' ||
+                    obj.type.includes('Grid') || 
+                    obj.type.includes('Helper') ||
+                    obj.type === 'AxesHelper' ||
+                    (obj as any).isTransformControls) {
+                    if (obj.visible) {
+                        obj.visible = false;
+                        hiddenObjects.push(obj);
+                    }
+                }
+            });
+
+            // 2. Clear background for transparency
+            const originalBackground = scene.background;
+            scene.background = null;
+
+            // 3. High Res Render
+            const originalPixelRatio = gl.getPixelRatio();
+            gl.setPixelRatio(4); // 4x Super Sampling
+            
+            gl.render(scene, camera);
+            const dataUrl = gl.domElement.toDataURL('image/png', 1.0);
+
+            // 4. Restore
+            gl.setPixelRatio(originalPixelRatio);
+            scene.background = originalBackground;
+            hiddenObjects.forEach(obj => obj.visible = true);
+
+            // 5. Download
+            const link = document.createElement('a');
+            const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+            link.setAttribute('download', `${robotName}_Skeleton_HD_${timestamp}.png`);
+            link.setAttribute('href', dataUrl);
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        };
+    }, [gl, scene, camera, actionRef, robotName]);
+
+    return null;
+};
 
 // Fix for missing JSX types in strict environments or when global types are not picked up
 // Augmenting both global and React module JSX namespaces to ensure compatibility
@@ -847,7 +903,54 @@ function RobotNode({
   );
 }
 
-export const Visualizer = ({ robot, onSelect, onUpdate, mode, assets, lang, theme, os, showVisual: propShowVisual, setShowVisual: propSetShowVisual }: { robot: RobotState; onSelect: any; onUpdate: any; mode: 'skeleton' | 'detail' | 'hardware', assets: Record<string, string>, lang: Language, theme: Theme, os?: 'mac' | 'win', showVisual?: boolean, setShowVisual?: (show: boolean) => void }) => {
+// Scene lighting setup
+function SceneLighting() {
+    const { scene, gl } = useThree();
+    
+    useEffect(() => {
+        // Setup environment map for material reflections
+        const pmremGenerator = new THREE.PMREMGenerator(gl);
+        pmremGenerator.compileEquirectangularShader();
+        
+        // Create a simple environment scene
+        const envScene = new THREE.Scene();
+        const envLight = new THREE.HemisphereLight(0xffffff, 0x444444, 1.0);
+        envScene.add(envLight);
+        
+        // Generate environment map
+        const envMap = pmremGenerator.fromScene(envScene, 0.04).texture;
+        envMap.mapping = THREE.EquirectangularReflectionMapping;
+        scene.environment = envMap;
+        
+        return () => {
+            pmremGenerator.dispose();
+        };
+    }, [scene, gl]);
+    
+    return (
+        <>
+            <hemisphereLight args={[0xffffff, 0x666666, 0.8]} position={[0, 0, 1]} />
+            <ambientLight intensity={0.4} />
+            
+            <directionalLight
+                position={[4, 4, 8]}
+                intensity={Math.PI * 0.8}
+                castShadow
+                shadow-mapSize-width={2048}
+                shadow-mapSize-height={2048}
+            />
+            <directionalLight position={[-4, -4, 6]} intensity={Math.PI * 0.4} />
+            <directionalLight position={[-4, 4, 4]} intensity={Math.PI * 0.3} />
+            <directionalLight position={[4, -4, 4]} intensity={Math.PI * 0.3} />
+            <directionalLight position={[0, 0, 10]} intensity={Math.PI * 0.2} />
+            <directionalLight position={[0, 0, -5]} intensity={Math.PI * 0.15} />
+            
+{/* Shadow plane removed - causes z-fighting */}
+        </>
+    );
+}
+
+export const Visualizer = ({ robot, onSelect, onUpdate, mode, assets, lang, theme, os, showVisual: propShowVisual, setShowVisual: propSetShowVisual, snapshotAction }: { robot: RobotState; onSelect: any; onUpdate: any; mode: 'skeleton' | 'detail' | 'hardware', assets: Record<string, string>, lang: Language, theme: Theme, os?: 'mac' | 'win', showVisual?: boolean, setShowVisual?: (show: boolean) => void, snapshotAction?: React.MutableRefObject<(() => void) | null> }) => {
   const t = translations[lang];
 
   // Skeleton Settings
@@ -1164,14 +1267,19 @@ export const Visualizer = ({ robot, onSelect, onUpdate, mode, assets, lang, them
         shadows 
         camera={{ position: [2, 2, 2], up: [0, 0, 1], fov: 60 }} 
         onCreated={(state) => console.log('Canvas created', state)}
+        gl={{
+            antialias: true,
+            toneMapping: THREE.ACESFilmicToneMapping,
+            toneMappingExposure: 1.0,
+            preserveDrawingBuffer: true,
+        }}
       >
         <color attach="background" args={[theme === 'light' ? '#f8f9fa' : '#1f1f1f']} />
         <Suspense fallback={null}>
             <OrbitControls makeDefault />
-            <ambientLight intensity={0.8} />
-            <directionalLight position={[10, 10, 10]} intensity={1.5} />
-            <directionalLight position={[-10, -10, -5]} intensity={1} />
+            <SceneLighting />
             <Environment files="/potsdamer_platz_1k.hdr" />
+            <SnapshotManager actionRef={snapshotAction} robotName={robot?.name || 'robot'} />
             
             <group position={[0, 0, 0]}>
                  <RobotNode 
@@ -1272,6 +1380,7 @@ export const Visualizer = ({ robot, onSelect, onUpdate, mode, assets, lang, them
             })()}
 
             <Grid 
+                name="ReferenceGrid"
                 infiniteGrid 
                 fadeDistance={100} 
                 sectionSize={1}
@@ -1282,6 +1391,7 @@ export const Visualizer = ({ robot, onSelect, onUpdate, mode, assets, lang, them
                 sectionColor={theme === 'light' ? '#94a3b8' : '#555555'} 
                 rotation={[Math.PI / 2, 0, 0]}
                 position={[0, 0, -0.01]} 
+                userData={{ isGizmo: true }}
             />
             
             <GizmoHelper alignment="bottom-right" margin={[80, 80]}>

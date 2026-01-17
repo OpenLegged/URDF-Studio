@@ -30,7 +30,107 @@ interface URDFViewerProps {
     showVisual?: boolean;
     setShowVisual?: (show: boolean) => void;
     onCollisionTransform?: (linkName: string, position: {x: number, y: number, z: number}, rotation: {r: number, p: number, y: number}) => void;
+    snapshotAction?: React.MutableRefObject<(() => void) | null>;
 }
+
+// Snapshot Manager to handle high-res capture without gizmos
+const SnapshotManager = ({ actionRef, robotName }: { actionRef?: React.MutableRefObject<(() => void) | null>, robotName: string }) => {
+    const { gl, scene, camera } = useThree();
+
+    useEffect(() => {
+        if (!actionRef) return;
+
+        actionRef.current = () => {
+            // 1. Hide Gizmos, Grid, and other helpers
+            const hiddenObjects: THREE.Object3D[] = [];
+            
+            // Helper to check if object is a helper/gizmo
+            const isHelper = (obj: THREE.Object3D) => {
+                if (obj.userData.isGizmo) return true;
+                if (obj.name === 'ReferenceGrid') return true;
+                // Check Types
+                if (obj.type.includes('Grid')) return true;
+                if (obj.type.includes('AxesHelper')) return true;
+                if (obj.type.includes('CameraHelper')) return true;
+                if (obj.type.includes('ArrowHelper')) return true;
+                // Check Drei Gizmos (often unnamed groups or specific structures)
+                // GizmoViewport usually resides in a group attached to camera or scene with specific userData in newer versions, 
+                // but checking for 'Gizmo' in name or type or parents might help.
+                // TransformControls
+                if ((obj as any).isTransformControls) return true;
+                
+                // Hide ALL lines that are NOT part of the robot model?
+                // Robot model meshes are usually Mesh. Lines are usually helpers.
+                // Exception: If the robot ITSELF uses Lines (rare in URDF, but possible in glTF).
+                // Safest is to assume Lines at root level or in helper groups are bad.
+                if (obj.type === 'Line' || obj.type === 'LineSegments') {
+                    // Check if parent is the scene or a known helper group
+                    if (obj.parent === scene) return true;
+                    // If it belongs to a Grid
+                    if (obj.parent && obj.parent.type.includes('Grid')) return true;
+                }
+                
+                return false;
+            };
+
+            scene.traverse((obj) => {
+                if (obj.visible && isHelper(obj)) {
+                    obj.visible = false;
+                    hiddenObjects.push(obj);
+                }
+            });
+            
+            // Also explicitly hide GizmoHelper container if found (it often attaches to a separate scene or camera, but in drei it's in the scene)
+            // It might be hard to find generic Drei gizmos.
+            // Let's try to find objects with specific names often used by Drei
+            const gizmoLayer = scene.children.find(c => c.name === 'GizmoViewport'); 
+            if(gizmoLayer && gizmoLayer.visible) {
+                 gizmoLayer.visible = false;
+                 hiddenObjects.push(gizmoLayer);
+            }
+
+            // 2. Store and clear background for transparency
+            const originalBackground = scene.background;
+            scene.background = null;
+            
+            // Clear color to transparent
+            const originalClearColor = new THREE.Color();
+            gl.getClearColor(originalClearColor);
+            const originalClearAlpha = gl.getClearAlpha();
+            gl.setClearColor(0x000000, 0);
+
+            // 3. High Res Render
+            const originalPixelRatio = gl.getPixelRatio();
+            gl.setPixelRatio(4); // 4x Super Sampling for crisp edges
+            
+            // Force update matrices
+            scene.updateMatrixWorld(true);
+            
+            gl.render(scene, camera);
+            const dataUrl = gl.domElement.toDataURL('image/png', 1.0);
+
+            // 4. Restore
+            gl.setPixelRatio(originalPixelRatio);
+            scene.background = originalBackground;
+            gl.setClearColor(originalClearColor, originalClearAlpha);
+            
+            hiddenObjects.forEach(obj => obj.visible = true);
+
+            // 5. Download
+            const link = document.createElement('a');
+            const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+            link.setAttribute('download', `${robotName}_HD_${timestamp}.png`);
+            link.setAttribute('href', dataUrl);
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        };
+    }, [gl, scene, camera, actionRef, robotName]);
+
+    return null;
+};
+
+// Empty raycast function to disable raycast on collision meshes
 
 // Clean file path (remove '..' and '.', normalize slashes)
 const cleanFilePath = (path: string): string => {
@@ -1809,7 +1909,7 @@ const JointInteraction = ({ joint, value, onChange }: { joint: any, value: numbe
     );
 };
 
-// Scene lighting setup - inspired by robot_viewer EnvironmentManager
+// Scene lighting setup - clean and simple for Z-up coordinate system
 function SceneLighting() {
     const { scene, gl } = useThree();
     
@@ -1818,12 +1918,10 @@ function SceneLighting() {
         const pmremGenerator = new THREE.PMREMGenerator(gl);
         pmremGenerator.compileEquirectangularShader();
         
-        // Create a simple environment scene
         const envScene = new THREE.Scene();
         const envLight = new THREE.HemisphereLight(0xffffff, 0x444444, 1.0);
         envScene.add(envLight);
         
-        // Generate environment map
         const envMap = pmremGenerator.fromScene(envScene, 0.04).texture;
         envMap.mapping = THREE.EquirectangularReflectionMapping;
         scene.environment = envMap;
@@ -1835,67 +1933,29 @@ function SceneLighting() {
     
     return (
         <>
-            {/* Hemisphere light for ambient fill - increased intensity */}
+            {/* Hemisphere light for ambient fill */}
             <hemisphereLight args={[0xffffff, 0x666666, 0.8]} position={[0, 0, 1]} />
             
             {/* Ambient light for base illumination */}
             <ambientLight intensity={0.4} />
             
-            {/* Main directional light with shadows (front-top-right) */}
+            {/* Main directional light with shadows */}
             <directionalLight
                 position={[4, 4, 8]}
                 intensity={Math.PI * 0.8}
                 castShadow
                 shadow-mapSize-width={2048}
                 shadow-mapSize-height={2048}
-                shadow-camera-near={0.1}
-                shadow-camera-far={50}
-                shadow-camera-left={-5}
-                shadow-camera-right={5}
-                shadow-camera-top={5}
-                shadow-camera-bottom={-5}
-                shadow-normalBias={0.001}
             />
             
-            {/* Fill light from back-left */}
-            <directionalLight
-                position={[-4, -4, 6]}
-                intensity={Math.PI * 0.4}
-            />
+            {/* Fill lights from different angles */}
+            <directionalLight position={[-4, -4, 6]} intensity={Math.PI * 0.4} />
+            <directionalLight position={[-4, 4, 4]} intensity={Math.PI * 0.3} />
+            <directionalLight position={[4, -4, 4]} intensity={Math.PI * 0.3} />
+            <directionalLight position={[0, 0, 10]} intensity={Math.PI * 0.2} />
+            <directionalLight position={[0, 0, -5]} intensity={Math.PI * 0.15} />
             
-            {/* Fill light from front-left */}
-            <directionalLight
-                position={[-4, 4, 4]}
-                intensity={Math.PI * 0.3}
-            />
-            
-            {/* Fill light from back-right */}
-            <directionalLight
-                position={[4, -4, 4]}
-                intensity={Math.PI * 0.3}
-            />
-            
-            {/* Top light */}
-            <directionalLight
-                position={[0, 0, 10]}
-                intensity={Math.PI * 0.2}
-            />
-            
-            {/* Bottom fill light (subtle) */}
-            <directionalLight
-                position={[0, 0, -5]}
-                intensity={Math.PI * 0.15}
-            />
-            
-            {/* Ground plane for shadows - Z-up coordinate system */}
-            <mesh 
-                rotation={[0, 0, 0]} 
-                position={[0, 0, -0.02]} 
-                receiveShadow
-            >
-                <planeGeometry args={[100, 100]} />
-                <shadowMaterial transparent opacity={0.15} side={THREE.DoubleSide} depthWrite={false} />
-            </mesh>
+{/* Shadow plane removed - causes z-fighting with grid */}
         </>
     );
 }
@@ -2535,7 +2595,7 @@ const JointControlItem = ({
 
     };
 
-export function URDFViewer({ urdfContent, assets, onJointChange, lang, mode = 'detail', onSelect, theme, selection, hoveredSelection, robotLinks, focusTarget, showVisual: propShowVisual, setShowVisual: propSetShowVisual, onCollisionTransform }: URDFViewerProps) {
+export function URDFViewer({ urdfContent, assets, onJointChange, lang, mode = 'detail', onSelect, theme, selection, hoveredSelection, robotLinks, focusTarget, showVisual: propShowVisual, setShowVisual: propSetShowVisual, snapshotAction, onCollisionTransform }: URDFViewerProps) {
     const t = translations[lang];
     const [robot, setRobot] = useState<any>(null);
     const [selectedJoint, setSelectedJoint] = useState<string | null>(null);
@@ -3096,6 +3156,7 @@ export function URDFViewer({ urdfContent, assets, onJointChange, lang, mode = 'd
                     antialias: true,
                     toneMapping: THREE.ACESFilmicToneMapping,
                     toneMappingExposure: 1.0,
+                    preserveDrawingBuffer: true,
                 }}
                 onPointerMissed={() => {
                     // Don't deselect if we just selected something via DOM events
@@ -3111,6 +3172,7 @@ export function URDFViewer({ urdfContent, assets, onJointChange, lang, mode = 'd
                 <color attach="background" args={[theme === 'light' ? '#f8f9fa' : '#1f1f1f']} />
                 <SceneLighting />
                 <Environment files="/potsdamer_platz_1k.hdr" />
+                <SnapshotManager actionRef={snapshotAction} robotName={robot?.name || 'robot'} />
                 
                 <Suspense fallback={null}>
                     <RobotModel
@@ -3152,6 +3214,7 @@ export function URDFViewer({ urdfContent, assets, onJointChange, lang, mode = 'd
                 )}
                 
                 <Grid 
+                    name="ReferenceGrid"
                     infiniteGrid 
                     fadeDistance={100}
                     sectionSize={1}

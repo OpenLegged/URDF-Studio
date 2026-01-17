@@ -16,7 +16,7 @@ import { generateRobotFromPrompt, runRobotInspection } from './services/geminiSe
 import { DEFAULT_MOTOR_LIBRARY } from './services/motorLibrary';
 import { translations, Language } from './services/i18n';
 import { INSPECTION_CRITERIA, getInspectionCategory } from './services/inspectionCriteria';
-import { Download, Activity, Box, Cpu, Upload, Sparkles, X, Loader2, Check, ArrowRight, Github, Globe, ScanSearch, AlertTriangle, Info, AlertCircle, Move, ChevronDown, ChevronRight, FileText, RefreshCw, MessageCircle, Send, FileJson, Folder, Heart, Sun, Moon, Briefcase, Undo, Redo, RotateCcw, RotateCw, History, Code, Settings } from 'lucide-react';
+import { Download, Activity, Box, Cpu, Upload, Sparkles, X, Loader2, Check, ArrowRight, Github, Globe, ScanSearch, AlertTriangle, Info, AlertCircle, Move, ChevronDown, ChevronRight, FileText, RefreshCw, MessageCircle, Send, FileJson, Folder, Heart, Sun, Moon, Briefcase, Undo, Redo, RotateCcw, RotateCw, History, Code, Settings, Camera } from 'lucide-react';
 import JSZip from 'jszip';
 import jsPDF from 'jspdf';
 
@@ -1091,6 +1091,9 @@ export default function App() {
     document.addEventListener('mouseup', handleMouseUp);
   };
 
+  // Snapshot Ref to trigger capture from within Canvas context
+  const snapshotActionRef = useRef<(() => void) | null>(null);
+
   const handleSettingsDragStart = (e: React.MouseEvent) => {
     e.preventDefault(); 
     const startX = e.clientX;
@@ -1111,6 +1114,23 @@ export default function App() {
 
     document.addEventListener('mousemove', handleMouseMove);
     document.addEventListener('mouseup', handleMouseUp);
+  };
+
+  const handleSnapshot = () => {
+      if (snapshotActionRef.current) {
+          try {
+              // Trigger the snapshot logic inside the Three.js context
+              snapshotActionRef.current();
+              // Toast is handled inside the snapshot function or we can do it here if it returns a promise
+              // But since we are calling a void function that triggers the download, we can show toast here
+              setToast({ show: true, message: lang === 'zh' ? '正在生成高清快照...' : 'Generating High-Res Snapshot...', type: 'info' });
+          } catch (e) {
+              console.error('Snapshot failed:', e);
+              setToast({ show: true, message: lang === 'zh' ? '快照失败' : 'Snapshot failed', type: 'info' });
+          }
+      } else {
+          console.warn('Snapshot action not bound');
+      }
   };
 
   const handleDownloadPDF = () => {
@@ -1705,6 +1725,14 @@ export default function App() {
         {/* Right Section - Actions */}
         <div className="flex items-center gap-0.5">
             <button 
+                onClick={handleSnapshot}
+                className="flex items-center justify-center w-8 h-8 rounded-md text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-700 dark:hover:text-slate-200 transition-all"
+                title={lang === 'zh' ? "快照" : "Snapshot"}
+            >
+                <Camera className="w-4 h-4" />
+            </button>
+
+            <button 
                 onClick={() => setIsSettingsOpen(true)}
                 className="flex items-center justify-center w-8 h-8 rounded-md text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-700 dark:hover:text-slate-200 transition-all"
                 title={lang === 'zh' ? "设置" : "Settings"}
@@ -1776,6 +1804,7 @@ export default function App() {
                 robotLinks={robot.links}
                 showVisual={showVisual}
                 setShowVisual={handleSetShowVisual}
+                snapshotAction={snapshotActionRef}
                 onCollisionTransform={(linkId, position, rotation) => {
                     // linkId is the selection.id which is the link's ID (not name)
                     console.log('App.tsx onCollisionTransform called:', { linkId, position, rotation });
@@ -1814,6 +1843,7 @@ export default function App() {
                 os={os}
                 showVisual={showVisual}
                 setShowVisual={handleSetShowVisual}
+                snapshotAction={snapshotActionRef}
             />
         )}
         
