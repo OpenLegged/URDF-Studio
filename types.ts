@@ -70,6 +70,7 @@ export interface UrdfJoint {
   limit: { lower: number; upper: number; effort: number; velocity: number };
   dynamics: UrdfJointDynamics;
   hardware: UrdfJointHardware;
+  angle?: number;
 }
 
 export interface RobotState {

@@ -6,9 +6,10 @@
 
 import React, { Suspense, useState, useMemo, useRef, useEffect, useCallback } from 'react';
 import { Canvas, useThree, useFrame } from '@react-three/fiber';
-import { OrbitControls, Grid, Environment, GizmoHelper, GizmoViewport, Html, TransformControls } from '@react-three/drei';
+import { OrbitControls, Grid, Environment, GizmoHelper, GizmoViewport, Html, TransformControls, Line } from '@react-three/drei';
 import * as THREE from 'three';
-import { RotateCcw, Move, ArrowUpRight } from 'lucide-react';
+import { RotateCcw, Move, ArrowUpRight, MousePointer2, Hand, Ruler, BoxSelect, View as ViewIcon, CheckSquare, Scan, MousePointerClick, X, Eye } from 'lucide-react';
+import Draggable from 'react-draggable';
 // @ts-ignore
 import URDFLoader from 'urdf-loader';
 import { translations, Language } from '../services/i18n';
@@ -19,6 +20,7 @@ interface URDFViewerProps {
     urdfContent: string;
     assets: Record<string, string>; // filename -> blob URL
     onJointChange?: (jointName: string, angle: number) => void;
+    jointAngleState?: Record<string, number>;
     lang: Language;
     mode?: 'detail' | 'hardware';
     onSelect?: (type: 'link' | 'joint', id: string, subType?: 'visual' | 'collision') => void;
@@ -29,8 +31,114 @@ interface URDFViewerProps {
     focusTarget?: string | null;
     showVisual?: boolean;
     setShowVisual?: (show: boolean) => void;
+    showToolbar?: boolean;
+    setShowToolbar?: (show: boolean) => void;
+    showOptionsPanel?: boolean;
+    setShowOptionsPanel?: (show: boolean) => void;
+    showJointPanel?: boolean;
+    setShowJointPanel?: (show: boolean) => void;
     onCollisionTransform?: (linkName: string, position: {x: number, y: number, z: number}, rotation: {r: number, p: number, y: number}) => void;
+    snapshotAction?: React.MutableRefObject<(() => void) | null>;
 }
+
+// Snapshot Manager to handle high-res capture without gizmos
+const SnapshotManager = ({ actionRef, robotName }: { actionRef?: React.MutableRefObject<(() => void) | null>, robotName: string }) => {
+    const { gl, scene, camera } = useThree();
+
+    useEffect(() => {
+        if (!actionRef) return;
+
+        actionRef.current = () => {
+            // 1. Hide Gizmos, Grid, and other helpers
+            const hiddenObjects: THREE.Object3D[] = [];
+            
+            // Helper to check if object is a helper/gizmo
+            const isHelper = (obj: THREE.Object3D) => {
+                if (obj.userData.isGizmo) return true;
+                if (obj.name === 'ReferenceGrid') return true;
+                // Check Types
+                if (obj.type.includes('Grid')) return true;
+                if (obj.type.includes('AxesHelper')) return true;
+                if (obj.type.includes('CameraHelper')) return true;
+                if (obj.type.includes('ArrowHelper')) return true;
+                // Check Drei Gizmos (often unnamed groups or specific structures)
+                // GizmoViewport usually resides in a group attached to camera or scene with specific userData in newer versions, 
+                // but checking for 'Gizmo' in name or type or parents might help.
+                // TransformControls
+                if ((obj as any).isTransformControls) return true;
+                
+                // Hide ALL lines that are NOT part of the robot model?
+                // Robot model meshes are usually Mesh. Lines are usually helpers.
+                // Exception: If the robot ITSELF uses Lines (rare in URDF, but possible in glTF).
+                // Safest is to assume Lines at root level or in helper groups are bad.
+                if (obj.type === 'Line' || obj.type === 'LineSegments') {
+                    // Check if parent is the scene or a known helper group
+                    if (obj.parent === scene) return true;
+                    // If it belongs to a Grid
+                    if (obj.parent && obj.parent.type.includes('Grid')) return true;
+                }
+                
+                return false;
+            };
+
+            scene.traverse((obj) => {
+                if (obj.visible && isHelper(obj)) {
+                    obj.visible = false;
+                    hiddenObjects.push(obj);
+                }
+            });
+            
+            // Also explicitly hide GizmoHelper container if found (it often attaches to a separate scene or camera, but in drei it's in the scene)
+            // It might be hard to find generic Drei gizmos.
+            // Let's try to find objects with specific names often used by Drei
+            const gizmoLayer = scene.children.find(c => c.name === 'GizmoViewport'); 
+            if(gizmoLayer && gizmoLayer.visible) {
+                 gizmoLayer.visible = false;
+                 hiddenObjects.push(gizmoLayer);
+            }
+
+            // 2. Store and clear background for transparency
+            const originalBackground = scene.background;
+            scene.background = null;
+            
+            // Clear color to transparent
+            const originalClearColor = new THREE.Color();
+            gl.getClearColor(originalClearColor);
+            const originalClearAlpha = gl.getClearAlpha();
+            gl.setClearColor(0x000000, 0);
+
+            // 3. High Res Render
+            const originalPixelRatio = gl.getPixelRatio();
+            gl.setPixelRatio(4); // 4x Super Sampling for crisp edges
+            
+            // Force update matrices
+            scene.updateMatrixWorld(true);
+            
+            gl.render(scene, camera);
+            const dataUrl = gl.domElement.toDataURL('image/png', 1.0);
+
+            // 4. Restore
+            gl.setPixelRatio(originalPixelRatio);
+            scene.background = originalBackground;
+            gl.setClearColor(originalClearColor, originalClearAlpha);
+            
+            hiddenObjects.forEach(obj => obj.visible = true);
+
+            // 5. Download
+            const link = document.createElement('a');
+            const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+            link.setAttribute('download', `${robotName}_HD_${timestamp}.png`);
+            link.setAttribute('href', dataUrl);
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        };
+    }, [gl, scene, camera, actionRef, robotName]);
+
+    return null;
+};
+
+// Empty raycast function to disable raycast on collision meshes
 
 // Clean file path (remove '..' and '.', normalize slashes)
 const cleanFilePath = (path: string): string => {
@@ -355,6 +463,7 @@ interface RobotModelProps {
     showVisual?: boolean;
     onSelect?: (type: 'link' | 'joint', id: string, subType?: 'visual' | 'collision') => void;
     onJointChange?: (name: string, angle: number) => void;
+    onJointChangeCommit?: (name: string, angle: number) => void;
     jointAngles?: Record<string, number>;
     setIsDragging?: (dragging: boolean) => void;
     setActiveJoint?: (jointName: string | null) => void;
@@ -371,6 +480,7 @@ interface RobotModelProps {
     robotLinks?: Record<string, UrdfLink>; // Link data from the app state, contains inertial info
     focusTarget?: string | null;
     transformMode?: 'select' | 'translate' | 'rotate' | 'universal';
+    toolMode?: ToolMode;
     onCollisionTransformEnd?: (linkName: string, position: {x: number, y: number, z: number}, rotation: {r: number, p: number, y: number}) => void;
 }
 
@@ -384,6 +494,15 @@ const highlightMaterial = new THREE.MeshPhongMaterial({
     emissive: 0x60a5fa,
     emissiveIntensity: 0.25,
     side: THREE.DoubleSide,
+});
+
+const highlightFaceMaterial = new THREE.MeshBasicMaterial({
+    color: 0xff0000,
+    transparent: true,
+    opacity: 0.5,
+    side: THREE.DoubleSide,
+    depthTest: false, // Render on top
+    depthWrite: false
 });
 
 const collisionHighlightMaterial = new THREE.MeshPhongMaterial({
@@ -404,7 +523,7 @@ const collisionBaseMaterial = new THREE.MeshBasicMaterial({
     depthTest: false
 });
 
-function RobotModel({ urdfContent, assets, onRobotLoaded, showCollision = false, showVisual = true, onSelect, onJointChange, jointAngles, setIsDragging, setActiveJoint, justSelectedRef, t, mode, selection, hoveredSelection, highlightMode = 'link', showInertia = false, showCenterOfMass = false, showOrigins = false, originSize = 1.0, showJointAxes = false, jointAxisSize = 1.0, robotLinks, focusTarget, transformMode = 'select', onCollisionTransformEnd }: RobotModelProps & { selection?: URDFViewerProps['selection'], hoveredSelection?: URDFViewerProps['selection'] }) {
+function RobotModel({ urdfContent, assets, onRobotLoaded, showCollision = false, showVisual = true, onSelect, onJointChange, onJointChangeCommit, jointAngles, setIsDragging, setActiveJoint, justSelectedRef, t, mode, selection, hoveredSelection, highlightMode = 'link', showInertia = false, showCenterOfMass = false, showOrigins = false, originSize = 1.0, showJointAxes = false, jointAxisSize = 1.0, robotLinks, focusTarget, transformMode = 'select', toolMode = 'select', onCollisionTransformEnd }: RobotModelProps & { selection?: URDFViewerProps['selection'], hoveredSelection?: URDFViewerProps['selection'] }) {
     const [robot, setRobot] = useState<THREE.Object3D | null>(null);
     const [error, setError] = useState<string | null>(null);
     const [robotVersion, setRobotVersion] = useState(0); // Track async loading updates
@@ -413,6 +532,7 @@ function RobotModel({ urdfContent, assets, onRobotLoaded, showCollision = false,
     const raycasterRef = useRef(new THREE.Raycaster());
     const hoveredLinkRef = useRef<string | null>(null);
     const onJointChangeRef = useRef(onJointChange);
+    const onJointChangeCommitRef = useRef(onJointChangeCommit);
     const setIsDraggingRef = useRef(setIsDragging);
     const invalidateRef = useRef(invalidate);
     const setActiveJointRef = useRef(setActiveJoint);
@@ -435,6 +555,175 @@ function RobotModel({ urdfContent, assets, onRobotLoaded, showCollision = false,
     const focusTargetRef = useRef<THREE.Vector3 | null>(null);
     const cameraTargetPosRef = useRef<THREE.Vector3 | null>(null);
     const isFocusingRef = useRef(false);
+
+    // Face selection state
+    const [highlightedFace, setHighlightedFace] = useState<{ mesh: THREE.Mesh, faceIndex: number } | null>(null);
+    const highlightedFaceMeshRef = useRef<THREE.Mesh | null>(null);
+
+    // Helper function to get triangle vertices from geometry
+    const getTriangleVertices = useCallback((geometry: THREE.BufferGeometry, faceIndex: number): THREE.Vector3[] => {
+        const positionAttribute = geometry.getAttribute('position');
+        const indexAttribute = geometry.getIndex();
+        
+        let a: number, b: number, c: number;
+        if (indexAttribute) {
+            a = indexAttribute.getX(faceIndex * 3);
+            b = indexAttribute.getX(faceIndex * 3 + 1);
+            c = indexAttribute.getX(faceIndex * 3 + 2);
+        } else {
+            a = faceIndex * 3;
+            b = faceIndex * 3 + 1;
+            c = faceIndex * 3 + 2;
+        }
+        
+        return [
+            new THREE.Vector3(positionAttribute.getX(a), positionAttribute.getY(a), positionAttribute.getZ(a)),
+            new THREE.Vector3(positionAttribute.getX(b), positionAttribute.getY(b), positionAttribute.getZ(b)),
+            new THREE.Vector3(positionAttribute.getX(c), positionAttribute.getY(c), positionAttribute.getZ(c))
+        ];
+    }, []);
+
+    // Helper function to compute face normal
+    const computeFaceNormal = useCallback((v0: THREE.Vector3, v1: THREE.Vector3, v2: THREE.Vector3): THREE.Vector3 => {
+        const edge1 = new THREE.Vector3().subVectors(v1, v0);
+        const edge2 = new THREE.Vector3().subVectors(v2, v0);
+        return new THREE.Vector3().crossVectors(edge1, edge2).normalize();
+    }, []);
+
+    // Find all coplanar triangles with the clicked face
+    const findCoplanarFaces = useCallback((geometry: THREE.BufferGeometry, clickedFaceIndex: number): number[] => {
+        const positionAttribute = geometry.getAttribute('position');
+        const indexAttribute = geometry.getIndex();
+        
+        // Get clicked face vertices and normal
+        const clickedVerts = getTriangleVertices(geometry, clickedFaceIndex);
+        const clickedNormal = computeFaceNormal(clickedVerts[0], clickedVerts[1], clickedVerts[2]);
+        
+        // Define the plane using the clicked face
+        const planePoint = clickedVerts[0]; // A point on the plane
+        
+        // Tolerance for coplanarity check
+        const normalTolerance = 0.001; // Angle tolerance (dot product close to 1 or -1)
+        const distanceTolerance = 0.0001; // Distance from plane tolerance
+        
+        const coplanarFaces: number[] = [];
+        
+        // Calculate total number of faces
+        const totalFaces = indexAttribute 
+            ? indexAttribute.count / 3 
+            : positionAttribute.count / 3;
+        
+        for (let i = 0; i < totalFaces; i++) {
+            const verts = getTriangleVertices(geometry, i);
+            const normal = computeFaceNormal(verts[0], verts[1], verts[2]);
+            
+            // Check if normals are parallel (same direction or opposite)
+            const dotProduct = Math.abs(clickedNormal.dot(normal));
+            if (dotProduct < 1 - normalTolerance) continue; // Not parallel
+            
+            // Check if all vertices lie on the same plane
+            // Distance from point to plane = (point - planePoint) · normal
+            let allOnPlane = true;
+            for (const vert of verts) {
+                const dist = Math.abs(new THREE.Vector3().subVectors(vert, planePoint).dot(clickedNormal));
+                if (dist > distanceTolerance) {
+                    allOnPlane = false;
+                    break;
+                }
+            }
+            
+            if (allOnPlane) {
+                coplanarFaces.push(i);
+            }
+        }
+        
+        return coplanarFaces;
+    }, [getTriangleVertices, computeFaceNormal]);
+
+    // Update face highlight mesh
+    useEffect(() => {
+        if (!highlightedFace) {
+            if (highlightedFaceMeshRef.current) {
+                highlightedFaceMeshRef.current.visible = false;
+            }
+            return;
+        }
+
+        const { mesh, faceIndex } = highlightedFace;
+        const geometry = mesh.geometry;
+        
+        if (!geometry) return;
+
+        // Create a new mesh for the face highlight if it doesn't exist
+        if (!highlightedFaceMeshRef.current) {
+            highlightedFaceMeshRef.current = new THREE.Mesh(new THREE.BufferGeometry(), highlightFaceMaterial);
+            highlightedFaceMeshRef.current.renderOrder = 2000;
+            scene.add(highlightedFaceMeshRef.current);
+        }
+
+        const highlightMesh = highlightedFaceMeshRef.current;
+        highlightMesh.visible = true;
+
+        const positionAttribute = geometry.getAttribute('position');
+        const indexAttribute = geometry.getIndex();
+
+        // Only highlight the single clicked triangle (not coplanar faces)
+        // This gives user precise control over individual mesh triangles
+        const facesToHighlight = [faceIndex];
+        
+        // Build positions array for the highlighted face(s)
+        const positions: number[] = [];
+        
+        for (const fi of facesToHighlight) {
+            let a: number, b: number, c: number;
+            if (indexAttribute) {
+                a = indexAttribute.getX(fi * 3);
+                b = indexAttribute.getX(fi * 3 + 1);
+                c = indexAttribute.getX(fi * 3 + 2);
+            } else {
+                a = fi * 3;
+                b = fi * 3 + 1;
+                c = fi * 3 + 2;
+            }
+            
+            positions.push(
+                positionAttribute.getX(a), positionAttribute.getY(a), positionAttribute.getZ(a),
+                positionAttribute.getX(b), positionAttribute.getY(b), positionAttribute.getZ(b),
+                positionAttribute.getX(c), positionAttribute.getY(c), positionAttribute.getZ(c)
+            );
+        }
+        
+        const highlightGeo = highlightMesh.geometry;
+        highlightGeo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+        highlightGeo.computeVertexNormals();
+
+    }, [highlightedFace, scene]);
+
+    // Sync face highlight transform
+    useFrame(() => {
+        if (highlightedFace && highlightedFaceMeshRef.current) {
+             const mesh = highlightedFace.mesh;
+             const highlight = highlightedFaceMeshRef.current;
+             
+             // Simple approach: Copy world matrix
+             mesh.updateMatrixWorld();
+             highlight.matrix.copy(mesh.matrixWorld);
+             highlight.matrixAutoUpdate = false; 
+             // Note: matrixWorld is composed of position, rotation, scale.
+             // If we add to scene, we can set matrix directly if matrixAutoUpdate is false.
+        }
+    });
+
+    // Clean up face highlight
+    useEffect(() => {
+        return () => {
+            if (highlightedFaceMeshRef.current) {
+                scene.remove(highlightedFaceMeshRef.current);
+                highlightedFaceMeshRef.current.geometry.dispose();
+                highlightedFaceMeshRef.current = null;
+            }
+        };
+    }, [scene]);
 
     // Handle focus target change
     useEffect(() => {
@@ -640,9 +929,10 @@ function RobotModel({ urdfContent, assets, onRobotLoaded, showCollision = false,
     useEffect(() => {
         invalidateRef.current = invalidate;
         onJointChangeRef.current = onJointChange;
+        onJointChangeCommitRef.current = onJointChangeCommit;
         setIsDraggingRef.current = setIsDragging;
         setActiveJointRef.current = setActiveJoint;
-    }, [invalidate, onJointChange, setIsDragging, setActiveJoint]);
+    }, [invalidate, onJointChange, onJointChangeCommit, setIsDragging, setActiveJoint]);
     
     // Mouse tracking for hover detection AND joint dragging (like robot_viewer's URDFDragControls)
     useEffect(() => {
@@ -772,6 +1062,15 @@ function RobotModel({ urdfContent, assets, onRobotLoaded, showCollision = false,
         const handleMouseDown = (e: MouseEvent) => {
             if (!robot) return;
             
+            // If in measure or view mode, do not perform selection/drag
+            // Only allow selection in standard modes (select, translate, rotate, universal)
+            // View mode handles pan/orbit but no selection
+            // Face mode handles face selection separately (TODO: Implement click to select face)
+            // Measure mode handles measurement points
+            const isStandardSelectionMode = ['select', 'translate', 'rotate', 'universal'].includes(toolMode || 'select');
+            
+            if (!isStandardSelectionMode) return;
+            
             // Cast ray from mouse position
             const rect = gl.domElement.getBoundingClientRect();
             const mouse = new THREE.Vector2(
@@ -891,6 +1190,12 @@ function RobotModel({ urdfContent, assets, onRobotLoaded, showCollision = false,
         
         const handleMouseUp = () => {
             if (isDraggingJoint.current) {
+                // Drag ended. Commit the change.
+                if (onJointChangeCommitRef.current && dragJoint.current) {
+                     const currentAngle = dragJoint.current.angle || 0;
+                     onJointChangeCommitRef.current(dragJoint.current.name, currentAngle);
+                }
+
                 isDraggingJoint.current = false;
                 dragJoint.current = null;
                 setIsDraggingRef.current?.(false);
@@ -930,7 +1235,7 @@ function RobotModel({ urdfContent, assets, onRobotLoaded, showCollision = false,
             gl.domElement.removeEventListener('mouseup', handleMouseUp);
             gl.domElement.removeEventListener('mouseleave', handleMouseLeave);
         };
-    }, [gl, camera, robot, onSelect, highlightGeometry, highlightMode]);
+    }, [gl, camera, robot, onSelect, highlightGeometry, highlightMode, toolMode]);
     
     // Continuous hover detection like robot_viewer's URDFDragControls.update()
     useFrame(() => {
@@ -938,10 +1243,62 @@ function RobotModel({ urdfContent, assets, onRobotLoaded, showCollision = false,
         
         // If dragging joint, do not update hover highlight
         if (isDraggingJoint.current) return;
+
+        // Standard link highlighting - ONLY for first 5 modes
+        // Modes: view, select, translate, rotate, universal
+        const isStandardMode = ['view', 'select', 'translate', 'rotate', 'universal'].includes(toolMode || 'select');
+
+        // Handle Face Selection Mode
+        if (toolMode === 'face') {
+            raycasterRef.current.setFromCamera(mouseRef.current, camera);
+            const intersects = raycasterRef.current.intersectObject(robot, true);
+            
+            if (intersects.length > 0) {
+                 const hit = intersects[0];
+                 // Filter out gizmos
+                 let isGizmo = false;
+                 let obj: THREE.Object3D | null = hit.object;
+                 while(obj) {
+                     if (obj.userData?.isGizmo) { isGizmo = true; break; }
+                     obj = obj.parent;
+                 }
+
+                 if (!isGizmo && hit.faceIndex !== undefined && hit.object instanceof THREE.Mesh) {
+                     // Check if we need to update the highlight (new face or new mesh)
+                     if (highlightedFace?.faceIndex !== hit.faceIndex || highlightedFace?.mesh !== hit.object) {
+                         setHighlightedFace({ mesh: hit.object, faceIndex: hit.faceIndex });
+                     }
+                     // Hide link highlight if any
+                     if (hoveredLinkRef.current) {
+                        highlightGeometry(hoveredLinkRef.current, true);
+                        hoveredLinkRef.current = null;
+                     }
+                     return;
+                 }
+            }
+            if (highlightedFace) setHighlightedFace(null);
+            return;
+        }
+        
+        // Hide face highlight if not in face mode
+        if ((toolMode as any) !== 'face' && highlightedFace) {
+             setHighlightedFace(null);
+        }
         
         // Skip hover processing briefly after selection to avoid race condition
         // with async React state update (selection?.id may be stale)
         if (justSelectedRef?.current) return;
+
+        // If NOT in standard mode, clear any existing link highlight and return
+        if (!isStandardMode) {
+            if (hoveredLinkRef.current && hoveredLinkRef.current !== selection?.id) {
+                const isCollisionMode = highlightMode === 'collision';
+                highlightGeometry(hoveredLinkRef.current, true, isCollisionMode ? 'collision' : 'visual', (hoveredLinkRef as any).currentMesh);
+                hoveredLinkRef.current = null;
+                (hoveredLinkRef as any).currentMesh = null;
+            }
+            return;
+        }
 
         raycasterRef.current.setFromCamera(mouseRef.current, camera);
         
@@ -1305,9 +1662,9 @@ function RobotModel({ urdfContent, assets, onRobotLoaded, showCollision = false,
                         axes.raycast = () => {};
                         
                         const axisLength = 0.12;
-                        const axisRadius = 0.003;  // Thinner axes
-                        const coneLength = 0.03;
-                        const coneRadius = 0.008;
+                        const axisRadius = 0.01;  // Thicker axes (was 0.003)
+                        const coneLength = 0.04;  // Slightly longer cone (was 0.03)
+                        const coneRadius = 0.015; // Thicker cone (was 0.008)
                         
                         // Helper to create one axis (cylinder + cone)
                         const createAxis = (color: number, rotationAxis: THREE.Vector3, rotationAngle: number) => {
@@ -1315,8 +1672,14 @@ function RobotModel({ urdfContent, assets, onRobotLoaded, showCollision = false,
                             
                             // Cylinder (shaft)
                             const cylinderGeom = new THREE.CylinderGeometry(axisRadius, axisRadius, axisLength, 8);
-                            const cylinderMat = new THREE.MeshBasicMaterial({ color, depthTest: true, depthWrite: true });
+                            const cylinderMat = new THREE.MeshBasicMaterial({ 
+                                color, 
+                                depthTest: false, // Make axes visible through geometry
+                                transparent: true, 
+                                opacity: 0.8 
+                            });
                             const cylinder = new THREE.Mesh(cylinderGeom, cylinderMat);
+                            cylinder.renderOrder = 1000;
                             cylinder.position.y = axisLength / 2;
                             cylinder.userData = { isGizmo: true };
                             cylinder.raycast = () => {};
@@ -1324,8 +1687,14 @@ function RobotModel({ urdfContent, assets, onRobotLoaded, showCollision = false,
                             
                             // Cone (arrowhead)
                             const coneGeom = new THREE.ConeGeometry(coneRadius, coneLength, 8);
-                            const coneMat = new THREE.MeshBasicMaterial({ color, depthTest: true, depthWrite: true });
+                            const coneMat = new THREE.MeshBasicMaterial({ 
+                                color, 
+                                depthTest: false, 
+                                transparent: true, 
+                                opacity: 0.8 
+                            });
                             const cone = new THREE.Mesh(coneGeom, coneMat);
+                            cone.renderOrder = 1000;
                             cone.position.y = axisLength + coneLength / 2;
                             cone.userData = { isGizmo: true };
                             cone.raycast = () => {};
@@ -1467,6 +1836,14 @@ function RobotModel({ urdfContent, assets, onRobotLoaded, showCollision = false,
     // Effect to handle external selection highlighting (Moved here to run AFTER visibility effects)
     useEffect(() => {
         if (!robot) return;
+
+        if (toolMode === 'measure') {
+            if (currentSelectionRef.current.id) {
+                highlightGeometry(currentSelectionRef.current.id, true, currentSelectionRef.current.subType as any);
+            }
+            currentSelectionRef.current = { id: null, subType: null };
+            return;
+        }
         
         // Clear previous selection highlight
         if (currentSelectionRef.current.id) {
@@ -1500,11 +1877,19 @@ function RobotModel({ urdfContent, assets, onRobotLoaded, showCollision = false,
         } else {
             currentSelectionRef.current = { id: null, subType: null };
         }
-    }, [robot, selection?.type, selection?.id, selection?.subType, highlightGeometry, robotVersion, highlightMode, showCollision]);
+    }, [robot, selection?.type, selection?.id, selection?.subType, highlightGeometry, robotVersion, highlightMode, showCollision, toolMode]);
 
     // Effect to handle external hover highlighting (Moved here to run AFTER visibility effects)
     useEffect(() => {
         if (!robot) return;
+
+        if (toolMode === 'measure') {
+            if (currentHoverRef.current.id) {
+                highlightGeometry(currentHoverRef.current.id, true, currentHoverRef.current.subType as any);
+            }
+            currentHoverRef.current = { id: null, subType: null };
+            return;
+        }
         
         // Clear previous hover highlight
         if (currentHoverRef.current.id) {
@@ -1522,7 +1907,7 @@ function RobotModel({ urdfContent, assets, onRobotLoaded, showCollision = false,
         } else {
             currentHoverRef.current = { id: null, subType: null };
         }
-    }, [robot, hoveredSelection?.id, hoveredSelection?.subType, selection?.id, selection?.subType, highlightGeometry, robotVersion]);
+    }, [robot, hoveredSelection?.id, hoveredSelection?.subType, selection?.id, selection?.subType, highlightGeometry, robotVersion, toolMode]);
 
     useEffect(() => {
         if (!urdfContent) return;
@@ -1660,7 +2045,7 @@ function RobotModel({ urdfContent, assets, onRobotLoaded, showCollision = false,
     );
 }
 
-const JointInteraction = ({ joint, value, onChange }: { joint: any, value: number, onChange: (val: number) => void }) => {
+const JointInteraction = ({ joint, value, onChange, onCommit }: { joint: any, value: number, onChange: (val: number) => void, onCommit?: (val: number) => void }) => {
     const transformRef = useRef<any>(null);
     const dummyRef = useRef<THREE.Object3D>(new THREE.Object3D());
     const lastRotation = useRef<number>(value);
@@ -1802,14 +2187,14 @@ const JointInteraction = ({ joint, value, onChange }: { joint: any, value: numbe
                 size={1.2}
                 space="local"
                 onMouseDown={() => { isDragging.current = true; }}
-                onMouseUp={() => { isDragging.current = false; }}
+                onMouseUp={() => { isDragging.current = false; if (onCommit) onCommit(lastRotation.current); }}
                 onObjectChange={handleChange}
             />
         </>
     );
 };
 
-// Scene lighting setup - inspired by robot_viewer EnvironmentManager
+// Scene lighting setup - clean and simple for Z-up coordinate system
 function SceneLighting() {
     const { scene, gl } = useThree();
     
@@ -1818,12 +2203,10 @@ function SceneLighting() {
         const pmremGenerator = new THREE.PMREMGenerator(gl);
         pmremGenerator.compileEquirectangularShader();
         
-        // Create a simple environment scene
         const envScene = new THREE.Scene();
         const envLight = new THREE.HemisphereLight(0xffffff, 0x444444, 1.0);
         envScene.add(envLight);
         
-        // Generate environment map
         const envMap = pmremGenerator.fromScene(envScene, 0.04).texture;
         envMap.mapping = THREE.EquirectangularReflectionMapping;
         scene.environment = envMap;
@@ -1835,67 +2218,29 @@ function SceneLighting() {
     
     return (
         <>
-            {/* Hemisphere light for ambient fill - increased intensity */}
+            {/* Hemisphere light for ambient fill */}
             <hemisphereLight args={[0xffffff, 0x666666, 0.8]} position={[0, 0, 1]} />
             
             {/* Ambient light for base illumination */}
             <ambientLight intensity={0.4} />
             
-            {/* Main directional light with shadows (front-top-right) */}
+            {/* Main directional light with shadows */}
             <directionalLight
                 position={[4, 4, 8]}
                 intensity={Math.PI * 0.8}
                 castShadow
                 shadow-mapSize-width={2048}
                 shadow-mapSize-height={2048}
-                shadow-camera-near={0.1}
-                shadow-camera-far={50}
-                shadow-camera-left={-5}
-                shadow-camera-right={5}
-                shadow-camera-top={5}
-                shadow-camera-bottom={-5}
-                shadow-normalBias={0.001}
             />
             
-            {/* Fill light from back-left */}
-            <directionalLight
-                position={[-4, -4, 6]}
-                intensity={Math.PI * 0.4}
-            />
+            {/* Fill lights from different angles */}
+            <directionalLight position={[-4, -4, 6]} intensity={Math.PI * 0.4} />
+            <directionalLight position={[-4, 4, 4]} intensity={Math.PI * 0.3} />
+            <directionalLight position={[4, -4, 4]} intensity={Math.PI * 0.3} />
+            <directionalLight position={[0, 0, 10]} intensity={Math.PI * 0.2} />
+            <directionalLight position={[0, 0, -5]} intensity={Math.PI * 0.15} />
             
-            {/* Fill light from front-left */}
-            <directionalLight
-                position={[-4, 4, 4]}
-                intensity={Math.PI * 0.3}
-            />
-            
-            {/* Fill light from back-right */}
-            <directionalLight
-                position={[4, -4, 4]}
-                intensity={Math.PI * 0.3}
-            />
-            
-            {/* Top light */}
-            <directionalLight
-                position={[0, 0, 10]}
-                intensity={Math.PI * 0.2}
-            />
-            
-            {/* Bottom fill light (subtle) */}
-            <directionalLight
-                position={[0, 0, -5]}
-                intensity={Math.PI * 0.15}
-            />
-            
-            {/* Ground plane for shadows - Z-up coordinate system */}
-            <mesh 
-                rotation={[0, 0, 0]} 
-                position={[0, 0, -0.02]} 
-                receiveShadow
-            >
-                <planeGeometry args={[100, 100]} />
-                <shadowMaterial transparent opacity={0.15} side={THREE.DoubleSide} depthWrite={false} />
-            </mesh>
+{/* Shadow plane removed - causes z-fighting with grid */}
         </>
     );
 }
@@ -2377,6 +2722,7 @@ const JointControlItem = ({
     activeJoint, 
     setActiveJoint, 
     handleJointAngleChange,
+    handleJointChangeCommit,
     onSelect
 }: { 
     name: string, 
@@ -2386,6 +2732,7 @@ const JointControlItem = ({
     activeJoint: string | null, 
     setActiveJoint: (name: string | null) => void, 
     handleJointAngleChange: (name: string, val: number) => void,
+    handleJointChangeCommit: (name: string, val: number) => void,
     onSelect?: (type: 'link' | 'joint', id: string) => void
 }) => {
     const limit = joint.limit || { lower: -Math.PI, upper: Math.PI };
@@ -2413,6 +2760,14 @@ const JointControlItem = ({
         setInputValue(displayValue.toFixed(2));
     }, [displayValue]);
 
+    const commitChange = (valStr: string) => {
+        const val = parseFloat(valStr);
+        if (!isNaN(val)) {
+            const radVal = angleUnit === 'deg' ? val * Math.PI / 180 : val;
+            handleJointChangeCommit(name, radVal);
+        }
+    };
+
     const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const s = e.target.value;
         setInputValue(s);
@@ -2425,117 +2780,376 @@ const JointControlItem = ({
         }
     };
 
-        return (
-
-                        <div 
-
-                            ref={itemRef}
-
-                            onClick={() => {
-
-                                setActiveJoint(name);
-
-                                onSelect?.('joint', name);
-
-                            }}
-
-                            className={`space-y-1 p-2 rounded-lg transition-colors cursor-pointer ${
-
-                                activeJoint === name 
-
-                                    ? 'bg-blue-100/50 dark:bg-google-blue/20 border border-blue-300 dark:border-google-blue/50' 
-
-                                    : 'bg-white/50 dark:bg-google-dark-bg/30 border border-transparent hover:bg-slate-100 dark:hover:bg-google-dark-bg/50'
-
-                            }`}
-
-                        >
-
-                <div className="flex justify-between text-xs items-center">
-
-                                        <span 
-
-                                            className={`truncate cursor-pointer font-medium ${activeJoint === name ? 'text-blue-600 dark:text-google-blue' : 'text-slate-700 dark:text-slate-200'}`} 
-
-                                            title={name}
-
-                                            onClick={() => {
-
-                                                setActiveJoint(name);
-
-                                                onSelect?.('joint', name);
-
-                                            }}
-
-                                        >
-
-                                            {name}
-
-                                        </span>
-
-                    <div className="flex items-center gap-1">
-
-                        <input 
-
-                            type="text" 
-
-                            value={inputValue}
-
-                            onChange={handleInputChange}
-
-                            onBlur={() => setInputValue(displayValue.toFixed(2))}
-
-                            className="w-16 bg-white dark:bg-google-dark-bg border border-slate-300 dark:border-google-dark-border rounded px-1 py-0.5 text-right text-xs text-slate-900 dark:text-white focus:border-google-blue outline-none"
-
-                        />
-
-                        <span className="text-slate-500 w-4">{angleUnit === 'deg' ? '°' : 'rad'}</span>
-
-                    </div>
-
-                </div>
-
-                <div className="flex items-center gap-2">
-
-                    <span className="text-[10px] text-slate-500 w-8 text-right">{displayMin.toFixed(1)}</span>
-
-                    <input
-
-                        type="range"
-
-                        min={displayMin}
-
-                        max={displayMax}
-
-                        step={step}
-
-                        value={displayValue}
-
-                        onChange={(e) => {
-
-                            const newVal = parseFloat(e.target.value);
-
-                            const radVal = angleUnit === 'deg' ? newVal * Math.PI / 180 : newVal;
-
-                            handleJointAngleChange(name, radVal);
-
+    return (
+        <div 
+            ref={itemRef}
+            onClick={() => {
+                setActiveJoint(name);
+                onSelect?.('joint', name);
+            }}
+            className={`space-y-1 p-2 rounded-lg transition-colors cursor-pointer ${
+                activeJoint === name 
+                    ? 'bg-blue-100/50 dark:bg-google-blue/20 border border-blue-300 dark:border-google-blue/50' 
+                    : 'bg-white/50 dark:bg-google-dark-bg/30 border border-transparent hover:bg-slate-100 dark:hover:bg-google-dark-bg/50'
+            }`}
+        >
+            <div className="flex justify-between text-xs items-center">
+                <span 
+                    className={`truncate cursor-pointer font-medium ${activeJoint === name ? 'text-blue-600 dark:text-google-blue' : 'text-slate-700 dark:text-slate-200'}`} 
+                    title={name}
+                    onClick={() => {
+                        setActiveJoint(name);
+                        onSelect?.('joint', name);
+                    }}
+                >
+                    {name}
+                </span>
+                <div className="flex items-center gap-1">
+                    <input 
+                        type="text" 
+                        value={inputValue}
+                        onChange={handleInputChange}
+                        onBlur={() => commitChange(inputValue)}
+                        onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                                commitChange(inputValue);
+                                (e.target as HTMLInputElement).blur();
+                            }
                         }}
-
-                        className="flex-1 h-1 bg-slate-300 dark:bg-google-dark-border rounded-lg appearance-none cursor-pointer accent-google-blue"
-
+                        className="w-16 bg-white dark:bg-google-dark-bg border border-slate-300 dark:border-google-dark-border rounded px-1 py-0.5 text-right text-xs text-slate-900 dark:text-white focus:border-google-blue outline-none"
                     />
-
-                    <span className="text-[10px] text-slate-500 w-8">{displayMax.toFixed(1)}</span>
-
+                    <span className="text-slate-500 w-4">{angleUnit === 'deg' ? '°' : 'rad'}</span>
                 </div>
-
             </div>
+            <div className="flex items-center gap-2">
+                <span className="text-[10px] text-slate-500 w-8 text-right">{displayMin.toFixed(1)}</span>
+                <input
+                    type="range"
+                    min={displayMin}
+                    max={displayMax}
+                    step={step}
+                    value={displayValue}
+                    onChange={(e) => {
+                        const newVal = parseFloat(e.target.value);
+                        const radVal = angleUnit === 'deg' ? newVal * Math.PI / 180 : newVal;
+                        handleJointAngleChange(name, radVal);
+                    }}
+                    onMouseUp={(e) => {
+                        const newVal = parseFloat((e.target as HTMLInputElement).value);
+                        const radVal = angleUnit === 'deg' ? newVal * Math.PI / 180 : newVal;
+                        handleJointChangeCommit(name, radVal);
+                    }}
+                    onTouchEnd={(e) => {
+                        const newVal = parseFloat((e.target as HTMLInputElement).value);
+                        const radVal = angleUnit === 'deg' ? newVal * Math.PI / 180 : newVal;
+                        handleJointChangeCommit(name, radVal);
+                    }}
+                    className="flex-1 h-1 bg-slate-300 dark:bg-google-dark-border rounded-lg appearance-none cursor-pointer accent-google-blue"
+                />
+                <span className="text-[10px] text-slate-500 w-8">{displayMax.toFixed(1)}</span>
+            </div>
+        </div>
+    );
+};
 
-        );
+type ToolMode = 'select' | 'translate' | 'rotate' | 'universal' | 'view' | 'face' | 'measure';
 
+// Measure state type for lifting state up
+interface MeasureState {
+    measurements: [THREE.Vector3, THREE.Vector3][];
+    currentPoints: THREE.Vector3[];
+    tempPoint: THREE.Vector3 | null;
+}
+
+// Measure Tool Component - only renders 3D elements, state is managed by parent
+const MeasureTool = ({ 
+    active, 
+    robot,
+    measureState,
+    setMeasureState 
+}: { 
+    active: boolean; 
+    robot: THREE.Object3D | null;
+    measureState: MeasureState;
+    setMeasureState: React.Dispatch<React.SetStateAction<MeasureState>>;
+}) => {
+    const { camera, gl } = useThree();
+    const [hoveredMeasurementIdx, setHoveredMeasurementIdx] = useState<number | null>(null);
+    const raycaster = useMemo(() => new THREE.Raycaster(), []);
+    const mouse = useRef(new THREE.Vector2());
+    
+    const { measurements, currentPoints, tempPoint } = measureState;
+
+    // Only clear temp state when deactivating, keep measurements
+    useEffect(() => {
+        if (!active) {
+            setMeasureState(prev => ({ ...prev, currentPoints: [], tempPoint: null }));
+        }
+    }, [active, setMeasureState]);
+
+    // Keyboard shortcuts
+    useEffect(() => {
+        if (!active) return;
+
+        const handleKeyDown = (event: KeyboardEvent) => {
+            // Escape: cancel current measurement in progress
+            if (event.key === 'Escape') {
+                if (currentPoints.length > 0) {
+                    setMeasureState(prev => ({ ...prev, currentPoints: [], tempPoint: null }));
+                }
+            }
+            // Backspace or Delete: remove last measurement
+            if (event.key === 'Backspace' || event.key === 'Delete') {
+                if (currentPoints.length > 0) {
+                    setMeasureState(prev => ({ ...prev, currentPoints: [], tempPoint: null }));
+                } else if (measurements.length > 0) {
+                    setMeasureState(prev => ({ ...prev, measurements: prev.measurements.slice(0, -1) }));
+                }
+            }
+        };
+
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+    }, [active, currentPoints, measurements, setMeasureState]);
+
+    useEffect(() => {
+        if (!active || !robot) return;
+
+        const handleMouseMove = (event: MouseEvent) => {
+            const rect = gl.domElement.getBoundingClientRect();
+            mouse.current.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+            mouse.current.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+
+            if (currentPoints.length === 1) {
+                 raycaster.setFromCamera(mouse.current, camera);
+                 const intersects = raycaster.intersectObject(robot, true);
+                 if (intersects.length > 0) {
+                     setMeasureState(prev => ({ ...prev, tempPoint: intersects[0].point.clone() }));
+                 } else {
+                     setMeasureState(prev => ({ ...prev, tempPoint: null }));
+                 }
+            }
+        };
+
+        const handleClick = (event: MouseEvent) => {
+             // Ignore clicks on UI elements or context menu
+             if ((event.target as HTMLElement).closest('.urdf-toolbar') || 
+                 (event.target as HTMLElement).closest('.urdf-options-panel') ||
+                 (event.target as HTMLElement).closest('.urdf-joint-panel') ||
+                 (event.target as HTMLElement).closest('.measure-context-menu') ||
+                 (event.target as HTMLElement).closest('.measure-panel')) return;
+             
+             raycaster.setFromCamera(mouse.current, camera);
+             const intersects = raycaster.intersectObject(robot, true);
+             
+             if (intersects.length > 0) {
+                 const point = intersects[0].point.clone();
+                 
+                 if (currentPoints.length === 0) {
+                     // First point of new measurement
+                     setMeasureState(prev => ({ ...prev, currentPoints: [point] }));
+                 } else if (currentPoints.length === 1) {
+                     // Second point - complete measurement
+                     setMeasureState(prev => ({
+                         ...prev,
+                         measurements: [...prev.measurements, [prev.currentPoints[0], point]],
+                         currentPoints: [],
+                         tempPoint: null
+                     }));
+                 }
+             }
+        };
+
+        gl.domElement.addEventListener('mousemove', handleMouseMove);
+        gl.domElement.addEventListener('click', handleClick);
+
+        return () => {
+            gl.domElement.removeEventListener('mousemove', handleMouseMove);
+            gl.domElement.removeEventListener('click', handleClick);
+        };
+    }, [active, robot, currentPoints, camera, gl, raycaster, setMeasureState]);
+
+    const handleDeleteMeasurement = (idx: number) => {
+        setMeasureState(prev => ({ ...prev, measurements: prev.measurements.filter((_, i) => i !== idx) }));
     };
 
-export function URDFViewer({ urdfContent, assets, onJointChange, lang, mode = 'detail', onSelect, theme, selection, hoveredSelection, robotLinks, focusTarget, showVisual: propShowVisual, setShowVisual: propSetShowVisual, onCollisionTransform }: URDFViewerProps) {
+    // Render current measurement in progress
+    const renderCurrentPoints = [...currentPoints];
+    if (currentPoints.length === 1 && tempPoint) {
+        renderCurrentPoints.push(tempPoint);
+    }
+
+    return (
+        <group>
+            {/* Render all completed measurements */}
+            {measurements.map((pair, idx) => (
+                <group key={`measurement-${idx}`}>
+                    <mesh position={pair[0]}>
+                        <sphereGeometry args={[0.0025, 16, 16]} />
+                        <meshBasicMaterial color={hoveredMeasurementIdx === idx ? "#ef4444" : "#22c55e"} depthTest={false} transparent opacity={0.8} />
+                    </mesh>
+                    <mesh position={pair[1]}>
+                        <sphereGeometry args={[0.0025, 16, 16]} />
+                        <meshBasicMaterial color={hoveredMeasurementIdx === idx ? "#ef4444" : "#22c55e"} depthTest={false} transparent opacity={0.8} />
+                    </mesh>
+                    <Line points={[pair[0], pair[1]]} color={hoveredMeasurementIdx === idx ? "#ef4444" : "#22c55e"} lineWidth={2} depthTest={false} />
+                    <Html position={new THREE.Vector3().addVectors(pair[0], pair[1]).multiplyScalar(0.5)}>
+                        <div 
+                            className={`bg-black/70 text-white px-2 py-1 rounded text-xs whitespace-nowrap font-mono cursor-pointer transition-colors group flex items-center gap-1 ${hoveredMeasurementIdx === idx ? 'bg-red-600/90' : 'hover:bg-slate-700'}`}
+                            onMouseEnter={() => setHoveredMeasurementIdx(idx)}
+                            onMouseLeave={() => setHoveredMeasurementIdx(null)}
+                            onClick={(e) => { e.stopPropagation(); handleDeleteMeasurement(idx); }}
+                            title="点击删除此测量"
+                        >
+                            {pair[0].distanceTo(pair[1]).toFixed(4)}m
+                            <svg className={`w-3 h-3 transition-opacity ${hoveredMeasurementIdx === idx ? 'opacity-100' : 'opacity-0'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                            </svg>
+                        </div>
+                    </Html>
+                </group>
+            ))}
+
+            {/* Render current measurement in progress (only when active) */}
+            {active && renderCurrentPoints.map((p, i) => (
+                <mesh key={`current-${i}`} position={p}>
+                    <sphereGeometry args={[0.0025, 16, 16]} />
+                    <meshBasicMaterial color="#ef4444" depthTest={false} transparent opacity={0.8} />
+                </mesh>
+            ))}
+            {active && renderCurrentPoints.length === 2 && (
+                <>
+                    <Line points={[renderCurrentPoints[0], renderCurrentPoints[1]]} color="#ef4444" lineWidth={2} depthTest={false} />
+                    <Html position={new THREE.Vector3().addVectors(renderCurrentPoints[0], renderCurrentPoints[1]).multiplyScalar(0.5)}>
+                        <div className="bg-black/70 text-white px-2 py-1 rounded text-xs whitespace-nowrap pointer-events-none font-mono">
+                            {renderCurrentPoints[0].distanceTo(renderCurrentPoints[1]).toFixed(4)}m
+                        </div>
+                    </Html>
+                </>
+            )}
+
+        </group>
+    );
+};
+
+const ViewerToolbar = ({ activeMode, setMode, onClose, lang = 'en' }: { activeMode: ToolMode, setMode: (mode: ToolMode) => void, onClose?: () => void, lang?: Language }) => {
+    const nodeRef = useRef<HTMLDivElement>(null);
+    const [initialPosition, setInitialPosition] = useState<{ x: number; y: number } | null>(null);
+    const t = translations[lang];
+    const tools = [
+        { id: 'view', icon: ViewIcon, label: t.viewMode },
+        { id: 'select', icon: MousePointer2, label: t.selectMode },
+        { id: 'translate', icon: Move, label: t.translateMode },
+        { id: 'rotate', icon: RotateCcw, label: t.rotateMode },
+        { id: 'universal', icon: ArrowUpRight, label: t.universalMode },
+        { id: 'face', icon: Scan, label: t.faceMode },
+        { id: 'measure', icon: Ruler, label: t.measureMode },
+    ];
+
+    // 初始加载时计算水平居中位置（顶部）- 只设置一次
+    useEffect(() => {
+        if (nodeRef.current && initialPosition === null) {
+            const parent = nodeRef.current.parentElement;
+            if (parent) {
+                const parentRect = parent.getBoundingClientRect();
+                const toolbarRect = nodeRef.current.getBoundingClientRect();
+                const centerX = (parentRect.width - toolbarRect.width) / 2;
+                setInitialPosition({ x: centerX, y: 4 });
+            }
+        }
+    }, [initialPosition]);
+
+    // 初始位置计算完成前，使用 CSS 居中；计算完成后使用 Draggable 的 defaultPosition
+    if (initialPosition === null) {
+        return (
+            <div ref={nodeRef} className="urdf-toolbar absolute z-40 bg-white/90 dark:bg-slate-800/90 backdrop-blur rounded-lg border border-slate-200 dark:border-slate-700 shadow-xl flex items-center p-1 gap-1 cursor-auto" style={{ left: '50%', top: '4px', transform: 'translateX(-50%)' }}>
+                <div className="drag-handle cursor-move px-1 text-slate-300 dark:text-slate-600 flex items-center h-full mr-1 hover:text-slate-500 dark:hover:text-slate-400">
+                    <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20"><path d="M7 2a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM7 8a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM7 14a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM13 2a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM13 8a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM13 14a2 2 0 1 0 0 4 2 2 0 0 0 0-4z"/></svg>
+                </div>
+                {tools.map((tool) => {
+                    const isActive = activeMode === tool.id;
+                    const Icon = tool.icon;
+                    return (
+                        <button
+                            key={tool.id}
+                            onClick={() => setMode(tool.id as ToolMode)}
+                            className={`group relative p-1.5 rounded-md transition-all ${
+                                isActive 
+                                ? 'bg-blue-100 text-blue-600 dark:bg-blue-900/50 dark:text-blue-400 shadow-sm' 
+                                : 'text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700 hover:text-slate-700 dark:hover:text-slate-200'
+                            }`}
+                        >
+                            <Icon className="w-4 h-4" />
+                            <span className="absolute top-full mt-2 left-1/2 -translate-x-1/2 bg-slate-800 text-white text-[10px] px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity duration-75 pointer-events-none whitespace-nowrap z-50 shadow-lg">
+                                {tool.label}
+                            </span>
+                        </button>
+                    );
+                })}
+                {onClose && (
+                    <>
+                        <div className="w-px h-4 bg-slate-200 dark:bg-slate-700 mx-1"></div>
+                        <button
+                            onClick={onClose}
+                            className="group relative p-1.5 rounded-md text-slate-400 hover:bg-red-50 hover:text-red-500 dark:hover:bg-red-900/20 transition-all"
+                        >
+                            <X className="w-4 h-4" />
+                            <span className="absolute top-full mt-2 left-1/2 -translate-x-1/2 bg-slate-800 text-white text-[10px] px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity duration-75 pointer-events-none whitespace-nowrap z-50 shadow-lg">
+                                {t.closeToolbar}
+                            </span>
+                        </button>
+                    </>
+                )}
+            </div>
+        );
+    }
+
+    return (
+        <Draggable bounds="parent" handle=".drag-handle" nodeRef={nodeRef} defaultPosition={initialPosition}>
+            <div ref={nodeRef} className="urdf-toolbar absolute z-40 bg-white/90 dark:bg-slate-800/90 backdrop-blur rounded-lg border border-slate-200 dark:border-slate-700 shadow-xl flex items-center p-1 gap-1 cursor-auto" style={{ left: 0, top: 0 }}>
+                <div className="drag-handle cursor-move px-1 text-slate-300 dark:text-slate-600 flex items-center h-full mr-1 hover:text-slate-500 dark:hover:text-slate-400">
+                    <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20"><path d="M7 2a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM7 8a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM7 14a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM13 2a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM13 8a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM13 14a2 2 0 1 0 0 4 2 2 0 0 0 0-4z"/></svg>
+                </div>
+                {tools.map((tool) => {
+                    const isActive = activeMode === tool.id;
+                    const Icon = tool.icon;
+                    return (
+                        <button
+                            key={tool.id}
+                            onClick={() => setMode(tool.id as ToolMode)}
+                            className={`group relative p-1.5 rounded-md transition-all ${
+                                isActive 
+                                ? 'bg-blue-100 text-blue-600 dark:bg-blue-900/50 dark:text-blue-400 shadow-sm' 
+                                : 'text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700 hover:text-slate-700 dark:hover:text-slate-200'
+                            }`}
+                        >
+                            <Icon className="w-4 h-4" />
+                            <span className="absolute top-full mt-2 left-1/2 -translate-x-1/2 bg-slate-800 text-white text-[10px] px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity duration-75 pointer-events-none whitespace-nowrap z-50 shadow-lg">
+                                {tool.label}
+                            </span>
+                        </button>
+                    );
+                })}
+                {onClose && (
+                    <>
+                        <div className="w-px h-4 bg-slate-200 dark:bg-slate-700 mx-1"></div>
+                        <button
+                            onClick={onClose}
+                            className="group relative p-1.5 rounded-md text-slate-400 hover:bg-red-50 hover:text-red-500 dark:hover:bg-red-900/20 transition-all"
+                        >
+                            <X className="w-4 h-4" />
+                            <span className="absolute top-full mt-2 left-1/2 -translate-x-1/2 bg-slate-800 text-white text-[10px] px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity duration-75 pointer-events-none whitespace-nowrap z-50 shadow-lg">
+                                {t.closeToolbar}
+                            </span>
+                        </button>
+                    </>
+                )}
+            </div>
+        </Draggable>
+    );
+};
+
+export function URDFViewer({ urdfContent, assets, onJointChange, jointAngleState, lang, mode = 'detail', onSelect, theme, selection, hoveredSelection, robotLinks, focusTarget, showVisual: propShowVisual, setShowVisual: propSetShowVisual, snapshotAction, onCollisionTransform, showToolbar = true, setShowToolbar, showOptionsPanel = true, setShowOptionsPanel, showJointPanel = true, setShowJointPanel }: URDFViewerProps) {
     const t = translations[lang];
     const [robot, setRobot] = useState<any>(null);
     const [selectedJoint, setSelectedJoint] = useState<string | null>(null);
@@ -2555,9 +3169,9 @@ export function URDFViewer({ urdfContent, assets, onJointChange, lang, mode = 'd
     const [originSize, setOriginSize] = useState(() => {
         if (typeof window !== 'undefined') {
             const saved = localStorage.getItem('urdf_viewer_origin_size');
-            return saved ? parseFloat(saved) : 1.0;
+            return saved ? Math.min(parseFloat(saved), 0.5) : 0.1;
         }
-        return 1.0;
+        return 0.1;
     });
     const [showJointAxes, setShowJointAxes] = useState(false);
     const [jointAxisSize, setJointAxisSize] = useState(() => {
@@ -2581,8 +3195,20 @@ export function URDFViewer({ urdfContent, assets, onJointChange, lang, mode = 'd
     // Highlight mode: 'link' (default) or 'collision'
     const [highlightMode, setHighlightMode] = useState<'link' | 'collision'>('link');
     
-    // Transform mode for collision editing: 'select' | 'translate' | 'rotate' | 'universal'
-    const [transformMode, setTransformMode] = useState<'select' | 'translate' | 'rotate' | 'universal'>('select');
+    // Tool mode
+    const [toolMode, setToolMode] = useState<ToolMode>('select');
+    
+    // Measure state - lifted up from MeasureTool for panel rendering outside Canvas
+    const [measureState, setMeasureState] = useState<MeasureState>({
+        measurements: [],
+        currentPoints: [],
+        tempPoint: null
+    });
+    const measurePanelRef = useRef<HTMLDivElement>(null);
+    const [measurePanelPos, setMeasurePanelPos] = useState<{ x: number; y: number } | null>(null);
+    
+    // Derived transform mode for RobotModel compatibility
+    const transformMode = (['translate', 'rotate', 'universal'].includes(toolMode) ? toolMode : 'select') as 'select' | 'translate' | 'rotate' | 'universal';
     
     // Automatically show collisions when collision highlight mode is selected
     useEffect(() => {
@@ -2607,7 +3233,7 @@ export function URDFViewer({ urdfContent, assets, onJointChange, lang, mode = 'd
     const jointPanelRef = useRef<HTMLDivElement>(null);
     const [optionsPanelPos, setOptionsPanelPos] = useState<{ x: number; y: number } | null>(null);
     const [jointPanelPos, setJointPanelPos] = useState<{ x: number; y: number } | null>(null);
-    const [dragging, setDragging] = useState<'options' | 'joints' | null>(null);
+    const [dragging, setDragging] = useState<'options' | 'joints' | 'measure' | null>(null);
     const dragStartRef = useRef<{ mouseX: number; mouseY: number; panelX: number; panelY: number } | null>(null);
     const [isOptionsCollapsed, setIsOptionsCollapsed] = useState(() => {
         if (typeof window !== 'undefined') {
@@ -2663,6 +3289,47 @@ export function URDFViewer({ urdfContent, assets, onJointChange, lang, mode = 'd
             setInitialJointAngles(angles);
         }
     }, []);
+
+    // Sync joint angles from history state (undo/redo)
+    useEffect(() => {
+        console.log('[URDFViewer] Sync useEffect triggered, robot:', !!robot, 'jointAngleState:', jointAngleState);
+        if (!robot || !jointAngleState) return;
+
+        setJointAngles(prev => {
+            const next = { ...prev, ...jointAngleState };
+            return next;
+        });
+
+        Object.entries(jointAngleState).forEach(([name, angle]) => {
+            const joint = robot.joints?.[name];
+            console.log('[URDFViewer] Setting joint:', name, 'to angle:', angle, 'joint found:', !!joint);
+            if (joint?.setJointValue) {
+                joint.setJointValue(angle);
+            }
+        });
+    }, [robot, jointAngleState]);
+
+    // Sync joint angles from robot prop (for undo/redo)
+    useEffect(() => {
+        if (robot && robot.joints) {
+            setJointAngles(prev => {
+                const next = { ...prev };
+                let changed = false;
+                Object.keys(robot.joints).forEach(name => {
+                    const newAngle = robot.joints[name].angle;
+                    if (newAngle !== undefined && newAngle !== prev[name]) {
+                        next[name] = newAngle;
+                        changed = true;
+                        // Also update the actual joint object in the scene if possible
+                        if (robot.joints[name].setJointValue) {
+                            robot.joints[name].setJointValue(newAngle);
+                        }
+                    }
+                });
+                return changed ? next : prev;
+            });
+        }
+    }, [robot]);
     
     const handleJointAngleChange = useCallback((jointName: string, angle: number) => {
         if (!robot?.joints?.[jointName]) return;
@@ -2673,11 +3340,13 @@ export function URDFViewer({ urdfContent, assets, onJointChange, lang, mode = 'd
         }
         
         setJointAngles(prev => ({ ...prev, [jointName]: angle }));
-        
+    }, [robot]);
+
+    const handleJointChangeCommit = useCallback((jointName: string, angle: number) => {
         if (onJointChange) {
             onJointChange(jointName, angle);
         }
-    }, [robot, onJointChange]);
+    }, [onJointChange]);
 
     const handleResetJoints = useCallback(() => {
         if (!robot || !robot.joints) return;
@@ -2756,7 +3425,8 @@ export function URDFViewer({ urdfContent, assets, onJointChange, lang, mode = 'd
     const handleMouseMove = useCallback((e: React.MouseEvent) => {
         if (!dragging || !dragStartRef.current || !containerRef.current) return;
         
-        const panelRef = dragging === 'options' ? optionsPanelRef : jointPanelRef;
+        const panelRef = dragging === 'options' ? optionsPanelRef : 
+                        dragging === 'joints' ? jointPanelRef : measurePanelRef;
         if (!panelRef.current) return;
         
         const deltaX = e.clientX - dragStartRef.current.mouseX;
@@ -2779,8 +3449,10 @@ export function URDFViewer({ urdfContent, assets, onJointChange, lang, mode = 'd
         
         if (dragging === 'options') {
             setOptionsPanelPos({ x: newX, y: newY });
-        } else {
+        } else if (dragging === 'joints') {
             setJointPanelPos({ x: newX, y: newY });
+        } else if (dragging === 'measure') {
+            setMeasurePanelPos({ x: newX, y: newY });
         }
     }, [dragging]);
     
@@ -2798,13 +3470,14 @@ export function URDFViewer({ urdfContent, assets, onJointChange, lang, mode = 'd
             onMouseLeave={handleMouseUp}
         >
             {/* Info overlay - unified with Visualizer style */}
-            <div className="absolute z-20 pointer-events-none select-none">
+            <div className="absolute top-4 left-4 z-20 pointer-events-none select-none">
                 <div className="text-slate-500 dark:text-slate-400 text-xs bg-white/50 dark:bg-google-dark-surface/50 backdrop-blur px-2 py-1 rounded border border-slate-200 dark:border-google-dark-border">
                     {mode === 'hardware' ? t.hardware : t.detail} {t.modeLabel}
                 </div>
             </div>
 
             {/* Settings panel - draggable */}
+            {showOptionsPanel && (
             <div 
                 ref={optionsPanelRef}
                 className="absolute z-30 pointer-events-auto"
@@ -2824,16 +3497,26 @@ export function URDFViewer({ urdfContent, assets, onJointChange, lang, mode = 'd
                             </svg>
                             {mode === 'hardware' ? t.hardwareOptions : t.detailOptions}
                         </div>
-                        <button 
-                            onClick={(e) => { e.stopPropagation(); toggleOptionsCollapsed(); }}
-                            className="text-slate-400 hover:text-slate-900 dark:hover:text-white p-1 hover:bg-slate-200 dark:hover:bg-google-dark-border rounded"
-                        >
-                            {isOptionsCollapsed ? (
-                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
-                            ) : (
-                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" /></svg>
+                        <div className="flex items-center gap-1">
+                            <button 
+                                onClick={(e) => { e.stopPropagation(); toggleOptionsCollapsed(); }}
+                                className="text-slate-400 hover:text-slate-900 dark:hover:text-white p-1 hover:bg-slate-200 dark:hover:bg-google-dark-border rounded"
+                            >
+                                {isOptionsCollapsed ? (
+                                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
+                                ) : (
+                                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" /></svg>
+                                )}
+                            </button>
+                            {setShowOptionsPanel && (
+                                <button 
+                                    onClick={(e) => { e.stopPropagation(); setShowOptionsPanel(false); }}
+                                    className="text-slate-400 hover:text-slate-900 dark:hover:text-white p-1 hover:bg-red-50 hover:text-red-500 dark:hover:bg-red-900/20 rounded"
+                                >
+                                    <X className="w-3 h-3" />
+                                </button>
                             )}
-                        </button>
+                        </div>
                     </div>
                     
                     {!isOptionsCollapsed && (
@@ -2856,46 +3539,7 @@ export function URDFViewer({ urdfContent, assets, onJointChange, lang, mode = 'd
                             </div>
                         </div>
 
-                        {/* Transform Mode - only shown in collision mode */}
-                        {highlightMode === 'collision' && mode === 'detail' && (
-                        <div className="border-b border-slate-200 dark:border-slate-700 pb-2 mb-1">
-                            <div className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase mb-1.5 px-1">{t.transformMode || "Transform Mode"}</div>
-                            <div className="grid grid-cols-4 gap-0.5 bg-slate-100 dark:bg-google-dark-bg rounded p-0.5">
-                                <button
-                                    onClick={() => setTransformMode('select')}
-                                    className={`flex flex-col items-center justify-center py-1.5 text-[9px] font-medium rounded transition-all ${transformMode === 'select' ? 'bg-white dark:bg-google-dark-surface text-google-blue shadow-sm' : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'}`}
-                                    title={t.selectMode || "Select"}
-                                >
-                                    <svg className="w-3.5 h-3.5 mb-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 15l-2 5L9 9l11 4-5 2zm0 0l5 5M7.188 2.239l.777 2.897M5.136 7.965l-2.898-.777M13.95 4.05l-2.122 2.122m-5.657 5.656l-2.12 2.122" /></svg>
-                                    {t.selectMode || "Select"}
-                                </button>
-                                <button
-                                    onClick={() => setTransformMode('translate')}
-                                    className={`flex flex-col items-center justify-center py-1.5 text-[9px] font-medium rounded transition-all ${transformMode === 'translate' ? 'bg-white dark:bg-google-dark-surface text-google-blue shadow-sm' : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'}`}
-                                    title={t.translateMode || "Translate"}
-                                >
-                                    <Move className="w-3.5 h-3.5 mb-0.5" />
-                                    {t.translateMode || "Move"}
-                                </button>
-                                <button
-                                    onClick={() => setTransformMode('rotate')}
-                                    className={`flex flex-col items-center justify-center py-1.5 text-[9px] font-medium rounded transition-all ${transformMode === 'rotate' ? 'bg-white dark:bg-google-dark-surface text-google-blue shadow-sm' : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'}`}
-                                    title={t.rotateMode || "Rotate"}
-                                >
-                                    <RotateCcw className="w-3.5 h-3.5 mb-0.5" />
-                                    {t.rotateMode || "Rotate"}
-                                </button>
-                                <button
-                                    onClick={() => setTransformMode('universal')}
-                                    className={`flex flex-col items-center justify-center py-1.5 text-[9px] font-medium rounded transition-all ${transformMode === 'universal' ? 'bg-white dark:bg-google-dark-surface text-google-blue shadow-sm' : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'}`}
-                                    title={t.universalMode || "Universal"}
-                                >
-                                    <svg className="w-3.5 h-3.5 mb-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" /></svg>
-                                    {t.universalMode || "All"}
-                                </button>
-                            </div>
-                        </div>
-                        )}
+
 
                         <div className="space-y-1">
                             <label className="flex items-center gap-2 text-xs text-slate-700 dark:text-slate-300 cursor-pointer hover:text-slate-900 dark:hover:text-white px-1 py-0.5 rounded hover:bg-slate-50 dark:hover:bg-google-dark-bg/50">
@@ -2950,7 +3594,7 @@ export function URDFViewer({ urdfContent, assets, onJointChange, lang, mode = 'd
                                         <input 
                                             type="range" 
                                             min="0.01" 
-                                            max="5.0" 
+                                            max="0.5" 
                                             step="0.01" 
                                             value={originSize}
                                             onChange={(e) => setOriginSize(parseFloat(e.target.value))}
@@ -3018,9 +3662,10 @@ export function URDFViewer({ urdfContent, assets, onJointChange, lang, mode = 'd
                     )}
                 </div>
             </div>
+            )}
             
             {/* Joint controls panel - draggable */}
-            {showJointControls && robot?.joints && Object.keys(robot.joints).length > 0 && (
+            {showJointControls && showJointPanel && robot?.joints && Object.keys(robot.joints).length > 0 && (
                 <div 
                     ref={jointPanelRef}
                     className="absolute z-30 bg-white/90 dark:bg-google-dark-surface/90 backdrop-blur rounded-lg border border-slate-200 dark:border-google-dark-border max-h-[50vh] overflow-hidden w-64 shadow-xl flex flex-col pointer-events-auto"
@@ -3063,6 +3708,14 @@ export function URDFViewer({ urdfContent, assets, onJointChange, lang, mode = 'd
                                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" /></svg>
                                 )}
                             </button>
+                            {setShowJointPanel && (
+                                <button 
+                                    onClick={(e) => { e.stopPropagation(); setShowJointPanel(false); }}
+                                    className="text-slate-400 hover:text-slate-900 dark:hover:text-white p-1 hover:bg-red-50 hover:text-red-500 dark:hover:bg-red-900/20 rounded"
+                                >
+                                    <X className="w-3 h-3" />
+                                </button>
+                            )}
                         </div>
                     </div>
                     {!isJointsCollapsed && (
@@ -3080,12 +3733,96 @@ export function URDFViewer({ urdfContent, assets, onJointChange, lang, mode = 'd
                                     activeJoint={activeJoint}
                                     setActiveJoint={setActiveJoint}
                                     handleJointAngleChange={handleJointAngleChange}
+                                    handleJointChangeCommit={handleJointChangeCommit}
                                     onSelect={onSelect}
                                 />
                             ))}
                     </div>
                     </div>
                     )}
+                </div>
+            )}
+            
+            {/* Toolbar - Floating centered top */}
+            {showToolbar && (
+                <ViewerToolbar 
+                    activeMode={toolMode} 
+                    setMode={setToolMode} 
+                    onClose={setShowToolbar ? () => setShowToolbar(false) : undefined}
+                    lang={lang}
+                />
+            )}
+            
+            {/* Measure panel - rendered outside Canvas so it doesn't rotate with camera */}
+            {toolMode === 'measure' && (
+                <div 
+                    ref={measurePanelRef}
+                    className="measure-panel absolute z-30 pointer-events-auto"
+                    style={measurePanelPos 
+                        ? { left: measurePanelPos.x, top: measurePanelPos.y }
+                        : { left: '16px', top: '100px' }
+                    }
+                    onMouseDown={(e) => {
+                        e.stopPropagation();
+                        if (!measurePanelRef.current || !containerRef.current) return;
+                        const rect = measurePanelRef.current.getBoundingClientRect();
+                        const containerRect = containerRef.current.getBoundingClientRect();
+                        dragStartRef.current = {
+                            mouseX: e.clientX,
+                            mouseY: e.clientY,
+                            panelX: rect.left - containerRect.left,
+                            panelY: rect.top - containerRect.top
+                        };
+                        setDragging('measure');
+                    }}
+                >
+                    <div className="bg-white/90 dark:bg-slate-800/90 backdrop-blur rounded-lg shadow-xl border border-slate-200 dark:border-slate-700 min-w-[200px] overflow-hidden">
+                        <div className="cursor-move px-3 py-2 border-b border-slate-200 dark:border-slate-700 flex items-center justify-between bg-slate-100/50 dark:bg-slate-700/50">
+                            <div className="text-xs font-semibold text-slate-700 dark:text-slate-200 flex items-center gap-2">
+                                <svg className="w-3 h-3 text-slate-400" fill="currentColor" viewBox="0 0 20 20"><path d="M7 2a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM7 8a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM7 14a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM13 2a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM13 8a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM13 14a2 2 0 1 0 0 4 2 2 0 0 0 0-4z"/></svg>
+                                <Ruler className="w-4 h-4" />
+                                测量工具
+                            </div>
+                        </div>
+                        <div className="p-3">
+                            <div className="text-[10px] text-slate-500 dark:text-slate-400 mb-3 space-y-1">
+                                <div>• 点击模型选择测量点</div>
+                                <div>• <kbd className="px-1 py-0.5 bg-slate-200 dark:bg-slate-700 rounded text-[9px]">Esc</kbd> 取消当前测量</div>
+                                <div>• <kbd className="px-1 py-0.5 bg-slate-200 dark:bg-slate-700 rounded text-[9px]">Delete</kbd> 删除上一个</div>
+                            </div>
+                            <div className="text-xs text-slate-600 dark:text-slate-300 mb-2">
+                                已测量: {measureState.measurements.length} 个
+                            </div>
+                            <div className="flex gap-2">
+                                <button
+                                    onClick={() => {
+                                        if (measureState.currentPoints.length > 0) {
+                                            setMeasureState(prev => ({ ...prev, currentPoints: [], tempPoint: null }));
+                                        } else if (measureState.measurements.length > 0) {
+                                            setMeasureState(prev => ({ ...prev, measurements: prev.measurements.slice(0, -1) }));
+                                        }
+                                    }}
+                                    disabled={measureState.measurements.length === 0 && measureState.currentPoints.length === 0}
+                                    className="flex-1 px-2 py-1.5 text-xs bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-1"
+                                >
+                                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
+                                    </svg>
+                                    撤销
+                                </button>
+                                <button
+                                    onClick={() => setMeasureState({ measurements: [], currentPoints: [], tempPoint: null })}
+                                    disabled={measureState.measurements.length === 0 && measureState.currentPoints.length === 0}
+                                    className="flex-1 px-2 py-1.5 text-xs bg-red-100 dark:bg-red-900/30 hover:bg-red-200 dark:hover:bg-red-900/50 text-red-700 dark:text-red-400 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-1"
+                                >
+                                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                    </svg>
+                                    全部清除
+                                </button>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             )}
             
@@ -3096,6 +3833,7 @@ export function URDFViewer({ urdfContent, assets, onJointChange, lang, mode = 'd
                     antialias: true,
                     toneMapping: THREE.ACESFilmicToneMapping,
                     toneMappingExposure: 1.0,
+                    preserveDrawingBuffer: true,
                 }}
                 onPointerMissed={() => {
                     // Don't deselect if we just selected something via DOM events
@@ -3111,7 +3849,15 @@ export function URDFViewer({ urdfContent, assets, onJointChange, lang, mode = 'd
                 <color attach="background" args={[theme === 'light' ? '#f8f9fa' : '#1f1f1f']} />
                 <SceneLighting />
                 <Environment files="/potsdamer_platz_1k.hdr" />
+                <SnapshotManager actionRef={snapshotAction} robotName={robot?.name || 'robot'} />
                 
+                <MeasureTool 
+                    active={toolMode === 'measure'} 
+                    robot={robot} 
+                    measureState={measureState}
+                    setMeasureState={setMeasureState}
+                />
+
                 <Suspense fallback={null}>
                     <RobotModel
                         urdfContent={urdfContent}
@@ -3121,6 +3867,7 @@ export function URDFViewer({ urdfContent, assets, onJointChange, lang, mode = 'd
                         showVisual={showVisual}
                         onSelect={handleSelectWrapper}
                         onJointChange={handleJointAngleChange}
+                        onJointChangeCommit={handleJointChangeCommit}
                         jointAngles={jointAngles}
                         setIsDragging={setIsDragging}
                         setActiveJoint={setActiveJoint}
@@ -3139,6 +3886,7 @@ export function URDFViewer({ urdfContent, assets, onJointChange, lang, mode = 'd
                         robotLinks={robotLinks}
                         focusTarget={focusTarget}
                         transformMode={transformMode}
+                        toolMode={toolMode}
                         onCollisionTransformEnd={onCollisionTransform}
                     />
                 </Suspense>
@@ -3148,10 +3896,12 @@ export function URDFViewer({ urdfContent, assets, onJointChange, lang, mode = 'd
                         joint={robot.joints[activeJoint]} 
                         value={jointAngles[activeJoint] || 0}
                         onChange={(val) => handleJointAngleChange(activeJoint, val)}
+                        onCommit={(val) => handleJointChangeCommit(activeJoint, val)}
                     />
                 )}
                 
                 <Grid 
+                    name="ReferenceGrid"
                     infiniteGrid 
                     fadeDistance={100}
                     sectionSize={1}

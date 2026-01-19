@@ -87,6 +87,9 @@ export const translations = {
     showGeometry: "Show Geometry",
     showLabels: "Show Labels",
     showJointAxes: "Show Joint Axes",
+    jointAxisSize: "Joint Axis Size",
+    frameSize: "Coordinate Frame Size",
+    labelScale: "Label Scale",
     showOrigin: "Show Origin",
     showCollision: "Show Collision",
     instruction: "Left Click: Rotate | Right Click: Pan | Scroll: Zoom",
@@ -150,6 +153,10 @@ export const translations = {
     rotateMode: "Rotate",
     universalMode: "Universal",
     selectMode: "Select",
+    viewMode: "View (Pan/Orbit)",
+    faceMode: "Select Face",
+    measureMode: "Measure",
+    closeToolbar: "Close Toolbar",
     
     // Toolbox Descriptions
     aiAssistantDesc: "Analyze robot structure and physics with AI",
@@ -243,6 +250,9 @@ export const translations = {
     showGeometry: "显示几何",
     showLabels: "显示标签",
     showJointAxes: "显示关节轴",
+    jointAxisSize: "关节轴尺寸",
+    frameSize: "坐标轴尺寸",
+    labelScale: "标签大小",
     showOrigin: "显示坐标轴",
     showCollision: "显示碰撞体",
     instruction: "左键: 旋转 | 右键: 平移 | 滚轮: 缩放",
@@ -306,6 +316,10 @@ export const translations = {
     rotateMode: "旋转",
     universalMode: "万能",
     selectMode: "选择",
+    viewMode: "视图 (平移/旋转)",
+    faceMode: "选择面",
+    measureMode: "测量",
+    closeToolbar: "关闭工具栏",
 
     // 工具箱描述
     aiAssistantDesc: "使用 AI 分析机器人结构和物理合理性",
