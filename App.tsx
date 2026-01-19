@@ -40,6 +40,18 @@ export default function App() {
   const [selection, setSelection] = useState<RobotState['selection']>({ type: null, id: null });
 
   const robot: RobotState = useMemo(() => ({ ...robotData, selection }), [robotData, selection]);
+  const jointAngleState = useMemo(() => {
+    const angles: Record<string, number> = {};
+    // Key by joint name (not ID) since URDFLoader's robot.joints uses names
+    Object.values(robotData.joints).forEach((joint) => {
+      const angle = (joint as { angle?: number }).angle;
+      if (angle !== undefined) {
+        angles[joint.name] = angle;
+      }
+    });
+    console.log('[App] jointAngleState updated:', angles);
+    return angles;
+  }, [robotData.joints]);
 
   const [appMode, setAppMode] = useState<AppMode>('skeleton');
   const [assets, setAssets] = useState<Record<string, string>>({});
@@ -445,6 +457,28 @@ export default function App() {
   const handleUploadAsset = (file: File) => {
     const url = URL.createObjectURL(file);
     setAssets(prev => ({ ...prev, [file.name]: url }));
+  };
+
+  const handleJointChange = (jointName: string, angle: number) => {
+    console.log('[App] handleJointChange called:', jointName, angle);
+    setRobotData(prev => {
+        // Find the joint by name (robotData.joints is keyed by ID, not name)
+        const jointEntry = Object.entries(prev.joints).find(([, j]) => j.name === jointName);
+        console.log('[App] jointEntry found:', jointEntry ? jointEntry[0] : 'NOT FOUND', 'available joints:', Object.values(prev.joints).map(j => j.name));
+        if (!jointEntry) return prev; // Joint not found, no change
+        
+        const [jointId, joint] = jointEntry;
+        return {
+            ...prev,
+            joints: {
+                ...prev.joints,
+                [jointId]: {
+                    ...joint,
+                    angle: angle
+                }
+            }
+        };
+    });
   };
 
   const generateBOM = (robot: RobotState): string => {
@@ -1919,6 +1953,7 @@ export default function App() {
                 robotLinks={robot.links}
                 showVisual={showVisual}
                 setShowVisual={handleSetShowVisual}
+                jointAngleState={jointAngleState}
                 snapshotAction={snapshotActionRef}
                 showToolbar={viewConfig.showToolbar}
                 setShowToolbar={(show) => setViewConfig(prev => ({ ...prev, showToolbar: show }))}
@@ -1926,6 +1961,7 @@ export default function App() {
                 setShowOptionsPanel={(show) => setViewConfig(prev => ({ ...prev, showOptionsPanel: show }))}
                 showJointPanel={viewConfig.showJointPanel}
                 setShowJointPanel={(show) => setViewConfig(prev => ({ ...prev, showJointPanel: show }))}
+                onJointChange={handleJointChange}
                 onCollisionTransform={(linkId, position, rotation) => {
                     // linkId is the selection.id which is the link's ID (not name)
                     console.log('App.tsx onCollisionTransform called:', { linkId, position, rotation });

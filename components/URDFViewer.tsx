@@ -20,6 +20,7 @@ interface URDFViewerProps {
     urdfContent: string;
     assets: Record<string, string>; // filename -> blob URL
     onJointChange?: (jointName: string, angle: number) => void;
+    jointAngleState?: Record<string, number>;
     lang: Language;
     mode?: 'detail' | 'hardware';
     onSelect?: (type: 'link' | 'joint', id: string, subType?: 'visual' | 'collision') => void;
@@ -462,6 +463,7 @@ interface RobotModelProps {
     showVisual?: boolean;
     onSelect?: (type: 'link' | 'joint', id: string, subType?: 'visual' | 'collision') => void;
     onJointChange?: (name: string, angle: number) => void;
+    onJointChangeCommit?: (name: string, angle: number) => void;
     jointAngles?: Record<string, number>;
     setIsDragging?: (dragging: boolean) => void;
     setActiveJoint?: (jointName: string | null) => void;
@@ -521,7 +523,7 @@ const collisionBaseMaterial = new THREE.MeshBasicMaterial({
     depthTest: false
 });
 
-function RobotModel({ urdfContent, assets, onRobotLoaded, showCollision = false, showVisual = true, onSelect, onJointChange, jointAngles, setIsDragging, setActiveJoint, justSelectedRef, t, mode, selection, hoveredSelection, highlightMode = 'link', showInertia = false, showCenterOfMass = false, showOrigins = false, originSize = 1.0, showJointAxes = false, jointAxisSize = 1.0, robotLinks, focusTarget, transformMode = 'select', toolMode = 'select', onCollisionTransformEnd }: RobotModelProps & { selection?: URDFViewerProps['selection'], hoveredSelection?: URDFViewerProps['selection'] }) {
+function RobotModel({ urdfContent, assets, onRobotLoaded, showCollision = false, showVisual = true, onSelect, onJointChange, onJointChangeCommit, jointAngles, setIsDragging, setActiveJoint, justSelectedRef, t, mode, selection, hoveredSelection, highlightMode = 'link', showInertia = false, showCenterOfMass = false, showOrigins = false, originSize = 1.0, showJointAxes = false, jointAxisSize = 1.0, robotLinks, focusTarget, transformMode = 'select', toolMode = 'select', onCollisionTransformEnd }: RobotModelProps & { selection?: URDFViewerProps['selection'], hoveredSelection?: URDFViewerProps['selection'] }) {
     const [robot, setRobot] = useState<THREE.Object3D | null>(null);
     const [error, setError] = useState<string | null>(null);
     const [robotVersion, setRobotVersion] = useState(0); // Track async loading updates
@@ -530,6 +532,7 @@ function RobotModel({ urdfContent, assets, onRobotLoaded, showCollision = false,
     const raycasterRef = useRef(new THREE.Raycaster());
     const hoveredLinkRef = useRef<string | null>(null);
     const onJointChangeRef = useRef(onJointChange);
+    const onJointChangeCommitRef = useRef(onJointChangeCommit);
     const setIsDraggingRef = useRef(setIsDragging);
     const invalidateRef = useRef(invalidate);
     const setActiveJointRef = useRef(setActiveJoint);
@@ -557,6 +560,86 @@ function RobotModel({ urdfContent, assets, onRobotLoaded, showCollision = false,
     const [highlightedFace, setHighlightedFace] = useState<{ mesh: THREE.Mesh, faceIndex: number } | null>(null);
     const highlightedFaceMeshRef = useRef<THREE.Mesh | null>(null);
 
+    // Helper function to get triangle vertices from geometry
+    const getTriangleVertices = useCallback((geometry: THREE.BufferGeometry, faceIndex: number): THREE.Vector3[] => {
+        const positionAttribute = geometry.getAttribute('position');
+        const indexAttribute = geometry.getIndex();
+        
+        let a: number, b: number, c: number;
+        if (indexAttribute) {
+            a = indexAttribute.getX(faceIndex * 3);
+            b = indexAttribute.getX(faceIndex * 3 + 1);
+            c = indexAttribute.getX(faceIndex * 3 + 2);
+        } else {
+            a = faceIndex * 3;
+            b = faceIndex * 3 + 1;
+            c = faceIndex * 3 + 2;
+        }
+        
+        return [
+            new THREE.Vector3(positionAttribute.getX(a), positionAttribute.getY(a), positionAttribute.getZ(a)),
+            new THREE.Vector3(positionAttribute.getX(b), positionAttribute.getY(b), positionAttribute.getZ(b)),
+            new THREE.Vector3(positionAttribute.getX(c), positionAttribute.getY(c), positionAttribute.getZ(c))
+        ];
+    }, []);
+
+    // Helper function to compute face normal
+    const computeFaceNormal = useCallback((v0: THREE.Vector3, v1: THREE.Vector3, v2: THREE.Vector3): THREE.Vector3 => {
+        const edge1 = new THREE.Vector3().subVectors(v1, v0);
+        const edge2 = new THREE.Vector3().subVectors(v2, v0);
+        return new THREE.Vector3().crossVectors(edge1, edge2).normalize();
+    }, []);
+
+    // Find all coplanar triangles with the clicked face
+    const findCoplanarFaces = useCallback((geometry: THREE.BufferGeometry, clickedFaceIndex: number): number[] => {
+        const positionAttribute = geometry.getAttribute('position');
+        const indexAttribute = geometry.getIndex();
+        
+        // Get clicked face vertices and normal
+        const clickedVerts = getTriangleVertices(geometry, clickedFaceIndex);
+        const clickedNormal = computeFaceNormal(clickedVerts[0], clickedVerts[1], clickedVerts[2]);
+        
+        // Define the plane using the clicked face
+        const planePoint = clickedVerts[0]; // A point on the plane
+        
+        // Tolerance for coplanarity check
+        const normalTolerance = 0.001; // Angle tolerance (dot product close to 1 or -1)
+        const distanceTolerance = 0.0001; // Distance from plane tolerance
+        
+        const coplanarFaces: number[] = [];
+        
+        // Calculate total number of faces
+        const totalFaces = indexAttribute 
+            ? indexAttribute.count / 3 
+            : positionAttribute.count / 3;
+        
+        for (let i = 0; i < totalFaces; i++) {
+            const verts = getTriangleVertices(geometry, i);
+            const normal = computeFaceNormal(verts[0], verts[1], verts[2]);
+            
+            // Check if normals are parallel (same direction or opposite)
+            const dotProduct = Math.abs(clickedNormal.dot(normal));
+            if (dotProduct < 1 - normalTolerance) continue; // Not parallel
+            
+            // Check if all vertices lie on the same plane
+            // Distance from point to plane = (point - planePoint) · normal
+            let allOnPlane = true;
+            for (const vert of verts) {
+                const dist = Math.abs(new THREE.Vector3().subVectors(vert, planePoint).dot(clickedNormal));
+                if (dist > distanceTolerance) {
+                    allOnPlane = false;
+                    break;
+                }
+            }
+            
+            if (allOnPlane) {
+                coplanarFaces.push(i);
+            }
+        }
+        
+        return coplanarFaces;
+    }, [getTriangleVertices, computeFaceNormal]);
+
     // Update face highlight mesh
     useEffect(() => {
         if (!highlightedFace) {
@@ -583,41 +666,37 @@ function RobotModel({ urdfContent, assets, onRobotLoaded, showCollision = false,
 
         const positionAttribute = geometry.getAttribute('position');
         const indexAttribute = geometry.getIndex();
-        const positions = [];
 
-        // Helper to get face normal
-        if (faceIndex !== undefined) {
-            const positions = [];
-            
-            // Just select the single clicked face/triangle
+        // Find all coplanar faces
+        const coplanarFaces = findCoplanarFaces(geometry, faceIndex);
+        
+        // Build positions array for all coplanar faces
+        const positions: number[] = [];
+        
+        for (const fi of coplanarFaces) {
+            let a: number, b: number, c: number;
             if (indexAttribute) {
-                const a = indexAttribute.getX(faceIndex * 3);
-                const b = indexAttribute.getX(faceIndex * 3 + 1);
-                const c = indexAttribute.getX(faceIndex * 3 + 2);
-                
-                positions.push(
-                    positionAttribute.getX(a), positionAttribute.getY(a), positionAttribute.getZ(a),
-                    positionAttribute.getX(b), positionAttribute.getY(b), positionAttribute.getZ(b),
-                    positionAttribute.getX(c), positionAttribute.getY(c), positionAttribute.getZ(c)
-                );
+                a = indexAttribute.getX(fi * 3);
+                b = indexAttribute.getX(fi * 3 + 1);
+                c = indexAttribute.getX(fi * 3 + 2);
             } else {
-                 const a = faceIndex * 3;
-                 const b = faceIndex * 3 + 1;
-                 const c = faceIndex * 3 + 2;
-                 
-                 positions.push(
-                    positionAttribute.getX(a), positionAttribute.getY(a), positionAttribute.getZ(a),
-                    positionAttribute.getX(b), positionAttribute.getY(b), positionAttribute.getZ(b),
-                    positionAttribute.getX(c), positionAttribute.getY(c), positionAttribute.getZ(c)
-                );
+                a = fi * 3;
+                b = fi * 3 + 1;
+                c = fi * 3 + 2;
             }
             
-            const highlightGeo = highlightMesh.geometry;
-            highlightGeo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-            highlightGeo.computeVertexNormals();
+            positions.push(
+                positionAttribute.getX(a), positionAttribute.getY(a), positionAttribute.getZ(a),
+                positionAttribute.getX(b), positionAttribute.getY(b), positionAttribute.getZ(b),
+                positionAttribute.getX(c), positionAttribute.getY(c), positionAttribute.getZ(c)
+            );
         }
+        
+        const highlightGeo = highlightMesh.geometry;
+        highlightGeo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+        highlightGeo.computeVertexNormals();
 
-    }, [highlightedFace, scene]);
+    }, [highlightedFace, scene, findCoplanarFaces]);
 
     // Sync face highlight transform
     useFrame(() => {
@@ -849,9 +928,10 @@ function RobotModel({ urdfContent, assets, onRobotLoaded, showCollision = false,
     useEffect(() => {
         invalidateRef.current = invalidate;
         onJointChangeRef.current = onJointChange;
+        onJointChangeCommitRef.current = onJointChangeCommit;
         setIsDraggingRef.current = setIsDragging;
         setActiveJointRef.current = setActiveJoint;
-    }, [invalidate, onJointChange, setIsDragging, setActiveJoint]);
+    }, [invalidate, onJointChange, onJointChangeCommit, setIsDragging, setActiveJoint]);
     
     // Mouse tracking for hover detection AND joint dragging (like robot_viewer's URDFDragControls)
     useEffect(() => {
@@ -1109,6 +1189,12 @@ function RobotModel({ urdfContent, assets, onRobotLoaded, showCollision = false,
         
         const handleMouseUp = () => {
             if (isDraggingJoint.current) {
+                // Drag ended. Commit the change.
+                if (onJointChangeCommitRef.current && dragJoint.current) {
+                     const currentAngle = dragJoint.current.angle || 0;
+                     onJointChangeCommitRef.current(dragJoint.current.name, currentAngle);
+                }
+
                 isDraggingJoint.current = false;
                 dragJoint.current = null;
                 setIsDraggingRef.current?.(false);
@@ -1194,7 +1280,7 @@ function RobotModel({ urdfContent, assets, onRobotLoaded, showCollision = false,
         }
         
         // Hide face highlight if not in face mode
-        if (toolMode !== 'face' && highlightedFace) {
+        if ((toolMode as any) !== 'face' && highlightedFace) {
              setHighlightedFace(null);
         }
         
@@ -1575,9 +1661,9 @@ function RobotModel({ urdfContent, assets, onRobotLoaded, showCollision = false,
                         axes.raycast = () => {};
                         
                         const axisLength = 0.12;
-                        const axisRadius = 0.003;  // Thinner axes
-                        const coneLength = 0.03;
-                        const coneRadius = 0.008;
+                        const axisRadius = 0.01;  // Thicker axes (was 0.003)
+                        const coneLength = 0.04;  // Slightly longer cone (was 0.03)
+                        const coneRadius = 0.015; // Thicker cone (was 0.008)
                         
                         // Helper to create one axis (cylinder + cone)
                         const createAxis = (color: number, rotationAxis: THREE.Vector3, rotationAngle: number) => {
@@ -1585,8 +1671,14 @@ function RobotModel({ urdfContent, assets, onRobotLoaded, showCollision = false,
                             
                             // Cylinder (shaft)
                             const cylinderGeom = new THREE.CylinderGeometry(axisRadius, axisRadius, axisLength, 8);
-                            const cylinderMat = new THREE.MeshBasicMaterial({ color, depthTest: true, depthWrite: true });
+                            const cylinderMat = new THREE.MeshBasicMaterial({ 
+                                color, 
+                                depthTest: false, // Make axes visible through geometry
+                                transparent: true, 
+                                opacity: 0.8 
+                            });
                             const cylinder = new THREE.Mesh(cylinderGeom, cylinderMat);
+                            cylinder.renderOrder = 1000;
                             cylinder.position.y = axisLength / 2;
                             cylinder.userData = { isGizmo: true };
                             cylinder.raycast = () => {};
@@ -1594,8 +1686,14 @@ function RobotModel({ urdfContent, assets, onRobotLoaded, showCollision = false,
                             
                             // Cone (arrowhead)
                             const coneGeom = new THREE.ConeGeometry(coneRadius, coneLength, 8);
-                            const coneMat = new THREE.MeshBasicMaterial({ color, depthTest: true, depthWrite: true });
+                            const coneMat = new THREE.MeshBasicMaterial({ 
+                                color, 
+                                depthTest: false, 
+                                transparent: true, 
+                                opacity: 0.8 
+                            });
                             const cone = new THREE.Mesh(coneGeom, coneMat);
+                            cone.renderOrder = 1000;
                             cone.position.y = axisLength + coneLength / 2;
                             cone.userData = { isGizmo: true };
                             cone.raycast = () => {};
@@ -1930,7 +2028,7 @@ function RobotModel({ urdfContent, assets, onRobotLoaded, showCollision = false,
     );
 }
 
-const JointInteraction = ({ joint, value, onChange }: { joint: any, value: number, onChange: (val: number) => void }) => {
+const JointInteraction = ({ joint, value, onChange, onCommit }: { joint: any, value: number, onChange: (val: number) => void, onCommit?: (val: number) => void }) => {
     const transformRef = useRef<any>(null);
     const dummyRef = useRef<THREE.Object3D>(new THREE.Object3D());
     const lastRotation = useRef<number>(value);
@@ -2072,7 +2170,7 @@ const JointInteraction = ({ joint, value, onChange }: { joint: any, value: numbe
                 size={1.2}
                 space="local"
                 onMouseDown={() => { isDragging.current = true; }}
-                onMouseUp={() => { isDragging.current = false; }}
+                onMouseUp={() => { isDragging.current = false; if (onCommit) onCommit(lastRotation.current); }}
                 onObjectChange={handleChange}
             />
         </>
@@ -2607,6 +2705,7 @@ const JointControlItem = ({
     activeJoint, 
     setActiveJoint, 
     handleJointAngleChange,
+    handleJointChangeCommit,
     onSelect
 }: { 
     name: string, 
@@ -2616,6 +2715,7 @@ const JointControlItem = ({
     activeJoint: string | null, 
     setActiveJoint: (name: string | null) => void, 
     handleJointAngleChange: (name: string, val: number) => void,
+    handleJointChangeCommit: (name: string, val: number) => void,
     onSelect?: (type: 'link' | 'joint', id: string) => void
 }) => {
     const limit = joint.limit || { lower: -Math.PI, upper: Math.PI };
@@ -2643,6 +2743,14 @@ const JointControlItem = ({
         setInputValue(displayValue.toFixed(2));
     }, [displayValue]);
 
+    const commitChange = (valStr: string) => {
+        const val = parseFloat(valStr);
+        if (!isNaN(val)) {
+            const radVal = angleUnit === 'deg' ? val * Math.PI / 180 : val;
+            handleJointChangeCommit(name, radVal);
+        }
+    };
+
     const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const s = e.target.value;
         setInputValue(s);
@@ -2655,115 +2763,77 @@ const JointControlItem = ({
         }
     };
 
-        return (
-
-                        <div 
-
-                            ref={itemRef}
-
-                            onClick={() => {
-
-                                setActiveJoint(name);
-
-                                onSelect?.('joint', name);
-
-                            }}
-
-                            className={`space-y-1 p-2 rounded-lg transition-colors cursor-pointer ${
-
-                                activeJoint === name 
-
-                                    ? 'bg-blue-100/50 dark:bg-google-blue/20 border border-blue-300 dark:border-google-blue/50' 
-
-                                    : 'bg-white/50 dark:bg-google-dark-bg/30 border border-transparent hover:bg-slate-100 dark:hover:bg-google-dark-bg/50'
-
-                            }`}
-
-                        >
-
-                <div className="flex justify-between text-xs items-center">
-
-                                        <span 
-
-                                            className={`truncate cursor-pointer font-medium ${activeJoint === name ? 'text-blue-600 dark:text-google-blue' : 'text-slate-700 dark:text-slate-200'}`} 
-
-                                            title={name}
-
-                                            onClick={() => {
-
-                                                setActiveJoint(name);
-
-                                                onSelect?.('joint', name);
-
-                                            }}
-
-                                        >
-
-                                            {name}
-
-                                        </span>
-
-                    <div className="flex items-center gap-1">
-
-                        <input 
-
-                            type="text" 
-
-                            value={inputValue}
-
-                            onChange={handleInputChange}
-
-                            onBlur={() => setInputValue(displayValue.toFixed(2))}
-
-                            className="w-16 bg-white dark:bg-google-dark-bg border border-slate-300 dark:border-google-dark-border rounded px-1 py-0.5 text-right text-xs text-slate-900 dark:text-white focus:border-google-blue outline-none"
-
-                        />
-
-                        <span className="text-slate-500 w-4">{angleUnit === 'deg' ? '°' : 'rad'}</span>
-
-                    </div>
-
-                </div>
-
-                <div className="flex items-center gap-2">
-
-                    <span className="text-[10px] text-slate-500 w-8 text-right">{displayMin.toFixed(1)}</span>
-
-                    <input
-
-                        type="range"
-
-                        min={displayMin}
-
-                        max={displayMax}
-
-                        step={step}
-
-                        value={displayValue}
-
-                        onChange={(e) => {
-
-                            const newVal = parseFloat(e.target.value);
-
-                            const radVal = angleUnit === 'deg' ? newVal * Math.PI / 180 : newVal;
-
-                            handleJointAngleChange(name, radVal);
-
+    return (
+        <div 
+            ref={itemRef}
+            onClick={() => {
+                setActiveJoint(name);
+                onSelect?.('joint', name);
+            }}
+            className={`space-y-1 p-2 rounded-lg transition-colors cursor-pointer ${
+                activeJoint === name 
+                    ? 'bg-blue-100/50 dark:bg-google-blue/20 border border-blue-300 dark:border-google-blue/50' 
+                    : 'bg-white/50 dark:bg-google-dark-bg/30 border border-transparent hover:bg-slate-100 dark:hover:bg-google-dark-bg/50'
+            }`}
+        >
+            <div className="flex justify-between text-xs items-center">
+                <span 
+                    className={`truncate cursor-pointer font-medium ${activeJoint === name ? 'text-blue-600 dark:text-google-blue' : 'text-slate-700 dark:text-slate-200'}`} 
+                    title={name}
+                    onClick={() => {
+                        setActiveJoint(name);
+                        onSelect?.('joint', name);
+                    }}
+                >
+                    {name}
+                </span>
+                <div className="flex items-center gap-1">
+                    <input 
+                        type="text" 
+                        value={inputValue}
+                        onChange={handleInputChange}
+                        onBlur={() => commitChange(inputValue)}
+                        onKeyDown={(e) => {
+                            if (e.key === 'Enter') {
+                                commitChange(inputValue);
+                                (e.target as HTMLInputElement).blur();
+                            }
                         }}
-
-                        className="flex-1 h-1 bg-slate-300 dark:bg-google-dark-border rounded-lg appearance-none cursor-pointer accent-google-blue"
-
+                        className="w-16 bg-white dark:bg-google-dark-bg border border-slate-300 dark:border-google-dark-border rounded px-1 py-0.5 text-right text-xs text-slate-900 dark:text-white focus:border-google-blue outline-none"
                     />
-
-                    <span className="text-[10px] text-slate-500 w-8">{displayMax.toFixed(1)}</span>
-
+                    <span className="text-slate-500 w-4">{angleUnit === 'deg' ? '°' : 'rad'}</span>
                 </div>
-
             </div>
-
-        );
-
-    };
+            <div className="flex items-center gap-2">
+                <span className="text-[10px] text-slate-500 w-8 text-right">{displayMin.toFixed(1)}</span>
+                <input
+                    type="range"
+                    min={displayMin}
+                    max={displayMax}
+                    step={step}
+                    value={displayValue}
+                    onChange={(e) => {
+                        const newVal = parseFloat(e.target.value);
+                        const radVal = angleUnit === 'deg' ? newVal * Math.PI / 180 : newVal;
+                        handleJointAngleChange(name, radVal);
+                    }}
+                    onMouseUp={(e) => {
+                        const newVal = parseFloat((e.target as HTMLInputElement).value);
+                        const radVal = angleUnit === 'deg' ? newVal * Math.PI / 180 : newVal;
+                        handleJointChangeCommit(name, radVal);
+                    }}
+                    onTouchEnd={(e) => {
+                        const newVal = parseFloat((e.target as HTMLInputElement).value);
+                        const radVal = angleUnit === 'deg' ? newVal * Math.PI / 180 : newVal;
+                        handleJointChangeCommit(name, radVal);
+                    }}
+                    className="flex-1 h-1 bg-slate-300 dark:bg-google-dark-border rounded-lg appearance-none cursor-pointer accent-google-blue"
+                />
+                <span className="text-[10px] text-slate-500 w-8">{displayMax.toFixed(1)}</span>
+            </div>
+        </div>
+    );
+};
 
 type ToolMode = 'select' | 'translate' | 'rotate' | 'universal' | 'view' | 'face' | 'measure';
 
@@ -2873,7 +2943,7 @@ const ViewerToolbar = ({ activeMode, setMode, onClose, lang = 'en' }: { activeMo
 
     return (
         <Draggable bounds="parent" handle=".drag-handle" nodeRef={nodeRef}>
-            <div ref={nodeRef} className="urdf-toolbar absolute top-4 left-0 right-0 mx-auto w-fit z-40 bg-white/90 dark:bg-slate-800/90 backdrop-blur rounded-lg border border-slate-200 dark:border-slate-700 shadow-xl flex items-center p-1 gap-1 cursor-auto">
+            <div ref={nodeRef} className="urdf-toolbar absolute top-1 left-0 right-0 mx-auto w-fit z-40 bg-white/90 dark:bg-slate-800/90 backdrop-blur rounded-lg border border-slate-200 dark:border-slate-700 shadow-xl flex items-center p-1 gap-1 cursor-auto">
                 <div className="drag-handle cursor-move px-1 text-slate-300 dark:text-slate-600 flex items-center h-full mr-1 hover:text-slate-500 dark:hover:text-slate-400">
                     <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20"><path d="M7 2a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM7 8a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM7 14a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM13 2a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM13 8a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM13 14a2 2 0 1 0 0 4 2 2 0 0 0 0-4z"/></svg>
                 </div>
@@ -2916,7 +2986,7 @@ const ViewerToolbar = ({ activeMode, setMode, onClose, lang = 'en' }: { activeMo
     );
 };
 
-export function URDFViewer({ urdfContent, assets, onJointChange, lang, mode = 'detail', onSelect, theme, selection, hoveredSelection, robotLinks, focusTarget, showVisual: propShowVisual, setShowVisual: propSetShowVisual, snapshotAction, onCollisionTransform, showToolbar = true, setShowToolbar, showOptionsPanel = true, setShowOptionsPanel, showJointPanel = true, setShowJointPanel }: URDFViewerProps) {
+export function URDFViewer({ urdfContent, assets, onJointChange, jointAngleState, lang, mode = 'detail', onSelect, theme, selection, hoveredSelection, robotLinks, focusTarget, showVisual: propShowVisual, setShowVisual: propSetShowVisual, snapshotAction, onCollisionTransform, showToolbar = true, setShowToolbar, showOptionsPanel = true, setShowOptionsPanel, showJointPanel = true, setShowJointPanel }: URDFViewerProps) {
     const t = translations[lang];
     const [robot, setRobot] = useState<any>(null);
     const [selectedJoint, setSelectedJoint] = useState<string | null>(null);
@@ -2936,9 +3006,9 @@ export function URDFViewer({ urdfContent, assets, onJointChange, lang, mode = 'd
     const [originSize, setOriginSize] = useState(() => {
         if (typeof window !== 'undefined') {
             const saved = localStorage.getItem('urdf_viewer_origin_size');
-            return saved ? parseFloat(saved) : 1.0;
+            return saved ? Math.min(parseFloat(saved), 0.5) : 0.1;
         }
-        return 1.0;
+        return 0.1;
     });
     const [showJointAxes, setShowJointAxes] = useState(false);
     const [jointAxisSize, setJointAxisSize] = useState(() => {
@@ -3047,6 +3117,47 @@ export function URDFViewer({ urdfContent, assets, onJointChange, lang, mode = 'd
             setInitialJointAngles(angles);
         }
     }, []);
+
+    // Sync joint angles from history state (undo/redo)
+    useEffect(() => {
+        console.log('[URDFViewer] Sync useEffect triggered, robot:', !!robot, 'jointAngleState:', jointAngleState);
+        if (!robot || !jointAngleState) return;
+
+        setJointAngles(prev => {
+            const next = { ...prev, ...jointAngleState };
+            return next;
+        });
+
+        Object.entries(jointAngleState).forEach(([name, angle]) => {
+            const joint = robot.joints?.[name];
+            console.log('[URDFViewer] Setting joint:', name, 'to angle:', angle, 'joint found:', !!joint);
+            if (joint?.setJointValue) {
+                joint.setJointValue(angle);
+            }
+        });
+    }, [robot, jointAngleState]);
+
+    // Sync joint angles from robot prop (for undo/redo)
+    useEffect(() => {
+        if (robot && robot.joints) {
+            setJointAngles(prev => {
+                const next = { ...prev };
+                let changed = false;
+                Object.keys(robot.joints).forEach(name => {
+                    const newAngle = robot.joints[name].angle;
+                    if (newAngle !== undefined && newAngle !== prev[name]) {
+                        next[name] = newAngle;
+                        changed = true;
+                        // Also update the actual joint object in the scene if possible
+                        if (robot.joints[name].setJointValue) {
+                            robot.joints[name].setJointValue(newAngle);
+                        }
+                    }
+                });
+                return changed ? next : prev;
+            });
+        }
+    }, [robot]);
     
     const handleJointAngleChange = useCallback((jointName: string, angle: number) => {
         if (!robot?.joints?.[jointName]) return;
@@ -3057,11 +3168,13 @@ export function URDFViewer({ urdfContent, assets, onJointChange, lang, mode = 'd
         }
         
         setJointAngles(prev => ({ ...prev, [jointName]: angle }));
-        
+    }, [robot]);
+
+    const handleJointChangeCommit = useCallback((jointName: string, angle: number) => {
         if (onJointChange) {
             onJointChange(jointName, angle);
         }
-    }, [robot, onJointChange]);
+    }, [onJointChange]);
 
     const handleResetJoints = useCallback(() => {
         if (!robot || !robot.joints) return;
@@ -3182,7 +3295,7 @@ export function URDFViewer({ urdfContent, assets, onJointChange, lang, mode = 'd
             onMouseLeave={handleMouseUp}
         >
             {/* Info overlay - unified with Visualizer style */}
-            <div className="absolute z-20 pointer-events-none select-none">
+            <div className="absolute top-4 left-4 z-20 pointer-events-none select-none">
                 <div className="text-slate-500 dark:text-slate-400 text-xs bg-white/50 dark:bg-google-dark-surface/50 backdrop-blur px-2 py-1 rounded border border-slate-200 dark:border-google-dark-border">
                     {mode === 'hardware' ? t.hardware : t.detail} {t.modeLabel}
                 </div>
@@ -3306,7 +3419,7 @@ export function URDFViewer({ urdfContent, assets, onJointChange, lang, mode = 'd
                                         <input 
                                             type="range" 
                                             min="0.01" 
-                                            max="5.0" 
+                                            max="0.5" 
                                             step="0.01" 
                                             value={originSize}
                                             onChange={(e) => setOriginSize(parseFloat(e.target.value))}
@@ -3445,6 +3558,7 @@ export function URDFViewer({ urdfContent, assets, onJointChange, lang, mode = 'd
                                     activeJoint={activeJoint}
                                     setActiveJoint={setActiveJoint}
                                     handleJointAngleChange={handleJointAngleChange}
+                                    handleJointChangeCommit={handleJointChangeCommit}
                                     onSelect={onSelect}
                                 />
                             ))}
@@ -3500,6 +3614,7 @@ export function URDFViewer({ urdfContent, assets, onJointChange, lang, mode = 'd
                         showVisual={showVisual}
                         onSelect={handleSelectWrapper}
                         onJointChange={handleJointAngleChange}
+                        onJointChangeCommit={handleJointChangeCommit}
                         jointAngles={jointAngles}
                         setIsDragging={setIsDragging}
                         setActiveJoint={setActiveJoint}
@@ -3527,6 +3642,7 @@ export function URDFViewer({ urdfContent, assets, onJointChange, lang, mode = 'd
                         joint={robot.joints[activeJoint]} 
                         value={jointAngles[activeJoint] || 0}
                         onChange={(val) => handleJointAngleChange(activeJoint, val)}
+                        onCommit={(val) => handleJointChangeCommit(activeJoint, val)}
                     />
                 )}
                 

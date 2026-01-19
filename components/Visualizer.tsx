@@ -118,6 +118,10 @@ interface CommonVisualizerProps {
   selectionTarget?: 'visual' | 'collision'; // For Detail mode selection override
   showLabels: boolean;
   showJointAxes: boolean;
+  jointAxisSize: number;
+  frameSize: number;
+  labelScale: number;
+  showSkeletonOrigin: boolean;
   showDetailOrigin: boolean;
   showDetailLabels: boolean;
   showCollision: boolean;
@@ -246,7 +250,7 @@ const DAERenderer = ({ url, material, assets, scale }: { url: string, material: 
 };
 
 
-const JointAxesVisual = ({ joint }: { joint: UrdfJoint }) => {
+const JointAxesVisual = ({ joint, scale = 1.0 }: { joint: UrdfJoint, scale?: number }) => {
   const { type, axis } = joint;
   
   const quaternion = useMemo(() => {
@@ -259,7 +263,7 @@ const JointAxesVisual = ({ joint }: { joint: UrdfJoint }) => {
   const color = "#d946ef";
 
   return (
-    <group quaternion={quaternion}>
+    <group quaternion={quaternion} scale={[scale, scale, scale]}>
       <arrowHelper args={[new THREE.Vector3(0, 0, 1), new THREE.Vector3(0, 0, 0), 0.35, color, 0.08, 0.05]} />
       {(type === JointType.REVOLUTE || type === JointType.CONTINUOUS) && (
         <group>
@@ -393,6 +397,10 @@ function JointNode({
   selectionTarget,
   showLabels,
   showJointAxes,
+  jointAxisSize,
+  frameSize,
+  labelScale,
+  showSkeletonOrigin,
   showDetailOrigin,
   showDetailLabels,
   showCollision,
@@ -414,7 +422,7 @@ function JointNode({
   const { x, y, z } = joint.origin.xyz;
   const { r, p, y: yaw } = joint.origin.rpy;
   
-  const showAxes = mode === 'skeleton' || (mode === 'detail' && showDetailOrigin) || (mode === 'hardware' && showHardwareOrigin);
+  const showAxes = (mode === 'skeleton' && showSkeletonOrigin) || (mode === 'detail' && showDetailOrigin) || (mode === 'hardware' && showHardwareOrigin);
   const showJointLabel = (mode === 'skeleton' && showLabels) || (mode === 'hardware' && showHardwareLabels);
   
   // Joint pivot: represents joint origin in parent-local space
@@ -460,13 +468,14 @@ function JointNode({
                 position={[0, 0, 0]} 
                 rotation={[0, 0, 0]}
             >
-                {showAxes && <axesHelper args={[0.2]} />}
+                {showAxes && <ThickerAxes size={frameSize * 0.12} />}
 
                 {(mode === 'skeleton' || mode === 'hardware') && (
                     <group>
                         {showJointLabel && (
                             <Html position={[0.25, 0, 0]} className="pointer-events-none">
                                 <div 
+                                    style={{ transform: `scale(${labelScale})`, transformOrigin: 'left center' }}
                                     onClick={(e) => { 
                                         e.stopPropagation(); 
                                         onSelect('joint', joint.id); 
@@ -484,12 +493,12 @@ function JointNode({
                                 </div>
                             </Html>
                         )}
-                        {mode === 'skeleton' && showJointAxes && <JointAxesVisual joint={joint} />}
+                        {mode === 'skeleton' && showJointAxes && <JointAxesVisual joint={joint} scale={jointAxisSize / 0.35} />}
                     </group>
                 )}
 
                 {mode !== 'skeleton' && (
-                    <mesh onClick={(e) => { e.stopPropagation(); onSelect('joint', joint.id); }}>
+                    <mesh onClick={(e: any) => { e.stopPropagation(); onSelect('joint', joint.id); }}>
                         <sphereGeometry args={[0.02, 16, 16]} />
                         <meshBasicMaterial color={isSelected ? "orange" : "transparent"} opacity={isSelected ? 1 : 0} transparent />
                     </mesh>
@@ -503,9 +512,12 @@ function JointNode({
                     mode={mode}
                     showGeometry={showGeometry}
                     showVisual={showVisual}
-                    selectionTarget={selectionTarget}
                     showLabels={showLabels}
                     showJointAxes={showJointAxes}
+                    jointAxisSize={jointAxisSize}
+                    frameSize={frameSize}
+                    labelScale={labelScale}
+                    showSkeletonOrigin={showSkeletonOrigin}
                     showDetailOrigin={showDetailOrigin}
                     showDetailLabels={showDetailLabels}
                     showCollision={showCollision}
@@ -537,6 +549,10 @@ function RobotNode({
   selectionTarget,
   showLabels,
   showJointAxes,
+  jointAxisSize,
+  frameSize,
+  labelScale,
+  showSkeletonOrigin,
   showDetailOrigin,
   showDetailLabels,
   showCollision,
@@ -659,24 +675,34 @@ function RobotNode({
         emissiveIntensity = 0.3; // Mild glow on hover
     }
 
-    // Use MeshPhysicalMaterial for improved glossy rendering (inspired by robot_viewer)
-    const material = new THREE.MeshPhysicalMaterial({
-        color: finalColor,
-        roughness: isSkeleton ? 0.6 : 0.15,  // Lower roughness for glossier appearance
-        metalness: isSkeleton ? 0.1 : 0.3,   // Slight metallic sheen
-        clearcoat: isSkeleton ? 0 : 0.3,     // Clear coat for extra glossiness
-        clearcoatRoughness: 0.1,
-        reflectivity: 0.8,
-        emissive: emissiveColor,
-        emissiveIntensity: emissiveIntensity,
-        transparent: isSkeleton || isCollision,
-        opacity: matOpacity,
-        wireframe: matWireframe,
-        side: isCollision ? THREE.FrontSide : THREE.DoubleSide,
-        polygonOffset: isCollision,
-        polygonOffsetFactor: -1,
-        polygonOffsetUnits: -1
-    });
+    const material = isSkeleton
+        ? new THREE.MeshBasicMaterial({
+            color: finalColor,
+            transparent: true,
+            opacity: matOpacity,
+            wireframe: matWireframe,
+            side: isCollision ? THREE.FrontSide : THREE.DoubleSide,
+            polygonOffset: isCollision,
+            polygonOffsetFactor: -1,
+            polygonOffsetUnits: -1
+        })
+        : new THREE.MeshPhysicalMaterial({
+            color: finalColor,
+            roughness: 0.15,
+            metalness: 0.3,
+            clearcoat: 0.3,
+            clearcoatRoughness: 0.1,
+            reflectivity: 0.8,
+            emissive: emissiveColor,
+            emissiveIntensity: emissiveIntensity,
+            transparent: isCollision,
+            opacity: matOpacity,
+            wireframe: matWireframe,
+            side: isCollision ? THREE.FrontSide : THREE.DoubleSide,
+            polygonOffset: isCollision,
+            polygonOffsetFactor: -1,
+            polygonOffsetUnits: -1
+        });
 
     const wrapperProps = {
         onClick: (e: any) => { handleLinkClick(e, isCollision ? 'collision' : 'visual'); },
@@ -695,6 +721,8 @@ function RobotNode({
     };
 
     let geometryNode;
+    const radialSegments = isSkeleton ? 8 : 32;
+    const boxSegments = isSkeleton ? 1 : 2;
     // For cylinder, we need to rotate to align with Z-up
     // This rotation is applied to the mesh itself, separate from origin rotation
     let meshRotation: [number, number, number] = [0, 0, 0];
@@ -703,7 +731,7 @@ function RobotNode({
          // Box dimensions: x=width (along X), y=depth (along Y), z=height (along Z)
          geometryNode = (
            <mesh>
-             <boxGeometry args={[dimensions.x, dimensions.y, dimensions.z, 2, 2, 2]} />
+             <boxGeometry args={[dimensions.x, dimensions.y, dimensions.z, boxSegments, boxSegments, boxSegments]} />
              <primitive object={material} attach="material" />
            </mesh>
          );
@@ -717,14 +745,14 @@ function RobotNode({
          // dimensions.x = radius, dimensions.y = height/length
          geometryNode = (
            <mesh rotation={meshRotation}>
-             <cylinderGeometry args={[dimensions.x, dimensions.x, dimensions.y, 32, 1]} />
+             <cylinderGeometry args={[dimensions.x, dimensions.x, dimensions.y, radialSegments, 1]} />
              <primitive object={material} attach="material" />
            </mesh>
          );
     } else if (type === GeometryType.SPHERE) {
          geometryNode = (
            <mesh>
-             <sphereGeometry args={[dimensions.x, 32, 32]} />
+             <sphereGeometry args={[dimensions.x, radialSegments, radialSegments]} />
              <primitive object={material} attach="material" />
            </mesh>
          );
@@ -795,7 +823,8 @@ function RobotNode({
       }
   };
 
-  const showRootAxes = isRoot && (mode === 'skeleton' || (mode === 'detail' && showDetailOrigin) || (mode === 'hardware' && showHardwareOrigin));
+  const showRootAxes = isRoot && ((mode === 'skeleton' && showSkeletonOrigin) || (mode === 'detail' && showDetailOrigin) || (mode === 'hardware' && showHardwareOrigin));
+  const shouldRenderGeometry = !(mode === 'skeleton' && !showGeometry && !showCollision);
   const showLinkLabel = (mode === 'detail' && showDetailLabels) || (mode === 'hardware' && showHardwareLabels);
   const showRootLabel = isRoot && ((mode === 'skeleton' && showLabels) || (mode === 'hardware' && showHardwareLabels));
 
@@ -803,10 +832,11 @@ function RobotNode({
     <group>
       {showRootAxes && (
         <group>
-            <axesHelper args={[0.3]} />
+            <ThickerAxes size={frameSize * 0.12} />
             {showRootLabel && (
                 <Html position={[0.35, 0, 0]} className="pointer-events-none">
                     <div 
+                        style={{ transform: `scale(${labelScale})`, transformOrigin: 'left center' }}
                         onClick={handleLinkClick}
                         className={`
                             px-1.5 py-0.5 text-[10px] font-mono rounded border whitespace-nowrap shadow-xl
@@ -824,15 +854,19 @@ function RobotNode({
         </group>
       )}
 
-      {/* Visual Geometry - key forces re-render on data change (includes origin for undo support) */}
-      <React.Fragment key={`visual-${link.visual?.type}-${link.visual?.dimensions?.x}-${link.visual?.dimensions?.y}-${link.visual?.dimensions?.z}-${link.visual?.origin?.xyz?.x}-${link.visual?.origin?.xyz?.y}-${link.visual?.origin?.xyz?.z}-${link.visual?.origin?.rpy?.r}-${link.visual?.origin?.rpy?.p}-${link.visual?.origin?.rpy?.y}-${link.visual?.meshPath || ''}`}>
-        {renderGeometry(false)}
-      </React.Fragment>
-      
-      {/* Collision Geometry - key forces re-render on data change (includes origin for undo support) */}
-      <React.Fragment key={`collision-${link.collision?.type}-${link.collision?.dimensions?.x}-${link.collision?.dimensions?.y}-${link.collision?.dimensions?.z}-${link.collision?.origin?.xyz?.x}-${link.collision?.origin?.xyz?.y}-${link.collision?.origin?.xyz?.z}-${link.collision?.origin?.rpy?.r}-${link.collision?.origin?.rpy?.p}-${link.collision?.origin?.rpy?.y}-${link.collision?.meshPath || ''}`}>
-        {renderGeometry(true)}
-      </React.Fragment>
+      {shouldRenderGeometry && (
+        <>
+          {/* Visual Geometry - key forces re-render on data change (includes origin for undo support) */}
+          <React.Fragment key={`visual-${link.visual?.type}-${link.visual?.dimensions?.x}-${link.visual?.dimensions?.y}-${link.visual?.dimensions?.z}-${link.visual?.origin?.xyz?.x}-${link.visual?.origin?.xyz?.y}-${link.visual?.origin?.xyz?.z}-${link.visual?.origin?.rpy?.r}-${link.visual?.origin?.rpy?.p}-${link.visual?.origin?.rpy?.y}-${link.visual?.meshPath || ''}`}>
+            {renderGeometry(false)}
+          </React.Fragment>
+          
+          {/* Collision Geometry - key forces re-render on data change (includes origin for undo support) */}
+          <React.Fragment key={`collision-${link.collision?.type}-${link.collision?.dimensions?.x}-${link.collision?.dimensions?.y}-${link.collision?.dimensions?.z}-${link.collision?.origin?.xyz?.x}-${link.collision?.origin?.xyz?.y}-${link.collision?.origin?.xyz?.z}-${link.collision?.origin?.rpy?.r}-${link.collision?.origin?.rpy?.p}-${link.collision?.origin?.rpy?.y}-${link.collision?.meshPath || ''}`}>
+            {renderGeometry(true)}
+          </React.Fragment>
+        </>
+      )}
 
       {/* Inertia Visualization */}
       {showInertia && <InertiaBox link={link} />}
@@ -856,6 +890,7 @@ function RobotNode({
       {showLinkLabel && (
          <Html position={[0, 0, 0]} className="pointer-events-none" zIndexRange={[100, 0]}>
             <div 
+                style={{ transform: `scale(${labelScale})`, transformOrigin: 'center center' }}
                 onClick={handleLinkClick}
                 className={`
                     px-1.5 py-0.5 text-[10px] font-mono rounded border whitespace-nowrap shadow-xl backdrop-blur-sm
@@ -884,6 +919,10 @@ function RobotNode({
             selectionTarget={selectionTarget}
             showLabels={showLabels}
             showJointAxes={showJointAxes}
+            jointAxisSize={jointAxisSize}
+            frameSize={frameSize}
+            labelScale={labelScale}
+            showSkeletonOrigin={showSkeletonOrigin}
             showDetailOrigin={showDetailOrigin}
             showDetailLabels={showDetailLabels}
             showCollision={showCollision}
@@ -902,6 +941,46 @@ function RobotNode({
     </group>
   );
 }
+
+// Coordinate Axis Component with adjustable thickness and size
+const ThickerAxes = ({ size = 0.1 }: { size?: number }) => {
+  const thickness = size * 0.08; // Reduced thickness (8% of size)
+  const headSize = size * 0.25;
+  
+  return (
+    <group>
+      {/* X Axis - Red */}
+      <mesh rotation={[0, 0, -Math.PI / 2]} position={[size / 2, 0, 0]}>
+        <cylinderGeometry args={[thickness, thickness, size, 8]} />
+        <meshBasicMaterial color="#ff4444" depthTest={false} transparent opacity={0.8} />
+      </mesh>
+      <mesh rotation={[0, 0, -Math.PI / 2]} position={[size, 0, 0]}>
+        <coneGeometry args={[thickness * 2, headSize, 8]} />
+        <meshBasicMaterial color="#ff4444" depthTest={false} transparent opacity={0.8} />
+      </mesh>
+
+      {/* Y Axis - Green */}
+      <mesh position={[0, size / 2, 0]}>
+        <cylinderGeometry args={[thickness, thickness, size, 8]} />
+        <meshBasicMaterial color="#44ff44" depthTest={false} transparent opacity={0.8} />
+      </mesh>
+      <mesh position={[0, size, 0]}>
+        <coneGeometry args={[thickness * 2, headSize, 8]} />
+        <meshBasicMaterial color="#44ff44" depthTest={false} transparent opacity={0.8} />
+      </mesh>
+
+      {/* Z Axis - Blue */}
+      <mesh rotation={[Math.PI / 2, 0, 0]} position={[0, 0, size / 2]}>
+        <cylinderGeometry args={[thickness, thickness, size, 8]} />
+        <meshBasicMaterial color="#4444ff" depthTest={false} transparent opacity={0.8} />
+      </mesh>
+      <mesh rotation={[Math.PI / 2, 0, 0]} position={[0, 0, size]}>
+        <coneGeometry args={[thickness * 2, headSize, 8]} />
+        <meshBasicMaterial color="#4444ff" depthTest={false} transparent opacity={0.8} />
+      </mesh>
+    </group>
+  );
+};
 
 // Scene lighting setup
 function SceneLighting() {
@@ -957,6 +1036,23 @@ export const Visualizer = ({ robot, onSelect, onUpdate, mode, assets, lang, them
   const [showGeometry, setShowGeometry] = useState(false);
   const [showLabels, setShowLabels] = useState(false);
   const [showJointAxes, setShowJointAxes] = useState(false);
+  const [showSkeletonOrigin, setShowSkeletonOrigin] = useState(true);
+  const [jointAxisSize, setJointAxisSize] = useState(0.35);
+  const [frameSize, setFrameSize] = useState(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('urdf_viewer_origin_size');
+      return saved ? Math.min(parseFloat(saved), 0.5) : 0.1;
+    }
+    return 0.1;
+  });
+
+  // Save frameSize to localStorage to sync with detail mode
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('urdf_viewer_origin_size', frameSize.toString());
+    }
+  }, [frameSize]);
+  const [labelScale, setLabelScale] = useState(1.0);
   const [transformMode, setTransformMode] = useState<'translate' | 'rotate'>('translate');
 
   // Detail Settings
@@ -1139,14 +1235,72 @@ export const Visualizer = ({ robot, onSelect, onUpdate, mode, assets, lang, them
                         <input type="checkbox" checked={showGeometry} onChange={(e) => setShowGeometry(e.target.checked)} className="rounded border-slate-300 dark:border-google-dark-border bg-white dark:bg-google-dark-bg text-google-blue" />
                         {t.showGeometry}
                      </label>
+
+                     <label className="flex items-center gap-2 cursor-pointer text-sm text-slate-700 dark:text-slate-200 select-none hover:text-slate-900 dark:hover:text-white">
+                        <input type="checkbox" checked={showSkeletonOrigin} onChange={(e) => setShowSkeletonOrigin(e.target.checked)} className="rounded border-slate-300 dark:border-google-dark-border bg-white dark:bg-google-dark-bg text-google-blue" />
+                        {t.showOrigin}
+                     </label>
+                     {showSkeletonOrigin && (
+                        <div className="pl-6 pr-2 pb-2">
+                            <div className="flex justify-between text-[10px] text-slate-500 dark:text-slate-400 mb-1">
+                                <span>{t.frameSize}</span>
+                                <span>{frameSize.toFixed(2)}</span>
+                            </div>
+                            <input 
+                                type="range" 
+                                min="0.01" 
+                                max="0.5" 
+                                step="0.01" 
+                                value={frameSize}
+                                onChange={(e) => setFrameSize(parseFloat(e.target.value))}
+                                className="w-full h-1 bg-slate-200 dark:bg-slate-700 rounded-lg appearance-none cursor-pointer accent-blue-600"
+                            />
+                        </div>
+                     )}
+
                      <label className="flex items-center gap-2 cursor-pointer text-sm text-slate-700 dark:text-slate-200 select-none hover:text-slate-900 dark:hover:text-white">
                         <input type="checkbox" checked={showLabels} onChange={(e) => setShowLabels(e.target.checked)} className="rounded border-slate-300 dark:border-google-dark-border bg-white dark:bg-google-dark-bg text-google-blue" />
                         {t.showLabels}
                      </label>
+                     {showLabels && (
+                        <div className="pl-6 pr-2 pb-2">
+                            <div className="flex justify-between text-[10px] text-slate-500 dark:text-slate-400 mb-1">
+                                <span>{t.labelScale}</span>
+                                <span>{labelScale.toFixed(1)}</span>
+                            </div>
+                            <input 
+                                type="range" 
+                                min="0.1" 
+                                max="2.0" 
+                                step="0.1" 
+                                value={labelScale}
+                                onChange={(e) => setLabelScale(parseFloat(e.target.value))}
+                                className="w-full h-1 bg-slate-200 dark:bg-slate-700 rounded-lg appearance-none cursor-pointer accent-blue-600"
+                            />
+                        </div>
+                     )}
+
                      <label className="flex items-center gap-2 cursor-pointer text-sm text-slate-700 dark:text-slate-200 select-none hover:text-slate-900 dark:hover:text-white">
                         <input type="checkbox" checked={showJointAxes} onChange={(e) => setShowJointAxes(e.target.checked)} className="rounded border-slate-300 dark:border-google-dark-border bg-white dark:bg-google-dark-bg text-google-blue" />
                         {t.showJointAxes}
                      </label>
+                     {showJointAxes && (
+                        <div className="pl-6 pr-2 pb-2">
+                            <div className="flex justify-between text-[10px] text-slate-500 dark:text-slate-400 mb-1">
+                                <span>{t.jointAxisSize}</span>
+                                <span>{jointAxisSize.toFixed(2)}</span>
+                            </div>
+                            <input 
+                                type="range" 
+                                min="0.01" 
+                                max="1.0" 
+                                step="0.01" 
+                                value={jointAxisSize}
+                                onChange={(e) => setJointAxisSize(parseFloat(e.target.value))}
+                                className="w-full h-1 bg-slate-200 dark:bg-slate-700 rounded-lg appearance-none cursor-pointer accent-blue-600"
+                            />
+                        </div>
+                     )}
                    </div>
                  </div>
               </div>
@@ -1292,6 +1446,10 @@ export const Visualizer = ({ robot, onSelect, onUpdate, mode, assets, lang, them
                     showVisual={showVisual}
                     showLabels={showLabels}
                     showJointAxes={showJointAxes}
+                    showSkeletonOrigin={showSkeletonOrigin}
+                    jointAxisSize={jointAxisSize}
+                    frameSize={frameSize}
+                    labelScale={labelScale}
                     showDetailOrigin={showDetailOrigin}
                     showDetailLabels={showDetailLabels}
                     showCollision={showCollision}
