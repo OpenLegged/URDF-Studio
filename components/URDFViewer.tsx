@@ -1836,6 +1836,14 @@ function RobotModel({ urdfContent, assets, onRobotLoaded, showCollision = false,
     // Effect to handle external selection highlighting (Moved here to run AFTER visibility effects)
     useEffect(() => {
         if (!robot) return;
+
+        if (toolMode === 'measure') {
+            if (currentSelectionRef.current.id) {
+                highlightGeometry(currentSelectionRef.current.id, true, currentSelectionRef.current.subType as any);
+            }
+            currentSelectionRef.current = { id: null, subType: null };
+            return;
+        }
         
         // Clear previous selection highlight
         if (currentSelectionRef.current.id) {
@@ -1869,11 +1877,19 @@ function RobotModel({ urdfContent, assets, onRobotLoaded, showCollision = false,
         } else {
             currentSelectionRef.current = { id: null, subType: null };
         }
-    }, [robot, selection?.type, selection?.id, selection?.subType, highlightGeometry, robotVersion, highlightMode, showCollision]);
+    }, [robot, selection?.type, selection?.id, selection?.subType, highlightGeometry, robotVersion, highlightMode, showCollision, toolMode]);
 
     // Effect to handle external hover highlighting (Moved here to run AFTER visibility effects)
     useEffect(() => {
         if (!robot) return;
+
+        if (toolMode === 'measure') {
+            if (currentHoverRef.current.id) {
+                highlightGeometry(currentHoverRef.current.id, true, currentHoverRef.current.subType as any);
+            }
+            currentHoverRef.current = { id: null, subType: null };
+            return;
+        }
         
         // Clear previous hover highlight
         if (currentHoverRef.current.id) {
@@ -1891,7 +1907,7 @@ function RobotModel({ urdfContent, assets, onRobotLoaded, showCollision = false,
         } else {
             currentHoverRef.current = { id: null, subType: null };
         }
-    }, [robot, hoveredSelection?.id, hoveredSelection?.subType, selection?.id, selection?.subType, highlightGeometry, robotVersion]);
+    }, [robot, hoveredSelection?.id, hoveredSelection?.subType, selection?.id, selection?.subType, highlightGeometry, robotVersion, toolMode]);
 
     useEffect(() => {
         if (!urdfContent) return;
@@ -2838,25 +2854,63 @@ const JointControlItem = ({
 
 type ToolMode = 'select' | 'translate' | 'rotate' | 'universal' | 'view' | 'face' | 'measure';
 
-// Measure Tool Component - measurements persist until right-click clear
-const MeasureTool = ({ active, robot }: { active: boolean, robot: THREE.Object3D | null }) => {
+// Measure state type for lifting state up
+interface MeasureState {
+    measurements: [THREE.Vector3, THREE.Vector3][];
+    currentPoints: THREE.Vector3[];
+    tempPoint: THREE.Vector3 | null;
+}
+
+// Measure Tool Component - only renders 3D elements, state is managed by parent
+const MeasureTool = ({ 
+    active, 
+    robot,
+    measureState,
+    setMeasureState 
+}: { 
+    active: boolean; 
+    robot: THREE.Object3D | null;
+    measureState: MeasureState;
+    setMeasureState: React.Dispatch<React.SetStateAction<MeasureState>>;
+}) => {
     const { camera, gl } = useThree();
-    // Store completed measurements as pairs of points
-    const [measurements, setMeasurements] = useState<[THREE.Vector3, THREE.Vector3][]>([]);
-    // Current measurement in progress (0, 1, or 2 points)
-    const [currentPoints, setCurrentPoints] = useState<THREE.Vector3[]>([]);
-    const [tempPoint, setTempPoint] = useState<THREE.Vector3 | null>(null);
-    const [showContextMenu, setShowContextMenu] = useState<{ x: number; y: number } | null>(null);
+    const [hoveredMeasurementIdx, setHoveredMeasurementIdx] = useState<number | null>(null);
     const raycaster = useMemo(() => new THREE.Raycaster(), []);
     const mouse = useRef(new THREE.Vector2());
+    
+    const { measurements, currentPoints, tempPoint } = measureState;
 
     // Only clear temp state when deactivating, keep measurements
     useEffect(() => {
         if (!active) {
-            setCurrentPoints([]);
-            setTempPoint(null);
+            setMeasureState(prev => ({ ...prev, currentPoints: [], tempPoint: null }));
         }
-    }, [active]);
+    }, [active, setMeasureState]);
+
+    // Keyboard shortcuts
+    useEffect(() => {
+        if (!active) return;
+
+        const handleKeyDown = (event: KeyboardEvent) => {
+            // Escape: cancel current measurement in progress
+            if (event.key === 'Escape') {
+                if (currentPoints.length > 0) {
+                    setMeasureState(prev => ({ ...prev, currentPoints: [], tempPoint: null }));
+                }
+            }
+            // Backspace or Delete: remove last measurement
+            if (event.key === 'Backspace' || event.key === 'Delete') {
+                if (currentPoints.length > 0) {
+                    setMeasureState(prev => ({ ...prev, currentPoints: [], tempPoint: null }));
+                } else if (measurements.length > 0) {
+                    setMeasureState(prev => ({ ...prev, measurements: prev.measurements.slice(0, -1) }));
+                }
+            }
+        };
+
+        window.addEventListener('keydown', handleKeyDown);
+        return () => window.removeEventListener('keydown', handleKeyDown);
+    }, [active, currentPoints, measurements, setMeasureState]);
 
     useEffect(() => {
         if (!active || !robot) return;
@@ -2870,9 +2924,9 @@ const MeasureTool = ({ active, robot }: { active: boolean, robot: THREE.Object3D
                  raycaster.setFromCamera(mouse.current, camera);
                  const intersects = raycaster.intersectObject(robot, true);
                  if (intersects.length > 0) {
-                     setTempPoint(intersects[0].point.clone());
+                     setMeasureState(prev => ({ ...prev, tempPoint: intersects[0].point.clone() }));
                  } else {
-                     setTempPoint(null);
+                     setMeasureState(prev => ({ ...prev, tempPoint: null }));
                  }
             }
         };
@@ -2882,13 +2936,8 @@ const MeasureTool = ({ active, robot }: { active: boolean, robot: THREE.Object3D
              if ((event.target as HTMLElement).closest('.urdf-toolbar') || 
                  (event.target as HTMLElement).closest('.urdf-options-panel') ||
                  (event.target as HTMLElement).closest('.urdf-joint-panel') ||
-                 (event.target as HTMLElement).closest('.measure-context-menu')) return;
-             
-             // Close context menu if open
-             if (showContextMenu) {
-                 setShowContextMenu(null);
-                 return;
-             }
+                 (event.target as HTMLElement).closest('.measure-context-menu') ||
+                 (event.target as HTMLElement).closest('.measure-panel')) return;
              
              raycaster.setFromCamera(mouse.current, camera);
              const intersects = raycaster.intersectObject(robot, true);
@@ -2898,38 +2947,30 @@ const MeasureTool = ({ active, robot }: { active: boolean, robot: THREE.Object3D
                  
                  if (currentPoints.length === 0) {
                      // First point of new measurement
-                     setCurrentPoints([point]);
+                     setMeasureState(prev => ({ ...prev, currentPoints: [point] }));
                  } else if (currentPoints.length === 1) {
                      // Second point - complete measurement
-                     setMeasurements(prev => [...prev, [currentPoints[0], point]]);
-                     setCurrentPoints([]);
-                     setTempPoint(null);
+                     setMeasureState(prev => ({
+                         ...prev,
+                         measurements: [...prev.measurements, [prev.currentPoints[0], point]],
+                         currentPoints: [],
+                         tempPoint: null
+                     }));
                  }
              }
         };
 
-        const handleContextMenu = (event: MouseEvent) => {
-            event.preventDefault();
-            // Show context menu at mouse position
-            setShowContextMenu({ x: event.clientX, y: event.clientY });
-        };
-
         gl.domElement.addEventListener('mousemove', handleMouseMove);
         gl.domElement.addEventListener('click', handleClick);
-        gl.domElement.addEventListener('contextmenu', handleContextMenu);
 
         return () => {
             gl.domElement.removeEventListener('mousemove', handleMouseMove);
             gl.domElement.removeEventListener('click', handleClick);
-            gl.domElement.removeEventListener('contextmenu', handleContextMenu);
         };
-    }, [active, robot, currentPoints, camera, gl, raycaster, showContextMenu]);
+    }, [active, robot, currentPoints, camera, gl, raycaster, setMeasureState]);
 
-    const handleClearAll = () => {
-        setMeasurements([]);
-        setCurrentPoints([]);
-        setTempPoint(null);
-        setShowContextMenu(null);
+    const handleDeleteMeasurement = (idx: number) => {
+        setMeasureState(prev => ({ ...prev, measurements: prev.measurements.filter((_, i) => i !== idx) }));
     };
 
     // Render current measurement in progress
@@ -2945,16 +2986,25 @@ const MeasureTool = ({ active, robot }: { active: boolean, robot: THREE.Object3D
                 <group key={`measurement-${idx}`}>
                     <mesh position={pair[0]}>
                         <sphereGeometry args={[0.0025, 16, 16]} />
-                        <meshBasicMaterial color="#22c55e" depthTest={false} transparent opacity={0.8} />
+                        <meshBasicMaterial color={hoveredMeasurementIdx === idx ? "#ef4444" : "#22c55e"} depthTest={false} transparent opacity={0.8} />
                     </mesh>
                     <mesh position={pair[1]}>
                         <sphereGeometry args={[0.0025, 16, 16]} />
-                        <meshBasicMaterial color="#22c55e" depthTest={false} transparent opacity={0.8} />
+                        <meshBasicMaterial color={hoveredMeasurementIdx === idx ? "#ef4444" : "#22c55e"} depthTest={false} transparent opacity={0.8} />
                     </mesh>
-                    <Line points={[pair[0], pair[1]]} color="#22c55e" lineWidth={2} depthTest={false} />
+                    <Line points={[pair[0], pair[1]]} color={hoveredMeasurementIdx === idx ? "#ef4444" : "#22c55e"} lineWidth={2} depthTest={false} />
                     <Html position={new THREE.Vector3().addVectors(pair[0], pair[1]).multiplyScalar(0.5)}>
-                        <div className="bg-black/70 text-white px-2 py-1 rounded text-xs whitespace-nowrap pointer-events-none font-mono">
+                        <div 
+                            className={`bg-black/70 text-white px-2 py-1 rounded text-xs whitespace-nowrap font-mono cursor-pointer transition-colors group flex items-center gap-1 ${hoveredMeasurementIdx === idx ? 'bg-red-600/90' : 'hover:bg-slate-700'}`}
+                            onMouseEnter={() => setHoveredMeasurementIdx(idx)}
+                            onMouseLeave={() => setHoveredMeasurementIdx(null)}
+                            onClick={(e) => { e.stopPropagation(); handleDeleteMeasurement(idx); }}
+                            title="点击删除此测量"
+                        >
                             {pair[0].distanceTo(pair[1]).toFixed(4)}m
+                            <svg className={`w-3 h-3 transition-opacity ${hoveredMeasurementIdx === idx ? 'opacity-100' : 'opacity-0'}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                            </svg>
                         </div>
                     </Html>
                 </group>
@@ -2978,22 +3028,6 @@ const MeasureTool = ({ active, robot }: { active: boolean, robot: THREE.Object3D
                 </>
             )}
 
-            {/* Context menu for clearing measurements */}
-            {showContextMenu && (
-                <Html position={[0, 0, 0]} style={{ position: 'fixed', left: showContextMenu.x, top: showContextMenu.y, transform: 'none' }}>
-                    <div className="measure-context-menu bg-white dark:bg-slate-800 rounded-lg shadow-xl border border-slate-200 dark:border-slate-700 py-1 min-w-[160px] z-50">
-                        <button
-                            onClick={handleClearAll}
-                            className="w-full px-3 py-2 text-left text-sm text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-700 flex items-center gap-2"
-                        >
-                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                            </svg>
-                            清除所有测量
-                        </button>
-                    </div>
-                </Html>
-            )}
         </group>
     );
 };
@@ -3164,6 +3198,15 @@ export function URDFViewer({ urdfContent, assets, onJointChange, jointAngleState
     // Tool mode
     const [toolMode, setToolMode] = useState<ToolMode>('select');
     
+    // Measure state - lifted up from MeasureTool for panel rendering outside Canvas
+    const [measureState, setMeasureState] = useState<MeasureState>({
+        measurements: [],
+        currentPoints: [],
+        tempPoint: null
+    });
+    const measurePanelRef = useRef<HTMLDivElement>(null);
+    const [measurePanelPos, setMeasurePanelPos] = useState<{ x: number; y: number } | null>(null);
+    
     // Derived transform mode for RobotModel compatibility
     const transformMode = (['translate', 'rotate', 'universal'].includes(toolMode) ? toolMode : 'select') as 'select' | 'translate' | 'rotate' | 'universal';
     
@@ -3190,7 +3233,7 @@ export function URDFViewer({ urdfContent, assets, onJointChange, jointAngleState
     const jointPanelRef = useRef<HTMLDivElement>(null);
     const [optionsPanelPos, setOptionsPanelPos] = useState<{ x: number; y: number } | null>(null);
     const [jointPanelPos, setJointPanelPos] = useState<{ x: number; y: number } | null>(null);
-    const [dragging, setDragging] = useState<'options' | 'joints' | null>(null);
+    const [dragging, setDragging] = useState<'options' | 'joints' | 'measure' | null>(null);
     const dragStartRef = useRef<{ mouseX: number; mouseY: number; panelX: number; panelY: number } | null>(null);
     const [isOptionsCollapsed, setIsOptionsCollapsed] = useState(() => {
         if (typeof window !== 'undefined') {
@@ -3382,7 +3425,8 @@ export function URDFViewer({ urdfContent, assets, onJointChange, jointAngleState
     const handleMouseMove = useCallback((e: React.MouseEvent) => {
         if (!dragging || !dragStartRef.current || !containerRef.current) return;
         
-        const panelRef = dragging === 'options' ? optionsPanelRef : jointPanelRef;
+        const panelRef = dragging === 'options' ? optionsPanelRef : 
+                        dragging === 'joints' ? jointPanelRef : measurePanelRef;
         if (!panelRef.current) return;
         
         const deltaX = e.clientX - dragStartRef.current.mouseX;
@@ -3405,8 +3449,10 @@ export function URDFViewer({ urdfContent, assets, onJointChange, jointAngleState
         
         if (dragging === 'options') {
             setOptionsPanelPos({ x: newX, y: newY });
-        } else {
+        } else if (dragging === 'joints') {
             setJointPanelPos({ x: newX, y: newY });
+        } else if (dragging === 'measure') {
+            setMeasurePanelPos({ x: newX, y: newY });
         }
     }, [dragging]);
     
@@ -3707,6 +3753,79 @@ export function URDFViewer({ urdfContent, assets, onJointChange, jointAngleState
                 />
             )}
             
+            {/* Measure panel - rendered outside Canvas so it doesn't rotate with camera */}
+            {toolMode === 'measure' && (
+                <div 
+                    ref={measurePanelRef}
+                    className="measure-panel absolute z-30 pointer-events-auto"
+                    style={measurePanelPos 
+                        ? { left: measurePanelPos.x, top: measurePanelPos.y }
+                        : { left: '16px', top: '100px' }
+                    }
+                    onMouseDown={(e) => {
+                        e.stopPropagation();
+                        if (!measurePanelRef.current || !containerRef.current) return;
+                        const rect = measurePanelRef.current.getBoundingClientRect();
+                        const containerRect = containerRef.current.getBoundingClientRect();
+                        dragStartRef.current = {
+                            mouseX: e.clientX,
+                            mouseY: e.clientY,
+                            panelX: rect.left - containerRect.left,
+                            panelY: rect.top - containerRect.top
+                        };
+                        setDragging('measure');
+                    }}
+                >
+                    <div className="bg-white/90 dark:bg-slate-800/90 backdrop-blur rounded-lg shadow-xl border border-slate-200 dark:border-slate-700 min-w-[200px] overflow-hidden">
+                        <div className="cursor-move px-3 py-2 border-b border-slate-200 dark:border-slate-700 flex items-center justify-between bg-slate-100/50 dark:bg-slate-700/50">
+                            <div className="text-xs font-semibold text-slate-700 dark:text-slate-200 flex items-center gap-2">
+                                <svg className="w-3 h-3 text-slate-400" fill="currentColor" viewBox="0 0 20 20"><path d="M7 2a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM7 8a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM7 14a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM13 2a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM13 8a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM13 14a2 2 0 1 0 0 4 2 2 0 0 0 0-4z"/></svg>
+                                <Ruler className="w-4 h-4" />
+                                测量工具
+                            </div>
+                        </div>
+                        <div className="p-3">
+                            <div className="text-[10px] text-slate-500 dark:text-slate-400 mb-3 space-y-1">
+                                <div>• 点击模型选择测量点</div>
+                                <div>• <kbd className="px-1 py-0.5 bg-slate-200 dark:bg-slate-700 rounded text-[9px]">Esc</kbd> 取消当前测量</div>
+                                <div>• <kbd className="px-1 py-0.5 bg-slate-200 dark:bg-slate-700 rounded text-[9px]">Delete</kbd> 删除上一个</div>
+                            </div>
+                            <div className="text-xs text-slate-600 dark:text-slate-300 mb-2">
+                                已测量: {measureState.measurements.length} 个
+                            </div>
+                            <div className="flex gap-2">
+                                <button
+                                    onClick={() => {
+                                        if (measureState.currentPoints.length > 0) {
+                                            setMeasureState(prev => ({ ...prev, currentPoints: [], tempPoint: null }));
+                                        } else if (measureState.measurements.length > 0) {
+                                            setMeasureState(prev => ({ ...prev, measurements: prev.measurements.slice(0, -1) }));
+                                        }
+                                    }}
+                                    disabled={measureState.measurements.length === 0 && measureState.currentPoints.length === 0}
+                                    className="flex-1 px-2 py-1.5 text-xs bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-1"
+                                >
+                                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
+                                    </svg>
+                                    撤销
+                                </button>
+                                <button
+                                    onClick={() => setMeasureState({ measurements: [], currentPoints: [], tempPoint: null })}
+                                    disabled={measureState.measurements.length === 0 && measureState.currentPoints.length === 0}
+                                    className="flex-1 px-2 py-1.5 text-xs bg-red-100 dark:bg-red-900/30 hover:bg-red-200 dark:hover:bg-red-900/50 text-red-700 dark:text-red-400 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-1"
+                                >
+                                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                    </svg>
+                                    全部清除
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+            
             <Canvas
                 camera={{ position: [2, 2, 2], up: [0, 0, 1], fov: 60 }}
                 shadows
@@ -3732,7 +3851,12 @@ export function URDFViewer({ urdfContent, assets, onJointChange, jointAngleState
                 <Environment files="/potsdamer_platz_1k.hdr" />
                 <SnapshotManager actionRef={snapshotAction} robotName={robot?.name || 'robot'} />
                 
-                <MeasureTool active={toolMode === 'measure'} robot={robot} />
+                <MeasureTool 
+                    active={toolMode === 'measure'} 
+                    robot={robot} 
+                    measureState={measureState}
+                    setMeasureState={setMeasureState}
+                />
 
                 <Suspense fallback={null}>
                     <RobotModel
@@ -3762,6 +3886,7 @@ export function URDFViewer({ urdfContent, assets, onJointChange, jointAngleState
                         robotLinks={robotLinks}
                         focusTarget={focusTarget}
                         transformMode={transformMode}
+                        toolMode={toolMode}
                         onCollisionTransformEnd={onCollisionTransform}
                     />
                 </Suspense>
