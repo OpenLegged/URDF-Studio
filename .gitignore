@@ -6,3 +6,10 @@ node_modules/
 dist/
 build/
 test/
+
+# IDE and AI
+.vscode/
+.idea/
+.claude/
+.copilot/
+.github/

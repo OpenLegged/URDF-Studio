@@ -2491,10 +2491,10 @@ export default function App() {
                           onChange={(e) => setUiScale(parseFloat(e.target.value))}
                           className="w-full h-1.5 bg-slate-200 dark:bg-slate-700 rounded-lg appearance-none cursor-pointer accent-blue-600"
                       />
-                      <div className="flex justify-between text-[10px] text-slate-400">
-                          <span>80%</span>
-                          <span>100%</span>
-                          <span>150%</span>
+                      <div className="relative h-4 text-[10px] text-slate-400">
+                          <span className="absolute left-0">80%</span>
+                          <span className="absolute" style={{ left: 'calc(28.6% - 12px)' }}>100%</span>
+                          <span className="absolute right-0">150%</span>
                       </div>
                   </div>
                   
