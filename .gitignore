@@ -12,4 +12,4 @@ test/
 .idea/
 .claude/
 .copilot/
-.github/
+.github/copilot-instructions.md
