@@ -1,10 +1,5 @@
-import React, { useState, useMemo, useEffect, useRef, Suspense } from 'react';
+import React, { useState, useMemo } from 'react';
 import { X, LayoutGrid, Search, Filter, Box, User, Heart, Download, ExternalLink, ChevronRight, Star, Clock, Globe, ArrowUpRight, RotateCcw } from 'lucide-react';
-import { Canvas, useThree } from '@react-three/fiber';
-import { OrbitControls, Stage, Environment } from '@react-three/drei';
-// @ts-ignore
-import URDFLoader from 'urdf-loader';
-import * as THREE from 'three';
 
 interface URDFSquareProps {
   onClose: () => void;
@@ -38,19 +33,20 @@ const MOCK_MODELS: RobotModel[] = [
     tags: ['Research', 'Quadruped', 'Mobile'],
     lastUpdated: '2026-01-17',
     urdfPath: '/library/urdf/unitree/go2_description' 
+  },
+  {
+    id: '2',
+    name: 'Unitree G1',
+    author: 'Unitree Robotics',
+    description: 'Humanoid robot for education and research.',
+    thumbnail: '',
+    category: 'Humanoid',
+    stars: 0,
+    downloads: 0,
+    tags: ['Humanoid', 'Bipedal', 'Mobile'],
+    lastUpdated: '2026-01-17',
+    urdfPath: '' 
   }
-//   {
-//     id: '2',
-//     name: 'Universal Robots UR5',
-//     author: 'UR Open Source',
-//     description: 'Collaborative industrial robotic arm with 6 degrees of freedom.',
-//     thumbnail: 'https://images.unsplash.com/photo-1563206767-5b18f218e7de?w=400&h=300&fit=crop',
-//     category: 'Manipulator',
-//     stars: 890,
-//     downloads: 3200,
-//     tags: ['Industrial', 'Arm', 'ROS'],
-//     lastUpdated: '2026-01-05'
-//   },
 //   {
 //     id: '3',
 //     name: 'Boston Dynamics Spot',
@@ -110,56 +106,12 @@ const CATEGORIES = [
 ];
 
 const RobotThumbnail = ({ model }: { model: RobotModel }) => {
-  const [robot, setRobot] = useState<THREE.Group | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(false);
-  const [use3D, setUse3D] = useState(false);
+  const [imageError, setImageError] = useState(false);
 
   // Try to load the static thumbnail first
   const staticThumbnailPath = model.urdfPath ? `${model.urdfPath}/thumbnail.png` : model.thumbnail;
 
-  useEffect(() => {
-    // Only load 3D if we've decided to use it (or if there's no static thumbnail)
-    if (!use3D || !model.urdfPath) return;
-
-    const loader = new URDFLoader();
-    const pkgName = model.urdfPath.split('/').filter(Boolean).pop() || '';
-    if (pkgName) {
-      loader.packages = { [pkgName]: model.urdfPath };
-    }
-    
-    const urdfFile = `${model.urdfPath}/urdf/go2_description.urdf`.replace(/\\/g, '/');
-    
-    loader.load(
-      urdfFile,
-      (result: any) => {
-        result.rotation.x = -Math.PI / 2;
-        result.updateMatrixWorld();
-        setRobot(result);
-        setLoading(false);
-      },
-      undefined,
-      (err: any) => {
-        console.error('Error loading URDF for thumbnail:', err);
-        setError(true);
-        setLoading(false);
-      }
-    );
-  }, [use3D, model.urdfPath]);
-
-  // If we are not using 3D yet, try to show the image
-  if (!use3D) {
-    return (
-      <img 
-        src={staticThumbnailPath} 
-        alt={model.name}
-        className="w-full h-full object-cover"
-        onError={() => setUse3D(true)} // If image fails, switch to 3D
-      />
-    );
-  }
-
-  if (error || !model.urdfPath) {
+  if (imageError || !staticThumbnailPath) {
     return (
       <div className="flex flex-col items-center gap-2 text-slate-300 dark:text-slate-600">
         <Box className="w-12 h-12 opacity-20" />
@@ -168,43 +120,13 @@ const RobotThumbnail = ({ model }: { model: RobotModel }) => {
     );
   }
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center">
-        <div className="w-8 h-8 border-2 border-indigo-500/20 border-t-indigo-500 rounded-full animate-spin" />
-      </div>
-    );
-  }
-
   return (
-    <div className="w-full h-full relative">
-      <Canvas 
-        shadows 
-        camera={{ position: [2, 2, 2], fov: 40 }}
-        gl={{ antialias: true, alpha: true }}
-      >
-        <color attach="background" args={['#f8fafc']} />
-        <Suspense fallback={null}>
-          <Stage 
-            intensity={1} 
-            environment="city" 
-            adjustCamera={true} 
-            shadows="contact"
-            center={{ top: true }}
-          >
-            {robot && <primitive object={robot} />}
-          </Stage>
-          <gridHelper args={[10, 10, 0xcccccc, 0xeeeeee]} position={[0, -0.01, 0]} />
-        </Suspense>
-        <ambientLight intensity={0.7} />
-        <directionalLight position={[5, 5, 5]} intensity={0.8} castShadow />
-      </Canvas>
-      {robot && robot.children.length === 0 && (
-        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-          <span className="text-[10px] text-slate-400">Empty Model</span>
-        </div>
-      )}
-    </div>
+    <img 
+      src={staticThumbnailPath} 
+      alt={model.name}
+      className="w-full h-full object-cover"
+      onError={() => setImageError(true)}
+    />
   );
 };
 
