@@ -13,6 +13,7 @@ import { parseMJCF, isMJCF } from './services/mjcfParser';
 import { parseUSDA, isUSDA } from './services/usdParser';
 import { parseXacro, isXacro } from './services/xacroParser';
 import { generateRobotFromPrompt, runRobotInspection } from './services/geminiService';
+import { URDFSquare } from './urdf_square/urdfSquare';
 import { DEFAULT_MOTOR_LIBRARY } from './services/motorLibrary';
 import { translations, Language } from './services/i18n';
 import { INSPECTION_CRITERIA, getInspectionCategory } from './services/inspectionCriteria';
@@ -225,6 +226,7 @@ export default function App() {
   const [activeMenu, setActiveMenu] = useState<'file' | 'toolbox' | 'view' | null>(null);
   const [isAboutMenuOpen, setIsAboutMenuOpen] = useState(false);
   const [isCodeViewerOpen, setIsCodeViewerOpen] = useState(false);
+  const [isURDFSquareOpen, setIsURDFSquareOpen] = useState(false);
 
   // View Configuration State
   const [viewConfig, setViewConfig] = useState({
@@ -1697,6 +1699,22 @@ export default function App() {
                                         </div>
                                     </button>
 
+                                    <button
+                                        onClick={() => {
+                                            setActiveMenu(null);
+                                            setIsURDFSquareOpen(true);
+                                        }}
+                                        className="w-full flex items-center gap-3 px-2.5 py-2 rounded-md hover:bg-teal-50 dark:hover:bg-teal-900/20 transition-all group"
+                                    >
+                                        <div className="w-9 h-9 flex items-center justify-center bg-teal-100 dark:bg-teal-900/40 rounded-lg text-teal-600 dark:text-teal-400 shrink-0">
+                                            <Box className="w-5 h-5" />
+                                        </div>
+                                        <div className="flex-1 text-left">
+                                            <div className="text-xs font-medium text-slate-700 dark:text-slate-200">{lang === 'zh' ? 'URDF 广场' : 'URDF Square'}</div>
+                                            <div className="text-[10px] text-slate-400 dark:text-slate-500">{lang === 'zh' ? '发现和分享更多机器人模型' : 'Discover and share more robot models'}</div>
+                                        </div>
+                                    </button>
+
 
                                 </div>
                             </div>
@@ -2094,6 +2112,11 @@ export default function App() {
             fileName={`${robot.name}.urdf`}
             lang={lang}
         />
+      )}
+
+      {/* URDF Square Window */}
+      {isURDFSquareOpen && (
+        <URDFSquare onClose={() => setIsURDFSquareOpen(false)} lang={lang} />
       )}
 
       {/* AI Inspector Floating Window */}
