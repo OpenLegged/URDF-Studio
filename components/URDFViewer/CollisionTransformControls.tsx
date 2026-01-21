@@ -1,9 +1,15 @@
 import React, { useRef, useState, useEffect, useCallback } from 'react';
-import { useThree } from '@react-three/fiber';
+import { useThree, useFrame } from '@react-three/fiber';
 import { TransformControls, Html } from '@react-three/drei';
 import * as THREE from 'three';
 import { CollisionTransformControlsProps } from './types';
 import { translations } from '../../services/i18n';
+
+// ============================================================
+// PERFORMANCE: Module-level pooled objects to eliminate GC pressure
+// ============================================================
+const _pooledEuler = new THREE.Euler();
+const _pooledColor = new THREE.Color();
 
 export const CollisionTransformControls: React.FC<CollisionTransformControlsProps> = ({
     robot,
@@ -39,34 +45,45 @@ export const CollisionTransformControls: React.FC<CollisionTransformControlsProp
     const currentAxisRef = useRef<string | null>(null);
     const startValueRef = useRef<number>(0);
 
-    // Update axis opacity based on active axis and dragging state
-    const updateAxisOpacity = useCallback((gizmo: any, axis: string | null, isDragging: boolean) => {
+    // Store original axis colors to prevent highlight color changes
+    const axisColorsRef = useRef<Map<any, THREE.Color>>(new Map());
+    
+    // Reset all axis materials to prevent any highlight effects
+    // This is called on every frame to override TransformControls' internal highlighting
+    const resetAxisMaterials = useCallback((gizmo: any) => {
+        if (!gizmo) return;
+
         gizmo.traverse((child: any) => {
-            if (child.material && child.material.color) {
-                // Check axis by material color (R=X, G=Y, B=Z)
-                const color = child.material.color;
-                const isXAxis = color.r > 0.5 && color.g < 0.4 && color.b < 0.4;
-                const isYAxis = color.g > 0.5 && color.r < 0.4 && color.b < 0.4;
-                const isZAxis = color.b > 0.5 && color.r < 0.4 && color.g < 0.4;
+            if (!child.material || !child.material.color) return;
 
-                const isActiveAxis = !axis ||
-                    (axis === 'X' && isXAxis) ||
-                    (axis === 'Y' && isYAxis) ||
-                    (axis === 'Z' && isZAxis);
-
-                // When dragging: active axis stays full opacity, others become very transparent
-                // When hovering: active axis stays full opacity, others become slightly transparent
-                if (axis && !isActiveAxis) {
-                    child.material.opacity = isDragging ? 0.15 : 0.3;
-                    child.material.transparent = true;
-                } else {
-                    child.material.opacity = 1.0;
-                    child.material.transparent = false;
-                }
-                child.material.needsUpdate = true;
+            // Store original color on first encounter
+            if (!axisColorsRef.current.has(child)) {
+                axisColorsRef.current.set(child, child.material.color.clone());
             }
+
+            // Restore original color (prevents yellow highlight on hover)
+            const originalColor = axisColorsRef.current.get(child);
+            if (originalColor && !child.material.color.equals(originalColor)) {
+                child.material.color.copy(originalColor);
+            }
+
+            // Keep full opacity, no transparency
+            child.material.opacity = 1.0;
+            child.material.transparent = false;
+            child.material.needsUpdate = true;
         });
     }, []);
+    
+    // Use frame loop to continuously reset materials - this completely disables highlight
+    useFrame(() => {
+        const controls = transformRef.current;
+        if (!controls || !targetObject) return;
+        
+        const gizmo = (controls as any).children?.[0];
+        if (gizmo) {
+            resetAxisMaterials(gizmo);
+        }
+    });
 
     // Setup event listeners for TransformControls
     useEffect(() => {
@@ -90,11 +107,7 @@ export const CollisionTransformControls: React.FC<CollisionTransformControlsProp
                 const axis = controls.axis;
                 currentAxisRef.current = axis;
 
-                // Update axis opacity for dragging state
-                const gizmo = (controls as any).children?.[0];
-                if (gizmo && axis) {
-                    updateAxisOpacity(gizmo, axis, true);
-                }
+                // Gizmo materials are reset via useFrame, no need for manual update here
 
                 // Get start value
                 const isRotate = transformMode === 'rotate';
@@ -118,11 +131,7 @@ export const CollisionTransformControls: React.FC<CollisionTransformControlsProp
                 const axis = currentAxisRef.current;
                 const isRotate = transformMode === 'rotate';
 
-                // Reset axis opacity to hover state
-                const gizmo = (controls as any).children?.[0];
-                if (gizmo && axis) {
-                    updateAxisOpacity(gizmo, axis, false);
-                }
+                // Gizmo materials are reset via useFrame, no need for manual update here
 
                 // Get current value after drag
                 let currentVal = 0;
@@ -157,7 +166,7 @@ export const CollisionTransformControls: React.FC<CollisionTransformControlsProp
         return () => {
             controls.removeEventListener('dragging-changed', handleDraggingChange);
         };
-    }, [targetObject, transformMode, setIsDragging, invalidate, pendingEdit, updateAxisOpacity]);
+    }, [targetObject, transformMode, setIsDragging, invalidate, pendingEdit]);
     
     // Find the selected collision mesh
     useEffect(() => {
@@ -219,7 +228,7 @@ export const CollisionTransformControls: React.FC<CollisionTransformControlsProp
     const [currentAxis, setCurrentAxis] = useState<string | null>(null);
     const [isDraggingAxis, setIsDraggingAxis] = useState(false);
 
-    // Customize TransformControls appearance - thicker axes and single-axis highlight
+    // Customize TransformControls appearance - thicker axes and disable highlight
     useEffect(() => {
         const controls = transformRef.current;
         if (!controls) return;
@@ -228,12 +237,18 @@ export const CollisionTransformControls: React.FC<CollisionTransformControlsProp
         const gizmo = (controls as any).children?.[0];
         if (!gizmo) return;
 
-        // Make axes thicker by scaling line width
+        // Make axes thicker by scaling line width and clone materials for independent control
         const updateAxisAppearance = () => {
             gizmo.traverse((child: any) => {
                 if (child.isMesh || child.isLine) {
-                    // Make lines thicker
                     if (child.material) {
+                        // PERFORMANCE FIX: Clone material to prevent shared material transparency issues
+                        // This ensures each axis has its own material instance
+                        if (!child.userData.materialCloned && child.material.clone) {
+                            child.material = child.material.clone();
+                            child.userData.materialCloned = true;
+                        }
+                        
                         if (child.material.linewidth !== undefined) {
                             child.material.linewidth = 3;
                         }
@@ -251,16 +266,15 @@ export const CollisionTransformControls: React.FC<CollisionTransformControlsProp
 
         updateAxisAppearance();
 
-        // Listen for axis changes to update transparency
+        // Disable the internal highlight behavior by overriding the gizmo's highlight method
+        if (gizmo.highlight) {
+            gizmo.highlight = () => {};
+        }
+
+        // Listen for axis changes (for currentAxis state tracking only)
         const handleAxisChanged = (event: any) => {
-            // Don't allow axis changes if pending edit exists
             if (pendingEdit) return;
-
-            const axis = event.value;
-            setCurrentAxis(axis);
-
-            // Update opacity based on current axis and dragging state
-            updateAxisOpacity(gizmo, axis, isDraggingAxis);
+            setCurrentAxis(event.value);
             invalidate();
         };
 
@@ -268,8 +282,10 @@ export const CollisionTransformControls: React.FC<CollisionTransformControlsProp
 
         return () => {
             controls.removeEventListener('axis-changed', handleAxisChanged);
+            // Clear stored colors on cleanup
+            axisColorsRef.current.clear();
         };
-    }, [targetObject, transformMode, invalidate, pendingEdit, isDraggingAxis, updateAxisOpacity]);
+    }, [targetObject, transformMode, invalidate, pendingEdit]);
 
     // Handle transform change (live update during drag)
     const handleObjectChange = useCallback(() => {
@@ -292,14 +308,14 @@ export const CollisionTransformControls: React.FC<CollisionTransformControlsProp
             else if (axis === 'Z') targetObject.position.z = pendingEdit.value;
         }
         
-        // Call onTransformEnd to save to history
+        // Call onTransformEnd to save to history (use pooled euler)
         const pos = targetObject.position;
-        const euler = new THREE.Euler().setFromQuaternion(targetObject.quaternion, 'XYZ');
+        _pooledEuler.setFromQuaternion(targetObject.quaternion, 'XYZ');
         
         onTransformEnd(
             selection.id,
             { x: pos.x, y: pos.y, z: pos.z },
-            { r: euler.x, p: euler.y, y: euler.z }
+            { r: _pooledEuler.x, p: _pooledEuler.y, y: _pooledEuler.z }
         );
         
         // Update original refs for next operation

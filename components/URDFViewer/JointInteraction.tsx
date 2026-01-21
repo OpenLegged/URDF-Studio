@@ -4,6 +4,17 @@ import { TransformControls } from '@react-three/drei';
 import * as THREE from 'three';
 import { JointInteractionProps } from './types';
 
+// ============================================================
+// PERFORMANCE: Module-level pooled objects to eliminate GC pressure
+// ============================================================
+const _pooledVec3 = new THREE.Vector3();
+const _pooledQuat = new THREE.Quaternion();
+const _pooledQuatAlign = new THREE.Quaternion();
+const _pooledQuatRot = new THREE.Quaternion();
+const _pooledQuatZero = new THREE.Quaternion();
+const _pooledQuatDelta = new THREE.Quaternion();
+const _pooledAlignVec = new THREE.Vector3();
+
 export const JointInteraction: React.FC<JointInteractionProps> = ({ joint, value, onChange, onCommit }) => {
     const transformRef = useRef<any>(null);
     const dummyRef = useRef<THREE.Object3D>(new THREE.Object3D());
@@ -14,16 +25,22 @@ export const JointInteraction: React.FC<JointInteractionProps> = ({ joint, value
 
     if (!joint) return null;
 
-    // Get joint axis - ensure it's a proper Vector3
-    const axisNormalized = useMemo(() => {
+    // PERFORMANCE: Store axis in ref to avoid recreating Vector3
+    const axisNormalizedRef = useRef(new THREE.Vector3(1, 0, 0));
+    
+    // Get joint axis - ensure it's a proper Vector3 (writes to ref, no allocation)
+    useMemo(() => {
         const axis = joint.axis;
         if (axis instanceof THREE.Vector3) {
-            return axis.clone().normalize();
+            axisNormalizedRef.current.copy(axis).normalize();
         } else if (axis && typeof axis.x === 'number') {
-            return new THREE.Vector3(axis.x, axis.y, axis.z).normalize();
+            axisNormalizedRef.current.set(axis.x, axis.y, axis.z).normalize();
+        } else {
+            axisNormalizedRef.current.set(1, 0, 0);
         }
-        return new THREE.Vector3(1, 0, 0);
     }, [joint]);
+    
+    const axisNormalized = axisNormalizedRef.current;
 
     // Determine which rotation mode to use based on axis
     const rotationAxis = useMemo((): 'X' | 'Y' | 'Z' => {
@@ -35,7 +52,7 @@ export const JointInteraction: React.FC<JointInteractionProps> = ({ joint, value
         return 'Z';
     }, [axisNormalized]);
 
-    // Function to update dummy position and orientation
+    // Function to update dummy position and orientation (uses pooled objects)
     const updateDummyTransform = useCallback(() => {
         if (dummyRef.current && joint) {
             try {
@@ -52,20 +69,18 @@ export const JointInteraction: React.FC<JointInteractionProps> = ({ joint, value
                         joint.getWorldQuaternion(dummyRef.current.quaternion);
                     }
 
-                    // Align the gizmo with the joint axis
-                    const alignVector = new THREE.Vector3(1, 0, 0); // Default X
-                    if (rotationAxis === 'Y') alignVector.set(0, 1, 0);
-                    if (rotationAxis === 'Z') alignVector.set(0, 0, 1);
+                    // Align the gizmo with the joint axis (use pooled vector)
+                    _pooledAlignVec.set(1, 0, 0); // Default X
+                    if (rotationAxis === 'Y') _pooledAlignVec.set(0, 1, 0);
+                    if (rotationAxis === 'Z') _pooledAlignVec.set(0, 0, 1);
 
-                    const alignQ = new THREE.Quaternion().setFromUnitVectors(
-                        alignVector,
-                        axisNormalized
-                    );
-                    dummyRef.current.quaternion.multiply(alignQ);
+                    // Use pooled quaternions
+                    _pooledQuatAlign.setFromUnitVectors(_pooledAlignVec, axisNormalized);
+                    dummyRef.current.quaternion.multiply(_pooledQuatAlign);
 
-                    // Apply the current joint angle rotation
-                    const rotQ = new THREE.Quaternion().setFromAxisAngle(alignVector, value); // Rotate around LOCAL axis
-                    dummyRef.current.quaternion.multiply(rotQ);
+                    // Apply the current joint angle rotation (use pooled quaternion)
+                    _pooledQuatRot.setFromAxisAngle(_pooledAlignVec, value);
+                    dummyRef.current.quaternion.multiply(_pooledQuatRot);
                 }
             } catch (e) {
                 // Prevent crash on math error
@@ -89,36 +104,33 @@ export const JointInteraction: React.FC<JointInteractionProps> = ({ joint, value
         
         try {
             // Calculate the angle from the current quaternion relative to the zero-angle frame
+            // Use pooled quaternion for parent
             const parent = joint.parent;
-            const parentQuat = new THREE.Quaternion();
             if (parent) {
-                parent.getWorldQuaternion(parentQuat);
+                parent.getWorldQuaternion(_pooledQuat);
             } else {
-                joint.getWorldQuaternion(parentQuat);
+                joint.getWorldQuaternion(_pooledQuat);
             }
 
-            // Re-calculate alignment (same as in updateDummyTransform)
-            const alignVector = new THREE.Vector3(1, 0, 0); 
-            if (rotationAxis === 'Y') alignVector.set(0, 1, 0);
-            if (rotationAxis === 'Z') alignVector.set(0, 0, 1);
+            // Re-calculate alignment (same as in updateDummyTransform) - use pooled vector
+            _pooledAlignVec.set(1, 0, 0); 
+            if (rotationAxis === 'Y') _pooledAlignVec.set(0, 1, 0);
+            if (rotationAxis === 'Z') _pooledAlignVec.set(0, 0, 1);
             
-            const alignQ = new THREE.Quaternion().setFromUnitVectors(
-                alignVector,
-                axisNormalized
-            );
+            _pooledQuatAlign.setFromUnitVectors(_pooledAlignVec, axisNormalized);
             
-            // Q_zero = Q_parent * Q_align
-            const zeroQuat = parentQuat.clone().multiply(alignQ);
+            // Q_zero = Q_parent * Q_align (use pooled zeroQuat)
+            _pooledQuatZero.copy(_pooledQuat).multiply(_pooledQuatAlign);
             
-            // Q_delta = Q_zero^-1 * Q_current
-            const deltaQuat = zeroQuat.clone().invert().multiply(dummyRef.current.quaternion);
+            // Q_delta = Q_zero^-1 * Q_current (use pooled deltaQuat)
+            _pooledQuatDelta.copy(_pooledQuatZero).invert().multiply(dummyRef.current.quaternion);
             
             // Extract angle from deltaQuat
             // 2 * atan2(q.component, q.w) gives the angle
             let newValue = 0;
-            if (rotationAxis === 'X') newValue = 2 * Math.atan2(deltaQuat.x, deltaQuat.w);
-            else if (rotationAxis === 'Y') newValue = 2 * Math.atan2(deltaQuat.y, deltaQuat.w);
-            else newValue = 2 * Math.atan2(deltaQuat.z, deltaQuat.w);
+            if (rotationAxis === 'X') newValue = 2 * Math.atan2(_pooledQuatDelta.x, _pooledQuatDelta.w);
+            else if (rotationAxis === 'Y') newValue = 2 * Math.atan2(_pooledQuatDelta.y, _pooledQuatDelta.w);
+            else newValue = 2 * Math.atan2(_pooledQuatDelta.z, _pooledQuatDelta.w);
             
             // Apply limits for revolute joints
             const limit = joint.limit || { lower: -Math.PI, upper: Math.PI };

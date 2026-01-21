@@ -17,8 +17,19 @@ import {
     emptyRaycast 
 } from './materials';
 import { RobotModelProps } from './types';
-import { createLoadingManager, createMeshLoader } from './loaders';
+import { createLoadingManager, createMeshLoader, buildAssetIndex, resetUnitDetection } from './loaders';
 import { throttle } from '../../services/throttle';
+import { 
+    RobotIndex, 
+    buildRobotIndex, 
+    createEmptyIndex,
+    getLinkMeshes,
+    highlightLinkMeshes,
+    revertHighlights,
+    freezeStaticMatrices,
+    findParentLinkFromMesh,
+    isMeshCollision
+} from './robotIndex';
 
 // Set of shared materials that should NOT be disposed (they are module-level singletons)
 const SHARED_MATERIALS = new Set<THREE.Material>([
@@ -37,6 +48,16 @@ const _pooledVec3A = new THREE.Vector3();
 const _pooledVec3B = new THREE.Vector3();
 const _pooledBox3 = new THREE.Box3();
 const _pooledRay = new THREE.Ray();
+const _pooledMatrix4 = new THREE.Matrix4();
+const _pooledQuat = new THREE.Quaternion();
+
+// ============================================================
+// PERFORMANCE: Named function references to avoid anonymous closures
+// These are defined at module level to prevent recreation each render
+// ============================================================
+let _frameRaycastCallback: (() => void) | null = null;
+let _frameFaceHighlightCallback: (() => void) | null = null;
+let _frameFocusCallback: (() => void) | null = null;
 // Minimum pixel movement threshold before triggering raycast (state locking)
 const MOUSE_MOVE_THRESHOLD = 2;
 // Throttle interval in ms (~30fps)
@@ -168,6 +189,9 @@ export const RobotModel: React.FC<RobotModelProps> = memo(({
     
     // PERFORMANCE: Pre-built map of linkName -> meshes for O(1) highlight lookup
     const linkMeshMapRef = useRef<Map<string, THREE.Mesh[]>>(new Map());
+    
+    // PERFORMANCE: Flat robot index for O(1) access to all entities
+    const robotIndexRef = useRef<RobotIndex>(createEmptyIndex());
     
     // Helper function to get triangle vertices - writes to provided output vectors (no allocation)
     const getTriangleVertices = useCallback((
@@ -305,19 +329,25 @@ export const RobotModel: React.FC<RobotModelProps> = memo(({
         }
 
         if (targetObj) {
-            const box = new THREE.Box3().setFromObject(targetObj);
-            const center = box.getCenter(new THREE.Vector3());
-            const size = box.getSize(new THREE.Vector3());
+            // PERFORMANCE: Use pooled Box3 and Vector3s
+            _pooledBox3.setFromObject(targetObj);
+            const center = _pooledBox3.getCenter(_pooledVec3A);
+            const size = _pooledBox3.getSize(_pooledVec3B);
             const maxDim = Math.max(size.x, size.y, size.z);
             const distance = Math.max(maxDim * 2, 0.5);
-            const direction = new THREE.Vector3().subVectors(camera.position, controls ? (controls as any).target : new THREE.Vector3(0,0,0)).normalize();
             
-            if (direction.lengthSq() < 0.001) direction.set(1, 1, 1).normalize();
+            // Calculate direction using pooled vector (reuse _pooledVec3B since size is no longer needed)
+            const controlTarget = controls ? (controls as any).target : _pooledVec3B.set(0, 0, 0);
+            _pooledVec3B.subVectors(camera.position, controlTarget).normalize();
             
-            const newPos = center.clone().add(direction.multiplyScalar(distance));
-
-            focusTargetRef.current = center;
-            cameraTargetPosRef.current = newPos;
+            if (_pooledVec3B.lengthSq() < 0.001) _pooledVec3B.set(1, 1, 1).normalize();
+            
+            // Store copies (need to persist across frames)
+            if (!focusTargetRef.current) focusTargetRef.current = new THREE.Vector3();
+            if (!cameraTargetPosRef.current) cameraTargetPosRef.current = new THREE.Vector3();
+            
+            focusTargetRef.current.copy(center);
+            cameraTargetPosRef.current.copy(center).add(_pooledVec3B.multiplyScalar(distance));
             isFocusingRef.current = true;
             invalidate();
         }
@@ -349,30 +379,21 @@ export const RobotModel: React.FC<RobotModelProps> = memo(({
     
     // Revert all highlighted meshes using the tracked Map (O(n) where n = highlighted, not total)
     const revertAllHighlights = useCallback(() => {
-        highlightedMeshesRef.current.forEach((origMaterial, mesh) => {
-            mesh.material = origMaterial;
-            const isCollider = (mesh as any).isURDFCollider || mesh.userData.isCollisionMesh;
-            if (isCollider) {
-                mesh.visible = showCollisionRef.current;
-                if (mesh.parent && (mesh.parent as any).isURDFCollider) mesh.parent.visible = showCollisionRef.current;
-                const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
-                materials.forEach((m: any) => { if (m) { m.transparent = true; m.opacity = 0.4; } });
-                mesh.renderOrder = 999;
-            } else {
-                mesh.visible = showVisualRef.current;
-            }
-        });
-        highlightedMeshesRef.current.clear();
+        revertHighlights(
+            highlightedMeshesRef.current,
+            showVisualRef.current,
+            showCollisionRef.current
+        );
     }, []);
 
     // PERFORMANCE: Helper function to highlight/unhighlight link geometry
     // Uses pre-built linkMeshMap for O(1) lookup instead of traverse
     const highlightGeometry = useCallback((linkName: string | null, revert: boolean, subType: 'visual' | 'collision' | undefined = undefined, meshToHighlight?: THREE.Object3D | null) => {
         if (!robot) return;
-        
+
         try {
             const targetSubType = subType || (highlightMode === 'collision' ? 'collision' : 'visual');
-            
+
             // OPTIMIZED: Use Map-based revert instead of traversing
             if (revert) {
                 revertAllHighlights();
@@ -382,13 +403,31 @@ export const RobotModel: React.FC<RobotModelProps> = memo(({
             // PERFORMANCE: If highlighting a specific mesh, use direct access
             if (meshToHighlight && (meshToHighlight as any).isMesh) {
                 const mesh = meshToHighlight as THREE.Mesh;
+
+                // Check if this mesh should be visible based on current mode
+                const isCollisionMesh = mesh.userData.isCollisionMesh ||
+                                       (mesh as any).isURDFCollider ||
+                                       mesh.parent?.userData.isCollisionMesh ||
+                                       (mesh.parent as any)?.isURDFCollider;
+
+                // Only highlight if it's the correct type for current mode
+                if ((targetSubType === 'collision' && !isCollisionMesh) ||
+                    (targetSubType === 'visual' && isCollisionMesh)) {
+                    return;
+                }
+
                 if (!highlightedMeshesRef.current.has(mesh)) {
                     highlightedMeshesRef.current.set(mesh, mesh.material);
                 }
                 mesh.material = targetSubType === 'collision' ? collisionHighlightMaterial : highlightMaterial;
-                mesh.visible = true;
-                if (mesh.parent) mesh.parent.visible = true;
-                
+
+                // Only make visible if in correct mode
+                if ((targetSubType === 'collision' && showCollisionRef.current) ||
+                    (targetSubType === 'visual' && showVisualRef.current)) {
+                    mesh.visible = true;
+                    if (mesh.parent) mesh.parent.visible = true;
+                }
+
                 if (mesh.userData.isCollisionMesh && mesh.material) {
                     (mesh.material as any).transparent = false;
                     (mesh.material as any).opacity = 1.0;
@@ -401,19 +440,24 @@ export const RobotModel: React.FC<RobotModelProps> = memo(({
             if (linkName) {
                 const mapKey = `${linkName}:${targetSubType}`;
                 const meshes = linkMeshMapRef.current.get(mapKey);
-                
+
                 if (meshes && meshes.length > 0) {
                     for (let i = 0; i < meshes.length; i++) {
                         const mesh = meshes[i];
                         if (mesh.userData?.isGizmo) continue;
-                        
+
                         if (!highlightedMeshesRef.current.has(mesh)) {
                             highlightedMeshesRef.current.set(mesh, mesh.material);
                         }
                         mesh.material = targetSubType === 'collision' ? collisionHighlightMaterial : highlightMaterial;
-                        mesh.visible = true;
-                        if (mesh.parent) mesh.parent.visible = true;
-                        
+
+                        // Only make visible if in correct mode
+                        if ((targetSubType === 'collision' && showCollisionRef.current) ||
+                            (targetSubType === 'visual' && showVisualRef.current)) {
+                            mesh.visible = true;
+                            if (mesh.parent) mesh.parent.visible = true;
+                        }
+
                         if (targetSubType === 'collision' && mesh.material) {
                             (mesh.material as any).transparent = false;
                             (mesh.material as any).opacity = 1.0;
@@ -422,7 +466,7 @@ export const RobotModel: React.FC<RobotModelProps> = memo(({
                     }
                     return;
                 }
-                
+
                 // Fallback to traverse if map lookup fails (shouldn't happen normally)
                 const linkObj = (robot as any).links?.[linkName];
                 if (linkObj) {
@@ -436,8 +480,13 @@ export const RobotModel: React.FC<RobotModelProps> = memo(({
                                     highlightedMeshesRef.current.set(c, c.material);
                                 }
                                 c.material = targetSubType === 'collision' ? collisionHighlightMaterial : highlightMaterial;
-                                c.visible = true;
-                                if (c.parent) c.parent.visible = true;
+
+                                // Only make visible if in correct mode
+                                if ((targetSubType === 'collision' && showCollisionRef.current) ||
+                                    (targetSubType === 'visual' && showVisualRef.current)) {
+                                    c.visible = true;
+                                    if (c.parent) c.parent.visible = true;
+                                }
                             }
                         }
                         c.children?.forEach(fallbackTraverse);
@@ -448,7 +497,7 @@ export const RobotModel: React.FC<RobotModelProps> = memo(({
         } catch (err) {
             console.warn("Error in highlightGeometry:", err);
         }
-    }, [robot, showCollision, showVisual, highlightMode, revertAllHighlights]);
+    }, [robot, highlightMode, revertAllHighlights]);
 
     // Keep refs up to date
     useEffect(() => {
@@ -906,59 +955,97 @@ export const RobotModel: React.FC<RobotModelProps> = memo(({
         }
     });
     
-    // Update collision visibility when showCollision changes
+    // Update collision visibility when showCollision changes (OPTIMIZED: uses robotIndex)
     useEffect(() => {
-        if (!robot) return;
-        
-        robot.traverse((child: any) => {
-            if (child.isURDFCollider) {
-                child.visible = showCollision;
-                child.traverse((inner: any) => {
-                    if (inner.isMesh) {
-                        inner.userData.isCollisionMesh = true;
-                        inner.raycast = (highlightMode === 'collision' && showCollision) 
-                            ? THREE.Mesh.prototype.raycast 
-                            : emptyRaycast;
+        if (!robot || robotIndexRef.current.linksCollision.size === 0) return;
+
+        console.log('[RobotModel] Collision visibility effect triggered:', showCollision);
+        const index = robotIndexRef.current;
+
+        // PERFORMANCE: Use flat index instead of traverse
+        let updatedCount = 0;
+        index.linksCollision.forEach((meshes) => {
+            for (let i = 0; i < meshes.length; i++) {
+                const mesh = meshes[i];
+
+                // Set mesh visibility
+                mesh.visible = showCollision;
+                updatedCount++;
+
+                // Update raycast function - only enable in collision mode
+                mesh.raycast = (highlightMode === 'collision' && showCollision)
+                    ? THREE.Mesh.prototype.raycast
+                    : emptyRaycast;
+
+                // Update ALL URDFCollider ancestors visibility up to robot
+                // This ensures collision groups are shown/hidden properly
+                let parent = mesh.parent;
+                while (parent && parent !== robot) {
+                    if ((parent as any).isURDFCollider || (parent as any).type === 'URDFCollider') {
+                        parent.visible = showCollision;
                     }
-                });
-                
+                    parent = parent.parent;
+                }
+
+                // Set material and render order
                 if (showCollision) {
-                    child.traverse((innerChild: any) => {
-                        if (innerChild.isMesh) {
-                            innerChild.userData.isCollisionMesh = true;
-                            if (innerChild.__origMaterial) {
-                                innerChild.__origMaterial = collisionBaseMaterial;
-                            } else {
-                                innerChild.material = collisionBaseMaterial;
-                            }
-                            innerChild.renderOrder = 999;
-                        }
-                    });
+                    mesh.material = collisionBaseMaterial;
+                    mesh.renderOrder = 999;
+                } else {
+                    const origMaterial = index.originalMaterials.get(mesh);
+                    if (origMaterial) {
+                        mesh.material = origMaterial;
+                    }
+                    mesh.renderOrder = 0;
                 }
             }
         });
-    }, [robot, showCollision, robotVersion, highlightMode]);
 
-    // Update visual visibility when link visibility changes
+        console.log(`[RobotModel] Updated ${updatedCount} collision meshes, visibility=${showCollision}`);
+
+        // Single invalidate call - no need for double
+        invalidate();
+    }, [robot, showCollision, highlightMode, invalidate]);
+
+    // Update visual visibility when showVisual or link visibility changes (OPTIMIZED: uses robotIndex)
     useEffect(() => {
-        if (!robot) return;
-        
-        robot.traverse((child: any) => {
-            if (child.parent && child.parent.isURDFLink && !child.isURDFJoint && !child.isURDFCollider) {
-                const linkName = child.parent.name;
-                const isLinkVisible = robotLinks?.[linkName]?.visible !== false;
-                child.visible = isLinkVisible;
-            }
-            if (child.isMesh && !child.isURDFCollider && !child.userData.isCollisionMesh) {
-                 let linkName = '';
-                 if (child.parent && child.parent.isURDFLink) linkName = child.parent.name;
-                 else if (child.parent && child.parent.parent && child.parent.parent.isURDFLink) linkName = child.parent.parent.name;
-                 
-                 const isLinkVisible = linkName ? (robotLinks?.[linkName]?.visible !== false) : true;
-                 child.visible = isLinkVisible;
+        if (!robot || robotIndexRef.current.linksVisual.size === 0) return;
+
+        console.log('[RobotModel] Visual visibility effect triggered:', showVisual);
+        const index = robotIndexRef.current;
+
+        // PERFORMANCE: Use flat index instead of traverse
+        let updatedCount = 0;
+        index.linksVisual.forEach((meshes, linkName) => {
+            const isLinkVisible = robotLinks?.[linkName]?.visible !== false;
+            const shouldShow = isLinkVisible && showVisual;
+
+            for (let i = 0; i < meshes.length; i++) {
+                const mesh = meshes[i];
+
+                // Set mesh visibility
+                mesh.visible = shouldShow;
+                updatedCount++;
+
+                // Update raycast function - only enable when visible
+                mesh.raycast = shouldShow ? THREE.Mesh.prototype.raycast : emptyRaycast;
+
+                // Update ALL URDFVisual ancestors visibility up to robot
+                let parent = mesh.parent;
+                while (parent && parent !== robot) {
+                    if ((parent as any).isURDFVisual || (parent as any).type === 'URDFVisual') {
+                        parent.visible = shouldShow;
+                    }
+                    parent = parent.parent;
+                }
             }
         });
-    }, [robot, robotVersion, robotLinks]);
+
+        console.log(`[RobotModel] Updated ${updatedCount} visual meshes, visibility=${showVisual}`);
+
+        // Single invalidate call - no need for double
+        invalidate();
+    }, [robot, robotLinks, showVisual, invalidate]);
 
     // Effect to handle inertia and CoM visualization (simplified - see original for full implementation)
     useEffect(() => {
@@ -1085,6 +1172,104 @@ export const RobotModel: React.FC<RobotModelProps> = memo(({
 
     }, [robot, showInertia, showCenterOfMass, robotVersion, invalidate, robotLinks]);
 
+    // Effect to handle origin axes visualization (showOrigins)
+    useEffect(() => {
+        if (!robot) return;
+        
+        robot.traverse((child: any) => {
+            // Add origin axes to links
+            if (child.isURDFLink) {
+                let originAxes = child.children.find((c: any) => c.name === '__origin_axes__');
+                
+                if (!originAxes && showOrigins) {
+                    originAxes = new THREE.AxesHelper(originSize);
+                    originAxes.name = '__origin_axes__';
+                    originAxes.userData = { isGizmo: true };
+                    originAxes.raycast = () => {};
+                    (originAxes.material as THREE.Material).depthTest = false;
+                    originAxes.renderOrder = 1000;
+                    child.add(originAxes);
+                }
+                
+                if (originAxes) {
+                    originAxes.visible = showOrigins;
+                    // Update size if changed
+                    if (showOrigins) {
+                        originAxes.scale.setScalar(originSize / 0.1); // AxesHelper default size is 1, we normalize
+                    }
+                }
+            }
+        });
+        
+        invalidate();
+    }, [robot, showOrigins, originSize, robotVersion, invalidate]);
+
+    // Effect to handle joint axes visualization (showJointAxes)
+    useEffect(() => {
+        if (!robot) return;
+        
+        robot.traverse((child: any) => {
+            // Add joint axis indicator to joints
+            if (child.isURDFJoint && child.jointType !== 'fixed') {
+                let jointAxisGroup = child.children.find((c: any) => c.name === '__joint_axis__');
+                
+                if (!jointAxisGroup && showJointAxes) {
+                    jointAxisGroup = new THREE.Group();
+                    jointAxisGroup.name = '__joint_axis__';
+                    jointAxisGroup.userData = { isGizmo: true };
+                    
+                    // Create arrow helper along joint axis
+                    const axis = child.axis || new THREE.Vector3(0, 0, 1);
+                    const axisNormalized = axis.clone().normalize();
+                    
+                    // Main axis arrow (red for rotation axis)
+                    const arrowHelper = new THREE.ArrowHelper(
+                        axisNormalized,
+                        new THREE.Vector3(0, 0, 0),
+                        jointAxisSize,
+                        0xff0000, // Red color
+                        jointAxisSize * 0.2,
+                        jointAxisSize * 0.1
+                    );
+                    arrowHelper.userData = { isGizmo: true };
+                    arrowHelper.raycast = () => {};
+                    jointAxisGroup.add(arrowHelper);
+                    
+                    // Add rotation indicator ring for revolute joints
+                    if (child.jointType === 'revolute' || child.jointType === 'continuous') {
+                        const ringGeometry = new THREE.TorusGeometry(jointAxisSize * 0.3, jointAxisSize * 0.02, 8, 32);
+                        const ringMaterial = new THREE.MeshBasicMaterial({ 
+                            color: 0xff6600, 
+                            transparent: true, 
+                            opacity: 0.6,
+                            depthTest: false 
+                        });
+                        const ring = new THREE.Mesh(ringGeometry, ringMaterial);
+                        ring.userData = { isGizmo: true };
+                        ring.raycast = () => {};
+                        
+                        // Orient ring perpendicular to axis
+                        ring.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), axisNormalized);
+                        ring.renderOrder = 999;
+                        jointAxisGroup.add(ring);
+                    }
+                    
+                    child.add(jointAxisGroup);
+                }
+                
+                if (jointAxisGroup) {
+                    jointAxisGroup.visible = showJointAxes;
+                    // Update scale if changed
+                    if (showJointAxes) {
+                        jointAxisGroup.scale.setScalar(jointAxisSize);
+                    }
+                }
+            }
+        });
+        
+        invalidate();
+    }, [robot, showJointAxes, jointAxisSize, robotVersion, invalidate]);
+
     // Effect to handle selection highlighting
     useEffect(() => {
         if (!robot) return;
@@ -1176,22 +1361,122 @@ export const RobotModel: React.FC<RobotModelProps> = memo(({
                 // Cleanup any existing robot before loading new one
                 cleanupPreviousRobot();
                 
+                // PERFORMANCE: Reset unit detection for new model
+                resetUnitDetection();
+                
                 const urdfDir = '';
+                
+                // PERFORMANCE: Build asset index once for O(1) lookups
+                const assetIndex = buildAssetIndex(assets, urdfDir);
+                
                 const manager = createLoadingManager(assets, urdfDir);
+
                 manager.onLoad = () => {
-                    if (!abortController.aborted && isMountedRef.current) {
+                    if (!abortController.aborted && isMountedRef.current && robotRef.current) {
+                        console.log('[RobotModel] All meshes loaded, rebuilding index...');
+
+                        // Rebuild index after all meshes are loaded
+                        const newIndex = buildRobotIndex(
+                            robotRef.current,
+                            showCollisionRef.current,
+                            showVisualRef.current
+                        );
+
+                        console.log('[RobotModel] Index rebuilt after mesh load:', {
+                            visualLinks: newIndex.linksVisual.size,
+                            collisionLinks: newIndex.linksCollision.size,
+                            totalVisualMeshes: Array.from(newIndex.linksVisual.values()).reduce((sum, arr) => sum + arr.length, 0),
+                            totalCollisionMeshes: Array.from(newIndex.linksCollision.values()).reduce((sum, arr) => sum + arr.length, 0),
+                        });
+
+                        robotIndexRef.current = newIndex;
+
+                        // Update linkMeshMap
+                        const newLinkMeshMap = new Map<string, THREE.Mesh[]>();
+                        newIndex.linksVisual.forEach((meshes, linkName) => {
+                            newLinkMeshMap.set(`${linkName}:visual`, meshes);
+                        });
+                        newIndex.linksCollision.forEach((meshes, linkName) => {
+                            newLinkMeshMap.set(`${linkName}:collision`, meshes);
+                        });
+                        linkMeshMapRef.current = newLinkMeshMap;
+
+                        // Apply visibility settings to newly loaded meshes (no state updates)
+                        newIndex.linksCollision.forEach((meshes) => {
+                            for (let i = 0; i < meshes.length; i++) {
+                                const mesh = meshes[i];
+                                mesh.visible = showCollisionRef.current;
+                                let parent = mesh.parent;
+                                while (parent && parent !== robotRef.current) {
+                                    if ((parent as any).isURDFCollider || (parent as any).type === 'URDFCollider') {
+                                        parent.visible = showCollisionRef.current;
+                                    }
+                                    parent = parent.parent;
+                                }
+                                mesh.raycast = (highlightMode === 'collision' && showCollisionRef.current)
+                                    ? THREE.Mesh.prototype.raycast
+                                    : emptyRaycast;
+                                if (showCollisionRef.current) {
+                                    mesh.material = collisionBaseMaterial;
+                                    mesh.renderOrder = 999;
+                                } else {
+                                    mesh.renderOrder = 0;
+                                }
+                            }
+                        });
+
+                        newIndex.linksVisual.forEach((meshes, linkName) => {
+                            const isLinkVisible = robotLinks?.[linkName]?.visible !== false;
+                            const shouldShow = isLinkVisible && showVisualRef.current;
+                            for (let i = 0; i < meshes.length; i++) {
+                                const mesh = meshes[i];
+                                mesh.visible = shouldShow;
+                                mesh.raycast = shouldShow ? THREE.Mesh.prototype.raycast : emptyRaycast;
+                                let parent = mesh.parent;
+                                while (parent && parent !== robotRef.current) {
+                                    if ((parent as any).isURDFVisual || (parent as any).type === 'URDFVisual') {
+                                        parent.visible = shouldShow;
+                                    }
+                                    parent = parent.parent;
+                                }
+                            }
+                        });
+
+                        // Only update robotVersion, don't call invalidate() to avoid triggering effects
                         setRobotVersion(v => v + 1);
-                        invalidate();
                     }
                 };
 
                 const loader = new URDFLoader(manager);
+                loader.parseVisual = true;  // Explicitly enable visual parsing
                 loader.parseCollision = true;
-                loader.loadMeshCb = createMeshLoader(assets, manager, urdfDir);
+                // PERFORMANCE: Pass assetIndex for O(1) mesh path resolution
+                loader.loadMeshCb = createMeshLoader(assets, manager, urdfDir, assetIndex);
                 loader.packages = (pkg: string) => '';
                 
                 const robotModel = loader.parse(urdfContent);
-                
+
+                // Debug: Check what was parsed
+                if (robotModel) {
+                    console.log('[RobotModel] Parsed robot structure:', {
+                        parseVisual: loader.parseVisual,
+                        parseCollision: loader.parseCollision,
+                        links: Object.keys((robotModel as any).links || {}),
+                        childrenCount: robotModel.children.length
+                    });
+
+                    // Check first link structure
+                    const firstLink = robotModel.children[0];
+                    if (firstLink) {
+                        console.log('[RobotModel] First link structure:', {
+                            name: firstLink.name,
+                            type: (firstLink as any).type,
+                            childrenCount: firstLink.children.length,
+                            childrenTypes: firstLink.children.map((c: any) => `${c.name}(${c.type}, isURDFCollider=${!!c.isURDFCollider}, isURDFVisual=${!!c.isURDFVisual})`)
+                        });
+                    }
+                }
+
                 // Check if load was aborted (e.g., by StrictMode remount or urdfContent change)
                 if (abortController.aborted) {
                     // Dispose the loaded model since we don't need it
@@ -1203,85 +1488,106 @@ export const RobotModel: React.FC<RobotModelProps> = memo(({
                 
                 if (robotModel && isMountedRef.current) {
                     enhanceMaterials(robotModel);
-                    
-                    // PERFORMANCE: Build linkName -> meshes map and inject userData in single traverse
-                    // This eliminates the need for traverse in highlightGeometry
+
+                    // PERFORMANCE: Build comprehensive flat index (single traverse)
+                    // This replaces the old manual traverse and linkMeshMap building
+                    const newIndex = buildRobotIndex(
+                        robotModel,
+                        showCollisionRef.current,
+                        showVisualRef.current
+                    );
+
+                    console.log('[RobotModel] Index built:', {
+                        visualLinks: newIndex.linksVisual.size,
+                        collisionLinks: newIndex.linksCollision.size,
+                        totalVisualMeshes: Array.from(newIndex.linksVisual.values()).reduce((sum, arr) => sum + arr.length, 0),
+                        totalCollisionMeshes: Array.from(newIndex.linksCollision.values()).reduce((sum, arr) => sum + arr.length, 0),
+                        links: Array.from(newIndex.linksVisual.keys()),
+                    });
+
+                    robotIndexRef.current = newIndex;
+
+                    // PERFORMANCE: Build legacy linkMeshMap from new index for backward compatibility
                     const newLinkMeshMap = new Map<string, THREE.Mesh[]>();
-                    
-                    robotModel.traverse((child: any) => {
-                        // Find parent link for this object
-                        let parentLink: any = null;
-                        let current = child;
-                        while (current) {
-                            if (current.isURDFLink || (robotModel as any).links?.[current.name]) {
-                                parentLink = current;
-                                break;
+                    newIndex.linksVisual.forEach((meshes, linkName) => {
+                        newLinkMeshMap.set(`${linkName}:visual`, meshes);
+                    });
+                    newIndex.linksCollision.forEach((meshes, linkName) => {
+                        newLinkMeshMap.set(`${linkName}:collision`, meshes);
+                    });
+                    linkMeshMapRef.current = newLinkMeshMap;
+
+                    // PERFORMANCE: Freeze static matrices for non-kinematic visual nodes
+                    freezeStaticMatrices(newIndex);
+
+                    // Set initial visibility for collision meshes based on showCollision state
+                    newIndex.linksCollision.forEach((meshes) => {
+                        for (let i = 0; i < meshes.length; i++) {
+                            const mesh = meshes[i];
+
+                            // Set mesh visibility
+                            mesh.visible = showCollisionRef.current;
+
+                            // Update ALL URDFCollider ancestors visibility
+                            let parent = mesh.parent;
+                            while (parent && parent !== robotModel) {
+                                if ((parent as any).isURDFCollider || (parent as any).type === 'URDFCollider') {
+                                    parent.visible = showCollisionRef.current;
+                                }
+                                parent = parent.parent;
                             }
-                            current = current.parent;
-                        }
-                        
-                        // Handle collision meshes
-                        if (child.isURDFCollider) {
-                            child.visible = showCollisionRef.current;
-                            child.traverse((inner: any) => {
-                                if (inner.isMesh) {
-                                    inner.userData.isCollisionMesh = true;
-                                    // Inject parent link name for fast lookup
-                                    if (parentLink) {
-                                        inner.userData.parentLinkName = parentLink.name;
-                                    }
-                                    // Add to link mesh map
-                                    if (parentLink) {
-                                        const key = `${parentLink.name}:collision`;
-                                        if (!newLinkMeshMap.has(key)) {
-                                            newLinkMeshMap.set(key, []);
-                                        }
-                                        newLinkMeshMap.get(key)!.push(inner);
-                                    }
-                                }
-                            });
-                        }
-                        // Handle visual meshes
-                        else if (child.isMesh && !child.userData.isCollisionMesh) {
-                            // Check if it's a visual (not a joint or collider)
-                            let isVisual = false;
-                            let checkParent = child.parent;
-                            while (checkParent) {
-                                if (checkParent.isURDFCollider) {
-                                    break; // Already handled as collision
-                                }
-                                if (checkParent.isURDFLink) {
-                                    isVisual = true;
-                                    break;
-                                }
-                                checkParent = checkParent.parent;
+
+                            // Set raycast behavior - only enable in collision mode
+                            mesh.raycast = (highlightMode === 'collision' && showCollisionRef.current)
+                                ? THREE.Mesh.prototype.raycast
+                                : emptyRaycast;
+
+                            // Apply collision material if showing
+                            if (showCollisionRef.current) {
+                                mesh.material = collisionBaseMaterial;
+                                mesh.renderOrder = 999;
+                            } else {
+                                // Keep original material but ensure mesh is hidden
+                                mesh.renderOrder = 0;
                             }
-                            
-                            if (isVisual && parentLink) {
-                                child.userData.parentLinkName = parentLink.name;
-                                child.userData.isVisualMesh = true;
-                                const key = `${parentLink.name}:visual`;
-                                if (!newLinkMeshMap.has(key)) {
-                                    newLinkMeshMap.set(key, []);
-                                }
-                                newLinkMeshMap.get(key)!.push(child);
-                            }
-                            
-                            child.visible = showVisualRef.current;
                         }
                     });
-                    
-                    // Store the pre-built map
-                    linkMeshMapRef.current = newLinkMeshMap;
-                    
+
+                    // Set initial visibility for visual meshes (respect showVisual prop)
+                    newIndex.linksVisual.forEach((meshes, linkName) => {
+                        const isLinkVisible = robotLinks?.[linkName]?.visible !== false;
+                        const shouldShow = isLinkVisible && showVisualRef.current;
+
+                        for (let i = 0; i < meshes.length; i++) {
+                            const mesh = meshes[i];
+                            mesh.visible = shouldShow;
+                            // Set raycast behavior based on visibility
+                            mesh.raycast = shouldShow ? THREE.Mesh.prototype.raycast : emptyRaycast;
+
+                            // Update ALL URDFVisual ancestors visibility
+                            let parent = mesh.parent;
+                            while (parent && parent !== robotModel) {
+                                if ((parent as any).isURDFVisual || (parent as any).type === 'URDFVisual') {
+                                    parent.visible = shouldShow;
+                                }
+                                parent = parent.parent;
+                            }
+                        }
+                    });
+
                     // Store in ref for cleanup
                     robotRef.current = robotModel;
                     setRobot(robotModel);
                     setError(null);
-                    
+
                     if (onRobotLoaded) {
                         onRobotLoaded(robotModel);
                     }
+
+                    // Trigger a render after the state update completes
+                    requestAnimationFrame(() => {
+                        invalidate();
+                    });
                 }
             } catch (err) {
                 if (!abortController.aborted && isMountedRef.current) {

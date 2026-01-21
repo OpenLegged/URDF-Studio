@@ -294,7 +294,7 @@ const JointNode = memo(function JointNode({
                 {mode !== 'skeleton' && (
                     <mesh onClick={(e: any) => { e.stopPropagation(); onSelect('joint', joint.id); }}>
                         <sphereGeometry args={[0.02, 16, 16]} />
-                        <meshBasicMaterial color={isSelected ? "orange" : "transparent"} opacity={isSelected ? 1 : 0} transparent />
+                        <meshBasicMaterial color={isSelected ? "orange" : "#000000"} opacity={isSelected ? 1 : 0} transparent />
                     </mesh>
                 )}
 
