@@ -1291,6 +1291,381 @@ export const RobotModel: React.FC<RobotModelProps> = memo(({
 
     }, [robot, showInertia, showCenterOfMass, robotVersion, invalidate, robotLinks]);
 
+    // Effect to handle origin axes visualization for each link
+    useEffect(() => {
+        if (!robot) return;
+
+        robot.traverse((child: any) => {
+            if (child.isURDFLink) {
+                let originAxes = child.children.find((c: any) => c.name === '__origin_axes__');
+
+                if (!originAxes && showOrigins) {
+                    originAxes = new THREE.Group();
+                    originAxes.name = '__origin_axes__';
+                    originAxes.userData = { isGizmo: true };
+
+                    const size = originSize;
+                    const thickness = size * 0.04;
+                    const headSize = size * 0.2;
+                    const headRadius = thickness * 2.5;
+
+                    // X Axis - Red
+                    const xAxisGeom = new THREE.CylinderGeometry(thickness, thickness, size, 12);
+                    const xAxisMat = new THREE.MeshBasicMaterial({ color: 0xef4444, depthTest: false });
+                    const xAxis = new THREE.Mesh(xAxisGeom, xAxisMat);
+                    xAxis.rotation.set(0, 0, -Math.PI / 2);
+                    xAxis.position.set(size / 2, 0, 0);
+                    xAxis.userData = { isGizmo: true };
+                    xAxis.raycast = () => {};
+                    xAxis.renderOrder = 999;
+                    originAxes.add(xAxis);
+
+                    const xConeGeom = new THREE.ConeGeometry(headRadius, headSize, 12);
+                    const xCone = new THREE.Mesh(xConeGeom, xAxisMat);
+                    xCone.rotation.set(0, 0, -Math.PI / 2);
+                    xCone.position.set(size, 0, 0);
+                    xCone.userData = { isGizmo: true };
+                    xCone.raycast = () => {};
+                    xCone.renderOrder = 999;
+                    originAxes.add(xCone);
+
+                    // Y Axis - Green
+                    const yAxisGeom = new THREE.CylinderGeometry(thickness, thickness, size, 12);
+                    const yAxisMat = new THREE.MeshBasicMaterial({ color: 0x22c55e, depthTest: false });
+                    const yAxis = new THREE.Mesh(yAxisGeom, yAxisMat);
+                    yAxis.position.set(0, size / 2, 0);
+                    yAxis.userData = { isGizmo: true };
+                    yAxis.raycast = () => {};
+                    yAxis.renderOrder = 999;
+                    originAxes.add(yAxis);
+
+                    const yConeGeom = new THREE.ConeGeometry(headRadius, headSize, 12);
+                    const yCone = new THREE.Mesh(yConeGeom, yAxisMat);
+                    yCone.position.set(0, size, 0);
+                    yCone.userData = { isGizmo: true };
+                    yCone.raycast = () => {};
+                    yCone.renderOrder = 999;
+                    originAxes.add(yCone);
+
+                    // Z Axis - Blue
+                    const zAxisGeom = new THREE.CylinderGeometry(thickness, thickness, size, 12);
+                    const zAxisMat = new THREE.MeshBasicMaterial({ color: 0x3b82f6, depthTest: false });
+                    const zAxis = new THREE.Mesh(zAxisGeom, zAxisMat);
+                    zAxis.rotation.set(Math.PI / 2, 0, 0);
+                    zAxis.position.set(0, 0, size / 2);
+                    zAxis.userData = { isGizmo: true };
+                    zAxis.raycast = () => {};
+                    zAxis.renderOrder = 999;
+                    originAxes.add(zAxis);
+
+                    const zConeGeom = new THREE.ConeGeometry(headRadius, headSize, 12);
+                    const zCone = new THREE.Mesh(zConeGeom, zAxisMat);
+                    zCone.rotation.set(Math.PI / 2, 0, 0);
+                    zCone.position.set(0, 0, size);
+                    zCone.userData = { isGizmo: true };
+                    zCone.raycast = () => {};
+                    zCone.renderOrder = 999;
+                    originAxes.add(zCone);
+
+                    child.add(originAxes);
+                }
+
+                if (originAxes) {
+                    originAxes.visible = showOrigins;
+                    // Update scale based on originSize
+                    if (showOrigins) {
+                        const currentSize = originSize;
+                        originAxes.scale.setScalar(1);
+                        // Rebuild axes if size changed significantly
+                        const existingAxisMesh = originAxes.children[0];
+                        if (existingAxisMesh && existingAxisMesh.geometry) {
+                            const params = (existingAxisMesh.geometry as THREE.CylinderGeometry).parameters;
+                            if (params && Math.abs(params.height - currentSize) > 0.001) {
+                                // Remove old axes and recreate with new size
+                                while (originAxes.children.length > 0) {
+                                    const c = originAxes.children[0];
+                                    originAxes.remove(c);
+                                    if ((c as any).geometry) (c as any).geometry.dispose();
+                                    if ((c as any).material) (c as any).material.dispose();
+                                }
+
+                                const size = currentSize;
+                                const thickness = size * 0.04;
+                                const headSize = size * 0.2;
+                                const headRadius = thickness * 2.5;
+
+                                // Recreate X Axis
+                                const xAxisGeom = new THREE.CylinderGeometry(thickness, thickness, size, 12);
+                                const xAxisMat = new THREE.MeshBasicMaterial({ color: 0xef4444, depthTest: false });
+                                const xAxis = new THREE.Mesh(xAxisGeom, xAxisMat);
+                                xAxis.rotation.set(0, 0, -Math.PI / 2);
+                                xAxis.position.set(size / 2, 0, 0);
+                                xAxis.userData = { isGizmo: true };
+                                xAxis.raycast = () => {};
+                                xAxis.renderOrder = 999;
+                                originAxes.add(xAxis);
+
+                                const xConeGeom = new THREE.ConeGeometry(headRadius, headSize, 12);
+                                const xCone = new THREE.Mesh(xConeGeom, xAxisMat);
+                                xCone.rotation.set(0, 0, -Math.PI / 2);
+                                xCone.position.set(size, 0, 0);
+                                xCone.userData = { isGizmo: true };
+                                xCone.raycast = () => {};
+                                xCone.renderOrder = 999;
+                                originAxes.add(xCone);
+
+                                // Recreate Y Axis
+                                const yAxisGeom = new THREE.CylinderGeometry(thickness, thickness, size, 12);
+                                const yAxisMat = new THREE.MeshBasicMaterial({ color: 0x22c55e, depthTest: false });
+                                const yAxis = new THREE.Mesh(yAxisGeom, yAxisMat);
+                                yAxis.position.set(0, size / 2, 0);
+                                yAxis.userData = { isGizmo: true };
+                                yAxis.raycast = () => {};
+                                yAxis.renderOrder = 999;
+                                originAxes.add(yAxis);
+
+                                const yConeGeom = new THREE.ConeGeometry(headRadius, headSize, 12);
+                                const yCone = new THREE.Mesh(yConeGeom, yAxisMat);
+                                yCone.position.set(0, size, 0);
+                                yCone.userData = { isGizmo: true };
+                                yCone.raycast = () => {};
+                                yCone.renderOrder = 999;
+                                originAxes.add(yCone);
+
+                                // Recreate Z Axis
+                                const zAxisGeom = new THREE.CylinderGeometry(thickness, thickness, size, 12);
+                                const zAxisMat = new THREE.MeshBasicMaterial({ color: 0x3b82f6, depthTest: false });
+                                const zAxis = new THREE.Mesh(zAxisGeom, zAxisMat);
+                                zAxis.rotation.set(Math.PI / 2, 0, 0);
+                                zAxis.position.set(0, 0, size / 2);
+                                zAxis.userData = { isGizmo: true };
+                                zAxis.raycast = () => {};
+                                zAxis.renderOrder = 999;
+                                originAxes.add(zAxis);
+
+                                const zConeGeom = new THREE.ConeGeometry(headRadius, headSize, 12);
+                                const zCone = new THREE.Mesh(zConeGeom, zAxisMat);
+                                zCone.rotation.set(Math.PI / 2, 0, 0);
+                                zCone.position.set(0, 0, size);
+                                zCone.userData = { isGizmo: true };
+                                zCone.raycast = () => {};
+                                zCone.renderOrder = 999;
+                                originAxes.add(zCone);
+                            }
+                        }
+                    }
+                }
+            }
+        });
+
+        invalidate();
+    }, [robot, showOrigins, originSize, robotVersion, invalidate]);
+
+    // Effect to handle joint axes visualization
+    useEffect(() => {
+        if (!robot) return;
+
+        robot.traverse((child: any) => {
+            if (child.isURDFJoint && child.jointType !== 'fixed') {
+                let jointAxisViz = child.children.find((c: any) => c.name === '__joint_axis__');
+
+                if (!jointAxisViz && showJointAxes) {
+                    jointAxisViz = new THREE.Group();
+                    jointAxisViz.name = '__joint_axis__';
+                    jointAxisViz.userData = { isGizmo: true };
+
+                    const axis = child.axis || new THREE.Vector3(0, 0, 1);
+                    const axisVec = new THREE.Vector3(axis.x, axis.y, axis.z).normalize();
+                    const quaternion = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 0, 1), axisVec);
+
+                    const scale = jointAxisSize;
+                    const color = 0xd946ef; // Purple/magenta
+
+                    // Arrow for axis direction
+                    const arrowLength = 0.35 * scale;
+                    const arrowHeadLength = 0.08 * scale;
+                    const arrowHeadWidth = 0.05 * scale;
+
+                    // Arrow shaft
+                    const shaftGeom = new THREE.CylinderGeometry(0.008 * scale, 0.008 * scale, arrowLength - arrowHeadLength, 8);
+                    const shaftMat = new THREE.MeshBasicMaterial({ color, depthTest: false });
+                    const shaft = new THREE.Mesh(shaftGeom, shaftMat);
+                    shaft.rotation.set(Math.PI / 2, 0, 0);
+                    shaft.position.set(0, 0, (arrowLength - arrowHeadLength) / 2);
+                    shaft.userData = { isGizmo: true };
+                    shaft.raycast = () => {};
+                    shaft.renderOrder = 999;
+                    jointAxisViz.add(shaft);
+
+                    // Arrow head
+                    const headGeom = new THREE.ConeGeometry(arrowHeadWidth, arrowHeadLength, 8);
+                    const head = new THREE.Mesh(headGeom, shaftMat);
+                    head.rotation.set(Math.PI / 2, 0, 0);
+                    head.position.set(0, 0, arrowLength - arrowHeadLength / 2);
+                    head.userData = { isGizmo: true };
+                    head.raycast = () => {};
+                    head.renderOrder = 999;
+                    jointAxisViz.add(head);
+
+                    // For revolute/continuous joints, add rotation indicator (torus)
+                    if (child.jointType === 'revolute' || child.jointType === 'continuous') {
+                        const torusRadius = 0.15 * scale;
+                        const tubeRadius = 0.005 * scale;
+                        const torusArc = child.jointType === 'revolute' ? Math.PI * 1.5 : Math.PI * 2;
+                        const torusGeom = new THREE.TorusGeometry(torusRadius, tubeRadius, 8, 32, torusArc);
+                        const torus = new THREE.Mesh(torusGeom, shaftMat);
+                        torus.userData = { isGizmo: true };
+                        torus.raycast = () => {};
+                        torus.renderOrder = 999;
+                        jointAxisViz.add(torus);
+
+                        // Small arrow on torus to indicate rotation direction
+                        const miniConeGeom = new THREE.ConeGeometry(0.015 * scale, 0.04 * scale, 8);
+                        const miniCone = new THREE.Mesh(miniConeGeom, shaftMat);
+                        miniCone.position.set(torusRadius, 0, 0);
+                        miniCone.rotation.set(Math.PI / 2, 0, -Math.PI / 2);
+                        miniCone.userData = { isGizmo: true };
+                        miniCone.raycast = () => {};
+                        miniCone.renderOrder = 999;
+                        jointAxisViz.add(miniCone);
+                    }
+
+                    // For prismatic joints, add bidirectional arrow
+                    if (child.jointType === 'prismatic') {
+                        // Second arrow in opposite direction
+                        const shaft2Geom = new THREE.CylinderGeometry(0.008 * scale, 0.008 * scale, arrowLength - arrowHeadLength, 8);
+                        const shaft2 = new THREE.Mesh(shaft2Geom, shaftMat);
+                        shaft2.rotation.set(-Math.PI / 2, 0, 0);
+                        shaft2.position.set(0, 0, -(arrowLength - arrowHeadLength) / 2);
+                        shaft2.userData = { isGizmo: true };
+                        shaft2.raycast = () => {};
+                        shaft2.renderOrder = 999;
+                        jointAxisViz.add(shaft2);
+
+                        const head2Geom = new THREE.ConeGeometry(arrowHeadWidth, arrowHeadLength, 8);
+                        const head2 = new THREE.Mesh(head2Geom, shaftMat);
+                        head2.rotation.set(-Math.PI / 2, 0, 0);
+                        head2.position.set(0, 0, -(arrowLength - arrowHeadLength / 2));
+                        head2.userData = { isGizmo: true };
+                        head2.raycast = () => {};
+                        head2.renderOrder = 999;
+                        jointAxisViz.add(head2);
+                    }
+
+                    // Apply axis rotation
+                    jointAxisViz.quaternion.copy(quaternion);
+
+                    child.add(jointAxisViz);
+                }
+
+                if (jointAxisViz) {
+                    jointAxisViz.visible = showJointAxes;
+
+                    // Update scale if jointAxisSize changed
+                    if (showJointAxes) {
+                        // Store the original scale factor used
+                        if (!jointAxisViz.userData.originalScale) {
+                            jointAxisViz.userData.originalScale = jointAxisSize;
+                        }
+
+                        const currentScale = jointAxisSize;
+                        const originalScale = jointAxisViz.userData.originalScale;
+
+                        if (Math.abs(currentScale - originalScale) > 0.01) {
+                            // Need to recreate with new scale - remove old and mark for recreation
+                            child.remove(jointAxisViz);
+                            jointAxisViz.traverse((obj: any) => {
+                                if (obj.geometry) obj.geometry.dispose();
+                                if (obj.material) obj.material.dispose();
+                            });
+
+                            // Create new joint axis visualization with updated scale
+                            const newJointAxisViz = new THREE.Group();
+                            newJointAxisViz.name = '__joint_axis__';
+                            newJointAxisViz.userData = { isGizmo: true, originalScale: currentScale };
+
+                            const axis = child.axis || new THREE.Vector3(0, 0, 1);
+                            const axisVec = new THREE.Vector3(axis.x, axis.y, axis.z).normalize();
+                            const quaternion = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 0, 1), axisVec);
+
+                            const scale = currentScale;
+                            const color = 0xd946ef;
+
+                            const arrowLength = 0.35 * scale;
+                            const arrowHeadLength = 0.08 * scale;
+                            const arrowHeadWidth = 0.05 * scale;
+
+                            const shaftGeom = new THREE.CylinderGeometry(0.008 * scale, 0.008 * scale, arrowLength - arrowHeadLength, 8);
+                            const shaftMat = new THREE.MeshBasicMaterial({ color, depthTest: false });
+                            const shaft = new THREE.Mesh(shaftGeom, shaftMat);
+                            shaft.rotation.set(Math.PI / 2, 0, 0);
+                            shaft.position.set(0, 0, (arrowLength - arrowHeadLength) / 2);
+                            shaft.userData = { isGizmo: true };
+                            shaft.raycast = () => {};
+                            shaft.renderOrder = 999;
+                            newJointAxisViz.add(shaft);
+
+                            const headGeom = new THREE.ConeGeometry(arrowHeadWidth, arrowHeadLength, 8);
+                            const head = new THREE.Mesh(headGeom, shaftMat);
+                            head.rotation.set(Math.PI / 2, 0, 0);
+                            head.position.set(0, 0, arrowLength - arrowHeadLength / 2);
+                            head.userData = { isGizmo: true };
+                            head.raycast = () => {};
+                            head.renderOrder = 999;
+                            newJointAxisViz.add(head);
+
+                            if (child.jointType === 'revolute' || child.jointType === 'continuous') {
+                                const torusRadius = 0.15 * scale;
+                                const tubeRadius = 0.005 * scale;
+                                const torusArc = child.jointType === 'revolute' ? Math.PI * 1.5 : Math.PI * 2;
+                                const torusGeom = new THREE.TorusGeometry(torusRadius, tubeRadius, 8, 32, torusArc);
+                                const torus = new THREE.Mesh(torusGeom, shaftMat);
+                                torus.userData = { isGizmo: true };
+                                torus.raycast = () => {};
+                                torus.renderOrder = 999;
+                                newJointAxisViz.add(torus);
+
+                                const miniConeGeom = new THREE.ConeGeometry(0.015 * scale, 0.04 * scale, 8);
+                                const miniCone = new THREE.Mesh(miniConeGeom, shaftMat);
+                                miniCone.position.set(torusRadius, 0, 0);
+                                miniCone.rotation.set(Math.PI / 2, 0, -Math.PI / 2);
+                                miniCone.userData = { isGizmo: true };
+                                miniCone.raycast = () => {};
+                                miniCone.renderOrder = 999;
+                                newJointAxisViz.add(miniCone);
+                            }
+
+                            if (child.jointType === 'prismatic') {
+                                const shaft2Geom = new THREE.CylinderGeometry(0.008 * scale, 0.008 * scale, arrowLength - arrowHeadLength, 8);
+                                const shaft2 = new THREE.Mesh(shaft2Geom, shaftMat);
+                                shaft2.rotation.set(-Math.PI / 2, 0, 0);
+                                shaft2.position.set(0, 0, -(arrowLength - arrowHeadLength) / 2);
+                                shaft2.userData = { isGizmo: true };
+                                shaft2.raycast = () => {};
+                                shaft2.renderOrder = 999;
+                                newJointAxisViz.add(shaft2);
+
+                                const head2Geom = new THREE.ConeGeometry(arrowHeadWidth, arrowHeadLength, 8);
+                                const head2 = new THREE.Mesh(head2Geom, shaftMat);
+                                head2.rotation.set(-Math.PI / 2, 0, 0);
+                                head2.position.set(0, 0, -(arrowLength - arrowHeadLength / 2));
+                                head2.userData = { isGizmo: true };
+                                head2.raycast = () => {};
+                                head2.renderOrder = 999;
+                                newJointAxisViz.add(head2);
+                            }
+
+                            newJointAxisViz.quaternion.copy(quaternion);
+                            child.add(newJointAxisViz);
+                        }
+                    }
+                }
+            }
+        });
+
+        invalidate();
+    }, [robot, showJointAxes, jointAxisSize, robotVersion, invalidate]);
+
     // Effect to handle selection highlighting
     useEffect(() => {
         if (!robot) return;

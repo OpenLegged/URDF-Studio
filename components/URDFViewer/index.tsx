@@ -64,9 +64,9 @@ export function URDFViewer({
     const [jointAxisSize, setJointAxisSize] = useState(() => {
         if (typeof window !== 'undefined') {
             const saved = localStorage.getItem('urdf_viewer_joint_axis_size');
-            return saved ? parseFloat(saved) : 1.0;
+            return saved ? Math.min(parseFloat(saved), 2.0) : 0.1;
         }
-        return 1.0;
+        return 0.1;
     });
 
     useEffect(() => {
@@ -465,7 +465,7 @@ export function URDFViewer({
                             />
 
                             {showJointAxes && (
-                                <SliderOption label={t.size} value={jointAxisSize} onChange={setJointAxisSize} min={0.01} max={5.0} step={0.01} compact />
+                                <SliderOption label={t.size} value={jointAxisSize} onChange={setJointAxisSize} min={0.01} max={2.0} step={0.01} compact />
                             )}
 
                             <CheckboxOption
