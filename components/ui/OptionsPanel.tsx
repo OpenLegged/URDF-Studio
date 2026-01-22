@@ -103,9 +103,9 @@ export const SliderOption: React.FC<SliderOptionProps> = ({
             step={step}
             value={value}
             onChange={(e) => onChange(parseFloat(e.target.value))}
-            className="flex-1 h-1 bg-slate-200 dark:bg-google-dark-border rounded-lg appearance-none cursor-pointer accent-google-blue"
+            className="flex-1 max-w-20 h-1 bg-slate-200 dark:bg-google-dark-border rounded-lg appearance-none cursor-pointer accent-google-blue"
           />
-          <span className="text-[9px] text-slate-400 w-6 text-right">{value.toFixed(decimals)}</span>
+          <span className="text-[9px] text-slate-400 text-right shrink-0 whitespace-nowrap">{value.toFixed(decimals)}</span>
         </div>
       </div>
     );
