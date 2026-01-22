@@ -4,6 +4,7 @@ import { X, LayoutGrid, Search, Filter, Box, User, Heart, Download, ExternalLink
 interface URDFSquareProps {
   onClose: () => void;
   lang: 'en' | 'zh';
+  onImport: (e: React.ChangeEvent<HTMLInputElement>) => void;
 }
 
 interface RobotModel {
@@ -47,54 +48,6 @@ const MOCK_MODELS: RobotModel[] = [
     lastUpdated: '2026-01-17',
     urdfPath: '' 
   }
-//   {
-//     id: '3',
-//     name: 'Boston Dynamics Spot',
-//     author: 'Community Contributor',
-//     description: 'Community-made URDF for the famous yellow quadruped robot.',
-//     thumbnail: 'https://images.unsplash.com/photo-1485827404703-89b55fcc595e?w=400&h=300&fit=crop',
-//     category: 'Quadruped',
-//     stars: 2100,
-//     downloads: 9500,
-//     tags: ['Boston Dynamics', 'Mobile', 'Advanced'],
-//     lastUpdated: '2025-11-15'
-//   },
-//   {
-//     id: '4',
-//     name: 'Frankas Emika Panda',
-//     author: 'Franka Research',
-//     description: 'Sensitive robotic arm with torque sensors in all joints.',
-//     thumbnail: 'https://images.unsplash.com/photo-1581092160562-40aa08e78837?w=400&h=300&fit=crop',
-//     category: 'Manipulator',
-//     stars: 650,
-//     downloads: 1800,
-//     tags: ['Research', 'High-Precision', 'Arm'],
-//     lastUpdated: '2026-01-10'
-//   },
-//   {
-//     id: '5',
-//     name: 'Bipedal Humanoid X',
-//     author: 'AILab',
-//     description: 'Open source humanoid robot skeleton for deep reinforcement learning.',
-//     thumbnail: 'https://images.unsplash.com/photo-1531746790731-6c087fecd05a?w=400&h=300&fit=crop',
-//     category: 'Humanoid',
-//     stars: 420,
-//     downloads: 1100,
-//     tags: ['Humanoid', 'Bipedal', 'Learning'],
-//     lastUpdated: '2026-01-12'
-//   },
-//   {
-//     id: '6',
-//     name: 'Generic Delivery Bot',
-//     author: 'LastMile Tech',
-//     description: 'Small 4-wheeled mobile robot for indoor delivery testing.',
-//     thumbnail: 'https://images.unsplash.com/photo-1558137623-af93c27e30e9?w=400&h=300&fit=crop',
-//     category: 'Mobile',
-//     stars: 150,
-//     downloads: 450,
-//     tags: ['Wheeled', 'Indoor', 'Small'],
-//     lastUpdated: '2025-10-24'
-//   }
 ];
 
 const CATEGORIES = [
@@ -130,9 +83,54 @@ const RobotThumbnail = ({ model }: { model: RobotModel }) => {
   );
 };
 
-export const URDFSquare: React.FC<URDFSquareProps> = ({ onClose, lang }) => {
+export const URDFSquare: React.FC<URDFSquareProps> = ({ onClose, lang, onImport }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('all');
+
+  const handleImportModel = async (model: RobotModel) => {
+    if (!model.urdfPath) return;
+    
+    try {
+      // 1. Fetch manifest
+      const manifestUrl = `${model.urdfPath}/manifest.json`;
+      const manifestRes = await fetch(manifestUrl);
+      if (!manifestRes.ok) throw new Error('Manifest not found');
+      const files: string[] = await manifestRes.json();
+      
+      // 2. Fetch all files
+      const fileObjects = await Promise.all(files.map(async (filePath) => {
+          const res = await fetch(`${model.urdfPath}/${filePath}`);
+          const blob = await res.blob();
+          // Create File object with webkitRelativePath patch
+          const fileName = filePath.split('/').pop()!;
+          const file = new File([blob], fileName, { type: blob.type });
+          
+          // Patch webkitRelativePath for folder structure preservation
+          // Use the folder name from urdfPath as the root directory
+          const rootFolder = model.urdfPath?.split('/').pop() || model.name.replace(/\s+/g, '_');
+          Object.defineProperty(file, 'webkitRelativePath', {
+              value: `${rootFolder}/${filePath}`
+          });
+          
+          return file;
+      }));
+      
+      // 3. Create mock event
+      const mockEvent = {
+          target: {
+              files: fileObjects
+          }
+      } as unknown as React.ChangeEvent<HTMLInputElement>;
+      
+      // 4. Call handler
+      onImport(mockEvent);
+      onClose(); // Close the square
+      
+    } catch (err) {
+      console.error('Failed to import model:', err);
+      alert(lang === 'zh' ? '加载模型文件失败，请确保 manifest.json 存在。' : 'Failed to load model files. Please ensure manifest.json exists.');
+    }
+  };
 
   const filteredModels = useMemo(() => {
     return MOCK_MODELS.filter(model => {
@@ -243,7 +241,9 @@ export const URDFSquare: React.FC<URDFSquareProps> = ({ onClose, lang }) => {
                     
                     {/* Action Overlay */}
                     <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex items-end p-4 pointer-events-none">
-                      <button className="w-full py-2 bg-white text-slate-900 rounded-lg text-sm font-bold flex items-center justify-center gap-2 hover:bg-indigo-50 transition-colors pointer-events-auto">
+                      <button 
+                        onClick={() => handleImportModel(model)}
+                        className="w-full py-2 bg-white text-slate-900 rounded-lg text-sm font-bold flex items-center justify-center gap-2 hover:bg-indigo-50 transition-colors pointer-events-auto">
                         <Download className="w-4 h-4" />
                         {lang === 'zh' ? '立即导入' : 'Import Now'}
                       </button>

@@ -223,7 +223,7 @@ export default function App() {
   const [toast, setToast] = useState<{ show: boolean; message: string; type: 'info' | 'success' }>({ show: false, message: '', type: 'info' });
   
   // Menu State
-  const [activeMenu, setActiveMenu] = useState<'file' | 'toolbox' | 'view' | null>(null);
+  const [activeMenu, setActiveMenu] = useState<'file' | 'toolbox' | 'view' | 'more' | null>(null);
   const [isAboutMenuOpen, setIsAboutMenuOpen] = useState(false);
   const [isCodeViewerOpen, setIsCodeViewerOpen] = useState(false);
   const [isURDFSquareOpen, setIsURDFSquareOpen] = useState(false);
@@ -1922,7 +1922,7 @@ export default function App() {
             {/* Mobile/Tablet "More" Menu */}
             <div className="relative sm:hidden">
                 <button 
-                    onClick={() => setActiveMenu(activeMenu === 'more' ? null : 'more')} // Reusing state logic or need new one? 'more' is not in type yet.
+                    onClick={() => setActiveMenu(activeMenu === 'more' ? null : 'more')}
                     className={`flex items-center justify-center w-8 h-8 rounded-md transition-all ${activeMenu === 'more' ? 'bg-slate-100 dark:bg-slate-800 text-slate-900 dark:text-white' : 'text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'}`}
                 >
                     <MoreHorizontal className="w-5 h-5" />
@@ -2012,7 +2012,7 @@ export default function App() {
                     urdfContent={urdfContentForViewer}
                     assets={assets}
                     lang={lang}
-                    mode={appMode}
+                    mode={appMode === 'skeleton' ? 'detail' : appMode}
                     onSelect={handleSelect}
                     selection={robot.selection}
                     hoveredSelection={hoveredSelection}
@@ -2116,7 +2116,11 @@ export default function App() {
 
       {/* URDF Square Window */}
       {isURDFSquareOpen && (
-        <URDFSquare onClose={() => setIsURDFSquareOpen(false)} lang={lang} />
+          <URDFSquare 
+            onClose={() => setIsURDFSquareOpen(false)} 
+            lang={lang} 
+            onImport={handleImport}
+          />
       )}
 
       {/* AI Inspector Floating Window */}
