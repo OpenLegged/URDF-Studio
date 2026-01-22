@@ -6,13 +6,13 @@ import * as THREE from 'three';
 import { translations, Language } from '../services/i18n';
 
 import { RotateCcw, Move, ArrowUpRight } from 'lucide-react';
-import { 
-  CheckboxOption, 
-  SliderOption, 
+import {
+  CheckboxOption,
+  SliderOption,
   ToggleButtonGroup,
   OptionsPanelHeader,
   OptionsPanelContent,
-  OptionsPanelContainer 
+  OptionsPanelContainer
 } from './ui/OptionsPanel';
 import {
   STLRenderer,
@@ -66,7 +66,7 @@ function getCachedMaterial(
 ): THREE.Material {
   // Generate a unique cache key based on all material properties
   const cacheKey = `${key}-${isSkeleton}-${finalColor}-${matOpacity}-${matWireframe}-${isCollision}-${emissiveColor}-${emissiveIntensity}`;
-  
+
   let material = materialCache.get(cacheKey);
   if (!material) {
     if (isSkeleton) {
@@ -201,16 +201,16 @@ const JointNode = memo(function JointNode({
 
   const { x, y, z } = joint.origin.xyz;
   const { r, p, y: yaw } = joint.origin.rpy;
-  
+
   const showAxes = (mode === 'skeleton' && showSkeletonOrigin) || (mode === 'detail' && showDetailOrigin) || (mode === 'hardware' && showHardwareOrigin);
   const showJointLabel = (mode === 'skeleton' && showLabels) || (mode === 'hardware' && showHardwareLabels);
-  
+
   // Joint pivot: represents joint origin in parent-local space
   // TransformControls attaches to this, modifying its position in parent-local frame
   const [jointPivot, setJointPivot] = useState<THREE.Group | null>(null);
   // Joint group: contains visualization, positioned at [0,0,0] relative to pivot
   const [jointGroup, setJointGroup] = useState<THREE.Group | null>(null);
-  
+
   // Register pivot with parent Visualizer component
   useEffect(() => {
     if (onRegisterJointPivot && isSelected) {
@@ -225,109 +225,109 @@ const JointNode = memo(function JointNode({
 
   return (
     <group>
-        {mode === 'skeleton' && showGeometry && (
-            <>
-                {/* Only render line if distance is significant (> 0.001m) to avoid rendering glitches */}
-                {(Math.abs(x) > 0.001 || Math.abs(y) > 0.001 || Math.abs(z) > 0.001) && (
-                    <Line
-                        points={[[0, 0, 0], [x, y, z]]}
-                        color={isSelected ? "#fbbf24" : "#94a3b8"}
-                        lineWidth={1}
-                        dashed
-                        dashSize={0.02}
-                        gapSize={0.01}
-                    />
-                )}
-            </>
-        )}
+      {mode === 'skeleton' && showGeometry && (
+        <>
+          {/* Only render line if distance is significant (> 0.001m) to avoid rendering glitches */}
+          {(Math.abs(x) > 0.001 || Math.abs(y) > 0.001 || Math.abs(z) > 0.001) && (
+            <Line
+              points={[[0, 0, 0], [x, y, z]]}
+              color={isSelected ? "#fbbf24" : "#94a3b8"}
+              lineWidth={1}
+              dashed
+              dashSize={0.02}
+              gapSize={0.01}
+            />
+          )}
+        </>
+      )}
 
-        {/* Joint pivot: represents joint origin in parent-local space */}
-        {/* TransformControls attaches here, modifies position in parent-local frame */}
+      {/* Joint pivot: represents joint origin in parent-local space */}
+      {/* TransformControls attaches here, modifies position in parent-local frame */}
+      <group
+        ref={setJointPivot}
+        position={[x, y, z]}
+        rotation={[r, p, yaw]}
+      >
+        {/* Joint group: at origin relative to pivot, contains visualization and child link */}
         <group
-            ref={setJointPivot}
-            position={[x, y, z]}
-            rotation={[r, p, yaw]}
+          ref={setJointGroup}
+          position={[0, 0, 0]}
+          rotation={[0, 0, 0]}
         >
-            {/* Joint group: at origin relative to pivot, contains visualization and child link */}
-            <group 
-                ref={setJointGroup}
-                position={[0, 0, 0]} 
-                rotation={[0, 0, 0]}
-            >
-                {showAxes && (
-                    <ThickerAxes
-                        size={frameSize * 0.12}
-                        onClick={(mode === 'skeleton' || mode === 'hardware') ? (e) => {
-                            e.stopPropagation();
-                            onSelect('joint', joint.id);
-                        } : undefined}
-                    />
-                )}
+          {showAxes && (
+            <ThickerAxes
+              size={frameSize * 0.12}
+              onClick={(mode === 'skeleton' || mode === 'hardware') ? (e) => {
+                e.stopPropagation();
+                onSelect('joint', joint.id);
+              } : undefined}
+            />
+          )}
 
-                {(mode === 'skeleton' || mode === 'hardware') && (
-                    <group>
-                        {showJointLabel && (
-                            <Html position={[0.25, 0, 0]} className="pointer-events-none">
-                                <div 
-                                    style={{ transform: `scale(${labelScale})`, transformOrigin: 'left center' }}
-                                    onClick={(e) => { 
-                                        e.stopPropagation(); 
-                                        onSelect('joint', joint.id); 
-                                    }}
-                                    className={`
+          {(mode === 'skeleton' || mode === 'hardware') && (
+            <group>
+              {showJointLabel && (
+                <Html position={[0.25, 0, 0]} className="pointer-events-none">
+                  <div
+                    style={{ transform: `scale(${labelScale})`, transformOrigin: 'left center' }}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onSelect('joint', joint.id);
+                    }}
+                    className={`
                                         px-1.5 py-0.5 text-[10px] font-mono rounded border whitespace-nowrap shadow-xl 
                                         pointer-events-auto cursor-pointer select-none transition-colors
-                                        ${isSelected 
-                                            ? 'bg-blue-600 text-white border-blue-400 z-50' 
-                                            : 'bg-white/90 dark:bg-slate-900/90 text-orange-700 dark:text-orange-200 border-orange-200 dark:border-orange-900/50 hover:bg-orange-50 dark:hover:bg-slate-800'
-                                        }
+                                        ${isSelected
+                        ? 'bg-blue-600 text-white border-blue-400 z-50'
+                        : 'bg-white/90 dark:bg-slate-900/90 text-orange-700 dark:text-orange-200 border-orange-200 dark:border-orange-900/50 hover:bg-orange-50 dark:hover:bg-slate-800'
+                      }
                                     `}
-                                >
-                                    {joint.name}
-                                </div>
-                            </Html>
-                        )}
-                        {mode === 'skeleton' && showJointAxes && joint.type !== 'fixed' && <JointAxesVisual joint={joint} scale={jointAxisSize / 0.35} />}
-                    </group>
-                )}
-
-                {mode !== 'skeleton' && (
-                    <mesh onClick={(e: any) => { e.stopPropagation(); onSelect('joint', joint.id); }}>
-                        <sphereGeometry args={[0.02, 16, 16]} />
-                        <meshBasicMaterial color={isSelected ? "orange" : "transparent"} opacity={isSelected ? 1 : 0} transparent />
-                    </mesh>
-                )}
-
-                <RobotNode 
-                    linkId={joint.childLinkId} 
-                    robot={robot} 
-                    onSelect={onSelect} 
-                    onUpdate={onUpdate}
-                    mode={mode}
-                    showGeometry={showGeometry}
-                    showVisual={showVisual}
-                    showLabels={showLabels}
-                    showJointAxes={showJointAxes}
-                    jointAxisSize={jointAxisSize}
-                    frameSize={frameSize}
-                    labelScale={labelScale}
-                    showSkeletonOrigin={showSkeletonOrigin}
-                    showDetailOrigin={showDetailOrigin}
-                    showDetailLabels={showDetailLabels}
-                    showCollision={showCollision}
-                    showHardwareOrigin={showHardwareOrigin}
-                    showHardwareLabels={showHardwareLabels}
-                    showInertia={showInertia}
-                    showCenterOfMass={showCenterOfMass}
-                    transformMode={transformMode}
-                    depth={depth + 1}
-                    assets={assets}
-                    lang={lang}
-                    onRegisterJointPivot={onRegisterJointPivot}
-                    onRegisterCollisionRef={onRegisterCollisionRef}
-                />
+                  >
+                    {joint.name}
+                  </div>
+                </Html>
+              )}
+              {mode === 'skeleton' && showJointAxes && joint.type !== 'fixed' && <JointAxesVisual joint={joint} scale={jointAxisSize / 0.35} />}
             </group>
+          )}
+
+          {mode !== 'skeleton' && (
+            <mesh onClick={(e: any) => { e.stopPropagation(); onSelect('joint', joint.id); }}>
+              <sphereGeometry args={[0.02, 16, 16]} />
+              <meshBasicMaterial color={isSelected ? "orange" : "white"} opacity={isSelected ? 1 : 0} transparent />
+            </mesh>
+          )}
+
+          <RobotNode
+            linkId={joint.childLinkId}
+            robot={robot}
+            onSelect={onSelect}
+            onUpdate={onUpdate}
+            mode={mode}
+            showGeometry={showGeometry}
+            showVisual={showVisual}
+            showLabels={showLabels}
+            showJointAxes={showJointAxes}
+            jointAxisSize={jointAxisSize}
+            frameSize={frameSize}
+            labelScale={labelScale}
+            showSkeletonOrigin={showSkeletonOrigin}
+            showDetailOrigin={showDetailOrigin}
+            showDetailLabels={showDetailLabels}
+            showCollision={showCollision}
+            showHardwareOrigin={showHardwareOrigin}
+            showHardwareLabels={showHardwareLabels}
+            showInertia={showInertia}
+            showCenterOfMass={showCenterOfMass}
+            transformMode={transformMode}
+            depth={depth + 1}
+            assets={assets}
+            lang={lang}
+            onRegisterJointPivot={onRegisterJointPivot}
+            onRegisterCollisionRef={onRegisterCollisionRef}
+          />
         </group>
+      </group>
     </group>
   );
 });
@@ -368,24 +368,24 @@ const RobotNode = memo(function RobotNode({
   if (!link) return null;
 
   const handleLinkClick = (e: any, subType?: 'visual' | 'collision') => {
-      e.stopPropagation();
-      
-      // Override subType if selectionTarget is set (global override)
-      // Otherwise use the clicked subType (granular selection)
-      const targetSubType = selectionTarget || subType;
-      
-      onSelect('link', linkId, targetSubType);
+    e.stopPropagation();
+
+    // Override subType if selectionTarget is set (global override)
+    // Otherwise use the clicked subType (granular selection)
+    const targetSubType = selectionTarget || subType;
+
+    onSelect('link', linkId, targetSubType);
   };
 
   const childJoints = Object.values(robot.joints).filter(j => j.parentLinkId === linkId);
   const isSelected = robot.selection.type === 'link' && robot.selection.id === linkId;
   const selectionSubType = robot.selection.subType;
   const isRoot = linkId === robot.rootLinkId;
-  
+
   // Refs for dragging geometry in Detail mode
   const [visualRef, setVisualRef] = useState<THREE.Group | null>(null);
   const [collisionRef, setCollisionRef] = useState<THREE.Group | null>(null);
-  
+
   // Register collision ref with parent when selected
   const isCollisionSelected = isSelected && selectionSubType === 'collision';
   useEffect(() => {
@@ -398,7 +398,7 @@ const RobotNode = memo(function RobotNode({
       }
     };
   }, [collisionRef, linkId, isCollisionSelected, onRegisterCollisionRef]);
-  
+
   // Hover State for highlighting before selection
   const [hoveredType, setHoveredType] = useState<'visual' | 'collision' | null>(null);
 
@@ -409,17 +409,17 @@ const RobotNode = memo(function RobotNode({
     if (isCollision && !data) return null;
 
     if (mode === 'skeleton' && !showGeometry && !isCollision) return null;
-    
+
     if (mode === 'detail') {
-        if (isCollision && !showCollision) return null;
-        if (!isCollision && (link.visible === false)) return null;
+      if (isCollision && !showCollision) return null;
+      if (!isCollision && (link.visible === false)) return null;
     } else {
-        if (isCollision && !showCollision) return null;
-        if (isCollision) return null;
+      if (isCollision && !showCollision) return null;
+      if (isCollision) return null;
     }
 
     const { type, dimensions, color, origin, meshPath } = data;
-    
+
     // IF TYPE IS NONE, RENDER NOTHING
     if (type === GeometryType.NONE) return null;
 
@@ -427,22 +427,22 @@ const RobotNode = memo(function RobotNode({
     const geometryKey = `${isCollision ? 'col' : 'vis'}-${type}-${dimensions.x}-${dimensions.y}-${dimensions.z}-${meshPath || 'none'}`;
 
     const isSkeleton = mode === 'skeleton';
-    
+
     // Interaction States
     const isHovered = hoveredType === (isCollision ? 'collision' : 'visual');
     const isVisualHighlight = !isCollision && isSelected && (selectionSubType === 'visual' || !selectionSubType);
     const isCollisionHighlight = isCollision && isSelected && selectionSubType === 'collision';
-    
+
     // Collision styling - Purple wireframe default
     const colColor = '#a855f7'; // Purple-500
-    
+
     // Opacity: Higher if selected or hovered
     const matOpacity = isCollision ? ((isCollisionHighlight || isHovered) ? 0.6 : 0.3) : (isSkeleton ? 0.2 : 1.0);
     // Wireframe: Fill if selected or hovered (for collision)
-    const matWireframe = isCollision ? (!isCollisionHighlight && !isHovered) : isSkeleton; 
-    
+    const matWireframe = isCollision ? (!isCollisionHighlight && !isHovered) : isSkeleton;
+
     const baseColor = isCollision ? colColor : color;
-    
+
     // Colors
     const selectionColorVisual = '#60a5fa'; // Blue-400
     const selectionColorCollision = '#d946ef'; // Fuchsia-500
@@ -459,43 +459,43 @@ const RobotNode = memo(function RobotNode({
     let emissiveIntensity = 0;
 
     if (isVisualHighlight) {
-        emissiveColor = '#1e40af';
-        emissiveIntensity = 0.5;
+      emissiveColor = '#1e40af';
+      emissiveIntensity = 0.5;
     } else if (isCollisionHighlight) {
-        emissiveColor = '#86198f';
-        emissiveIntensity = 0.5;
+      emissiveColor = '#86198f';
+      emissiveIntensity = 0.5;
     } else if (isHovered) {
-        emissiveColor = isCollision ? '#d946ef' : '#3b82f6';
-        emissiveIntensity = 0.3; // Mild glow on hover
+      emissiveColor = isCollision ? '#d946ef' : '#3b82f6';
+      emissiveIntensity = 0.3; // Mild glow on hover
     }
 
     // Use cached material to avoid shader recompilation
     const material = getCachedMaterial(
-        geometryKey,
-        isSkeleton,
-        finalColor,
-        matOpacity,
-        matWireframe,
-        isCollision,
-        emissiveColor,
-        emissiveIntensity
+      geometryKey,
+      isSkeleton,
+      finalColor,
+      matOpacity,
+      matWireframe,
+      isCollision,
+      emissiveColor,
+      emissiveIntensity
     );
 
     // Use array format for position/rotation to avoid creating new objects
     const wrapperProps = {
-        onClick: (e: any) => { handleLinkClick(e, isCollision ? 'collision' : 'visual'); },
-        onPointerOver: (e: any) => {
-            e.stopPropagation();
-            setHoveredType(isCollision ? 'collision' : 'visual');
-        },
-        onPointerOut: (e: any) => {
-             e.stopPropagation();
-             setHoveredType(null);
-        },
-        // Use array format instead of new THREE.Vector3/Euler to avoid object creation
-        position: origin ? [origin.xyz.x, origin.xyz.y, origin.xyz.z] as [number, number, number] : undefined,
-        rotation: origin ? [origin.rpy.r, origin.rpy.p, origin.rpy.y] as [number, number, number] : undefined,
-        ref: isCollision ? setCollisionRef : setVisualRef
+      onClick: (e: any) => { handleLinkClick(e, isCollision ? 'collision' : 'visual'); },
+      onPointerOver: (e: any) => {
+        e.stopPropagation();
+        setHoveredType(isCollision ? 'collision' : 'visual');
+      },
+      onPointerOut: (e: any) => {
+        e.stopPropagation();
+        setHoveredType(null);
+      },
+      // Use array format instead of new THREE.Vector3/Euler to avoid object creation
+      position: origin ? [origin.xyz.x, origin.xyz.y, origin.xyz.z] as [number, number, number] : undefined,
+      rotation: origin ? [origin.rpy.r, origin.rpy.p, origin.rpy.y] as [number, number, number] : undefined,
+      ref: isCollision ? setCollisionRef : setVisualRef
     };
 
     let geometryNode;
@@ -506,99 +506,99 @@ const RobotNode = memo(function RobotNode({
     let meshRotation: [number, number, number] = [0, 0, 0];
 
     if (type === GeometryType.BOX) {
-         // Box dimensions: x=width (along X), y=depth (along Y), z=height (along Z)
-         geometryNode = (
-           <mesh>
-             <boxGeometry args={[dimensions.x, dimensions.y, dimensions.z, boxSegments, boxSegments, boxSegments]} />
-             <primitive object={material} attach="material" />
-           </mesh>
-         );
+      // Box dimensions: x=width (along X), y=depth (along Y), z=height (along Z)
+      geometryNode = (
+        <mesh>
+          <boxGeometry args={[dimensions.x, dimensions.y, dimensions.z, boxSegments, boxSegments, boxSegments]} />
+          <primitive object={material} attach="material" />
+        </mesh>
+      );
     } else if (type === GeometryType.CYLINDER) {
-         // Three.js CylinderGeometry is Y-axis aligned by default (extends along +Y)
-         // Our scene uses Z-up coordinate system
-         // To align cylinder along +Z: rotate -90 degrees around X axis
-         // This transforms: +Y -> +Z
-         meshRotation = [-Math.PI / 2, 0, 0];
-         // args: [radiusTop, radiusBottom, height, radialSegments]
-         // dimensions.x = radius, dimensions.y = height/length
-         geometryNode = (
-           <mesh rotation={meshRotation}>
-             <cylinderGeometry args={[dimensions.x, dimensions.x, dimensions.y, radialSegments, 1]} />
-             <primitive object={material} attach="material" />
-           </mesh>
-         );
+      // Three.js CylinderGeometry is Y-axis aligned by default (extends along +Y)
+      // Our scene uses Z-up coordinate system
+      // To align cylinder along +Z: rotate -90 degrees around X axis
+      // This transforms: +Y -> +Z
+      meshRotation = [-Math.PI / 2, 0, 0];
+      // args: [radiusTop, radiusBottom, height, radialSegments]
+      // dimensions.x = radius, dimensions.y = height/length
+      geometryNode = (
+        <mesh rotation={meshRotation}>
+          <cylinderGeometry args={[dimensions.x, dimensions.x, dimensions.y, radialSegments, 1]} />
+          <primitive object={material} attach="material" />
+        </mesh>
+      );
     } else if (type === GeometryType.SPHERE) {
-         geometryNode = (
-           <mesh>
-             <sphereGeometry args={[dimensions.x, radialSegments, radialSegments]} />
-             <primitive object={material} attach="material" />
-           </mesh>
-         );
+      geometryNode = (
+        <mesh>
+          <sphereGeometry args={[dimensions.x, radialSegments, radialSegments]} />
+          <primitive object={material} attach="material" />
+        </mesh>
+      );
     } else if (type === GeometryType.MESH) {
-         let assetUrl = meshPath ? assets[meshPath] : undefined;
-         
-         // Case insensitive fallback lookup
-         if (!assetUrl && meshPath) {
-             const lowerPath = meshPath.toLowerCase();
-             const foundKey = Object.keys(assets).find(k => k.toLowerCase() === lowerPath);
-             if (foundKey) assetUrl = assets[foundKey];
-         }
+      let assetUrl = meshPath ? assets[meshPath] : undefined;
 
-         if (meshPath && assetUrl) {
-             const url = assetUrl;
-             const ext = meshPath.split('.').pop()?.toLowerCase();
-             
-             if (ext === 'stl') {
-                 geometryNode = <STLRenderer url={url} material={material} scale={dimensions} />;
-             } else if (ext === 'obj') {
-                 geometryNode = <OBJRenderer url={url} material={material} color={finalColor} assets={assets} scale={dimensions} />;
-             } else if (ext === 'dae') {
-                 geometryNode = <DAERenderer url={url} material={material} assets={assets} scale={dimensions} />;
-             } else {
-                 // Fallback for unknown extension
-                 geometryNode = <mesh geometry={new THREE.BoxGeometry(0.1, 0.1, 0.1)} material={material} />;
-             }
-         } else {
-             // Placeholder if no mesh loaded
-             geometryNode = (
-                 <mesh>
-                    <boxGeometry args={[0.1, 0.1, 0.1]} />
-                    <meshStandardMaterial color={isCollision ? "red" : "gray"} wireframe />
-                 </mesh>
-             );
-         }
+      // Case insensitive fallback lookup
+      if (!assetUrl && meshPath) {
+        const lowerPath = meshPath.toLowerCase();
+        const foundKey = Object.keys(assets).find(k => k.toLowerCase() === lowerPath);
+        if (foundKey) assetUrl = assets[foundKey];
+      }
+
+      if (meshPath && assetUrl) {
+        const url = assetUrl;
+        const ext = meshPath.split('.').pop()?.toLowerCase();
+
+        if (ext === 'stl') {
+          geometryNode = <STLRenderer url={url} material={material} scale={dimensions} />;
+        } else if (ext === 'obj') {
+          geometryNode = <OBJRenderer url={url} material={material} color={finalColor} assets={assets} scale={dimensions} />;
+        } else if (ext === 'dae') {
+          geometryNode = <DAERenderer url={url} material={material} assets={assets} scale={dimensions} />;
+        } else {
+          // Fallback for unknown extension
+          geometryNode = <mesh geometry={new THREE.BoxGeometry(0.1, 0.1, 0.1)} material={material} />;
+        }
+      } else {
+        // Placeholder if no mesh loaded
+        geometryNode = (
+          <mesh>
+            <boxGeometry args={[0.1, 0.1, 0.1]} />
+            <meshStandardMaterial color={isCollision ? "red" : "gray"} wireframe />
+          </mesh>
+        );
+      }
     }
 
     return (
-        <group key={geometryKey} {...wrapperProps}>
-            {geometryNode}
-        </group>
+      <group key={geometryKey} {...wrapperProps}>
+        {geometryNode}
+      </group>
     );
   };
-  
+
   // Dragging logic for Detail Mode
   const activeGeometryRef = showCollision ? collisionRef : visualRef;
   const geometryTargetType = showCollision ? 'collision' : 'visual';
 
   const handleGeometryTransformEnd = () => {
-      if (activeGeometryRef) {
-          const pos = activeGeometryRef.position;
-          const rot = activeGeometryRef.rotation;
-          
-          const currentData = geometryTargetType === 'collision' ? link.collision : link.visual;
-          const newData = {
-              ...currentData,
-              origin: {
-                  xyz: { x: pos.x, y: pos.y, z: pos.z },
-                  rpy: { r: rot.x, p: rot.y, y: rot.z }
-              }
-          };
+    if (activeGeometryRef) {
+      const pos = activeGeometryRef.position;
+      const rot = activeGeometryRef.rotation;
 
-          onUpdate('link', linkId, {
-              ...link,
-              [geometryTargetType]: newData
-          });
-      }
+      const currentData = geometryTargetType === 'collision' ? link.collision : link.visual;
+      const newData = {
+        ...currentData,
+        origin: {
+          xyz: { x: pos.x, y: pos.y, z: pos.z },
+          rpy: { r: rot.x, p: rot.y, y: rot.z }
+        }
+      };
+
+      onUpdate('link', linkId, {
+        ...link,
+        [geometryTargetType]: newData
+      });
+    }
   };
 
   const showRootAxes = isRoot && ((mode === 'skeleton' && showSkeletonOrigin) || (mode === 'detail' && showDetailOrigin) || (mode === 'hardware' && showHardwareOrigin));
@@ -610,25 +610,25 @@ const RobotNode = memo(function RobotNode({
     <group>
       {showRootAxes && (
         <group>
-            <ThickerAxes size={frameSize * 0.12} />
-            {showRootLabel && (
-                <Html position={[0.35, 0, 0]} className="pointer-events-none">
-                    <div 
-                        style={{ transform: `scale(${labelScale})`, transformOrigin: 'left center' }}
-                        onClick={handleLinkClick}
-                        className={`
+          <ThickerAxes size={frameSize * 0.12} />
+          {showRootLabel && (
+            <Html position={[0.35, 0, 0]} className="pointer-events-none">
+              <div
+                style={{ transform: `scale(${labelScale})`, transformOrigin: 'left center' }}
+                onClick={handleLinkClick}
+                className={`
                             px-1.5 py-0.5 text-[10px] font-mono rounded border whitespace-nowrap shadow-xl
                             pointer-events-auto cursor-pointer select-none transition-colors
-                            ${isSelected 
-                                ? 'bg-blue-600 text-white border-blue-400 z-50' 
-                                : 'bg-white/90 dark:bg-slate-900/90 text-slate-800 dark:text-slate-200 border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800'
-                            }
+                            ${isSelected
+                    ? 'bg-blue-600 text-white border-blue-400 z-50'
+                    : 'bg-white/90 dark:bg-slate-900/90 text-slate-800 dark:text-slate-200 border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800'
+                  }
                         `}
-                    >
-                        {link.name} (Base)
-                    </div>
-                </Html>
-            )}
+              >
+                {link.name} (Base)
+              </div>
+            </Html>
+          )}
         </group>
       )}
 
@@ -643,7 +643,7 @@ const RobotNode = memo(function RobotNode({
 
       {/* Inertia Visualization */}
       {showInertia && <InertiaBox link={link} />}
-      
+
       {/* Center of Mass Indicator */}
       {showCenterOfMass && <LinkCenterOfMass link={link} />}
 
@@ -661,55 +661,55 @@ const RobotNode = memo(function RobotNode({
       */}
 
       {showLinkLabel && (
-         <Html position={[0, 0, 0]} className="pointer-events-none" zIndexRange={[100, 0]}>
-            <div 
-                style={{ transform: `scale(${labelScale})`, transformOrigin: 'center center' }}
-                onClick={handleLinkClick}
-                className={`
+        <Html position={[0, 0, 0]} className="pointer-events-none" zIndexRange={[100, 0]}>
+          <div
+            style={{ transform: `scale(${labelScale})`, transformOrigin: 'center center' }}
+            onClick={handleLinkClick}
+            className={`
                     px-1.5 py-0.5 text-[10px] font-mono rounded border whitespace-nowrap shadow-xl backdrop-blur-sm
                     pointer-events-auto cursor-pointer select-none transition-colors opacity-90 hover:opacity-100
-                    ${isSelected 
-                        ? 'bg-blue-600/90 text-white border-blue-400 z-50' 
-                        : 'bg-white/80 dark:bg-slate-800/80 text-blue-700 dark:text-blue-200 border-slate-300 dark:border-slate-600 hover:bg-slate-100 dark:hover:bg-slate-700'
-                    }
+                    ${isSelected
+                ? 'bg-blue-600/90 text-white border-blue-400 z-50'
+                : 'bg-white/80 dark:bg-slate-800/80 text-blue-700 dark:text-blue-200 border-slate-300 dark:border-slate-600 hover:bg-slate-100 dark:hover:bg-slate-700'
+              }
                 `}
-            >
-                {link.name}
-            </div>
+          >
+            {link.name}
+          </div>
         </Html>
       )}
 
       {childJoints.map(joint => (
-         <JointNode 
-            key={joint.id}
-            joint={joint}
-            robot={robot}
-            onSelect={onSelect}
-            onUpdate={onUpdate}
-            mode={mode}
-            showGeometry={showGeometry}
-            showVisual={showVisual}
-            selectionTarget={selectionTarget}
-            showLabels={showLabels}
-            showJointAxes={showJointAxes}
-            jointAxisSize={jointAxisSize}
-            frameSize={frameSize}
-            labelScale={labelScale}
-            showSkeletonOrigin={showSkeletonOrigin}
-            showDetailOrigin={showDetailOrigin}
-            showDetailLabels={showDetailLabels}
-            showCollision={showCollision}
-            showHardwareOrigin={showHardwareOrigin}
-            showHardwareLabels={showHardwareLabels}
-            showInertia={showInertia}
-            showCenterOfMass={showCenterOfMass}
-            transformMode={transformMode}
-            depth={depth + 1}
-            assets={assets}
-            lang={lang}
-            onRegisterJointPivot={onRegisterJointPivot}
-            onRegisterCollisionRef={onRegisterCollisionRef}
-         />
+        <JointNode
+          key={joint.id}
+          joint={joint}
+          robot={robot}
+          onSelect={onSelect}
+          onUpdate={onUpdate}
+          mode={mode}
+          showGeometry={showGeometry}
+          showVisual={showVisual}
+          selectionTarget={selectionTarget}
+          showLabels={showLabels}
+          showJointAxes={showJointAxes}
+          jointAxisSize={jointAxisSize}
+          frameSize={frameSize}
+          labelScale={labelScale}
+          showSkeletonOrigin={showSkeletonOrigin}
+          showDetailOrigin={showDetailOrigin}
+          showDetailLabels={showDetailLabels}
+          showCollision={showCollision}
+          showHardwareOrigin={showHardwareOrigin}
+          showHardwareLabels={showHardwareLabels}
+          showInertia={showInertia}
+          showCenterOfMass={showCenterOfMass}
+          transformMode={transformMode}
+          depth={depth + 1}
+          assets={assets}
+          lang={lang}
+          onRegisterJointPivot={onRegisterJointPivot}
+          onRegisterCollisionRef={onRegisterCollisionRef}
+        />
       ))}
     </group>
   );
@@ -745,7 +745,7 @@ export const Visualizer = ({ robot, onSelect, onUpdate, mode, assets, lang, them
   const [showDetailOrigin, setShowDetailOrigin] = useState(false);
   const [showDetailLabels, setShowDetailLabels] = useState(false);
   const [showCollision, setShowCollision] = useState(false);
-  
+
   // Handle showVisual (controlled or uncontrolled)
   const [localShowVisual, setLocalShowVisual] = useState(true);
   const showVisual = propShowVisual !== undefined ? propShowVisual : localShowVisual;
@@ -999,12 +999,12 @@ export const Visualizer = ({ robot, onSelect, onUpdate, mode, assets, lang, them
 
         if (isRotate) {
           startValue = axis === 'X' ? selectedJointPivot.rotation.x :
-                      axis === 'Y' ? selectedJointPivot.rotation.y :
-                      axis === 'Z' ? selectedJointPivot.rotation.z : 0;
+            axis === 'Y' ? selectedJointPivot.rotation.y :
+              axis === 'Z' ? selectedJointPivot.rotation.z : 0;
         } else {
           startValue = axis === 'X' ? selectedJointPivot.position.x :
-                      axis === 'Y' ? selectedJointPivot.position.y :
-                      axis === 'Z' ? selectedJointPivot.position.z : 0;
+            axis === 'Y' ? selectedJointPivot.position.y :
+              axis === 'Z' ? selectedJointPivot.position.z : 0;
         }
 
         // Store start value for later comparison
@@ -1027,12 +1027,12 @@ export const Visualizer = ({ robot, onSelect, onUpdate, mode, assets, lang, them
 
         if (isRotate) {
           currentVal = axis === 'X' ? selectedJointPivot.rotation.x :
-                      axis === 'Y' ? selectedJointPivot.rotation.y :
-                      axis === 'Z' ? selectedJointPivot.rotation.z : 0;
+            axis === 'Y' ? selectedJointPivot.rotation.y :
+              axis === 'Z' ? selectedJointPivot.rotation.z : 0;
         } else {
           currentVal = axis === 'X' ? selectedJointPivot.position.x :
-                      axis === 'Y' ? selectedJointPivot.position.y :
-                      axis === 'Z' ? selectedJointPivot.position.z : 0;
+            axis === 'Y' ? selectedJointPivot.position.y :
+              axis === 'Z' ? selectedJointPivot.position.z : 0;
         }
 
         const delta = currentVal - startValueRef.current;
@@ -1128,9 +1128,9 @@ export const Visualizer = ({ robot, onSelect, onUpdate, mode, assets, lang, them
   const handleMouseDown = React.useCallback((e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    
+
     if (!optionsPanelRef.current || !containerRef.current) return;
-    
+
     const rect = optionsPanelRef.current.getBoundingClientRect();
     const containerRect = containerRef.current.getBoundingClientRect();
 
@@ -1145,27 +1145,27 @@ export const Visualizer = ({ robot, onSelect, onUpdate, mode, assets, lang, them
 
   const handleMouseMove = React.useCallback((e: React.MouseEvent) => {
     if (!dragging || !dragStartRef.current || !containerRef.current || !optionsPanelRef.current) return;
-    
+
     const deltaX = e.clientX - dragStartRef.current.mouseX;
     const deltaY = e.clientY - dragStartRef.current.mouseY;
-    
+
     const containerRect = containerRef.current.getBoundingClientRect();
     const panelRect = optionsPanelRef.current.getBoundingClientRect();
-    
+
     // 计算新位置
     let newX = dragStartRef.current.panelX + deltaX;
     let newY = dragStartRef.current.panelY + deltaY;
-    
+
     // 边界限制：确保面板不会超出容器
     const padding = 2;
     const maxX = containerRect.width - panelRect.width - padding;
     const maxY = containerRect.height - panelRect.height - padding;
-    
+
     // Ensure newX and newY are within [padding, max] range
     // Also ensure we don't go negative (if panel is bigger than container)
     newX = Math.max(padding, Math.min(newX, Math.max(padding, maxX)));
     newY = Math.max(padding, Math.min(newY, Math.max(padding, maxY)));
-    
+
     setOptionsPanelPos({ x: newX, y: newY });
   }, [dragging]);
 
@@ -1175,287 +1175,287 @@ export const Visualizer = ({ robot, onSelect, onUpdate, mode, assets, lang, them
   }, []);
 
   return (
-    <div 
+    <div
       ref={containerRef}
       className="flex-1 relative bg-google-light-bg dark:bg-google-dark-bg h-full min-w-0 overflow-hidden"
       onMouseMove={handleMouseMove}
       onMouseUp={handleMouseUp}
       onMouseLeave={handleMouseUp}
     >
-        <div className="absolute top-4 left-4 z-10 pointer-events-none select-none">
-             <div className="text-slate-500 dark:text-slate-400 text-xs bg-white/50 dark:bg-google-dark-surface/50 backdrop-blur px-2 py-1 rounded border border-slate-200 dark:border-google-dark-border">
-              {os === 'mac' ? t.instructionMac : t.instructionWin} <br/>
-              {mode === 'skeleton' ? (showLabels ? t.clickLabels : t.enableLabels) : t.clickToSelect}
-           </div>
+      <div className="absolute top-4 left-4 z-10 pointer-events-none select-none">
+        <div className="text-slate-500 dark:text-slate-400 text-xs bg-white/50 dark:bg-google-dark-surface/50 backdrop-blur px-2 py-1 rounded border border-slate-200 dark:border-google-dark-border">
+          {os === 'mac' ? t.instructionMac : t.instructionWin} <br />
+          {mode === 'skeleton' ? (showLabels ? t.clickLabels : t.enableLabels) : t.clickToSelect}
         </div>
+      </div>
 
-        {showOptionsPanel && (
-        <div 
-           ref={optionsPanelRef}
-           className="absolute z-10 pointer-events-auto"
-           style={optionsPanelPos 
-             ? { left: optionsPanelPos.x, top: optionsPanelPos.y, right: 'auto' }
-             : { top: '16px', right: '16px' }
-           }
+      {showOptionsPanel && (
+        <div
+          ref={optionsPanelRef}
+          className="absolute z-10 pointer-events-auto"
+          style={optionsPanelPos
+            ? { left: optionsPanelPos.x, top: optionsPanelPos.y, right: 'auto' }
+            : { top: '16px', right: '16px' }
+          }
         >
-           {mode === 'skeleton' && (
-              <div className="bg-white/80 dark:bg-google-dark-surface/80 backdrop-blur rounded-lg border border-slate-200 dark:border-google-dark-border flex flex-col w-48 shadow-xl overflow-hidden">
-                 <div 
-                   className="text-[10px] text-slate-500 uppercase font-bold tracking-wider px-3 py-2 cursor-move bg-slate-100/50 dark:bg-google-dark-bg/50 hover:bg-slate-100 dark:hover:bg-google-dark-bg select-none flex items-center justify-between"
-                   onMouseDown={handleMouseDown}
-                 >
-                   <div className="flex items-center gap-2">
-                     <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
-                       <path d="M7 2a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM7 8a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM7 14a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM13 2a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM13 8a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM13 14a2 2 0 1 0 0 4 2 2 0 0 0 0-4z"/>
-                     </svg>
-                     {t.skeletonOptions}
-                   </div>
-                   <div className="flex items-center gap-1">
-                     <button
-                       onMouseDown={(e) => e.stopPropagation()}
-                       onClick={(e) => { e.stopPropagation(); setOptionsPanelPos(null); toggleOptionsCollapsed(); }}
-                       className="text-slate-400 hover:text-slate-900 dark:hover:text-white p-1 hover:bg-slate-200 dark:hover:bg-google-dark-border rounded"
-                       title={isOptionsCollapsed ? t.expand : t.collapse}
-                     >
-                       {isOptionsCollapsed ? (
-                         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
-                       ) : (
-                         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" /></svg>
-                       )}
-                     </button>
-                     {setShowOptionsPanel && (
-                       <button
-                         onMouseDown={(e) => e.stopPropagation()}
-                         onClick={(e) => { e.stopPropagation(); setShowOptionsPanel(false); }}
-                         className="text-slate-400 hover:text-red-600 dark:hover:text-red-400 p-1 hover:bg-slate-200 dark:hover:bg-google-dark-border rounded"
-                         title={t.close}
-                       >
-                         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
-                       </button>
-                     )}
-                   </div>
-                 </div>
-                 
-                 <div className={`transition-all duration-200 ease-in-out overflow-hidden ${isOptionsCollapsed ? 'max-h-0 opacity-0' : 'max-h-96 opacity-100'}`}>
-                   <div className="p-2 flex flex-col gap-2">
-                     <div className="flex bg-slate-100 dark:bg-google-dark-bg rounded-lg p-0.5 mb-1">
-                        <button 
-                            onClick={() => setTransformMode('translate')}
-                            className={`flex-1 py-1 text-xs rounded-md ${transformMode === 'translate' ? 'bg-google-blue text-white shadow' : 'text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'}`}
-                        >
-                            {t.move}
-                        </button>
-                        <button 
-                            onClick={() => setTransformMode('rotate')}
-                            className={`flex-1 py-1 text-xs rounded-md ${transformMode === 'rotate' ? 'bg-google-blue text-white shadow' : 'text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'}`}
-                        >
-                            {t.rotate}
-                        </button>
-                     </div>
-
-                     <CheckboxOption checked={showGeometry} onChange={setShowGeometry} label={t.showGeometry} />
-
-                     <CheckboxOption checked={showSkeletonOrigin} onChange={setShowSkeletonOrigin} label={t.showOrigin} />
-                     {showSkeletonOrigin && (
-                        <SliderOption label={t.frameSize} value={frameSize} onChange={setFrameSize} min={0.01} max={0.5} step={0.01} />
-                     )}
-
-                     <CheckboxOption checked={showLabels} onChange={setShowLabels} label={t.showLabels} />
-                     {showLabels && (
-                        <SliderOption label={t.labelScale} value={labelScale} onChange={setLabelScale} min={0.1} max={2.0} step={0.1} decimals={1} />
-                     )}
-
-                     <CheckboxOption checked={showJointAxes} onChange={setShowJointAxes} label={t.showJointAxes} />
-                     {showJointAxes && (
-                        <SliderOption label={t.jointAxisSize} value={jointAxisSize} onChange={setJointAxisSize} min={0.01} max={1.0} step={0.01} />
-                     )}
-                   </div>
-                 </div>
+          {mode === 'skeleton' && (
+            <div className="bg-white/80 dark:bg-google-dark-surface/80 backdrop-blur rounded-lg border border-slate-200 dark:border-google-dark-border flex flex-col w-48 shadow-xl overflow-hidden">
+              <div
+                className="text-[10px] text-slate-500 uppercase font-bold tracking-wider px-3 py-2 cursor-move bg-slate-100/50 dark:bg-google-dark-bg/50 hover:bg-slate-100 dark:hover:bg-google-dark-bg select-none flex items-center justify-between"
+                onMouseDown={handleMouseDown}
+              >
+                <div className="flex items-center gap-2">
+                  <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
+                    <path d="M7 2a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM7 8a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM7 14a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM13 2a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM13 8a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM13 14a2 2 0 1 0 0 4 2 2 0 0 0 0-4z" />
+                  </svg>
+                  {t.skeletonOptions}
+                </div>
+                <div className="flex items-center gap-1">
+                  <button
+                    onMouseDown={(e) => e.stopPropagation()}
+                    onClick={(e) => { e.stopPropagation(); setOptionsPanelPos(null); toggleOptionsCollapsed(); }}
+                    className="text-slate-400 hover:text-slate-900 dark:hover:text-white p-1 hover:bg-slate-200 dark:hover:bg-google-dark-border rounded"
+                    title={isOptionsCollapsed ? t.expand : t.collapse}
+                  >
+                    {isOptionsCollapsed ? (
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
+                    ) : (
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" /></svg>
+                    )}
+                  </button>
+                  {setShowOptionsPanel && (
+                    <button
+                      onMouseDown={(e) => e.stopPropagation()}
+                      onClick={(e) => { e.stopPropagation(); setShowOptionsPanel(false); }}
+                      className="text-slate-400 hover:text-red-600 dark:hover:text-red-400 p-1 hover:bg-slate-200 dark:hover:bg-google-dark-border rounded"
+                      title={t.close}
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                    </button>
+                  )}
+                </div>
               </div>
-           )}
 
-           {mode === 'detail' && (
-              <div className="bg-white/80 dark:bg-google-dark-surface/80 backdrop-blur rounded-lg border border-slate-200 dark:border-google-dark-border flex flex-col w-48 shadow-xl overflow-hidden">
-                 <div 
-                   className="text-[10px] text-slate-500 uppercase font-bold tracking-wider px-3 py-2 cursor-move bg-slate-100/50 dark:bg-google-dark-bg/50 hover:bg-slate-100 dark:hover:bg-google-dark-bg select-none flex items-center justify-between"
-                   onMouseDown={handleMouseDown}
-                 >
-                   <div className="flex items-center gap-2">
-                     <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
-                       <path d="M7 2a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM7 8a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM7 14a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM13 2a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM13 8a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM13 14a2 2 0 1 0 0 4 2 2 0 0 0 0-4z"/>
-                     </svg>
-                     {t.detailOptions}
-                   </div>
-                   <button 
-                     onMouseDown={(e) => e.stopPropagation()}
-                     onClick={(e) => { e.stopPropagation(); setOptionsPanelPos(null); toggleOptionsCollapsed(); }}
-                     className="text-slate-400 hover:text-slate-900 dark:hover:text-white p-1 hover:bg-slate-200 dark:hover:bg-google-dark-border rounded"
-                   >
-                     {isOptionsCollapsed ? (
-                       <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
-                     ) : (
-                       <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" /></svg>
-                     )}
-                   </button>
-                 </div>
-                 
-                 <div className={`transition-all duration-200 ease-in-out overflow-hidden ${isOptionsCollapsed ? 'max-h-0 opacity-0' : 'max-h-96 opacity-100'}`}>
-                   <div className="p-2 flex flex-col gap-2">
-                     <div className="flex bg-slate-100 dark:bg-google-dark-bg rounded-lg p-0.5 mb-1">
-                        <button 
-                            onClick={() => setTransformMode('translate')}
-                            className={`flex-1 py-1 text-xs rounded-md ${transformMode === 'translate' ? 'bg-google-blue text-white shadow' : 'text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'}`}
-                        >
-                            {t.move}
-                        </button>
-                        <button 
-                            onClick={() => setTransformMode('rotate')}
-                            className={`flex-1 py-1 text-xs rounded-md ${transformMode === 'rotate' ? 'bg-google-blue text-white shadow' : 'text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'}`}
-                        >
-                            {t.rotate}
-                        </button>
-                     </div>
+              <div className={`transition-all duration-200 ease-in-out overflow-hidden ${isOptionsCollapsed ? 'max-h-0 opacity-0' : 'max-h-96 opacity-100'}`}>
+                <div className="p-2 flex flex-col gap-2">
+                  <div className="flex bg-slate-100 dark:bg-google-dark-bg rounded-lg p-0.5 mb-1">
+                    <button
+                      onClick={() => setTransformMode('translate')}
+                      className={`flex-1 py-1 text-xs rounded-md ${transformMode === 'translate' ? 'bg-google-blue text-white shadow' : 'text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'}`}
+                    >
+                      {t.move}
+                    </button>
+                    <button
+                      onClick={() => setTransformMode('rotate')}
+                      className={`flex-1 py-1 text-xs rounded-md ${transformMode === 'rotate' ? 'bg-google-blue text-white shadow' : 'text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'}`}
+                    >
+                      {t.rotate}
+                    </button>
+                  </div>
 
-                     <CheckboxOption checked={showDetailOrigin} onChange={setShowDetailOrigin} label={t.showOrigin} />
-                     <CheckboxOption checked={showDetailLabels} onChange={setShowDetailLabels} label={t.showLabels} />
-                     <CheckboxOption checked={showVisual} onChange={setShowVisual} label={t.showVisual} />
-                     <CheckboxOption checked={showCollision} onChange={setShowCollision} label={t.showCollision} />
-                     <CheckboxOption checked={showInertia} onChange={setShowInertia} label={t.showInertia} />
-                     <CheckboxOption checked={showCenterOfMass} onChange={setShowCenterOfMass} label={t.showCenterOfMass} />
-                   </div>
-                 </div>
+                  <CheckboxOption checked={showGeometry} onChange={setShowGeometry} label={t.showGeometry} />
+
+                  <CheckboxOption checked={showSkeletonOrigin} onChange={setShowSkeletonOrigin} label={t.showOrigin} />
+                  {showSkeletonOrigin && (
+                    <SliderOption label={t.frameSize} value={frameSize} onChange={setFrameSize} min={0.01} max={0.5} step={0.01} />
+                  )}
+
+                  <CheckboxOption checked={showLabels} onChange={setShowLabels} label={t.showLabels} />
+                  {showLabels && (
+                    <SliderOption label={t.labelScale} value={labelScale} onChange={setLabelScale} min={0.1} max={2.0} step={0.1} decimals={1} />
+                  )}
+
+                  <CheckboxOption checked={showJointAxes} onChange={setShowJointAxes} label={t.showJointAxes} />
+                  {showJointAxes && (
+                    <SliderOption label={t.jointAxisSize} value={jointAxisSize} onChange={setJointAxisSize} min={0.01} max={1.0} step={0.01} />
+                  )}
+                </div>
               </div>
-           )}
+            </div>
+          )}
 
-           {mode === 'hardware' && (
-              <div className="bg-white/80 dark:bg-google-dark-surface/80 backdrop-blur rounded-lg border border-slate-200 dark:border-google-dark-border flex flex-col w-48 shadow-xl overflow-hidden">
-                 <div 
-                   className="text-[10px] text-slate-500 uppercase font-bold tracking-wider px-3 py-2 cursor-move bg-slate-100/50 dark:bg-google-dark-bg/50 hover:bg-slate-100 dark:hover:bg-google-dark-bg select-none flex items-center justify-between"
-                   onMouseDown={handleMouseDown}
-                 >
-                   <div className="flex items-center gap-2">
-                     <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
-                       <path d="M7 2a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM7 8a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM7 14a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM13 2a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM13 8a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM13 14a2 2 0 1 0 0 4 2 2 0 0 0 0-4z"/>
-                     </svg>
-                     {t.hardwareOptions}
-                   </div>
-                   <div className="flex items-center gap-1">
-                     <button
-                       onMouseDown={(e) => e.stopPropagation()}
-                       onClick={(e) => { e.stopPropagation(); setOptionsPanelPos(null); toggleOptionsCollapsed(); }}
-                       className="text-slate-400 hover:text-slate-900 dark:hover:text-white p-1 hover:bg-slate-200 dark:hover:bg-google-dark-border rounded"
-                       title={isOptionsCollapsed ? t.expand : t.collapse}
-                     >
-                       {isOptionsCollapsed ? (
-                         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
-                       ) : (
-                         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" /></svg>
-                       )}
-                     </button>
-                     {setShowOptionsPanel && (
-                       <button
-                         onMouseDown={(e) => e.stopPropagation()}
-                         onClick={(e) => { e.stopPropagation(); setShowOptionsPanel(false); }}
-                         className="text-slate-400 hover:text-red-600 dark:hover:text-red-400 p-1 hover:bg-slate-200 dark:hover:bg-google-dark-border rounded"
-                         title={t.close}
-                       >
-                         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
-                       </button>
-                     )}
-                   </div>
-                 </div>
-                 <div className={`transition-all duration-200 ease-in-out overflow-hidden ${isOptionsCollapsed ? 'max-h-0 opacity-0' : 'max-h-96 opacity-100'}`}>
-                   <div className="p-2 flex flex-col gap-2">
-                     <CheckboxOption checked={showHardwareOrigin} onChange={setShowHardwareOrigin} label={t.showOrigin} />
-                     <CheckboxOption checked={showHardwareLabels} onChange={setShowHardwareLabels} label={t.showLabels} />
-                   </div>
-                 </div>
+          {mode === 'detail' && (
+            <div className="bg-white/80 dark:bg-google-dark-surface/80 backdrop-blur rounded-lg border border-slate-200 dark:border-google-dark-border flex flex-col w-48 shadow-xl overflow-hidden">
+              <div
+                className="text-[10px] text-slate-500 uppercase font-bold tracking-wider px-3 py-2 cursor-move bg-slate-100/50 dark:bg-google-dark-bg/50 hover:bg-slate-100 dark:hover:bg-google-dark-bg select-none flex items-center justify-between"
+                onMouseDown={handleMouseDown}
+              >
+                <div className="flex items-center gap-2">
+                  <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
+                    <path d="M7 2a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM7 8a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM7 14a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM13 2a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM13 8a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM13 14a2 2 0 1 0 0 4 2 2 0 0 0 0-4z" />
+                  </svg>
+                  {t.detailOptions}
+                </div>
+                <button
+                  onMouseDown={(e) => e.stopPropagation()}
+                  onClick={(e) => { e.stopPropagation(); setOptionsPanelPos(null); toggleOptionsCollapsed(); }}
+                  className="text-slate-400 hover:text-slate-900 dark:hover:text-white p-1 hover:bg-slate-200 dark:hover:bg-google-dark-border rounded"
+                >
+                  {isOptionsCollapsed ? (
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
+                  ) : (
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" /></svg>
+                  )}
+                </button>
               </div>
-           )}
+
+              <div className={`transition-all duration-200 ease-in-out overflow-hidden ${isOptionsCollapsed ? 'max-h-0 opacity-0' : 'max-h-96 opacity-100'}`}>
+                <div className="p-2 flex flex-col gap-2">
+                  <div className="flex bg-slate-100 dark:bg-google-dark-bg rounded-lg p-0.5 mb-1">
+                    <button
+                      onClick={() => setTransformMode('translate')}
+                      className={`flex-1 py-1 text-xs rounded-md ${transformMode === 'translate' ? 'bg-google-blue text-white shadow' : 'text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'}`}
+                    >
+                      {t.move}
+                    </button>
+                    <button
+                      onClick={() => setTransformMode('rotate')}
+                      className={`flex-1 py-1 text-xs rounded-md ${transformMode === 'rotate' ? 'bg-google-blue text-white shadow' : 'text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'}`}
+                    >
+                      {t.rotate}
+                    </button>
+                  </div>
+
+                  <CheckboxOption checked={showDetailOrigin} onChange={setShowDetailOrigin} label={t.showOrigin} />
+                  <CheckboxOption checked={showDetailLabels} onChange={setShowDetailLabels} label={t.showLabels} />
+                  <CheckboxOption checked={showVisual} onChange={setShowVisual} label={t.showVisual} />
+                  <CheckboxOption checked={showCollision} onChange={setShowCollision} label={t.showCollision} />
+                  <CheckboxOption checked={showInertia} onChange={setShowInertia} label={t.showInertia} />
+                  <CheckboxOption checked={showCenterOfMass} onChange={setShowCenterOfMass} label={t.showCenterOfMass} />
+                </div>
+              </div>
+            </div>
+          )}
+
+          {mode === 'hardware' && (
+            <div className="bg-white/80 dark:bg-google-dark-surface/80 backdrop-blur rounded-lg border border-slate-200 dark:border-google-dark-border flex flex-col w-48 shadow-xl overflow-hidden">
+              <div
+                className="text-[10px] text-slate-500 uppercase font-bold tracking-wider px-3 py-2 cursor-move bg-slate-100/50 dark:bg-google-dark-bg/50 hover:bg-slate-100 dark:hover:bg-google-dark-bg select-none flex items-center justify-between"
+                onMouseDown={handleMouseDown}
+              >
+                <div className="flex items-center gap-2">
+                  <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
+                    <path d="M7 2a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM7 8a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM7 14a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM13 2a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM13 8a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM13 14a2 2 0 1 0 0 4 2 2 0 0 0 0-4z" />
+                  </svg>
+                  {t.hardwareOptions}
+                </div>
+                <div className="flex items-center gap-1">
+                  <button
+                    onMouseDown={(e) => e.stopPropagation()}
+                    onClick={(e) => { e.stopPropagation(); setOptionsPanelPos(null); toggleOptionsCollapsed(); }}
+                    className="text-slate-400 hover:text-slate-900 dark:hover:text-white p-1 hover:bg-slate-200 dark:hover:bg-google-dark-border rounded"
+                    title={isOptionsCollapsed ? t.expand : t.collapse}
+                  >
+                    {isOptionsCollapsed ? (
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
+                    ) : (
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" /></svg>
+                    )}
+                  </button>
+                  {setShowOptionsPanel && (
+                    <button
+                      onMouseDown={(e) => e.stopPropagation()}
+                      onClick={(e) => { e.stopPropagation(); setShowOptionsPanel(false); }}
+                      className="text-slate-400 hover:text-red-600 dark:hover:text-red-400 p-1 hover:bg-slate-200 dark:hover:bg-google-dark-border rounded"
+                      title={t.close}
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                    </button>
+                  )}
+                </div>
+              </div>
+              <div className={`transition-all duration-200 ease-in-out overflow-hidden ${isOptionsCollapsed ? 'max-h-0 opacity-0' : 'max-h-96 opacity-100'}`}>
+                <div className="p-2 flex flex-col gap-2">
+                  <CheckboxOption checked={showHardwareOrigin} onChange={setShowHardwareOrigin} label={t.showOrigin} />
+                  <CheckboxOption checked={showHardwareLabels} onChange={setShowHardwareLabels} label={t.showLabels} />
+                </div>
+              </div>
+            </div>
+          )}
         </div>
-        )}
-        
+      )}
+
       <Canvas
         shadows
         frameloop="demand"
         camera={{ position: [2, 2, 2], up: [0, 0, 1], fov: 60 }}
         gl={{
-            antialias: true,
-            toneMapping: THREE.ACESFilmicToneMapping,
-            toneMappingExposure: 1.0,
-            preserveDrawingBuffer: true,
+          antialias: true,
+          toneMapping: THREE.ACESFilmicToneMapping,
+          toneMappingExposure: 1.0,
+          preserveDrawingBuffer: true,
         }}
       >
         <color attach="background" args={[theme === 'light' ? '#f8f9fa' : '#1f1f1f']} />
         <Suspense fallback={null}>
-            <OrbitControls makeDefault enableDamping={false} />
-            <SceneLighting />
-            <Environment files="/potsdamer_platz_1k.hdr" environmentIntensity={1.2} />
-            <SnapshotManager actionRef={snapshotAction} robotName={robot?.name || 'robot'} />
-            
-            <group position={[0, 0, 0]}>
-                 <RobotNode 
-                    linkId={robot.rootLinkId} 
-                    robot={robot} 
-                    onSelect={onSelect} 
-                    onUpdate={onUpdate}
-                    mode={mode} 
-                    showGeometry={showGeometry}
-                    showVisual={showVisual}
-                    showLabels={showLabels}
-                    showJointAxes={showJointAxes}
-                    showSkeletonOrigin={showSkeletonOrigin}
-                    jointAxisSize={jointAxisSize}
-                    frameSize={frameSize}
-                    labelScale={labelScale}
-                    showDetailOrigin={showDetailOrigin}
-                    showDetailLabels={showDetailLabels}
-                    showCollision={showCollision}
-                    showHardwareOrigin={showHardwareOrigin}
-                    showHardwareLabels={showHardwareLabels}
-                    showInertia={showInertia}
-                    showCenterOfMass={showCenterOfMass}
-                    transformMode={transformMode}
-                    depth={0}
-                    assets={assets}
-                    lang={lang}
-                    onRegisterJointPivot={handleRegisterJointPivot}
-                    onRegisterCollisionRef={handleRegisterCollisionRef}
-                 />
-            </group>
-            
-            {/* TransformControls at root Canvas level - not nested in hierarchy */}
-            {/* Skip fixed joints - they cannot be transformed */}
-            {mode === 'skeleton' && selectedJointPivot && robot.selection.type === 'joint' && robot.selection.id && (() => {
-              const jointId = robot.selection.id!;
-              const joint = robot.joints[jointId];
+          <OrbitControls makeDefault enableDamping={false} />
+          <SceneLighting />
+          <Environment files="/potsdamer_platz_1k.hdr" environmentIntensity={1.2} />
+          <SnapshotManager actionRef={snapshotAction} robotName={robot?.name || 'robot'} />
 
-              if (!joint) return null;
+          <group position={[0, 0, 0]}>
+            <RobotNode
+              linkId={robot.rootLinkId}
+              robot={robot}
+              onSelect={onSelect}
+              onUpdate={onUpdate}
+              mode={mode}
+              showGeometry={showGeometry}
+              showVisual={showVisual}
+              showLabels={showLabels}
+              showJointAxes={showJointAxes}
+              showSkeletonOrigin={showSkeletonOrigin}
+              jointAxisSize={jointAxisSize}
+              frameSize={frameSize}
+              labelScale={labelScale}
+              showDetailOrigin={showDetailOrigin}
+              showDetailLabels={showDetailLabels}
+              showCollision={showCollision}
+              showHardwareOrigin={showHardwareOrigin}
+              showHardwareLabels={showHardwareLabels}
+              showInertia={showInertia}
+              showCenterOfMass={showCenterOfMass}
+              transformMode={transformMode}
+              depth={0}
+              assets={assets}
+              lang={lang}
+              onRegisterJointPivot={handleRegisterJointPivot}
+              onRegisterCollisionRef={handleRegisterCollisionRef}
+            />
+          </group>
 
-              // Don't show TransformControls for fixed joints
-              const jointTypeStr = String(joint.type).toLowerCase();
-              if (jointTypeStr === 'fixed' || joint.type === JointType.FIXED) return null;
+          {/* TransformControls at root Canvas level - not nested in hierarchy */}
+          {/* Skip fixed joints - they cannot be transformed */}
+          {mode === 'skeleton' && selectedJointPivot && robot.selection.type === 'joint' && robot.selection.id && (() => {
+            const jointId = robot.selection.id!;
+            const joint = robot.joints[jointId];
 
-              return (
-                <TransformControls
-                    ref={transformControlRef}
-                    object={selectedJointPivot}
-                    mode={transformMode}
-                    size={0.7}
-                    space="local"
-                    enabled={!pendingEdit}
-                    onChange={handleObjectChange}
-                />
-              );
-            })()}
+            if (!joint) return null;
 
-            {/* Confirm/Cancel UI matching CollisionTransformControls style */}
-            {mode === 'skeleton' && pendingEdit && selectedJointPivot && (() => {
-              // Get world position for correct placement
-              const worldPos = new THREE.Vector3();
-              selectedJointPivot.getWorldPosition(worldPos);
+            // Don't show TransformControls for fixed joints
+            const jointTypeStr = String(joint.type).toLowerCase();
+            if (jointTypeStr === 'fixed' || joint.type === JointType.FIXED) return null;
 
-              return (
+            return (
+              <TransformControls
+                ref={transformControlRef}
+                object={selectedJointPivot}
+                mode={transformMode}
+                size={0.7}
+                space="local"
+                enabled={!pendingEdit}
+                onChange={handleObjectChange}
+              />
+            );
+          })()}
+
+          {/* Confirm/Cancel UI matching CollisionTransformControls style */}
+          {mode === 'skeleton' && pendingEdit && selectedJointPivot && (() => {
+            // Get world position for correct placement
+            const worldPos = new THREE.Vector3();
+            selectedJointPivot.getWorldPosition(worldPos);
+
+            return (
               <Html
                 position={worldPos.toArray()}
                 style={{ pointerEvents: 'auto' }}
@@ -1512,63 +1512,63 @@ export const Visualizer = ({ robot, onSelect, onUpdate, mode, assets, lang, them
                   </div>
                 </div>
               </Html>
-              );
-            })()}
+            );
+          })()}
 
-            {/* TransformControls for collision geometry in detail mode */}
-            {mode === 'detail' && selectedCollisionRef && robot.selection.type === 'link' && robot.selection.id && robot.selection.subType === 'collision' && (() => {
-              const linkId = robot.selection.id!;
-              const link = robot.links[linkId];
-              
-              if (!link) return null;
-              
-              const handleCollisionTransformEnd = () => {
-                if (selectedCollisionRef) {
-                  const pos = selectedCollisionRef.position;
-                  const rot = selectedCollisionRef.rotation;
-                  
-                  onUpdate('link', linkId, {
-                    ...link,
-                    collision: {
-                      ...link.collision,
-                      origin: {
-                        xyz: { x: pos.x, y: pos.y, z: pos.z },
-                        rpy: { r: rot.x, p: rot.y, y: rot.z }
-                      }
+          {/* TransformControls for collision geometry in detail mode */}
+          {mode === 'detail' && selectedCollisionRef && robot.selection.type === 'link' && robot.selection.id && robot.selection.subType === 'collision' && (() => {
+            const linkId = robot.selection.id!;
+            const link = robot.links[linkId];
+
+            if (!link) return null;
+
+            const handleCollisionTransformEnd = () => {
+              if (selectedCollisionRef) {
+                const pos = selectedCollisionRef.position;
+                const rot = selectedCollisionRef.rotation;
+
+                onUpdate('link', linkId, {
+                  ...link,
+                  collision: {
+                    ...link.collision,
+                    origin: {
+                      xyz: { x: pos.x, y: pos.y, z: pos.z },
+                      rpy: { r: rot.x, p: rot.y, y: rot.z }
                     }
-                  });
-                }
-              };
-              
-              return (
-                <TransformControls 
-                    object={selectedCollisionRef}
-                    mode={transformMode}
-                    size={0.7}
-                    space="local"
-                    onMouseUp={handleCollisionTransformEnd}
-                />
-              );
-            })()}
+                  }
+                });
+              }
+            };
 
-            <Grid 
-                name="ReferenceGrid"
-                infiniteGrid 
-                fadeDistance={100} 
-                sectionSize={1}
-                cellSize={0.1}
-                sectionThickness={1.5}
-                cellThickness={0.5}
-                cellColor={theme === 'light' ? '#cbd5e1' : '#444444'} 
-                sectionColor={theme === 'light' ? '#94a3b8' : '#555555'} 
-                rotation={[Math.PI / 2, 0, 0]}
-                position={[0, 0, -0.01]} 
-                userData={{ isGizmo: true }}
-            />
-            
-            <GizmoHelper alignment="bottom-right" margin={[80, 80]}>
-                <GizmoViewport axisColors={['#ef4444', '#22c55e', '#3b82f6']} labelColor={theme === 'light' ? '#0f172a' : 'white'} />
-            </GizmoHelper>
+            return (
+              <TransformControls
+                object={selectedCollisionRef}
+                mode={transformMode}
+                size={0.7}
+                space="local"
+                onMouseUp={handleCollisionTransformEnd}
+              />
+            );
+          })()}
+
+          <Grid
+            name="ReferenceGrid"
+            infiniteGrid
+            fadeDistance={100}
+            sectionSize={1}
+            cellSize={0.1}
+            sectionThickness={1.5}
+            cellThickness={0.5}
+            cellColor={theme === 'light' ? '#cbd5e1' : '#444444'}
+            sectionColor={theme === 'light' ? '#94a3b8' : '#555555'}
+            rotation={[Math.PI / 2, 0, 0]}
+            position={[0, 0, -0.01]}
+            userData={{ isGizmo: true }}
+          />
+
+          <GizmoHelper alignment="bottom-right" margin={[80, 80]}>
+            <GizmoViewport axisColors={['#ef4444', '#22c55e', '#3b82f6']} labelColor={theme === 'light' ? '#0f172a' : 'white'} />
+          </GizmoHelper>
         </Suspense>
       </Canvas>
     </div>

@@ -60,6 +60,9 @@ export const enhanceSingleMaterial = (material: THREE.Material): THREE.Material 
     if ((material as any).isMeshPhongMaterial || (material as any).isMeshStandardMaterial) {
         const mat = material as THREE.MeshPhongMaterial;
         
+        // Preserve existing color - don't override URDF colors
+        const existingColor = mat.color ? mat.color.clone() : null;
+        
         // Increase shininess for better highlights
         if (mat.shininess !== undefined) {
             mat.shininess = 120; // Higher shininess for glossy look
@@ -67,9 +70,9 @@ export const enhanceSingleMaterial = (material: THREE.Material): THREE.Material 
         
         // Enhance specular reflection
         if (!mat.specular) {
-            mat.specular = new THREE.Color(1.0, 1.0, 1.0); // Bright white specular
+            mat.specular = new THREE.Color(0.5, 0.5, 0.5); // Moderate specular
         } else if (mat.specular.isColor) {
-            mat.specular.setRGB(1.0, 1.0, 1.0);
+            mat.specular.setRGB(0.5, 0.5, 0.5);
         }
         
         // If standard material (PBR), make it more metallic/glossy
@@ -80,14 +83,19 @@ export const enhanceSingleMaterial = (material: THREE.Material): THREE.Material 
             stdMat.envMapIntensity = 1.5; // Stronger environment reflections
         }
         
+        // Restore color if it was set
+        if (existingColor) {
+            mat.color = existingColor;
+        }
+        
         mat.needsUpdate = true;
         return mat;
         
     } else if ((material as any).isMeshBasicMaterial) {
-        // Convert to Phong for better lighting
+        // Convert to Phong for better lighting, preserving color
         const oldMat = material as THREE.MeshBasicMaterial;
         const newMat = new THREE.MeshPhongMaterial({
-            color: oldMat.color,
+            color: oldMat.color ? oldMat.color.clone() : new THREE.Color(0xffffff),
             map: oldMat.map,
             transparent: oldMat.transparent,
             opacity: oldMat.opacity,

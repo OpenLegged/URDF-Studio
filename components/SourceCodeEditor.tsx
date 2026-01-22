@@ -197,6 +197,15 @@ export const SourceCodeEditor: React.FC<SourceCodeEditorProps> = ({ code, onCode
   const [validationErrors, setValidationErrors] = useState<ValidationError[]>([]);
   const [currentCode, setCurrentCode] = useState(code);
   
+  // Sync editor content when code prop changes (e.g., different file selected)
+  useEffect(() => {
+    if (editorRef.current && code !== currentCode && !isDirty) {
+      editorRef.current.setValue(code);
+      setCurrentCode(code);
+      setValidationErrors(validateURDF(code, t));
+    }
+  }, [code]);
+  
   // Window State
   const [isMaximized, setIsMaximized] = useState(false);
   const [rect, setRect] = useState({ x: 100, y: 100, width: 800, height: 600 });

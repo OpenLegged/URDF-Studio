@@ -8,16 +8,17 @@ import { MathUtils } from '../../services/mathUtils';
 import { disposeObject3D } from './dispose';
 import { CollisionTransformControls } from './CollisionTransformControls';
 import { translations } from '../../services/i18n';
-import { 
-    enhanceMaterials, 
-    highlightMaterial, 
+import {
+    enhanceMaterials,
+    highlightMaterial,
     highlightFaceMaterial,
-    collisionHighlightMaterial, 
+    collisionHighlightMaterial,
     collisionBaseMaterial,
-    emptyRaycast 
+    emptyRaycast
 } from './materials';
 import { RobotModelProps } from './types';
 import { createLoadingManager, createMeshLoader } from './loaders';
+import { loadMJCFToThreeJS, isMJCFContent } from '../../services/mjcfLoader';
 import { throttle } from '../../services/throttle';
 
 // Set of shared materials that should NOT be disposed (they are module-level singletons)
@@ -42,37 +43,242 @@ const MOUSE_MOVE_THRESHOLD = 2;
 // Throttle interval in ms (~30fps)
 const THROTTLE_INTERVAL = 33;
 
+// ============================================================
+// URDF Material Parser - Extract rgba colors from URDF XML
+// ============================================================
+interface URDFMaterialInfo {
+    name?: string;
+    rgba?: [number, number, number, number];
+}
+
+function parseURDFMaterials(urdfContent: string): Map<string, URDFMaterialInfo> {
+    const linkMaterials = new Map<string, URDFMaterialInfo>();
+    const globalMaterials = new Map<string, URDFMaterialInfo>();
+
+    console.log('[RobotModel] parseURDFMaterials called, content length:', urdfContent.length);
+
+    try {
+        const parser = new DOMParser();
+        const doc = parser.parseFromString(urdfContent, 'text/xml');
+
+        // First pass: collect global materials (defined at robot level)
+        const robotMaterials = doc.querySelectorAll('robot > material');
+        robotMaterials.forEach(matEl => {
+            const name = matEl.getAttribute('name');
+            if (name) {
+                const colorEl = matEl.querySelector('color');
+                if (colorEl) {
+                    const rgbaStr = colorEl.getAttribute('rgba');
+                    if (rgbaStr) {
+                        const parts = rgbaStr.trim().split(/\s+/).map(Number);
+                        if (parts.length >= 3) {
+                            globalMaterials.set(name, {
+                                name,
+                                rgba: [parts[0], parts[1], parts[2], parts[3] ?? 1]
+                            });
+                        }
+                    }
+                }
+            }
+        });
+
+        // Second pass: get materials from each link's visual
+        const links = doc.querySelectorAll('link');
+        links.forEach(linkEl => {
+            const linkName = linkEl.getAttribute('name');
+            if (!linkName) return;
+
+            // Get first visual's material
+            const visualEl = linkEl.querySelector('visual');
+            if (!visualEl) return;
+
+            const matEl = visualEl.querySelector('material');
+            if (!matEl) return;
+
+            const matName = matEl.getAttribute('name');
+            const colorEl = matEl.querySelector('color');
+
+            if (colorEl) {
+                // Inline color definition
+                const rgbaStr = colorEl.getAttribute('rgba');
+                if (rgbaStr) {
+                    const parts = rgbaStr.trim().split(/\s+/).map(Number);
+                    if (parts.length >= 3) {
+                        const rgba: [number, number, number, number] = [parts[0], parts[1], parts[2], parts[3] ?? 1];
+                        linkMaterials.set(linkName, {
+                            name: matName || undefined,
+                            rgba
+                        });
+                        console.log(`[RobotModel] Parsed material for link "${linkName}": rgba=[${rgba.join(', ')}]`);
+                    }
+                }
+            } else if (matName && globalMaterials.has(matName)) {
+                // Reference to global material
+                linkMaterials.set(linkName, globalMaterials.get(matName)!);
+                console.log(`[RobotModel] Link "${linkName}" uses global material "${matName}"`);
+            }
+        });
+    } catch (error) {
+        console.error('[RobotModel] Failed to parse URDF materials:', error);
+    }
+
+    console.log(`[RobotModel] parseURDFMaterials complete: ${linkMaterials.size} link materials, ${globalMaterials.size} global materials`);
+    return linkMaterials;
+}
+
+function applyURDFMaterials(robot: THREE.Object3D, materials: Map<string, URDFMaterialInfo>): void {
+    if (materials.size === 0) return;
+
+    console.log(`[RobotModel] Applying ${materials.size} URDF materials`);
+    console.log(`[RobotModel] Material link names:`, Array.from(materials.keys()).slice(0, 10));
+
+    let appliedCount = 0;
+    let meshCount = 0;
+
+    // First, log all link names in the robot for debugging
+    const robotLinkNames: string[] = [];
+    robot.traverse((obj: any) => {
+        if (obj.isURDFLink) {
+            robotLinkNames.push(obj.name);
+        }
+    });
+    console.log(`[RobotModel] Robot has ${robotLinkNames.length} URDFLinks:`, robotLinkNames.slice(0, 10));
+
+    robot.traverse((child: any) => {
+        if (!child.isMesh) return;
+        meshCount++;
+
+        // Find parent link - urdf-loader hierarchy: URDFLink -> URDFVisual -> Mesh
+        let linkName: string | null = null;
+        let current = child.parent;
+        let traversePath: string[] = [];
+        
+        while (current && current !== robot) {
+            traversePath.push(`${current.constructor?.name || current.type}(${current.name})`);
+            
+            // Check for URDFLink (urdf-loader sets isURDFLink = true)
+            if (current.isURDFLink) {
+                linkName = current.name;
+                break;
+            }
+            // URDFVisual is between mesh and link, continue traversing
+            if (current.isURDFVisual) {
+                current = current.parent;
+                continue;
+            }
+            // Fallback: check if this object's name matches a link we have material for
+            if (materials.has(current.name)) {
+                linkName = current.name;
+                break;
+            }
+            current = current.parent;
+        }
+
+        if (!linkName) {
+            // Last resort: try mesh name or parent names
+            if (materials.has(child.name)) {
+                linkName = child.name;
+            } else if (child.parent && materials.has(child.parent.name)) {
+                linkName = child.parent.name;
+            } else if (child.parent?.parent && materials.has(child.parent.parent.name)) {
+                // Mesh -> Visual -> Link
+                linkName = child.parent.parent.name;
+            }
+        }
+
+        // Log first few meshes for debugging
+        if (meshCount <= 5) {
+            console.log(`[RobotModel] Mesh #${meshCount}: path=[${traversePath.join(' -> ')}], foundLink="${linkName}", hasMaterial=${materials.has(linkName || '')}`);
+        }
+
+        if (!linkName) return;
+
+        const matInfo = materials.get(linkName);
+        if (!matInfo || !matInfo.rgba) return;
+
+        // Apply color to mesh material
+        const [r, g, b, a] = matInfo.rgba;
+        const color = new THREE.Color(r, g, b);
+        appliedCount++;
+
+        if (Array.isArray(child.material)) {
+            child.material = child.material.map((mat: THREE.Material) => {
+                const cloned = mat.clone();
+                (cloned as any).color = color;
+                cloned.needsUpdate = true;
+                if (a < 1) {
+                    cloned.transparent = true;
+                    cloned.opacity = a;
+                }
+                return cloned;
+            });
+        } else if (child.material) {
+            child.material = child.material.clone();
+            child.material.color = color;
+            child.material.needsUpdate = true;
+            if (a < 1) {
+                child.material.transparent = true;
+                child.material.opacity = a;
+            }
+        }
+    });
+
+    console.log(`[RobotModel] Applied materials to ${appliedCount}/${meshCount} meshes`);
+}
+
+function offsetRobotToGround(robot: THREE.Object3D): void {
+    // Calculate bounding box
+    const box = new THREE.Box3().setFromObject(robot);
+    const minY = box.min.y;
+    const minZ = box.min.z;
+
+    console.log(`[RobotModel] Robot bounds before offset: minY=${minY.toFixed(4)}, minZ=${minZ.toFixed(4)}`);
+
+    // Offset Y so bottom is at Y=0 (ground plane in Three.js Y-up convention)
+    if (isFinite(minY) && Math.abs(minY) > 0.0001) {
+        robot.position.y -= minY;
+        console.log(`[RobotModel] Offset robot Y by ${-minY} to place on ground`);
+    }
+
+    // Also offset Z if there are negative Z parts (for Z-up URDF convention)
+    // This ensures the robot is fully above the XY plane
+    if (isFinite(minZ) && minZ < -0.0001) {
+        robot.position.z -= minZ;
+        console.log(`[RobotModel] Offset robot Z by ${-minZ} to remove negative Z parts`);
+    }
+}
+
 // Wrap with memo and custom comparison to prevent unnecessary re-renders
-export const RobotModel: React.FC<RobotModelProps> = memo(({ 
-    urdfContent, 
-    assets, 
-    onRobotLoaded, 
-    showCollision = false, 
-    showVisual = true, 
-    onSelect, 
-    onJointChange, 
-    onJointChangeCommit, 
-    jointAngles, 
-    setIsDragging, 
-    setActiveJoint, 
-    justSelectedRef, 
-    t, 
-    mode, 
-    selection, 
-    hoveredSelection, 
-    highlightMode = 'link', 
-    showInertia = false, 
-    showCenterOfMass = false, 
-    showOrigins = false, 
-    originSize = 1.0, 
-    showJointAxes = false, 
-    jointAxisSize = 1.0, 
-    robotLinks, 
-    focusTarget, 
-    transformMode = 'select', 
-    toolMode = 'select', 
-    onCollisionTransformEnd, 
-    isOrbitDragging 
+export const RobotModel: React.FC<RobotModelProps> = memo(({
+    urdfContent,
+    assets,
+    onRobotLoaded,
+    showCollision = false,
+    showVisual = true,
+    onSelect,
+    onJointChange,
+    onJointChangeCommit,
+    jointAngles,
+    setIsDragging,
+    setActiveJoint,
+    justSelectedRef,
+    t,
+    mode,
+    selection,
+    hoveredSelection,
+    highlightMode = 'link',
+    showInertia = false,
+    showCenterOfMass = false,
+    showOrigins = false,
+    originSize = 1.0,
+    showJointAxes = false,
+    jointAxisSize = 1.0,
+    robotLinks,
+    focusTarget,
+    transformMode = 'select',
+    toolMode = 'select',
+    onCollisionTransformEnd,
+    isOrbitDragging
 }) => {
     const [robot, setRobot] = useState<THREE.Object3D | null>(null);
     const [error, setError] = useState<string | null>(null);
@@ -81,7 +287,7 @@ export const RobotModel: React.FC<RobotModelProps> = memo(({
     const mouseRef = useRef(new THREE.Vector2(-1000, -1000));
     const raycasterRef = useRef(new THREE.Raycaster());
     const hoveredLinkRef = useRef<string | null>(null);
-    
+
     // PERFORMANCE: Track last mouse position for state locking (skip small movements)
     const lastMousePosRef = useRef({ x: 0, y: 0 });
     // PERFORMANCE: Cached robot bounding box for two-phase detection
@@ -92,15 +298,15 @@ export const RobotModel: React.FC<RobotModelProps> = memo(({
     const setIsDraggingRef = useRef(setIsDragging);
     const invalidateRef = useRef(invalidate);
     const setActiveJointRef = useRef(setActiveJoint);
-    
+
     const currentSelectionRef = useRef<{ id: string | null, subType: string | null }>({ id: null, subType: null });
     const currentHoverRef = useRef<{ id: string | null, subType: string | null }>({ id: null, subType: null });
-    
+
     const isDraggingJoint = useRef(false);
     const dragJoint = useRef<any>(null);
     const dragHitDistance = useRef(0);
     const lastRayRef = useRef(new THREE.Ray());
-    
+
     const showVisualRef = useRef(showVisual);
     const showCollisionRef = useRef(showCollision);
 
@@ -117,7 +323,7 @@ export const RobotModel: React.FC<RobotModelProps> = memo(({
     const isMountedRef = useRef(true);
     // Track loading abort controller to cancel duplicate loads
     const loadAbortRef = useRef<{ aborted: boolean }>({ aborted: false });
-    
+
     // ============================================================
     // PERFORMANCE OPTIMIZATION: Throttle raycasting and track highlights
     // ============================================================
@@ -129,14 +335,14 @@ export const RobotModel: React.FC<RobotModelProps> = memo(({
     const lastCameraPosRef = useRef(new THREE.Vector3());
     // Track last toolMode to detect mode changes
     const lastToolModeRef = useRef(toolMode);
-    
+
     // PERFORMANCE: Update robot bounding box when robot changes
     useEffect(() => {
         if (robot) {
             boundingBoxNeedsUpdateRef.current = true;
         }
     }, [robot, robotVersion]);
-    
+
     // Helper to get/update robot bounding box (cached)
     const getRobotBoundingBox = useCallback(() => {
         if (!robot) return null;
@@ -151,7 +357,7 @@ export const RobotModel: React.FC<RobotModelProps> = memo(({
         }
         return robotBoundingBoxRef.current;
     }, [robot]);
-    
+
     // PERFORMANCE: Two-phase detection - check bounding box first
     const rayIntersectsBoundingBox = useCallback((raycaster: THREE.Raycaster): boolean => {
         const bbox = getRobotBoundingBox();
@@ -165,13 +371,13 @@ export const RobotModel: React.FC<RobotModelProps> = memo(({
     const _triVert0 = useRef(new THREE.Vector3());
     const _triVert1 = useRef(new THREE.Vector3());
     const _triVert2 = useRef(new THREE.Vector3());
-    
+
     // PERFORMANCE: Pre-built map of linkName -> meshes for O(1) highlight lookup
     const linkMeshMapRef = useRef<Map<string, THREE.Mesh[]>>(new Map());
-    
+
     // Helper function to get triangle vertices - writes to provided output vectors (no allocation)
     const getTriangleVertices = useCallback((
-        geometry: THREE.BufferGeometry, 
+        geometry: THREE.BufferGeometry,
         faceIndex: number,
         outV0: THREE.Vector3,
         outV1: THREE.Vector3,
@@ -179,7 +385,7 @@ export const RobotModel: React.FC<RobotModelProps> = memo(({
     ): void => {
         const positionAttribute = geometry.getAttribute('position');
         const indexAttribute = geometry.getIndex();
-        
+
         let a: number, b: number, c: number;
         if (indexAttribute) {
             a = indexAttribute.getX(faceIndex * 3);
@@ -190,7 +396,7 @@ export const RobotModel: React.FC<RobotModelProps> = memo(({
             b = faceIndex * 3 + 1;
             c = faceIndex * 3 + 2;
         }
-        
+
         // Write directly to output vectors - no allocation
         outV0.set(positionAttribute.getX(a), positionAttribute.getY(a), positionAttribute.getZ(a));
         outV1.set(positionAttribute.getX(b), positionAttribute.getY(b), positionAttribute.getZ(b));
@@ -208,7 +414,7 @@ export const RobotModel: React.FC<RobotModelProps> = memo(({
 
         const { mesh, faceIndex } = highlightedFace;
         const geometry = mesh.geometry;
-        
+
         if (!geometry) return;
 
         if (!highlightedFaceMeshRef.current) {
@@ -225,7 +431,7 @@ export const RobotModel: React.FC<RobotModelProps> = memo(({
 
         const facesToHighlight = [faceIndex];
         const positions: number[] = [];
-        
+
         for (const fi of facesToHighlight) {
             let a: number, b: number, c: number;
             if (indexAttribute) {
@@ -237,14 +443,14 @@ export const RobotModel: React.FC<RobotModelProps> = memo(({
                 b = fi * 3 + 1;
                 c = fi * 3 + 2;
             }
-            
+
             positions.push(
                 positionAttribute.getX(a), positionAttribute.getY(a), positionAttribute.getZ(a),
                 positionAttribute.getX(b), positionAttribute.getY(b), positionAttribute.getZ(b),
                 positionAttribute.getX(c), positionAttribute.getY(c), positionAttribute.getZ(c)
             );
         }
-        
+
         const highlightGeo = highlightMesh.geometry;
         highlightGeo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
         highlightGeo.computeVertexNormals();
@@ -257,11 +463,11 @@ export const RobotModel: React.FC<RobotModelProps> = memo(({
         if (mode === 'hardware') return;
 
         if (highlightedFace && highlightedFaceMeshRef.current) {
-             const mesh = highlightedFace.mesh;
-             const highlight = highlightedFaceMeshRef.current;
-             mesh.updateMatrixWorld();
-             highlight.matrix.copy(mesh.matrixWorld);
-             highlight.matrixAutoUpdate = false;
+            const mesh = highlightedFace.mesh;
+            const highlight = highlightedFaceMeshRef.current;
+            mesh.updateMatrixWorld();
+            highlight.matrix.copy(mesh.matrixWorld);
+            highlight.matrixAutoUpdate = false;
         }
     });
 
@@ -280,7 +486,7 @@ export const RobotModel: React.FC<RobotModelProps> = memo(({
             highlightedMeshesRef.current.clear();
         };
     }, [scene]);
-    
+
     // Clean up face highlight when leaving face mode
     useEffect(() => {
         if (toolMode !== 'face' && highlightedFaceMeshRef.current) {
@@ -293,10 +499,10 @@ export const RobotModel: React.FC<RobotModelProps> = memo(({
         if (!focusTarget || !robot) return;
 
         let targetObj: THREE.Object3D | undefined;
-        
+
         if ((robot as any).links && (robot as any).links[focusTarget]) {
             targetObj = (robot as any).links[focusTarget];
-        } 
+        }
         else if ((robot as any).joints && (robot as any).joints[focusTarget]) {
             targetObj = (robot as any).joints[focusTarget];
         }
@@ -310,10 +516,10 @@ export const RobotModel: React.FC<RobotModelProps> = memo(({
             const size = box.getSize(new THREE.Vector3());
             const maxDim = Math.max(size.x, size.y, size.z);
             const distance = Math.max(maxDim * 2, 0.5);
-            const direction = new THREE.Vector3().subVectors(camera.position, controls ? (controls as any).target : new THREE.Vector3(0,0,0)).normalize();
-            
+            const direction = new THREE.Vector3().subVectors(camera.position, controls ? (controls as any).target : new THREE.Vector3(0, 0, 0)).normalize();
+
             if (direction.lengthSq() < 0.001) direction.set(1, 1, 1).normalize();
-            
+
             const newPos = center.clone().add(direction.multiplyScalar(distance));
 
             focusTargetRef.current = center;
@@ -346,7 +552,7 @@ export const RobotModel: React.FC<RobotModelProps> = memo(({
 
     useEffect(() => { showVisualRef.current = showVisual; }, [showVisual]);
     useEffect(() => { showCollisionRef.current = showCollision; }, [showCollision]);
-    
+
     // Revert all highlighted meshes using the tracked Map (O(n) where n = highlighted, not total)
     const revertAllHighlights = useCallback(() => {
         highlightedMeshesRef.current.forEach((origMaterial, mesh) => {
@@ -369,10 +575,10 @@ export const RobotModel: React.FC<RobotModelProps> = memo(({
     // Uses pre-built linkMeshMap for O(1) lookup instead of traverse
     const highlightGeometry = useCallback((linkName: string | null, revert: boolean, subType: 'visual' | 'collision' | undefined = undefined, meshToHighlight?: THREE.Object3D | null) => {
         if (!robot) return;
-        
+
         try {
             const targetSubType = subType || (highlightMode === 'collision' ? 'collision' : 'visual');
-            
+
             // OPTIMIZED: Use Map-based revert instead of traversing
             if (revert) {
                 revertAllHighlights();
@@ -388,7 +594,7 @@ export const RobotModel: React.FC<RobotModelProps> = memo(({
                 mesh.material = targetSubType === 'collision' ? collisionHighlightMaterial : highlightMaterial;
                 mesh.visible = true;
                 if (mesh.parent) mesh.parent.visible = true;
-                
+
                 if (mesh.userData.isCollisionMesh && mesh.material) {
                     (mesh.material as any).transparent = false;
                     (mesh.material as any).opacity = 1.0;
@@ -401,19 +607,19 @@ export const RobotModel: React.FC<RobotModelProps> = memo(({
             if (linkName) {
                 const mapKey = `${linkName}:${targetSubType}`;
                 const meshes = linkMeshMapRef.current.get(mapKey);
-                
+
                 if (meshes && meshes.length > 0) {
                     for (let i = 0; i < meshes.length; i++) {
                         const mesh = meshes[i];
                         if (mesh.userData?.isGizmo) continue;
-                        
+
                         if (!highlightedMeshesRef.current.has(mesh)) {
                             highlightedMeshesRef.current.set(mesh, mesh.material);
                         }
                         mesh.material = targetSubType === 'collision' ? collisionHighlightMaterial : highlightMaterial;
                         mesh.visible = true;
                         if (mesh.parent) mesh.parent.visible = true;
-                        
+
                         if (targetSubType === 'collision' && mesh.material) {
                             (mesh.material as any).transparent = false;
                             (mesh.material as any).opacity = 1.0;
@@ -422,7 +628,7 @@ export const RobotModel: React.FC<RobotModelProps> = memo(({
                     }
                     return;
                 }
-                
+
                 // Fallback to traverse if map lookup fails (shouldn't happen normally)
                 const linkObj = (robot as any).links?.[linkName];
                 if (linkObj) {
@@ -458,7 +664,7 @@ export const RobotModel: React.FC<RobotModelProps> = memo(({
         setIsDraggingRef.current = setIsDragging;
         setActiveJointRef.current = setActiveJoint;
     }, [invalidate, onJointChange, onJointChangeCommit, setIsDragging, setActiveJoint]);
-    
+
     // Mouse tracking for hover detection AND joint dragging
     useEffect(() => {
         const findNearestJoint = (obj: THREE.Object3D | null): any => {
@@ -472,7 +678,7 @@ export const RobotModel: React.FC<RobotModelProps> = memo(({
             }
             return null;
         };
-        
+
         const findParentLink = (hitObject: THREE.Object3D): THREE.Object3D | null => {
             let current: THREE.Object3D | null = hitObject;
             while (current) {
@@ -494,15 +700,15 @@ export const RobotModel: React.FC<RobotModelProps> = memo(({
             const axisWorld = axis.clone().transformDirection(joint.matrixWorld).normalize();
             const pivotPoint = new THREE.Vector3().setFromMatrixPosition(joint.matrixWorld);
             const plane = new THREE.Plane().setFromNormalAndCoplanarPoint(axisWorld, pivotPoint);
-            
+
             const projStart = new THREE.Vector3();
             const projEnd = new THREE.Vector3();
             plane.projectPoint(startPt, projStart);
             plane.projectPoint(endPt, projEnd);
-            
+
             projStart.sub(pivotPoint);
             projEnd.sub(pivotPoint);
-            
+
             const cross = new THREE.Vector3().crossVectors(projStart, projEnd);
             const direction = Math.sign(cross.dot(axisWorld));
             return direction * projStart.angleTo(projEnd);
@@ -517,41 +723,41 @@ export const RobotModel: React.FC<RobotModelProps> = memo(({
 
         const moveRay = (toRay: THREE.Ray) => {
             if (!isDraggingJoint.current || !dragJoint.current) return;
-            
+
             const prevHitPoint = new THREE.Vector3();
             const newHitPoint = new THREE.Vector3();
-            
+
             lastRayRef.current.at(dragHitDistance.current, prevHitPoint);
             toRay.at(dragHitDistance.current, newHitPoint);
-            
+
             let delta = 0;
             const jt = dragJoint.current.jointType;
-            
+
             if (jt === 'revolute' || jt === 'continuous') {
                 delta = getRevoluteDelta(dragJoint.current, prevHitPoint, newHitPoint);
             } else if (jt === 'prismatic') {
                 delta = getPrismaticDelta(dragJoint.current, prevHitPoint, newHitPoint);
             }
-            
+
             if (delta !== 0) {
                 const currentAngle = dragJoint.current.angle || 0;
                 let newAngle = currentAngle + delta;
-                
+
                 const limit = dragJoint.current.limit || { lower: -Math.PI, upper: Math.PI };
                 if (jt === 'revolute') {
                     newAngle = Math.max(limit.lower, Math.min(limit.upper, newAngle));
                 }
-                
+
                 if (dragJoint.current.setJointValue) {
                     dragJoint.current.setJointValue(newAngle);
                     invalidateRef.current();
                 }
-                
+
                 if (onJointChangeRef.current) {
                     onJointChangeRef.current(dragJoint.current.name, newAngle);
                 }
             }
-            
+
             lastRayRef.current.copy(toRay);
         };
 
@@ -561,24 +767,24 @@ export const RobotModel: React.FC<RobotModelProps> = memo(({
             const dx = e.clientX - lastMousePosRef.current.x;
             const dy = e.clientY - lastMousePosRef.current.y;
             const distSq = dx * dx + dy * dy;
-            
+
             if (distSq < MOUSE_MOVE_THRESHOLD * MOUSE_MOVE_THRESHOLD) {
                 return; // Skip - mouse hasn't moved enough
             }
-            
+
             // Update last position
             lastMousePosRef.current.x = e.clientX;
             lastMousePosRef.current.y = e.clientY;
-            
+
             const rect = gl.domElement.getBoundingClientRect();
             mouseRef.current.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
             mouseRef.current.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
-            
+
             // OPTIMIZATION: Signal that raycast is needed on next frame
             needsRaycastRef.current = true;
-            
+
             raycasterRef.current.setFromCamera(mouseRef.current, camera);
-            
+
             if (!isOrbitDragging?.current) {
                 invalidateRef.current();
             }
@@ -602,26 +808,26 @@ export const RobotModel: React.FC<RobotModelProps> = memo(({
                 throttledMouseMove(e);
             }
         };
-        
+
         const handleMouseDown = (e: MouseEvent) => {
             if (!robot) return;
-            
+
             const isStandardSelectionMode = ['select', 'translate', 'rotate', 'universal'].includes(toolMode || 'select');
-            
+
             if (!isStandardSelectionMode) return;
-            
+
             const rect = gl.domElement.getBoundingClientRect();
             const mouse = new THREE.Vector2(
                 ((e.clientX - rect.left) / rect.width) * 2 - 1,
                 -((e.clientY - rect.top) / rect.height) * 2 + 1
             );
-            
+
             raycasterRef.current.setFromCamera(mouse, camera);
 
             const isCollisionMode = highlightMode === 'collision';
 
             const intersections = raycasterRef.current.intersectObject(robot, true);
-            
+
             const validHits = intersections.filter(hit => {
                 if (hit.object.userData?.isGizmo) return false;
                 let p = hit.object.parent;
@@ -650,16 +856,16 @@ export const RobotModel: React.FC<RobotModelProps> = memo(({
                 }
                 return true;
             });
-            
+
             if (validHits.length > 0) {
                 const hit = validHits[0];
-                
+
                 if (justSelectedRef) {
                     justSelectedRef.current = true;
                 }
-                
+
                 const linkObj = findParentLink(hit.object);
-                
+
                 if (linkObj && onSelect) {
                     const subType = isCollisionMode ? 'collision' : 'visual';
 
@@ -673,17 +879,17 @@ export const RobotModel: React.FC<RobotModelProps> = memo(({
                             onSelect('link', linkObj.name, subType);
                         }
                     }
-                    
+
                     if (mode === 'detail' || !((linkObj.parent as any)?.isURDFJoint)) {
                         highlightGeometry(linkObj.name, false, subType);
                     }
-                    
+
                     hoveredLinkRef.current = null;
                     (hoveredLinkRef as any).currentMesh = null;
                 }
-                
+
                 const joint = isCollisionMode ? null : findNearestJoint(hit.object);
-                
+
                 if (joint) {
                     isDraggingJoint.current = true;
                     dragJoint.current = joint;
@@ -698,12 +904,12 @@ export const RobotModel: React.FC<RobotModelProps> = memo(({
                 }
             }
         };
-        
+
         const handleMouseUp = () => {
             if (isDraggingJoint.current) {
                 if (onJointChangeCommitRef.current && dragJoint.current) {
-                     const currentAngle = dragJoint.current.angle || 0;
-                     onJointChangeCommitRef.current(dragJoint.current.name, currentAngle);
+                    const currentAngle = dragJoint.current.angle || 0;
+                    onJointChangeCommitRef.current(dragJoint.current.name, currentAngle);
                 }
 
                 isDraggingJoint.current = false;
@@ -717,10 +923,10 @@ export const RobotModel: React.FC<RobotModelProps> = memo(({
                 }, 100);
             }
         };
-        
+
         const handleMouseLeave = () => {
             mouseRef.current.set(-1000, -1000);
-            
+
             if (hoveredLinkRef.current && hoveredLinkRef.current !== currentSelectionRef.current.id) {
                 const isCollisionMode = highlightMode === 'collision';
                 highlightGeometry(hoveredLinkRef.current, true, isCollisionMode ? 'collision' : 'visual', (hoveredLinkRef as any).currentMesh);
@@ -730,12 +936,12 @@ export const RobotModel: React.FC<RobotModelProps> = memo(({
 
             handleMouseUp();
         };
-        
+
         gl.domElement.addEventListener('mousemove', handleMouseMove);
         gl.domElement.addEventListener('mousedown', handleMouseDown);
         gl.domElement.addEventListener('mouseup', handleMouseUp);
         gl.domElement.addEventListener('mouseleave', handleMouseLeave);
-        
+
         return () => {
             // Cancel throttled handler to prevent pending callbacks
             throttledMouseMove.cancel();
@@ -745,7 +951,7 @@ export const RobotModel: React.FC<RobotModelProps> = memo(({
             gl.domElement.removeEventListener('mouseleave', handleMouseLeave);
         };
     }, [gl, camera, robot, onSelect, highlightGeometry, highlightMode, toolMode, mode, justSelectedRef, isOrbitDragging]);
-    
+
     // Continuous hover detection (OPTIMIZED: only run when needed)
     useFrame(() => {
         if (!robot) return;
@@ -754,11 +960,11 @@ export const RobotModel: React.FC<RobotModelProps> = memo(({
 
         // Skip hover detection in hardware mode to improve performance
         if (mode === 'hardware') return;
-        
+
         // OPTIMIZATION: Check if raycast is needed (mouse moved, camera changed, or toolMode changed)
         const cameraMoved = !camera.position.equals(lastCameraPosRef.current);
         const toolModeChanged = toolMode !== lastToolModeRef.current;
-        
+
         if (cameraMoved) {
             lastCameraPosRef.current.copy(camera.position);
             needsRaycastRef.current = true;
@@ -767,7 +973,7 @@ export const RobotModel: React.FC<RobotModelProps> = memo(({
             lastToolModeRef.current = toolMode;
             needsRaycastRef.current = true;
         }
-        
+
         // Skip raycast if no update needed
         if (!needsRaycastRef.current) return;
         needsRaycastRef.current = false;
@@ -777,44 +983,44 @@ export const RobotModel: React.FC<RobotModelProps> = memo(({
         // Handle Face Selection Mode
         if (toolMode === 'face') {
             raycasterRef.current.setFromCamera(mouseRef.current, camera);
-            
+
             // PERFORMANCE: Two-phase detection - check bounding box first
             if (!rayIntersectsBoundingBox(raycasterRef.current)) {
                 if (highlightedFace) setHighlightedFace(null);
                 return;
             }
-            
-            const intersects = raycasterRef.current.intersectObject(robot, true);
-            
-            if (intersects.length > 0) {
-                 const hit = intersects[0];
-                 let isGizmo = false;
-                 let obj: THREE.Object3D | null = hit.object;
-                 while(obj) {
-                     if (obj.userData?.isGizmo) { isGizmo = true; break; }
-                     obj = obj.parent;
-                 }
 
-                 if (!isGizmo && hit.faceIndex !== undefined && hit.faceIndex !== null && hit.object instanceof THREE.Mesh) {
-                     if (highlightedFace?.faceIndex !== hit.faceIndex || highlightedFace?.mesh !== hit.object) {
-                         setHighlightedFace({ mesh: hit.object, faceIndex: hit.faceIndex as number });
-                     }
-                     if (hoveredLinkRef.current) {
+            const intersects = raycasterRef.current.intersectObject(robot, true);
+
+            if (intersects.length > 0) {
+                const hit = intersects[0];
+                let isGizmo = false;
+                let obj: THREE.Object3D | null = hit.object;
+                while (obj) {
+                    if (obj.userData?.isGizmo) { isGizmo = true; break; }
+                    obj = obj.parent;
+                }
+
+                if (!isGizmo && hit.faceIndex !== undefined && hit.faceIndex !== null && hit.object instanceof THREE.Mesh) {
+                    if (highlightedFace?.faceIndex !== hit.faceIndex || highlightedFace?.mesh !== hit.object) {
+                        setHighlightedFace({ mesh: hit.object, faceIndex: hit.faceIndex as number });
+                    }
+                    if (hoveredLinkRef.current) {
                         highlightGeometry(hoveredLinkRef.current, true);
                         hoveredLinkRef.current = null;
-                     }
-                     return;
-                 }
+                    }
+                    return;
+                }
             }
             if (highlightedFace) setHighlightedFace(null);
             return;
         }
-        
+
         // Hide face highlight if not in face mode
         if ((toolMode as any) !== 'face' && highlightedFace) {
-             setHighlightedFace(null);
+            setHighlightedFace(null);
         }
-        
+
         if (justSelectedRef?.current) return;
 
         if (!isStandardMode) {
@@ -829,7 +1035,7 @@ export const RobotModel: React.FC<RobotModelProps> = memo(({
 
         raycasterRef.current.setFromCamera(mouseRef.current, camera);
         const isCollisionMode = highlightMode === 'collision';
-        
+
         // PERFORMANCE: Two-phase detection - check bounding box first
         if (!rayIntersectsBoundingBox(raycasterRef.current)) {
             // Ray misses robot entirely - clear hover state if needed
@@ -840,12 +1046,12 @@ export const RobotModel: React.FC<RobotModelProps> = memo(({
             }
             return;
         }
-        
+
         const intersections = raycasterRef.current.intersectObject(robot, true);
-        
+
         let newHoveredLink: string | null = null;
         let newHoveredMesh: THREE.Object3D | null = null;
-        
+
         if (intersections.length > 0) {
             const validHits = intersections.filter(hit => {
                 if (hit.object.userData?.isGizmo) return false;
@@ -880,7 +1086,7 @@ export const RobotModel: React.FC<RobotModelProps> = memo(({
                 const hit = validHits[0];
                 newHoveredMesh = hit.object;
                 let current = hit.object as THREE.Object3D | null;
-                
+
                 while (current) {
                     if ((robot as any).links && (robot as any).links[current.name]) {
                         newHoveredLink = current.name;
@@ -891,37 +1097,37 @@ export const RobotModel: React.FC<RobotModelProps> = memo(({
                 }
             }
         }
-        
+
         if (newHoveredLink !== hoveredLinkRef.current || newHoveredMesh !== (hoveredLinkRef as any).currentMesh) {
             if (hoveredLinkRef.current && hoveredLinkRef.current !== selection?.id) {
                 highlightGeometry(hoveredLinkRef.current, true, isCollisionMode ? 'collision' : 'visual', (hoveredLinkRef as any).currentMesh);
             }
-            
+
             if (newHoveredLink && newHoveredLink !== selection?.id) {
                 highlightGeometry(newHoveredLink, false, isCollisionMode ? 'collision' : 'visual', newHoveredMesh);
             }
-            
+
             hoveredLinkRef.current = newHoveredLink;
             (hoveredLinkRef as any).currentMesh = newHoveredMesh;
         }
     });
-    
+
     // Update collision visibility when showCollision changes
     useEffect(() => {
         if (!robot) return;
-        
+
         robot.traverse((child: any) => {
             if (child.isURDFCollider) {
                 child.visible = showCollision;
                 child.traverse((inner: any) => {
                     if (inner.isMesh) {
                         inner.userData.isCollisionMesh = true;
-                        inner.raycast = (highlightMode === 'collision' && showCollision) 
-                            ? THREE.Mesh.prototype.raycast 
+                        inner.raycast = (highlightMode === 'collision' && showCollision)
+                            ? THREE.Mesh.prototype.raycast
                             : emptyRaycast;
                     }
                 });
-                
+
                 if (showCollision) {
                     child.traverse((innerChild: any) => {
                         if (innerChild.isMesh) {
@@ -942,7 +1148,7 @@ export const RobotModel: React.FC<RobotModelProps> = memo(({
     // Update visual visibility when link visibility changes
     useEffect(() => {
         if (!robot) return;
-        
+
         robot.traverse((child: any) => {
             if (child.parent && child.parent.isURDFLink && !child.isURDFJoint && !child.isURDFCollider) {
                 const linkName = child.parent.name;
@@ -950,12 +1156,12 @@ export const RobotModel: React.FC<RobotModelProps> = memo(({
                 child.visible = isLinkVisible;
             }
             if (child.isMesh && !child.isURDFCollider && !child.userData.isCollisionMesh) {
-                 let linkName = '';
-                 if (child.parent && child.parent.isURDFLink) linkName = child.parent.name;
-                 else if (child.parent && child.parent.parent && child.parent.parent.isURDFLink) linkName = child.parent.parent.name;
-                 
-                 const isLinkVisible = linkName ? (robotLinks?.[linkName]?.visible !== false) : true;
-                 child.visible = isLinkVisible;
+                let linkName = '';
+                if (child.parent && child.parent.isURDFLink) linkName = child.parent.name;
+                else if (child.parent && child.parent.parent && child.parent.parent.isURDFLink) linkName = child.parent.parent.name;
+
+                const isLinkVisible = linkName ? (robotLinks?.[linkName]?.visible !== false) : true;
+                child.visible = isLinkVisible;
             }
         });
     }, [robot, robotVersion, robotLinks]);
@@ -969,10 +1175,10 @@ export const RobotModel: React.FC<RobotModelProps> = memo(({
                 const linkName = child.name || child.urdfName;
                 const linkData = robotLinks?.[linkName];
                 const inertialData = linkData?.inertial;
-                
+
                 if (inertialData && inertialData.mass > 0) {
                     let vizGroup = child.children.find((c: any) => c.name === '__inertia_visual__');
-                    
+
                     if (!vizGroup) {
                         vizGroup = new THREE.Group();
                         vizGroup.name = '__inertia_visual__';
@@ -986,54 +1192,54 @@ export const RobotModel: React.FC<RobotModelProps> = memo(({
                         comVisual = new THREE.Group();
                         comVisual.name = '__com_visual__';
                         comVisual.userData = { isGizmo: true };
-                        
+
                         const radius = 0.03;
                         const geometry = new THREE.SphereGeometry(radius, 16, 16, 0, Math.PI / 2, 0, Math.PI / 2);
                         const matBlack = new THREE.MeshBasicMaterial({ color: 0x000000, depthTest: false, transparent: true, opacity: 0.8 });
                         const matWhite = new THREE.MeshBasicMaterial({ color: 0xffffff, depthTest: false, transparent: true, opacity: 0.8 });
-                        
+
                         const positions = [
-                            [0, 0, 0], [0, Math.PI/2, 0], [0, Math.PI, 0], [0, -Math.PI/2, 0], 
-                            [Math.PI, 0, 0], [Math.PI, Math.PI/2, 0], [Math.PI, Math.PI, 0], [Math.PI, -Math.PI/2, 0]
+                            [0, 0, 0], [0, Math.PI / 2, 0], [0, Math.PI, 0], [0, -Math.PI / 2, 0],
+                            [Math.PI, 0, 0], [Math.PI, Math.PI / 2, 0], [Math.PI, Math.PI, 0], [Math.PI, -Math.PI / 2, 0]
                         ];
-                        
+
                         positions.forEach((rot, i) => {
                             const mesh = new THREE.Mesh(geometry, (i % 2 === 0) ? matBlack : matWhite);
                             mesh.rotation.set(rot[0], rot[1], rot[2]);
                             mesh.renderOrder = 999;
                             mesh.userData = { isGizmo: true };
-                            mesh.raycast = () => {};
+                            mesh.raycast = () => { };
                             comVisual.add(mesh);
                         });
-                        
+
                         const axes = new THREE.AxesHelper(0.1);
                         (axes.material as THREE.Material).depthTest = false;
                         (axes.material as THREE.Material).transparent = true;
                         axes.renderOrder = 999;
                         axes.userData = { isGizmo: true };
-                        axes.raycast = () => {};
+                        axes.raycast = () => { };
                         comVisual.add(axes);
 
                         vizGroup.add(comVisual);
                     }
                     comVisual.visible = showCenterOfMass;
-                    
+
                     // Inertia Box
                     let inertiaBox = vizGroup.children.find((c: any) => c.name === '__inertia_box__');
-                    
+
                     if (!inertiaBox) {
                         const boxData = MathUtils.computeInertiaBox(inertialData);
-                        
+
                         if (boxData) {
                             const { width, height, depth, rotation } = boxData;
                             const geom = new THREE.BoxGeometry(width, height, depth);
-                            
+
                             inertiaBox = new THREE.Group();
                             inertiaBox.name = '__inertia_box__';
                             inertiaBox.userData = { isGizmo: true };
 
-                            const mat = new THREE.MeshBasicMaterial({ 
-                                color: 0x4a9eff, 
+                            const mat = new THREE.MeshBasicMaterial({
+                                color: 0x4a9eff,
                                 transparent: true,
                                 opacity: 0.2,
                                 depthWrite: false,
@@ -1042,28 +1248,28 @@ export const RobotModel: React.FC<RobotModelProps> = memo(({
                             const mesh = new THREE.Mesh(geom, mat);
                             mesh.quaternion.copy(rotation);
                             mesh.userData = { isGizmo: true };
-                            mesh.raycast = () => {};
+                            mesh.raycast = () => { };
                             mesh.renderOrder = 999;
                             inertiaBox.add(mesh);
 
                             const edges = new THREE.EdgesGeometry(geom);
-                            const line = new THREE.LineSegments(edges, new THREE.LineBasicMaterial({ 
-                                color: 0x4a9eff, 
-                                transparent: true, 
+                            const line = new THREE.LineSegments(edges, new THREE.LineBasicMaterial({
+                                color: 0x4a9eff,
+                                transparent: true,
                                 opacity: 0.6,
                                 depthWrite: false,
                                 depthTest: false
                             }));
                             line.quaternion.copy(rotation);
                             line.userData = { isGizmo: true };
-                            line.raycast = () => {};
+                            line.raycast = () => { };
                             line.renderOrder = 1000;
                             inertiaBox.add(line);
 
                             vizGroup.add(inertiaBox);
                         }
                     }
-                    
+
                     if (inertiaBox) {
                         inertiaBox.visible = showInertia;
                     }
@@ -1075,12 +1281,12 @@ export const RobotModel: React.FC<RobotModelProps> = memo(({
                         vizGroup.position.set(xyz.x, xyz.y, xyz.z);
                         vizGroup.rotation.set(rpy.r, rpy.p, rpy.y);
                     }
-                    
+
                     vizGroup.visible = showInertia || showCenterOfMass;
                 }
             }
         });
-        
+
         invalidate();
 
     }, [robot, showInertia, showCenterOfMass, robotVersion, invalidate, robotLinks]);
@@ -1096,11 +1302,11 @@ export const RobotModel: React.FC<RobotModelProps> = memo(({
             currentSelectionRef.current = { id: null, subType: null };
             return;
         }
-        
+
         if (currentSelectionRef.current.id) {
             highlightGeometry(currentSelectionRef.current.id, true, currentSelectionRef.current.subType as any);
         }
-        
+
         let targetId: string | null = null;
         let targetSubType = selection?.subType;
 
@@ -1115,7 +1321,7 @@ export const RobotModel: React.FC<RobotModelProps> = memo(({
                 }
             }
         }
-        
+
         if (targetId) {
             highlightGeometry(targetId, false, targetSubType);
             currentSelectionRef.current = { id: targetId, subType: targetSubType || null };
@@ -1135,13 +1341,13 @@ export const RobotModel: React.FC<RobotModelProps> = memo(({
             currentHoverRef.current = { id: null, subType: null };
             return;
         }
-        
+
         if (currentHoverRef.current.id) {
             if (currentHoverRef.current.id !== selection?.id || currentHoverRef.current.subType !== selection?.subType) {
                 highlightGeometry(currentHoverRef.current.id, true, currentHoverRef.current.subType as any);
             }
         }
-        
+
         if (hoveredSelection?.type === 'link' && hoveredSelection.id) {
             highlightGeometry(hoveredSelection.id, false, hoveredSelection.subType);
             currentHoverRef.current = { id: hoveredSelection.id, subType: hoveredSelection.subType || null };
@@ -1153,11 +1359,11 @@ export const RobotModel: React.FC<RobotModelProps> = memo(({
     // Load robot with proper cleanup and abort handling
     useEffect(() => {
         if (!urdfContent) return;
-        
+
         // Create abort controller for this load
         const abortController = { aborted: false };
         loadAbortRef.current = abortController;
-        
+
         // Cleanup previous robot before loading new one
         const cleanupPreviousRobot = () => {
             if (robotRef.current) {
@@ -1170,44 +1376,103 @@ export const RobotModel: React.FC<RobotModelProps> = memo(({
                 robotRef.current = null;
             }
         };
-        
+
         const loadRobot = async () => {
             try {
                 // Cleanup any existing robot before loading new one
                 cleanupPreviousRobot();
-                
-                const urdfDir = '';
-                const manager = createLoadingManager(assets, urdfDir);
-                manager.onLoad = () => {
-                    if (!abortController.aborted && isMountedRef.current) {
-                        setRobotVersion(v => v + 1);
-                        invalidate();
-                    }
-                };
 
-                const loader = new URDFLoader(manager);
-                loader.parseCollision = true;
-                loader.loadMeshCb = createMeshLoader(assets, manager, urdfDir);
-                loader.packages = (pkg: string) => '';
-                
-                const robotModel = loader.parse(urdfContent);
-                
-                // Check if load was aborted (e.g., by StrictMode remount or urdfContent change)
-                if (abortController.aborted) {
-                    // Dispose the loaded model since we don't need it
-                    if (robotModel) {
-                        disposeObject3D(robotModel, true, SHARED_MATERIALS);
+                let robotModel: THREE.Object3D | null = null;
+
+                // Check if content is MJCF (MuJoCo XML)
+                if (isMJCFContent(urdfContent)) {
+                    console.log('[RobotModel] Detected MJCF content, using MJCF loader');
+                    console.log('[RobotModel] Content snippet:', urdfContent.substring(0, 200));
+                    robotModel = await loadMJCFToThreeJS(urdfContent, assets);
+
+                    if (abortController.aborted) {
+                        if (robotModel) {
+                            disposeObject3D(robotModel, true, SHARED_MATERIALS);
+                        }
+                        return;
                     }
-                    return;
+                } else {
+                    console.log('[RobotModel] Detected Standard URDF content');
+                    console.log('[RobotModel] Content snippet:', urdfContent.substring(0, 200));
+                    // Standard URDF loading
+                    const urdfDir = '';
+                    const manager = createLoadingManager(assets, urdfDir);
+                    manager.onLoad = () => {
+                        if (!abortController.aborted && isMountedRef.current) {
+                            console.log('[RobotModel] All assets loaded. Applying materials and updating view.');
+
+                            // Apply URDF materials AFTER meshes are fully loaded
+                            // This is critical because meshes load asynchronously
+                            const materials = parseURDFMaterials(urdfContent);
+                            applyURDFMaterials(robotModel!, materials);
+                            
+                            // Re-run enhanceMaterials to ensure proper lighting on loaded meshes
+                            enhanceMaterials(robotModel!);
+                            
+                            // Re-offset to ground after meshes are loaded (bounds may have changed)
+                            offsetRobotToGround(robotModel!);
+
+                            // Log final stats
+                            const box = new THREE.Box3().setFromObject(robotModel!);
+                            const size = box.getSize(new THREE.Vector3());
+                            let meshCount = 0;
+                            let visibleMeshCount = 0;
+                            robotModel!.traverse((c: any) => {
+                                if (c.isMesh) {
+                                    meshCount++;
+                                    if (c.visible) visibleMeshCount++;
+                                }
+                            });
+                            console.log(`[RobotModel] Final robot stats (at onLoad):`, {
+                                bounds: JSON.stringify({ size: size, min: box.min, max: box.max }),
+                                meshCount,
+                                visibleMeshCount,
+                                scale: robotModel!.scale
+                            });
+
+                            setRobotVersion(v => v + 1);
+                            invalidate();
+                        }
+                    };
+
+                    const loader = new URDFLoader(manager);
+                    loader.parseCollision = true;
+                    loader.loadMeshCb = createMeshLoader(assets, manager, urdfDir);
+                    loader.packages = (pkg: string) => '';
+
+                    robotModel = loader.parse(urdfContent);
+
+                    // Check if load was aborted (e.g., by StrictMode remount or urdfContent change)
+                    if (abortController.aborted) {
+                        // Dispose the loaded model since we don't need it
+                        if (robotModel) {
+                            disposeObject3D(robotModel, true, SHARED_MATERIALS);
+                        }
+                        return;
+                    }
                 }
-                
+
                 if (robotModel && isMountedRef.current) {
+                    // Apply URDF materials from XML (urdf-loader doesn't handle inline rgba)
+                    if (!isMJCFContent(urdfContent)) {
+                        const materials = parseURDFMaterials(urdfContent);
+                        applyURDFMaterials(robotModel, materials);
+                    }
+
+                    // Offset robot so bottom is at ground level (Y=0)
+                    offsetRobotToGround(robotModel);
+
                     enhanceMaterials(robotModel);
-                    
+
                     // PERFORMANCE: Build linkName -> meshes map and inject userData in single traverse
                     // This eliminates the need for traverse in highlightGeometry
                     const newLinkMeshMap = new Map<string, THREE.Mesh[]>();
-                    
+
                     robotModel.traverse((child: any) => {
                         // Find parent link for this object
                         let parentLink: any = null;
@@ -1219,7 +1484,7 @@ export const RobotModel: React.FC<RobotModelProps> = memo(({
                             }
                             current = current.parent;
                         }
-                        
+
                         // Handle collision meshes
                         if (child.isURDFCollider) {
                             child.visible = showCollisionRef.current;
@@ -1256,7 +1521,7 @@ export const RobotModel: React.FC<RobotModelProps> = memo(({
                                 }
                                 checkParent = checkParent.parent;
                             }
-                            
+
                             if (isVisual && parentLink) {
                                 child.userData.parentLinkName = parentLink.name;
                                 child.userData.isVisualMesh = true;
@@ -1266,21 +1531,44 @@ export const RobotModel: React.FC<RobotModelProps> = memo(({
                                 }
                                 newLinkMeshMap.get(key)!.push(child);
                             }
-                            
+
                             child.visible = showVisualRef.current;
                         }
                     });
-                    
+
                     // Store the pre-built map
                     linkMeshMapRef.current = newLinkMeshMap;
-                    
+
                     // Store in ref for cleanup
                     robotRef.current = robotModel;
                     setRobot(robotModel);
                     setError(null);
-                    
+
                     if (onRobotLoaded) {
                         onRobotLoaded(robotModel);
+                    }
+
+                    // Diagnostic: Check robot bounds and mesh count
+                    const box = new THREE.Box3().setFromObject(robotModel);
+                    const size = box.getSize(new THREE.Vector3());
+                    let meshCount = 0;
+                    let visibleMeshCount = 0;
+                    robotModel.traverse((c: any) => {
+                        if (c.isMesh) {
+                            meshCount++;
+                            if (c.visible) visibleMeshCount++;
+                        }
+                    });
+                    console.log(`[RobotModel] Loaded robot stats:`, {
+                        bounds: { size: size, min: box.min, max: box.max },
+                        meshCount,
+                        visibleMeshCount,
+                        position: robotModel.position
+                    });
+                    if (meshCount === 0) {
+                        console.warn('[RobotModel] No meshes found in loaded robot!');
+                    } else if (size.lengthSq() < 0.000001) {
+                        console.warn('[RobotModel] Robot bounds are effectively zero!');
                     }
                 }
             } catch (err) {
@@ -1290,14 +1578,14 @@ export const RobotModel: React.FC<RobotModelProps> = memo(({
                 }
             }
         };
-        
+
         loadRobot();
-        
+
         // Cleanup function - runs on unmount or when dependencies change
         return () => {
             // Mark this load as aborted to prevent state updates
             abortController.aborted = true;
-            
+
             // Deep cleanup of robot resources
             if (robotRef.current) {
                 // Remove from scene
@@ -1310,7 +1598,7 @@ export const RobotModel: React.FC<RobotModelProps> = memo(({
             }
         };
     }, [urdfContent, assets]);
-    
+
     // Track component mount state for preventing state updates after unmount
     useEffect(() => {
         isMountedRef.current = true;
@@ -1318,7 +1606,7 @@ export const RobotModel: React.FC<RobotModelProps> = memo(({
             isMountedRef.current = false;
         };
     }, []);
-    
+
     if (error) {
         return (
             <Html center>
@@ -1328,7 +1616,7 @@ export const RobotModel: React.FC<RobotModelProps> = memo(({
             </Html>
         );
     }
-    
+
     if (!robot) {
         return (
             <Html center>
@@ -1336,7 +1624,7 @@ export const RobotModel: React.FC<RobotModelProps> = memo(({
             </Html>
         );
     }
-    
+
     return (
         <>
             <primitive object={robot} />

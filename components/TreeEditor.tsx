@@ -188,6 +188,7 @@ interface TreeEditorProps {
   theme: Theme;
   availableFiles?: RobotFile[];
   onLoadRobot?: (file: RobotFile) => void;
+  currentFileName?: string;  // Currently loaded file name
 }
 
 // --- Structure View Components ---
@@ -428,7 +429,7 @@ const TreeNode = memo(({
 
 export const TreeEditor: React.FC<TreeEditorProps> = ({ 
     robot, onSelect, onFocus, onAddChild, onDelete, onNameChange, onUpdate, showVisual, setShowVisual, mode, lang, collapsed, onToggle, theme,
-    availableFiles = [], onLoadRobot
+    availableFiles = [], onLoadRobot, currentFileName
 }) => {
   const t = translations[lang];
   const [width, setWidth] = useState(288);
@@ -570,6 +571,15 @@ export const TreeEditor: React.FC<TreeEditorProps> = ({
                     className="w-full bg-slate-50 dark:bg-google-dark-surface focus:bg-white dark:focus:bg-google-dark-surface text-sm text-slate-900 dark:text-white px-3 py-2 rounded-lg border border-slate-300 dark:border-google-dark-border focus:border-google-blue outline-none transition-colors"
                     placeholder={t.enterRobotName}
                 />
+                {/* Current Loaded File Display */}
+                {currentFileName && (
+                    <div className="mt-2 flex items-center gap-1.5">
+                        <FileCode className="w-3.5 h-3.5 text-blue-500 shrink-0" />
+                        <span className="text-[11px] text-slate-600 dark:text-slate-400 truncate" title={currentFileName}>
+                            {currentFileName}
+                        </span>
+                    </div>
+                )}
             </div>
 
             {/* Top: File Browser */}

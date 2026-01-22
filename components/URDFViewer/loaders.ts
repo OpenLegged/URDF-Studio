@@ -4,10 +4,10 @@ import * as THREE from 'three';
 // SHARED MATERIALS - Avoid shader recompilation for each mesh
 // ============================================================
 const DEFAULT_MESH_MATERIAL = new THREE.MeshPhongMaterial({ color: 0xaaaaaa });
-const PLACEHOLDER_MATERIAL = new THREE.MeshPhongMaterial({ 
-    color: 0xff6b6b, 
-    transparent: true, 
-    opacity: 0.7 
+const PLACEHOLDER_MATERIAL = new THREE.MeshPhongMaterial({
+    color: 0xff6b6b,
+    transparent: true,
+    opacity: 0.7
 });
 
 // Reusable Vector3 for size calculations (object pooling)
@@ -23,13 +23,13 @@ export const cleanFilePath = (path: string): string => {
     if (!path.includes('..') && !path.includes('./') && !path.includes('\\')) {
         return path.replace(/\/+/g, '/'); // Just normalize multiple slashes
     }
-    
+
     // Normalize backslashes first
     let result = path.replace(/\\/g, '/');
-    
+
     // Remove ./ references
     result = result.replace(/\/\.\//g, '/').replace(/^\.\//g, '');
-    
+
     // Handle .. by iterative replacement (avoids array allocation)
     let prev = '';
     while (prev !== result) {
@@ -39,13 +39,13 @@ export const cleanFilePath = (path: string): string => {
         // Handle trailing /segment/..
         result = result.replace(/\/[^\/]+\/\.\.$/g, '');
     }
-    
+
     // Clean up any leading ../
     result = result.replace(/^\.\.\/+/g, '');
-    
+
     // Normalize multiple slashes
     result = result.replace(/\/+/g, '/');
-    
+
     return result;
 };
 
@@ -75,30 +75,30 @@ export const buildAssetIndex = (assets: Record<string, string>, urdfDir: string 
         filenameLower: new Map(),
         suffixes: new Map(),
     };
-    
+
     for (const [key, value] of Object.entries(assets)) {
         // Direct mapping
         index.direct.set(key, value);
-        
+
         // Cleaned path
         const cleaned = cleanFilePath(key);
         index.direct.set(cleaned, value);
-        
+
         // With urdfDir prefix
         if (urdfDir) {
             index.direct.set(urdfDir + cleaned, value);
             index.direct.set(urdfDir + key, value);
         }
-        
+
         // Lowercase variants
         index.lowercase.set(key.toLowerCase(), value);
         index.lowercase.set(cleaned.toLowerCase(), value);
-        
+
         // Filename only
         const filename = key.split('/').pop() || key;
         index.filename.set(filename, value);
         index.filenameLower.set(filename.toLowerCase(), value);
-        
+
         // Suffix matching: store the shortest unique suffix
         const cleanedLower = cleaned.toLowerCase();
         for (let i = cleanedLower.length - 1; i >= 0; i--) {
@@ -111,7 +111,7 @@ export const buildAssetIndex = (assets: Record<string, string>, urdfDir: string 
             }
         }
     }
-    
+
     return index;
 };
 
@@ -120,10 +120,10 @@ export const findAssetByIndex = (path: string, index: AssetIndex, urdfDir: strin
     // Strategy 0: Direct match (most common case)
     let result = index.direct.get(path);
     if (result) return result;
-    
+
     // Clean the path (optimized version)
     let cleanPath = path.replace(/\\/g, '/');
-    
+
     // Remove blob: prefix if present
     if (cleanPath.startsWith('blob:')) {
         const slashIdx = cleanPath.indexOf('/', 5);
@@ -131,7 +131,7 @@ export const findAssetByIndex = (path: string, index: AssetIndex, urdfDir: strin
             cleanPath = cleanPath.substring(slashIdx + 1);
         }
     }
-    
+
     // Remove package:// prefix
     if (cleanPath.startsWith('package://')) {
         cleanPath = cleanPath.substring(10);
@@ -140,48 +140,48 @@ export const findAssetByIndex = (path: string, index: AssetIndex, urdfDir: strin
             cleanPath = cleanPath.substring(slashIdx + 1);
         }
     }
-    
+
     // Remove leading ./
     if (cleanPath.startsWith('./')) {
         cleanPath = cleanPath.substring(2);
     }
-    
+
     // Normalize path
     const normalizedPath = cleanFilePath(cleanPath);
-    
+
     // Strategy 1: Direct lookup with normalized path
     result = index.direct.get(normalizedPath);
     if (result) return result;
-    
+
     // Strategy 2: With urdfDir
     if (urdfDir) {
         result = index.direct.get(urdfDir + normalizedPath);
         if (result) return result;
     }
-    
+
     // Strategy 3: Clean path
     result = index.direct.get(cleanPath);
     if (result) return result;
-    
+
     // Strategy 4: Lowercase lookup
     const lowerPath = normalizedPath.toLowerCase();
     result = index.lowercase.get(lowerPath);
     if (result) return result;
-    
+
     // Strategy 5: Filename only
     const lastSlash = normalizedPath.lastIndexOf('/');
     const filename = lastSlash === -1 ? normalizedPath : normalizedPath.substring(lastSlash + 1);
     result = index.filename.get(filename);
     if (result) return result;
-    
+
     // Strategy 6: Lowercase filename
     result = index.filenameLower.get(filename.toLowerCase());
     if (result) return result;
-    
+
     // Strategy 7: Suffix match
     result = index.suffixes.get(lowerPath);
     if (result) return result;
-    
+
     return null;
 };
 
@@ -189,7 +189,7 @@ export const findAssetByIndex = (path: string, index: AssetIndex, urdfDir: strin
 export const findAssetByPath = (path: string, assets: Record<string, string>, urdfDir: string = ''): string | null => {
     // Strategy 0: Direct match
     if (assets[path]) return assets[path];
-    
+
     // Clean the path
     let cleanPath = path.replace(/\\/g, '/');
     if (cleanPath.startsWith('blob:')) {
@@ -202,23 +202,23 @@ export const findAssetByPath = (path: string, assets: Record<string, string>, ur
         if (slashIdx !== -1) cleanPath = cleanPath.substring(slashIdx + 1);
     }
     if (cleanPath.startsWith('./')) cleanPath = cleanPath.substring(2);
-    
+
     const normalizedPath = cleanFilePath(cleanPath);
     const fullPath = urdfDir + normalizedPath;
-    
+
     if (assets[fullPath]) return assets[fullPath];
     if (assets[normalizedPath]) return assets[normalizedPath];
     if (assets[cleanPath]) return assets[cleanPath];
-    
+
     const lastSlash = normalizedPath.lastIndexOf('/');
     const filename = lastSlash === -1 ? normalizedPath : normalizedPath.substring(lastSlash + 1);
     if (assets[filename]) return assets[filename];
-    
+
     const lowerFilename = filename.toLowerCase();
     for (const key of Object.keys(assets)) {
         if (key.toLowerCase() === lowerFilename) return assets[key];
     }
-    
+
     const searchLower = normalizedPath.toLowerCase();
     for (const key of Object.keys(assets)) {
         const keyLower = key.toLowerCase();
@@ -226,14 +226,28 @@ export const findAssetByPath = (path: string, assets: Record<string, string>, ur
         const keyFilename = keyLower.split('/').pop() || '';
         if (searchLower.endsWith(keyFilename)) return assets[key];
     }
-    
+
+    // Diagnostic logging for failure
+    if (Object.keys(assets).length > 0) {
+        console.warn(`[URDFViewer] Asset lookup failed for: "${path}"`);
+        console.warn(`[URDFViewer] Search path was: "${searchLower}"`);
+        const keys = Object.keys(assets);
+        console.warn(`[URDFViewer] Available assets (first 10):`, keys.slice(0, 10));
+        // Check if any key contains the filename
+        const filename = path.split('/').pop() || '';
+        const partialMatches = keys.filter(k => k.toLowerCase().includes(filename.toLowerCase()));
+        if (partialMatches.length > 0) {
+            console.warn(`[URDFViewer] Potential partial matches found:`, partialMatches);
+        }
+    }
+
     return null;
 };
 
 // Loading manager that resolves asset URLs from our blob storage
 export const createLoadingManager = (assets: Record<string, string>, urdfDir: string = '') => {
     const manager = new THREE.LoadingManager();
-    
+
     manager.setURLModifier((url: string) => {
         // If already a blob/data URL, return as-is
         if (url.startsWith('blob:') || url.startsWith('data:')) {
@@ -249,10 +263,10 @@ export const createLoadingManager = (assets: Record<string, string>, urdfDir: st
             }
             return url;
         }
-        
+
         const found = findAssetByPath(url, assets, urdfDir);
         if (found) return found;
-        
+
         console.warn('[URDFViewer] Asset not found:', url);
         // Return a transparent 1x1 pixel for missing textures instead of invalid URL
         // This prevents the browser from trying to load package:// URLs
@@ -262,7 +276,7 @@ export const createLoadingManager = (assets: Record<string, string>, urdfDir: st
         // For mesh files, return empty string to let mesh loader handle it with placeholder
         return '';
     });
-    
+
     return manager;
 };
 
@@ -301,32 +315,38 @@ export const createMeshLoader = (assets: Record<string, string>, manager: THREE.
     ) => {
         try {
             // PERFORMANCE: Use pre-indexed lookup if available, fallback to legacy
-            const assetUrl = assetIndex 
+            const assetUrl = assetIndex
                 ? findAssetByIndex(path, assetIndex, urdfDir)
                 : findAssetByPath(path, assets, urdfDir);
-            
+
+            if (assetUrl) {
+                console.log(`[URDFViewer] Found asset for "${path}" -> "${assetUrl}"`);
+            }
+
             if (!assetUrl) {
                 console.warn('[URDFViewer] Mesh not found, using placeholder:', path);
                 done(createPlaceholderMesh(path));
                 return;
             }
-            
+
             // PERFORMANCE: Avoid split, use lastIndexOf
             const lastSlash = path.lastIndexOf('/');
             const filename = lastSlash === -1 ? path : path.substring(lastSlash + 1);
             const lastDot = filename.lastIndexOf('.');
             const ext = lastDot === -1 ? '' : filename.substring(lastDot + 1).toLowerCase();
-            
+
             let meshObject: THREE.Object3D | null = null;
-            
+
             if (ext === 'stl') {
                 const { STLLoader } = await import('three/examples/jsm/loaders/STLLoader.js');
                 const loader = new STLLoader(manager);
                 const geometry = await new Promise<THREE.BufferGeometry>((resolve, reject) => {
                     loader.load(assetUrl, resolve, undefined, reject);
                 });
+
+                // Use default material - urdf-loader will override with URDF-defined materials if present
                 meshObject = new THREE.Mesh(geometry, DEFAULT_MESH_MATERIAL.clone());
-                
+
                 // PERFORMANCE: First-detection mode for unit scaling
                 if (_detectedUnitScale !== null) {
                     // Use cached scale factor
@@ -350,7 +370,7 @@ export const createMeshLoader = (assets: Record<string, string>, manager: THREE.
                         _detectedUnitScale = 1; // Units are correct, no scaling needed
                     }
                 }
-                
+
             } else if (ext === 'dae') {
                 const { ColladaLoader } = await import('three/examples/jsm/loaders/ColladaLoader.js');
                 const loader = new ColladaLoader(manager);
@@ -358,10 +378,10 @@ export const createMeshLoader = (assets: Record<string, string>, manager: THREE.
                     loader.load(assetUrl, resolve, undefined, reject);
                 });
                 meshObject = result.scene;
-                
+
                 if (meshObject) {
                     meshObject.rotation.set(0, 0, 0);
-                    
+
                     // PERFORMANCE: First-detection mode for unit scaling
                     if (_detectedUnitScale !== null) {
                         if (_detectedUnitScale !== 1) {
@@ -372,7 +392,7 @@ export const createMeshLoader = (assets: Record<string, string>, manager: THREE.
                         _tempBox.setFromObject(meshObject);
                         _tempBox.getSize(_tempSize);
                         const maxDim = Math.max(_tempSize.x, _tempSize.y, _tempSize.z);
-                        
+
                         if (maxDim > 10) {
                             _detectedUnitScale = 0.001;
                             console.warn('[URDFViewer] Detected mm units in DAE, caching scale factor 0.001');
@@ -383,9 +403,9 @@ export const createMeshLoader = (assets: Record<string, string>, manager: THREE.
                             _detectedUnitScale = 1;
                         }
                     }
-                    
+
                     meshObject.updateMatrix();
-                    
+
                     // Remove lights from Collada (optimized: collect first, then remove)
                     const lightsToRemove: THREE.Object3D[] = [];
                     meshObject.traverse((child: THREE.Object3D) => {
@@ -397,14 +417,14 @@ export const createMeshLoader = (assets: Record<string, string>, manager: THREE.
                         lightsToRemove[i].parent?.remove(lightsToRemove[i]);
                     }
                 }
-                
+
             } else if (ext === 'obj') {
                 const { OBJLoader } = await import('three/examples/jsm/loaders/OBJLoader.js');
                 const loader = new OBJLoader(manager);
                 meshObject = await new Promise<THREE.Group>((resolve, reject) => {
                     loader.load(assetUrl, resolve, undefined, reject);
                 });
-                
+
             } else if (ext === 'gltf' || ext === 'glb') {
                 const { GLTFLoader } = await import('three/examples/jsm/loaders/GLTFLoader.js');
                 const loader = new GLTFLoader(manager);
@@ -413,14 +433,14 @@ export const createMeshLoader = (assets: Record<string, string>, manager: THREE.
                 });
                 meshObject = gltfModel.scene;
             }
-            
+
             if (meshObject) {
                 done(meshObject);
             } else {
                 console.warn('[URDFViewer] Unsupported mesh format, using placeholder:', ext, path);
                 done(createPlaceholderMesh(path));
             }
-            
+
         } catch (error) {
             console.error('[URDFViewer] Mesh loading error, using placeholder:', path, error);
             // Return placeholder instead of failing completely
