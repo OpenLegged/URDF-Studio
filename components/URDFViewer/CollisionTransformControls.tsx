@@ -18,7 +18,7 @@ export const CollisionTransformControls: React.FC<CollisionTransformControlsProp
     const transformRef = useRef<any>(null);
     const { invalidate } = useThree();
     const [targetObject, setTargetObject] = useState<THREE.Object3D | null>(null);
-    
+
     // Pending edit state - shown after drag ends, waiting for confirm/cancel
     const [pendingEdit, setPendingEdit] = useState<{
         axis: string;
@@ -26,14 +26,14 @@ export const CollisionTransformControls: React.FC<CollisionTransformControlsProp
         startValue: number;
         isRotate: boolean;
     } | null>(null);
-    
+
     // Force re-render when pendingEdit changes
     const [, forceUpdate] = useState(0);
-    
+
     // Store original transform for cancel
     const originalPositionRef = useRef<THREE.Vector3>(new THREE.Vector3());
     const originalRotationRef = useRef<THREE.Euler>(new THREE.Euler());
-    
+
     // Track if currently dragging
     const isDraggingRef = useRef(false);
     const currentAxisRef = useRef<string | null>(null);
@@ -100,13 +100,13 @@ export const CollisionTransformControls: React.FC<CollisionTransformControlsProp
                 const isRotate = transformMode === 'rotate';
                 if (isRotate) {
                     const val = axis === 'X' ? targetObject.rotation.x :
-                               axis === 'Y' ? targetObject.rotation.y :
-                               axis === 'Z' ? targetObject.rotation.z : 0;
+                        axis === 'Y' ? targetObject.rotation.y :
+                            axis === 'Z' ? targetObject.rotation.z : 0;
                     startValueRef.current = val;
                 } else {
                     const val = axis === 'X' ? targetObject.position.x :
-                               axis === 'Y' ? targetObject.position.y :
-                               axis === 'Z' ? targetObject.position.z : 0;
+                        axis === 'Y' ? targetObject.position.y :
+                            axis === 'Z' ? targetObject.position.z : 0;
                     startValueRef.current = val;
                 }
             } else if (isDraggingRef.current) {
@@ -128,12 +128,12 @@ export const CollisionTransformControls: React.FC<CollisionTransformControlsProp
                 let currentVal = 0;
                 if (isRotate) {
                     currentVal = axis === 'X' ? targetObject.rotation.x :
-                                axis === 'Y' ? targetObject.rotation.y :
-                                axis === 'Z' ? targetObject.rotation.z : 0;
+                        axis === 'Y' ? targetObject.rotation.y :
+                            axis === 'Z' ? targetObject.rotation.z : 0;
                 } else {
                     currentVal = axis === 'X' ? targetObject.position.x :
-                                axis === 'Y' ? targetObject.position.y :
-                                axis === 'Z' ? targetObject.position.z : 0;
+                        axis === 'Y' ? targetObject.position.y :
+                            axis === 'Z' ? targetObject.position.z : 0;
                 }
 
                 const delta = currentVal - startValueRef.current;
@@ -158,7 +158,7 @@ export const CollisionTransformControls: React.FC<CollisionTransformControlsProp
             controls.removeEventListener('dragging-changed', handleDraggingChange);
         };
     }, [targetObject, transformMode, setIsDragging, invalidate, pendingEdit, updateAxisOpacity]);
-    
+
     // Find the selected collision mesh
     useEffect(() => {
         if (!robot || !selection?.id || selection.subType !== 'collision' || transformMode === 'select') {
@@ -166,22 +166,22 @@ export const CollisionTransformControls: React.FC<CollisionTransformControlsProp
             setPendingEdit(null);
             return;
         }
-        
+
         const linkName = selection.id;
         const linkObj = (robot as any).links?.[linkName];
-        
+
         if (!linkObj) {
             setTargetObject(null);
             return;
         }
-        
+
         let collisionGroup: THREE.Object3D | null = null;
         linkObj.traverse((child: any) => {
             if (!collisionGroup && child.isURDFCollider) {
                 collisionGroup = child;
             }
         });
-        
+
         if (collisionGroup) {
             const cg = collisionGroup as THREE.Object3D;
             setTargetObject(cg);
@@ -192,7 +192,7 @@ export const CollisionTransformControls: React.FC<CollisionTransformControlsProp
             setTargetObject(null);
         }
     }, [robot, selection, transformMode]);
-    
+
     // Clear pending edit when selection changes or transformMode changes
     useEffect(() => {
         // When selection changes, cancel any pending edit by restoring original transform
@@ -214,7 +214,7 @@ export const CollisionTransformControls: React.FC<CollisionTransformControlsProp
             }
         };
     }, [pendingEdit, targetObject]);
-    
+
     // Track hovered/dragged axis for single-axis highlight effect
     const [currentAxis, setCurrentAxis] = useState<string | null>(null);
     const [isDraggingAxis, setIsDraggingAxis] = useState(false);
@@ -275,11 +275,11 @@ export const CollisionTransformControls: React.FC<CollisionTransformControlsProp
     const handleObjectChange = useCallback(() => {
         invalidate();
     }, [invalidate]);
-    
+
     // Handle confirm - save to history
     const handleConfirm = useCallback(() => {
         if (!targetObject || !selection?.id || !onTransformEnd || !pendingEdit) return;
-        
+
         // Apply the edited value (in case user modified in text field)
         const axis = pendingEdit.axis;
         if (pendingEdit.isRotate) {
@@ -291,25 +291,25 @@ export const CollisionTransformControls: React.FC<CollisionTransformControlsProp
             else if (axis === 'Y') targetObject.position.y = pendingEdit.value;
             else if (axis === 'Z') targetObject.position.z = pendingEdit.value;
         }
-        
+
         // Call onTransformEnd to save to history
         const pos = targetObject.position;
         const euler = new THREE.Euler().setFromQuaternion(targetObject.quaternion, 'XYZ');
-        
+
         onTransformEnd(
             selection.id,
             { x: pos.x, y: pos.y, z: pos.z },
             { r: euler.x, p: euler.y, y: euler.z }
         );
-        
+
         // Update original refs for next operation
         originalPositionRef.current.copy(targetObject.position);
         originalRotationRef.current.copy(targetObject.rotation);
-        
+
         setPendingEdit(null);
         invalidate();
     }, [targetObject, selection?.id, onTransformEnd, pendingEdit, invalidate]);
-    
+
     // Handle cancel - restore original transform
     const handleCancel = useCallback(() => {
         if (targetObject) {
@@ -319,11 +319,11 @@ export const CollisionTransformControls: React.FC<CollisionTransformControlsProp
         setPendingEdit(null);
         invalidate();
     }, [targetObject, invalidate]);
-    
+
     // Convert radians to degrees for display
     const radToDeg = (rad: number) => rad * (180 / Math.PI);
     const degToRad = (deg: number) => deg * (Math.PI / 180);
-    
+
     // Get display value (degrees for rotation, meters for translation)
     const getDisplayValue = useCallback(() => {
         if (!pendingEdit) return '0';
@@ -332,7 +332,7 @@ export const CollisionTransformControls: React.FC<CollisionTransformControlsProp
         }
         return pendingEdit.value.toFixed(4);
     }, [pendingEdit]);
-    
+
     // Get delta display value
     const getDeltaDisplay = useCallback(() => {
         if (!pendingEdit) return '0';
@@ -343,7 +343,7 @@ export const CollisionTransformControls: React.FC<CollisionTransformControlsProp
         }
         return (delta >= 0 ? '+' : '') + delta.toFixed(4);
     }, [pendingEdit]);
-    
+
     // Handle value change in text field
     const handleValueChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
         const inputVal = parseFloat(e.target.value);
@@ -351,7 +351,7 @@ export const CollisionTransformControls: React.FC<CollisionTransformControlsProp
             // Convert degrees to radians for rotation
             const val = pendingEdit.isRotate ? degToRad(inputVal) : inputVal;
             setPendingEdit({ ...pendingEdit, value: val });
-            
+
             // Live preview
             if (targetObject) {
                 const axis = pendingEdit.axis;
@@ -368,7 +368,7 @@ export const CollisionTransformControls: React.FC<CollisionTransformControlsProp
             }
         }
     }, [pendingEdit, targetObject, invalidate]);
-    
+
     // Handle Enter key to confirm
     const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
         if (e.key === 'Enter') {
@@ -379,11 +379,11 @@ export const CollisionTransformControls: React.FC<CollisionTransformControlsProp
             handleCancel();
         }
     }, [handleConfirm, handleCancel]);
-    
+
     if (!targetObject || transformMode === 'select') {
         return null;
     }
-    
+
     // Get axis color
     const getAxisColor = (axis: string | null) => {
         if (axis === 'X') return '#ef4444';
@@ -391,14 +391,14 @@ export const CollisionTransformControls: React.FC<CollisionTransformControlsProp
         if (axis === 'Z') return '#3b82f6';
         return '#94a3b8';
     };
-    
+
     // Determine the mode for TransformControls
     const getControlMode = () => {
         if (transformMode === 'translate') return 'translate';
         if (transformMode === 'rotate') return 'rotate';
         return 'translate';
     };
-    
+
     return (
         <>
             {/* Main TransformControls - disabled when pending edit exists */}
@@ -407,6 +407,7 @@ export const CollisionTransformControls: React.FC<CollisionTransformControlsProp
                 object={targetObject}
                 mode={getControlMode()}
                 size={0.8}
+                space="local"
                 enabled={!pendingEdit}
                 onChange={handleObjectChange}
             />

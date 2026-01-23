@@ -226,6 +226,58 @@ function applyURDFMaterials(robot: THREE.Object3D, materials: Map<string, URDFMa
     console.log(`[RobotModel] Applied materials to ${appliedCount}/${meshCount} meshes`);
 }
 
+/**
+ * Create a visual arrow indicator for joint axis (used for both URDF and MJCF joints).
+ * Color: Red for X, Green for Y, Blue for Z dominant component.
+ */
+function createJointAxisVisualization(axis: THREE.Vector3, size: number = 1.0): THREE.Object3D {
+    const length = 0.15 * size;
+    const group = new THREE.Group();
+    group.name = '__joint_axis_helper__';
+    group.userData.isGizmo = true;
+
+    // Determine color based on dominant axis
+    const absAxis = new THREE.Vector3(Math.abs(axis.x), Math.abs(axis.y), Math.abs(axis.z));
+    let color: number;
+    if (absAxis.x >= absAxis.y && absAxis.x >= absAxis.z) {
+        color = 0xff4444; // Red for X
+    } else if (absAxis.y >= absAxis.x && absAxis.y >= absAxis.z) {
+        color = 0x44ff44; // Green for Y
+    } else {
+        color = 0x4444ff; // Blue for Z
+    }
+
+    // Create arrow shaft (cylinder)
+    const shaftGeom = new THREE.CylinderGeometry(0.005, 0.005, length * 0.8, 8);
+    const shaftMat = new THREE.MeshBasicMaterial({ color, depthTest: false, transparent: true, opacity: 0.9 });
+    const shaft = new THREE.Mesh(shaftGeom, shaftMat);
+    shaft.position.y = length * 0.4;
+    shaft.userData.isGizmo = true;
+    shaft.raycast = () => {};
+    shaft.renderOrder = 1001;
+    group.add(shaft);
+
+    // Create arrow head (cone)
+    const headGeom = new THREE.ConeGeometry(0.015, length * 0.2, 8);
+    const headMat = new THREE.MeshBasicMaterial({ color, depthTest: false, transparent: true, opacity: 0.9 });
+    const head = new THREE.Mesh(headGeom, headMat);
+    head.position.y = length * 0.9;
+    head.userData.isGizmo = true;
+    head.raycast = () => {};
+    head.renderOrder = 1001;
+    group.add(head);
+
+    // Align the arrow (default points +Y) to the axis direction
+    const targetDir = axis.clone().normalize();
+    const upDir = new THREE.Vector3(0, 1, 0);
+    if (Math.abs(targetDir.dot(upDir)) < 0.999) {
+        const quaternion = new THREE.Quaternion().setFromUnitVectors(upDir, targetDir);
+        group.quaternion.copy(quaternion);
+    }
+
+    return group;
+}
+
 function offsetRobotToGround(robot: THREE.Object3D): void {
     // Calculate bounding box
     const box = new THREE.Box3().setFromObject(robot);
@@ -273,6 +325,7 @@ export const RobotModel: React.FC<RobotModelProps> = memo(({
     originSize = 1.0,
     showJointAxes = false,
     jointAxisSize = 1.0,
+    modelOpacity = 1.0,
     robotLinks,
     focusTarget,
     transformMode = 'select',
@@ -667,18 +720,14 @@ export const RobotModel: React.FC<RobotModelProps> = memo(({
 
     // Mouse tracking for hover detection AND joint dragging
     useEffect(() => {
-        const findNearestJoint = (obj: THREE.Object3D | null): any => {
-            let curr = obj;
-            while (curr) {
-                if (curr.userData?.isGizmo) return null;
-                if ((curr as any).isURDFJoint && (curr as any).jointType !== 'fixed') {
-                    return curr;
-                }
-                curr = curr.parent;
-            }
-            return null;
-        };
-
+        /**
+         * Find the parent link of the clicked object
+         * Matching robot_viewer/JointDragControls.js findParentLink()
+         * 
+         * MJCF hierarchy: JointNode -> GeomCompensationGroup -> LinkGroup -> visual -> Mesh
+         * URDF hierarchy: JointNode -> LinkGroup -> visual -> Mesh
+         * Must traverse up through any intermediate groups to find the true URDFLink.
+         */
         const findParentLink = (hitObject: THREE.Object3D): THREE.Object3D | null => {
             let current: THREE.Object3D | null = hitObject;
             while (current) {
@@ -695,9 +744,77 @@ export const RobotModel: React.FC<RobotModelProps> = memo(({
             return null;
         };
 
+        /**
+         * Find the parent joint of a link (for drag rotation)
+         * Matching robot_viewer/JointDragControls.js findParentJoint()
+         * 
+         * Key: We need to find the joint that CONNECTS this link to its parent.
+         * 
+         * MJCF hierarchy (must traverse through GeomCompensationGroup):
+         *   BodyOffsetGroup
+         *   └── JointNode (isURDFJoint) ← target
+         *       └── GeomCompensationGroup (intermediate)
+         *           └── LinkGroup (isURDFLink) ← starting point
+         * 
+         * URDF hierarchy:
+         *   JointNode (isURDFJoint) ← target
+         *   └── LinkGroup (isURDFLink) ← starting point
+         */
+        const findParentJoint = (linkObject: THREE.Object3D | null): any => {
+            if (!linkObject) return null;
+
+            // Traverse up through parent nodes, skipping intermediate groups
+            // until we find a node with isURDFJoint marker
+            let current: THREE.Object3D | null = linkObject.parent;
+            
+            while (current && current !== robot) {
+                // Check if this is a joint node
+                if ((current as any).isURDFJoint || (current as any).type === 'URDFJoint') {
+                    const jointType = (current as any).jointType;
+                    
+                    // Skip fixed joints - continue searching upward for a movable joint
+                    if (jointType === 'fixed') {
+                        // Find the next link up in the hierarchy
+                        let parentLink: THREE.Object3D | null = current.parent;
+                        while (parentLink && parentLink !== robot) {
+                            if ((parentLink as any).isURDFLink || (parentLink as any).type === 'URDFLink') {
+                                return findParentJoint(parentLink);
+                            }
+                            parentLink = parentLink.parent;
+                        }
+                        return null;
+                    }
+                    
+                    // Found a movable joint
+                    return current;
+                }
+                
+                // Move up to the next parent (skipping GeomCompensationGroup, BodyOffsetGroup, etc.)
+                current = current.parent;
+            }
+            
+            return null;
+        };
+
         const getRevoluteDelta = (joint: any, startPt: THREE.Vector3, endPt: THREE.Vector3): number => {
             const axis = joint.axis || new THREE.Vector3(0, 0, 1);
-            const axisWorld = axis.clone().transformDirection(joint.matrixWorld).normalize();
+            
+            // Transform axis from local space to world space.
+            // In MJCF, axis is defined in BodyContainer (bodyOffsetGroup) local space.
+            // In URDF, axis is defined in parent link space.
+            // Using getWorldQuaternion ensures the axis follows body orientation correctly.
+            const worldQuat = new THREE.Quaternion();
+            if (joint.bodyOffsetGroup) {
+                // MJCF: axis is in BodyContainer local space
+                joint.bodyOffsetGroup.getWorldQuaternion(worldQuat);
+            } else if (joint.parent) {
+                // URDF: axis is in parent link space
+                joint.parent.getWorldQuaternion(worldQuat);
+            } else {
+                joint.getWorldQuaternion(worldQuat);
+            }
+            
+            const axisWorld = axis.clone().applyQuaternion(worldQuat).normalize();
             const pivotPoint = new THREE.Vector3().setFromMatrixPosition(joint.matrixWorld);
             const plane = new THREE.Plane().setFromNormalAndCoplanarPoint(axisWorld, pivotPoint);
 
@@ -716,7 +833,21 @@ export const RobotModel: React.FC<RobotModelProps> = memo(({
 
         const getPrismaticDelta = (joint: any, startPt: THREE.Vector3, endPt: THREE.Vector3): number => {
             const axis = joint.axis || new THREE.Vector3(0, 0, 1);
-            const axisWorld = axis.clone().transformDirection(joint.parent.matrixWorld).normalize();
+            
+            // Transform axis from local space to world space.
+            // Using getWorldQuaternion ensures the axis follows body orientation correctly.
+            const worldQuat = new THREE.Quaternion();
+            if (joint.bodyOffsetGroup) {
+                // MJCF: axis is in BodyContainer local space
+                joint.bodyOffsetGroup.getWorldQuaternion(worldQuat);
+            } else if (joint.parent) {
+                // URDF: axis is in parent link space
+                joint.parent.getWorldQuaternion(worldQuat);
+            } else {
+                joint.getWorldQuaternion(worldQuat);
+            }
+            
+            const axisWorld = axis.clone().applyQuaternion(worldQuat).normalize();
             const delta = new THREE.Vector3().subVectors(endPt, startPt);
             return delta.dot(axisWorld);
         };
@@ -888,7 +1019,9 @@ export const RobotModel: React.FC<RobotModelProps> = memo(({
                     (hoveredLinkRef as any).currentMesh = null;
                 }
 
-                const joint = isCollisionMode ? null : findNearestJoint(hit.object);
+                // Find the parent joint of the clicked link (matching robot_viewer pattern)
+                const clickedLink = findParentLink(hit.object);
+                const joint = isCollisionMode ? null : (clickedLink ? findParentJoint(clickedLink) : null);
 
                 if (joint) {
                     isDraggingJoint.current = true;
@@ -1145,6 +1278,109 @@ export const RobotModel: React.FC<RobotModelProps> = memo(({
         });
     }, [robot, showCollision, robotVersion, highlightMode]);
 
+    // Update visual mesh visibility when showVisual changes
+    // CRITICAL: Only toggle meshes marked as visual, NOT parent groups
+    // This ensures collision meshes remain visible even when visual is off
+    useEffect(() => {
+        if (!robot) return;
+
+        robot.traverse((child: any) => {
+            // Handle visual group containers (from MJCF loader)
+            if (child.userData?.isVisualGroup) {
+                child.visible = showVisual;
+                return; // Children handled by group visibility
+            }
+            
+            // Handle individual visual meshes (marked during load)
+            if (child.isMesh && child.userData?.isVisual) {
+                child.visible = showVisual;
+            }
+            
+            // Handle URDF visual meshes (check parent chain for URDFVisual)
+            if (child.isMesh && !child.userData?.isCollision && !child.userData?.isCollisionMesh) {
+                let parent = child.parent;
+                let isUrdfVisual = false;
+                while (parent && parent !== robot) {
+                    if ((parent as any).isURDFVisual) {
+                        isUrdfVisual = true;
+                        break;
+                    }
+                    if ((parent as any).isURDFCollider) {
+                        break; // This is a collision mesh, skip
+                    }
+                    parent = parent.parent;
+                }
+                if (isUrdfVisual) {
+                    child.visible = showVisual;
+                }
+            }
+        });
+        
+        invalidate();
+    }, [robot, showVisual, robotVersion, invalidate]);
+
+    // Update link axes, joint axes visibility, and model opacity
+    useEffect(() => {
+        if (!robot) return;
+
+        robot.traverse((child: any) => {
+            // Handle link coordinate axes (RGB = XYZ)
+            if (child.name === '__link_axes_helper__') {
+                child.visible = showOrigins;
+                const scale = originSize || 1.0;
+                child.scale.set(scale, scale, scale);
+            }
+            
+            // Handle joint axis helpers (red arrow with green rotation indicator)
+            if (child.name === '__joint_axis_helper__') {
+                child.visible = showJointAxes;
+                const scale = jointAxisSize || 1.0;
+                child.scale.set(scale, scale, scale);
+            }
+            
+            // Handle debug AxesHelper for joint pivot verification (RGB = XYZ)
+            // This shows the coordinate frame at each joint pivot point
+            if (child.name === '__debug_joint_axes__') {
+                child.visible = showJointAxes;
+                const scale = jointAxisSize || 1.0;
+                child.scale.set(scale, scale, scale);
+            }
+            
+            // Handle URDF joint axis visualization (if any)
+            if (child.isURDFJoint && child.axis) {
+                let axisHelper = child.children.find((c: any) => c.name === '__joint_axis_helper__');
+                if (!axisHelper && showJointAxes) {
+                    // Create axis helper for URDF joints that don't have one
+                    const axis = child.axis as THREE.Vector3;
+                    axisHelper = createJointAxisVisualization(axis, jointAxisSize);
+                    child.add(axisHelper);
+                }
+                if (axisHelper) {
+                    axisHelper.visible = showJointAxes;
+                    const scale = jointAxisSize || 1.0;
+                    axisHelper.scale.set(scale, scale, scale);
+                }
+            }
+
+            // Apply model opacity to all meshes (except gizmos)
+            if (child.isMesh && !child.userData?.isGizmo) {
+                if (child.material) {
+                    // Handle both single material and material array
+                    const materials = Array.isArray(child.material) ? child.material : [child.material];
+                    materials.forEach((mat: any) => {
+                        if (mat && !mat.userData?.isSharedMaterial) {
+                            mat.transparent = modelOpacity < 1.0;
+                            mat.opacity = modelOpacity;
+                            mat.needsUpdate = true;
+                        }
+                    });
+                }
+            }
+        });
+        
+        invalidate();
+    }, [robot, showOrigins, originSize, showJointAxes, jointAxisSize, modelOpacity, robotVersion, invalidate]);
+
     // Update visual visibility when link visibility changes
     useEffect(() => {
         if (!robot) return;
@@ -1186,14 +1422,15 @@ export const RobotModel: React.FC<RobotModelProps> = memo(({
                         child.add(vizGroup);
                     }
 
-                    // CoM Indicator
+                    // CoM Indicator - FIXED size (not affected by model scale)
                     let comVisual = vizGroup.children.find((c: any) => c.name === '__com_visual__');
                     if (!comVisual) {
                         comVisual = new THREE.Group();
                         comVisual.name = '__com_visual__';
                         comVisual.userData = { isGizmo: true };
 
-                        const radius = 0.03;
+                        // Fixed radius for CoM sphere (0.01m = 1cm)
+                        const radius = 0.01;
                         const geometry = new THREE.SphereGeometry(radius, 16, 16, 0, Math.PI / 2, 0, Math.PI / 2);
                         const matBlack = new THREE.MeshBasicMaterial({ color: 0x000000, depthTest: false, transparent: true, opacity: 0.8 });
                         const matWhite = new THREE.MeshBasicMaterial({ color: 0xffffff, depthTest: false, transparent: true, opacity: 0.8 });
@@ -1206,7 +1443,7 @@ export const RobotModel: React.FC<RobotModelProps> = memo(({
                         positions.forEach((rot, i) => {
                             const mesh = new THREE.Mesh(geometry, (i % 2 === 0) ? matBlack : matWhite);
                             mesh.rotation.set(rot[0], rot[1], rot[2]);
-                            mesh.renderOrder = 999;
+                            mesh.renderOrder = 1000;
                             mesh.userData = { isGizmo: true };
                             mesh.raycast = () => { };
                             comVisual.add(mesh);
@@ -1215,7 +1452,7 @@ export const RobotModel: React.FC<RobotModelProps> = memo(({
                         const axes = new THREE.AxesHelper(0.1);
                         (axes.material as THREE.Material).depthTest = false;
                         (axes.material as THREE.Material).transparent = true;
-                        axes.renderOrder = 999;
+                        axes.renderOrder = 1000;
                         axes.userData = { isGizmo: true };
                         axes.raycast = () => { };
                         comVisual.add(axes);
@@ -1224,11 +1461,25 @@ export const RobotModel: React.FC<RobotModelProps> = memo(({
                     }
                     comVisual.visible = showCenterOfMass;
 
-                    // Inertia Box
+                    // Inertia Box - clamped to link bounding box size
                     let inertiaBox = vizGroup.children.find((c: any) => c.name === '__inertia_box__');
 
                     if (!inertiaBox) {
-                        const boxData = MathUtils.computeInertiaBox(inertialData);
+                        // Calculate link bounding box for size clamping
+                        let maxLinkSize: number | undefined;
+                        try {
+                            const linkBox = new THREE.Box3().setFromObject(child);
+                            const linkSize = linkBox.getSize(new THREE.Vector3());
+                            maxLinkSize = Math.max(linkSize.x, linkSize.y, linkSize.z);
+                            // Use 0 if the bounding box is invalid
+                            if (!isFinite(maxLinkSize) || maxLinkSize <= 0) {
+                                maxLinkSize = undefined;
+                            }
+                        } catch (e) {
+                            maxLinkSize = undefined;
+                        }
+                        
+                        const boxData = MathUtils.computeInertiaBox(inertialData, maxLinkSize);
 
                         if (boxData) {
                             const { width, height, depth, rotation } = boxData;
@@ -1239,9 +1490,9 @@ export const RobotModel: React.FC<RobotModelProps> = memo(({
                             inertiaBox.userData = { isGizmo: true };
 
                             const mat = new THREE.MeshBasicMaterial({
-                                color: 0x4a9eff,
+                                color: 0x00d4ff,
                                 transparent: true,
-                                opacity: 0.2,
+                                opacity: 0.25,
                                 depthWrite: false,
                                 depthTest: false
                             });
@@ -1254,7 +1505,7 @@ export const RobotModel: React.FC<RobotModelProps> = memo(({
 
                             const edges = new THREE.EdgesGeometry(geom);
                             const line = new THREE.LineSegments(edges, new THREE.LineBasicMaterial({
-                                color: 0x4a9eff,
+                                color: 0x00d4ff,
                                 transparent: true,
                                 opacity: 0.6,
                                 depthWrite: false,

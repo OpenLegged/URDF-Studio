@@ -1,6 +1,18 @@
 
 import { RobotState, UrdfLink, UrdfJoint, GeometryType } from '../types';
 
+// Helper to convert hex color to RGBA string
+const hexToRgba = (hex: string): string => {
+  const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+  if (result) {
+    const r = parseInt(result[1], 16) / 255;
+    const g = parseInt(result[2], 16) / 255;
+    const b = parseInt(result[3], 16) / 255;
+    return `${r.toFixed(4)} ${g.toFixed(4)} ${b.toFixed(4)} 1.0`;
+  }
+  return '0.5 0.5 0.5 1.0'; // fallback gray
+};
+
 export const generateURDF = (robot: RobotState, extended: boolean = false): string => {
   const { name, links, joints, rootLinkId } = robot;
 
@@ -35,7 +47,7 @@ export const generateURDF = (robot: RobotState, extended: boolean = false): stri
         }
         xml += `      </geometry>\n`;
         xml += `      <material name="${link.id}_mat">\n`;
-        xml += `        <color rgba="0.5 0.5 0.5 1.0"/>\n`; 
+        xml += `        <color rgba="${hexToRgba(link.visual.color || '#808080')}"/>\n`; 
         xml += `      </material>\n`;
         xml += `    </visual>\n`;
     }

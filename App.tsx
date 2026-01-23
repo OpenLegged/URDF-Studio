@@ -64,11 +64,15 @@ export default function App() {
 
     // Compute content for viewer - use original content to preserve material colors
     // generateURDF() loses material colors (hardcodes gray), so always use original content
+    // When no URDF is imported, generate URDF from current robotData for source code viewer
     const urdfContentForViewer = useMemo(() => {
-        if (!originalUrdfContent) return '';
-        // Always use original content to preserve material colors and mesh paths
-        return originalUrdfContent;
-    }, [originalUrdfContent]);
+        if (originalUrdfContent) {
+            // Use original content to preserve material colors and mesh paths
+            return originalUrdfContent;
+        }
+        // No imported file - generate URDF from current robotData
+        return generateURDF(robot, false);
+    }, [originalUrdfContent, robot]);
     const importInputRef = useRef<HTMLInputElement>(null);
     const importFolderInputRef = useRef<HTMLInputElement>(null);
     const [isDragOver, setIsDragOver] = useState(false);

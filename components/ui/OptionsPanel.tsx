@@ -33,6 +33,36 @@ const DragGripIcon = ({ className = "w-3 h-3" }: { className?: string }) => (
   </svg>
 );
 
+// ============== File Icon ==============
+const FileIcon = () => (
+  <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+  </svg>
+);
+
+// ============== Model Header Badge ==============
+interface ModelHeaderBadgeProps {
+  fileName: string;
+}
+
+export const ModelHeaderBadge: React.FC<ModelHeaderBadgeProps> = ({ fileName }) => {
+  return (
+    <div className="px-3 py-2 bg-slate-50 dark:bg-google-dark-bg/30 border-b border-slate-200 dark:border-google-dark-border">
+      <div className="flex items-center gap-2">
+        <FileIcon />
+        <div className="flex-1 min-w-0">
+          <div className="text-[9px] text-slate-400 dark:text-slate-500 uppercase tracking-wide mb-0.5">
+            Loaded Model
+          </div>
+          <div className="text-[11px] text-slate-700 dark:text-slate-300 font-medium truncate" title={fileName}>
+            {fileName}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 // ============== Checkbox Option ==============
 interface CheckboxOptionProps {
   checked: boolean;
@@ -78,6 +108,8 @@ interface SliderOptionProps {
   decimals?: number;
   indent?: boolean;
   compact?: boolean;
+  icon?: ReactNode;
+  showPercentage?: boolean;
 }
 
 export const SliderOption: React.FC<SliderOptionProps> = ({
@@ -90,11 +122,16 @@ export const SliderOption: React.FC<SliderOptionProps> = ({
   decimals = 2,
   indent = true,
   compact = false,
+  icon,
+  showPercentage = false,
 }) => {
+  const displayValue = showPercentage ? `${Math.round(value * 100)}%` : value.toFixed(decimals);
+
   if (compact) {
     return (
       <div className={`${indent ? 'pl-6' : ''} pr-2 pb-1`}>
         <div className="flex items-center gap-2">
+          {icon && <span className="text-slate-400 dark:text-slate-500">{icon}</span>}
           <span className="text-[9px] text-slate-400">{label}</span>
           <input
             type="range"
@@ -103,9 +140,12 @@ export const SliderOption: React.FC<SliderOptionProps> = ({
             step={step}
             value={value}
             onChange={(e) => onChange(parseFloat(e.target.value))}
-            className="flex-1 max-w-20 h-1 bg-slate-200 dark:bg-google-dark-border rounded-lg appearance-none cursor-pointer accent-google-blue"
+            className="flex-1 h-1.5 bg-slate-200 dark:bg-google-dark-border rounded-full appearance-none cursor-pointer slider-modern"
+            style={{
+              background: `linear-gradient(to right, rgb(59, 130, 246) 0%, rgb(59, 130, 246) ${((value - min) / (max - min)) * 100}%, rgb(226, 232, 240) ${((value - min) / (max - min)) * 100}%, rgb(226, 232, 240) 100%)`
+            }}
           />
-          <span className="text-[9px] text-slate-400 text-right shrink-0 whitespace-nowrap">{value.toFixed(decimals)}</span>
+          <span className="text-[10px] font-medium text-slate-600 dark:text-slate-300 w-10 text-right shrink-0 whitespace-nowrap">{displayValue}</span>
         </div>
       </div>
     );
@@ -113,9 +153,12 @@ export const SliderOption: React.FC<SliderOptionProps> = ({
 
   return (
     <div className={`${indent ? 'pl-6' : ''} pr-2 pb-2`}>
-      <div className="flex justify-between text-[10px] text-slate-500 dark:text-slate-400 mb-1">
-        <span>{label}</span>
-        <span>{value.toFixed(decimals)}</span>
+      <div className="flex items-center justify-between mb-1.5">
+        <div className="flex items-center gap-1.5">
+          {icon && <span className="text-slate-400 dark:text-slate-500">{icon}</span>}
+          <span className="text-[10px] text-slate-600 dark:text-slate-400">{label}</span>
+        </div>
+        <span className="text-[11px] font-semibold text-slate-700 dark:text-slate-300 bg-slate-100 dark:bg-google-dark-bg px-2 py-0.5 rounded">{displayValue}</span>
       </div>
       <input
         type="range"
@@ -124,7 +167,10 @@ export const SliderOption: React.FC<SliderOptionProps> = ({
         step={step}
         value={value}
         onChange={(e) => onChange(parseFloat(e.target.value))}
-        className="w-full h-1 bg-slate-200 dark:bg-slate-700 rounded-lg appearance-none cursor-pointer accent-blue-600"
+        className="w-full h-2 bg-slate-200 dark:bg-slate-700 rounded-full appearance-none cursor-pointer slider-modern"
+        style={{
+          background: `linear-gradient(to right, rgb(59, 130, 246) 0%, rgb(59, 130, 246) ${((value - min) / (max - min)) * 100}%, rgb(226, 232, 240) ${((value - min) / (max - min)) * 100}%, rgb(226, 232, 240) 100%)`
+        }}
       />
     </div>
   );

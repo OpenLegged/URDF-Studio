@@ -136,10 +136,23 @@ export class MathUtils {
 
     /**
      * Compute box dimensions corresponding to inertia matrix (like Gazebo)
-     * Based on principal moments of inertia matrix, compute equivalent box dimensions
-     * @returns {Object|null} Returns box data, or null if inertia parameters are unreasonable (don't display)
+     * Based on principal moments of inertia matrix, compute equivalent box dimensions.
+     * 
+     * Physics formula for uniform box inertia:
+     *   Ixx = m/12 * (h² + d²)
+     *   Iyy = m/12 * (w² + d²)
+     *   Izz = m/12 * (w² + h²)
+     * 
+     * Solving for dimensions:
+     *   w² = 6/m * (Iyy + Izz - Ixx)
+     *   h² = 6/m * (Ixx + Izz - Iyy)
+     *   d² = 6/m * (Ixx + Iyy - Izz)
+     * 
+     * @param inertial - Inertial data with mass and inertia tensor
+     * @param maxSize - Optional maximum size limit (e.g., from link bounding box)
+     * @returns {Object|null} Returns box data, or null if inertia parameters are unreasonable
      */
-    static computeInertiaBox(inertial: any) {
+    static computeInertiaBox(inertial: any, maxSize?: number) {
         const Ixx = inertial.inertia.ixx || 0;
         const Iyy = inertial.inertia.iyy || 0;
         const Izz = inertial.inertia.izz || 0;
@@ -149,19 +162,13 @@ export class MathUtils {
         const mass = inertial.mass || 1;
 
         // Reasonableness check 1: Mass too small
-        const minMassThreshold = 0.01; // 10g
+        const minMassThreshold = 0.001; // 1g - more permissive
         if (mass < minMassThreshold) {
-            const avgInertia = (Math.abs(Ixx) + Math.abs(Iyy) + Math.abs(Izz)) / 3;
-            // Characteristic inertia radius
-            const inertiaRadius = mass > 0 ? Math.sqrt(avgInertia / mass) : 0; 
-            
-            if (inertiaRadius > 0.05) {
-                return null;
-            }
+            return null;
         }
 
         // Reasonableness check 2: All inertia values close to zero
-        const inertiaThreshold = 1e-9;
+        const inertiaThreshold = 1e-12;
         if (Math.abs(Ixx) < inertiaThreshold &&
             Math.abs(Iyy) < inertiaThreshold &&
             Math.abs(Izz) < inertiaThreshold) {
@@ -197,45 +204,46 @@ export class MathUtils {
             );
             rotation.setFromRotationMatrix(rotMatrix);
         } else {
-            // No off-diagonal components, use diagonal values directly
+            // No off-diagonal components, use diagonal values directly (diaginertia format)
             principalInertias = [Ixx, Iyy, Izz];
         }
 
+        // Sort principal inertias to ensure Ix <= Iy <= Iz (triangle inequality)
+        const [Ix, Iy, Iz] = [...principalInertias].sort((a, b) => a - b);
+
+        // Physics formula: factor = 6/mass (derived from I = m/12 * (a² + b²))
         const factor = 6.0 / mass;
 
-        let width = Math.sqrt(Math.abs(factor * (principalInertias[1] + principalInertias[2] - principalInertias[0])));
-        let height = Math.sqrt(Math.abs(factor * (principalInertias[0] + principalInertias[2] - principalInertias[1])));
-        let depth = Math.sqrt(Math.abs(factor * (principalInertias[0] + principalInertias[1] - principalInertias[2])));
+        // Calculate squared dimensions (may be negative if triangle inequality violated)
+        const wSq = factor * (Iy + Iz - Ix);
+        const hSq = factor * (Ix + Iz - Iy);
+        const dSq = factor * (Ix + Iy - Iz);
 
-        // Reasonableness check 3: Check ratio between inertia radius and box size
-        const avgInertia = (Math.abs(principalInertias[0]) + Math.abs(principalInertias[1]) + Math.abs(principalInertias[2])) / 3;
-        const inertiaRadius = Math.sqrt(avgInertia / mass);
-        const avgBoxSize = (width + height + depth) / 3;
-
-        if (inertiaRadius > avgBoxSize) {
-            return null; 
-        }
-
-        // Reasonableness check 4: Check if equivalent density is reasonable
-        const volume = width * height * depth;
-        // Avoid division by zero
-        const equivalentDensity = volume > 0 ? mass / volume : 0; 
-        
-        const minDensity = 0.0001; 
-        if (equivalentDensity < minDensity) {
-           return null;
-        }
+        // Handle cases where squared dimension is negative (non-physical inertia)
+        // Use absolute value and small minimum to prevent NaN
+        let width = Math.sqrt(Math.max(Math.abs(wSq), 1e-6));
+        let height = Math.sqrt(Math.max(Math.abs(hSq), 1e-6));
+        let depth = Math.sqrt(Math.max(Math.abs(dSq), 1e-6));
 
         // Set minimum size
-        const minSize = 0.01;
+        const minSize = 0.005;
         width = Math.max(width, minSize);
         height = Math.max(height, minSize);
         depth = Math.max(depth, minSize);
 
-        // If all inertias very small, use default small box
-        if (width < minSize && height < minSize && depth < minSize) {
-            width = height = depth = 0.05;
+        // Clamp to maximum size if provided (e.g., 2x link bounding box)
+        if (maxSize && maxSize > 0) {
+            const clampSize = maxSize * 2; // Allow up to 2x the reference size
+            width = Math.min(width, clampSize);
+            height = Math.min(height, clampSize);
+            depth = Math.min(depth, clampSize);
         }
+
+        // Fallback clamp: prevent unreasonably large boxes (> 2 meters)
+        const absoluteMaxSize = 2.0;
+        width = Math.min(width, absoluteMaxSize);
+        height = Math.min(height, absoluteMaxSize);
+        depth = Math.min(depth, absoluteMaxSize);
 
         return {
             width: width,   // x direction
