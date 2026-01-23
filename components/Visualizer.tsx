@@ -241,28 +241,28 @@ const JointNode = memo(function JointNode({
         </>
       )}
 
-      {/* Joint pivot: represents joint origin in parent-local space */}
-      {/* TransformControls attaches here, modifies position in parent-local frame */}
-      <group
-        ref={setJointPivot}
-        position={[x, y, z]}
-        rotation={[r, p, yaw]}
-      >
-        {/* Joint group: at origin relative to pivot, contains visualization and child link */}
+        {/* Joint pivot: represents joint origin in parent-local space */}
+        {/* TransformControls attaches here, modifies position in parent-local frame */}
         <group
-          ref={setJointGroup}
-          position={[0, 0, 0]}
-          rotation={[0, 0, 0]}
+            ref={setJointPivot}
+            position={[x, y, z]}
+            rotation={[r, p, yaw]}
         >
-          {showAxes && (
-            <ThickerAxes
-              size={frameSize * 0.12}
-              onClick={(mode === 'skeleton' || mode === 'hardware') ? (e) => {
-                e.stopPropagation();
-                onSelect('joint', joint.id);
-              } : undefined}
-            />
-          )}
+            {/* Joint group: at origin relative to pivot, contains visualization and child link */}
+            <group 
+                ref={setJointGroup}
+                position={[0, 0, 0]} 
+                rotation={[0, 0, 0]}
+            >
+                {showAxes && (
+                    <ThickerAxes
+                        size={frameSize * 0.12}
+                        onClick={(mode === 'skeleton' || mode === 'hardware') ? (e) => {
+                            e.stopPropagation();
+                            onSelect('joint', joint.id);
+                        } : undefined}
+                    />
+                )}
 
           {(mode === 'skeleton' || mode === 'hardware') && (
             <group>
@@ -610,13 +610,13 @@ const RobotNode = memo(function RobotNode({
     <group>
       {showRootAxes && (
         <group>
-          <ThickerAxes size={frameSize * 0.12} />
-          {showRootLabel && (
-            <Html position={[0.35, 0, 0]} className="pointer-events-none">
-              <div
-                style={{ transform: `scale(${labelScale})`, transformOrigin: 'left center' }}
-                onClick={handleLinkClick}
-                className={`
+            <ThickerAxes size={frameSize * 0.12} />
+            {showRootLabel && (
+                <Html position={[0.35, 0, 0]} className="pointer-events-none">
+                    <div 
+                        style={{ transform: `scale(${labelScale})`, transformOrigin: 'left center' }}
+                        onClick={handleLinkClick}
+                        className={`
                             px-1.5 py-0.5 text-[10px] font-mono rounded border whitespace-nowrap shadow-xl
                             pointer-events-auto cursor-pointer select-none transition-colors
                             ${isSelected
@@ -727,9 +727,9 @@ export const Visualizer = ({ robot, onSelect, onUpdate, mode, assets, lang, them
   const [frameSize, setFrameSize] = useState(() => {
     if (typeof window !== 'undefined') {
       const saved = localStorage.getItem('urdf_viewer_origin_size');
-      return saved ? Math.min(parseFloat(saved), 0.5) : 0.1;
+      return saved ? Math.min(parseFloat(saved), 0.8) : 0.15;
     }
-    return 0.1;
+    return 0.15;
   });
 
   // Save frameSize to localStorage to sync with detail mode
@@ -1255,10 +1255,10 @@ export const Visualizer = ({ robot, onSelect, onUpdate, mode, assets, lang, them
 
                   <CheckboxOption checked={showGeometry} onChange={setShowGeometry} label={t.showGeometry} />
 
-                  <CheckboxOption checked={showSkeletonOrigin} onChange={setShowSkeletonOrigin} label={t.showOrigin} />
-                  {showSkeletonOrigin && (
-                    <SliderOption label={t.frameSize} value={frameSize} onChange={setFrameSize} min={0.01} max={0.5} step={0.01} />
-                  )}
+                     <CheckboxOption checked={showSkeletonOrigin} onChange={setShowSkeletonOrigin} label={t.showOrigin} />
+                     {showSkeletonOrigin && (
+                        <SliderOption label={t.frameSize} value={frameSize} onChange={setFrameSize} min={0.01} max={0.5} step={0.01} />
+                     )}
 
                   <CheckboxOption checked={showLabels} onChange={setShowLabels} label={t.showLabels} />
                   {showLabels && (
