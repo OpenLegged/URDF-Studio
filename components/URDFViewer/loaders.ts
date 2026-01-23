@@ -3,7 +3,12 @@ import * as THREE from 'three';
 // ============================================================
 // SHARED MATERIALS - Avoid shader recompilation for each mesh
 // ============================================================
-const DEFAULT_MESH_MATERIAL = new THREE.MeshPhongMaterial({ color: 0xaaaaaa });
+const DEFAULT_MESH_MATERIAL = new THREE.MeshStandardMaterial({
+    color: 0x707070,      // Medium-dark grey for proper exposure in bright studio lighting
+    roughness: 0.45,      // Lower roughness for visible surface gloss and sharper edges
+    metalness: 0.15,      // Low metalness for industrial plastic/painted metal look
+    envMapIntensity: 1.0  // Full environment reflection for realistic highlights
+});
 const PLACEHOLDER_MATERIAL = new THREE.MeshPhongMaterial({
     color: 0xff6b6b,
     transparent: true,
@@ -320,7 +325,7 @@ export const createMeshLoader = (assets: Record<string, string>, manager: THREE.
                 : findAssetByPath(path, assets, urdfDir);
 
             if (assetUrl) {
-                console.log(`[URDFViewer] Found asset for "${path}" -> "${assetUrl}"`);
+                // Asset found, proceed with loading
             }
 
             if (!assetUrl) {

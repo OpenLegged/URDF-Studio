@@ -34,6 +34,8 @@ export interface URDFViewerProps {
     setShowJointPanel?: (show: boolean) => void;
     onCollisionTransform?: (linkName: string, position: {x: number, y: number, z: number}, rotation: {r: number, p: number, y: number}) => void;
     snapshotAction?: React.MutableRefObject<(() => void) | null>;
+    /** Currently loaded filename for display in the UI */
+    fileName?: string;
 }
 
 export interface RobotModelProps {
@@ -58,6 +60,7 @@ export interface RobotModelProps {
     originSize?: number;
     showJointAxes?: boolean;
     jointAxisSize?: number;
+    modelOpacity?: number;
     robotLinks?: Record<string, UrdfLink>;
     focusTarget?: string | null;
     transformMode?: 'select' | 'translate' | 'rotate' | 'universal';

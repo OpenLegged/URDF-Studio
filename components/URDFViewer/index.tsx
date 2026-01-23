@@ -1,10 +1,10 @@
 import React, { Suspense, useState, useRef, useEffect, useCallback } from 'react';
 import { Canvas, RootState } from '@react-three/fiber';
-import { OrbitControls, Grid, Environment, GizmoHelper, GizmoViewport } from '@react-three/drei';
+import { OrbitControls, Environment, GizmoHelper, GizmoViewport, ContactShadows } from '@react-three/drei';
 import * as THREE from 'three';
 import { RotateCcw, Move, ArrowUpRight, X, Ruler } from 'lucide-react';
 import { CheckboxOption, SliderOption } from '../ui/OptionsPanel';
-import { SnapshotManager, SceneLighting } from '../shared';
+import { SnapshotManager, SceneLighting, ReferenceGrid } from '../shared';
 import { translations } from '../../services/i18n';
 
 import { URDFViewerProps, ToolMode, MeasureState } from './types';
@@ -14,37 +14,38 @@ import { MeasureTool } from './MeasureTool';
 import { ViewerToolbar } from './ViewerToolbar';
 import { JointControlItem } from './JointControlItem';
 
-export function URDFViewer({ 
-    urdfContent, 
-    assets, 
-    onJointChange, 
-    jointAngleState, 
-    lang, 
-    mode = 'detail', 
-    onSelect, 
-    theme, 
-    selection, 
-    hoveredSelection, 
-    robotLinks, 
-    focusTarget, 
-    showVisual: propShowVisual, 
-    setShowVisual: propSetShowVisual, 
-    snapshotAction, 
-    onCollisionTransform, 
-    showToolbar = true, 
-    setShowToolbar, 
-    showOptionsPanel = true, 
-    setShowOptionsPanel, 
-    showJointPanel = true, 
-    setShowJointPanel 
+export function URDFViewer({
+    urdfContent,
+    assets,
+    onJointChange,
+    jointAngleState,
+    lang,
+    mode = 'detail',
+    onSelect,
+    theme,
+    selection,
+    hoveredSelection,
+    robotLinks,
+    focusTarget,
+    showVisual: propShowVisual,
+    setShowVisual: propSetShowVisual,
+    snapshotAction,
+    onCollisionTransform,
+    showToolbar = true,
+    setShowToolbar,
+    showOptionsPanel = true,
+    setShowOptionsPanel,
+    showJointPanel = true,
+    setShowJointPanel,
+    fileName
 }: URDFViewerProps) {
     const t = translations[lang];
-    
+
     const isOrbitDragging = useRef(false);
     const [robot, setRobot] = useState<any>(null);
-    
+
     const [showCollision, setShowCollision] = useState(false);
-    
+
     const [localShowVisual, setLocalShowVisual] = useState(true);
     const showVisual = propShowVisual !== undefined ? propShowVisual : localShowVisual;
     const setShowVisual = propSetShowVisual || setLocalShowVisual;
@@ -68,6 +69,13 @@ export function URDFViewer({
         }
         return 1.0;
     });
+    const [modelOpacity, setModelOpacity] = useState(() => {
+        if (typeof window !== 'undefined') {
+            const saved = localStorage.getItem('urdf_viewer_model_opacity');
+            return saved ? parseFloat(saved) : 1.0;
+        }
+        return 1.0;
+    });
 
     useEffect(() => {
         localStorage.setItem('urdf_viewer_origin_size', originSize.toString());
@@ -76,7 +84,11 @@ export function URDFViewer({
     useEffect(() => {
         localStorage.setItem('urdf_viewer_joint_axis_size', jointAxisSize.toString());
     }, [jointAxisSize]);
-    
+
+    useEffect(() => {
+        localStorage.setItem('urdf_viewer_model_opacity', modelOpacity.toString());
+    }, [modelOpacity]);
+
     const [highlightMode, setHighlightMode] = useState<'link' | 'collision'>('link');
     const [toolMode, setToolMode] = useState<ToolMode>('select');
 
@@ -91,9 +103,9 @@ export function URDFViewer({
     });
     const measurePanelRef = useRef<HTMLDivElement>(null);
     const [measurePanelPos, setMeasurePanelPos] = useState<{ x: number; y: number } | null>(null);
-    
+
     const transformMode = (['translate', 'rotate', 'universal'].includes(toolMode) ? toolMode : 'select') as 'select' | 'translate' | 'rotate' | 'universal';
-    
+
     useEffect(() => {
         if (selection?.subType === 'collision') {
             setHighlightMode('collision');
@@ -139,18 +151,18 @@ export function URDFViewer({
             return newState;
         });
     };
-    
+
     const [jointAngles, setJointAngles] = useState<Record<string, number>>({});
     const [initialJointAngles, setInitialJointAngles] = useState<Record<string, number>>({});
     const [angleUnit, setAngleUnit] = useState<'rad' | 'deg'>('rad');
     const [activeJoint, setActiveJoint] = useState<string | null>(null);
     const [isDragging, setIsDragging] = useState(false);
-    
+
     const justSelectedRef = useRef(false);
-    
+
     const handleRobotLoaded = useCallback((loadedRobot: any) => {
         setRobot(loadedRobot);
-        
+
         if (loadedRobot.joints) {
             const angles: Record<string, number> = {};
             Object.keys(loadedRobot.joints).forEach(name => {
@@ -196,15 +208,15 @@ export function URDFViewer({
             });
         }
     }, [robot]);
-    
+
     const handleJointAngleChange = useCallback((jointName: string, angle: number) => {
         if (!robot?.joints?.[jointName]) return;
-        
+
         const joint = robot.joints[jointName];
         if (joint.setJointValue) {
             joint.setJointValue(angle);
         }
-        
+
         setJointAngles(prev => ({ ...prev, [jointName]: angle }));
     }, [robot]);
 
@@ -216,7 +228,7 @@ export function URDFViewer({
 
     const handleResetJoints = useCallback(() => {
         if (!robot || !robot.joints) return;
-        
+
         Object.keys(jointAngles).forEach(name => {
             const initialAngle = initialJointAngles[name] || 0;
             handleJointAngleChange(name, initialAngle);
@@ -256,7 +268,6 @@ export function URDFViewer({
         };
 
         const handleContextRestored = () => {
-            console.log('WebGL context restored.');
             setContextLost(false);
             state.invalidate();
         };
@@ -304,10 +315,10 @@ export function URDFViewer({
     const handleMouseDown = useCallback((panel: 'options' | 'joints', e: React.MouseEvent) => {
         e.preventDefault();
         e.stopPropagation();
-        
+
         const panelRef = panel === 'options' ? optionsPanelRef : jointPanelRef;
         if (!panelRef.current || !containerRef.current) return;
-        
+
         const rect = panelRef.current.getBoundingClientRect();
         const containerRect = containerRef.current.getBoundingClientRect();
 
@@ -319,30 +330,30 @@ export function URDFViewer({
         };
         setDragging(panel);
     }, []);
-    
+
     const handleMouseMove = useCallback((e: React.MouseEvent) => {
         if (!dragging || !dragStartRef.current || !containerRef.current) return;
-        
-        const panelRef = dragging === 'options' ? optionsPanelRef : 
-                        dragging === 'joints' ? jointPanelRef : measurePanelRef;
+
+        const panelRef = dragging === 'options' ? optionsPanelRef :
+            dragging === 'joints' ? jointPanelRef : measurePanelRef;
         if (!panelRef.current) return;
-        
+
         const deltaX = e.clientX - dragStartRef.current.mouseX;
         const deltaY = e.clientY - dragStartRef.current.mouseY;
-        
+
         const containerRect = containerRef.current.getBoundingClientRect();
         const panelRect = panelRef.current.getBoundingClientRect();
-        
+
         let newX = dragStartRef.current.panelX + deltaX;
         let newY = dragStartRef.current.panelY + deltaY;
-        
+
         const padding = 2;
         const maxX = containerRect.width - panelRect.width - padding;
         const maxY = containerRect.height - panelRect.height - padding;
-        
+
         newX = Math.max(padding, Math.min(newX, Math.max(padding, maxX)));
         newY = Math.max(padding, Math.min(newY, Math.max(padding, maxY)));
-        
+
         if (dragging === 'options') {
             setOptionsPanelPos({ x: newX, y: newY });
         } else if (dragging === 'joints') {
@@ -351,14 +362,14 @@ export function URDFViewer({
             setMeasurePanelPos({ x: newX, y: newY });
         }
     }, [dragging]);
-    
+
     const handleMouseUp = useCallback(() => {
         setDragging(null);
         dragStartRef.current = null;
     }, []);
-    
+
     return (
-        <div 
+        <div
             ref={containerRef}
             className="flex-1 relative bg-google-light-bg dark:bg-google-dark-bg h-full min-w-0 overflow-hidden"
             onMouseMove={handleMouseMove}
@@ -374,144 +385,207 @@ export function URDFViewer({
 
             {/* Settings panel */}
             {showOptionsPanel && (
-            <div 
-                ref={optionsPanelRef}
-                className="absolute z-30 pointer-events-auto"
-                style={optionsPanelPos 
-                    ? { left: optionsPanelPos.x, top: optionsPanelPos.y, right: 'auto' }
-                    : { top: '16px', right: '16px' }
-                }
-            >
-                <div className="bg-white/80 dark:bg-google-dark-surface/80 backdrop-blur rounded-lg border border-slate-200 dark:border-google-dark-border flex flex-col w-48 shadow-xl overflow-hidden">
-                    <div 
-                        className="text-[10px] text-slate-500 uppercase font-bold tracking-wider px-3 py-2 cursor-move bg-slate-100/50 dark:bg-google-dark-bg/50 hover:bg-slate-100 dark:hover:bg-google-dark-bg select-none flex items-center justify-between"
-                        onMouseDown={(e) => handleMouseDown('options', e)}
-                    >
-                        <div className="flex items-center gap-2">
-                            <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
-                                <path d="M7 2a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM7 8a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM7 14a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM13 2a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM13 8a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM13 14a2 2 0 1 0 0 4 2 2 0 0 0 0-4z"/>
-                            </svg>
-                            {mode === 'hardware' ? t.hardwareOptions : t.detailOptions}
-                        </div>
-                        <div className="flex items-center gap-1">
-                            <button 
-                                onClick={(e) => { e.stopPropagation(); toggleOptionsCollapsed(); }}
-                                className="text-slate-400 hover:text-slate-900 dark:hover:text-white p-1 hover:bg-slate-200 dark:hover:bg-google-dark-border rounded"
-                            >
-                                {isOptionsCollapsed ? (
-                                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
-                                ) : (
-                                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" /></svg>
+                <div
+                    ref={optionsPanelRef}
+                    className="absolute z-30 pointer-events-auto"
+                    style={optionsPanelPos
+                        ? { left: optionsPanelPos.x, top: optionsPanelPos.y, right: 'auto' }
+                        : { top: '16px', right: '16px' }
+                    }
+                >
+                    <div className="bg-white/80 dark:bg-google-dark-surface/80 backdrop-blur rounded-lg border border-slate-200 dark:border-google-dark-border flex flex-col w-48 shadow-xl overflow-hidden">
+                        <div
+                            className="text-[10px] text-slate-500 uppercase font-bold tracking-wider px-3 py-2 cursor-move bg-slate-100/50 dark:bg-google-dark-bg/50 hover:bg-slate-100 dark:hover:bg-google-dark-bg select-none flex items-center justify-between"
+                            onMouseDown={(e) => handleMouseDown('options', e)}
+                        >
+                            <div className="flex items-center gap-2">
+                                <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
+                                    <path d="M7 2a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM7 8a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM7 14a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM13 2a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM13 8a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM13 14a2 2 0 1 0 0 4 2 2 0 0 0 0-4z" />
+                                </svg>
+                                {mode === 'hardware' ? t.hardwareOptions : t.detailOptions}
+                            </div>
+                            <div className="flex items-center gap-1">
+                                <button
+                                    onClick={(e) => { e.stopPropagation(); toggleOptionsCollapsed(); }}
+                                    className="text-slate-400 hover:text-slate-900 dark:hover:text-white p-1 hover:bg-slate-200 dark:hover:bg-google-dark-border rounded"
+                                >
+                                    {isOptionsCollapsed ? (
+                                        <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
+                                    ) : (
+                                        <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" /></svg>
+                                    )}
+                                </button>
+                                {setShowOptionsPanel && (
+                                    <button
+                                        onClick={(e) => { e.stopPropagation(); setShowOptionsPanel(false); }}
+                                        className="text-slate-400 hover:text-slate-900 dark:hover:text-white p-1 hover:bg-red-50 hover:text-red-500 dark:hover:bg-red-900/20 rounded"
+                                    >
+                                        <X className="w-3 h-3" />
+                                    </button>
                                 )}
-                            </button>
-                            {setShowOptionsPanel && (
-                                <button 
-                                    onClick={(e) => { e.stopPropagation(); setShowOptionsPanel(false); }}
-                                    className="text-slate-400 hover:text-slate-900 dark:hover:text-white p-1 hover:bg-red-50 hover:text-red-500 dark:hover:bg-red-900/20 rounded"
-                                >
-                                    <X className="w-3 h-3" />
-                                </button>
-                            )}
-                        </div>
-                    </div>
-                    
-                    {!isOptionsCollapsed && (
-                    <div className="px-2 pb-2 pt-1 flex flex-col gap-2">
-                        <div className="border-b border-slate-200 dark:border-slate-700 pb-2 mb-1">
-                            <div className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase mb-1.5 px-1">{t.highlightMode}</div>
-                            <div className="flex bg-slate-100 dark:bg-google-dark-bg rounded p-0.5">
-                                <button
-                                    onClick={() => setHighlightMode('link')}
-                                    className={`flex-1 py-1 text-[10px] font-medium rounded transition-all ${highlightMode === 'link' ? 'bg-white dark:bg-google-dark-surface text-google-blue shadow-sm' : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'}`}
-                                >
-                                    {t.linkMode}
-                                </button>
-                                <button
-                                    onClick={() => setHighlightMode('collision')}
-                                    className={`flex-1 py-1 text-[10px] font-medium rounded transition-all ${highlightMode === 'collision' ? 'bg-white dark:bg-google-dark-surface text-google-blue shadow-sm' : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'}`}
-                                >
-                                    {t.collisionMode}
-                                </button>
                             </div>
                         </div>
 
-                        <div className="space-y-1">
-                            <CheckboxOption checked={showJointControls} onChange={setShowJointControls} label={t.showJointControls} compact />
-                            <CheckboxOption checked={showVisual} onChange={setShowVisual} label={t.showVisual} compact />
-                            <CheckboxOption checked={showCollision} onChange={setShowCollision} label={t.showCollision} compact />
-                        </div>
+                        {!isOptionsCollapsed && (
+                            <div className="px-2 pb-2 pt-1 flex flex-col gap-2">
+                                {/* Loaded File Display */}
+                                {fileName && (
+                                    <div className="bg-gradient-to-r from-slate-50 to-slate-100 dark:from-google-dark-bg dark:to-google-dark-surface rounded-md px-2 py-1.5 border border-slate-200 dark:border-google-dark-border animate-fade-in">
+                                        <div className="text-[9px] text-slate-400 dark:text-slate-500 uppercase tracking-wide mb-0.5">
+                                            {lang === 'zh' ? '已加载' : 'Loaded'}
+                                        </div>
+                                        <div className="text-[11px] font-semibold text-slate-700 dark:text-slate-200 truncate" title={fileName}>
+                                            {fileName}
+                                        </div>
+                                    </div>
+                                )}
 
-                        <div className="border-t border-slate-200 dark:border-slate-700 pt-2 space-y-1">
-                            <div className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase mb-1 px-1">{t.gizmos}</div>
-                            
-                            <CheckboxOption
-                                checked={showOrigins}
-                                onChange={setShowOrigins}
-                                label={t.showOrigin}
-                                icon={<Move className="w-3 h-3 text-slate-500" />}
-                                compact
-                            />
+                                <div className="border-b border-slate-200 dark:border-slate-700 pb-2 mb-1">
+                                    <div className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase mb-1.5 px-1">{t.highlightMode}</div>
+                                    <div className="flex bg-slate-100 dark:bg-google-dark-bg rounded p-0.5">
+                                        <button
+                                            onClick={() => setHighlightMode('link')}
+                                            className={`flex-1 py-1 text-[10px] font-medium rounded transition-all ${highlightMode === 'link' ? 'bg-white dark:bg-google-dark-surface text-google-blue shadow-sm' : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'}`}
+                                        >
+                                            {t.linkMode}
+                                        </button>
+                                        <button
+                                            onClick={() => setHighlightMode('collision')}
+                                            className={`flex-1 py-1 text-[10px] font-medium rounded transition-all ${highlightMode === 'collision' ? 'bg-white dark:bg-google-dark-surface text-google-blue shadow-sm' : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'}`}
+                                        >
+                                            {t.collisionMode}
+                                        </button>
+                                    </div>
+                                </div>
 
-                            {showOrigins && (
-                                <SliderOption label={t.size} value={originSize} onChange={setOriginSize} min={0.01} max={0.5} step={0.01} compact />
-                            )}
+                                <div className="space-y-1">
+                                    <CheckboxOption checked={showJointControls} onChange={setShowJointControls} label={t.showJointControls} compact />
+                                    <CheckboxOption checked={showVisual} onChange={setShowVisual} label={t.showVisual} compact />
+                                    <CheckboxOption checked={showCollision} onChange={setShowCollision} label={t.showCollision} compact />
+                                </div>
 
-                            <CheckboxOption
-                                checked={showJointAxes}
-                                onChange={setShowJointAxes}
-                                label={t.showJointAxes}
-                                icon={<ArrowUpRight className="w-3 h-3 text-slate-500" />}
-                                compact
-                            />
+                                {/* Model Opacity - Beautified */}
+                                <div className="border-t border-slate-200 dark:border-slate-700 pt-2">
+                                    <div className="px-1">
+                                        <div className="flex items-center gap-2 mb-1.5">
+                                            <div className="flex items-center gap-1">
+                                                <svg className="w-3 h-3 text-slate-400" viewBox="0 0 24 24" fill="currentColor">
+                                                    <circle cx="12" cy="12" r="10" fillOpacity={modelOpacity} />
+                                                    <circle cx="12" cy="12" r="10" fill="none" stroke="currentColor" strokeWidth="1.5" />
+                                                </svg>
+                                                <span className="text-[10px] text-slate-600 dark:text-slate-300">
+                                                    {lang === 'zh' ? '透明度' : 'Opacity'}
+                                                </span>
+                                            </div>
+                                            <span className="text-[10px] font-mono text-google-blue ml-auto">
+                                                {Math.round(modelOpacity * 100)}%
+                                            </span>
+                                        </div>
+                                        <div className="relative">
+                                            <input
+                                                type="range"
+                                                min={0.1}
+                                                max={1.0}
+                                                step={0.05}
+                                                value={modelOpacity}
+                                                onChange={(e) => setModelOpacity(parseFloat(e.target.value))}
+                                                className="w-full h-2 rounded-full appearance-none cursor-pointer bg-gradient-to-r from-slate-200 via-slate-300 to-slate-400 dark:from-slate-700 dark:via-slate-600 dark:to-slate-500 shadow-inner"
+                                                style={{
+                                                    background: `linear-gradient(to right, rgb(59, 130, 246) 0%, rgb(59, 130, 246) ${(modelOpacity - 0.1) / 0.9 * 100}%, rgb(203, 213, 225) ${(modelOpacity - 0.1) / 0.9 * 100}%, rgb(203, 213, 225) 100%)`
+                                                }}
+                                            />
+                                        </div>
+                                    </div>
+                                </div>
 
-                            {showJointAxes && (
-                                <SliderOption label={t.size} value={jointAxisSize} onChange={setJointAxisSize} min={0.01} max={5.0} step={0.01} compact />
-                            )}
+                                {/* Coordinate Axes Section */}
+                                <div className="border-t border-slate-200 dark:border-slate-700 pt-2 space-y-1">
+                                    <div className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase mb-1 px-1">
+                                        {lang === 'zh' ? '坐标系显示' : 'Coordinate Axes'}
+                                    </div>
 
-                            <CheckboxOption
-                                checked={showCenterOfMass}
-                                onChange={setShowCenterOfMass}
-                                label={t.showCenterOfMass}
-                                icon={<div className="w-3 h-3 rounded-full border border-slate-500 flex items-center justify-center"><div className="w-1 h-1 bg-slate-500 rounded-full"></div></div>}
-                                compact
-                            />
+                                    <CheckboxOption
+                                        checked={showOrigins}
+                                        onChange={setShowOrigins}
+                                        label={t.showOrigin}
+                                        icon={<Move className="w-3 h-3 text-slate-500" />}
+                                        compact
+                                    />
 
-                            <CheckboxOption
-                                checked={showInertia}
-                                onChange={setShowInertia}
-                                label={t.showInertia}
-                                icon={<div className="w-3 h-3 border border-dashed border-slate-500"></div>}
-                                compact
-                            />
-                        </div>
+                                    {showOrigins && (
+                                        <SliderOption label={t.size} value={originSize} onChange={setOriginSize} min={0.01} max={0.5} step={0.01} compact />
+                                    )}
+                                </div>
+
+                                {/* Joint Axes Section - Separated */}
+                                <div className="border-t border-slate-200 dark:border-slate-700 pt-2 space-y-1">
+                                    <div className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase mb-1 px-1">
+                                        {lang === 'zh' ? '关节轴显示' : 'Joint Axes'}
+                                    </div>
+
+                                    <CheckboxOption
+                                        checked={showJointAxes}
+                                        onChange={setShowJointAxes}
+                                        label={t.showJointAxes}
+                                        icon={<ArrowUpRight className="w-3 h-3 text-red-500" />}
+                                        compact
+                                    />
+
+                                    {showJointAxes && (
+                                        <SliderOption label={t.size} value={jointAxisSize} onChange={setJointAxisSize} min={0.01} max={5.0} step={0.01} compact />
+                                    )}
+                                </div>
+
+                                {/* Physics Visualization Section */}
+                                <div className="border-t border-slate-200 dark:border-slate-700 pt-2 space-y-1">
+                                    <div className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase mb-1 px-1">
+                                        {lang === 'zh' ? '物理可视化' : 'Physics'}
+                                    </div>
+
+                                    <CheckboxOption
+                                        checked={showCenterOfMass}
+                                        onChange={setShowCenterOfMass}
+                                        label={t.showCenterOfMass}
+                                        icon={<div className="w-3 h-3 rounded-full border border-slate-500 flex items-center justify-center"><div className="w-1 h-1 bg-slate-500 rounded-full"></div></div>}
+                                        compact
+                                    />
+
+                                    <CheckboxOption
+                                        checked={showInertia}
+                                        onChange={setShowInertia}
+                                        label={t.showInertia}
+                                        icon={<div className="w-3 h-3 border border-dashed border-slate-500"></div>}
+                                        compact
+                                    />
+                                </div>
+                            </div>
+                        )}
                     </div>
-                    )}
                 </div>
-            </div>
             )}
-            
+
             {/* Joint controls panel */}
             {showJointControls && showJointPanel && robot?.joints && Object.keys(robot.joints).length > 0 && (
-                <div 
+                <div
                     ref={jointPanelRef}
                     className="absolute z-30 bg-white/90 dark:bg-google-dark-surface/90 backdrop-blur rounded-lg border border-slate-200 dark:border-google-dark-border max-h-[50vh] overflow-hidden w-64 shadow-xl flex flex-col pointer-events-auto"
-                    style={jointPanelPos 
+                    style={jointPanelPos
                         ? { left: jointPanelPos.x, top: jointPanelPos.y, right: 'auto', bottom: 'auto' }
                         : { bottom: '16px', right: '16px' }
                     }
                 >
-                    <div 
+                    <div
                         className="text-[10px] text-slate-500 uppercase font-bold tracking-wider px-3 py-2 cursor-move bg-slate-100/50 dark:bg-google-dark-bg/50 hover:bg-slate-100 dark:hover:bg-google-dark-bg select-none flex items-center justify-between flex-shrink-0"
                         onMouseDown={(e) => handleMouseDown('joints', e)}
                     >
                         <div className="flex items-center gap-2">
                             <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
-                                <path d="M7 2a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM7 8a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM7 14a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM13 2a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM13 8a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM13 14a2 2 0 1 0 0 4 2 2 0 0 0 0-4z"/>
+                                <path d="M7 2a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM7 8a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM7 14a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM13 2a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM13 8a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM13 14a2 2 0 1 0 0 4 2 2 0 0 0 0-4z" />
                             </svg>
                             {t.jointControls}
                         </div>
                         <div className="flex items-center gap-2">
-                             <button
+                            <button
                                 onClick={(e) => { e.stopPropagation(); handleResetJoints(); }}
                                 className="p-1 rounded bg-slate-200 dark:bg-google-dark-bg hover:bg-slate-300 dark:hover:bg-google-dark-border text-slate-700 dark:text-white"
                                 title={t.resetJoints}
@@ -525,7 +599,7 @@ export function URDFViewer({
                             >
                                 {angleUnit.toUpperCase()}
                             </button>
-                            <button 
+                            <button
                                 onClick={(e) => { e.stopPropagation(); toggleJointsCollapsed(); }}
                                 className="text-slate-400 hover:text-slate-900 dark:hover:text-white p-1 hover:bg-slate-200 dark:hover:bg-google-dark-border rounded"
                             >
@@ -536,7 +610,7 @@ export function URDFViewer({
                                 )}
                             </button>
                             {setShowJointPanel && (
-                                <button 
+                                <button
                                     onClick={(e) => { e.stopPropagation(); setShowJointPanel(false); }}
                                     className="text-slate-400 hover:text-slate-900 dark:hover:text-white p-1 hover:bg-red-50 hover:text-red-500 dark:hover:bg-red-900/20 rounded"
                                 >
@@ -546,46 +620,46 @@ export function URDFViewer({
                         </div>
                     </div>
                     {!isJointsCollapsed && (
-                    <div className="p-3 overflow-y-auto flex-1">
-                    <div className="space-y-2">
-                        {Object.entries(robot.joints)
-                            .filter(([_, joint]: [string, any]) => joint.jointType !== 'fixed')
-                            .map(([name, joint]: [string, any]) => (
-                                <JointControlItem 
-                                    key={name}
-                                    name={name}
-                                    joint={joint}
-                                    jointAngles={jointAngles}
-                                    angleUnit={angleUnit}
-                                    activeJoint={activeJoint}
-                                    setActiveJoint={setActiveJoint}
-                                    handleJointAngleChange={handleJointAngleChange}
-                                    handleJointChangeCommit={handleJointChangeCommit}
-                                    onSelect={onSelect}
-                                />
-                            ))}
-                    </div>
-                    </div>
+                        <div className="p-3 overflow-y-auto flex-1">
+                            <div className="space-y-2">
+                                {Object.entries(robot.joints)
+                                    .filter(([_, joint]: [string, any]) => joint.jointType !== 'fixed')
+                                    .map(([name, joint]: [string, any]) => (
+                                        <JointControlItem
+                                            key={name}
+                                            name={name}
+                                            joint={joint}
+                                            jointAngles={jointAngles}
+                                            angleUnit={angleUnit}
+                                            activeJoint={activeJoint}
+                                            setActiveJoint={setActiveJoint}
+                                            handleJointAngleChange={handleJointAngleChange}
+                                            handleJointChangeCommit={handleJointChangeCommit}
+                                            onSelect={onSelect}
+                                        />
+                                    ))}
+                            </div>
+                        </div>
                     )}
                 </div>
             )}
-            
+
             {/* Toolbar */}
             {showToolbar && (
-                <ViewerToolbar 
-                    activeMode={toolMode} 
-                    setMode={setToolMode} 
+                <ViewerToolbar
+                    activeMode={toolMode}
+                    setMode={setToolMode}
                     onClose={setShowToolbar ? () => setShowToolbar(false) : undefined}
                     lang={lang}
                 />
             )}
-            
+
             {/* Measure panel */}
             {toolMode === 'measure' && (
-                <div 
+                <div
                     ref={measurePanelRef}
                     className="measure-panel absolute z-30 pointer-events-auto"
-                    style={measurePanelPos 
+                    style={measurePanelPos
                         ? { left: measurePanelPos.x, top: measurePanelPos.y }
                         : { left: '16px', top: '100px' }
                     }
@@ -606,7 +680,7 @@ export function URDFViewer({
                     <div className="bg-white/90 dark:bg-slate-800/90 backdrop-blur rounded-lg shadow-xl border border-slate-200 dark:border-slate-700 min-w-[200px] overflow-hidden">
                         <div className="cursor-move px-3 py-2 border-b border-slate-200 dark:border-slate-700 flex items-center justify-between bg-slate-100/50 dark:bg-slate-700/50">
                             <div className="text-xs font-semibold text-slate-700 dark:text-slate-200 flex items-center gap-2">
-                                <svg className="w-3 h-3 text-slate-400" fill="currentColor" viewBox="0 0 20 20"><path d="M7 2a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM7 8a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM7 14a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM13 2a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM13 8a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM13 14a2 2 0 1 0 0 4 2 2 0 0 0 0-4z"/></svg>
+                                <svg className="w-3 h-3 text-slate-400" fill="currentColor" viewBox="0 0 20 20"><path d="M7 2a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM7 8a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM7 14a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM13 2a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM13 8a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM13 14a2 2 0 1 0 0 4 2 2 0 0 0 0-4z" /></svg>
                                 <Ruler className="w-4 h-4" />
                                 测量工具
                             </div>
@@ -670,7 +744,7 @@ export function URDFViewer({
                 gl={{
                     antialias: true,
                     toneMapping: THREE.ACESFilmicToneMapping,
-                    toneMappingExposure: 1.0,
+                    toneMappingExposure: 1.1,
                     preserveDrawingBuffer: true,
                     powerPreference: 'high-performance',
                     failIfMajorPerformanceCaveat: false,
@@ -689,10 +763,10 @@ export function URDFViewer({
                 <SceneLighting />
                 <Environment files="/potsdamer_platz_1k.hdr" environmentIntensity={1.2} />
                 <SnapshotManager actionRef={snapshotAction} robotName={robot?.name || 'robot'} />
-                
-                <MeasureTool 
-                    active={toolMode === 'measure'} 
-                    robot={robot} 
+
+                <MeasureTool
+                    active={toolMode === 'measure'}
+                    robot={robot}
                     measureState={measureState}
                     setMeasureState={setMeasureState}
                 />
@@ -722,6 +796,7 @@ export function URDFViewer({
                         originSize={originSize}
                         showJointAxes={showJointAxes}
                         jointAxisSize={jointAxisSize}
+                        modelOpacity={modelOpacity}
                         robotLinks={robotLinks}
                         focusTarget={focusTarget}
                         transformMode={transformMode}
@@ -730,30 +805,30 @@ export function URDFViewer({
                         isOrbitDragging={isOrbitDragging}
                     />
                 </Suspense>
-                
+
                 {activeJoint && robot?.joints?.[activeJoint] && (
-                    <JointInteraction 
-                        joint={robot.joints[activeJoint]} 
+                    <JointInteraction
+                        joint={robot.joints[activeJoint]}
                         value={jointAngles[activeJoint] || 0}
                         onChange={(val) => handleJointAngleChange(activeJoint, val)}
                         onCommit={(val) => handleJointChangeCommit(activeJoint, val)}
                     />
                 )}
-                
-                <Grid 
-                    name="ReferenceGrid"
-                    infiniteGrid 
-                    fadeDistance={100}
-                    sectionSize={1}
-                    cellSize={0.1}
-                    sectionThickness={1.5}
-                    cellThickness={0.5}
-                    cellColor={theme === 'light' ? '#cbd5e1' : '#444444'} 
-                    sectionColor={theme === 'light' ? '#94a3b8' : '#555555'}
+
+                {/* Contact shadows for product studio ground effect */}
+                <ContactShadows
+                    opacity={0.6}
+                    scale={10}
+                    blur={2.5}
+                    far={1}
+                    resolution={512}
+                    color="#000000"
+                    position={[0, 0, 0]}
                     rotation={[Math.PI / 2, 0, 0]}
-                    position={[0, 0, -0.01]}
                 />
-                
+
+                <ReferenceGrid theme={theme} />
+
                 <OrbitControls
                     makeDefault
                     enableDamping={false}
@@ -763,15 +838,16 @@ export function URDFViewer({
                     onStart={() => { isOrbitDragging.current = true; }}
                     onEnd={() => { isOrbitDragging.current = false; }}
                 />
-                
+
                 <GizmoHelper alignment="bottom-right" margin={[80, 80]}>
                     <GizmoViewport labelColor={theme === 'light' ? '#0f172a' : 'white'} axisHeadScale={1} />
                 </GizmoHelper>
-                
+
             </Canvas>
         </div>
     );
 }
 
 export { URDFViewer as default };
+export * from './types';
 export * from './types';
