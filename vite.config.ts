@@ -20,7 +20,9 @@ export default defineConfig(({ mode }) => {
       },
       resolve: {
         alias: {
-          '@': path.resolve(__dirname, '.'),
+          '@': path.resolve(__dirname, './src'),
+          // 临时别名，指向旧文件位置，便于渐进迁移
+          '@legacy': path.resolve(__dirname, '.'),
         }
       }
     };
