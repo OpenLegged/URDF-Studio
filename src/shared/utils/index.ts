@@ -1,2 +1,7 @@
-// Shared utils placeholder - will be populated in Phase 2
-export {}
+/**
+ * Shared utilities index
+ * Re-exports all utility functions from sub-modules
+ */
+
+export * from './math';
+export * from './throttle';

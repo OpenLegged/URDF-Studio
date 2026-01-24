@@ -1,2 +1,6 @@
-// Shared hooks placeholder - will be populated in Phase 2
-export {}
+/**
+ * Shared hooks index
+ * Re-exports all hooks from sub-modules
+ */
+
+export * from './useHistory';

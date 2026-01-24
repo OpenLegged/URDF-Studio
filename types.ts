@@ -1,3 +1,11 @@
+/**
+ * @deprecated Types have been migrated to @/types
+ * This file is kept for backward compatibility during migration.
+ * New code should import from '@/types' instead.
+ *
+ * Example:
+ *   import { RobotState, UrdfLink } from '@/types';
+ */
 
 export type Vector3 = { x: number; y: number; z: number };
 export type Euler = { r: number; p: number; y: number };
