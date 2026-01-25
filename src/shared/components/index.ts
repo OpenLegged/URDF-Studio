@@ -1,2 +1,10 @@
-// Shared components placeholder - will be populated in Phase 4
-export {}
+/**
+ * Shared Components
+ * Export all shared UI and 3D components
+ */
+
+// 3D Components
+export * from './3d';
+
+// Panel Components
+export * from './Panel';

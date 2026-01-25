@@ -1,8 +1,5 @@
 /**
- * Shared Components Index
- * Export all shared components for easy importing
+ * Re-export from new location for backwards compatibility
+ * @deprecated Import from '@/shared/components/3d' instead
  */
-
-export { STLRenderer, OBJRenderer, DAERenderer, useLoadingManager } from './MeshRenderers';
-export { HoverInvalidator, SnapshotManager, SceneLighting, ReferenceGrid } from './SceneUtilities';
-export { ThickerAxes, JointAxesVisual, InertiaBox, LinkCenterOfMass } from './VisualizationHelpers';
+export * from '@/shared/components/3d';
