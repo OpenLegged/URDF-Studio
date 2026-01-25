@@ -15,24 +15,52 @@
 
 ### 相关文档
 
-| 文档 | 说明 |
-|------|------|
-| [docs/PROJECT_GUIDE.md](docs/PROJECT_GUIDE.md) | 当前项目结构 |
+
+| 文档                                                       | 说明           |
+| ---------------------------------------------------------- | -------------- |
+| [docs/PROJECT_GUIDE.md](docs/PROJECT_GUIDE.md)             | 当前项目结构   |
 | [docs/MODULARIZATION_PLAN.md](docs/MODULARIZATION_PLAN.md) | 目标模块化架构 |
-| [docs/REFACTORING_STEPS.md](docs/REFACTORING_STEPS.md) | 渐进式重构步骤 |
+| [docs/REFACTORING_STEPS.md](docs/REFACTORING_STEPS.md)     | 渐进式重构步骤 |
+
+
+继续阶段6 Feature模块迁移。
+
+已完成: code-editor, hardware-config, robot-tree, property-editor, visualizer
+
+待迁移:
+
+1. urdf-viewer (components/URDFViewer/ → src/features/urdf-viewer/)
+2. ai-assistant (services/geminiService.ts → src/features/ai-assistant/)
+3. file-io (从App.tsx提取 → src/features/file-io/)
+
+迁移模式:
+
+- 复制到 src/features/xxx/components/
+- 更新导入: @/types, @/store, @/shared/i18n, @/shared/components/3d
+- 原文件改为 export * from '@/features/xxx'
+- 每完成1个任务后进行测试npm build
+
+URDFViewer 组件列表:
+
+- components/URDFViewer/RobotModel.tsx (主渲染组件，约2273行)
+- components/URDFViewer/URDFViewer.tsx (容器组件)
+- components/URDFViewer/index.ts
+
+参考已迁移的 src/features/visualizer/ 结构
 
 ### 重构阶段
 
-| 阶段 | 名称 | 状态 |
-|------|------|------|
-| 1 | 基础设施准备 | ✅ 已完成 |
-| 2 | 类型与工具迁移 | ✅ 已完成 |
-| 3 | 核心业务逻辑迁移 | ✅ 已完成 |
-| 4 | 共享组件迁移 | ✅ 已完成 |
-| 5 | Store 层建立 | ✅ 已完成 |
-| 6 | Feature 模块迁移 | 待开始 |
-| 7 | App 层重构 | 待开始 |
-| 8 | 清理与验证 | 待开始 |
+
+| 阶段 | 名称             | 状态      |
+| ---- | ---------------- | --------- |
+| 1    | 基础设施准备     | ✅ 已完成 |
+| 2    | 类型与工具迁移   | ✅ 已完成 |
+| 3    | 核心业务逻辑迁移 | ✅ 已完成 |
+| 4    | 共享组件迁移     | ✅ 已完成 |
+| 5    | Store 层建立     | ✅ 已完成 |
+| 6    | Feature 模块迁移 | 待开始    |
+| 7    | App 层重构       | 待开始    |
+| 8    | 清理与验证       | 待开始    |
 
 ## 目标架构
 
@@ -86,12 +114,13 @@ Features 之间**不可直接依赖**，通过 Store 通信。
 
 ### 文件命名
 
-| 类型 | 规则 | 示例 |
-|------|------|------|
-| 组件 | PascalCase | `LinkEditor.tsx` |
+
+| 类型 | 规则                | 示例                |
+| ---- | ------------------- | ------------------- |
+| 组件 | PascalCase          | `LinkEditor.tsx`    |
 | Hook | camelCase + use前缀 | `useModelLoader.ts` |
-| 工具 | camelCase | `transforms.ts` |
-| 类型 | camelCase | `types.ts` |
+| 工具 | camelCase           | `transforms.ts`     |
+| 类型 | camelCase           | `types.ts`          |
 
 ### 导入顺序
 
@@ -185,13 +214,14 @@ import { Something } from '@legacy/xxx'       // 原有位置 (临时)
 
 需要拆分的主要文件：
 
-| 文件 | 当前行数 | 目标 |
-|------|---------|------|
-| `App.tsx` | ~2,734 | 拆分到 app/ + store/ |
-| `RobotModel.tsx` | ~2,273 | 拆分到 urdf-viewer/model/ |
-| `Visualizer.tsx` | ~1,575 | 拆分到 visualizer/ |
-| `PropertyEditor.tsx` | ~1,151 | 拆分到 property-editor/ |
-| `mjcfLoader.ts` | ~1,225 | 拆分到 core/parsers/mjcf/ |
+
+| 文件                 | 当前行数 | 目标                      |
+| -------------------- | -------- | ------------------------- |
+| `App.tsx`            | ~2,734   | 拆分到 app/ + store/      |
+| `RobotModel.tsx`     | ~2,273   | 拆分到 urdf-viewer/model/ |
+| `Visualizer.tsx`     | ~1,575   | 拆分到 visualizer/        |
+| `PropertyEditor.tsx` | ~1,151   | 拆分到 property-editor/   |
+| `mjcfLoader.ts`      | ~1,225   | 拆分到 core/parsers/mjcf/ |
 
 ## 核心数据结构
 
@@ -218,16 +248,16 @@ interface UIState {
 
 每完成一个阶段，验证以下内容：
 
-- [ ] `npm run dev` 正常启动
-- [ ] `npm run build` 无错误
-- [ ] 控制台无错误/警告
-- [ ] 三种模式 (Skeleton/Detail/Hardware) 正常切换
-- [ ] 导入功能正常 (URDF/MJCF/USD/Xacro)
-- [ ] 导出功能正常
-- [ ] TreeEditor 编辑正常
-- [ ] PropertyEditor 编辑正常
-- [ ] 3D 渲染正常
-- [ ] Undo/Redo 正常
+- [ ]  `npm run dev` 正常启动
+- [ ]  `npm run build` 无错误
+- [ ]  控制台无错误/警告
+- [ ]  三种模式 (Skeleton/Detail/Hardware) 正常切换
+- [ ]  导入功能正常 (URDF/MJCF/USD/Xacro)
+- [ ]  导出功能正常
+- [ ]  TreeEditor 编辑正常
+- [ ]  PropertyEditor 编辑正常
+- [ ]  3D 渲染正常
+- [ ]  Undo/Redo 正常
 
 ## 注意事项
 
@@ -254,10 +284,11 @@ URDF-Studio/
 
 ### 核心文件位置
 
-| 功能 | 当前位置 | 目标位置 |
-|------|---------|---------|
-| URDF 解析 | services/urdfParser.ts | src/core/parsers/urdf/ |
+
+| 功能        | 当前位置                             | 目标位置                        |
+| ----------- | ------------------------------------ | ------------------------------- |
+| URDF 解析   | services/urdfParser.ts               | src/core/parsers/urdf/          |
 | 3D 模型渲染 | components/URDFViewer/RobotModel.tsx | src/features/urdf-viewer/model/ |
-| 属性编辑 | components/PropertyEditor.tsx | src/features/property-editor/ |
-| 状态管理 | App.tsx (useState) | src/store/ (Zustand) |
-| 共享 3D | components/shared/ | src/shared/components/3d/ |
+| 属性编辑    | components/PropertyEditor.tsx        | src/features/property-editor/   |
+| 状态管理    | App.tsx (useState)                   | src/store/ (Zustand)            |
+| 共享 3D     | components/shared/                   | src/shared/components/3d/       |

@@ -1,2 +1,5 @@
-// Visualizer feature placeholder - will be populated in Phase 6
-export {}
+/**
+ * Visualizer Feature Module
+ * 3D visualization for Skeleton/Hardware modes
+ */
+export { Visualizer } from './components/Visualizer';
