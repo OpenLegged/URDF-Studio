@@ -22,32 +22,6 @@
 | [docs/MODULARIZATION_PLAN.md](docs/MODULARIZATION_PLAN.md) | 目标模块化架构 |
 | [docs/REFACTORING_STEPS.md](docs/REFACTORING_STEPS.md)     | 渐进式重构步骤 |
 
-
-继续阶段6 Feature模块迁移。
-
-已完成: code-editor, hardware-config, robot-tree, property-editor, visualizer
-
-待迁移:
-
-1. urdf-viewer (components/URDFViewer/ → src/features/urdf-viewer/)
-2. ai-assistant (services/geminiService.ts → src/features/ai-assistant/)
-3. file-io (从App.tsx提取 → src/features/file-io/)
-
-迁移模式:
-
-- 复制到 src/features/xxx/components/
-- 更新导入: @/types, @/store, @/shared/i18n, @/shared/components/3d
-- 原文件改为 export * from '@/features/xxx'
-- 每完成1个任务后进行测试npm build
-
-URDFViewer 组件列表:
-
-- components/URDFViewer/RobotModel.tsx (主渲染组件，约2273行)
-- components/URDFViewer/URDFViewer.tsx (容器组件)
-- components/URDFViewer/index.ts
-
-参考已迁移的 src/features/visualizer/ 结构
-
 ### 重构阶段
 
 
