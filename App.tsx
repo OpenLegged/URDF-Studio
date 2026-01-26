@@ -20,6 +20,9 @@ import { Download, Activity, Box, Cpu, Upload, Sparkles, X, Loader2, Check, Arro
 import JSZip from 'jszip';
 import jsPDF from 'jspdf';
 
+// Store imports for state synchronization (Phase 7 migration)
+import { useUIStore, useSelectionStore, useRobotStore } from '@/store';
+
 const INITIAL_ID = 'base_link';
 
 type RobotData = Omit<RobotState, 'selection'>;
@@ -88,6 +91,33 @@ export default function App() {
             }
         }
     }, [robotData, selection]);
+
+    // === Store Synchronization (Phase 7 migration) ===
+    // Sync core state to stores for components that read from store
+    const syncRobotToStore = useRobotStore((state) => state.setRobot);
+    const syncSelectionToStore = useSelectionStore((state) => state.setSelection);
+    const setAppModeStore = useUIStore((state) => state.setAppMode);
+
+    // Sync robot data changes to store
+    useEffect(() => {
+        syncRobotToStore({
+            name: robotData.name,
+            links: robotData.links,
+            joints: robotData.joints,
+            rootLinkId: robotData.rootLinkId,
+        });
+    }, [robotData, syncRobotToStore]);
+
+    // Sync selection to store
+    useEffect(() => {
+        syncSelectionToStore(selection);
+    }, [selection, syncSelectionToStore]);
+
+    // Sync app mode to store
+    useEffect(() => {
+        setAppModeStore(appMode);
+    }, [appMode, setAppModeStore]);
+    // === End Store Synchronization ===
 
     // Sidebar collapse state
     const [leftSidebarCollapsed, setLeftSidebarCollapsed] = useState(() => {
