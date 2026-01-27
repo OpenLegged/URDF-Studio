@@ -1,6 +1,6 @@
 import React, { Suspense, useState, useRef, useEffect, useCallback } from 'react';
 import { Canvas, RootState } from '@react-three/fiber';
-import { OrbitControls, Environment, GizmoHelper, GizmoViewport, ContactShadows } from '@react-three/drei';
+import { OrbitControls, Environment, GizmoHelper, GizmoViewport } from '@react-three/drei';
 import * as THREE from 'three';
 import { RotateCcw, Move, ArrowUpRight, X, Ruler } from 'lucide-react';
 import { CheckboxOption, SliderOption } from '@/shared/components/Panel/OptionsPanel';
@@ -815,8 +815,8 @@ export function URDFViewer({
                     />
                 )}
 
-                {/* Contact shadows for product studio ground effect */}
-                <ContactShadows
+                {/* Contact shadows disabled - removed for cleaner appearance */}
+                {/* <ContactShadows
                     opacity={0.6}
                     scale={10}
                     blur={2.5}
@@ -825,7 +825,7 @@ export function URDFViewer({
                     color="#000000"
                     position={[0, 0, 0]}
                     rotation={[Math.PI / 2, 0, 0]}
-                />
+                /> */}
 
                 <ReferenceGrid theme={theme} />
 
