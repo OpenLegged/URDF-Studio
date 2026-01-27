@@ -19,7 +19,7 @@ interface RobotModel {
   tags: string[];
   lastUpdated: string;
   urdfPath?: string;
-  sourceType: 'server' | 'url'; // 新增：server 表示服务器存储，url 表示外部链接
+  sourceType: 'server' | 'git'; // 新增：server 表示服务器存储，git 表示外部链接
 }
 
 const MOCK_MODELS: RobotModel[] = [
@@ -42,14 +42,14 @@ const MOCK_MODELS: RobotModel[] = [
     name: 'Unitree G1',
     author: 'Unitree Robotics',
     description: 'Humanoid robot for education and research.',
-    thumbnail: '',
+    thumbnail: '/library/urdf/unitree/g1_thumbnail.jpg',
     category: 'Humanoid',
     stars: 0,
     downloads: 0,
     tags: ['Humanoid', 'Bipedal', 'Mobile'],
     lastUpdated: '2026-01-17',
     urdfPath: 'https://github.com/unitreerobotics/unitree_ros/blob/master/robots/g1_description',
-    sourceType: 'url'
+    sourceType: 'git'
   }
 ];
 
@@ -65,7 +65,8 @@ const RobotThumbnail = ({ model }: { model: RobotModel }) => {
   const [imageError, setImageError] = useState(false);
 
   // Try to load the static thumbnail first
-  const staticThumbnailPath = model.urdfPath ? `${model.urdfPath}/thumbnail.png` : model.thumbnail;
+  // 优先使用明确指定的 thumbnail。如果是 server 类型且未指定 thumbnail，则尝试从 urdfPath 推断
+  const staticThumbnailPath = model.thumbnail || (model.sourceType === 'server' && model.urdfPath ? `${model.urdfPath}/thumbnail.png` : '');
 
   if (imageError || !staticThumbnailPath) {
     return (
@@ -91,7 +92,7 @@ export const URDFSquare: React.FC<URDFSquareProps> = ({ onClose, lang, onImport 
   const [selectedCategory, setSelectedCategory] = useState('all');
   const [isDownloading, setIsDownloading] = useState(false);
 
-  const downloadFromGithub = async (model: RobotModel) => {
+  const loadFromGithub = async (model: RobotModel) => {
     if (!model.urdfPath) return;
     setIsDownloading(true);
 
@@ -105,64 +106,64 @@ export const URDFSquare: React.FC<URDFSquareProps> = ({ onClose, lang, onImport 
       const branch = parts[3];
       const path = parts.slice(4).join('/');
 
-      // 2. 获取用户本地目录句柄
-      if (!(window as any).showDirectoryPicker) {
-        throw new Error(lang === 'zh' ? '您的浏览器不支持文件系统访问 API' : 'Your browser does not support File System Access API');
-      }
-      const dirHandle = await (window as any).showDirectoryPicker({
-        mode: 'readwrite',
-        startIn: 'downloads'
-      });
-
-      // 3. 构建 GitHub API 递归请求
+      // 2. 构建 GitHub API 递归请求
       const apiUrl = `https://api.github.com/repos/${owner}/${repo}/contents/${path}?ref=${branch}`;
-      const response = await fetch(apiUrl);
-      if (!response.ok) throw new Error('GitHub API request failed');
-      const contents = await response.json();
+      
+      const fileObjects: File[] = [];
+      const rootFolder = model.name.replace(/\s+/g, '_');
 
-      // 4. 定义递归下载函数
-      const downloadRecursive = async (items: any[], currentHandle: FileSystemDirectoryHandle) => {
+      // 3. 定义递归下载函数
+      const fetchRecursive = async (requestUrl: string, currentPath: string) => {
+        const response = await fetch(requestUrl);
+        if (!response.ok) throw new Error('GitHub API request failed');
+        const contents = await response.json();
+        
+        const items = Array.isArray(contents) ? contents : [contents];
+
         for (const item of items) {
           if (item.type === 'file') {
             const fileRes = await fetch(item.download_url);
             const blob = await fileRes.blob();
-            const fileHandle = await currentHandle.getFileHandle(item.name, { create: true });
-            const writable = await fileHandle.createWritable();
-            await writable.write(blob);
-            await writable.close();
+            const file = new File([blob], item.name, { type: blob.type });
+            
+            // Patch webkitRelativePath
+            const relativePath = currentPath ? `${currentPath}/${item.name}` : item.name;
+            Object.defineProperty(file, 'webkitRelativePath', {
+                value: `${rootFolder}/${relativePath}`
+            });
+            fileObjects.push(file);
+            
           } else if (item.type === 'dir') {
-            const newDirHandle = await currentHandle.getDirectoryHandle(item.name, { create: true });
-            const subDirRes = await fetch(item.url);
-            const subDirItems = await subDirRes.json();
-            await downloadRecursive(subDirItems, newDirHandle);
+            await fetchRecursive(item.url, currentPath ? `${currentPath}/${item.name}` : item.name);
           }
         }
       };
 
-      await downloadRecursive(Array.isArray(contents) ? contents : [contents], dirHandle);
+      await fetchRecursive(apiUrl, '');
       
+      // 4. Create mock event and call onImport
+      const mockEvent = {
+          target: {
+              files: fileObjects
+          }
+      } as unknown as React.ChangeEvent<HTMLInputElement>;
+      
+      onImport(mockEvent);
       setIsDownloading(false);
-      if (confirm(lang === 'zh' ? '下载完成！是否立即从本地文件夹加载该模型？' : 'Download complete! Would you like to load the model from the local folder now?')) {
-        // 触发关闭窗口，并提示用户点击主界面的“导入本地 URDF"
-        onClose();
-        // 这里可以弹出更详细的指引，因为浏览器无法自动打开文件选择框并选中刚下载的目录
-        alert(lang === 'zh' ? '请点击主界面的“导入本地 URDF”并选择刚才下载的文件夹。' : 'Please click "Import Local URDF" on the main screen and select the folder you just downloaded.');
-      }
+      onClose();
       
     } catch (err: any) {
       setIsDownloading(false);
-      console.error('Github download failed:', err);
-      if (err.name !== 'AbortError') {
-        alert(lang === 'zh' ? `下载失败: ${err.message}` : `Download failed: ${err.message}`);
-      }
+      console.error('Github load failed:', err);
+      alert(lang === 'zh' ? `加载失败: ${err.message}` : `Load failed: ${err.message}`);
     }
   };
 
   const handleImportModel = async (model: RobotModel) => {
     if (!model.urdfPath) return;
 
-    if (model.sourceType === 'url') {
-      await downloadFromGithub(model);
+    if (model.sourceType === 'git') {
+      await loadFromGithub(model);
       return;
     }
     
@@ -391,11 +392,13 @@ export const URDFSquare: React.FC<URDFSquareProps> = ({ onClose, lang, onImport 
       
       {/* Loading Indicator */}
       {isDownloading && (
-        <div className="absolute bottom-6 left-6 z-50 flex items-center gap-3 px-4 py-3 bg-white dark:bg-slate-800 shadow-2xl rounded-xl border border-slate-200 dark:border-slate-700 animate-in fade-in slide-in-from-bottom-4 duration-300">
-          <Loader2 className="w-5 h-5 text-indigo-500 animate-spin" />
-          <div className="flex flex-col">
-            <span className="text-sm font-bold">{lang === 'zh' ? '正在处理中...' : 'Processing...'}</span>
-            <span className="text-[10px] text-slate-500">{lang === 'zh' ? '正在从云端获取模型资源，请稍候' : 'Fetching model resources, please wait'}</span>
+        <div className="absolute inset-0 z-50 flex items-center justify-center bg-white/80 dark:bg-slate-900/80 backdrop-blur-sm animate-in fade-in duration-300">
+          <div className="flex flex-col items-center gap-6 px-12 py-10 bg-white dark:bg-slate-800 shadow-2xl rounded-2xl border border-slate-200 dark:border-slate-700">
+            <Loader2 className="w-12 h-12 text-indigo-600 animate-spin" />
+            <div className="flex flex-col items-center text-center gap-2">
+              <span className="text-xl font-bold text-slate-900 dark:text-white">{lang === 'zh' ? '正在处理中...' : 'Processing...'}</span>
+              <span className="text-base text-slate-500">{lang === 'zh' ? '正在从云端获取模型资源，请稍候' : 'Fetching model resources, please wait'}</span>
+            </div>
           </div>
         </div>
       )}
