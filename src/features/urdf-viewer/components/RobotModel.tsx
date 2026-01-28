@@ -591,6 +591,20 @@ export const RobotModel: React.FC<RobotModelProps> = memo(({
         try {
             const targetSubType = subType || (highlightMode === 'collision' ? 'collision' : 'visual');
 
+            // CRITICAL: Check if the corresponding display option is enabled
+            // In link mode, only highlight if showVisual is true
+            // In collision mode, only highlight if showCollision is true
+            if (!revert) {
+                if (targetSubType === 'visual' && !showVisual) {
+                    // Link mode but visual display is off - don't highlight
+                    return;
+                }
+                if (targetSubType === 'collision' && !showCollision) {
+                    // Collision mode but collision display is off - don't highlight
+                    return;
+                }
+            }
+
             // OPTIMIZED: Use Map-based revert instead of traversing
             if (revert) {
                 revertAllHighlights();
@@ -906,6 +920,13 @@ export const RobotModel: React.FC<RobotModelProps> = memo(({
 
             if (!isStandardSelectionMode) return;
 
+            // CRITICAL: Only allow selection if the corresponding display option is enabled
+            const isCollisionMode = highlightMode === 'collision';
+            if ((isCollisionMode && !showCollision) || (!isCollisionMode && !showVisual)) {
+                // Selection is not allowed because the display option is disabled
+                return;
+            }
+
             const rect = gl.domElement.getBoundingClientRect();
             const mouse = new THREE.Vector2(
                 ((e.clientX - rect.left) / rect.width) * 2 - 1,
@@ -913,8 +934,6 @@ export const RobotModel: React.FC<RobotModelProps> = memo(({
             );
 
             raycasterRef.current.setFromCamera(mouse, camera);
-
-            const isCollisionMode = highlightMode === 'collision';
 
             const intersections = raycasterRef.current.intersectObject(robot, true);
 
@@ -1125,8 +1144,21 @@ export const RobotModel: React.FC<RobotModelProps> = memo(({
             return;
         }
 
-        raycasterRef.current.setFromCamera(mouseRef.current, camera);
+        // CRITICAL: Skip hover detection if the corresponding display option is not enabled
+        // In link mode, only allow hover if showVisual is true
+        // In collision mode, only allow hover if showCollision is true
         const isCollisionMode = highlightMode === 'collision';
+        if ((isCollisionMode && !showCollision) || (!isCollisionMode && !showVisual)) {
+            // Clear any current hover since display is disabled
+            if (hoveredLinkRef.current && hoveredLinkRef.current !== selection?.id) {
+                highlightGeometry(hoveredLinkRef.current, true, isCollisionMode ? 'collision' : 'visual', (hoveredLinkRef as any).currentMesh);
+                hoveredLinkRef.current = null;
+                (hoveredLinkRef as any).currentMesh = null;
+            }
+            return;
+        }
+
+        raycasterRef.current.setFromCamera(mouseRef.current, camera);
 
         // PERFORMANCE: Two-phase detection - check bounding box first
         if (!rayIntersectsBoundingBox(raycasterRef.current)) {
@@ -1906,7 +1938,7 @@ export const RobotModel: React.FC<RobotModelProps> = memo(({
         } else {
             currentSelectionRef.current = { id: null, subType: null };
         }
-    }, [robot, selection?.type, selection?.id, selection?.subType, highlightGeometry, robotVersion, highlightMode, showCollision, toolMode]);
+    }, [robot, selection?.type, selection?.id, selection?.subType, highlightGeometry, robotVersion, highlightMode, showCollision, showVisual, toolMode]);
 
     // Effect to handle hover highlighting
     useEffect(() => {
@@ -1932,7 +1964,7 @@ export const RobotModel: React.FC<RobotModelProps> = memo(({
         } else {
             currentHoverRef.current = { id: null, subType: null };
         }
-    }, [robot, hoveredSelection?.id, hoveredSelection?.subType, selection?.id, selection?.subType, highlightGeometry, robotVersion, toolMode]);
+    }, [robot, hoveredSelection?.id, hoveredSelection?.subType, selection?.id, selection?.subType, highlightGeometry, robotVersion, toolMode, highlightMode, showVisual, showCollision]);
 
     // Load robot with proper cleanup and abort handling
     useEffect(() => {

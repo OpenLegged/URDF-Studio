@@ -80,8 +80,8 @@ export const CheckboxOption: React.FC<CheckboxOptionProps> = ({
   compact = false,
 }) => {
   const baseClass = compact
-    ? "flex items-center gap-2 text-xs text-slate-700 dark:text-slate-300 cursor-pointer hover:text-slate-900 dark:hover:text-white px-1 py-0.5 rounded hover:bg-slate-50 dark:hover:bg-google-dark-bg/50"
-    : "flex items-center gap-2 cursor-pointer text-sm text-slate-700 dark:text-slate-200 select-none hover:text-slate-900 dark:hover:text-white";
+    ? "flex items-center gap-2 text-xs text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white px-1 py-0.5 rounded hover:bg-slate-50 dark:hover:bg-google-dark-bg/50 select-none"
+    : "flex items-center gap-2 text-sm text-slate-700 dark:text-slate-200 hover:text-slate-900 dark:hover:text-white select-none";
 
   return (
     <label className={baseClass}>

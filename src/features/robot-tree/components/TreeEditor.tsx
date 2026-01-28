@@ -197,6 +197,70 @@ export interface TreeEditorProps {
 
 // --- Structure View Components ---
 
+// Component for text with long-press selection
+const SelectableText: React.FC<{
+  children: React.ReactNode;
+  className?: string;
+}> = ({ children, className = '' }) => {
+  const [isLongPressing, setIsLongPressing] = useState(false);
+  const pressTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const elementRef = useRef<HTMLSpanElement>(null);
+
+  const handleMouseDown = useCallback((e: React.MouseEvent) => {
+    // Prevent default text selection behavior for normal clicks
+    e.preventDefault();
+
+    pressTimerRef.current = setTimeout(() => {
+      setIsLongPressing(true);
+      // Enable text selection on the element itself
+      if (elementRef.current) {
+        elementRef.current.style.userSelect = 'text';
+        elementRef.current.style.webkitUserSelect = 'text';
+      }
+    }, 400); // 400ms for long press
+  }, []);
+
+  const handleMouseUp = useCallback(() => {
+    if (pressTimerRef.current) {
+      clearTimeout(pressTimerRef.current);
+      pressTimerRef.current = null;
+    }
+    if (!isLongPressing) {
+      // Reset if not long pressing
+      if (elementRef.current) {
+        elementRef.current.style.userSelect = 'none';
+        elementRef.current.style.webkitUserSelect = 'none';
+      }
+    }
+    setIsLongPressing(false);
+  }, [isLongPressing]);
+
+  const handleMouseLeave = useCallback(() => {
+    if (pressTimerRef.current) {
+      clearTimeout(pressTimerRef.current);
+      pressTimerRef.current = null;
+    }
+    setIsLongPressing(false);
+    if (elementRef.current) {
+      elementRef.current.style.userSelect = 'none';
+      elementRef.current.style.webkitUserSelect = 'none';
+    }
+  }, []);
+
+  return (
+    <span
+      ref={elementRef}
+      className={className}
+      style={{ userSelect: 'none', WebkitUserSelect: 'none' }}
+      onMouseDown={handleMouseDown}
+      onMouseUp={handleMouseUp}
+      onMouseLeave={handleMouseLeave}
+    >
+      {children}
+    </span>
+  );
+};
+
 // Memoized TreeNode to prevent unnecessary re-renders in recursive tree
 const TreeNode = memo(({
   linkId,
@@ -273,7 +337,9 @@ const TreeNode = memo(({
           <Box size={12} className={isLinkSelected ? 'text-white' : 'text-blue-500 dark:text-blue-400'} />
         </div>
 
-        <span className="text-xs font-medium truncate flex-1">{link.name}</span>
+        <SelectableText className="text-xs font-medium truncate flex-1">
+          {link.name}
+        </SelectableText>
 
         {/* Right side actions - always visible */}
         <div className="flex items-center gap-0.5 ml-auto">
@@ -344,8 +410,8 @@ const TreeNode = memo(({
                   {/* Connector */}
                   <div className="absolute -left-3 top-1/2 w-3 h-px bg-slate-200 dark:bg-slate-700" />
                   <Shapes size={12} />
-                  <span className="font-medium">{t.visual}</span>
-                  <span className="text-[10px] opacity-70 ml-auto">{link.visual.type}</span>
+                  <SelectableText className="font-medium">{t.visual}</SelectableText>
+                  <SelectableText className="text-[10px] opacity-70 ml-auto">{link.visual.type}</SelectableText>
                 </div>
               )}
 
@@ -362,8 +428,8 @@ const TreeNode = memo(({
                   {/* Connector */}
                   <div className="absolute -left-3 top-1/2 w-3 h-px bg-slate-200 dark:bg-slate-700" />
                   <Shield size={12} />
-                  <span className="font-medium">{t.collision}</span>
-                  <span className="text-[10px] opacity-70 ml-auto">{link.collision.type}</span>
+                  <SelectableText className="font-medium">{t.collision}</SelectableText>
+                  <SelectableText className="text-[10px] opacity-70 ml-auto">{link.collision.type}</SelectableText>
                 </div>
               )}
             </div>
@@ -393,7 +459,9 @@ const TreeNode = memo(({
                     <ArrowRightLeft size={10} className={isJointSelected ? 'text-white' : 'text-orange-500 dark:text-orange-400'} />
                   </div>
 
-                  <span className="text-[11px] font-medium truncate flex-1">{joint.name}</span>
+                  <SelectableText className="text-[11px] font-medium truncate flex-1">
+                    {joint.name}
+                  </SelectableText>
 
                   {/* Actions */}
                   {isSkeleton && (
