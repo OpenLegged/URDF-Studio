@@ -498,7 +498,7 @@ export function URDFViewer({
                                                 type="range"
                                                 min={0}
                                                 max={0.9}
-                                                step={0.05}
+                                                step={0.009}
                                                 value={1.0 - modelOpacity}
                                                 onChange={(e) => setModelOpacity(1.0 - parseFloat(e.target.value))}
                                                 className="w-full h-2 rounded-full appearance-none cursor-pointer bg-gradient-to-r from-slate-200 via-slate-300 to-slate-400 dark:from-slate-700 dark:via-slate-600 dark:to-slate-500 shadow-inner"
