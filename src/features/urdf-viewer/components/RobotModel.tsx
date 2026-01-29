@@ -1377,12 +1377,12 @@ export const RobotModel: React.FC<RobotModelProps> = memo(({
         if (!robot) return;
 
         robot.traverse((child: any) => {
-            if (child.parent && child.parent.isURDFLink && !child.isURDFJoint && !child.isURDFCollider) {
+            if (child.parent && child.parent.isURDFLink && !child.isURDFJoint && !child.isURDFCollider && child.userData?.isGizmo !== true) {
                 const linkName = child.parent.name;
                 const isLinkVisible = robotLinks?.[linkName]?.visible !== false;
                 child.visible = isLinkVisible;
             }
-            if (child.isMesh && !child.isURDFCollider && !child.userData.isCollisionMesh) {
+            if (child.isMesh && !child.isURDFCollider && !child.userData.isCollisionMesh && child.userData?.isGizmo !== true) {
                 let linkName = '';
                 if (child.parent && child.parent.isURDFLink) linkName = child.parent.name;
                 else if (child.parent && child.parent.parent && child.parent.parent.isURDFLink) linkName = child.parent.parent.name;
