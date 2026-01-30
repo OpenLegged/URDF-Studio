@@ -270,8 +270,16 @@ export function URDFViewer({
     // Handle WebGL context creation and context lost/restored events
     const handleCanvasCreated = useCallback((state: RootState) => {
         const gl = state.gl;
+        const scene = state.scene;
         glRef.current = gl;
         const canvas = gl.domElement;
+
+        // Expose scene to window for debugging
+        if (typeof window !== 'undefined') {
+            (window as any).scene = scene;
+            (window as any).THREE = THREE;
+            console.log('Three.js scene exposed to window.scene');
+        }
 
         const handleContextLost = (event: Event) => {
             event.preventDefault();

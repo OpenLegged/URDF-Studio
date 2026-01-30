@@ -164,7 +164,7 @@ function quaternionToEuler(w: number, x: number, y: number, z: number): [number,
 // MESH MAP PARSING
 // ============================================================
 
-function parseMeshAssets(doc: Document): Map<string, MJCFMesh> {
+function parseMeshAssets(doc: Document, settings?: MJCFCompilerSettings): Map<string, MJCFMesh> {
     const meshMap = new Map<string, MJCFMesh>();
     const asset = doc.querySelector('asset');
     if (!asset) return meshMap;
@@ -172,9 +172,15 @@ function parseMeshAssets(doc: Document): Map<string, MJCFMesh> {
     const meshes = asset.querySelectorAll('mesh');
     meshes.forEach((meshEl, index) => {
         let name = meshEl.getAttribute('name');
-        const file = meshEl.getAttribute('file');
+        let file = meshEl.getAttribute('file');
 
         if (file) {
+            // Apply meshdir prefix if available
+            if (settings?.meshdir && !file.startsWith('/') && !file.includes(':')) {
+                const prefix = settings.meshdir.endsWith('/') ? settings.meshdir : `${settings.meshdir}/`;
+                file = `${prefix}${file}`;
+            }
+
             if (!name) {
                 const fileName = file.split('/').pop()?.split('\\').pop() || '';
                 name = fileName.split('.')[0] || `mesh_${index}`;
@@ -183,6 +189,7 @@ function parseMeshAssets(doc: Document): Map<string, MJCFMesh> {
             const scaleStr = meshEl.getAttribute('scale');
             const scale = scaleStr ? parseNumbers(scaleStr) : undefined;
 
+            console.debug(`[MJCFLoader] Parsed mesh asset: name="${name}", file="${file}"`);
             meshMap.set(name, { name, file, scale: scale && scale.length >= 3 ? scale : undefined });
         }
     });
@@ -534,12 +541,27 @@ async function loadMeshForMJCF(
     assets: Record<string, string>,
     meshCache: Map<string, THREE.Object3D | THREE.BufferGeometry>
 ): Promise<THREE.Object3D | null> {
-    // Use findAssetByPath which has fuzzy matching (suffix match, etc)
-    const assetUrl = findAssetByPath(filePath, assets, '');
+    // 1. Try exact path (with meshdir)
+    let assetUrl = findAssetByPath(filePath, assets, '');
+
+    // 2. Fallback: Try filename only (ignore path/meshdir)
+    if (!assetUrl) {
+        const filename = filePath.split('/').pop() || '';
+        if (filename && filename !== filePath) {
+             console.warn(`[MJCFLoader] Mesh not found at ${filePath}, trying filename ${filename}`);
+             assetUrl = findAssetByPath(filename, assets, '');
+        }
+    }
 
     if (!assetUrl) {
-        console.warn(`[MJCFLoader] Mesh file not found: ${filePath}`);
-        // Log available assets to help debugging
+        console.warn(`[MJCFLoader] Mesh file definitely not found: ${filePath}`);
+        // Log available assets to help debugging (limited output)
+        const keys = Object.keys(assets);
+        if (keys.length > 0) {
+            console.debug(`[MJCFLoader] Available assets (${keys.length}):`, keys.slice(0, 10));
+        } else {
+            console.warn('[MJCFLoader] No assets available!');
+        }
         return null;
     }
 
@@ -832,7 +854,7 @@ export async function loadMJCFToThreeJS(
         console.log(`[MJCFLoader] Compiler settings: angle=${compilerSettings.angleUnit}, meshdir=${compilerSettings.meshdir}`);
 
         // Parse mesh assets
-        const meshMap = parseMeshAssets(doc);
+        const meshMap = parseMeshAssets(doc, compilerSettings);
 
         // Parse worldbody
         const worldbodyEl = mujocoEl.querySelector('worldbody');
