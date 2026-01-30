@@ -157,13 +157,14 @@ export const collisionBaseMaterial = new THREE.MeshStandardMaterial({
     metalness: 0.0,
     side: THREE.DoubleSide,
     depthWrite: false,      // Critical: transparent objects should not write to depth buffer
-    depthTest: true,        // Keep depth test for correct self-occlusion
+    depthTest: false,       // Disable depth test so collision always renders above visual mesh
     polygonOffset: true,    // Prevent Z-fighting with ground plane
     polygonOffsetFactor: -1.0,
     polygonOffsetUnits: -4.0,
 });
-// Set high renderOrder so collision meshes render after grid
+// Set flags to prevent opacity modification and mark as collision material
 collisionBaseMaterial.userData.isCollisionMaterial = true;
+collisionBaseMaterial.userData.isSharedMaterial = true;  // Prevent opacity modification
 
 // Empty raycast function to disable raycast on collision meshes
 export const emptyRaycast = () => { };

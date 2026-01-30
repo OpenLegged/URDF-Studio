@@ -55,7 +55,7 @@ export const TransformConfirmUI = memo(function TransformConfirmUI({
       zIndexRange={[100, 0]}
     >
       <div
-        className="flex flex-col items-center gap-1 transform -translate-y-16"
+        className="flex flex-col items-center gap-1"
         onClick={(e) => e.stopPropagation()}
         onPointerDown={(e) => e.stopPropagation()}
       >
@@ -74,7 +74,7 @@ export const TransformConfirmUI = memo(function TransformConfirmUI({
             onChange={handleValueChange}
             onKeyDown={handleKeyDown}
             autoFocus
-            className="w-20 px-1.5 py-0.5 text-xs font-mono bg-white/90 dark:bg-slate-800/90 border border-slate-300 dark:border-slate-600 rounded text-slate-800 dark:text-white focus:outline-none focus:border-blue-500 shadow"
+            className="w-20 px-1.5 py-0.5 text-xs font-mono bg-white/10 dark:bg-slate-900/10 backdrop-blur-sm border border-white/30 dark:border-slate-400/30 rounded text-slate-900 dark:text-white focus:outline-none focus:border-blue-500 shadow-lg"
           />
           <span className="text-[10px] text-slate-500 dark:text-slate-400">
             {pendingEdit.isRotate ? '°' : 'm'} ({getDeltaDisplay()})

@@ -1392,38 +1392,47 @@ export const RobotModel: React.FC<RobotModelProps> = memo(({
                 }
             }
 
-            // Apply model opacity to all meshes (except gizmos and collision meshes)
-            if (child.isMesh && !child.userData?.isGizmo) {
-                // Check if this is a collision mesh or part of a collision group
+            // Apply model opacity to VISUAL meshes only
+            // Skip: gizmos, collision meshes, inertia/CoM visualizations, axes
+            if (child.isMesh) {
+                // Skip if mesh itself is marked as gizmo
+                if (child.userData?.isGizmo) return;
+                
+                // Check if this is a collision mesh
                 const isCollision = child.isURDFCollider || 
                                    child.userData?.isCollisionMesh || 
                                    child.userData?.isCollision;
+                if (isCollision) return;
                 
-                // Also check parent hierarchy for collision or gizmo flags
-                let isSpecial = isCollision;
+                // Check parent hierarchy for special visualizations
                 let parent = child.parent;
-                while (parent && parent !== robot && !isSpecial) {
+                while (parent && parent !== robot) {
                     if (parent.userData?.isGizmo || 
                         parent.isURDFCollider || 
                         parent.userData?.isCollisionMesh ||
                         parent.name === '__inertia_visual__' ||
                         parent.name === '__com_visual__' ||
-                        parent.name === '__inertia_box__') {
-                        isSpecial = true;
+                        parent.name === '__inertia_box__' ||
+                        parent.name === '__origin_axes__' ||
+                        parent.name === '__joint_axis_helper__') {
+                        return; // Skip this mesh entirely
                     }
                     parent = parent.parent;
                 }
 
-                if (!isSpecial && child.material) {
-                    // Handle both single material and material array
+                // Apply opacity only to regular visual meshes
+                if (child.material) {
                     const materials = Array.isArray(child.material) ? child.material : [child.material];
                     materials.forEach((mat: any) => {
-                        if (mat && !mat.userData?.isSharedMaterial) {
+                        // Skip materials marked as shared/protected, or with depthTest disabled (overlay materials)
+                        if (mat && 
+                            !mat.userData?.isSharedMaterial && 
+                            !mat.userData?.isCollisionMaterial &&
+                            mat.depthTest !== false) {
                             const isTransparent = modelOpacity < 1.0;
                             mat.transparent = isTransparent;
                             mat.opacity = modelOpacity;
-                            // Fix depth write: when fully opaque, enable depth writing to prevent seeing through geometry
-                            mat.depthWrite = !isTransparent;
+                            mat.depthWrite = true;
                             mat.needsUpdate = true;
                         }
                     });
@@ -1488,7 +1497,9 @@ export const RobotModel: React.FC<RobotModelProps> = memo(({
                     const radius = 0.01;
                     const geometry = new THREE.SphereGeometry(radius, 16, 16, 0, Math.PI / 2, 0, Math.PI / 2);
                     const matBlack = new THREE.MeshBasicMaterial({ color: 0x000000, depthTest: false, transparent: true, opacity: 0.8 });
+                    matBlack.userData = { isSharedMaterial: true };  // Prevent opacity modification
                     const matWhite = new THREE.MeshBasicMaterial({ color: 0xffffff, depthTest: false, transparent: true, opacity: 0.8 });
+                    matWhite.userData = { isSharedMaterial: true };  // Prevent opacity modification
 
                     const positions = [
                         [0, 0, 0], [0, Math.PI / 2, 0], [0, Math.PI, 0], [0, -Math.PI / 2, 0],
@@ -1558,6 +1569,7 @@ export const RobotModel: React.FC<RobotModelProps> = memo(({
                             depthWrite: false,
                             depthTest: false
                         });
+                        mat.userData = { isSharedMaterial: true };  // Prevent opacity modification
                         const mesh = new THREE.Mesh(geom, mat);
                         mesh.quaternion.copy(rotation);
                         mesh.userData = { isGizmo: true };
@@ -1566,13 +1578,15 @@ export const RobotModel: React.FC<RobotModelProps> = memo(({
                         inertiaBox.add(mesh);
 
                         const edges = new THREE.EdgesGeometry(geom);
-                        const line = new THREE.LineSegments(edges, new THREE.LineBasicMaterial({
+                        const lineMat = new THREE.LineBasicMaterial({
                             color: 0x00d4ff,
                             transparent: true,
                             opacity: 0.6,
                             depthWrite: false,
                             depthTest: false
-                        }));
+                        });
+                        lineMat.userData = { isSharedMaterial: true };  // Prevent opacity modification
+                        const line = new THREE.LineSegments(edges, lineMat);
                         line.quaternion.copy(rotation);
                         line.userData = { isGizmo: true };
                         line.raycast = () => { };
@@ -1615,7 +1629,7 @@ export const RobotModel: React.FC<RobotModelProps> = memo(({
 
         invalidate();
 
-    }, [robot, showInertia, showCenterOfMass, centerOfMassSize, modelOpacity, robotVersion, invalidate, robotLinks]);
+    }, [robot, showInertia, showCenterOfMass, centerOfMassSize, robotVersion, invalidate, robotLinks]);
 
     // Effect to handle origin axes visualization for each link
     useEffect(() => {

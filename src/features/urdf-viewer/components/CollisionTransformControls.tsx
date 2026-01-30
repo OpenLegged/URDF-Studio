@@ -423,16 +423,27 @@ export const CollisionTransformControls: React.FC<CollisionTransformControlsProp
                 />
             )}
 
-            {/* Confirm/Cancel UI after drag ends - Fusion360 style */}
-            {pendingEdit && (
+            {/* Confirm/Cancel UI after drag ends - Fusion360 style: positioned above collision body */}
+            {pendingEdit && (() => {
+                // Calculate bounding box top position for Fusion360-like UI placement
+                const box = new THREE.Box3().setFromObject(targetObject);
+                const center = box.getCenter(new THREE.Vector3());
+                const size = box.getSize(new THREE.Vector3());
+                // Position UI just above the collision body's bounding box
+                const uiPosition: [number, number, number] = [
+                    center.x,
+                    center.y,
+                    center.z + size.z / 2 + 0.02 // Small offset above the top
+                ];
+                return (
                 <Html
-                    position={targetObject.position.toArray()}
+                    position={uiPosition}
                     style={{ pointerEvents: 'auto' }}
                     center
                     zIndexRange={[100, 0]}
                 >
                     <div
-                        className="flex flex-col items-center gap-1 transform -translate-y-16"
+                        className="flex flex-col items-center gap-1"
                         onClick={(e) => e.stopPropagation()}
                         onPointerDown={(e) => e.stopPropagation()}
                     >
@@ -481,7 +492,8 @@ export const CollisionTransformControls: React.FC<CollisionTransformControlsProp
                         </div>
                     </div>
                 </Html>
-            )}
+                );
+            })()}
         </>
     );
 };

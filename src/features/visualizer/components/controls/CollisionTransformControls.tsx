@@ -71,6 +71,9 @@ export const CollisionTransformControls = memo(function CollisionTransformContro
         // Get world position for correct placement
         const worldPos = new THREE.Vector3();
         selectedCollisionRef.getWorldPosition(worldPos);
+        
+        // Offset upward to float above the collision object
+        worldPos.y += 0.3;
 
         return (
           <TransformConfirmUI
