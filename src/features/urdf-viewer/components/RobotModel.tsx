@@ -238,8 +238,46 @@ function createJointAxisVisualization(axis: THREE.Vector3, size: number = 1.0): 
 }
 
 function offsetRobotToGround(robot: THREE.Object3D): void {
-    // Calculate bounding box
-    const box = new THREE.Box3().setFromObject(robot);
+    // Update matrix world to ensure correct bounds calculation for detached object
+    robot.updateMatrixWorld(true);
+
+    const box = new THREE.Box3();
+    
+    robot.traverse((child) => {
+        // Ignore gizmos and helpers
+        if (child.userData?.isGizmo) return;
+        
+        // Ignore specific helper names that might not be tagged
+        if (child.name === '__link_axes_helper__' || 
+            child.name === '__joint_axis_helper__' || 
+            child.name === '__debug_joint_axes__' ||
+            child.name === '__inertia_visual__' ||
+            child.name === '__com_visual__' ||
+            child.name === '__inertia_box__' ||
+            child.name === '__origin_axes__' ||
+            child.name === '__joint_axis__') return;
+
+        if ((child as THREE.Mesh).isMesh) {
+            const mesh = child as THREE.Mesh;
+            if (mesh.geometry) {
+                if (!mesh.geometry.boundingBox) mesh.geometry.computeBoundingBox();
+                const geomBox = mesh.geometry.boundingBox!.clone();
+                geomBox.applyMatrix4(mesh.matrixWorld);
+                box.union(geomBox);
+            }
+        }
+    });
+
+    // Fallback if box is empty (e.g. only gizmos found or no meshes)
+    if (box.isEmpty()) {
+        const standardBox = new THREE.Box3().setFromObject(robot);
+        if (!standardBox.isEmpty()) {
+             box.copy(standardBox);
+        } else {
+             return;
+        }
+    }
+
     const minY = box.min.y;
     const minZ = box.min.z;
 
@@ -1354,9 +1392,29 @@ export const RobotModel: React.FC<RobotModelProps> = memo(({
                 }
             }
 
-            // Apply model opacity to all meshes (except gizmos)
+            // Apply model opacity to all meshes (except gizmos and collision meshes)
             if (child.isMesh && !child.userData?.isGizmo) {
-                if (child.material) {
+                // Check if this is a collision mesh or part of a collision group
+                const isCollision = child.isURDFCollider || 
+                                   child.userData?.isCollisionMesh || 
+                                   child.userData?.isCollision;
+                
+                // Also check parent hierarchy for collision or gizmo flags
+                let isSpecial = isCollision;
+                let parent = child.parent;
+                while (parent && parent !== robot && !isSpecial) {
+                    if (parent.userData?.isGizmo || 
+                        parent.isURDFCollider || 
+                        parent.userData?.isCollisionMesh ||
+                        parent.name === '__inertia_visual__' ||
+                        parent.name === '__com_visual__' ||
+                        parent.name === '__inertia_box__') {
+                        isSpecial = true;
+                    }
+                    parent = parent.parent;
+                }
+
+                if (!isSpecial && child.material) {
                     // Handle both single material and material array
                     const materials = Array.isArray(child.material) ? child.material : [child.material];
                     materials.forEach((mat: any) => {
@@ -1440,7 +1498,7 @@ export const RobotModel: React.FC<RobotModelProps> = memo(({
                     positions.forEach((rot, i) => {
                         const mesh = new THREE.Mesh(geometry, (i % 2 === 0) ? matBlack : matWhite);
                         mesh.rotation.set(rot[0], rot[1], rot[2]);
-                        mesh.renderOrder = 1000;
+                        mesh.renderOrder = 10001;
                         mesh.userData = { isGizmo: true };
                         mesh.raycast = () => { };
                         comVisual.add(mesh);
@@ -1453,31 +1511,16 @@ export const RobotModel: React.FC<RobotModelProps> = memo(({
                 const sizeScale = centerOfMassSize / 0.01; // Base size is 0.01
                 comVisual.scale.set(sizeScale, sizeScale, sizeScale);
 
-                // Apply fade-in effect based on model opacity
+                // Control visibility based on showCenterOfMass flag only
+                // Opacity is fixed and independent of model opacity
+                comVisual.visible = showCenterOfMass;
                 if (showCenterOfMass) {
-                    if (modelOpacity >= 1.0) {
-                        // Fully opaque: hide CoM to avoid visual clutter
-                        comVisual.visible = false;
-                    } else if (modelOpacity > 0.7) {
-                        // Light transparency (0-30%): gradually fade in CoM
-                        comVisual.visible = true;
-                        const fadeIn = (1.0 - modelOpacity) / 0.3; // 0 to 1 transition
-                        comVisual.traverse((child: any) => {
-                            if (child.material) {
-                                child.material.opacity = 0.8 * fadeIn;
-                            }
-                        });
-                    } else {
-                        // High transparency (30%+): fully visible CoM
-                        comVisual.visible = true;
-                        comVisual.traverse((child: any) => {
-                            if (child.material) {
-                                child.material.opacity = 0.8;
-                            }
-                        });
-                    }
-                } else {
-                    comVisual.visible = false;
+                    comVisual.traverse((child: any) => {
+                        if (child.material) {
+                            child.material.opacity = 0.8;
+                            child.material.transparent = true;
+                        }
+                    });
                 }
 
                 // Inertia Box - clamped to link bounding box size
@@ -1519,7 +1562,7 @@ export const RobotModel: React.FC<RobotModelProps> = memo(({
                         mesh.quaternion.copy(rotation);
                         mesh.userData = { isGizmo: true };
                         mesh.raycast = () => { };
-                        mesh.renderOrder = 999;
+                        mesh.renderOrder = 9999;
                         inertiaBox.add(mesh);
 
                         const edges = new THREE.EdgesGeometry(geom);
@@ -1533,49 +1576,28 @@ export const RobotModel: React.FC<RobotModelProps> = memo(({
                         line.quaternion.copy(rotation);
                         line.userData = { isGizmo: true };
                         line.raycast = () => { };
-                        line.renderOrder = 1000;
+                        line.renderOrder = 10000;
                         inertiaBox.add(line);
 
                         vizGroup.add(inertiaBox);
                     }
                 }
 
-                // Apply fade-in effect to inertia box based on model opacity
+                // Control visibility based on showInertia flag only
+                // Opacity is fixed and independent of model opacity
                 if (inertiaBox) {
+                    inertiaBox.visible = showInertia;
                     if (showInertia) {
-                        if (modelOpacity >= 1.0) {
-                            // Fully opaque: hide inertia box
-                            inertiaBox.visible = false;
-                        } else if (modelOpacity > 0.7) {
-                            // Light transparency (0-30%): gradually fade in
-                            inertiaBox.visible = true;
-                            const fadeIn = (1.0 - modelOpacity) / 0.3;
-                            inertiaBox.traverse((child: any) => {
-                                if (child.material) {
-                                    const baseMat = child.material as THREE.Material & { opacity?: number };
-                                    if (child.type === 'Mesh') {
-                                        baseMat.opacity = 0.25 * fadeIn;
-                                    } else if (child.type === 'LineSegments') {
-                                        baseMat.opacity = 0.6 * fadeIn;
-                                    }
+                        inertiaBox.traverse((child: any) => {
+                            if (child.material) {
+                                const baseMat = child.material as THREE.Material & { opacity?: number };
+                                if (child.type === 'Mesh') {
+                                    baseMat.opacity = 0.25;
+                                } else if (child.type === 'LineSegments') {
+                                    baseMat.opacity = 0.6;
                                 }
-                            });
-                        } else {
-                            // High transparency (30%+): fully visible
-                            inertiaBox.visible = true;
-                            inertiaBox.traverse((child: any) => {
-                                if (child.material) {
-                                    const baseMat = child.material as THREE.Material & { opacity?: number };
-                                    if (child.type === 'Mesh') {
-                                        baseMat.opacity = 0.25;
-                                    } else if (child.type === 'LineSegments') {
-                                        baseMat.opacity = 0.6;
-                                    }
-                                }
-                            });
-                        }
-                    } else {
-                        inertiaBox.visible = false;
+                            }
+                        });
                     }
                 }
 

@@ -486,24 +486,24 @@ export function URDFViewer({
                                                     <circle cx="12" cy="12" r="10" fill="none" stroke="currentColor" strokeWidth="1.5" />
                                                 </svg>
                                                 <span className="text-[10px] text-slate-600 dark:text-slate-300">
-                                                    {lang === 'zh' ? '透明度' : 'Transparency'}
+                                                    {lang === 'zh' ? '不透明度' : 'Opacity'}
                                                 </span>
                                             </div>
                                             <span className="text-[10px] font-mono text-google-blue ml-auto">
-                                                {Math.round((1.0 - modelOpacity) / 0.9 * 100)}%
+                                                {Math.round(modelOpacity / 1.0 * 100)}%
                                             </span>
                                         </div>
                                         <div className="relative">
                                             <input
                                                 type="range"
-                                                min={0}
-                                                max={0.9}
-                                                step={0.009}
-                                                value={1.0 - modelOpacity}
-                                                onChange={(e) => setModelOpacity(1.0 - parseFloat(e.target.value))}
+                                                min={0.1}
+                                                max={1.0}
+                                                step={0.01}
+                                                value={modelOpacity}
+                                                onChange={(e) => setModelOpacity(parseFloat(e.target.value))}
                                                 className="w-full h-2 rounded-full appearance-none cursor-pointer bg-gradient-to-r from-slate-200 via-slate-300 to-slate-400 dark:from-slate-700 dark:via-slate-600 dark:to-slate-500 shadow-inner"
                                                 style={{
-                                                    background: `linear-gradient(to right, rgb(59, 130, 246) 0%, rgb(59, 130, 246) ${(1.0 - modelOpacity) / 0.9 * 100}%, rgb(203, 213, 225) ${(1.0 - modelOpacity) / 0.9 * 100}%, rgb(203, 213, 225) 100%)`
+                                                    background: `linear-gradient(to right, rgb(59, 130, 246) 0%, rgb(59, 130, 246) ${(modelOpacity) / 1.0 * 100}%, rgb(203, 213, 225) ${(modelOpacity) / 1.0 * 100}%, rgb(203, 213, 225) 100%)`
                                                 }}
                                             />
                                         </div>

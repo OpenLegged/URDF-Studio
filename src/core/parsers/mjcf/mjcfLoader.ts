@@ -96,12 +96,19 @@ function parseCompilerSettings(doc: Document): MJCFCompilerSettings {
 
 function parseNumbers(str: string | null): number[] {
     if (!str) return [];
-    return str.trim().split(/\s+/).map(s => parseFloat(s) || 0);
+    return str.trim().split(/\s+/).map(s => {
+        const num = parseFloat(s);
+        return isNaN(num) ? 0 : num;
+    });
 }
 
 function parsePos(str: string | null): [number, number, number] {
     const nums = parseNumbers(str);
-    return [nums[0] || 0, nums[1] || 0, nums[2] || 0];
+    return [
+        nums.length > 0 ? nums[0] : 0,
+        nums.length > 1 ? nums[1] : 0,
+        nums.length > 2 ? nums[2] : 0
+    ];
 }
 
 /**
@@ -198,13 +205,49 @@ function parseBody(bodyEl: Element, meshMap: Map<string, MJCFMesh>): MJCFBody {
     const geoms: MJCFGeom[] = [];
     const geomElements = bodyEl.querySelectorAll(':scope > geom');
     geomElements.forEach(geomEl => {
+        // Parse size and fromto first for type inference
+        const sizeArr = parseNumbers(geomEl.getAttribute('size'));
+        const fromtoStr = geomEl.getAttribute('fromto');
+        const fromtoArr = fromtoStr ? parseNumbers(fromtoStr) : undefined;
+        const meshAttr = geomEl.getAttribute('mesh');
+        
+        // Infer geometry type according to MJCF specification:
+        // 1. Explicit type attribute takes priority (must be non-empty and trimmed)
+        // 2. If mesh attribute exists → 'mesh'
+        // 3. If fromto attribute exists → 'capsule' (MJCF default for fromto)
+        // 4. Based on size array length (MJCF defaults):
+        //    - 1 element → sphere (radius)
+        //    - 2 elements → capsule (radius, half-length) - MJCF default for 2-element size
+        //    - 3 elements → ellipsoid (semi-axes) - MJCF default for 3-element size
+        // 5. Default → sphere
+        const explicitType = geomEl.getAttribute('type')?.trim() || null;
+        let inferredType: string;
+        
+        if (explicitType) {
+            // Use explicit type from attribute
+            inferredType = explicitType;
+        } else if (meshAttr) {
+            inferredType = 'mesh';
+        } else if (fromtoArr && fromtoArr.length === 6) {
+            inferredType = 'capsule'; // MJCF default for fromto is capsule
+        } else if (sizeArr.length === 1) {
+            inferredType = 'sphere';
+        } else if (sizeArr.length === 2) {
+            inferredType = 'capsule'; // MJCF default for 2-element size is capsule, not cylinder
+        } else if (sizeArr.length >= 3) {
+            inferredType = 'ellipsoid'; // MJCF default for 3-element size is ellipsoid
+        } else {
+            inferredType = 'sphere'; // Final fallback - MuJoCo default
+        }
+        
         const geom: MJCFGeom = {
             name: geomEl.getAttribute('name') || undefined,
-            type: geomEl.getAttribute('type') || (geomEl.getAttribute('mesh') ? 'mesh' : 'sphere'),
-            size: parseNumbers(geomEl.getAttribute('size')),
-            mesh: geomEl.getAttribute('mesh') || undefined,
+            type: inferredType,
+            size: sizeArr,
+            mesh: meshAttr || undefined,
             pos: geomEl.getAttribute('pos') ? parsePos(geomEl.getAttribute('pos')) : undefined,
             quat: parseQuat(geomEl.getAttribute('quat')),
+            fromto: fromtoArr,
         };
 
         const rgbaStr = geomEl.getAttribute('rgba');
@@ -238,11 +281,11 @@ function parseBody(bodyEl: Element, meshMap: Map<string, MJCFMesh>): MJCFBody {
         const axisStr = jointEl.getAttribute('axis');
         if (axisStr) {
             const axisNums = parseNumbers(axisStr);
-            // Use parsed values directly, they can be 0 (valid axis component)
+            // Use array length check - 0 is a valid axis component
             joint.axis = [
-                axisNums[0] !== undefined ? axisNums[0] : 0,
-                axisNums[1] !== undefined ? axisNums[1] : 0,
-                axisNums[2] !== undefined ? axisNums[2] : 1
+                axisNums.length > 0 ? axisNums[0] : 0,
+                axisNums.length > 1 ? axisNums[1] : 0,
+                axisNums.length > 2 ? axisNums[2] : 1  // Default Z component to 1 if not specified
             ];
         } else {
             // MuJoCo default axis is Z (0, 0, 1), NOT X like URDF
@@ -252,7 +295,11 @@ function parseBody(bodyEl: Element, meshMap: Map<string, MJCFMesh>): MJCFBody {
         const rangeStr = jointEl.getAttribute('range');
         if (rangeStr) {
             const rangeNums = parseNumbers(rangeStr);
-            joint.range = [rangeNums[0] || -Math.PI, rangeNums[1] || Math.PI];
+            // Use array length check to preserve valid 0 values
+            joint.range = [
+                rangeNums.length > 0 ? rangeNums[0] : -Math.PI,
+                rangeNums.length > 1 ? rangeNums[1] : Math.PI
+            ];
         }
 
         const posStr = jointEl.getAttribute('pos');
@@ -333,7 +380,13 @@ async function createGeometryMesh(
     assets: Record<string, string>,
     meshCache: Map<string, THREE.Object3D | THREE.BufferGeometry>
 ): Promise<THREE.Object3D | null> {
+    // Determine geometry type: mesh attribute takes priority, otherwise use parsed type
     const type = geom.mesh ? 'mesh' : geom.type;
+    
+    // Debug logging for collision geometry creation
+    if (geom.name || (!geom.mesh && geom.size)) {
+        console.debug(`[MJCFLoader] Creating geom: type="${type}", size=[${geom.size?.join(', ') || 'none'}], name="${geom.name || 'unnamed'}"`);
+    }
 
     switch (type) {
         case 'box': {
@@ -457,7 +510,11 @@ async function createGeometryMesh(
         }
 
         default:
-            return null;
+            // Unknown type - log warning and create default sphere
+            console.warn(`[MJCFLoader] Unknown geom type "${type}", defaulting to sphere`);
+            const defaultRadius = geom.size?.[0] || 0.05;
+            const defaultGeometry = new THREE.SphereGeometry(defaultRadius, 32, 32);
+            return new THREE.Mesh(defaultGeometry, createDefaultMaterial());
     }
 }
 
@@ -1138,6 +1195,9 @@ export async function loadMJCFToThreeJS(
 
                 // Add to collision group if collision
                 if (isCollisionGeom) {
+                    // Log collision geom creation for debugging
+                    console.debug(`[MJCFLoader] Adding collision geom: type="${geom.type}", size=[${geom.size?.join(', ') || 'none'}], pos=[${geom.pos?.join(', ') || 'none'}]`);
+                    
                     // Clone if already added to visual, otherwise use directly
                     const collisionMesh = isVisualGeom ? mesh.clone(true) : mesh;
                     collisionMesh.userData.isCollisionMesh = true;

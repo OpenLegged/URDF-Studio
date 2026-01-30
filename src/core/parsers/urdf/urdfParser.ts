@@ -88,6 +88,7 @@ export const parseURDF = (xmlString: string): RobotState | null => {
       const cylinder = geoEl.querySelector("cylinder");
       const sphere = geoEl.querySelector("sphere");
       const mesh = geoEl.querySelector("mesh");
+      const capsule = geoEl.querySelector("capsule");
 
       if (box) {
           return {
@@ -109,6 +110,16 @@ export const parseURDF = (xmlString: string): RobotState | null => {
               dimensions: {
                   x: parseFloat(sphere.getAttribute("radius") || "0.1"),
                   y: 0, z: 0
+              }
+          };
+      } else if (capsule) {
+          // Map capsule to cylinder for visualization
+          return {
+              type: GeometryType.CYLINDER,
+              dimensions: {
+                  x: parseFloat(capsule.getAttribute("radius") || "0.1"),
+                  y: parseFloat(capsule.getAttribute("length") || "0.5"),
+                  z: 0
               }
           };
       } else if (mesh) {
@@ -135,7 +146,7 @@ export const parseURDF = (xmlString: string): RobotState | null => {
               meshPath: cleanName
           };
       }
-      return defaultGeo;
+      return null;
   };
 
   const parseColor = (materialEl: Element | null): string | undefined => {
@@ -203,6 +214,7 @@ export const parseURDF = (xmlString: string): RobotState | null => {
       let hasExplicitMaterial = false;
       if (visualEl) {
           visualGeo = parseGeometry(visualEl.querySelector("geometry"), DEFAULT_LINK.visual);
+          if (!visualGeo) visualGeo = { type: GeometryType.NONE, dimensions: { x: 0, y: 0, z: 0 } };
 
           // Parse Material Color
           const materialEl = visualEl.querySelector("material");
@@ -236,6 +248,7 @@ export const parseURDF = (xmlString: string): RobotState | null => {
       let collisionGeo;
       if (collisionEl) {
           collisionGeo = parseGeometry(collisionEl.querySelector("geometry"), DEFAULT_LINK.collision);
+          if (!collisionGeo) collisionGeo = { type: GeometryType.NONE, dimensions: { x: 0, y: 0, z: 0 } };
       } else {
           // If no collision tag exists, map to NONE
           collisionGeo = { type: GeometryType.NONE, dimensions: { x:0, y:0, z:0 } };

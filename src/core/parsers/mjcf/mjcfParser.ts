@@ -51,19 +51,30 @@ interface MJCFMesh {
 // Parse space-separated numbers
 function parseNumbers(str: string | null): number[] {
     if (!str) return [];
-    return str.trim().split(/\s+/).map(s => parseFloat(s) || 0);
+    return str.trim().split(/\s+/).map(s => {
+        const num = parseFloat(s);
+        return isNaN(num) ? 0 : num;
+    });
 }
 
 // Parse xyz position
 function parsePos(str: string | null): { x: number, y: number, z: number } {
     const nums = parseNumbers(str);
-    return { x: nums[0] || 0, y: nums[1] || 0, z: nums[2] || 0 };
+    return {
+        x: nums.length > 0 ? nums[0] : 0,
+        y: nums.length > 1 ? nums[1] : 0,
+        z: nums.length > 2 ? nums[2] : 0
+    };
 }
 
 // Parse euler angles (in radians)
 function parseEuler(str: string | null): { r: number, p: number, y: number } {
     const nums = parseNumbers(str);
-    return { r: nums[0] || 0, p: nums[1] || 0, y: nums[2] || 0 };
+    return {
+        r: nums.length > 0 ? nums[0] : 0,
+        p: nums.length > 1 ? nums[1] : 0,
+        y: nums.length > 2 ? nums[2] : 0
+    };
 }
 
 // Parse quaternion (w x y z)
@@ -130,7 +141,8 @@ function convertGeomType(mjcfType: string): GeometryType {
         case 'box': return GeometryType.BOX;
         case 'sphere': return GeometryType.SPHERE;
         case 'cylinder': return GeometryType.CYLINDER;
-        case 'capsule': return GeometryType.CYLINDER; // Approximation
+        case 'capsule': return GeometryType.CYLINDER; // Approximation - rendered as cylinder
+        case 'ellipsoid': return GeometryType.SPHERE; // Approximation - rendered as scaled sphere
         case 'mesh': return GeometryType.MESH;
         case 'plane': return GeometryType.BOX; // Approximation
         default: return GeometryType.BOX;
@@ -148,13 +160,44 @@ function parseBody(bodyElement: Element, meshMap: Map<string, MJCFMesh>): MJCFBo
     const geoms: MJCFGeom[] = [];
     const geomElements = bodyElement.querySelectorAll(':scope > geom');
     geomElements.forEach(geomEl => {
+        // Parse size and fromto first for type inference
+        const sizeArr = parseNumbers(geomEl.getAttribute('size'));
+        const fromtoArr = parseNumbers(geomEl.getAttribute('fromto'));
+        const meshAttr = geomEl.getAttribute('mesh');
+        
+        // Infer geometry type according to MJCF specification:
+        // 1. Explicit type attribute takes priority
+        // 2. If mesh attribute exists → 'mesh'
+        // 3. If fromto attribute exists → 'capsule' (MJCF default)
+        // 4. Based on size array length (MJCF defaults):
+        //    - 1 element → sphere
+        //    - 2 elements → capsule (MJCF default for 2-element size)
+        //    - 3 elements → ellipsoid
+        // 5. Default → sphere
+        let inferredType = geomEl.getAttribute('type');
+        if (!inferredType) {
+            if (meshAttr) {
+                inferredType = 'mesh';
+            } else if (fromtoArr && fromtoArr.length === 6) {
+                inferredType = 'capsule';
+            } else if (sizeArr.length === 1) {
+                inferredType = 'sphere';
+            } else if (sizeArr.length === 2) {
+                inferredType = 'capsule'; // MJCF default for 2-element size
+            } else if (sizeArr.length >= 3) {
+                inferredType = 'ellipsoid';
+            } else {
+                inferredType = 'sphere';
+            }
+        }
+        
         const geom: MJCFGeom = {
             name: geomEl.getAttribute('name') || undefined,
-            type: geomEl.getAttribute('type') || 'sphere',
-            size: parseNumbers(geomEl.getAttribute('size')),
-            mesh: geomEl.getAttribute('mesh') || undefined,
+            type: inferredType,
+            size: sizeArr,
+            mesh: meshAttr || undefined,
             pos: geomEl.getAttribute('pos') ? parsePos(geomEl.getAttribute('pos')) : undefined,
-            fromto: parseNumbers(geomEl.getAttribute('fromto')),
+            fromto: fromtoArr.length > 0 ? fromtoArr : undefined,
         };
 
         const rgbaStr = geomEl.getAttribute('rgba');
@@ -177,13 +220,22 @@ function parseBody(bodyElement: Element, meshMap: Map<string, MJCFMesh>): MJCFBo
         const axisStr = jointEl.getAttribute('axis');
         if (axisStr) {
             const nums = parseNumbers(axisStr);
-            joint.axis = { x: nums[0] || 0, y: nums[1] || 0, z: nums[2] || 1 };
+            // Use array length check - 0 is a valid axis component
+            joint.axis = {
+                x: nums.length > 0 ? nums[0] : 0,
+                y: nums.length > 1 ? nums[1] : 0,
+                z: nums.length > 2 ? nums[2] : 1  // Default Z to 1 if not specified
+            };
         }
 
         const rangeStr = jointEl.getAttribute('range');
         if (rangeStr) {
             const nums = parseNumbers(rangeStr);
-            joint.range = [nums[0] || -Math.PI, nums[1] || Math.PI];
+            // Use array length check to preserve valid 0 values
+            joint.range = [
+                nums.length > 0 ? nums[0] : -Math.PI,
+                nums.length > 1 ? nums[1] : Math.PI
+            ];
         }
 
         const posStr = jointEl.getAttribute('pos');
@@ -258,31 +310,54 @@ function mjcfToRobotState(
                 if (scale && scale.length >= 3) {
                     // Store scale in dimensions (will be applied during render)
                     visual.dimensions = { x: scale[0], y: scale[1], z: scale[2] };
+                } else {
+                    // Default scale 1:1:1 for meshes without explicit scale
+                    visual.dimensions = { x: 1, y: 1, z: 1 };
                 }
+            } else if (geom.mesh) {
+                // Mesh referenced but not in meshMap - still set default scale
+                visual.meshPath = geom.mesh;
+                visual.dimensions = { x: 1, y: 1, z: 1 };
             }
 
             // Parse size - use dimensions: x=radius, y=length for cylinder; xyz for box
-            if (geom.size) {
-                switch (geom.type.toLowerCase()) {
+            if (geom.size && geom.size.length > 0) {
+                const geomType = geom.type?.toLowerCase() || 'sphere';
+                switch (geomType) {
                     case 'box':
                         visual.dimensions = {
                             x: (geom.size[0] || 0.1) * 2,
-                            y: (geom.size[1] || 0.1) * 2,
-                            z: (geom.size[2] || 0.1) * 2
+                            y: ((geom.size[1] ?? geom.size[0]) || 0.1) * 2,
+                            z: ((geom.size[2] ?? geom.size[0]) || 0.1) * 2
                         };
                         break;
                     case 'sphere':
                         visual.dimensions = { x: geom.size[0] || 0.1, y: 0, z: 0 };
                         break;
+                    case 'ellipsoid':
+                        // Ellipsoid uses 3 radii
+                        visual.dimensions = {
+                            x: geom.size[0] || 0.1,
+                            y: (geom.size[1] ?? geom.size[0]) || 0.1,
+                            z: (geom.size[2] ?? geom.size[0]) || 0.1
+                        };
+                        break;
                     case 'cylinder':
                     case 'capsule':
                         visual.dimensions = {
                             x: geom.size[0] || 0.1,  // radius
-                            y: (geom.size[1] || 0.1) * 2,  // length
+                            y: (geom.size[1] || 0.1) * 2,  // length (MJCF uses half-length)
                             z: 0
                         };
                         break;
+                    default:
+                        // For unknown types with size, treat as sphere
+                        visual.dimensions = { x: geom.size[0] || 0.1, y: 0, z: 0 };
+                        break;
                 }
+            } else if (!geom.mesh) {
+                // No size and no mesh - use small default sphere dimensions
+                visual.dimensions = { x: 0.05, y: 0, z: 0 };
             }
 
             // Parse color

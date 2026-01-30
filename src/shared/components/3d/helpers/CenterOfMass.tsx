@@ -22,38 +22,38 @@ export const LinkCenterOfMass = React.memo(({ link }: CenterOfMassProps) => {
   return (
     <group position={[pos.x, pos.y, pos.z]}>
       {/* 8 octants forming a sphere */}
-      <mesh rotation={[0, 0, 0]}>
+      <mesh rotation={[0, 0, 0]} renderOrder={10001}>
         <sphereGeometry args={[radius, 16, 16, 0, Math.PI / 2, 0, Math.PI / 2]} />
-        <meshBasicMaterial color="#000000" />
+        <meshBasicMaterial color="#000000" depthTest={false} />
       </mesh>
-      <mesh rotation={[0, Math.PI / 2, 0]}>
+      <mesh rotation={[0, Math.PI / 2, 0]} renderOrder={10001}>
         <sphereGeometry args={[radius, 16, 16, 0, Math.PI / 2, 0, Math.PI / 2]} />
-        <meshBasicMaterial color="#ffffff" />
+        <meshBasicMaterial color="#ffffff" depthTest={false} />
       </mesh>
-      <mesh rotation={[0, Math.PI, 0]}>
+      <mesh rotation={[0, Math.PI, 0]} renderOrder={10001}>
         <sphereGeometry args={[radius, 16, 16, 0, Math.PI / 2, 0, Math.PI / 2]} />
-        <meshBasicMaterial color="#000000" />
+        <meshBasicMaterial color="#000000" depthTest={false} />
       </mesh>
-      <mesh rotation={[0, -Math.PI / 2, 0]}>
+      <mesh rotation={[0, -Math.PI / 2, 0]} renderOrder={10001}>
         <sphereGeometry args={[radius, 16, 16, 0, Math.PI / 2, 0, Math.PI / 2]} />
-        <meshBasicMaterial color="#ffffff" />
+        <meshBasicMaterial color="#ffffff" depthTest={false} />
       </mesh>
 
-      <mesh rotation={[Math.PI, 0, 0]}>
+      <mesh rotation={[Math.PI, 0, 0]} renderOrder={10001}>
         <sphereGeometry args={[radius, 16, 16, 0, Math.PI / 2, 0, Math.PI / 2]} />
-        <meshBasicMaterial color="#000000" />
+        <meshBasicMaterial color="#000000" depthTest={false} />
       </mesh>
-      <mesh rotation={[Math.PI, Math.PI / 2, 0]}>
+      <mesh rotation={[Math.PI, Math.PI / 2, 0]} renderOrder={10001}>
         <sphereGeometry args={[radius, 16, 16, 0, Math.PI / 2, 0, Math.PI / 2]} />
-        <meshBasicMaterial color="#ffffff" />
+        <meshBasicMaterial color="#ffffff" depthTest={false} />
       </mesh>
-      <mesh rotation={[Math.PI, Math.PI, 0]}>
+      <mesh rotation={[Math.PI, Math.PI, 0]} renderOrder={10001}>
         <sphereGeometry args={[radius, 16, 16, 0, Math.PI / 2, 0, Math.PI / 2]} />
-        <meshBasicMaterial color="#000000" />
+        <meshBasicMaterial color="#000000" depthTest={false} />
       </mesh>
-      <mesh rotation={[Math.PI, -Math.PI / 2, 0]}>
+      <mesh rotation={[Math.PI, -Math.PI / 2, 0]} renderOrder={10001}>
         <sphereGeometry args={[radius, 16, 16, 0, Math.PI / 2, 0, Math.PI / 2]} />
-        <meshBasicMaterial color="#ffffff" />
+        <meshBasicMaterial color="#ffffff" depthTest={false} />
       </mesh>
 
       <Html position={[0.03, 0.03, 0]} style={{ pointerEvents: 'none' }}>

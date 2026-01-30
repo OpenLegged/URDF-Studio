@@ -36,13 +36,14 @@ export const InertiaBox = React.memo(({ link }: InertiaBoxProps) => {
 
   return (
     <group position={[pos.x, pos.y, pos.z]} rotation={finalEuler}>
-      <mesh>
+      <mesh renderOrder={9999}>
         <boxGeometry args={[width, height, depth]} />
         <meshPhongMaterial
           color={0x4a9eff}
           transparent
           opacity={0.35}
           depthWrite={false}
+          depthTest={false}
           shininess={50}
         />
       </mesh>
