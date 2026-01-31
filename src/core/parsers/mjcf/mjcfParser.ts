@@ -449,7 +449,12 @@ function mjcfToRobotState(
             collision.type = GeometryType.NONE;
         }
 
-        let linkInertial = { ...DEFAULT_LINK.inertial };
+        let linkInertial = {
+            mass: 0,
+            origin: { xyz: { x: 0, y: 0, z: 0 }, rpy: { r: 0, p: 0, y: 0 } },
+            inertia: { ixx: 0, ixy: 0, ixz: 0, iyy: 0, iyz: 0, izz: 0 }
+        };
+
         if (body.inertial) {
             const { mass, pos: inertialPos, quat: inertialQuat, diaginertia, fullinertia } = body.inertial;
             linkInertial.mass = mass;
