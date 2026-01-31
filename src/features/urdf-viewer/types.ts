@@ -56,10 +56,13 @@ export interface RobotModelProps {
     highlightMode?: 'link' | 'collision';
     showInertia?: boolean;
     showCenterOfMass?: boolean;
+    showCoMOverlay?: boolean;
     centerOfMassSize?: number;
     showOrigins?: boolean;
+    showOriginsOverlay?: boolean;
     originSize?: number;
     showJointAxes?: boolean;
+    showJointAxesOverlay?: boolean;
     jointAxisSize?: number;
     modelOpacity?: number;
     robotLinks?: Record<string, UrdfLink>;

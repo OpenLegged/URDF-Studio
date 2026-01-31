@@ -94,7 +94,7 @@ export const SourceCodeViewer: React.FC<SourceCodeViewerProps> = ({
               <span className="hidden sm:inline">{copied ? t.copied : t.copy}</span>
             </button>
 
-            <div className="w-px h-4 bg-slate-300 dark:bg-[#444444] mx-1" />
+            <div className="w-px h-4 bg-slate-300 dark:bg-google-dark-border mx-1" />
 
             <button
               onClick={onClose}

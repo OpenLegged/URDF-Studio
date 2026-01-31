@@ -316,7 +316,7 @@ export const OptionsPanelContent: React.FC<OptionsPanelContentProps> = ({
   return (
     <div
       className={`transition-all duration-200 ease-in-out overflow-hidden ${
-        isCollapsed ? 'max-h-0 opacity-0' : 'max-h-[500px] opacity-100'
+        isCollapsed ? 'max-h-0 opacity-0' : 'max-h-125 opacity-100'
       } ${className}`}
     >
       <div className="p-2 flex flex-col gap-2">{children}</div>
