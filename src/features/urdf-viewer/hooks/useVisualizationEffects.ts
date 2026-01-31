@@ -20,6 +20,7 @@ export interface UseVisualizationEffectsOptions {
     showVisual: boolean;
     highlightMode: 'link' | 'collision';
     showInertia: boolean;
+    showInertiaOverlay?: boolean;
     showCenterOfMass: boolean;
     showCoMOverlay?: boolean;
     centerOfMassSize: number;
@@ -50,6 +51,7 @@ export function useVisualizationEffects({
     showVisual,
     highlightMode,
     showInertia,
+    showInertiaOverlay = true,
     showCenterOfMass,
     showCoMOverlay = true,
     centerOfMassSize,
@@ -353,6 +355,14 @@ export function useVisualizationEffects({
                                 } else if (c.type === 'LineSegments') {
                                     baseMat.opacity = 0.6;
                                 }
+
+                                // Apply overlay settings
+                                baseMat.transparent = true;
+                                baseMat.depthTest = !showInertiaOverlay;
+                                baseMat.depthWrite = !showInertiaOverlay;
+                            }
+                            if (c.isMesh || c.type === 'LineSegments') {
+                                c.renderOrder = showInertiaOverlay ? 10001 : 0;
                             }
                         });
                     }
@@ -371,7 +381,7 @@ export function useVisualizationEffects({
         });
 
         invalidate();
-    }, [robot, showInertia, showCenterOfMass, showCoMOverlay, centerOfMassSize, robotVersion, invalidate, robotLinks]);
+    }, [robot, showInertia, showInertiaOverlay, showCenterOfMass, showCoMOverlay, centerOfMassSize, robotVersion, invalidate, robotLinks]);
 
     // Effect to handle origin axes visualization for each link
     useEffect(() => {

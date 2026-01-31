@@ -55,6 +55,7 @@ export interface RobotModelProps {
     mode?: 'detail' | 'hardware';
     highlightMode?: 'link' | 'collision';
     showInertia?: boolean;
+    showInertiaOverlay?: boolean;
     showCenterOfMass?: boolean;
     showCoMOverlay?: boolean;
     centerOfMassSize?: number;

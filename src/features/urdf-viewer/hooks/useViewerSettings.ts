@@ -15,6 +15,8 @@ export interface ViewerSettings {
     setCenterOfMassSize: React.Dispatch<React.SetStateAction<number>>;
     showInertia: boolean;
     setShowInertia: React.Dispatch<React.SetStateAction<boolean>>;
+    showInertiaOverlay: boolean;
+    setShowInertiaOverlay: React.Dispatch<React.SetStateAction<boolean>>;
     showOrigins: boolean;
     setShowOrigins: React.Dispatch<React.SetStateAction<boolean>>;
     showOriginsOverlay: boolean;
@@ -57,6 +59,13 @@ export function useViewerSettings(): ViewerSettings {
         return 0.01;
     });
     const [showInertia, setShowInertia] = useState(false);
+    const [showInertiaOverlay, setShowInertiaOverlay] = useState(() => {
+        if (typeof window !== 'undefined') {
+            const saved = localStorage.getItem('urdf_viewer_inertia_overlay');
+            return saved !== 'false';
+        }
+        return true;
+    });
     const [showOrigins, setShowOrigins] = useState(false);
     const [showOriginsOverlay, setShowOriginsOverlay] = useState(() => {
         if (typeof window !== 'undefined') {
@@ -125,6 +134,10 @@ export function useViewerSettings(): ViewerSettings {
     }, [showCoMOverlay]);
 
     useEffect(() => {
+        localStorage.setItem('urdf_viewer_inertia_overlay', showInertiaOverlay.toString());
+    }, [showInertiaOverlay]);
+
+    useEffect(() => {
         localStorage.setItem('urdf_viewer_joint_axis_size', jointAxisSize.toString());
     }, [jointAxisSize]);
 
@@ -164,6 +177,7 @@ export function useViewerSettings(): ViewerSettings {
         showCoMOverlay, setShowCoMOverlay,
         centerOfMassSize, setCenterOfMassSize,
         showInertia, setShowInertia,
+        showInertiaOverlay, setShowInertiaOverlay,
         showOrigins, setShowOrigins,
         showOriginsOverlay, setShowOriginsOverlay,
         originSize, setOriginSize,

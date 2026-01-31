@@ -55,6 +55,7 @@ export function URDFViewer({
         showCoMOverlay, setShowCoMOverlay,
         centerOfMassSize, setCenterOfMassSize,
         showInertia, setShowInertia,
+        showInertiaOverlay, setShowInertiaOverlay,
         showOrigins, setShowOrigins,
         showOriginsOverlay, setShowOriginsOverlay,
         originSize, setOriginSize,
@@ -334,6 +335,8 @@ export function URDFViewer({
                 setCenterOfMassSize={setCenterOfMassSize}
                 showInertia={showInertia}
                 setShowInertia={setShowInertia}
+                showInertiaOverlay={showInertiaOverlay}
+                setShowInertiaOverlay={setShowInertiaOverlay}
             />
 
             {/* Joint controls panel */}
@@ -443,6 +446,7 @@ export function URDFViewer({
                         hoveredSelection={hoveredSelection}
                         highlightMode={highlightMode}
                         showInertia={showInertia}
+                        showInertiaOverlay={showInertiaOverlay}
                         showCenterOfMass={showCenterOfMass}
                         showCoMOverlay={showCoMOverlay}
                         centerOfMassSize={centerOfMassSize}

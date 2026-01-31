@@ -44,6 +44,8 @@ interface ViewerOptionsPanelProps {
     setCenterOfMassSize: (size: number) => void;
     showInertia: boolean;
     setShowInertia: (show: boolean) => void;
+    showInertiaOverlay: boolean;
+    setShowInertiaOverlay: (show: boolean) => void;
 }
 
 export const ViewerOptionsPanel: React.FC<ViewerOptionsPanelProps> = ({
@@ -88,6 +90,8 @@ export const ViewerOptionsPanel: React.FC<ViewerOptionsPanelProps> = ({
     setCenterOfMassSize,
     showInertia,
     setShowInertia,
+    showInertiaOverlay,
+    setShowInertiaOverlay,
 }) => {
     if (!showOptionsPanel) return null;
 
@@ -292,13 +296,26 @@ export const ViewerOptionsPanel: React.FC<ViewerOptionsPanelProps> = ({
                                 <SliderOption label={t.size} value={centerOfMassSize} onChange={setCenterOfMassSize} min={0.005} max={0.1} step={0.005} decimals={3} compact />
                             )}
 
-                            <CheckboxOption
-                                checked={showInertia}
-                                onChange={setShowInertia}
-                                label={t.showInertia}
-                                icon={<div className="w-3 h-3 border border-dashed border-slate-500"></div>}
-                                compact
-                            />
+                            <div className="flex items-center justify-between pr-1">
+                                <CheckboxOption
+                                    checked={showInertia}
+                                    onChange={setShowInertia}
+                                    label={t.showInertia}
+                                    icon={<div className="w-3 h-3 border border-dashed border-slate-500"></div>}
+                                    compact
+                                />
+                                {showInertia && (
+                                    <button
+                                        className={`p-0.5 rounded transition-colors ${showInertiaOverlay ? 'text-google-blue bg-blue-50 dark:bg-blue-900/30' : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-300'}`}
+                                        onClick={() => setShowInertiaOverlay(!showInertiaOverlay)}
+                                        title={lang === 'zh' ? "显示在最前" : "Always on top"}
+                                    >
+                                        <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
+                                        </svg>
+                                    </button>
+                                )}
+                            </div>
                         </div>
                     </div>
                 )}
