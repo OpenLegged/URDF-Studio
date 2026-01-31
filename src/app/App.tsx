@@ -184,14 +184,14 @@ function AppContent() {
 
       {/* Toast */}
       {toast.show && (
-        <div className="fixed top-20 left-1/2 -translate-x-1/2 z-100 animate-in fade-in slide-in-from-top-4 duration-300">
-          <div className="bg-white dark:bg-slate-800 shadow-xl rounded-lg border border-green-200 dark:border-green-900 px-4 py-3 flex items-center gap-3 max-w-md">
-            <div className="bg-green-100 dark:bg-green-900/30 p-1.5 rounded-full shrink-0">
-              <svg className="w-4 h-4 text-green-600 dark:text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <div className="fixed top-20 left-1/2 -translate-x-1/2 z-[200] animate-in fade-in slide-in-from-top-4 duration-300">
+          <div className="bg-white dark:bg-[#2C2C2E] shadow-2xl dark:shadow-black/50 rounded-xl border border-slate-200 dark:border-[#000000] px-4 py-3 flex items-center gap-3 max-w-md">
+            <div className="bg-green-100 dark:bg-green-600 p-1.5 rounded-full shrink-0">
+              <svg className="w-4 h-4 text-green-600 dark:text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
               </svg>
             </div>
-            <div className="text-sm text-slate-700 dark:text-slate-200 font-medium">{toast.message}</div>
+            <div className="text-sm text-slate-700 dark:text-white font-medium">{toast.message}</div>
             <button
               onClick={() => setToast(prev => ({ ...prev, show: false }))}
               className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 ml-2"

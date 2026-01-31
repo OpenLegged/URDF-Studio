@@ -21,12 +21,12 @@ export function AboutModal({ isOpen, onClose }: AboutModalProps) {
   return (
     <div className="fixed inset-0 z-[100] flex items-center justify-center">
       <div
-        className="absolute inset-0 bg-black/50 backdrop-blur-sm"
+        className="absolute inset-0 bg-black/50"
         onClick={onClose}
       />
-      <div className="relative bg-white dark:bg-slate-800 rounded-xl shadow-2xl border border-slate-200 dark:border-slate-700 w-[400px] overflow-hidden">
+      <div className="relative bg-white dark:bg-panel-bg rounded-xl shadow-2xl dark:shadow-black border border-slate-200 dark:border-border-black w-[400px] overflow-hidden">
         {/* Header */}
-        <div className="bg-gradient-to-r from-slate-100 to-slate-50 dark:from-slate-800 dark:to-slate-900 px-6 py-5 border-b border-slate-200 dark:border-slate-700">
+        <div className="bg-slate-50 dark:bg-element-active px-6 py-5 border-b border-slate-200 dark:border-border-black">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
               <img src="/logos/logo.png" alt="URDF Studio" className="w-10 h-10 object-contain" />
@@ -37,7 +37,7 @@ export function AboutModal({ isOpen, onClose }: AboutModalProps) {
             </div>
             <button
               onClick={onClose}
-              className="p-1.5 rounded-lg hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors"
+              className="p-1.5 rounded-lg hover:bg-slate-200 dark:hover:bg-element-hover text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 transition-colors"
             >
               <X className="w-4 h-4" />
             </button>
@@ -58,9 +58,9 @@ export function AboutModal({ isOpen, onClose }: AboutModalProps) {
               href="https://github.com/OpenLegged/URDF-Studio"
               target="_blank"
               rel="noopener noreferrer"
-              className="flex items-center gap-3 p-3 rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors group"
+              className="flex items-center gap-3 p-3 rounded-lg border border-slate-200 dark:border-border-black hover:bg-slate-50 dark:hover:bg-element-bg transition-colors group"
             >
-              <div className="w-9 h-9 bg-slate-900 dark:bg-slate-700 rounded-lg flex items-center justify-center">
+              <div className="w-9 h-9 bg-slate-900 dark:bg-black rounded-lg flex items-center justify-center">
                 <Github className="w-4 h-4 text-white" />
               </div>
               <div className="flex-1">
@@ -74,9 +74,9 @@ export function AboutModal({ isOpen, onClose }: AboutModalProps) {
               href="https://www.motphys.com/"
               target="_blank"
               rel="noopener noreferrer"
-              className="flex items-center gap-3 p-3 rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors group"
+              className="flex items-center gap-3 p-3 rounded-lg border border-slate-200 dark:border-border-black hover:bg-slate-50 dark:hover:bg-element-bg transition-colors group"
             >
-              <div className="w-9 h-9 bg-white dark:bg-slate-700 rounded-lg flex items-center justify-center overflow-hidden border border-slate-100 dark:border-slate-600">
+              <div className="w-9 h-9 bg-white dark:bg-black rounded-lg flex items-center justify-center overflow-hidden border border-slate-100 dark:border-element-hover">
                 <img
                   src="/logos/Motphys_Logo_only_Black_100x100px.svg"
                   alt="Motphys"
@@ -103,9 +103,9 @@ export function AboutModal({ isOpen, onClose }: AboutModalProps) {
               href="https://www.d-robotics.cc/"
               target="_blank"
               rel="noopener noreferrer"
-              className="flex items-center gap-3 p-3 rounded-lg border border-slate-200 dark:border-slate-700 hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors group"
+              className="flex items-center gap-3 p-3 rounded-lg border border-slate-200 dark:border-border-black hover:bg-slate-50 dark:hover:bg-element-bg transition-colors group"
             >
-              <div className="w-9 h-9 bg-white dark:bg-slate-700 rounded-lg flex items-center justify-center overflow-hidden border border-slate-100 dark:border-slate-600">
+              <div className="w-9 h-9 bg-white dark:bg-black rounded-lg flex items-center justify-center overflow-hidden border border-slate-100 dark:border-element-hover">
                 <img src="/logos/d-robotics-logo.jpg" alt="D-Robotics" className="w-full h-full object-cover" />
               </div>
               <div className="flex-1">
@@ -122,11 +122,11 @@ export function AboutModal({ isOpen, onClose }: AboutModalProps) {
         </div>
 
         {/* Footer */}
-        <div className="px-6 py-4 bg-slate-50 dark:bg-slate-900/50 border-t border-slate-200 dark:border-slate-700">
+        <div className="px-6 py-4 bg-slate-50 dark:bg-app-bg border-t border-slate-200 dark:border-border-black">
           <p className="text-xs text-slate-500 dark:text-slate-400 text-center">
             {lang === 'zh'
-              ? '© 2025 OpenLegged. 基于 MIT 协议开源。'
-              : '© 2025 OpenLegged. Open sourced under MIT License.'}
+              ? '© 2025 OpenLegged. 基于 Apache License 2.0 协议开源。'
+              : '© 2025 OpenLegged. Open sourced under Apache License 2.0.'}
           </p>
         </div>
       </div>

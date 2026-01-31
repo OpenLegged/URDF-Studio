@@ -57,7 +57,7 @@ export const LinkCenterOfMass = React.memo(({ link }: CenterOfMassProps) => {
       </mesh>
 
       <Html position={[0.03, 0.03, 0]} style={{ pointerEvents: 'none' }}>
-        <div className="text-[8px] text-red-400 bg-black/60 px-1 rounded whitespace-nowrap">
+        <div className="text-[8px] text-red-500 dark:text-red-400 bg-white/90 dark:bg-black/60 border border-red-200 dark:border-red-900 px-1 rounded whitespace-nowrap shadow-sm">
           CoM
         </div>
       </Html>

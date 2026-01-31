@@ -79,7 +79,7 @@ export const RobotPreview: React.FC<RobotPreviewProps> = ({
     return (
       <div 
         ref={containerRef} 
-        className="flex items-center justify-center w-full h-full bg-slate-100 dark:bg-slate-800"
+        className="flex items-center justify-center w-full h-full bg-slate-100 dark:bg-[#000000]"
       >
         <Loader2 className="w-6 h-6 animate-spin text-slate-400" />
       </div>
@@ -92,7 +92,7 @@ export const RobotPreview: React.FC<RobotPreviewProps> = ({
       <div 
         ref={containerRef}
         className="w-full h-full flex items-center justify-center overflow-hidden"
-        style={{ backgroundColor: theme === 'light' ? '#f8f9fa' : '#1f1f1f' }}
+        style={{ backgroundColor: theme === 'light' ? '#f8f9fa' : '#000000' }}
       >
         <img 
           src={animationUrl}

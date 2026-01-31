@@ -74,7 +74,7 @@ export const TransformConfirmUI = memo(function TransformConfirmUI({
             onChange={handleValueChange}
             onKeyDown={handleKeyDown}
             autoFocus
-            className="w-20 px-1.5 py-0.5 text-xs font-mono bg-white/10 dark:bg-slate-900/10 backdrop-blur-sm border border-white/30 dark:border-slate-400/30 rounded text-slate-900 dark:text-white focus:outline-none focus:border-blue-500 shadow-lg"
+            className="w-20 px-1.5 py-0.5 text-xs font-mono bg-white dark:bg-[#000000] border border-slate-300 dark:border-[#48484A] rounded text-slate-900 dark:text-white focus:outline-none focus:border-blue-500 shadow-lg"
           />
           <span className="text-[10px] text-slate-500 dark:text-slate-400">
             {pendingEdit.isRotate ? '°' : 'm'} ({getDeltaDisplay()})

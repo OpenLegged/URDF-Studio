@@ -513,7 +513,7 @@ export const SourceCodeEditor: React.FC<SourceCodeEditorProps> = ({
   return (
     <div
       ref={containerRef}
-      className={`fixed z-50 flex flex-col bg-white dark:bg-[#1e1e1e] rounded-lg shadow-2xl border border-slate-300 dark:border-slate-700 overflow-hidden ${isMaximized ? 'inset-0 !transform-none !w-full !h-full rounded-none' : ''}`}
+      className={`fixed z-50 flex flex-col bg-white dark:bg-panel-bg rounded-lg shadow-2xl border border-slate-300 dark:border-border-black overflow-hidden ${isMaximized ? 'inset-0 !transform-none !w-full !h-full rounded-none' : ''}`}
       style={!isMaximized ? {
         width: rect.width,
         height: rect.height,
@@ -524,7 +524,7 @@ export const SourceCodeEditor: React.FC<SourceCodeEditorProps> = ({
     >
       {/* Header */}
       <div
-        className={`h-10 bg-slate-100 dark:bg-[#2d2d2d] border-b border-slate-200 dark:border-[#1e1e1e] flex items-center justify-between px-3 select-none ${isMaximized ? '' : 'cursor-move'}`}
+        className={`h-10 bg-slate-100 dark:bg-element-active border-b border-slate-200 dark:border-border-black flex items-center justify-between px-3 select-none ${isMaximized ? '' : 'cursor-move'}`}
         onMouseDown={handleMouseDown}
         onDoubleClick={toggleMaximize}
       >
@@ -555,7 +555,7 @@ export const SourceCodeEditor: React.FC<SourceCodeEditorProps> = ({
 
           <button
             onClick={toggleMaximize}
-            className="p-1.5 text-slate-500 hover:bg-slate-200 dark:text-slate-400 dark:hover:bg-slate-700 rounded transition-colors"
+            className="p-1.5 text-slate-500 hover:bg-slate-200 dark:text-slate-400 dark:hover:bg-element-hover rounded transition-colors"
             title={isMaximized ? t.restore : t.maximize}
           >
             {isMaximized ? <Minimize className="w-3.5 h-3.5" /> : <Maximize className="w-3.5 h-3.5" />}
@@ -574,7 +574,7 @@ export const SourceCodeEditor: React.FC<SourceCodeEditorProps> = ({
       {/* Editor Content */}
       <div className="flex-1 overflow-hidden relative">
         {!isEditorReady && (
-          <div className="absolute inset-0 flex items-center justify-center bg-white dark:bg-[#1e1e1e] z-10">
+          <div className="absolute inset-0 flex items-center justify-center bg-white dark:bg-panel-bg z-10">
             <Loader2 className="w-6 h-6 animate-spin text-slate-400" />
           </div>
         )}
@@ -610,7 +610,7 @@ export const SourceCodeEditor: React.FC<SourceCodeEditorProps> = ({
       </div>
 
       {/* Status Bar */}
-      <div className="h-7 bg-slate-50 dark:bg-[#252526] border-t border-slate-200 dark:border-[#1e1e1e] flex items-center px-3 justify-between shrink-0 text-[10px] select-none">
+      <div className="h-7 bg-slate-50 dark:bg-element-active border-t border-slate-200 dark:border-border-black flex items-center px-3 justify-between shrink-0 text-[10px] select-none">
         <div className="flex items-center gap-3">
           {validationErrors.length > 0 ? (
             <button

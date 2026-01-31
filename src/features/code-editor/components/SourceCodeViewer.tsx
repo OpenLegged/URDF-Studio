@@ -60,11 +60,11 @@ export const SourceCodeViewer: React.FC<SourceCodeViewerProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4 animate-in fade-in duration-200">
-      <div className="w-full max-w-4xl h-[80vh] bg-white dark:bg-[#1e1e1e] rounded-lg shadow-2xl flex flex-col overflow-hidden border border-slate-200 dark:border-slate-700 animate-in zoom-in-95 duration-200">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 animate-in fade-in duration-200">
+      <div className="w-full max-w-4xl h-[80vh] bg-white dark:bg-[#2C2C2E] rounded-lg shadow-2xl dark:shadow-black/50 flex flex-col overflow-hidden border border-slate-200 dark:border-[#000000] animate-in zoom-in-95 duration-200">
 
         {/* Header */}
-        <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200 dark:border-[#333333] bg-slate-50 dark:bg-[#252526]">
+        <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200 dark:border-[#000000] bg-slate-50 dark:bg-[#2C2C2E]">
           <div className="flex items-center gap-2">
             <FileCode className="w-5 h-5 text-blue-600 dark:text-blue-400" />
             <span className="font-mono text-sm font-bold text-slate-700 dark:text-slate-200">{fileName}</span>
@@ -118,7 +118,7 @@ export const SourceCodeViewer: React.FC<SourceCodeViewerProps> = ({
               height: '100%',
               fontSize: '13px',
               lineHeight: '1.5',
-              backgroundColor: theme === 'dark' ? '#1e1e1e' : '#ffffff',
+              backgroundColor: theme === 'dark' ? '#000000' : '#ffffff',
             }}
             codeTagProps={{
                 style: { fontFamily: "'JetBrains Mono', 'Fira Code', Consolas, monospace" }

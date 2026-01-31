@@ -3,17 +3,27 @@
 @custom-variant dark (&:where(.dark, .dark *));
 
 @theme {
-  --color-google-dark-bg: #1f1f1f;
-  --color-google-dark-surface: #2d2d2d;
-  --color-google-dark-border: #444444;
-  --color-google-blue: #1a73e8;
+  --color-app-bg: #000000;
+  --color-panel-bg: #1E1E1E;
+  --color-element-bg: #3A3A3C;
+  --color-element-hover: #48484A;
+  --color-element-active: #2C2C2E;
+  --color-input-bg: #151515;
+  --color-system-blue: #0060FA;
+  --color-segmented-active: #636366;
+  --color-border-black: #000000;
+  
+  --color-google-dark-bg: var(--color-panel-bg);
+  --color-google-dark-surface: #2C2C2E;
+  --color-google-dark-border: var(--color-border-black);
+  --color-google-blue: var(--color-system-blue);
   --color-google-light-bg: #f8f9fa;
   --color-google-light-surface: #ffffff;
 }
 
 body {
   font-family: 'Inter', sans-serif;
-  @apply bg-google-light-bg dark:bg-google-dark-bg text-slate-900 dark:text-slate-200;
+  @apply bg-google-light-bg dark:bg-app-bg text-slate-900 dark:text-slate-200;
   overflow: hidden;
 }
 

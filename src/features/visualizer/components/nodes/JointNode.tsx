@@ -165,7 +165,7 @@ export const JointNode = memo(function JointNode({
                                         pointer-events-auto cursor-pointer select-none transition-colors
                                         ${isSelected
                         ? 'bg-blue-600 text-white border-blue-400 z-50'
-                        : 'bg-white/90 dark:bg-slate-900/90 text-orange-700 dark:text-orange-200 border-orange-200 dark:border-orange-900/50 hover:bg-orange-50 dark:hover:bg-slate-800'
+                        : 'bg-white/90 dark:bg-[#1C1C1E] text-orange-700 dark:text-orange-200 border-orange-200 dark:border-[#000000] hover:bg-orange-50 dark:hover:bg-[#3A3A3C]'
                       }
                                     `}
                   >

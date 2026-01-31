@@ -340,7 +340,7 @@ export const RobotThumbnail3D: React.FC<RobotThumbnail3DProps> = ({ urdfPath, ur
           }}
           onError={() => setHasError(true)}
         >
-          <color attach="background" args={[theme === 'light' ? '#f8f9fa' : '#1f1f1f']} />
+          <color attach="background" args={[theme === 'light' ? '#f8f9fa' : '#000000']} />
           <SceneLighting />
           <Environment files="/potsdamer_platz_1k.hdr" environmentIntensity={1.2} />
 
@@ -353,7 +353,7 @@ export const RobotThumbnail3D: React.FC<RobotThumbnail3DProps> = ({ urdfPath, ur
           </Suspense>
         </Canvas>
       ) : (
-        <div className="flex items-center justify-center w-full h-full bg-slate-100 dark:bg-slate-800">
+        <div className="flex items-center justify-center w-full h-full bg-slate-100 dark:bg-[#000000]">
           <Loader2 className="w-6 h-6 animate-spin text-slate-400" />
         </div>
       )}

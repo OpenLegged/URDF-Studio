@@ -398,7 +398,7 @@ export function URDFViewer({
         >
             {/* Info overlay */}
             <div className="absolute top-4 left-4 z-20 pointer-events-none select-none">
-                <div className="text-slate-500 dark:text-slate-400 text-xs bg-white/50 dark:bg-google-dark-surface/50 backdrop-blur px-2 py-1 rounded border border-slate-200 dark:border-google-dark-border">
+                <div className="text-slate-500 dark:text-slate-400 text-xs bg-white/80 dark:bg-black/40 backdrop-blur-sm px-2 py-1 rounded border border-slate-200 dark:border-border-black shadow-sm">
                     {mode === 'hardware' ? t.hardware : t.detail} {t.modeLabel}
                 </div>
             </div>
@@ -413,9 +413,9 @@ export function URDFViewer({
                         : { top: '16px', right: '16px' }
                     }
                 >
-                    <div className="bg-white/80 dark:bg-google-dark-surface/80 backdrop-blur rounded-lg border border-slate-200 dark:border-google-dark-border flex flex-col w-48 shadow-xl overflow-hidden">
+                    <div className="bg-white dark:bg-panel-bg rounded-lg border border-slate-200 dark:border-border-black flex flex-col w-48 shadow-md dark:shadow-xl overflow-hidden">
                         <div
-                            className="text-[10px] text-slate-500 uppercase font-bold tracking-wider px-3 py-2 cursor-move bg-slate-100/50 dark:bg-google-dark-bg/50 hover:bg-slate-100 dark:hover:bg-google-dark-bg select-none flex items-center justify-between"
+                            className="text-[10px] text-slate-500 uppercase font-bold tracking-wider px-3 py-2 cursor-move bg-slate-100 dark:bg-element-active hover:bg-slate-100 dark:hover:bg-element-active select-none flex items-center justify-between"
                             onMouseDown={(e) => handleMouseDown('options', e)}
                         >
                             <div className="flex items-center gap-2">
@@ -427,7 +427,7 @@ export function URDFViewer({
                             <div className="flex items-center gap-1">
                                 <button
                                     onClick={(e) => { e.stopPropagation(); toggleOptionsCollapsed(); }}
-                                    className="text-slate-400 hover:text-slate-900 dark:hover:text-white p-1 hover:bg-slate-200 dark:hover:bg-google-dark-border rounded"
+                                    className="text-slate-400 hover:text-slate-900 dark:hover:text-white p-1 hover:bg-slate-200 dark:hover:bg-element-hover rounded"
                                 >
                                     {isOptionsCollapsed ? (
                                         <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
@@ -450,7 +450,7 @@ export function URDFViewer({
                             <div className="px-2 pb-2 pt-1 flex flex-col gap-2">
                                 {/* Loaded File Display */}
                                 {fileName && (
-                                    <div className="bg-gradient-to-r from-slate-50 to-slate-100 dark:from-google-dark-bg dark:to-google-dark-surface rounded-md px-2 py-1.5 border border-slate-200 dark:border-google-dark-border animate-fade-in">
+                                    <div className="bg-gradient-to-r from-slate-50 to-slate-100 dark:from-black dark:to-element-active rounded-md px-2 py-1.5 border border-slate-200 dark:border-border-black animate-fade-in">
                                         <div className="text-[9px] text-slate-400 dark:text-slate-500 uppercase tracking-wide mb-0.5">
                                             {lang === 'zh' ? '已加载' : 'Loaded'}
                                         </div>
@@ -462,16 +462,16 @@ export function URDFViewer({
 
                                 <div className="border-b border-slate-200 dark:border-slate-700 pb-2 mb-1">
                                     <div className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase mb-1.5 px-1">{t.highlightMode}</div>
-                                    <div className="flex bg-slate-100 dark:bg-google-dark-bg rounded p-0.5">
+                                    <div className="flex bg-slate-100 dark:bg-black rounded p-0.5">
                                         <button
                                             onClick={() => setHighlightMode('link')}
-                                            className={`flex-1 py-1 text-[10px] font-medium rounded transition-all ${highlightMode === 'link' ? 'bg-white dark:bg-google-dark-surface text-google-blue shadow-sm' : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'}`}
+                                            className={`flex-1 py-1 text-[10px] font-medium rounded transition-all ${highlightMode === 'link' ? 'bg-white dark:bg-element-bg text-google-blue shadow-sm' : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'}`}
                                         >
                                             {t.linkMode}
                                         </button>
                                         <button
                                             onClick={() => setHighlightMode('collision')}
-                                            className={`flex-1 py-1 text-[10px] font-medium rounded transition-all ${highlightMode === 'collision' ? 'bg-white dark:bg-google-dark-surface text-google-blue shadow-sm' : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'}`}
+                                            className={`flex-1 py-1 text-[10px] font-medium rounded transition-all ${highlightMode === 'collision' ? 'bg-white dark:bg-element-bg text-google-blue shadow-sm' : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'}`}
                                         >
                                             {t.collisionMode}
                                         </button>
@@ -509,7 +509,7 @@ export function URDFViewer({
                                                 step={0.01}
                                                 value={modelOpacity}
                                                 onChange={(e) => setModelOpacity(parseFloat(e.target.value))}
-                                                className="w-full h-2 rounded-full appearance-none cursor-pointer bg-gradient-to-r from-slate-200 via-slate-300 to-slate-400 dark:from-slate-700 dark:via-slate-600 dark:to-slate-500 shadow-inner"
+                                                className="w-full h-2 rounded-full appearance-none cursor-pointer bg-slate-200 dark:bg-black shadow-inner"
                                                 style={{
                                                     background: `linear-gradient(to right, rgb(59, 130, 246) 0%, rgb(59, 130, 246) ${(modelOpacity) / 1.0 * 100}%, rgb(203, 213, 225) ${(modelOpacity) / 1.0 * 100}%, rgb(203, 213, 225) 100%)`
                                                 }}
@@ -584,14 +584,14 @@ export function URDFViewer({
             {showJointControls && showJointPanel && robot?.joints && Object.keys(robot.joints).length > 0 && (
                 <div
                     ref={jointPanelRef}
-                    className="absolute z-30 bg-white/90 dark:bg-google-dark-surface/90 backdrop-blur rounded-lg border border-slate-200 dark:border-google-dark-border max-h-[50vh] overflow-hidden w-64 shadow-xl flex flex-col pointer-events-auto"
+                    className="absolute z-30 bg-white dark:bg-panel-bg rounded-lg border border-slate-200 dark:border-border-black max-h-[50vh] overflow-hidden w-64 shadow-md dark:shadow-xl flex flex-col pointer-events-auto"
                     style={jointPanelPos
                         ? { left: jointPanelPos.x, top: jointPanelPos.y, right: 'auto', bottom: 'auto' }
                         : { bottom: '16px', right: '16px' }
                     }
                 >
                     <div
-                        className="text-[10px] text-slate-500 uppercase font-bold tracking-wider px-3 py-2 cursor-move bg-slate-100/50 dark:bg-google-dark-bg/50 hover:bg-slate-100 dark:hover:bg-google-dark-bg select-none flex items-center justify-between flex-shrink-0"
+                        className="text-[10px] text-slate-500 uppercase font-bold tracking-wider px-3 py-2 cursor-move bg-slate-100 dark:bg-element-active hover:bg-slate-100 dark:hover:bg-element-active select-none flex items-center justify-between flex-shrink-0"
                         onMouseDown={(e) => handleMouseDown('joints', e)}
                     >
                         <div className="flex items-center gap-2">
@@ -603,21 +603,21 @@ export function URDFViewer({
                         <div className="flex items-center gap-2">
                             <button
                                 onClick={(e) => { e.stopPropagation(); handleResetJoints(); }}
-                                className="p-1 rounded bg-slate-200 dark:bg-google-dark-bg hover:bg-slate-300 dark:hover:bg-google-dark-border text-slate-700 dark:text-white"
+                                className="p-1 rounded bg-slate-200 dark:bg-black hover:bg-slate-300 dark:hover:bg-element-hover text-slate-700 dark:text-white"
                                 title={t.resetJoints}
                             >
                                 <RotateCcw className="w-3 h-3" />
                             </button>
                             <button
                                 onClick={(e) => { e.stopPropagation(); setAngleUnit(angleUnit === 'rad' ? 'deg' : 'rad'); }}
-                                className="text-[10px] px-1.5 py-0.5 rounded bg-slate-200 dark:bg-google-dark-bg hover:bg-slate-300 dark:hover:bg-google-dark-border text-slate-700 dark:text-white font-mono"
+                                className="text-[10px] px-1.5 py-0.5 rounded bg-slate-200 dark:bg-black hover:bg-slate-300 dark:hover:bg-element-hover text-slate-700 dark:text-white font-mono"
                                 title={t.switchUnit}
                             >
                                 {angleUnit.toUpperCase()}
                             </button>
                             <button
                                 onClick={(e) => { e.stopPropagation(); toggleJointsCollapsed(); }}
-                                className="text-slate-400 hover:text-slate-900 dark:hover:text-white p-1 hover:bg-slate-200 dark:hover:bg-google-dark-border rounded"
+                                className="text-slate-400 hover:text-slate-900 dark:hover:text-white p-1 hover:bg-slate-200 dark:hover:bg-element-hover rounded"
                             >
                                 {isJointsCollapsed ? (
                                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
@@ -693,9 +693,8 @@ export function URDFViewer({
                         setDragging('measure');
                     }}
                 >
-                    <div className="bg-white/90 dark:bg-slate-800/90 backdrop-blur rounded-lg shadow-xl border border-slate-200 dark:border-slate-700 min-w-[200px] overflow-hidden">
-                        <div className="cursor-move px-3 py-2 border-b border-slate-200 dark:border-slate-700 flex items-center justify-between bg-slate-100/50 dark:bg-slate-700/50">
-                            <div className="text-xs font-semibold text-slate-700 dark:text-slate-200 flex items-center gap-2">
+                                            <div className="bg-white dark:bg-panel-bg rounded-lg shadow-md dark:shadow-xl border border-slate-200 dark:border-border-black min-w-[200px] overflow-hidden">
+                                            <div className="cursor-move px-3 py-2 border-b border-slate-200 dark:border-border-black flex items-center justify-between bg-slate-100 dark:bg-element-active">                            <div className="text-xs font-semibold text-slate-700 dark:text-slate-200 flex items-center gap-2">
                                 <svg className="w-3 h-3 text-slate-400" fill="currentColor" viewBox="0 0 20 20"><path d="M7 2a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM7 8a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM7 14a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM13 2a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM13 8a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM13 14a2 2 0 1 0 0 4 2 2 0 0 0 0-4z" /></svg>
                                 <Ruler className="w-4 h-4" />
                                 测量工具
@@ -704,8 +703,8 @@ export function URDFViewer({
                         <div className="p-3">
                             <div className="text-[10px] text-slate-500 dark:text-slate-400 mb-3 space-y-1">
                                 <div>• 点击模型选择测量点</div>
-                                <div>• <kbd className="px-1 py-0.5 bg-slate-200 dark:bg-slate-700 rounded text-[9px]">Esc</kbd> 取消当前测量</div>
-                                <div>• <kbd className="px-1 py-0.5 bg-slate-200 dark:bg-slate-700 rounded text-[9px]">Delete</kbd> 删除上一个</div>
+                                <div>• <kbd className="px-1 py-0.5 bg-slate-200 dark:bg-element-bg rounded text-[9px]">Esc</kbd> 取消当前测量</div>
+                                <div>• <kbd className="px-1 py-0.5 bg-slate-200 dark:bg-element-bg rounded text-[9px]">Delete</kbd> 删除上一个</div>
                             </div>
                             <div className="text-xs text-slate-600 dark:text-slate-300 mb-2">
                                 已测量: {measureState.measurements.length} 个
@@ -720,7 +719,7 @@ export function URDFViewer({
                                         }
                                     }}
                                     disabled={measureState.measurements.length === 0 && measureState.currentPoints.length === 0}
-                                    className="flex-1 px-2 py-1.5 text-xs bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-1"
+                                    className="flex-1 px-2 py-1.5 text-xs bg-slate-100 dark:bg-element-bg hover:bg-slate-200 dark:hover:bg-element-hover text-slate-700 dark:text-slate-200 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-1"
                                 >
                                     <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
@@ -775,8 +774,8 @@ export function URDFViewer({
                     setActiveJoint(null);
                 }}
             >
-                <color attach="background" args={[theme === 'light' ? '#f8f9fa' : '#1f1f1f']} />
-                <SceneLighting />
+                <color attach="background" args={[theme === 'light' ? '#f8f9fa' : '#000000']} />
+                <SceneLighting theme={theme} />
                 <Environment files="/potsdamer_platz_1k.hdr" environmentIntensity={1.2} />
                 <SnapshotManager actionRef={snapshotAction} robotName={robot?.name || 'robot'} />
 

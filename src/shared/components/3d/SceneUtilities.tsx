@@ -152,7 +152,7 @@ export const LIGHTING_CONFIG = {
 
 // Scene lighting setup for Z-up coordinate system
 // 5-Point lighting for comprehensive robot illumination
-export function SceneLighting() {
+export function SceneLighting({ theme }: { theme?: 'light' | 'dark' }) {
   const { scene, gl } = useThree();
 
   useEffect(() => {
@@ -164,26 +164,26 @@ export function SceneLighting() {
     // Configure tone mapping: ACESFilmicToneMapping for realistic color reproduction
     // Prevents overexposure on white parts while revealing detail in dark areas
     gl.toneMapping = THREE.ACESFilmicToneMapping;
-    gl.toneMappingExposure = 1.1; // Slightly above 1.0 for good brightness
+    gl.toneMappingExposure = theme === 'light' ? 1.0 : 1.1; // Reduced exposure for light mode
 
     // Ensure proper sRGB output color space
     gl.outputColorSpace = THREE.SRGBColorSpace;
 
-    console.log('[SceneLighting] Configured: ACESFilmic tone mapping, exposure 1.1, sRGB output');
-  }, [scene, gl]);
+    console.log(`[SceneLighting] Configured: ACESFilmic tone mapping, exposure ${gl.toneMappingExposure}, sRGB output`);
+  }, [scene, gl, theme]);
 
   return (
     <>
       {/* Ambient light - base global fill (prevents pure black shadows) */}
-      <ambientLight intensity={LIGHTING_CONFIG.ambientIntensity} color="#ffffff" />
+      <ambientLight intensity={theme === 'light' ? 0.6 : LIGHTING_CONFIG.ambientIntensity} color="#ffffff" />
 
       {/* Hemisphere light - critical for 360° visibility
           White sky + grey ground ensures bottom surfaces are visible */}
       <hemisphereLight
         args={[
           LIGHTING_CONFIG.hemisphereSky,
-          LIGHTING_CONFIG.hemisphereGround,
-          LIGHTING_CONFIG.hemisphereIntensity
+          theme === 'light' ? '#ffffff' : LIGHTING_CONFIG.hemisphereGround,
+          theme === 'light' ? 0.4 : LIGHTING_CONFIG.hemisphereIntensity
         ]}
         position={[0, 1, 0]}
       />
@@ -191,9 +191,9 @@ export function SceneLighting() {
       {/* 1. Main front light - right-front 45° with shadows */}
       <directionalLight
         position={LIGHTING_CONFIG.mainLightPosition}
-        intensity={LIGHTING_CONFIG.mainLightIntensity}
+        intensity={theme === 'light' ? 0.5 : LIGHTING_CONFIG.mainLightIntensity}
         color="#ffffff"
-        castShadow
+        castShadow={theme !== 'light'} // Disable shadows in light mode to fix artifacts
         shadow-mapSize-width={2048}
         shadow-mapSize-height={2048}
         shadow-camera-far={50}
@@ -280,10 +280,11 @@ export function ReferenceGrid({ theme }: ReferenceGridProps) {
       cellSize={0.1}
       sectionThickness={1.5}
       cellThickness={0.5}
-      cellColor={theme === 'light' ? '#cbd5e1' : '#444444'}
-      sectionColor={theme === 'light' ? '#94a3b8' : '#555555'}
+      cellColor={theme === 'light' ? '#e2e8f0' : '#444444'}
+      sectionColor={theme === 'light' ? '#cbd5e1' : '#555555'}
       rotation={[Math.PI / 2, 0, 0]}
       position={[0, 0, -0.001]}
+      receiveShadow={false}
     />
   );
 }

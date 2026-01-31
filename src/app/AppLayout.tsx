@@ -235,7 +235,7 @@ export function AppLayout({
   }, [robotLinks, robotJoints, selection, setSelection]);
 
   return (
-    <div className="flex flex-col h-screen font-sans bg-google-light-bg dark:bg-google-dark-bg text-slate-800 dark:text-slate-200">
+    <div className="flex flex-col h-screen font-sans bg-google-light-bg dark:bg-app-bg text-slate-800 dark:text-slate-200">
       {/* Hidden file inputs */}
       <input
         type="file"

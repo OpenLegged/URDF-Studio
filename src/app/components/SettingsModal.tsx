@@ -44,12 +44,12 @@ export function SettingsModal() {
   return (
     <div
       style={{ left: settingsPos.x, top: settingsPos.y }}
-      className="fixed z-[100] w-[320px] bg-white dark:bg-slate-800 rounded-xl shadow-2xl border border-slate-200 dark:border-slate-700 overflow-hidden"
+      className="fixed z-[100] w-[320px] bg-white dark:bg-panel-bg rounded-xl shadow-2xl border border-slate-200 dark:border-border-black overflow-hidden"
     >
       {/* Header */}
       <div
         onMouseDown={handleDragStart}
-        className="bg-slate-100 dark:bg-slate-900 px-4 py-3 border-b border-slate-200 dark:border-slate-700 flex items-center justify-between cursor-move select-none"
+        className="bg-slate-50 dark:bg-element-active px-4 py-3 border-b border-slate-200 dark:border-border-black flex items-center justify-between cursor-move select-none"
       >
         <div className="flex items-center gap-2">
           <Settings className="w-4 h-4 text-slate-500 dark:text-slate-400" />
@@ -83,7 +83,7 @@ export function SettingsModal() {
             step="0.05"
             value={uiScale}
             onChange={(e) => setUiScale(parseFloat(e.target.value))}
-            className="w-full h-1.5 bg-slate-200 dark:bg-slate-700 rounded-lg appearance-none cursor-pointer accent-blue-600"
+            className="w-full h-1.5 bg-slate-200 dark:bg-black border border-slate-200 dark:border-element-hover rounded-lg appearance-none cursor-pointer accent-[#0060FA]"
           />
           <div className="relative h-4 text-[10px] text-slate-400">
             <span className="absolute left-0">80%</span>
@@ -94,7 +94,7 @@ export function SettingsModal() {
 
         <button
           onClick={() => setUiScale(1.0)}
-          className="w-full py-1.5 text-xs text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 rounded transition-colors"
+          className="w-full py-1.5 text-xs text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-element-bg hover:bg-slate-200 dark:hover:bg-element-hover rounded transition-colors"
         >
           {lang === 'zh' ? '重置默认' : 'Reset to Default'}
         </button>
