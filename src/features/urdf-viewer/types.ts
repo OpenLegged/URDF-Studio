@@ -55,11 +55,15 @@ export interface RobotModelProps {
     mode?: 'detail' | 'hardware';
     highlightMode?: 'link' | 'collision';
     showInertia?: boolean;
+    showInertiaOverlay?: boolean;
     showCenterOfMass?: boolean;
+    showCoMOverlay?: boolean;
     centerOfMassSize?: number;
     showOrigins?: boolean;
+    showOriginsOverlay?: boolean;
     originSize?: number;
     showJointAxes?: boolean;
+    showJointAxesOverlay?: boolean;
     jointAxisSize?: number;
     modelOpacity?: number;
     robotLinks?: Record<string, UrdfLink>;

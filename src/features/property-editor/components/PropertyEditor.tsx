@@ -60,15 +60,15 @@ const CollapsibleSection = ({ title, children, defaultOpen = true, className = "
   };
 
   return (
-    <div className={`border border-slate-200 dark:border-slate-700 rounded-lg overflow-hidden ${className}`}>
+    <div className={`border border-slate-200 dark:border-[#000000] rounded-lg overflow-hidden ${className}`}>
       <button
-        className="w-full flex items-center justify-between p-2 bg-slate-50 dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 transition-colors text-xs font-bold text-slate-700 dark:text-slate-300"
+        className="w-full flex items-center justify-between p-2 bg-slate-50 dark:bg-[#2C2C2E] hover:bg-slate-100 dark:hover:bg-[#3A3A3C] transition-colors text-xs font-bold text-slate-700 dark:text-slate-300"
         onClick={toggle}
       >
         <span>{title}</span>
         {isOpen ? <ChevronDown className="w-3 h-3 opacity-60" /> : <ChevronRight className="w-3 h-3 opacity-60" />}
       </button>
-      {isOpen && <div className="p-3 bg-white dark:bg-google-dark-surface border-t border-slate-200 dark:border-slate-700">{children}</div>}
+      {isOpen && <div className="p-3 bg-white dark:bg-[#000000] border-t border-slate-200 dark:border-[#000000]">{children}</div>}
     </div>
   );
 };
@@ -113,7 +113,7 @@ const NumberInput = ({ value, onChange, label, step = 0.1 }: { value: number, on
         onBlur={handleBlur}
         onFocus={(e) => e.target.select()}
         onKeyDown={handleKeyDown}
-        className="bg-white dark:bg-google-dark-surface border border-slate-300 dark:border-google-dark-border rounded-lg px-2 py-1 text-sm text-slate-900 dark:text-white focus:outline-none focus:border-google-blue w-full"
+        className="bg-white dark:bg-[#000000] border border-slate-300 dark:border-[#48484A] rounded-lg px-2 py-1 text-sm text-slate-900 dark:text-white focus:outline-none focus:border-google-blue w-full"
       />
     </div>
   );
@@ -319,7 +319,7 @@ const GeometryEditor = ({
 
                         update({ type: newType, dimensions: newDims, origin: newOrigin });
                     }}
-                    className="bg-white dark:bg-google-dark-surface border border-slate-300 dark:border-google-dark-border rounded-lg px-2 py-1 text-sm text-slate-900 dark:text-white w-full"
+                    className="bg-white dark:bg-[#000000] border border-slate-300 dark:border-[#48484A] rounded-lg px-2 py-1 text-sm text-slate-900 dark:text-white w-full"
                 >
                     <option value={GeometryType.BOX}>{t.box}</option>
                     <option value={GeometryType.CYLINDER}>{t.cylinder}</option>
@@ -361,7 +361,7 @@ const GeometryEditor = ({
                                         onClick={() => update({ meshPath: filename })}
                                         className={`
                                             flex items-center gap-2 p-1.5 rounded cursor-pointer text-xs
-                                            ${geomData.meshPath === filename ? 'bg-blue-100 dark:bg-blue-900/50 text-google-blue dark:text-blue-200 border border-blue-200 dark:border-blue-800' : 'hover:bg-slate-200 dark:hover:bg-google-dark-bg text-slate-700 dark:text-slate-300'}
+                                            ${geomData.meshPath === filename ? 'bg-blue-100 dark:bg-[#0060FA] text-google-blue dark:text-white border border-blue-200 dark:border-transparent' : 'hover:bg-slate-200 dark:hover:bg-google-dark-bg text-slate-700 dark:text-slate-300'}
                                         `}
                                     >
                                         <File className="w-3 h-3 shrink-0" />
@@ -687,7 +687,7 @@ export const PropertyEditor: React.FC<PropertyEditorProps> = ({
       {/* Side Toggle Button (Centered & Protruding Left) */}
       <button
           onClick={(e) => { e.stopPropagation(); onToggle?.(); }}
-          className="absolute -left-4 top-1/2 -translate-y-1/2 w-4 h-16 bg-white dark:bg-slate-800 hover:bg-blue-500 dark:hover:bg-blue-600 hover:text-white border border-slate-300 dark:border-slate-600 rounded-l-lg shadow-md flex flex-col items-center justify-center z-50 cursor-pointer text-slate-400 hover:text-white transition-all group"
+          className="absolute -left-4 top-1/2 -translate-y-1/2 w-4 h-16 bg-white dark:bg-[#2C2C2E] hover:bg-blue-500 dark:hover:bg-blue-600 hover:text-white border border-slate-300 dark:border-[#000000] rounded-l-lg shadow-md flex flex-col items-center justify-center z-50 cursor-pointer text-slate-400 hover:text-white transition-all group"
           title={collapsed ? t.properties : t.collapseSidebar}
       >
           <div className="flex flex-col gap-0.5 items-center">
@@ -699,11 +699,11 @@ export const PropertyEditor: React.FC<PropertyEditorProps> = ({
 
       <div className="h-full w-full overflow-hidden flex flex-col relative bg-slate-50 dark:bg-google-dark-bg">
         <div style={{ width: `${Math.max(width, 280)}px`, minWidth: `${Math.max(width, 280)}px` }} className="h-full flex flex-col">
-          <div className="w-full flex items-center justify-between px-4 py-2 border-b border-slate-200 dark:border-google-dark-border bg-white dark:bg-google-dark-surface shrink-0 relative z-30">
+          <div className="w-full flex items-center justify-between px-4 py-2 border-b border-slate-200 dark:border-google-dark-border bg-white dark:bg-[#2C2C2E] shrink-0 relative z-30">
             <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">{t.properties}</span>
             {data && (
               <div className="flex items-center gap-2 flex-1 min-w-0 ml-2">
-                <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold uppercase shrink-0 ${isLink ? 'bg-blue-100 dark:bg-blue-900/50 text-blue-700 dark:text-blue-200' : 'bg-orange-100 dark:bg-orange-900/50 text-orange-700 dark:text-orange-200'}`}>
+                <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold uppercase shrink-0 ${isLink ? 'bg-blue-100 dark:bg-slate-700 text-blue-700 dark:text-slate-300' : 'bg-orange-100 dark:bg-slate-700 text-orange-700 dark:text-slate-300'}`}>
                   {selection.type}
                 </span>
                 <h2 className="font-semibold text-slate-900 dark:text-white truncate">{data.name}</h2>
@@ -730,7 +730,7 @@ export const PropertyEditor: React.FC<PropertyEditorProps> = ({
                             type="text"
                             value={data.name}
                             onChange={(e) => onUpdate('link', selection.id!, { ...data, name: e.target.value })}
-                            className="bg-white dark:bg-google-dark-surface border border-slate-300 dark:border-google-dark-border rounded-lg px-2 py-1 text-sm text-slate-900 dark:text-white w-full focus:border-google-blue focus:outline-none"
+                            className="bg-white dark:bg-[#000000] border border-slate-300 dark:border-[#48484A] rounded-lg px-2 py-1 text-sm text-slate-900 dark:text-white w-full focus:border-google-blue focus:outline-none"
                         />
                     </InputGroup>
                 )}
@@ -739,7 +739,7 @@ export const PropertyEditor: React.FC<PropertyEditorProps> = ({
                 {mode === 'detail' && (
                   <>
                       {/* Tab Navigation - Folder Style */}
-                      <div className="flex items-end gap-1 border-t border-x border-b border-slate-200 dark:border-slate-700 mb-0 bg-slate-100/50 dark:bg-slate-900/20 pt-1 px-1 rounded-t-lg">
+                      <div className="flex items-end gap-1 border-t border-x border-b border-slate-200 dark:border-[#000000] mb-0 bg-slate-100/50 dark:bg-[#000000] pt-1 px-1 rounded-t-lg">
                         <div className="w-px"></div>
                         <button
                           onClick={() => handleTabChange('visual')}
@@ -773,7 +773,7 @@ export const PropertyEditor: React.FC<PropertyEditorProps> = ({
                                     type="text"
                                     value={data.name}
                                     onChange={(e) => onUpdate('link', selection.id!, { ...data, name: e.target.value })}
-                                    className="bg-white dark:bg-google-dark-surface border border-slate-300 dark:border-google-dark-border rounded-lg px-2 py-1 text-sm text-slate-900 dark:text-white w-full focus:border-google-blue focus:outline-none"
+                                    className="bg-white dark:bg-[#000000] border border-slate-300 dark:border-[#48484A] rounded-lg px-2 py-1 text-sm text-slate-900 dark:text-white w-full focus:border-google-blue focus:outline-none"
                                 />
                             </InputGroup>
 
@@ -928,7 +928,7 @@ export const PropertyEditor: React.FC<PropertyEditorProps> = ({
                             type="text"
                             value={data.name}
                             onChange={(e) => onUpdate('joint', selection.id!, { ...data, name: e.target.value })}
-                            className="bg-white dark:bg-google-dark-surface border border-slate-300 dark:border-google-dark-border rounded-lg px-2 py-1 text-sm text-slate-900 dark:text-white w-full focus:border-google-blue focus:outline-none"
+                            className="bg-white dark:bg-[#000000] border border-slate-300 dark:border-[#48484A] rounded-lg px-2 py-1 text-sm text-slate-900 dark:text-white w-full focus:border-google-blue focus:outline-none"
                         />
                     </InputGroup>
                 )}
@@ -940,7 +940,7 @@ export const PropertyEditor: React.FC<PropertyEditorProps> = ({
                             <select
                                 value={jointData?.type || JOINT_TYPE_REVOLUTE}
                                 onChange={(e) => onUpdate('joint', selection.id!, { ...data, type: e.target.value })}
-                                className="bg-white dark:bg-google-dark-surface border border-slate-300 dark:border-google-dark-border rounded-lg px-2 py-1 text-sm text-slate-900 dark:text-white w-full"
+                                className="bg-white dark:bg-[#000000] border border-slate-300 dark:border-[#48484A] rounded-lg px-2 py-1 text-sm text-slate-900 dark:text-white w-full"
                             >
                                 <option value={JOINT_TYPE_REVOLUTE}>Revolute</option>
                                 <option value={JOINT_TYPE_CONTINUOUS}>Continuous</option>
@@ -994,7 +994,7 @@ export const PropertyEditor: React.FC<PropertyEditorProps> = ({
                                 <select
                                     value={motorSource}
                                     onChange={(e) => handleSourceChange(e.target.value)}
-                                    className="bg-white dark:bg-google-dark-surface border border-slate-300 dark:border-google-dark-border rounded-lg px-2 py-1 text-sm text-slate-900 dark:text-white w-full"
+                                    className="bg-white dark:bg-[#000000] border border-slate-300 dark:border-[#48484A] rounded-lg px-2 py-1 text-sm text-slate-900 dark:text-white w-full"
                                 >
                                     <option value="None">{t.none}</option>
                                     <option value="Library">{t.library}</option>
@@ -1008,7 +1008,7 @@ export const PropertyEditor: React.FC<PropertyEditorProps> = ({
                                         <select
                                             value={motorBrand}
                                             onChange={(e) => handleBrandChange(e.target.value)}
-                                            className="bg-white dark:bg-google-dark-surface border border-slate-300 dark:border-google-dark-border rounded-lg px-2 py-1 text-sm text-slate-900 dark:text-white w-full"
+                                            className="bg-white dark:bg-[#000000] border border-slate-300 dark:border-[#48484A] rounded-lg px-2 py-1 text-sm text-slate-900 dark:text-white w-full"
                                         >
                                             {Object.keys(motorLibrary).map(brand => (
                                                 <option key={brand} value={brand}>{brand}</option>
@@ -1019,7 +1019,7 @@ export const PropertyEditor: React.FC<PropertyEditorProps> = ({
                                         <select
                                             value={currentMotorType}
                                             onChange={(e) => handleLibraryMotorChange(e.target.value)}
-                                            className="bg-white dark:bg-google-dark-surface border border-slate-300 dark:border-google-dark-border rounded-lg px-2 py-1 text-sm text-slate-900 dark:text-white w-full"
+                                            className="bg-white dark:bg-[#000000] border border-slate-300 dark:border-[#48484A] rounded-lg px-2 py-1 text-sm text-slate-900 dark:text-white w-full"
                                         >
                                             {motorLibrary[motorBrand]?.map(m => (
                                                 <option key={m.name} value={m.name}>{m.name}</option>
@@ -1052,7 +1052,7 @@ export const PropertyEditor: React.FC<PropertyEditorProps> = ({
                                         onChange={(e) => onUpdate('joint', selection.id!, {
                                             ...data, hardware: { ...jointData?.hardware, motorType: e.target.value }
                                         })}
-                                        className="bg-white dark:bg-google-dark-surface border border-slate-300 dark:border-google-dark-border rounded-lg px-2 py-1 text-sm text-slate-900 dark:text-white w-full focus:outline-none focus:border-google-blue"
+                                        className="bg-white dark:bg-[#000000] border border-slate-300 dark:border-[#48484A] rounded-lg px-2 py-1 text-sm text-slate-900 dark:text-white w-full focus:outline-none focus:border-google-blue"
                                     />
                                 </InputGroup>
                             )}
@@ -1067,7 +1067,7 @@ export const PropertyEditor: React.FC<PropertyEditorProps> = ({
                                                 onChange={(e) => onUpdate('joint', selection.id!, {
                                                     ...data, hardware: { ...jointData?.hardware, motorId: e.target.value }
                                                 })}
-                                                className="bg-white dark:bg-google-dark-surface border border-slate-300 dark:border-google-dark-border rounded-lg px-2 py-1 text-sm text-slate-900 dark:text-white w-full focus:outline-none focus:border-google-blue"
+                                                className="bg-white dark:bg-[#000000] border border-slate-300 dark:border-[#48484A] rounded-lg px-2 py-1 text-sm text-slate-900 dark:text-white w-full focus:outline-none focus:border-google-blue"
                                             />
                                         </InputGroup>
                                         <InputGroup label={t.direction}>
@@ -1076,7 +1076,7 @@ export const PropertyEditor: React.FC<PropertyEditorProps> = ({
                                                 onChange={(e) => onUpdate('joint', selection.id!, {
                                                     ...data, hardware: { ...jointData?.hardware, motorDirection: parseInt(e.target.value) }
                                                 })}
-                                                className="bg-white dark:bg-google-dark-surface border border-slate-300 dark:border-google-dark-border rounded-lg px-2 py-1 text-sm text-slate-900 dark:text-white w-full"
+                                                className="bg-white dark:bg-[#000000] border border-slate-300 dark:border-[#48484A] rounded-lg px-2 py-1 text-sm text-slate-900 dark:text-white w-full"
                                             >
                                                 <option value={1}>1 ({t.normal})</option>
                                                 <option value={-1}>-1 ({t.inverted})</option>

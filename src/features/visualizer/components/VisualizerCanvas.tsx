@@ -1,9 +1,9 @@
 import React, { memo, Suspense } from 'react';
 import { Canvas } from '@react-three/fiber';
-import { OrbitControls, Grid, Environment, GizmoHelper, GizmoViewport } from '@react-three/drei';
+import { OrbitControls, Environment, GizmoHelper, GizmoViewport } from '@react-three/drei';
 import * as THREE from 'three';
 import { Theme } from '@/types';
-import { SceneLighting, SnapshotManager } from '@/shared/components/3d';
+import { SceneLighting, SnapshotManager, ReferenceGrid } from '@/shared/components/3d';
 
 interface VisualizerCanvasProps {
   theme: Theme;
@@ -40,10 +40,10 @@ export const VisualizerCanvas = memo(function VisualizerCanvas({
         preserveDrawingBuffer: true,
       }}
     >
-      <color attach="background" args={[theme === 'light' ? '#f8f9fa' : '#1f1f1f']} />
+      <color attach="background" args={[theme === 'light' ? '#f8f9fa' : '#000000']} />
       <Suspense fallback={null}>
         <OrbitControls makeDefault enableDamping={false} />
-        <SceneLighting />
+        <SceneLighting theme={theme} />
         <Environment files="/potsdamer_platz_1k.hdr" environmentIntensity={1.2} />
         <SnapshotManager actionRef={snapshotAction} robotName={robotName} />
 
@@ -51,20 +51,7 @@ export const VisualizerCanvas = memo(function VisualizerCanvas({
         {children}
 
         {/* Reference Grid */}
-        <Grid
-          name="ReferenceGrid"
-          infiniteGrid
-          fadeDistance={100}
-          sectionSize={1}
-          cellSize={0.1}
-          sectionThickness={1.5}
-          cellThickness={0.5}
-          cellColor={theme === 'light' ? '#cbd5e1' : '#444444'}
-          sectionColor={theme === 'light' ? '#94a3b8' : '#555555'}
-          rotation={[Math.PI / 2, 0, 0]}
-          position={[0, 0, -0.01]}
-          userData={{ isGizmo: true }}
-        />
+        <ReferenceGrid theme={theme} />
 
         {/* Axis Gizmo */}
         <GizmoHelper alignment="bottom-right" margin={[80, 80]}>

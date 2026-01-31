@@ -52,7 +52,7 @@ const MeasurementItem = memo(({
             <Line points={[pair[0], pair[1]]} color={color} lineWidth={2} depthTest={false} />
             <Html position={midpoint}>
                 <div
-                    className={`bg-black/70 text-white px-2 py-1 rounded text-xs whitespace-nowrap font-mono cursor-pointer transition-colors group flex items-center gap-1 ${isHovered ? 'bg-red-600/90' : 'hover:bg-slate-700'}`}
+                    className={`bg-slate-700/80 dark:bg-black/70 text-white px-2 py-1 rounded text-xs whitespace-nowrap font-mono cursor-pointer transition-colors group flex items-center gap-1 ${isHovered ? 'bg-red-600/90' : 'hover:bg-slate-700 dark:hover:bg-black'}`}
                     onMouseEnter={onHover}
                     onMouseLeave={onLeave}
                     onClick={(e) => { e.stopPropagation(); onDelete(); }}
@@ -92,7 +92,7 @@ const CurrentMeasurementPreview = memo(({ points }: { points: THREE.Vector3[] })
                 <>
                     <Line points={[points[0], points[1]]} color="#ef4444" lineWidth={2} depthTest={false} />
                     <Html position={midpoint}>
-                        <div className="bg-black/70 text-white px-2 py-1 rounded text-xs whitespace-nowrap pointer-events-none font-mono">
+                        <div className="bg-slate-700/80 dark:bg-black/70 text-white px-2 py-1 rounded text-xs whitespace-nowrap pointer-events-none font-mono">
                             {distance}m
                         </div>
                     </Html>

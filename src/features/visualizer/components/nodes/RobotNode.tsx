@@ -165,7 +165,7 @@ export const RobotNode = memo(function RobotNode({
                             pointer-events-auto cursor-pointer select-none transition-colors
                             ${isSelected
                     ? 'bg-blue-600 text-white border-blue-400 z-50'
-                    : 'bg-white/90 dark:bg-slate-900/90 text-slate-800 dark:text-slate-200 border-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-800'
+                    : 'bg-white dark:bg-[#151515] text-slate-800 dark:text-slate-200 border-slate-300 dark:border-[#000000] hover:bg-slate-100 dark:hover:bg-[#2C2C2E]'
                   }
                         `}
               >
@@ -233,11 +233,11 @@ export const RobotNode = memo(function RobotNode({
             style={{ transform: `scale(${labelScale})`, transformOrigin: 'center center' }}
             onClick={handleLinkClick}
             className={`
-                    px-1.5 py-0.5 text-[10px] font-mono rounded border whitespace-nowrap shadow-xl backdrop-blur-sm
+                    px-1.5 py-0.5 text-[10px] font-mono rounded border whitespace-nowrap shadow-xl
                     pointer-events-auto cursor-pointer select-none transition-colors opacity-90 hover:opacity-100
                     ${isSelected
-                ? 'bg-blue-600/90 text-white border-blue-400 z-50'
-                : 'bg-white/80 dark:bg-slate-800/80 text-blue-700 dark:text-blue-200 border-slate-300 dark:border-slate-600 hover:bg-slate-100 dark:hover:bg-slate-700'
+                ? 'bg-blue-600 text-white border-blue-400 z-50'
+                : 'bg-white dark:bg-[#151515] text-blue-700 dark:text-blue-200 border-slate-300 dark:border-[#000000] hover:bg-slate-100 dark:hover:bg-[#2C2C2E]'
               }
                 `}
           >

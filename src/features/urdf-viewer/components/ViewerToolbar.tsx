@@ -32,7 +32,7 @@ export const ViewerToolbar: React.FC<ViewerToolbarProps> = ({ activeMode, setMod
 
     if (initialPosition === null) {
         return (
-            <div ref={nodeRef} className="urdf-toolbar absolute z-40 bg-white/90 dark:bg-slate-800/90 backdrop-blur rounded-lg border border-slate-200 dark:border-slate-700 shadow-xl flex items-center p-1 gap-1 cursor-auto" style={{ left: '50%', top: '4px', transform: 'translateX(-50%)' }}>
+            <div ref={nodeRef} className="urdf-toolbar absolute z-40 bg-white/90 dark:bg-panel-bg rounded-lg border border-slate-200 dark:border-border-black shadow-2xl dark:shadow-black flex items-center p-1 gap-1 cursor-auto" style={{ left: '50%', top: '4px', transform: 'translateX(-50%)' }}>
                 <div className="drag-handle cursor-move px-1 text-slate-300 dark:text-slate-600 flex items-center h-full mr-1 hover:text-slate-500 dark:hover:text-slate-400">
                     <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20"><path d="M7 2a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM7 8a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM7 14a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM13 2a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM13 8a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM13 14a2 2 0 1 0 0 4 2 2 0 0 0 0-4z"/></svg>
                 </div>
@@ -45,12 +45,12 @@ export const ViewerToolbar: React.FC<ViewerToolbarProps> = ({ activeMode, setMod
                             onClick={() => setMode(tool.id as ToolMode)}
                             className={`group relative p-1.5 rounded-md transition-all ${
                                 isActive
-                                ? 'bg-blue-100 text-blue-600 dark:bg-blue-900/50 dark:text-blue-400 shadow-sm'
-                                : 'text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700 hover:text-slate-700 dark:hover:text-slate-200'
+                                ? 'bg-blue-100 text-blue-600 dark:bg-system-blue dark:text-white shadow-lg dark:shadow-black/40'
+                                : 'text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-element-bg hover:text-slate-700 dark:hover:text-white'
                             }`}
                         >
                             <Icon className="w-4 h-4" />
-                            <span className="absolute top-full mt-2 left-1/2 -translate-x-1/2 bg-slate-800 text-white text-[10px] px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity duration-75 pointer-events-none whitespace-nowrap z-50 shadow-lg">
+                            <span className="absolute top-full mt-2 left-1/2 -translate-x-1/2 bg-slate-800 dark:bg-black text-white text-[10px] px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity duration-75 pointer-events-none whitespace-nowrap z-50 shadow-md dark:shadow-lg border border-slate-200 dark:border-slate-700">
                                 {tool.label}
                             </span>
                         </button>
@@ -58,13 +58,13 @@ export const ViewerToolbar: React.FC<ViewerToolbarProps> = ({ activeMode, setMod
                 })}
                 {onClose && (
                     <>
-                        <div className="w-px h-4 bg-slate-200 dark:bg-slate-700 mx-1"></div>
+                        <div className="w-px h-4 bg-slate-200 dark:bg-border-black mx-1"></div>
                         <button
                             onClick={onClose}
                             className="group relative p-1.5 rounded-md text-slate-400 hover:bg-red-50 hover:text-red-500 dark:hover:bg-red-900/20 transition-all"
                         >
                             <X className="w-4 h-4" />
-                            <span className="absolute top-full mt-2 left-1/2 -translate-x-1/2 bg-slate-800 text-white text-[10px] px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity duration-75 pointer-events-none whitespace-nowrap z-50 shadow-lg">
+                            <span className="absolute top-full mt-2 left-1/2 -translate-x-1/2 bg-slate-800 dark:bg-black text-white text-[10px] px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity duration-75 pointer-events-none whitespace-nowrap z-50 shadow-md dark:shadow-lg border border-slate-200 dark:border-slate-700">
                                 {t.closeToolbar}
                             </span>
                         </button>
@@ -76,7 +76,7 @@ export const ViewerToolbar: React.FC<ViewerToolbarProps> = ({ activeMode, setMod
 
     return (
         <Draggable bounds="parent" handle=".drag-handle" nodeRef={nodeRef} defaultPosition={initialPosition}>
-            <div ref={nodeRef} className="urdf-toolbar absolute z-40 bg-white/90 dark:bg-slate-800/90 backdrop-blur rounded-lg border border-slate-200 dark:border-slate-700 shadow-xl flex items-center p-1 gap-1 cursor-auto" style={{ left: 0, top: 0 }}>
+            <div ref={nodeRef} className="urdf-toolbar absolute z-40 bg-white/90 dark:bg-panel-bg rounded-lg border border-slate-200 dark:border-border-black shadow-2xl dark:shadow-black flex items-center p-1 gap-1 cursor-auto">
                 <div className="drag-handle cursor-move px-1 text-slate-300 dark:text-slate-600 flex items-center h-full mr-1 hover:text-slate-500 dark:hover:text-slate-400">
                     <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20"><path d="M7 2a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM7 8a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM7 14a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM13 2a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM13 8a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM13 14a2 2 0 1 0 0 4 2 2 0 0 0 0-4z"/></svg>
                 </div>
@@ -89,12 +89,12 @@ export const ViewerToolbar: React.FC<ViewerToolbarProps> = ({ activeMode, setMod
                             onClick={() => setMode(tool.id as ToolMode)}
                             className={`group relative p-1.5 rounded-md transition-all ${
                                 isActive
-                                ? 'bg-blue-100 text-blue-600 dark:bg-blue-900/50 dark:text-blue-400 shadow-sm'
-                                : 'text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700 hover:text-slate-700 dark:hover:text-slate-200'
+                                ? 'bg-blue-100 text-blue-600 dark:bg-system-blue dark:text-white shadow-lg dark:shadow-black/40'
+                                : 'text-slate-500 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-element-bg hover:text-slate-700 dark:hover:text-white'
                             }`}
                         >
                             <Icon className="w-4 h-4" />
-                            <span className="absolute top-full mt-2 left-1/2 -translate-x-1/2 bg-slate-800 text-white text-[10px] px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity duration-75 pointer-events-none whitespace-nowrap z-50 shadow-lg">
+                            <span className="absolute top-full mt-2 left-1/2 -translate-x-1/2 bg-slate-800 dark:bg-black text-white text-[10px] px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity duration-75 pointer-events-none whitespace-nowrap z-50 shadow-md dark:shadow-lg border border-slate-200 dark:border-slate-700">
                                 {tool.label}
                             </span>
                         </button>
@@ -102,13 +102,13 @@ export const ViewerToolbar: React.FC<ViewerToolbarProps> = ({ activeMode, setMod
                 })}
                 {onClose && (
                     <>
-                        <div className="w-px h-4 bg-slate-200 dark:bg-slate-700 mx-1"></div>
+                        <div className="w-px h-4 bg-slate-200 dark:bg-border-black mx-1"></div>
                         <button
                             onClick={onClose}
                             className="group relative p-1.5 rounded-md text-slate-400 hover:bg-red-50 hover:text-red-500 dark:hover:bg-red-900/20 transition-all"
                         >
                             <X className="w-4 h-4" />
-                            <span className="absolute top-full mt-2 left-1/2 -translate-x-1/2 bg-slate-800 text-white text-[10px] px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity duration-75 pointer-events-none whitespace-nowrap z-50 shadow-lg">
+                            <span className="absolute top-full mt-2 left-1/2 -translate-x-1/2 bg-slate-800 dark:bg-black text-white text-[10px] px-2 py-1 rounded opacity-0 group-hover:opacity-100 transition-opacity duration-75 pointer-events-none whitespace-nowrap z-50 shadow-md dark:shadow-lg border border-slate-200 dark:border-slate-700">
                                 {t.closeToolbar}
                             </span>
                         </button>

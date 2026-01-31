@@ -9,11 +9,12 @@ import {
   AlertTriangle, Info, AlertCircle, RefreshCw, FileText,
   Minimize2, Maximize2, Minus, LayoutGrid, Search, Download, Star, Clock, Globe
 } from 'lucide-react';
-import jsPDF from 'jspdf';
+import { createRoot } from 'react-dom/client';
 import type { RobotState, MotorSpec, InspectionReport } from '@/types';
 import type { Language } from '@/shared/i18n';
 import { translations } from '@/shared/i18n';
 import { generateRobotFromPrompt, runRobotInspection, INSPECTION_CRITERIA } from '../index';
+import { InspectionReportTemplate } from '@/features/file-io/components/InspectionReportTemplate';
 
 interface AIModalProps {
   isOpen: boolean;
@@ -40,11 +41,12 @@ export function AIModal({
   const [isMaximized, setIsMaximized] = useState(false);
   const [isMinimized, setIsMinimized] = useState(false);
   const [position, setPosition] = useState({ x: 100, y: 100 });
+  const [dragTransform, setDragTransform] = useState({ x: 0, y: 0 });
   const [size, setSize] = useState({ width: 900, height: 650 });
   const [isDragging, setIsDragging] = useState(false);
   const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
   const containerRef = useRef<HTMLDivElement>(null);
-  
+
   // Resize state
   const [isResizing, setIsResizing] = useState(false);
   const [resizeDirection, setResizeDirection] = useState<'right' | 'bottom' | 'corner' | null>(null);
@@ -64,21 +66,30 @@ export function AIModal({
     if (isMaximized) return;
     setIsDragging(true);
     setDragOffset({
-      x: e.clientX - position.x,
-      y: e.clientY - position.y
+      x: e.clientX,
+      y: e.clientY
     });
-  }, [position, isMaximized]);
+    setDragTransform({ x: 0, y: 0 });
+  }, [isMaximized]);
 
-  // Handle mouse move for dragging
+  // Handle mouse move for dragging - use transform for smoother performance
   useEffect(() => {
     const handleMouseMove = (e: MouseEvent) => {
       if (!isDragging) return;
-      const newX = Math.max(0, Math.min(window.innerWidth - size.width, e.clientX - dragOffset.x));
-      const newY = Math.max(0, Math.min(window.innerHeight - 48, e.clientY - dragOffset.y));
-      setPosition({ x: newX, y: newY });
+      const deltaX = e.clientX - dragOffset.x;
+      const deltaY = e.clientY - dragOffset.y;
+      setDragTransform({ x: deltaX, y: deltaY });
     };
 
     const handleMouseUp = () => {
+      if (isDragging && (dragTransform.x !== 0 || dragTransform.y !== 0)) {
+        // Commit the drag position
+        setPosition(prev => ({
+          x: Math.max(0, Math.min(window.innerWidth - size.width, prev.x + dragTransform.x)),
+          y: Math.max(0, Math.min(window.innerHeight - 48, prev.y + dragTransform.y))
+        }));
+        setDragTransform({ x: 0, y: 0 });
+      }
       setIsDragging(false);
     };
 
@@ -91,7 +102,7 @@ export function AIModal({
       document.removeEventListener('mousemove', handleMouseMove);
       document.removeEventListener('mouseup', handleMouseUp);
     };
-  }, [isDragging, dragOffset, size.width, size.height]);
+  }, [isDragging, dragOffset, dragTransform, size.width, size.height]);
 
   // Handle resize start
   const handleResizeStart = useCallback((e: React.MouseEvent, direction: 'right' | 'bottom' | 'corner') => {
@@ -167,6 +178,7 @@ export function AIModal({
         bottom: 0,
         width: '100%',
         height: '100%',
+        transform: 'none',
       };
     }
     if (isMinimized) {
@@ -176,14 +188,17 @@ export function AIModal({
         top: position.y,
         width: size.width,
         height: 48,
+        transform: 'none',
       };
     }
+    // Use transform for dragging to avoid layout reflow
     return {
       position: 'fixed',
       left: position.x,
       top: position.y,
       width: size.width,
       height: size.height,
+      transform: isDragging ? `translate(${dragTransform.x}px, ${dragTransform.y}px)` : 'none',
     };
   };
 
@@ -530,139 +545,117 @@ export function AIModal({
     }
   };
 
-  // Download PDF report
+  // Download PDF report using HTML template approach for Chinese support
   const handleDownloadPDF = () => {
     if (!inspectionReport) return;
 
-    const doc = new jsPDF();
-    const pageWidth = doc.internal.pageSize.getWidth();
-    const pageHeight = doc.internal.pageSize.getHeight();
-    const margin = 20;
-    let yPos = margin;
+    // Create a hidden container for the report template
+    const container = document.createElement('div');
+    container.id = 'pdf-report-container-modal';
+    container.style.cssText = `
+      position: fixed;
+      left: -9999px;
+      top: 0;
+      width: 210mm;
+      padding: 0;
+      margin: 0;
+    `;
+    document.body.appendChild(container);
 
-    // Title
-    doc.setFontSize(20);
-    doc.setTextColor(50, 50, 50);
-    const reportTitle = lang === 'zh' ? 'URDF 机器人检查报告' : 'URDF Robot Inspection Report';
-    doc.text(reportTitle, pageWidth / 2, yPos, { align: 'center' });
-    yPos += 15;
+    // Render the report template
+    const root = createRoot(container);
+    root.render(
+      <InspectionReportTemplate
+        inspectionReport={inspectionReport}
+        robotName={robot.name}
+        lang={lang as 'zh' | 'en'}
+      />
+    );
 
-    // Robot name
-    doc.setFontSize(14);
-    doc.setTextColor(100, 100, 100);
-    const robotNameLabel = lang === 'zh' ? '机器人名称' : 'Robot Name';
-    doc.text(`${robotNameLabel}: ${robot.name}`, margin, yPos);
-    yPos += 10;
+    // Wait for rendering to complete
+    setTimeout(() => {
+      // Generate filename
+      const now = new Date();
+      const dateStr = now.toLocaleString(lang === 'zh' ? 'zh-CN' : 'en-US', {
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+      });
+      const fileName =
+        lang === 'zh'
+          ? `${robot.name}_检查报告_${dateStr.replace(/[\/\s:]/g, '_')}.pdf`
+          : `${robot.name}_inspection_report_${dateStr.replace(/[\/\s:]/g, '_')}.pdf`;
 
-    // Date
-    const now = new Date();
-    const dateStr = now.toLocaleString(lang === 'zh' ? 'zh-CN' : 'en-US', { year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' });
-    const dateLabel = lang === 'zh' ? '检查日期' : 'Inspection Date';
-    doc.text(`${dateLabel}: ${dateStr}`, margin, yPos);
-    yPos += 15;
+      // Create a clean printable version
+      const element = document.getElementById('pdf-report-container-modal')?.firstElementChild;
+      if (element) {
+        // Store original body content
+        const originalContent = document.body.innerHTML;
 
-    // Overall score
-    const overallScore = inspectionReport.overallScore ?? 0;
-    const maxScore = inspectionReport.maxScore ?? 100;
-    doc.setFontSize(16);
-    doc.setTextColor(50, 50, 50);
-    const scoreLabel = lang === 'zh' ? '总分' : 'Overall Score';
-    doc.text(`${scoreLabel}: ${overallScore.toFixed(1)}/${maxScore}`, margin, yPos);
-    yPos += 10;
+        // Replace body with report content for printing
+        const reportClone = element.cloneNode(true) as HTMLElement;
+        reportClone.style.cssText = `
+          width: 100%;
+          max-width: 210mm;
+          margin: 0 auto;
+          padding: 20mm;
+        `;
 
-    // Progress bar
-    const scorePercentage = (overallScore / maxScore) * 100;
-    const barWidth = pageWidth - 2 * margin;
-    const barHeight = 5;
-    doc.setFillColor(200, 200, 200);
-    doc.rect(margin, yPos, barWidth, barHeight, 'F');
+        document.body.innerHTML = '';
+        document.body.appendChild(reportClone);
 
-    let barColor: [number, number, number] = [239, 68, 68];
-    if (scorePercentage >= 90) barColor = [34, 197, 94];
-    else if (scorePercentage >= 60) barColor = [234, 179, 8];
-    doc.setFillColor(...barColor);
-    doc.rect(margin, yPos, (barWidth * scorePercentage) / 100, barHeight, 'F');
-    yPos += 15;
+        // Store original title
+        const originalTitle = document.title;
+        document.title = fileName;
 
-    // Summary
-    doc.setFontSize(12);
-    doc.setTextColor(50, 50, 50);
-    doc.setFont(undefined, 'bold');
-    const summaryLabel = lang === 'zh' ? '检查总结' : 'Inspection Summary';
-    doc.text(summaryLabel, margin, yPos);
-    yPos += 8;
-    doc.setFont(undefined, 'normal');
-    const summaryLines = doc.splitTextToSize(inspectionReport.summary, pageWidth - 2 * margin);
-    doc.text(summaryLines, margin, yPos);
-    yPos += summaryLines.length * 6 + 10;
-
-    // Issues by category
-    const issuesByCategory: Record<string, typeof inspectionReport.issues> = {};
-    INSPECTION_CRITERIA.forEach(category => {
-      issuesByCategory[category.id] = [];
-    });
-    inspectionReport.issues.forEach(issue => {
-      const categoryId = issue.category || 'physical';
-      if (!issuesByCategory[categoryId]) issuesByCategory[categoryId] = [];
-      issuesByCategory[categoryId].push(issue);
-    });
-
-    INSPECTION_CRITERIA.forEach(category => {
-      if (yPos > pageHeight - 40) {
-        doc.addPage();
-        yPos = margin;
-      }
-
-      const categoryIssues = issuesByCategory[category.id] || [];
-      const categoryScore = inspectionReport.categoryScores?.[category.id] ?? 10;
-      const categoryName = lang === 'zh' ? category.nameZh : category.name;
-
-      doc.setFontSize(14);
-      doc.setFont(undefined, 'bold');
-      doc.setTextColor(50, 50, 50);
-      doc.text(`${categoryName} (${categoryScore.toFixed(1)}/10)`, margin, yPos);
-      yPos += 10;
-
-      if (categoryIssues.length === 0) {
-        doc.setFontSize(10);
-        doc.setFont(undefined, 'normal');
-        doc.setTextColor(34, 197, 94);
-        doc.text(lang === 'zh' ? '✓ 该章节所有检查项均通过' : '✓ All checks passed', margin + 5, yPos);
-        yPos += 8;
-      } else {
-        categoryIssues.forEach(issue => {
-          if (yPos > pageHeight - 30) {
-            doc.addPage();
-            yPos = margin;
+        // Inject print styles
+        const styleElement = document.createElement('style');
+        styleElement.textContent = `
+          @page {
+            size: A4;
+            margin: 10mm;
           }
+          @media print {
+            body {
+              margin: 0;
+              padding: 0;
+            }
+          }
+        `;
+        document.head.appendChild(styleElement);
 
-          const issueScore = issue.score ?? 10;
-          doc.setFontSize(10);
-          doc.setFont(undefined, 'bold');
+        // Small delay before opening print dialog
+        setTimeout(() => {
+          window.print();
 
-          if (issue.type === 'error') doc.setTextColor(239, 68, 68);
-          else if (issue.type === 'warning') doc.setTextColor(234, 179, 8);
-          else if (issue.type === 'suggestion') doc.setTextColor(59, 130, 246);
-          else doc.setTextColor(50, 50, 50);
+          // Restore original content after print
+          window.addEventListener('afterprint', () => {
+            document.body.innerHTML = originalContent;
+            document.title = originalTitle;
+            styleElement.remove();
+          }, { once: true });
 
-          const icon = issue.type === 'error' ? '✗' : issue.type === 'warning' ? '⚠' : 'ℹ';
-          doc.text(`${icon} ${issue.title} (${issueScore.toFixed(1)}/10)`, margin + 5, yPos);
-          yPos += 6;
-
-          doc.setFont(undefined, 'normal');
-          doc.setTextColor(100, 100, 100);
-          const descLines = doc.splitTextToSize(issue.description, pageWidth - 2 * margin - 10);
-          doc.text(descLines, margin + 5, yPos);
-          yPos += descLines.length * 5 + 5;
-        });
+          // Also restore after a timeout in case user cancels
+          setTimeout(() => {
+            if (document.body.contains(reportClone)) {
+              document.body.innerHTML = originalContent;
+              document.title = originalTitle;
+            }
+          }, 5000);
+        }, 100);
       }
-      yPos += 5;
-    });
 
-    const fileName = lang === 'zh'
-      ? `${robot.name}_检查报告_${dateStr.replace(/[\/\s:]/g, '_')}.pdf`
-      : `${robot.name}_inspection_report_${dateStr.replace(/[\/\s:]/g, '_')}.pdf`;
-    doc.save(fileName);
+      // Cleanup
+      setTimeout(() => {
+        root.unmount();
+        const containerToRemove = document.getElementById('pdf-report-container-modal');
+        if (containerToRemove && containerToRemove.parentElement) {
+          containerToRemove.parentElement.removeChild(containerToRemove);
+        }
+      }, 6000);
+    }, 200);
   };
 
   // Score color helpers
@@ -710,15 +703,15 @@ export function AIModal({
     return (
       <div className="space-y-6">
         {/* Score header - Dashboard Style */}
-        <div className="relative overflow-hidden bg-slate-900 rounded-2xl p-6 text-white shadow-xl">
+        <div className="relative overflow-hidden bg-slate-900 dark:bg-[#1C1C1E] rounded-2xl p-6 text-white shadow-xl border border-transparent dark:border-white/10">
           <div className="absolute top-0 right-0 p-8 opacity-10 rotate-12">
             <Sparkles className="w-32 h-32" />
           </div>
           
           <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
             <div className="space-y-2">
-              <div className="flex items-center gap-2 text-indigo-400">
-                <div className="w-2 h-2 rounded-full bg-indigo-400 animate-pulse" />
+              <div className="flex items-center gap-2 text-blue-400">
+                <div className="w-2 h-2 rounded-full bg-blue-400 animate-pulse" />
                 <span className="text-[10px] font-bold uppercase tracking-[0.2em]">{t.inspectorSummary}</span>
               </div>
               <h2 className="text-3xl font-black tracking-tight leading-tight">
@@ -741,7 +734,7 @@ export function AIModal({
               </div>
               <button
                 onClick={handleDownloadPDF}
-                className="p-3 bg-white/10 hover:bg-white/20 text-white rounded-xl transition-all border border-white/10 backdrop-blur-md group shadow-lg"
+                className="p-3 bg-black dark:bg-[#48484A] hover:bg-slate-700 text-white rounded-xl transition-all border border-white/10 group shadow-lg"
                 title={t.downloadReport}
               >
                 <FileText className="w-6 h-6 group-hover:scale-110 transition-transform" />
@@ -771,8 +764,8 @@ export function AIModal({
                 key={category.id} 
                 className={`group border rounded-2xl overflow-hidden transition-all duration-300 ${
                   isExpanded 
-                    ? 'bg-white dark:bg-slate-800/50 border-slate-200 dark:border-slate-700 shadow-xl shadow-slate-200/50 dark:shadow-none' 
-                    : 'bg-slate-50 dark:bg-slate-800/30 border-transparent hover:border-slate-200 dark:hover:border-slate-700'
+                    ? 'bg-white dark:bg-[#1C1C1E] border-slate-200 dark:border-white/10 shadow-xl shadow-slate-200/50 dark:shadow-black/50' 
+                    : 'bg-slate-50 dark:bg-[#1C1C1E]/50 border-transparent hover:border-slate-200 dark:hover:border-white/10'
                 }`}
               >
                 <button
@@ -826,7 +819,7 @@ export function AIModal({
                           const issueScore = issue.score ?? 10;
                           const isRetesting = retestingItem?.categoryId === issue.category && retestingItem?.itemId === issue.itemId;
                           
-                          let bgClass = "bg-white dark:bg-slate-800 border-slate-100 dark:border-slate-700";
+                          let bgClass = "bg-white dark:bg-[#2C2C2E] border-slate-100 dark:border-white/5";
                           let iconColor = "text-slate-400";
                           let Icon = Info;
 
@@ -851,7 +844,7 @@ export function AIModal({
                           return (
                             <div key={idx} className={`p-4 rounded-xl border transition-all hover:shadow-md ${bgClass} group/issue`}>
                               <div className="flex gap-4">
-                                <div className={`shrink-0 p-2 rounded-lg bg-white dark:bg-slate-900 shadow-sm ${iconColor}`}>
+                                <div className={`shrink-0 p-2 rounded-lg bg-white dark:bg-[#000000] shadow-sm ${iconColor}`}>
                                   <Icon className="w-4 h-4" />
                                 </div>
                                 <div className="flex-1 min-w-0">
@@ -865,7 +858,7 @@ export function AIModal({
                                         <button
                                           onClick={() => handleRetestItem(issue.category!, issue.itemId!)}
                                           disabled={isRetesting || isGeneratingAI}
-                                          className="p-1.5 bg-slate-100 dark:bg-slate-700 hover:bg-indigo-500 hover:text-white rounded-lg transition-all disabled:opacity-30"
+                                          className="p-1.5 bg-slate-100 dark:bg-slate-700 hover:bg-[#0060FA] hover:text-white rounded-lg transition-all disabled:opacity-30"
                                           title={lang === 'zh' ? '重新检查该项' : 'Retest this item'}
                                         >
                                           {isRetesting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
@@ -888,7 +881,7 @@ export function AIModal({
                                               const type = robot.links[id] ? 'link' : 'joint';
                                               onSelectItem(type, id);
                                             }}
-                                            className="text-[9px] font-bold bg-slate-100 dark:bg-slate-900/50 hover:bg-indigo-500 hover:text-white px-2 py-1 rounded-md text-slate-500 dark:text-slate-400 transition-all border border-transparent hover:border-indigo-400"
+                                            className="text-[9px] font-bold bg-slate-100 dark:bg-[#000000] hover:bg-[#0060FA] hover:text-white px-2 py-1 rounded-md text-slate-500 dark:text-slate-400 transition-all border border-transparent hover:border-[#0060FA]"
                                           >
                                             {name}
                                           </button>
@@ -923,37 +916,30 @@ export function AIModal({
       {/* Floating Window */}
       <div
         ref={containerRef}
-        style={{
-          ...getWindowStyle(),
-          willChange: isDragging ? 'transform' : 'auto',
-          transition: 'none',
-          transform: isDragging ? 'translateZ(0)' : 'none'
-        }}
-        className={`z-[100] bg-white dark:bg-slate-900 flex flex-col text-slate-900 dark:text-slate-100 overflow-hidden rounded-xl shadow-2xl border border-slate-200 dark:border-slate-700 ${
-          isDragging ? 'select-none' : ''
-        } ${isDragging ? 'cursor-grabbing' : ''}`}
+        style={getWindowStyle()}
+        className={`z-[100] bg-white dark:bg-[#1C1C1E] flex flex-col text-slate-900 dark:text-slate-100 overflow-hidden rounded-xl shadow-2xl dark:shadow-black border border-slate-200 dark:border-white/10 select-none`}
       >
         {/* Resize handles - Larger hit areas */}
         {!isMaximized && !isMinimized && (
           <>
-            <div className="absolute right-0 top-0 bottom-0 w-2 cursor-ew-resize hover:bg-indigo-500/20 active:bg-indigo-500/30 transition-colors z-20" onMouseDown={(e) => handleResizeStart(e, 'right')} />
-            <div className="absolute bottom-0 left-0 right-0 h-2 cursor-ns-resize hover:bg-indigo-500/20 active:bg-indigo-500/30 transition-colors z-20" onMouseDown={(e) => handleResizeStart(e, 'bottom')} />
-            <div className="absolute bottom-0 right-0 w-6 h-6 cursor-nwse-resize hover:bg-indigo-500/30 active:bg-indigo-500/40 transition-colors z-30 flex items-center justify-center" onMouseDown={(e) => handleResizeStart(e, 'corner')}>
+            <div className="absolute right-0 top-0 bottom-0 w-2 cursor-ew-resize hover:bg-[#0060FA]/20 active:bg-[#0060FA]/30 transition-colors z-20" onMouseDown={(e) => handleResizeStart(e, 'right')} />
+            <div className="absolute bottom-0 left-0 right-0 h-2 cursor-ns-resize hover:bg-[#0060FA]/20 active:bg-[#0060FA]/30 transition-colors z-20" onMouseDown={(e) => handleResizeStart(e, 'bottom')} />
+            <div className="absolute bottom-0 right-0 w-6 h-6 cursor-nwse-resize hover:bg-[#0060FA]/30 active:bg-[#0060FA]/40 transition-colors z-30 flex items-center justify-center" onMouseDown={(e) => handleResizeStart(e, 'corner')}>
               <div className="w-2 h-2 border-r-2 border-b-2 border-slate-400" />
             </div>
           </>
         )}
 
         {/* Window Header */}
-        <div 
-          className={`h-12 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between px-4 bg-slate-50 dark:bg-slate-800 shrink-0 ${
-            !isMaximized ? 'cursor-grab' : ''
-          } ${isDragging ? 'cursor-grabbing' : ''}`}
+        <div
+          className={`h-12 border-b border-slate-200 dark:border-white/10 flex items-center justify-between px-4 bg-slate-50 dark:bg-[#1C1C1E] shrink-0 ${
+            isMaximized ? '' : 'cursor-grab'
+          } ${isDragging ? '!cursor-grabbing' : ''}`}
           onMouseDown={handleMouseDown}
         >
           <div className="flex items-center gap-3">
             <div className="flex items-center gap-2">
-              <div className="p-1.5 bg-purple-600 rounded-lg text-white shadow-lg shadow-purple-500/20">
+              <div className="p-1.5 bg-[#0060FA] rounded-lg text-white shadow-lg shadow-black/20">
                 <ScanSearch className="w-4 h-4" />
               </div>
               <h1 className="text-sm font-bold tracking-tight">
@@ -962,7 +948,7 @@ export function AIModal({
             </div>
             
             {inspectionReport && !isMinimized && (
-              <div className="hidden md:flex ml-4 items-center gap-2 px-2 py-1 bg-white dark:bg-slate-700/50 border border-slate-200 dark:border-slate-600 rounded-lg">
+              <div className="hidden md:flex ml-4 items-center gap-2 px-2 py-1 bg-white dark:bg-element-bg/50 border border-slate-200 dark:border-element-hover rounded-lg">
                 <div className={`w-2 h-2 rounded-full ${getScoreBgColor(inspectionReport.overallScore || 0, inspectionReport.maxScore || 100)} animation-pulse`} />
                 <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
                   {t.overallScore}: {inspectionReport.overallScore?.toFixed(1)}
@@ -972,10 +958,10 @@ export function AIModal({
           </div>
 
           <div className="flex items-center gap-1">
-            <button onClick={toggleMinimize} className="p-1.5 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-md transition-colors" title={t.minimize}>
+            <button onClick={toggleMinimize} className="p-1.5 hover:bg-slate-200 dark:hover:bg-element-hover rounded-md transition-colors" title={t.minimize}>
               <Minus className="w-4 h-4 text-slate-500" />
             </button>
-            <button onClick={toggleMaximize} className="p-1.5 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-md transition-colors" title={isMaximized ? t.restore : t.maximize}>
+            <button onClick={toggleMaximize} className="p-1.5 hover:bg-slate-200 dark:hover:bg-element-hover rounded-md transition-colors" title={isMaximized ? t.restore : t.maximize}>
               {isMaximized ? <Minimize2 className="w-4 h-4 text-slate-500" /> : <Maximize2 className="w-4 h-4 text-slate-500" />}
             </button>
             <button onClick={handleClose} className="p-1.5 hover:bg-red-100 dark:hover:bg-red-900/30 rounded-md transition-colors group" title={t.close}>
@@ -988,15 +974,15 @@ export function AIModal({
         {!isMinimized && (
           <div className="flex-1 flex overflow-hidden relative">
             {/* Sidebar - Inspection Items */}
-            <div className="w-56 border-r border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/30 flex flex-col shrink-0">
-              <div className="p-3 border-b border-slate-200 dark:border-slate-800">
+            <div className="w-56 border-r border-slate-200 dark:border-white/10 bg-slate-50 dark:bg-[#1C1C1E] flex flex-col shrink-0">
+              <div className="p-3 border-b border-slate-200 dark:border-white/10">
                 <h3 className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-2 px-1">
                   {t.inspectionItems}
                 </h3>
                 <button
                   onClick={handleRunInspection}
                   disabled={isGeneratingAI}
-                  className="w-full py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-xs font-bold flex items-center justify-center gap-2 transition-all shadow-lg shadow-indigo-500/20 active:scale-[0.98] disabled:opacity-50 disabled:active:scale-100"
+                  className="w-full py-2 bg-[#0060FA] hover:bg-[#0050D0] text-white rounded-lg text-xs font-bold flex items-center justify-center gap-2 transition-all shadow-lg shadow-black/20 active:scale-[0.98] disabled:opacity-50 disabled:active:scale-100"
                 >
                   {isGeneratingAI ? <Loader2 className="w-4 h-4 animate-spin" /> : <RefreshCw className="w-4 h-4" />}
                   {isGeneratingAI ? t.thinking : t.runInspection}
@@ -1012,11 +998,11 @@ export function AIModal({
                   const isExpanded = expandedCategories.has(category.id);
 
                   return (
-                    <div key={category.id} className={`rounded-lg transition-colors ${isExpanded ? 'bg-white dark:bg-slate-800/50 shadow-sm border border-slate-200 dark:border-slate-700' : 'hover:bg-slate-200/50 dark:hover:bg-slate-800/30'}`}>
+                    <div key={category.id} className={`rounded-lg transition-colors ${isExpanded ? 'bg-white dark:bg-element-bg shadow-sm border border-slate-200 dark:border-white/10' : 'hover:bg-slate-200/50 dark:hover:bg-element-bg'}`}>
                       <div className="flex items-center p-2 group">
                         <div className="flex items-center gap-2 flex-1 min-w-0">
                           <div 
-                            className={`w-4 h-4 rounded border flex items-center justify-center transition-colors cursor-pointer ${allSelected ? 'bg-indigo-600 border-indigo-600' : someSelected ? 'bg-indigo-400 border-indigo-400' : 'border-slate-300 dark:border-slate-600 hover:border-indigo-400'}`}
+                            className={`w-4 h-4 rounded border flex items-center justify-center transition-colors cursor-pointer ${allSelected ? 'bg-[#0060FA] border-[#0060FA]' : someSelected ? 'bg-[#0060FA]/70 border-[#0060FA]/70' : 'border-slate-300 dark:border-slate-600 hover:border-[#0060FA]'}`}
                             onClick={() => toggleCategorySelection(category.id)}
                           >
                             {allSelected ? <Check className="w-3 h-3 text-white" /> : someSelected ? <Minus className="w-2.5 h-2.5 text-white" /> : null}
@@ -1034,7 +1020,7 @@ export function AIModal({
                           </button>
                         </div>
                         <button 
-                          className="p-1 hover:bg-slate-200 dark:hover:bg-slate-700 rounded transition-colors"
+                          className="p-1 hover:bg-slate-200 dark:hover:bg-element-hover rounded transition-colors"
                           onClick={() => setExpandedCategories(prev => {
                             const next = new Set(prev);
                             if (next.has(category.id)) next.delete(category.id);
@@ -1051,10 +1037,10 @@ export function AIModal({
                           {category.items.map(item => (
                             <div 
                               key={item.id}
-                              className="flex items-center gap-2 p-1.5 hover:bg-slate-100 dark:hover:bg-slate-700/50 rounded-md cursor-pointer group/item"
+                              className="flex items-center gap-2 p-1.5 hover:bg-slate-100 dark:hover:bg-element-hover rounded-md cursor-pointer group/item"
                               onClick={() => toggleItemSelection(category.id, item.id)}
                             >
-                              <div className={`w-3.5 h-3.5 rounded border flex items-center justify-center transition-colors ${selectedItemIds.has(item.id) ? 'bg-indigo-500 border-indigo-500' : 'border-slate-300 dark:border-slate-600 group-hover/item:border-indigo-400'}`}>
+                              <div className={`w-3.5 h-3.5 rounded border flex items-center justify-center transition-colors ${selectedItemIds.has(item.id) ? 'bg-[#0060FA] border-[#0060FA]' : 'border-slate-300 dark:border-slate-600 group-hover/item:border-[#0060FA]'}`}>
                                 {selectedItemIds.has(item.id) && <Check className="w-2.5 h-2.5 text-white" />}
                               </div>
                               <span className="text-[10px] text-slate-600 dark:text-slate-400 font-medium truncate">{lang === 'zh' ? item.nameZh : item.name}</span>
@@ -1069,13 +1055,13 @@ export function AIModal({
             </div>
 
             {/* Main Content - Results */}
-            <div className="flex-1 overflow-y-auto bg-white dark:bg-slate-900 flex flex-col min-w-0">
+            <div className="flex-1 overflow-y-auto bg-white dark:bg-app-bg flex flex-col min-w-0">
               <div className="flex-1 p-6">
                 {inspectionProgress ? (
                   <div className="h-full flex flex-col items-center justify-center max-w-md mx-auto text-center space-y-6">
                     <div className="relative">
-                      <div className="w-24 h-24 rounded-full border-4 border-slate-100 dark:border-slate-800 flex items-center justify-center">
-                        <Loader2 className="w-10 h-10 text-indigo-500 animate-spin" />
+                      <div className="w-24 h-24 rounded-full border-4 border-slate-100 dark:border-border-black flex items-center justify-center">
+                        <Loader2 className="w-10 h-10 text-[#0060FA] animate-spin" />
                       </div>
                       <div className="absolute inset-0 flex items-center justify-center">
                         <span className="text-xs font-bold font-mono">
@@ -1083,34 +1069,61 @@ export function AIModal({
                         </span>
                       </div>
                     </div>
-                    
+
                     <div className="space-y-2">
                       <h3 className="text-lg font-bold text-slate-800 dark:text-white">{t.runInspection}</h3>
                       <p className="text-sm text-slate-500 dark:text-slate-400">
                         {inspectionProgress.currentCategory ? (
                           <>
-                            {t.checking}: <span className="text-indigo-500 font-bold">{inspectionProgress.currentCategory}</span>
+                            {t.checking}: <span className="text-[#0060FA] font-bold">{inspectionProgress.currentCategory}</span>
                             <br />
                             <span className="opacity-60">{inspectionProgress.currentItem}</span>
                           </>
                         ) : (
-                          t.generatingReport
+                          <>
+                            <div className="flex items-center justify-center gap-2">
+                              <Sparkles className="w-4 h-4 text-[#0060FA]" />
+                              <span className="text-[#0060FA] font-semibold">{t.generatingReport}</span>
+                            </div>
+                            <span className="text-xs text-slate-400 mt-1 block">{lang === 'zh' ? '这可能需要 30 秒...' : 'This may take up to 30 seconds...'}</span>
+                          </>
                         )}
                       </p>
                     </div>
 
-                    <div className="w-full bg-slate-100 dark:bg-slate-800 rounded-full h-1.5 overflow-hidden">
-                      <div 
-                        className="h-full bg-indigo-500 transition-all duration-300"
+                    {/* Progress bar - always visible, changes style based on state */}
+                    <div className="w-full bg-slate-100 dark:bg-black rounded-full h-2 overflow-hidden">
+                      <div
+                        className={`h-full transition-all duration-300 ${
+                          inspectionProgress.currentCategory
+                            ? 'bg-[#0060FA]'
+                            : 'bg-[#0060FA] animate-pulse'
+                        }`}
                         style={{ width: `${(inspectionProgress.completed / inspectionProgress.total) * 100}%` }}
                       />
                     </div>
+
+                    {/* Report generation sub-progress when in generating phase */}
+                    {!inspectionProgress.currentCategory && reportGenerationTimer && (
+                      <div className="w-full space-y-2 pt-2">
+                        <div className="flex justify-between text-[10px] text-slate-400">
+                          <span>{lang === 'zh' ? 'AI 分析中' : 'AI Analyzing'}</span>
+                          <span>{reportGenerationTimer}s</span>
+                        </div>
+                        <div className="w-full bg-slate-100 dark:bg-black rounded-full h-1.5 overflow-hidden">
+                          <div
+                            className="h-full bg-blue-500 transition-all duration-1000"
+                            style={{ width: `${Math.min((reportGenerationTimer / 30) * 100, 95)}%` }}
+                          />
+                        </div>
+                      </div>
+                    )}
                   </div>
                 ) : !aiResponse && !inspectionReport ? (
                   <div className="h-full flex flex-col">
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
-                      <div className="p-4 bg-purple-50 dark:bg-purple-900/10 rounded-xl border border-purple-100 dark:border-purple-800/30">
-                        <div className="flex items-center gap-2 text-purple-600 dark:text-purple-400 mb-2">
+                      <div className="p-4 bg-blue-50 dark:bg-blue-900/10 rounded-xl border border-blue-100 dark:border-white/10">
+                        <div className="flex items-center gap-2 text-blue-600 dark:text-blue-400 mb-2">
                           <Sparkles className="w-4 h-4" />
                           <h3 className="text-sm font-bold uppercase tracking-tight">{lang === 'zh' ? '智能分析' : 'AI Analysis'}</h3>
                         </div>
@@ -1118,8 +1131,8 @@ export function AIModal({
                           "{t.aiIntro}"
                         </p>
                       </div>
-                      <div className="p-4 bg-indigo-50 dark:bg-indigo-900/10 rounded-xl border border-indigo-100 dark:border-indigo-800/30">
-                        <div className="flex items-center gap-2 text-indigo-600 dark:text-indigo-400 mb-2">
+                      <div className="p-4 bg-slate-50 dark:bg-element-active/50 rounded-xl border border-slate-100 dark:border-white/10">
+                        <div className="flex items-center gap-2 text-slate-600 dark:text-slate-400 mb-2">
                           <Info className="w-4 h-4" />
                           <h3 className="text-sm font-bold uppercase tracking-tight">{lang === 'zh' ? '常用示例' : 'Examples'}</h3>
                         </div>
@@ -1129,11 +1142,11 @@ export function AIModal({
                       </div>
                     </div>
 
-                    <div className="flex-1 flex flex-col bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-200 dark:border-slate-700 p-4">
+                    <div className="flex-1 flex flex-col bg-white dark:bg-black rounded-xl border border-slate-200 dark:border-white/10 shadow-sm p-4">
                       <textarea
                         value={aiPrompt}
                         onChange={(e) => setAiPrompt(e.target.value)}
-                        className="flex-1 bg-transparent border-none p-0 text-slate-700 dark:text-slate-200 text-sm focus:ring-0 resize-none custom-scrollbar"
+                        className="flex-1 bg-transparent border-none p-0 text-slate-900 dark:text-slate-200 text-sm focus:ring-0 focus:outline-none resize-none custom-scrollbar placeholder:text-slate-400"
                         placeholder={t.aiPlaceholder}
                       />
                       <div className="mt-4 flex justify-between items-center">
@@ -1143,7 +1156,7 @@ export function AIModal({
                         <button
                           onClick={handleGenerateAI}
                           disabled={isGeneratingAI || !aiPrompt.trim()}
-                          className="px-4 py-1.5 bg-slate-900 dark:bg-white dark:text-slate-900 text-white rounded-lg text-xs font-bold flex items-center gap-2 hover:opacity-90 transition-all active:scale-95 disabled:opacity-30 disabled:active:scale-100"
+                          className="px-4 py-1.5 bg-black dark:bg-white dark:text-slate-900 text-white rounded-lg text-xs font-bold flex items-center gap-2 hover:opacity-90 transition-all shadow-lg dark:shadow-black active:scale-95 disabled:opacity-30 disabled:active:scale-100"
                         >
                           {isGeneratingAI ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
                           {t.send}
@@ -1161,7 +1174,7 @@ export function AIModal({
                         <div className="flex justify-center">
                           <button
                             onClick={() => setIsReportChatOpen(true)}
-                            className="flex items-center gap-2 px-6 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-full text-xs font-bold transition-all shadow-lg shadow-indigo-500/30 hover:scale-105 active:scale-95"
+                            className="flex items-center gap-2 px-6 py-2 bg-[#0060FA] hover:bg-blue-600 text-white rounded-full text-xs font-bold transition-all shadow-lg shadow-black/20 hover:scale-105 active:scale-95"
                           >
                             <MessageCircle className="w-4 h-4" />
                             {lang === 'zh' ? '针对报告进行对话' : 'Discuss Report with AI'}
@@ -1172,21 +1185,21 @@ export function AIModal({
 
                     {aiResponse && (
                       <div className="space-y-6">
-                        <div className="p-4 bg-slate-50 dark:bg-slate-800/80 rounded-xl border border-slate-200 dark:border-slate-700">
+                        <div className="p-4 bg-slate-50 dark:bg-[#1C1C1E] rounded-xl border border-slate-200 dark:border-white/10">
                           <div className="flex items-center gap-2 mb-3">
-                            <div className="w-1 h-3 bg-indigo-500 rounded-full" />
+                            <div className="w-1 h-3 bg-[#0060FA] rounded-full" />
                             <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">{t.yourRequest}</span>
                           </div>
                           <p className="text-sm text-slate-700 dark:text-slate-300 font-medium italic">{aiPrompt}</p>
                         </div>
 
-                        <div className="p-5 bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 shadow-xl shadow-slate-200/50 dark:shadow-none relative overflow-hidden group">
-                          <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-purple-500 to-indigo-500" />
+                        <div className="p-5 bg-white dark:bg-[#1C1C1E] rounded-xl border border-slate-200 dark:border-white/10 shadow-xl shadow-slate-200/50 dark:shadow-black/50 relative overflow-hidden group">
+                          <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-[#0060FA] to-blue-400" />
                           <div className="flex items-center justify-between mb-4">
                             <div className="flex items-center gap-2">
-                              <Sparkles className="w-4 h-4 text-indigo-500" />
+                              <Sparkles className="w-4 h-4 text-[#0060FA]" />
                               <h3 className="text-sm font-bold text-slate-800 dark:text-white uppercase tracking-tight">
-                                {t.aiResponse} <span className="text-indigo-400 font-normal ml-1">[{aiResponse.type}]</span>
+                                {t.aiResponse} <span className="text-blue-400 font-normal ml-1">[{aiResponse.type}]</span>
                               </h3>
                             </div>
                             {aiResponse.data && (
@@ -1221,15 +1234,15 @@ export function AIModal({
 
             {/* Chat Overlay for Inspection Report */}
             {isReportChatOpen && inspectionReport && (
-              <div className="absolute inset-0 bg-white/95 dark:bg-slate-900/95 z-40 flex flex-col animate-in slide-in-from-right-4 duration-300">
-                <div className="h-12 px-4 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between bg-slate-50 dark:bg-slate-800 shrink-0">
+              <div className="absolute inset-0 bg-white/95 dark:bg-app-bg/95 z-40 flex flex-col animate-in slide-in-from-right-4 duration-300">
+                <div className="h-12 px-4 border-b border-slate-200 dark:border-white/10 flex items-center justify-between bg-slate-50 dark:bg-[#1C1C1E] shrink-0">
                   <div className="flex items-center gap-2">
                     <div className="p-1 bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 rounded">
                       <MessageCircle className="w-3.5 h-3.5" />
                     </div>
                     <span className="text-xs font-bold">{t.chatTitle}</span>
                   </div>
-                  <button onClick={() => { setIsReportChatOpen(false); setReportChatMessages([]); }} className="p-1 hover:bg-slate-200 dark:hover:bg-slate-700 rounded transition-colors">
+                  <button onClick={() => { setIsReportChatOpen(false); setReportChatMessages([]); }} className="p-1 hover:bg-slate-200 dark:hover:bg-element-hover rounded transition-colors">
                     <X className="w-4 h-4" />
                   </button>
                 </div>
@@ -1237,7 +1250,7 @@ export function AIModal({
                 <div className="flex-1 overflow-y-auto p-6 space-y-4 custom-scrollbar">
                    {reportChatMessages.length === 0 ? (
                      <div className="h-full flex flex-col items-center justify-center text-slate-400 space-y-3 px-10 text-center">
-                        <div className="p-4 bg-slate-100 dark:bg-slate-800 rounded-full">
+                        <div className="p-4 bg-slate-100 dark:bg-black rounded-full">
                            <MessageCircle className="w-8 h-8 opacity-20" />
                         </div>
                         <p className="text-xs italic leading-relaxed">{t.askAboutReport}</p>
@@ -1247,8 +1260,8 @@ export function AIModal({
                        <div key={idx} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
                          <div className={`max-w-[85%] px-4 py-2.5 rounded-2xl shadow-sm text-sm ${
                            msg.role === 'user' 
-                             ? 'bg-indigo-600 text-white rounded-tr-none' 
-                             : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 rounded-tl-none border border-slate-200 dark:border-slate-700'
+                             ? 'bg-[#0060FA] text-white rounded-tr-none' 
+                             : 'bg-slate-100 dark:bg-element-active text-slate-700 dark:text-slate-200 rounded-tl-none border border-slate-200 dark:border-border-black'
                          }`}>
                            {msg.content}
                          </div>
@@ -1257,14 +1270,14 @@ export function AIModal({
                    )}
                    {isChatGenerating && (
                      <div className="flex justify-start">
-                        <div className="bg-slate-100 dark:bg-slate-800 rounded-2xl rounded-tl-none border border-slate-200 dark:border-slate-700 px-4 py-2.5">
-                           <Loader2 className="w-4 h-4 animate-spin text-indigo-500" />
+                        <div className="bg-slate-100 dark:bg-element-active rounded-2xl rounded-tl-none border border-slate-200 dark:border-border-black px-4 py-2.5">
+                           <Loader2 className="w-4 h-4 animate-spin text-[#0060FA]" />
                         </div>
                      </div>
                    )}
                 </div>
 
-                <div className="p-4 border-t border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900">
+                <div className="p-4 border-t border-slate-200 dark:border-white/10 bg-white dark:bg-[#1C1C1E]">
                   <div className="relative group">
                     <input 
                       type="text"
@@ -1272,12 +1285,12 @@ export function AIModal({
                       onChange={(e) => setReportChatInput(e.target.value)}
                       onKeyPress={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleReportChatSend(); } }}
                       placeholder={t.chatPlaceholder}
-                      className="w-full bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl py-3 pl-4 pr-12 text-xs focus:ring-2 focus:ring-indigo-500 transition-all"
+                      className="w-full bg-slate-100 dark:bg-black border border-slate-200 dark:border-element-hover rounded-xl py-3 pl-4 pr-12 text-xs focus:ring-2 focus:ring-[#0060FA] transition-all"
                     />
                     <button 
                       onClick={handleReportChatSend}
                       disabled={isChatGenerating || !reportChatInput.trim()}
-                      className="absolute right-2 top-1/2 -translate-y-1/2 p-2 bg-indigo-600 text-white rounded-lg shadow-md hover:opacity-90 active:scale-90 transition-all disabled:opacity-30 disabled:scale-100"
+                      className="absolute right-2 top-1/2 -translate-y-1/2 p-2 bg-[#0060FA] text-white rounded-lg shadow-md hover:opacity-90 active:scale-90 transition-all disabled:opacity-30 disabled:scale-100"
                     >
                       <Send className="w-3.5 h-3.5" />
                     </button>
@@ -1289,12 +1302,12 @@ export function AIModal({
         )}
 
         {/* Footer */}
-        <div className="h-14 px-4 border-t border-slate-200 dark:border-slate-800 flex items-center justify-between shrink-0 bg-slate-50 dark:bg-slate-800/80">
+        <div className="h-14 px-4 border-t border-slate-200 dark:border-white/10 flex items-center justify-between shrink-0 bg-slate-50 dark:bg-[#1C1C1E]">
           <div className="flex items-center gap-2">
             {(aiResponse || inspectionReport) && !inspectionProgress && (
               <button
                 onClick={() => { setAiResponse(null); setInspectionReport(null); setAiPrompt(''); setInspectionProgress(null); setReportGenerationTimer(null); }}
-                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-slate-500 hover:text-slate-800 dark:hover:text-white hover:bg-slate-200 dark:hover:bg-slate-700 rounded-lg transition-colors"
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-slate-500 hover:text-slate-800 dark:hover:text-white hover:bg-slate-200 dark:hover:bg-element-hover rounded-lg transition-colors"
               >
                 <ArrowRight className="w-3.5 h-3.5 rotate-180" />
                 {t.back}
@@ -1311,7 +1324,7 @@ export function AIModal({
                 <button
                   onClick={handleGenerateAI}
                   disabled={isGeneratingAI || !aiPrompt.trim()}
-                  className="px-6 py-1.5 bg-slate-900 dark:bg-white dark:text-slate-900 text-white rounded-lg text-xs font-bold transition-all hover:opacity-90 active:scale-95 disabled:opacity-30"
+                  className="px-6 py-1.5 bg-black dark:bg-white dark:text-slate-900 text-white rounded-lg text-xs font-bold transition-all shadow-lg dark:shadow-black hover:opacity-90 active:scale-95 disabled:opacity-30"
                 >
                   {isGeneratingAI ? t.thinking : t.send}
                 </button>
@@ -1330,7 +1343,7 @@ export function AIModal({
 
         {/* Resize Indicator */}
         {isResizing && (
-          <div className="absolute bottom-2 right-12 z-50 px-2 py-1 bg-indigo-600 text-white text-[10px] rounded font-mono shadow-lg">
+          <div className="absolute bottom-2 right-12 z-50 px-2 py-1 bg-[#0060FA] text-white text-[10px] rounded font-mono shadow-lg">
             {size.width} × {size.height}
           </div>
         )}

@@ -512,7 +512,7 @@ export const URDFSquare: React.FC<URDFSquareProps> = ({ onClose, lang, onImport 
     <>
       {/* Backdrop - no blur */}
       <div 
-        className="fixed inset-0 z-[90] bg-black/30"
+        className="fixed inset-0 z-[90] bg-black/50"
         onClick={onClose}
       />
       
@@ -520,7 +520,7 @@ export const URDFSquare: React.FC<URDFSquareProps> = ({ onClose, lang, onImport 
       <div
         ref={containerRef}
         style={getWindowStyle()}
-        className={`z-[100] bg-white dark:bg-slate-900 flex flex-col text-slate-900 dark:text-slate-100 overflow-hidden rounded-xl shadow-2xl border border-slate-200 dark:border-slate-700 ${
+        className={`z-[100] bg-white dark:bg-panel-bg flex flex-col text-slate-900 dark:text-slate-100 overflow-hidden rounded-xl shadow-2xl dark:shadow-black border border-slate-200 dark:border-border-black ${
           isDragging || isResizing ? 'select-none' : ''
         } ${isDragging ? 'cursor-grabbing' : ''}`}
       >
@@ -529,17 +529,17 @@ export const URDFSquare: React.FC<URDFSquareProps> = ({ onClose, lang, onImport 
           <>
             {/* Right edge resize handle */}
             <div
-              className="absolute right-0 top-0 bottom-0 w-2 cursor-ew-resize hover:bg-indigo-500/20 transition-colors z-20"
+              className="absolute right-0 top-0 bottom-0 w-2 cursor-ew-resize hover:bg-[#0060FA]/20 transition-colors z-20"
               onMouseDown={(e) => handleResizeStart(e, 'right')}
             />
             {/* Bottom edge resize handle */}
             <div
-              className="absolute bottom-0 left-0 right-0 h-2 cursor-ns-resize hover:bg-indigo-500/20 transition-colors z-20"
+              className="absolute bottom-0 left-0 right-0 h-2 cursor-ns-resize hover:bg-[#0060FA]/20 transition-colors z-20"
               onMouseDown={(e) => handleResizeStart(e, 'bottom')}
             />
             {/* Bottom-right corner resize handle */}
             <div
-              className="absolute bottom-0 right-0 w-4 h-4 cursor-nwse-resize hover:bg-indigo-500/30 transition-colors z-30"
+              className="absolute bottom-0 right-0 w-4 h-4 cursor-nwse-resize hover:bg-[#0060FA]/30 transition-colors z-30"
               onMouseDown={(e) => handleResizeStart(e, 'corner')}
             >
               <svg className="w-4 h-4 text-slate-400" viewBox="0 0 16 16" fill="currentColor">
@@ -552,14 +552,14 @@ export const URDFSquare: React.FC<URDFSquareProps> = ({ onClose, lang, onImport 
         )}
         {/* Window Header - Draggable */}
         <div 
-          className={`h-12 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between px-4 bg-slate-50 dark:bg-slate-800 shrink-0 ${
+          className={`h-12 border-b border-slate-200 dark:border-border-black flex items-center justify-between px-4 bg-slate-50 dark:bg-element-active shrink-0 ${
             !isMaximized ? 'cursor-grab' : ''
           } ${isDragging ? 'cursor-grabbing' : ''}`}
           onMouseDown={handleMouseDown}
         >
           <div className="flex items-center gap-3">
             <div className="flex items-center gap-2">
-              <div className="p-1.5 bg-indigo-600 rounded-lg text-white">
+              <div className="p-1.5 bg-[#0060FA] rounded-lg text-white">
                 <LayoutGrid className="w-4 h-4" />
               </div>
               <h1 className="text-sm font-bold tracking-tight">
@@ -575,7 +575,7 @@ export const URDFSquare: React.FC<URDFSquareProps> = ({ onClose, lang, onImport 
                   placeholder={t.searchModels}
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  className="w-full bg-white dark:bg-slate-700/50 border border-slate-200 dark:border-slate-600 rounded-lg py-1.5 pl-9 pr-3 text-xs focus:ring-2 focus:ring-indigo-500 transition-all"
+                  className="w-full bg-white dark:bg-black border border-slate-200 dark:border-element-hover rounded-lg py-1.5 pl-9 pr-3 text-xs focus:ring-2 focus:ring-[#0060FA] transition-all"
                   onMouseDown={(e) => e.stopPropagation()}
                 />
               </div>
@@ -585,14 +585,14 @@ export const URDFSquare: React.FC<URDFSquareProps> = ({ onClose, lang, onImport 
           <div className="flex items-center gap-1">
             <button 
               onClick={toggleMinimize}
-              className="p-1.5 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-md transition-colors"
+              className="p-1.5 hover:bg-slate-200 dark:hover:bg-element-hover rounded-md transition-colors"
               title={t.minimize}
             >
               <Minus className="w-4 h-4 text-slate-500" />
             </button>
             <button 
               onClick={toggleMaximize}
-              className="p-1.5 hover:bg-slate-200 dark:hover:bg-slate-700 rounded-md transition-colors"
+              className="p-1.5 hover:bg-slate-200 dark:hover:bg-element-hover rounded-md transition-colors"
               title={isMaximized ? t.restore : t.maximize}
             >
               {isMaximized ? <Minimize2 className="w-4 h-4 text-slate-500" /> : <Maximize2 className="w-4 h-4 text-slate-500" />}
@@ -611,7 +611,7 @@ export const URDFSquare: React.FC<URDFSquareProps> = ({ onClose, lang, onImport 
         {!isMinimized && (
           <div className="flex-1 flex overflow-hidden relative">
             {/* Sidebar */}
-            <div className="w-48 border-r border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-800/30 p-3 overflow-y-auto hidden lg:block">
+            <div className="w-48 border-r border-slate-200 dark:border-border-black bg-slate-50 dark:bg-panel-bg p-3 overflow-y-auto hidden lg:block">
               <div className="space-y-4">
                 <div>
                   <h3 className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-2 px-2">
@@ -624,8 +624,8 @@ export const URDFSquare: React.FC<URDFSquareProps> = ({ onClose, lang, onImport 
                         onClick={() => setSelectedCategory(cat.id)}
                         className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-md text-xs transition-all ${
                           selectedCategory === cat.id 
-                            ? 'bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-400 font-medium' 
-                            : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800'
+                            ? 'bg-[#0060FA]/10 dark:bg-[#0060FA] text-[#0060FA] dark:text-white font-medium' 
+                            : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-element-hover'
                         }`}
                       >
                         <cat.icon className="w-3.5 h-3.5" />
@@ -638,11 +638,11 @@ export const URDFSquare: React.FC<URDFSquareProps> = ({ onClose, lang, onImport 
             </div>
 
             {/* Main Content */}
-            <div className="flex-1 overflow-y-auto bg-white dark:bg-slate-900/50">
+            <div className="flex-1 overflow-y-auto bg-white dark:bg-[#151515]">
               <div className="p-4">
                 {/* Page Header */}
                 <div className="mb-4">
-                  <div className="flex items-center gap-2 text-indigo-600 dark:text-indigo-400 text-xs font-medium mb-1">
+                  <div className="flex items-center gap-2 text-[#0060FA] dark:text-[#0060FA] text-xs font-medium mb-1">
                     <Star className="w-3.5 h-3.5 fill-current" />
                     <span>{t.featuredModels}</span>
                   </div>
@@ -654,13 +654,13 @@ export const URDFSquare: React.FC<URDFSquareProps> = ({ onClose, lang, onImport 
                 {/* Grid */}
                 <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
                   {filteredModels.map(model => (
-                    <div key={model.id} className="group bg-white dark:bg-slate-800 rounded-lg border border-slate-200 dark:border-slate-700 hover:border-indigo-400 dark:hover:border-indigo-500 overflow-hidden transition-all hover:shadow-lg flex flex-col">
+                    <div key={model.id} className="group bg-white dark:bg-panel-bg rounded-lg border border-slate-200 dark:border-border-black hover:border-[#0060FA] dark:hover:border-[#0060FA] overflow-hidden transition-all shadow-md hover:shadow-2xl dark:shadow-black flex flex-col">
                       {/* Thumbnail Area */}
-                      <div className="relative h-36 overflow-hidden bg-slate-100 dark:bg-slate-900 flex items-center justify-center">
+                      <div className="relative h-36 overflow-hidden bg-slate-100 dark:bg-black flex items-center justify-center">
                         <RobotThumbnail model={model} theme={theme} />
                         
                         <div className="absolute top-2 left-2 flex gap-1">
-                          <span className="px-1.5 py-0.5 bg-slate-900/60 backdrop-blur-md text-white text-[9px] font-bold rounded uppercase">
+                          <span className="px-1.5 py-0.5 bg-white/90 dark:bg-black/80 text-slate-900 dark:text-white text-[9px] font-bold rounded uppercase shadow-sm backdrop-blur-[2px]">
                             {getCategoryName(model.category, t)}
                           </span>
                         </div>
@@ -669,7 +669,7 @@ export const URDFSquare: React.FC<URDFSquareProps> = ({ onClose, lang, onImport 
                         <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex items-end p-3 pointer-events-none">
                           <button 
                             onClick={() => handleImportModel(model)}
-                            className="w-full py-1.5 bg-white text-slate-900 rounded-md text-xs font-bold flex items-center justify-center gap-1.5 hover:bg-indigo-50 transition-colors pointer-events-auto">
+                            className="w-full py-1.5 bg-white dark:bg-[#0060FA] text-slate-900 dark:text-white rounded-md text-xs font-bold flex items-center justify-center gap-1.5 hover:bg-[#0060FA] dark:hover:bg-blue-600 hover:text-white transition-colors pointer-events-auto">
                             <Download className="w-3.5 h-3.5" />
                             {t.importNow}
                           </button>
@@ -679,7 +679,7 @@ export const URDFSquare: React.FC<URDFSquareProps> = ({ onClose, lang, onImport 
                       {/* Details */}
                       <div className="p-3 flex-1 flex flex-col">
                         <div className="flex justify-between items-start mb-1">
-                          <h3 className="font-bold text-sm leading-tight group-hover:text-indigo-600 transition-colors">
+                          <h3 className="font-bold text-sm leading-tight group-hover:text-[#0060FA] transition-colors">
                             {lang === 'zh' && MODEL_TRANSLATIONS[model.id]?.name_zh ? MODEL_TRANSLATIONS[model.id].name_zh : model.name}
                           </h3>
                           <button className="text-slate-400 hover:text-red-500 transition-colors">
@@ -698,13 +698,13 @@ export const URDFSquare: React.FC<URDFSquareProps> = ({ onClose, lang, onImport 
 
                         <div className="flex flex-wrap gap-1 mb-2">
                           {(lang === 'zh' && MODEL_TRANSLATIONS[model.id]?.tags_zh ? MODEL_TRANSLATIONS[model.id].tags_zh : model.tags).slice(0, 3).map((tag, idx) => (
-                            <span key={idx} className="px-1.5 py-0.5 bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300 text-[9px] rounded-full">
+                            <span key={idx} className="px-1.5 py-0.5 bg-slate-100 dark:bg-app-bg text-slate-600 dark:text-slate-300 text-[9px] rounded-full">
                               #{tag}
                             </span>
                           ))}
                         </div>
 
-                        <div className="pt-2 border-t border-slate-100 dark:border-slate-700 flex items-center justify-between text-[10px] text-slate-400">
+                        <div className="pt-2 border-t border-slate-100 dark:border-border-black flex items-center justify-between text-[10px] text-slate-400">
                           <div className="flex items-center gap-3">
                             <div className="flex items-center gap-1">
                               <Star className="w-3 h-3" />
@@ -727,7 +727,7 @@ export const URDFSquare: React.FC<URDFSquareProps> = ({ onClose, lang, onImport 
 
                 {filteredModels.length === 0 && (
                   <div className="flex flex-col items-center justify-center py-16 text-center">
-                    <div className="w-12 h-12 bg-slate-100 dark:bg-slate-800 rounded-full flex items-center justify-center mb-3">
+                    <div className="w-12 h-12 bg-slate-100 dark:bg-app-bg rounded-full flex items-center justify-center mb-3">
                       <Search className="w-6 h-6 text-slate-300" />
                     </div>
                     <h3 className="text-lg font-bold mb-1">{t.noModelsFound}</h3>
@@ -741,8 +741,8 @@ export const URDFSquare: React.FC<URDFSquareProps> = ({ onClose, lang, onImport 
         
         {/* Loading Indicator */}
         {isDownloading && (
-          <div className="absolute bottom-4 left-4 z-50 flex items-center gap-2 px-3 py-2 bg-white dark:bg-slate-800 shadow-xl rounded-lg border border-slate-200 dark:border-slate-700">
-            <Loader2 className="w-4 h-4 text-indigo-500 animate-spin" />
+          <div className="absolute bottom-4 left-4 z-50 flex items-center gap-2 px-3 py-2 bg-white dark:bg-panel-bg shadow-md dark:shadow-xl rounded-lg border border-slate-200 dark:border-border-black">
+            <Loader2 className="w-4 h-4 text-[#0060FA] animate-spin" />
             <div className="flex flex-col">
               <span className="text-xs font-bold">{t.processing}</span>
               <span className="text-[9px] text-slate-500">{t.fetchingResources}</span>
@@ -752,7 +752,7 @@ export const URDFSquare: React.FC<URDFSquareProps> = ({ onClose, lang, onImport 
         
         {/* Resize indicator when resizing */}
         {isResizing && (
-          <div className="absolute bottom-2 right-2 z-50 px-2 py-1 bg-indigo-600 text-white text-[10px] rounded font-mono">
+          <div className="absolute bottom-2 right-2 z-50 px-2 py-1 bg-[#0060FA] text-white text-[10px] rounded font-mono">
             {size.width} × {size.height}
           </div>
         )}

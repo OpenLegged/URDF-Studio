@@ -47,7 +47,7 @@ interface ModelHeaderBadgeProps {
 
 export const ModelHeaderBadge: React.FC<ModelHeaderBadgeProps> = ({ fileName }) => {
   return (
-    <div className="px-3 py-2 bg-slate-50 dark:bg-google-dark-bg/30 border-b border-slate-200 dark:border-google-dark-border">
+    <div className="px-3 py-2 bg-slate-50 dark:bg-google-dark-bg border-b border-slate-200 dark:border-google-dark-border">
       <div className="flex items-center gap-2">
         <FileIcon />
         <div className="flex-1 min-w-0">
@@ -80,7 +80,7 @@ export const CheckboxOption: React.FC<CheckboxOptionProps> = ({
   compact = false,
 }) => {
   const baseClass = compact
-    ? "flex items-center gap-2 text-xs text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white px-1 py-0.5 rounded hover:bg-slate-50 dark:hover:bg-google-dark-bg/50 select-none"
+    ? "flex items-center gap-2 text-xs text-slate-700 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white px-1 py-0.5 rounded hover:bg-slate-50 dark:hover:bg-google-dark-bg select-none"
     : "flex items-center gap-2 text-sm text-slate-700 dark:text-slate-200 hover:text-slate-900 dark:hover:text-white select-none";
 
   return (
@@ -197,12 +197,12 @@ export function ToggleButtonGroup<T extends string>({
 }: ToggleButtonGroupProps<T>) {
   const textSize = size === 'sm' ? 'text-[10px]' : 'text-xs';
   const activeClass = size === 'sm'
-    ? 'bg-white dark:bg-google-dark-surface text-google-blue shadow-sm'
-    : 'bg-google-blue text-white shadow';
+    ? 'bg-slate-100 dark:bg-google-dark-bg text-google-blue shadow-sm'
+    : 'bg-google-blue text-white shadow-sm';
   const inactiveClass = 'text-slate-500 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white';
 
   return (
-    <div className="flex bg-slate-100 dark:bg-google-dark-bg rounded-lg p-0.5">
+    <div className="flex gap-1">
       {options.map((option) => (
         <button
           key={option.value}
@@ -264,7 +264,7 @@ export const OptionsPanelHeader: React.FC<OptionsPanelHeaderProps> = ({
 }) => {
   return (
     <div
-      className="text-[10px] text-slate-500 uppercase font-bold tracking-wider px-3 py-2 cursor-move bg-slate-100/50 dark:bg-google-dark-bg/50 hover:bg-slate-100 dark:hover:bg-google-dark-bg select-none flex items-center justify-between"
+      className="text-[10px] text-slate-500 uppercase font-bold tracking-wider px-3 py-2 cursor-move bg-slate-100 dark:bg-google-dark-bg hover:bg-slate-100 dark:hover:bg-google-dark-bg select-none flex items-center justify-between"
       onMouseDown={onMouseDown}
     >
       <div className="flex items-center gap-2">
@@ -316,7 +316,7 @@ export const OptionsPanelContent: React.FC<OptionsPanelContentProps> = ({
   return (
     <div
       className={`transition-all duration-200 ease-in-out overflow-hidden ${
-        isCollapsed ? 'max-h-0 opacity-0' : 'max-h-[500px] opacity-100'
+        isCollapsed ? 'max-h-0 opacity-0' : 'max-h-125 opacity-100'
       } ${className}`}
     >
       <div className="p-2 flex flex-col gap-2">{children}</div>
@@ -336,7 +336,7 @@ export const OptionsPanelContainer: React.FC<OptionsPanelContainerProps> = ({
 }) => {
   return (
     <div
-      className={`bg-white/80 dark:bg-google-dark-surface/80 backdrop-blur rounded-lg border border-slate-200 dark:border-google-dark-border flex flex-col w-48 shadow-xl overflow-hidden ${className}`}
+      className={`bg-white dark:bg-google-dark-surface rounded-lg border border-slate-200 dark:border-google-dark-border flex flex-col w-48 shadow-md dark:shadow-xl overflow-hidden ${className}`}
     >
       {children}
     </div>

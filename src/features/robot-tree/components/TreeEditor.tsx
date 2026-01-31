@@ -78,7 +78,7 @@ function getFileIcon(filename: string, isFolder: boolean, isOpen: boolean) {
         case 'urdf':
             return <FileCode className="w-3.5 h-3.5 text-blue-500" />;
         case 'xacro':
-            return <FileCode className="w-3.5 h-3.5 text-purple-500" />;
+            return <FileCode className="w-3.5 h-3.5 text-slate-500" />;
         case 'xml':
             return <FileCode className="w-3.5 h-3.5 text-orange-500" />;
         case 'dae':
@@ -112,10 +112,7 @@ const FileTreeNodeComponent: React.FC<{
     return (
         <div>
             <div
-                className={`flex items-center gap-1.5 py-1 pr-2 cursor-pointer hover:bg-slate-100 dark:hover:bg-slate-700/50 transition-colors group rounded-sm ${
-                    !node.isFolder ? 'hover:bg-blue-50 dark:hover:bg-blue-900/20' : ''
-                }`}
-                style={{ paddingLeft: `${paddingLeft}px` }}
+                className={`flex items-center gap-1.5 py-1 pr-2 cursor-pointer hover:bg-slate-100 dark:hover:bg-[#3A3A3C] transition-colors group rounded-sm`}                style={{ paddingLeft: `${paddingLeft}px` }}
                 onClick={handleClick}
             >
                 {/* Expand/collapse arrow for folders */}
@@ -146,9 +143,9 @@ const FileTreeNodeComponent: React.FC<{
                 {/* Format badge for robot files */}
                 {node.file && (
                     <span className={`text-[9px] px-1 rounded font-medium ${
-                        node.file.format === 'urdf' ? 'bg-blue-100 dark:bg-blue-900/50 text-blue-600 dark:text-blue-300' :
-                        node.file.format === 'xacro' ? 'bg-purple-100 dark:bg-purple-900/50 text-purple-600 dark:text-purple-300' :
-                        node.file.format === 'mjcf' ? 'bg-orange-100 dark:bg-orange-900/50 text-orange-600 dark:text-orange-300' :
+                        node.file.format === 'urdf' ? 'bg-blue-100 dark:bg-slate-700 text-blue-600 dark:text-slate-300' :
+                        node.file.format === 'xacro' ? 'bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-slate-300' :
+                        node.file.format === 'mjcf' ? 'bg-orange-100 dark:bg-slate-700 text-orange-600 dark:text-slate-300' :
                         'bg-slate-200 dark:bg-slate-700 text-slate-500'
                     }`}>
                         {node.file.format.toUpperCase()}
@@ -307,8 +304,8 @@ const TreeNode = memo(({
       <div
         className={`relative flex items-center py-1 px-2 mx-1 my-0.5 rounded-md cursor-pointer group
           ${isLinkSelected
-            ? 'bg-blue-500 text-white shadow-sm'
-            : 'hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-300'}`}
+            ? 'bg-blue-500 text-white shadow-sm dark:bg-[#3A3A3C]'
+            : 'hover:bg-slate-100 dark:hover:bg-[#3A3A3C] text-slate-700 dark:text-slate-300'}`}
         onClick={() => onSelect('link', linkId)}
         onDoubleClick={() => onFocus && onFocus(linkId)}
         style={{ marginLeft: depth > 0 ? '8px' : '0' }}
@@ -321,7 +318,7 @@ const TreeNode = memo(({
         {/* Expand toggle */}
         <div
           className={`w-4 h-4 flex items-center justify-center shrink-0 mr-1 rounded
-            ${hasChildren ? 'hover:bg-black/10 dark:hover:bg-white/10 cursor-pointer' : ''}`}
+            ${hasChildren ? 'hover:bg-black/10 dark:hover:bg-[#48484A] cursor-pointer' : ''}`}
           onClick={(e) => { e.stopPropagation(); if (hasChildren) setIsExpanded(!isExpanded); }}
         >
           {hasChildren && (
@@ -333,8 +330,8 @@ const TreeNode = memo(({
 
         {/* Link icon */}
         <div className={`w-5 h-5 rounded flex items-center justify-center mr-1.5 shrink-0
-          ${isLinkSelected ? 'bg-blue-400' : 'bg-blue-100 dark:bg-blue-900/30'}`}>
-          <Box size={12} className={isLinkSelected ? 'text-white' : 'text-blue-500 dark:text-blue-400'} />
+          ${isLinkSelected ? 'bg-blue-400 dark:bg-slate-500' : 'bg-blue-100 dark:bg-slate-700'}`}>
+          <Box size={12} className={isLinkSelected ? 'text-white' : 'text-blue-500 dark:text-slate-300'} />
         </div>
 
         <SelectableText className="text-xs font-medium truncate flex-1">
@@ -360,7 +357,7 @@ const TreeNode = memo(({
 
           {/* Visibility Toggle */}
           <button
-              className={`p-1 rounded hover:bg-black/10 dark:hover:bg-white/10 cursor-pointer
+              className={`p-1 rounded hover:bg-black/10 dark:hover:bg-[#48484A] cursor-pointer
                   ${isLinkSelected ? 'text-white' : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-200'}`}
               onClick={(e) => {
                   e.stopPropagation();
@@ -401,8 +398,8 @@ const TreeNode = memo(({
                 <div
                   className={`relative flex items-center gap-2 text-[11px] px-2 py-1 ml-5 rounded-md cursor-pointer transition-colors
                     ${robot.selection.type === 'link' && robot.selection.id === linkId && robot.selection.subType === 'visual'
-                      ? 'bg-blue-500 text-white shadow-sm'
-                      : 'text-blue-600 dark:text-blue-300 hover:bg-blue-50 dark:hover:bg-blue-900/30'}
+                      ? 'bg-blue-500 text-white shadow-sm dark:bg-[#3A3A3C]'
+                      : 'text-blue-600 dark:text-slate-400 hover:bg-blue-50 dark:hover:bg-[#3A3A3C]'}
                   `}
                   title={`Visual: ${link.visual.type}`}
                   onClick={(e) => { e.stopPropagation(); onSelect('link', linkId, 'visual'); }}
@@ -419,8 +416,8 @@ const TreeNode = memo(({
                 <div
                   className={`relative flex items-center gap-2 text-[11px] px-2 py-1 ml-5 rounded-md cursor-pointer transition-colors
                     ${robot.selection.type === 'link' && robot.selection.id === linkId && robot.selection.subType === 'collision'
-                      ? 'bg-purple-500 text-white shadow-sm'
-                      : 'text-purple-600 dark:text-purple-300 hover:bg-purple-50 dark:hover:bg-purple-900/30'}
+                      ? 'bg-[#0060FA] text-white shadow-sm dark:bg-[#3A3A3C]'
+                      : 'text-[#0060FA] dark:text-slate-400 hover:bg-[#0060FA]/10 dark:hover:bg-[#3A3A3C]'}
                   `}
                   title={`Collision: ${link.collision.type}`}
                   onClick={(e) => { e.stopPropagation(); onSelect('link', linkId, 'collision'); }}
@@ -445,8 +442,8 @@ const TreeNode = memo(({
                 <div
                   className={`relative flex items-center py-1 px-2 mx-1 my-0.5 rounded-md cursor-pointer group
                     ${isJointSelected
-                      ? 'bg-orange-500 text-white shadow-sm'
-                      : 'hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-600 dark:text-slate-400'}`}
+                      ? 'bg-orange-500 text-white shadow-sm dark:bg-[#3A3A3C]'
+                      : 'hover:bg-slate-100 dark:hover:bg-[#3A3A3C] text-slate-600 dark:text-slate-400'}`}
                   onClick={() => onSelect('joint', joint.id)}
                   style={{ marginLeft: '8px' }}
                 >
@@ -455,8 +452,8 @@ const TreeNode = memo(({
 
                   {/* Joint icon */}
                   <div className={`w-5 h-5 rounded flex items-center justify-center mr-1.5 shrink-0
-                    ${isJointSelected ? 'bg-orange-400' : 'bg-orange-100 dark:bg-orange-900/30'}`}>
-                    <ArrowRightLeft size={10} className={isJointSelected ? 'text-white' : 'text-orange-500 dark:text-orange-400'} />
+                    ${isJointSelected ? 'bg-orange-400 dark:bg-slate-500' : 'bg-orange-100 dark:bg-slate-700'}`}>
+                    <ArrowRightLeft size={10} className={isJointSelected ? 'text-white' : 'text-orange-500 dark:text-slate-300'} />
                   </div>
 
                   <SelectableText className="text-[11px] font-medium truncate flex-1">
@@ -623,7 +620,7 @@ export const TreeEditor: React.FC<TreeEditorProps> = ({
       {/* Side Toggle Button */}
       <button
           onClick={onToggle}
-          className="absolute -right-4 top-1/2 -translate-y-1/2 w-4 h-16 bg-white dark:bg-slate-800 hover:bg-blue-500 dark:hover:bg-blue-600 hover:text-white border border-slate-300 dark:border-slate-600 rounded-r-lg shadow-md flex flex-col items-center justify-center z-50 cursor-pointer text-slate-400 hover:text-white transition-all group"
+          className="absolute -right-4 top-1/2 -translate-y-1/2 w-4 h-16 bg-white dark:bg-[#2C2C2E] hover:bg-blue-500 dark:hover:bg-blue-600 hover:text-white border border-slate-300 dark:border-[#000000] rounded-r-lg shadow-md flex flex-col items-center justify-center z-50 cursor-pointer text-slate-400 hover:text-white transition-all group"
           title={collapsed ? t.structure : t.collapseSidebar}
       >
           <div className="flex flex-col gap-0.5 items-center">
@@ -642,7 +639,7 @@ export const TreeEditor: React.FC<TreeEditorProps> = ({
                     type="text"
                     value={robot.name}
                     onChange={(e) => onNameChange(e.target.value)}
-                    className="w-full bg-slate-50 dark:bg-google-dark-surface focus:bg-white dark:focus:bg-google-dark-surface text-sm text-slate-900 dark:text-white px-3 py-2 rounded-lg border border-slate-300 dark:border-google-dark-border focus:border-google-blue outline-none transition-colors"
+                    className="w-full bg-slate-50 dark:bg-[#000000] focus:bg-white dark:focus:bg-[#000000] text-sm text-slate-900 dark:text-white px-3 py-2 rounded-lg border border-slate-300 dark:border-[#48484A] focus:border-google-blue outline-none transition-colors"
                     placeholder={t.enterRobotName}
                 />
                 {/* Current Loaded File Display */}
@@ -662,7 +659,7 @@ export const TreeEditor: React.FC<TreeEditorProps> = ({
                 style={{ height: isFileBrowserOpen ? `${fileBrowserHeight}px` : 'auto' }}
             >
                 <div
-                    className="flex items-center justify-between px-3 py-2 bg-slate-100 dark:bg-google-dark-surface cursor-pointer select-none"
+                    className="flex items-center justify-between px-3 py-2 bg-slate-100 dark:bg-[#2C2C2E] cursor-pointer select-none"
                     onClick={() => setIsFileBrowserOpen(!isFileBrowserOpen)}
                 >
                      <div className="flex items-center gap-2">
@@ -708,7 +705,7 @@ export const TreeEditor: React.FC<TreeEditorProps> = ({
                 style={{ flex: isStructureOpen ? '1 1 0%' : '0 0 auto' }}
             >
                 <div
-                    className="flex items-center justify-between px-3 py-2 bg-slate-100 dark:bg-google-dark-surface cursor-pointer select-none border-b border-slate-200 dark:border-google-dark-border"
+                    className="flex items-center justify-between px-3 py-2 bg-slate-100 dark:bg-[#2C2C2E] cursor-pointer select-none border-b border-slate-200 dark:border-google-dark-border"
                     onClick={() => setIsStructureOpen(!isStructureOpen)}
                 >
                      <div className="flex items-center gap-2">
@@ -718,7 +715,7 @@ export const TreeEditor: React.FC<TreeEditorProps> = ({
 
                      {/* Master Visual Toggle */}
                      <div
-                        className={`flex items-center justify-center w-5 h-5 rounded hover:bg-black/10 dark:hover:bg-white/10 cursor-pointer text-slate-500 dark:text-slate-400`}
+                        className={`flex items-center justify-center w-5 h-5 rounded hover:bg-black/10 dark:hover:bg-[#48484A] cursor-pointer text-slate-500 dark:text-slate-400`}
                         onClick={(e) => {
                             e.stopPropagation();
                             setShowVisual(!showVisual);
