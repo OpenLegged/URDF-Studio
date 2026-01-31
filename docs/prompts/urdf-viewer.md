@@ -12,7 +12,9 @@ src/features/urdf-viewer/
 │   ├── useCameraFocus.ts           # 相机聚焦控制
 │   ├── useMouseInteraction.ts      # 鼠标交互处理
 │   ├── useHoverDetection.ts        # 悬停检测
-│   └── useVisualizationEffects.ts  # 可视化效果（惯性、质心、原点等）
+│   ├── useVisualizationEffects.ts  # 可视化效果（惯性、质心、原点等）
+│   ├── useViewerSettings.ts        # 查看器设置状态管理
+│   └── usePanelDrag.ts             # 浮动面板拖拽逻辑
 ├── utils/
 │   ├── materials.ts                # 材质定义（高亮、碰撞等）
 │   ├── urdfMaterials.ts            # URDF 材质处理
@@ -20,7 +22,10 @@ src/features/urdf-viewer/
 │   ├── robotPositioning.ts         # 机器人定位计算
 │   └── dispose.ts                  # THREE.js 资源清理
 ├── components/
-│   ├── URDFViewer.tsx              # 主组件（Canvas + 面板 + 工具栏）
+│   ├── URDFViewer.tsx              # 主组件（Canvas + 布局）
+│   ├── ViewerOptionsPanel.tsx      # 设置面板
+│   ├── JointsPanel.tsx             # 关节控制面板
+│   ├── MeasurePanel.tsx            # 测量工具面板
 │   ├── RobotModel.tsx              # 机器人模型渲染
 │   ├── JointInteraction.tsx        # 关节拖拽交互
 │   ├── JointControlItem.tsx        # 关节控制滑块
@@ -38,8 +43,9 @@ src/features/urdf-viewer/
 ```
 URDFViewer
 ├─ ViewerToolbar (工具模式切换)
-├─ OptionsPanel (显示选项)
-├─ JointPanel (关节控制列表)
+├─ ViewerOptionsPanel (显示选项)
+├─ JointsPanel (关节控制列表)
+├─ MeasurePanel (测量信息面板)
 └─ Canvas
    ├─ RobotModel (模型 + 可视化)
    ├─ JointInteraction (关节拖拽)

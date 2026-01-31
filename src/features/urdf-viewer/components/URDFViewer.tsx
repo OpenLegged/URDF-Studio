@@ -2,8 +2,6 @@ import React, { Suspense, useState, useRef, useEffect, useCallback } from 'react
 import { Canvas, RootState } from '@react-three/fiber';
 import { OrbitControls, Environment, GizmoHelper, GizmoViewport } from '@react-three/drei';
 import * as THREE from 'three';
-import { RotateCcw, Move, ArrowUpRight, X, Ruler } from 'lucide-react';
-import { CheckboxOption, SliderOption } from '@/shared/components/Panel/OptionsPanel';
 import { SnapshotManager, SceneLighting, ReferenceGrid } from '@/shared/components/3d';
 import { translations } from '@/shared/i18n';
 
@@ -12,7 +10,12 @@ import { RobotModel } from './RobotModel';
 import { JointInteraction } from './JointInteraction';
 import { MeasureTool } from './MeasureTool';
 import { ViewerToolbar } from './ViewerToolbar';
-import { JointControlItem } from './JointControlItem';
+import { ViewerOptionsPanel } from './ViewerOptionsPanel';
+import { MeasurePanel } from './MeasurePanel';
+import { JointsPanel } from './JointsPanel';
+
+import { useViewerSettings } from '../hooks/useViewerSettings';
+import { usePanelDrag } from '../hooks/usePanelDrag';
 
 export function URDFViewer({
     urdfContent,
@@ -44,97 +47,29 @@ export function URDFViewer({
     const isOrbitDragging = useRef(false);
     const [robot, setRobot] = useState<any>(null);
 
-    const [showCollision, setShowCollision] = useState(false);
+    const {
+        showCollision, setShowCollision,
+        localShowVisual, setLocalShowVisual,
+        showJointControls, setShowJointControls,
+        showCenterOfMass, setShowCenterOfMass,
+        showCoMOverlay, setShowCoMOverlay,
+        centerOfMassSize, setCenterOfMassSize,
+        showInertia, setShowInertia,
+        showOrigins, setShowOrigins,
+        showOriginsOverlay, setShowOriginsOverlay,
+        originSize, setOriginSize,
+        showJointAxes, setShowJointAxes,
+        showJointAxesOverlay, setShowJointAxesOverlay,
+        jointAxisSize, setJointAxisSize,
+        modelOpacity, setModelOpacity,
+        highlightMode, setHighlightMode,
+        isOptionsCollapsed, toggleOptionsCollapsed,
+        isJointsCollapsed, toggleJointsCollapsed
+    } = useViewerSettings();
 
-    const [localShowVisual, setLocalShowVisual] = useState(true);
     const showVisual = propShowVisual !== undefined ? propShowVisual : localShowVisual;
     const setShowVisual = propSetShowVisual || setLocalShowVisual;
 
-    const [showJointControls, setShowJointControls] = useState(true);
-    const [showCenterOfMass, setShowCenterOfMass] = useState(false);
-    const [showCoMOverlay, setShowCoMOverlay] = useState(() => {
-        if (typeof window !== 'undefined') {
-            const saved = localStorage.getItem('urdf_viewer_com_overlay');
-            return saved !== 'false'; // Default true
-        }
-        return true;
-    });
-    const [centerOfMassSize, setCenterOfMassSize] = useState(() => {
-        if (typeof window !== 'undefined') {
-            const saved = localStorage.getItem('urdf_viewer_com_size');
-            return saved ? Math.min(parseFloat(saved), 0.5) : 0.01;
-        }
-        return 0.01;
-    });
-    const [showInertia, setShowInertia] = useState(false);
-    const [showOrigins, setShowOrigins] = useState(false);
-    const [showOriginsOverlay, setShowOriginsOverlay] = useState(() => {
-        if (typeof window !== 'undefined') {
-            const saved = localStorage.getItem('urdf_viewer_origin_overlay');
-            return saved !== 'false';
-        }
-        return true;
-    });
-    const [originSize, setOriginSize] = useState(() => {
-        if (typeof window !== 'undefined') {
-            const saved = localStorage.getItem('urdf_viewer_origin_size');
-            return saved ? Math.min(parseFloat(saved), 0.5) : 0.1;
-        }
-        return 0.1;
-    });
-    const [showJointAxes, setShowJointAxes] = useState(false);
-    const [showJointAxesOverlay, setShowJointAxesOverlay] = useState(() => {
-        if (typeof window !== 'undefined') {
-            const saved = localStorage.getItem('urdf_viewer_joint_axis_overlay');
-            return saved !== 'false';
-        }
-        return true;
-    });
-    const [jointAxisSize, setJointAxisSize] = useState(() => {
-        if (typeof window !== 'undefined') {
-            const saved = localStorage.getItem('urdf_viewer_joint_axis_size');
-            return saved ? Math.min(parseFloat(saved), 2.0) : 0.1;
-        }
-        return 0.1;
-    });
-    const [modelOpacity, setModelOpacity] = useState(() => {
-        if (typeof window !== 'undefined') {
-            const saved = localStorage.getItem('urdf_viewer_model_opacity');
-            return saved ? parseFloat(saved) : 1.0;
-        }
-        return 1.0;
-    });
-
-    useEffect(() => {
-        localStorage.setItem('urdf_viewer_origin_size', originSize.toString());
-    }, [originSize]);
-
-    useEffect(() => {
-        localStorage.setItem('urdf_viewer_com_size', centerOfMassSize.toString());
-    }, [centerOfMassSize]);
-
-    useEffect(() => {
-        localStorage.setItem('urdf_viewer_com_overlay', showCoMOverlay.toString());
-    }, [showCoMOverlay]);
-
-    useEffect(() => {
-        localStorage.setItem('urdf_viewer_joint_axis_size', jointAxisSize.toString());
-    }, [jointAxisSize]);
-
-    useEffect(() => {
-        localStorage.setItem('urdf_viewer_origin_overlay', showOriginsOverlay.toString());
-    }, [showOriginsOverlay]);
-
-    useEffect(() => {
-        localStorage.setItem('urdf_viewer_joint_axis_overlay', showJointAxesOverlay.toString());
-    }, [showJointAxesOverlay]);
-
-    useEffect(() => {
-        localStorage.setItem('urdf_viewer_model_opacity', modelOpacity.toString());
-    }, [modelOpacity]);
-
-
-    const [highlightMode, setHighlightMode] = useState<'link' | 'collision'>('link');
     const [toolMode, setToolMode] = useState<ToolMode>('select');
 
     // WebGL context lost state
@@ -146,8 +81,21 @@ export function URDFViewer({
         currentPoints: [],
         tempPoint: null
     });
+    
+    const containerRef = useRef<HTMLDivElement>(null);
+    const optionsPanelRef = useRef<HTMLDivElement>(null);
+    const jointPanelRef = useRef<HTMLDivElement>(null);
     const measurePanelRef = useRef<HTMLDivElement>(null);
-    const [measurePanelPos, setMeasurePanelPos] = useState<{ x: number; y: number } | null>(null);
+
+    const {
+        optionsPanelPos,
+        jointPanelPos,
+        measurePanelPos,
+        dragging,
+        handleMouseDown,
+        handleMouseMove,
+        handleMouseUp
+    } = usePanelDrag(containerRef, optionsPanelRef, jointPanelRef, measurePanelRef);
 
     const transformMode = (['translate', 'rotate', 'universal'].includes(toolMode) ? toolMode : 'select') as 'select' | 'translate' | 'rotate' | 'universal';
 
@@ -159,43 +107,6 @@ export function URDFViewer({
         }
     }, [selection?.subType]);
 
-    const containerRef = useRef<HTMLDivElement>(null);
-    const optionsPanelRef = useRef<HTMLDivElement>(null);
-    const jointPanelRef = useRef<HTMLDivElement>(null);
-    const [optionsPanelPos, setOptionsPanelPos] = useState<{ x: number; y: number } | null>(null);
-    const [jointPanelPos, setJointPanelPos] = useState<{ x: number; y: number } | null>(null);
-    const [dragging, setDragging] = useState<'options' | 'joints' | 'measure' | null>(null);
-    const dragStartRef = useRef<{ mouseX: number; mouseY: number; panelX: number; panelY: number } | null>(null);
-    const [isOptionsCollapsed, setIsOptionsCollapsed] = useState(() => {
-        if (typeof window !== 'undefined') {
-            const saved = localStorage.getItem('urdf_viewer_options_collapsed');
-            return saved === 'true';
-        }
-        return false;
-    });
-    const [isJointsCollapsed, setIsJointsCollapsed] = useState(() => {
-        if (typeof window !== 'undefined') {
-            const saved = localStorage.getItem('urdf_viewer_joints_collapsed');
-            return saved === 'true';
-        }
-        return false;
-    });
-
-    const toggleOptionsCollapsed = () => {
-        setIsOptionsCollapsed(prev => {
-            const newState = !prev;
-            localStorage.setItem('urdf_viewer_options_collapsed', String(newState));
-            return newState;
-        });
-    };
-
-    const toggleJointsCollapsed = () => {
-        setIsJointsCollapsed(prev => {
-            const newState = !prev;
-            localStorage.setItem('urdf_viewer_joints_collapsed', String(newState));
-            return newState;
-        });
-    };
 
     const [jointAngles, setJointAngles] = useState<Record<string, number>>({});
     const [initialJointAngles, setInitialJointAngles] = useState<Record<string, number>>({});
@@ -365,62 +276,6 @@ export function URDFViewer({
         }
     }, [selection, robot]);
 
-    const handleMouseDown = useCallback((panel: 'options' | 'joints', e: React.MouseEvent) => {
-        e.preventDefault();
-        e.stopPropagation();
-
-        const panelRef = panel === 'options' ? optionsPanelRef : jointPanelRef;
-        if (!panelRef.current || !containerRef.current) return;
-
-        const rect = panelRef.current.getBoundingClientRect();
-        const containerRect = containerRef.current.getBoundingClientRect();
-
-        dragStartRef.current = {
-            mouseX: e.clientX,
-            mouseY: e.clientY,
-            panelX: rect.left - containerRect.left,
-            panelY: rect.top - containerRect.top
-        };
-        setDragging(panel);
-    }, []);
-
-    const handleMouseMove = useCallback((e: React.MouseEvent) => {
-        if (!dragging || !dragStartRef.current || !containerRef.current) return;
-
-        const panelRef = dragging === 'options' ? optionsPanelRef :
-            dragging === 'joints' ? jointPanelRef : measurePanelRef;
-        if (!panelRef.current) return;
-
-        const deltaX = e.clientX - dragStartRef.current.mouseX;
-        const deltaY = e.clientY - dragStartRef.current.mouseY;
-
-        const containerRect = containerRef.current.getBoundingClientRect();
-        const panelRect = panelRef.current.getBoundingClientRect();
-
-        let newX = dragStartRef.current.panelX + deltaX;
-        let newY = dragStartRef.current.panelY + deltaY;
-
-        const padding = 2;
-        const maxX = containerRect.width - panelRect.width - padding;
-        const maxY = containerRect.height - panelRect.height - padding;
-
-        newX = Math.max(padding, Math.min(newX, Math.max(padding, maxX)));
-        newY = Math.max(padding, Math.min(newY, Math.max(padding, maxY)));
-
-        if (dragging === 'options') {
-            setOptionsPanelPos({ x: newX, y: newY });
-        } else if (dragging === 'joints') {
-            setJointPanelPos({ x: newX, y: newY });
-        } else if (dragging === 'measure') {
-            setMeasurePanelPos({ x: newX, y: newY });
-        }
-    }, [dragging]);
-
-    const handleMouseUp = useCallback(() => {
-        setDragging(null);
-        dragStartRef.current = null;
-    }, []);
-
     return (
         <div
             ref={containerRef}
@@ -437,300 +292,72 @@ export function URDFViewer({
             </div>
 
             {/* Settings panel */}
-            {showOptionsPanel && (
-                <div
-                    ref={optionsPanelRef}
-                    className="absolute z-30 pointer-events-auto"
-                    style={optionsPanelPos
-                        ? { left: optionsPanelPos.x, top: optionsPanelPos.y, right: 'auto' }
-                        : { top: '16px', right: '16px' }
-                    }
-                >
-                    <div className="bg-white/80 dark:bg-google-dark-surface/80 backdrop-blur rounded-lg border border-slate-200 dark:border-google-dark-border flex flex-col w-48 shadow-xl overflow-hidden">
-                        <div
-                            className="text-[10px] text-slate-500 uppercase font-bold tracking-wider px-3 py-2 cursor-move bg-slate-100/50 dark:bg-google-dark-bg/50 hover:bg-slate-100 dark:hover:bg-google-dark-bg select-none flex items-center justify-between"
-                            onMouseDown={(e) => handleMouseDown('options', e)}
-                        >
-                            <div className="flex items-center gap-2">
-                                <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
-                                    <path d="M7 2a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM7 8a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM7 14a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM13 2a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM13 8a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM13 14a2 2 0 1 0 0 4 2 2 0 0 0 0-4z" />
-                                </svg>
-                                {mode === 'hardware' ? t.hardwareOptions : t.detailOptions}
-                            </div>
-                            <div className="flex items-center gap-1">
-                                <button
-                                    onClick={(e) => { e.stopPropagation(); toggleOptionsCollapsed(); }}
-                                    className="text-slate-400 hover:text-slate-900 dark:hover:text-white p-1 hover:bg-slate-200 dark:hover:bg-google-dark-border rounded"
-                                >
-                                    {isOptionsCollapsed ? (
-                                        <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
-                                    ) : (
-                                        <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" /></svg>
-                                    )}
-                                </button>
-                                {setShowOptionsPanel && (
-                                    <button
-                                        onClick={(e) => { e.stopPropagation(); setShowOptionsPanel(false); }}
-                                        className="text-slate-400 dark:hover:text-white p-1 hover:bg-red-50 hover:text-red-500 dark:hover:bg-red-900/20 rounded"
-                                    >
-                                        <X className="w-3 h-3" />
-                                    </button>
-                                )}
-                            </div>
-                        </div>
-
-                        {!isOptionsCollapsed && (
-                            <div className="px-2 pb-2 pt-1 flex flex-col gap-2">
-                                {/* Loaded File Display */}
-                                {fileName && (
-                                    <div className="bg-linear-to-r from-slate-50 to-slate-100 dark:from-google-dark-bg dark:to-google-dark-surface rounded-md px-2 py-1.5 border border-slate-200 dark:border-google-dark-border animate-fade-in">
-                                        <div className="text-[9px] text-slate-400 dark:text-slate-500 uppercase tracking-wide mb-0.5">
-                                            {lang === 'zh' ? '已加载' : 'Loaded'}
-                                        </div>
-                                        <div className="text-[11px] font-semibold text-slate-700 dark:text-slate-200 truncate" title={fileName}>
-                                            {fileName}
-                                        </div>
-                                    </div>
-                                )}
-
-                                <div className="border-b border-slate-200 dark:border-slate-700 pb-2 mb-1">
-                                    <div className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase mb-1.5 px-1">{t.highlightMode}</div>
-                                    <div className="flex bg-slate-100 dark:bg-google-dark-bg rounded p-0.5">
-                                        <button
-                                            onClick={() => setHighlightMode('link')}
-                                            className={`flex-1 py-1 text-[10px] font-medium rounded transition-all ${highlightMode === 'link' ? 'bg-white dark:bg-google-dark-surface text-google-blue shadow-sm' : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'}`}
-                                        >
-                                            {t.linkMode}
-                                        </button>
-                                        <button
-                                            onClick={() => setHighlightMode('collision')}
-                                            className={`flex-1 py-1 text-[10px] font-medium rounded transition-all ${highlightMode === 'collision' ? 'bg-white dark:bg-google-dark-surface text-google-blue shadow-sm' : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-300'}`}
-                                        >
-                                            {t.collisionMode}
-                                        </button>
-                                    </div>
-                                </div>
-
-                                <div className="space-y-1">
-                                    <CheckboxOption checked={showJointControls} onChange={setShowJointControls} label={t.showJointControls} compact />
-                                    <CheckboxOption checked={showVisual} onChange={setShowVisual} label={t.showVisual} compact />
-                                    <CheckboxOption checked={showCollision} onChange={setShowCollision} label={t.showCollision} compact />
-                                </div>
-
-                                {/* Model Transparency - Beautified */}
-                                <div className="border-t border-slate-200 dark:border-slate-700 pt-2">
-                                    <div className="px-1">
-                                        <div className="flex items-center gap-2 mb-1.5">
-                                            <div className="flex items-center gap-1">
-                                                <svg className="w-3 h-3 text-slate-400" viewBox="0 0 24 24" fill="currentColor">
-                                                    <circle cx="12" cy="12" r="10" fillOpacity={modelOpacity} />
-                                                    <circle cx="12" cy="12" r="10" fill="none" stroke="currentColor" strokeWidth="1.5" />
-                                                </svg>
-                                                <span className="text-[10px] text-slate-600 dark:text-slate-300">
-                                                    {lang === 'zh' ? '不透明度' : 'Opacity'}
-                                                </span>
-                                            </div>
-                                            <span className="text-[10px] font-mono text-google-blue ml-auto">
-                                                {Math.round(modelOpacity / 1.0 * 100)}%
-                                            </span>
-                                        </div>
-                                        <div className="relative">
-                                            <input
-                                                type="range"
-                                                min={0.1}
-                                                max={1.0}
-                                                step={0.01}
-                                                value={modelOpacity}
-                                                onChange={(e) => setModelOpacity(parseFloat(e.target.value))}
-                                                className="w-full h-2 rounded-full appearance-none cursor-pointer bg-linear-to-r from-slate-200 via-slate-300 to-slate-400 dark:from-slate-700 dark:via-slate-600 dark:to-slate-500 shadow-inner"
-                                                style={{
-                                                    background: `linear-gradient(to right, rgb(59, 130, 246) 0%, rgb(59, 130, 246) ${(modelOpacity) / 1.0 * 100}%, rgb(203, 213, 225) ${(modelOpacity) / 1.0 * 100}%, rgb(203, 213, 225) 100%)`
-                                                }}
-                                            />
-                                        </div>
-                                    </div>
-                                </div>
-
-                                {/* Coordinate Axes Section */}
-                                <div className="border-t border-slate-200 dark:border-slate-700 pt-2 space-y-1">
-                                    <div className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase mb-1 px-1">
-                                        {lang === 'zh' ? '坐标系显示' : 'Coordinate Axes'}
-                                    </div>
-
-                                    <div className="flex items-center justify-between pr-1">
-                                        <CheckboxOption
-                                            checked={showOrigins}
-                                            onChange={setShowOrigins}
-                                            label={t.showOrigin}
-                                            icon={<Move className="w-3 h-3 text-slate-500" />}
-                                            compact
-                                        />
-                                        {showOrigins && (
-                                            <button
-                                                className={`p-0.5 rounded transition-colors ${showOriginsOverlay ? 'text-google-blue bg-blue-50 dark:bg-blue-900/30' : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-300'}`}
-                                                onClick={() => setShowOriginsOverlay(!showOriginsOverlay)}
-                                                title={lang === 'zh' ? "显示在最前" : "Always on top"}
-                                            >
-                                                <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
-                                                </svg>
-                                            </button>
-                                        )}
-                                    </div>
-
-                                    {showOrigins && (
-                                        <SliderOption label={t.size} value={originSize} onChange={setOriginSize} min={0.01} max={0.5} step={0.01} compact />
-                                    )}
-
-                                    <div className="flex items-center justify-between pr-1">
-                                        <CheckboxOption
-                                            checked={showJointAxes}
-                                            onChange={setShowJointAxes}
-                                            label={t.showJointAxes}
-                                            icon={<ArrowUpRight className="w-3 h-3 text-red-500" />}
-                                            compact
-                                        />
-                                        {showJointAxes && (
-                                            <button
-                                                className={`p-0.5 rounded transition-colors ${showJointAxesOverlay ? 'text-google-blue bg-blue-50 dark:bg-blue-900/30' : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-300'}`}
-                                                onClick={() => setShowJointAxesOverlay(!showJointAxesOverlay)}
-                                                title={lang === 'zh' ? "显示在最前" : "Always on top"}
-                                            >
-                                                <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
-                                                </svg>
-                                            </button>
-                                        )}
-                                    </div>
-
-                                    {showJointAxes && (
-                                        <SliderOption label={t.size} value={jointAxisSize} onChange={setJointAxisSize} min={0.01} max={2.0} step={0.01} compact />
-                                    )}
-                                </div>
-
-                                {/* Physics Visualization Section */}
-                                <div className="border-t border-slate-200 dark:border-slate-700 pt-2 space-y-1">
-                                    <div className="text-[10px] font-bold text-slate-500 dark:text-slate-400 uppercase mb-1 px-1">
-                                        {lang === 'zh' ? '物理可视化' : 'Physics'}
-                                    </div>
-
-                                    <div className="flex items-center justify-between pr-1">
-                                        <CheckboxOption
-                                            checked={showCenterOfMass}
-                                            onChange={setShowCenterOfMass}
-                                            label={t.showCenterOfMass}
-                                            icon={<div className="w-3 h-3 rounded-full border border-slate-500 flex items-center justify-center"><div className="w-1 h-1 bg-slate-500 rounded-full"></div></div>}
-                                            compact
-                                        />
-                                        {showCenterOfMass && (
-                                            <button
-                                                className={`p-0.5 rounded transition-colors ${showCoMOverlay ? 'text-google-blue bg-blue-50 dark:bg-blue-900/30' : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-300'}`}
-                                                onClick={() => setShowCoMOverlay(!showCoMOverlay)}
-                                                title={lang === 'zh' ? "显示在最前" : "Always on top"}
-                                            >
-                                                <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
-                                                </svg>
-                                            </button>
-                                        )}
-                                    </div>
-                                    {showCenterOfMass && (
-                                        <SliderOption label={t.size} value={centerOfMassSize} onChange={setCenterOfMassSize} min={0.005} max={0.1} step={0.005} decimals={3} compact />
-                                    )}
-
-                                    <CheckboxOption
-                                        checked={showInertia}
-                                        onChange={setShowInertia}
-                                        label={t.showInertia}
-                                        icon={<div className="w-3 h-3 border border-dashed border-slate-500"></div>}
-                                        compact
-                                    />
-                                </div>
-                            </div>
-                        )}
-                    </div>
-                </div>
-            )}
+            <ViewerOptionsPanel
+                showOptionsPanel={showOptionsPanel}
+                optionsPanelRef={optionsPanelRef}
+                optionsPanelPos={optionsPanelPos}
+                onMouseDown={(e) => handleMouseDown('options', e)}
+                mode={mode}
+                t={t}
+                isOptionsCollapsed={isOptionsCollapsed}
+                toggleOptionsCollapsed={toggleOptionsCollapsed}
+                setShowOptionsPanel={setShowOptionsPanel}
+                fileName={fileName}
+                lang={lang}
+                highlightMode={highlightMode}
+                setHighlightMode={setHighlightMode}
+                showJointControls={showJointControls}
+                setShowJointControls={setShowJointControls}
+                showVisual={showVisual}
+                setShowVisual={setShowVisual}
+                showCollision={showCollision}
+                setShowCollision={setShowCollision}
+                modelOpacity={modelOpacity}
+                setModelOpacity={setModelOpacity}
+                showOrigins={showOrigins}
+                setShowOrigins={setShowOrigins}
+                showOriginsOverlay={showOriginsOverlay}
+                setShowOriginsOverlay={setShowOriginsOverlay}
+                originSize={originSize}
+                setOriginSize={setOriginSize}
+                showJointAxes={showJointAxes}
+                setShowJointAxes={setShowJointAxes}
+                showJointAxesOverlay={showJointAxesOverlay}
+                setShowJointAxesOverlay={setShowJointAxesOverlay}
+                jointAxisSize={jointAxisSize}
+                setJointAxisSize={setJointAxisSize}
+                showCenterOfMass={showCenterOfMass}
+                setShowCenterOfMass={setShowCenterOfMass}
+                showCoMOverlay={showCoMOverlay}
+                setShowCoMOverlay={setShowCoMOverlay}
+                centerOfMassSize={centerOfMassSize}
+                setCenterOfMassSize={setCenterOfMassSize}
+                showInertia={showInertia}
+                setShowInertia={setShowInertia}
+            />
 
             {/* Joint controls panel */}
-            {showJointControls && showJointPanel && robot?.joints && Object.keys(robot.joints).length > 0 && (
-                <div
-                    ref={jointPanelRef}
-                    className="absolute z-30 bg-white/90 dark:bg-google-dark-surface/90 backdrop-blur rounded-lg border border-slate-200 dark:border-google-dark-border max-h-[50vh] overflow-hidden w-64 shadow-xl flex flex-col pointer-events-auto"
-                    style={jointPanelPos
-                        ? { left: jointPanelPos.x, top: jointPanelPos.y, right: 'auto', bottom: 'auto' }
-                        : { bottom: '16px', right: '16px' }
-                    }
-                >
-                    <div
-                        className="text-[10px] text-slate-500 uppercase font-bold tracking-wider px-3 py-2 cursor-move bg-slate-100/50 dark:bg-google-dark-bg/50 hover:bg-slate-100 dark:hover:bg-google-dark-bg select-none flex items-center justify-between shrink-0"
-                        onMouseDown={(e) => handleMouseDown('joints', e)}
-                    >
-                        <div className="flex items-center gap-2">
-                            <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
-                                <path d="M7 2a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM7 8a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM7 14a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM13 2a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM13 8a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM13 14a2 2 0 1 0 0 4 2 2 0 0 0 0-4z" />
-                            </svg>
-                            {t.jointControls}
-                        </div>
-                        <div className="flex items-center gap-2">
-                            <button
-                                onClick={(e) => { e.stopPropagation(); handleResetJoints(); }}
-                                className="p-1 rounded bg-slate-200 dark:bg-google-dark-bg hover:bg-slate-300 dark:hover:bg-google-dark-border text-slate-700 dark:text-white"
-                                title={t.resetJoints}
-                            >
-                                <RotateCcw className="w-3 h-3" />
-                            </button>
-                            <button
-                                onClick={(e) => { e.stopPropagation(); setAngleUnit(angleUnit === 'rad' ? 'deg' : 'rad'); }}
-                                className="text-[10px] px-1.5 py-0.5 rounded bg-slate-200 dark:bg-google-dark-bg hover:bg-slate-300 dark:hover:bg-google-dark-border text-slate-700 dark:text-white font-mono"
-                                title={t.switchUnit}
-                            >
-                                {angleUnit.toUpperCase()}
-                            </button>
-                            <button
-                                onClick={(e) => { e.stopPropagation(); toggleJointsCollapsed(); }}
-                                className="text-slate-400 hover:text-slate-900 dark:hover:text-white p-1 hover:bg-slate-200 dark:hover:bg-google-dark-border rounded"
-                            >
-                                {isJointsCollapsed ? (
-                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
-                                ) : (
-                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" /></svg>
-                                )}
-                            </button>
-                            {setShowJointPanel && (
-                                <button
-                                    onClick={(e) => { e.stopPropagation(); setShowJointPanel(false); }}
-                                    className="text-slate-400 dark:hover:text-white p-1 hover:bg-red-50 hover:text-red-500 dark:hover:bg-red-900/20 rounded"
-                                >
-                                    <X className="w-3 h-3" />
-                                </button>
-                            )}
-                        </div>
-                    </div>
-                    {!isJointsCollapsed && (
-                        <div className="p-3 overflow-y-auto flex-1">
-                            <div className="space-y-2">
-                                {Object.entries(robot.joints)
-                                    .filter(([_, joint]: [string, any]) => joint.jointType !== 'fixed')
-                                    .map(([name, joint]: [string, any]) => (
-                                        <JointControlItem
-                                            key={name}
-                                            name={name}
-                                            joint={joint}
-                                            jointAngles={jointAngles}
-                                            angleUnit={angleUnit}
-                                            activeJoint={activeJoint}
-                                            setActiveJoint={setActiveJoint}
-                                            handleJointAngleChange={handleJointAngleChange}
-                                            handleJointChangeCommit={handleJointChangeCommit}
-                                            onSelect={onSelect}
-                                        />
-                                    ))}
-                            </div>
-                        </div>
-                    )}
-                </div>
-            )}
+            <JointsPanel
+                showJointControls={showJointControls}
+                showJointPanel={showJointPanel}
+                robot={robot}
+                jointPanelRef={jointPanelRef}
+                jointPanelPos={jointPanelPos}
+                onMouseDown={(e) => handleMouseDown('joints', e)}
+                t={t}
+                handleResetJoints={handleResetJoints}
+                angleUnit={angleUnit}
+                setAngleUnit={setAngleUnit}
+                isJointsCollapsed={isJointsCollapsed}
+                toggleJointsCollapsed={toggleJointsCollapsed}
+                setShowJointPanel={setShowJointPanel}
+                jointAngles={jointAngles}
+                activeJoint={activeJoint}
+                setActiveJoint={setActiveJoint}
+                handleJointAngleChange={handleJointAngleChange}
+                handleJointChangeCommit={handleJointChangeCommit}
+                onSelect={onSelect}
+            />
 
             {/* Toolbar */}
             {showToolbar && (
@@ -743,77 +370,14 @@ export function URDFViewer({
             )}
 
             {/* Measure panel */}
-            {toolMode === 'measure' && (
-                <div
-                    ref={measurePanelRef}
-                    className="measure-panel absolute z-30 pointer-events-auto"
-                    style={measurePanelPos
-                        ? { left: measurePanelPos.x, top: measurePanelPos.y }
-                        : { left: '16px', top: '100px' }
-                    }
-                    onMouseDown={(e) => {
-                        e.stopPropagation();
-                        if (!measurePanelRef.current || !containerRef.current) return;
-                        const rect = measurePanelRef.current.getBoundingClientRect();
-                        const containerRect = containerRef.current.getBoundingClientRect();
-                        dragStartRef.current = {
-                            mouseX: e.clientX,
-                            mouseY: e.clientY,
-                            panelX: rect.left - containerRect.left,
-                            panelY: rect.top - containerRect.top
-                        };
-                        setDragging('measure');
-                    }}
-                >
-                    <div className="bg-white/90 dark:bg-slate-800/90 backdrop-blur rounded-lg shadow-xl border border-slate-200 dark:border-slate-700 min-w-50 overflow-hidden">
-                        <div className="cursor-move px-3 py-2 border-b border-slate-200 dark:border-slate-700 flex items-center justify-between bg-slate-100/50 dark:bg-slate-700/50">
-                            <div className="text-xs font-semibold text-slate-700 dark:text-slate-200 flex items-center gap-2">
-                                <svg className="w-3 h-3 text-slate-400" fill="currentColor" viewBox="0 0 20 20"><path d="M7 2a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM7 8a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM7 14a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM13 2a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM13 8a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM13 14a2 2 0 1 0 0 4 2 2 0 0 0 0-4z" /></svg>
-                                <Ruler className="w-4 h-4" />
-                                测量工具
-                            </div>
-                        </div>
-                        <div className="p-3">
-                            <div className="text-[10px] text-slate-500 dark:text-slate-400 mb-3 space-y-1">
-                                <div>• 点击模型选择测量点</div>
-                                <div>• <kbd className="px-1 py-0.5 bg-slate-200 dark:bg-slate-700 rounded text-[9px]">Esc</kbd> 取消当前测量</div>
-                                <div>• <kbd className="px-1 py-0.5 bg-slate-200 dark:bg-slate-700 rounded text-[9px]">Delete</kbd> 删除上一个</div>
-                            </div>
-                            <div className="text-xs text-slate-600 dark:text-slate-300 mb-2">
-                                已测量: {measureState.measurements.length} 个
-                            </div>
-                            <div className="flex gap-2">
-                                <button
-                                    onClick={() => {
-                                        if (measureState.currentPoints.length > 0) {
-                                            setMeasureState(prev => ({ ...prev, currentPoints: [], tempPoint: null }));
-                                        } else if (measureState.measurements.length > 0) {
-                                            setMeasureState(prev => ({ ...prev, measurements: prev.measurements.slice(0, -1) }));
-                                        }
-                                    }}
-                                    disabled={measureState.measurements.length === 0 && measureState.currentPoints.length === 0}
-                                    className="flex-1 px-2 py-1.5 text-xs bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-1"
-                                >
-                                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" />
-                                    </svg>
-                                    撤销
-                                </button>
-                                <button
-                                    onClick={() => setMeasureState({ measurements: [], currentPoints: [], tempPoint: null })}
-                                    disabled={measureState.measurements.length === 0 && measureState.currentPoints.length === 0}
-                                    className="flex-1 px-2 py-1.5 text-xs bg-red-100 dark:bg-red-900/30 hover:bg-red-200 dark:hover:bg-red-900/50 text-red-700 dark:text-red-400 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-1"
-                                >
-                                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                                    </svg>
-                                    全部清除
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            )}
+            <MeasurePanel
+                toolMode={toolMode}
+                measurePanelRef={measurePanelRef}
+                measurePanelPos={measurePanelPos}
+                onMouseDown={(e) => handleMouseDown('measure', e)}
+                measureState={measureState}
+                setMeasureState={setMeasureState}
+            />
 
             {/* Show overlay when WebGL context is lost */}
             {contextLost && (
