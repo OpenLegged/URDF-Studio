@@ -1480,6 +1480,108 @@ test('buildUsdExportBundleFromSnapshot writes OBJ vertex normals for buffered me
   assert.match(objText, /^f 1\/\/1 2\/\/2 3\/\/3$/m);
 });
 
+test('buildUsdExportBundleFromSnapshot repairs USD normals that oppose triangle winding', async () => {
+  const positions = new Float32Array([
+    0, 0, 0,
+    1, 0, 0,
+    1, 1, 0,
+    0, 1, 0,
+  ]);
+  const indices = new Uint32Array([0, 1, 2, 0, 2, 3]);
+  const normals = new Float32Array([
+    0, 0, -1,
+    0, 0, -1,
+    0, 0, -1,
+    0, 0, -1,
+  ]);
+
+  const snapshot = {
+    stageSourcePath: '/robots/demo/reversed-normals.usd',
+    stage: {
+      defaultPrimPath: '/Robot',
+    },
+    robotTree: {
+      linkParentPairs: [['/Robot/base_link', null]] as Array<[string, string | null]>,
+      rootLinkPaths: ['/Robot/base_link'],
+    },
+    robotMetadataSnapshot: {
+      stageSourcePath: '/robots/demo/reversed-normals.usd',
+      linkParentPairs: [['/Robot/base_link', null]] as Array<[string, string | null]>,
+      jointCatalogEntries: [],
+      meshCountsByLinkPath: {
+        '/Robot/base_link': {
+          visualMeshCount: 1,
+          collisionMeshCount: 0,
+        },
+      },
+    },
+    render: {
+      meshDescriptors: [
+        {
+          meshId: '/Robot/base_link/visuals.proto_mesh_id0',
+          sectionName: 'visuals',
+          resolvedPrimPath: '/Robot/base_link/visuals/mesh_0',
+          primType: 'mesh',
+          ranges: {
+            positions: { offset: 0, count: 12, stride: 3 },
+            indices: { offset: 0, count: 6, stride: 1 },
+            normals: { offset: 0, count: 12, stride: 3 },
+          },
+        },
+      ],
+    },
+    buffers: {
+      positions,
+      indices,
+      normals,
+      uvs: new Float32Array(0),
+      transforms: new Float32Array(0),
+      rangesByMeshId: {},
+    },
+  } as unknown as UsdSceneSnapshot;
+
+  const currentRobot: RobotState = {
+    name: 'normal_repair',
+    rootLinkId: 'base_link',
+    selection: { type: null, id: null },
+    links: {
+      base_link: {
+        id: 'base_link',
+        name: 'base_link',
+        visible: true,
+        visual: {
+          type: GeometryType.MESH,
+          dimensions: { x: 1, y: 1, z: 1 },
+          color: '#ffffff',
+          origin: { xyz: { x: 0, y: 0, z: 0 }, rpy: { r: 0, p: 0, y: 0 } },
+        },
+        collision: {
+          type: GeometryType.NONE,
+          dimensions: { x: 0, y: 0, z: 0 },
+          color: '#000000',
+          origin: { xyz: { x: 0, y: 0, z: 0 }, rpy: { r: 0, p: 0, y: 0 } },
+        },
+        collisionBodies: [],
+      },
+    },
+    joints: {},
+    materials: {},
+  };
+
+  const bundle = buildUsdExportBundleFromSnapshot(snapshot, {
+    fileName: 'reversed-normals.usd',
+    currentRobot,
+  });
+
+  assert.ok(bundle);
+  const objText = await bundle.meshFiles.get('base_link_visual_0.obj')?.text();
+  assert.ok(objText);
+  assert.doesNotMatch(objText, /^vn 0 0 -1$/m);
+  assert.match(objText, /^vn 0 0 1$/m);
+  assert.match(objText, /^f 1\/\/1 2\/\/2 3\/\/3$/m);
+  assert.match(objText, /^f 1\/\/4 3\/\/5 4\/\/6$/m);
+});
+
 test('prepareUsdExportCacheFromSnapshot materializes exportable mesh paths and reusable mesh files', async () => {
   const { positions, indices } = createTriangleBuffers();
 
@@ -1697,6 +1799,7 @@ test('prepareUsdExportCacheFromResolvedSnapshot keeps descriptor world transform
   const prepared = prepareUsdExportCacheFromResolvedSnapshot(snapshot, resolution);
 
   assert.equal(prepared.robotData.links.child_link.visual.meshPath, 'child_link_visual_0.obj');
+  assert.equal(prepared.robotData.links.child_link.visual.doubleSided, true);
   const meshText = await prepared.meshFiles['child_link_visual_0.obj'].text();
   assert.match(meshText, /^v 0 0 0(?:\s|$)/m);
   assert.doesNotMatch(meshText, /^v 5 0 0(?:\s|$)/m);

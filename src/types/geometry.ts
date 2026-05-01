@@ -103,6 +103,7 @@ export interface UrdfVisual {
   materialSource?: 'inline' | 'named' | 'gazebo';
   authoredMaterials?: UrdfVisualMaterial[];
   meshMaterialGroups?: UrdfVisualMeshMaterialGroup[];
+  doubleSided?: boolean; // Force visual mesh materials to render both sides.
   meshPath?: string; // For later detailed design
   submeshName?: string; // SDF submesh name to select a specific named group from a shared mesh file
   submeshCenter?: boolean; // SDF submesh center flag — when true, re-center the extracted submesh to its own origin

@@ -16,6 +16,7 @@ import {
 import { createBoxFaceMaterialArray } from '@/core/utils/boxFaceMaterialArray';
 import { createMatteMaterial } from '@/core/utils/materialFactory';
 import { applyVisualMeshMaterialGroupsToObject } from '@/core/utils/meshMaterialGroups';
+import { forceObjectMaterialSide } from '@/core/utils/three/materialSide';
 import { createMainThreadYieldController } from '@/core/utils/yieldToMainThread';
 import {
   createTerrainBlendMaterial,
@@ -343,6 +344,18 @@ function applyMeshScale(group: THREE.Object3D, geometry: RobotLink['visual']): v
     Number.isFinite(scale?.y) ? scale.y : 1,
     Number.isFinite(scale?.z) ? scale.z : 1,
   );
+}
+
+function applyVisualMaterialSidePolicy(
+  object: THREE.Object3D,
+  geometry: RobotLink['visual'],
+  isCollision: boolean,
+): void {
+  if (isCollision || geometry.doubleSided !== true) {
+    return;
+  }
+
+  forceObjectMaterialSide(object, THREE.DoubleSide);
 }
 
 function createImagePreviewMesh(
@@ -746,6 +759,7 @@ export async function buildRuntimeRobotFromState({
             applyVisualMeshMaterialGroupsToObject(meshObject, geometry, { manager });
           }
 
+          applyVisualMaterialSidePolicy(meshObject, geometry, isCollision);
           group.add(meshObject);
           if (group.parent && !isCollision) {
             restackLinkVisualRoots(group.parent);
@@ -912,6 +926,12 @@ export async function buildRuntimeRobotFromState({
     }
 
     applyOrigin(joint, jointData.origin);
+    if (typeof jointData.angle === 'number' && Number.isFinite(jointData.angle)) {
+      const originalIgnoreLimits = joint.ignoreLimits;
+      joint.ignoreLimits = true;
+      joint.setJointValue(jointData.angle);
+      joint.ignoreLimits = originalIgnoreLimits;
+    }
     jointMap[jointKey] = joint;
     await yieldIfNeeded();
   }

@@ -5,6 +5,7 @@ import type {
 } from './usdStageOpenPreparation.ts';
 import {
   buildUsdBundlePreloadEntries,
+  isTextualUsdLayerCandidatePath,
   toVirtualUsdPath,
   type UsdPreloadEntry,
 } from './usdPreloadSources.ts';
@@ -64,6 +65,10 @@ function normalizePreparedUsdError(error: unknown): string {
 }
 
 function shouldNormalizePreparedUsdText(path: string): boolean {
+  return isTextualUsdLayerCandidatePath(path);
+}
+
+function isAlwaysTextualUsdLayerPath(path: string): boolean {
   const normalizedPath = String(path || '')
     .trim()
     .toLowerCase();
@@ -124,7 +129,7 @@ async function loadPreparedUsdBlob(entry: UsdPreloadEntry): Promise<PreparedUsdP
   }
 
   const normalizedBlobPromise = (async () => {
-    if (typeof entry.loadText === 'function') {
+    if (typeof entry.loadText === 'function' && isAlwaysTextualUsdLayerPath(entry.path)) {
       const sourceText = await entry.loadText();
       const normalizedText = normalizeUsdInstanceableVisualScopeVisibility(sourceText);
       return {
@@ -137,6 +142,13 @@ async function loadPreparedUsdBlob(entry: UsdPreloadEntry): Promise<PreparedUsdP
     const needsNormalization = await blobNeedsUsdInstanceableVisualScopeNormalization(blob);
 
     if (!needsNormalization) {
+      if (!isAlwaysTextualUsdLayerPath(entry.path)) {
+        return {
+          blob,
+          bytes: null,
+        };
+      }
+
       return {
         blob: null,
         bytes: new Uint8Array(await blob.arrayBuffer()),

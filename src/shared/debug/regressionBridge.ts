@@ -429,19 +429,18 @@ function getUsdDescriptorCandidatePaths(descriptor: UsdSceneMeshDescriptor): str
   ].filter(Boolean);
 }
 
-function isUsdDescriptorWithinLinkPath(
-  descriptor: UsdSceneMeshDescriptor,
-  linkPath: string | null | undefined,
-): boolean {
-  const normalizedLinkPath = normalizeUsdDebugPathWithLeadingSlash(linkPath);
-  if (!normalizedLinkPath) {
-    return false;
+function getUsdVisualDescriptorLinkPath(descriptor: UsdSceneMeshDescriptor): string | null {
+  const visualPathMarkers = ['/visuals/', '/visual/', '/visuals.', '/visual.'];
+  for (const candidatePath of getUsdDescriptorCandidatePaths(descriptor)) {
+    for (const marker of visualPathMarkers) {
+      const markerIndex = candidatePath.indexOf(marker);
+      if (markerIndex > 0) {
+        return candidatePath.slice(0, markerIndex);
+      }
+    }
   }
 
-  return getUsdDescriptorCandidatePaths(descriptor).some(
-    (candidatePath) =>
-      candidatePath === normalizedLinkPath || candidatePath.startsWith(`${normalizedLinkPath}/`),
-  );
+  return null;
 }
 
 function colorArrayToRegressionHex(
@@ -975,24 +974,16 @@ function summarizeSelectedUsdVisualMaterials(): RegressionSelectedUsdVisualMater
     return null;
   }
 
-  const selectedSceneSummary = summarizeSelectedUsdScene();
-  const baseLinkPath = selectedSceneSummary?.baseLink?.linkPath ?? null;
-  if (!baseLinkPath) {
-    return null;
-  }
-
   const materialLookup = new Map<string, UsdSceneMaterialRecord>();
   Array.from(snapshot.render?.materials || []).forEach((material, index) => {
     const materialId = normalizeUsdDebugPathWithLeadingSlash(material?.materialId);
     materialLookup.set(materialId || `__material-index:${index}`, material);
   });
-  const preferredVisualMaterial =
-    snapshot.render?.preferredVisualMaterialsByLinkPath?.[baseLinkPath] ?? null;
 
   const meshes = Array.from(snapshot.render?.meshDescriptors || [])
     .filter(isUsdVisualDescriptor)
-    .filter((descriptor) => isUsdDescriptorWithinLinkPath(descriptor, baseLinkPath))
     .map((descriptor) => {
+      const linkPath = getUsdVisualDescriptorLinkPath(descriptor);
       const { descriptorMaterialId, geometryMaterialId, geomSubsetMaterialIds } =
         getUsdDescriptorMaterialIds(descriptor);
       const materialIds = Array.from(
@@ -1002,6 +993,9 @@ function summarizeSelectedUsdVisualMaterials(): RegressionSelectedUsdVisualMater
           ),
         ),
       );
+      const preferredVisualMaterial = linkPath
+        ? snapshot.render?.preferredVisualMaterialsByLinkPath?.[linkPath] ?? null
+        : null;
       const materials = materialIds
         .map((materialId) =>
           summarizeRegressionUsdMaterial(materialLookup.get(materialId) || null, materialId),
@@ -1020,7 +1014,7 @@ function summarizeSelectedUsdVisualMaterials(): RegressionSelectedUsdVisualMater
 
       return {
         meshId: normalizeUsdDebugPathWithLeadingSlash(descriptor.meshId) || null,
-        linkPath: baseLinkPath,
+        linkPath,
         overrideColor: null,
         hasOverrideMaterial: false,
         materials,

@@ -20,6 +20,9 @@ import { resolveUsdMeshApproximationGeometry } from './usdViewerRobotAdapter';
 
 interface UsdRuntimeTransformInterface {
   getPreferredLinkWorldTransform?: (linkPath: string) => unknown;
+  getJointInfoForLink?: (
+    linkPath: string,
+  ) => { angleDeg?: number | null } | null | undefined;
   getWorldTransformForPrimPath?: (primPath: string) => unknown;
 }
 
@@ -69,6 +72,15 @@ function normalizeUsdPath(path: string | null | undefined): string {
     .replace(/\\/g, '/');
   if (!normalized) return '';
   return normalized.startsWith('/') ? normalized : `/${normalized}`;
+}
+
+function degreesToRadians(value: unknown): number | undefined {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) {
+    return undefined;
+  }
+
+  return (numeric * Math.PI) / 180;
 }
 
 function getDescriptorRole(descriptor: UsdSceneMeshDescriptor): DescriptorRole {
@@ -536,6 +548,17 @@ export function hydrateUsdViewerRobotResolutionFromRuntime(
   const originalJointLocalMatricesByChildLinkId = new Map<string, THREE.Matrix4>();
   const originalInertialOriginsByLinkId = new Map<string, NonNullable<UrdfVisual['origin']>>();
   Object.values(nextResolution.robotData.joints).forEach((joint) => {
+    const childLinkPath =
+      resolution.childLinkPathByJointId[joint.id] || resolution.linkPathById[joint.childLinkId];
+    if (childLinkPath && joint.type !== JointType.FIXED) {
+      const runtimeAngle = degreesToRadians(
+        runtime.getJointInfoForLink?.(childLinkPath)?.angleDeg,
+      );
+      if (runtimeAngle !== undefined) {
+        joint.angle = runtimeAngle;
+      }
+    }
+
     originalJointLocalMatricesByChildLinkId.set(
       joint.childLinkId,
       createOriginMatrix(joint.origin),

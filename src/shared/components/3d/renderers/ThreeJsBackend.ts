@@ -131,7 +131,7 @@ export class ThreeJsBackend implements RobotRendererBackend {
 
   private resolveFormat(): 'urdf' | 'mjcf' | 'sdf' | 'usd' | 'xacro' | 'mesh' {
     const format = this.sourceFile?.format || 'urdf';
-    if (format === 'usd' || format === 'usda') {
+    if (format === 'usd') {
       return 'usd';
     }
     if (format === 'mesh') {

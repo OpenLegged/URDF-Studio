@@ -391,6 +391,26 @@ export function useUsdDocumentLifecycle({
         availableFiles: useAssetsStore.getState().availableFiles,
         assets: useAssetsStore.getState().assets,
         signal: controller.signal,
+        onDeferredSceneSnapshot: (snapshot, stageSourcePath) => {
+          if (cancelled) {
+            return;
+          }
+          const liveAssetsState = useAssetsStore.getState();
+          const liveSelectedFile = liveAssetsState.selectedFile;
+          if (liveSelectedFile?.format !== 'usd' || liveSelectedFile.name !== hydrationFile.name) {
+            return;
+          }
+          if (
+            !shouldApplyUsdStageHydration({
+              pendingFileName: liveSelectedFile.name,
+              selectedFileName: liveSelectedFile.name,
+              stageSourcePath,
+            })
+          ) {
+            return;
+          }
+          liveAssetsState.setUsdSceneSnapshot(liveSelectedFile.name, snapshot);
+        },
         onEvent: (event) => {
           if (event.type === 'document-load') {
             commitHydrationLoadEvent(event.event);

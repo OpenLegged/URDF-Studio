@@ -111,6 +111,7 @@ export interface UsdJointCatalogEntry {
   axisLocal?: ArrayLike<number> | null;
   lowerLimitDeg?: number | null;
   upperLimitDeg?: number | null;
+  angleDeg?: number | null;
   driveDamping?: number | null;
   driveMaxForce?: number | null;
   localPos0?: ArrayLike<number> | null;

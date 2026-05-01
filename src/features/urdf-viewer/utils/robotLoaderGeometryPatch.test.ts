@@ -719,6 +719,73 @@ test('applyGeometryPatchInPlace updates selected auxiliary visual bodies in plac
   );
 });
 
+test('applyGeometryPatchInPlace applies double-sided rendering to marked mesh visuals in place', () => {
+  const robotModel = new THREE.Group() as THREE.Group & {
+    links?: Record<string, THREE.Object3D>;
+  };
+  const linkObject = new THREE.Group();
+  linkObject.name = 'base_link';
+  (linkObject as any).isURDFLink = true;
+
+  const visualGroup = new URDFVisual();
+  const visualMesh = new THREE.Mesh(
+    new THREE.BoxGeometry(1, 1, 1),
+    new THREE.MeshPhongMaterial({
+      color: new THREE.Color('#808080'),
+      side: THREE.FrontSide,
+    }),
+  );
+  visualGroup.add(visualMesh);
+  linkObject.add(visualGroup);
+  robotModel.add(linkObject);
+  robotModel.links = { base_link: linkObject };
+
+  const previousLinkData = makeLink({
+    id: 'base_link',
+    name: 'base_link',
+    visual: makeGeometry({
+      type: GeometryType.MESH,
+      meshPath: 'base_link_visual_0.obj',
+      dimensions: { x: 1, y: 1, z: 1 },
+      doubleSided: false,
+    }),
+  });
+  const linkData = makeLink({
+    id: 'base_link',
+    name: 'base_link',
+    visual: makeGeometry({
+      type: GeometryType.MESH,
+      meshPath: 'base_link_visual_0.obj',
+      dimensions: { x: 1, y: 1, z: 1 },
+      doubleSided: true,
+    }),
+  });
+
+  const applied = applyGeometryPatchInPlace({
+    robotModel,
+    patch: {
+      linkName: 'base_link',
+      previousLinkData,
+      linkData,
+      visualChanged: true,
+      visualBodiesChanged: false,
+      collisionChanged: false,
+      collisionBodiesChanged: false,
+      inertialChanged: false,
+      visibilityChanged: false,
+    },
+    assets: {},
+    showVisual: true,
+    showCollision: false,
+    linkMeshMapRef: { current: new Map<string, THREE.Mesh[]>() },
+    invalidate: () => {},
+  });
+
+  assert.equal(applied, true);
+  assert.equal(visualGroup.children[0], visualMesh);
+  assert.equal((visualMesh.material as THREE.Material).side, THREE.DoubleSide);
+});
+
 test('applyGeometryPatchInPlace updates authored multi-material colors in place without rebuilding the visual group', () => {
   const robotModel = new THREE.Group() as THREE.Group & {
     links?: Record<string, THREE.Object3D>;

@@ -20,7 +20,10 @@ import {
   type SdfHeightmap,
 } from '@/types';
 import { resolveGazeboScriptMaterial } from './gazeboMaterialScripts';
-import { resolveSdfIncludeSource } from './sdfIncludeResolution';
+import {
+  createSdfIncludeResolutionContext,
+  type SdfIncludeResolutionContext,
+} from './sdfIncludeResolution';
 
 type Pose = { xyz: Vector3; rpy: Euler };
 type ParsedPose = { pose: Pose; relativeTo: string | null; specified: boolean };
@@ -120,6 +123,7 @@ interface ParseSdfModelOptions extends ParseSDFOptions {
   parentMatrix?: THREE.Matrix4;
   namespacePrefix?: string;
   includeStack?: Set<string>;
+  includeResolutionContext?: SdfIncludeResolutionContext;
   /** SDF spec version string (e.g. "1.5"). Affects axis-frame defaults. */
   sdfVersion?: string;
 }
@@ -1088,6 +1092,7 @@ function parseIncludedModelGraph(
     parentMatrix = new THREE.Matrix4().identity(),
     namespacePrefix,
     includeStack = new Set<string>(),
+    includeResolutionContext = createSdfIncludeResolutionContext(allFileContents),
   }: ParseSdfModelOptions,
 ): void {
   const includeUri = getFirstDirectChild(includeEl, 'uri')?.textContent?.trim() || '';
@@ -1095,7 +1100,7 @@ function parseIncludedModelGraph(
     return;
   }
 
-  const resolvedInclude = resolveSdfIncludeSource(includeUri, allFileContents, sourcePath);
+  const resolvedInclude = includeResolutionContext.resolve(includeUri, sourcePath);
   if (!resolvedInclude || includeStack.has(resolvedInclude.path)) {
     return;
   }
@@ -1127,6 +1132,7 @@ function parseIncludedModelGraph(
     parentMatrix: parentMatrix.clone().multiply(poseToMatrix(includePose.pose)),
     namespacePrefix: qualifyScopedName(includeName, namespacePrefix),
     includeStack: nextIncludeStack,
+    includeResolutionContext,
   });
 
   if (includeGraph) {
@@ -1144,6 +1150,7 @@ function parseNestedModelGraph(
     parentMatrix = new THREE.Matrix4().identity(),
     namespacePrefix,
     includeStack = new Set<string>(),
+    includeResolutionContext = createSdfIncludeResolutionContext(allFileContents),
     sdfVersion,
   }: ParseSdfModelOptions,
 ): void {
@@ -1158,6 +1165,7 @@ function parseNestedModelGraph(
     parentMatrix: nestedModelMatrix,
     namespacePrefix: nestedNamespacePrefix,
     includeStack,
+    includeResolutionContext,
     sdfVersion,
   });
 
@@ -1175,6 +1183,7 @@ function parseSdfModel(
     parentMatrix = new THREE.Matrix4().identity(),
     namespacePrefix,
     includeStack = new Set<string>(),
+    includeResolutionContext = createSdfIncludeResolutionContext(allFileContents),
     sdfVersion,
   }: ParseSdfModelOptions = {},
 ): ParsedSdfGraph | null {
@@ -1419,6 +1428,7 @@ function parseSdfModel(
       parentMatrix: modelMatrix,
       namespacePrefix,
       includeStack,
+      includeResolutionContext,
     });
   }
 
@@ -1430,6 +1440,7 @@ function parseSdfModel(
       parentMatrix: modelMatrix,
       namespacePrefix,
       includeStack,
+      includeResolutionContext,
       sdfVersion,
     });
   }
@@ -1674,7 +1685,14 @@ export function parseSDF(xmlString: string, options: ParseSDFOptions = {}): Robo
   const sdfVersion = sdfEl?.getAttribute('version') || undefined;
 
   const modelName = modelEl.getAttribute('name')?.trim() || 'imported_sdf_model';
-  const parsedGraph = parseSdfModel(modelEl, { ...options, sdfVersion });
+  const includeResolutionContext = createSdfIncludeResolutionContext(
+    options.allFileContents ?? {},
+  );
+  const parsedGraph = parseSdfModel(modelEl, {
+    ...options,
+    sdfVersion,
+    includeResolutionContext,
+  });
   if (!parsedGraph) {
     return null;
   }

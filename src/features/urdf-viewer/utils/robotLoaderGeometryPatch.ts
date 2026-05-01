@@ -10,6 +10,7 @@ import {
 } from '@/core/robot';
 import { createBoxFaceMaterialArray } from '@/core/utils/boxFaceMaterialArray';
 import { applyVisualMeshMaterialGroupsToObject } from '@/core/utils/meshMaterialGroups';
+import { forceObjectMaterialSide } from '@/core/utils/three/materialSide';
 import {
   applyVisualMaterialOverrideToObject,
   resolveVisualMaterialOverrideFromGeometry,
@@ -294,6 +295,9 @@ function patchGeometryCategory({
         }
         if (hasGeometryMeshMaterialGroups(geometry)) {
           applyVisualMeshMaterialGroupsToObject(obj, geometry, { manager });
+        }
+        if (geometry.doubleSided === true) {
+          forceObjectMaterialSide(obj, THREE.DoubleSide);
         }
       }
 
@@ -858,6 +862,10 @@ function patchGeometryGroupInPlace({
     targetGroup.children.forEach((child) => {
       applyVisualMeshMaterialGroupsToObject(child, geometry);
     });
+  }
+
+  if (!isCollision && geometry.doubleSided === true) {
+    forceObjectMaterialSide(targetGroup, THREE.DoubleSide);
   }
 
   robotModel.updateMatrixWorld(true);

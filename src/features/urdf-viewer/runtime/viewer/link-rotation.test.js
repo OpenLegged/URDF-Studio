@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { Vector3 } from 'three';
 
 import { LinkRotationController } from './link-rotation.js';
 
@@ -172,4 +173,32 @@ test('LinkRotationController surfaces cached metadata getter failures as catalog
     assert.ok(
         loggedErrors.some((entry) => /Failed to read cached render robot metadata snapshot/.test(String(entry?.[0] || ''))),
     );
+});
+
+test('LinkRotationController does not clamp existing joint angle when catalog limits refresh', () => {
+    const controller = new LinkRotationController();
+    controller.linkJointStateByLinkPath.set('/Robot/leg_link', {
+        linkPath: '/Robot/leg_link',
+        jointPath: '/Robot/joints/leg_joint',
+        parentLinkPath: '/Robot/base_link',
+        axisToken: 'X',
+        axisLocal: new Vector3(1, 0, 0),
+        lowerLimitDeg: -180,
+        upperLimitDeg: 180,
+        angleDeg: 0,
+        localPivotInLink: null,
+    });
+
+    controller.applyJointCatalogEntry({
+        linkPath: '/Robot/leg_link',
+        jointPath: '/Robot/joints/leg_joint',
+        parentLinkPath: '/Robot/base_link',
+        axisToken: 'X',
+        axisLocal: new Vector3(1, 0, 0),
+        lowerLimitDeg: 10,
+        upperLimitDeg: 20,
+        localPivotInLink: null,
+    });
+
+    assert.equal(controller.linkJointStateByLinkPath.get('/Robot/leg_link')?.angleDeg, 0);
 });

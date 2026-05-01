@@ -5,6 +5,7 @@ import type { RobotFile } from '@/types';
 import {
   createRendererBackend,
   createRendererBackendForFormat,
+  isFormatSupported,
 } from './createRendererBackend';
 
 const usdSourceFile: RobotFile = {
@@ -28,5 +29,13 @@ test('createRendererBackendForFormat rejects explicit USD backend creation', () 
   assert.throws(
     () => createRendererBackendForFormat('usd', usdSourceFile, {}),
     /USD sources must be hydrated to RobotState before rendering/,
+  );
+});
+
+test('createRendererBackendForFormat does not expose usda as a source format', () => {
+  assert.equal(isFormatSupported('usda'), false);
+  assert.throws(
+    () => createRendererBackendForFormat('usda', usdSourceFile, {}),
+    /Unsupported renderer source format: usda/,
   );
 });

@@ -35,6 +35,7 @@ test('adapts usd-viewer robot scene snapshot into URDF Studio RobotData', () => 
             axisLocal: [0, 0, -1],
             lowerLimitDeg: -90,
             upperLimitDeg: 90,
+            angleDeg: 30,
             driveDamping: 0.15,
             driveMaxForce: 8,
             localPivotInLink: [1, 2, 3],
@@ -150,6 +151,7 @@ test('adapts usd-viewer robot scene snapshot into URDF Studio RobotData', () => 
   assert.deepEqual(joint.axis, { x: 0, y: 0, z: -1 });
   assert.equal(joint.limit.lower, -Math.PI / 2);
   assert.equal(joint.limit.upper, Math.PI / 2);
+  assert.ok(Math.abs((joint.angle ?? Number.NaN) - Math.PI / 6) < 1e-6);
   assert.equal(joint.limit.effort, 8);
   assert.equal(joint.dynamics.damping, 0.15);
   assert.deepEqual(joint.origin.xyz, { x: 4, y: 5, z: 6 });
@@ -449,6 +451,48 @@ test('ignores USDA internal mesh libraries when robot link metadata is present',
   assert.deepEqual(Object.keys(result.robotData.links).sort(), ['FL_hip', 'base_link']);
   assert.equal(result.robotData.joints.FL_hip_joint?.parentLinkId, 'base_link');
   assert.equal(result.robotData.joints.FL_hip_joint?.childLinkId, 'FL_hip');
+});
+
+test('does not expose USDA internal mesh libraries as the RobotState root when no robot metadata was recovered', () => {
+  const result = adaptUsdViewerSnapshotToRobotData(
+    {
+      stageSourcePath: '/unitree_ros/go2_description/urdf/go2_description.usda',
+      stage: {
+        defaultPrimPath: '/go2_description',
+      },
+      robotTree: {
+        linkParentPairs: [],
+        rootLinkPaths: ['/go2_description/__MeshLibrary'],
+      },
+      robotMetadataSnapshot: {
+        stageSourcePath: '/unitree_ros/go2_description/urdf/go2_description.usda',
+        source: 'usd-stage-cpp',
+        linkParentPairs: [],
+        jointCatalogEntries: [],
+        meshCountsByLinkPath: {},
+      },
+      render: {
+        meshDescriptors: [
+          {
+            meshId: '/go2_description/__MeshLibrary/Geometry_6',
+            sectionName: 'visuals',
+            resolvedPrimPath: '/go2_description/__MeshLibrary/Geometry_6',
+            primType: 'mesh',
+          },
+        ],
+      },
+    },
+    {
+      fileName: 'go2_description.usda',
+    },
+  );
+
+  assert.ok(result);
+  assert.equal(result.robotData.rootLinkId, 'go2_description');
+  assert.equal(result.linkIdByPath['/go2_description'], 'go2_description');
+  assert.equal(result.linkIdByPath['/go2_description/__MeshLibrary'], undefined);
+  assert.deepEqual(Object.keys(result.robotData.links), ['go2_description']);
+  assert.equal(result.robotData.links.go2_description.visual.type, GeometryType.NONE);
 });
 
 test('adapts generic mesh-only CAD USD assemblies into a browseable hierarchy rooted at the default prim', () => {

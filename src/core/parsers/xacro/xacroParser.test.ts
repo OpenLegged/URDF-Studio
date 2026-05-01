@@ -75,6 +75,58 @@ test('processXacro keeps non-robot tags when stripping included robot wrappers',
   assert.match(processed, /<link name="base"/);
 });
 
+test('processXacro reuses include lookup keys while preserving relative package and fuzzy includes', () => {
+  const rawFileMap: XacroFileMap = {
+    'workspace/pkg/root/parts/arm.xacro': `
+      <robot name="arm">
+        <xacro:include filename="../common/joint.xacro" />
+        <link name="arm" />
+      </robot>
+    `,
+    'workspace/pkg/root/common/joint.xacro': `
+      <robot name="joint">
+        <link name="nested_relative_joint" />
+      </robot>
+    `,
+    'workspace/pkg/root/common/package_part.xacro': `
+      <robot name="package_part">
+        <link name="package_part" />
+      </robot>
+    `,
+    'workspace/other/shared/sensor.xacro': `
+      <robot name="sensor">
+        <link name="fuzzy_sensor" />
+      </robot>
+    `,
+  };
+  let ownKeysCalls = 0;
+  const fileMap: XacroFileMap = new Proxy(rawFileMap, {
+    ownKeys(target) {
+      ownKeysCalls += 1;
+      return Reflect.ownKeys(target);
+    },
+  });
+
+  const processed = processXacro(
+    `
+      <robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="outer">
+        <xacro:include filename="parts/arm.xacro" />
+        <xacro:include filename="$(find pkg)/root/common/package_part.xacro" />
+        <xacro:include filename="sensor.xacro" />
+      </robot>
+    `,
+    {},
+    fileMap,
+    'workspace/pkg/root',
+  );
+
+  assert.match(processed, /<link name="arm"/);
+  assert.match(processed, /<link name="nested_relative_joint"/);
+  assert.match(processed, /<link name="package_part"/);
+  assert.match(processed, /<link name="fuzzy_sensor"/);
+  assert.equal(ownKeysCalls, 1);
+});
+
 test('processXacro evaluates boolean expressions and quoted string comparisons in conditionals', () => {
   const processed = processXacro(`
     <robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="conditional_fixture">

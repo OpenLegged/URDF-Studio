@@ -41,6 +41,7 @@ export function ingestJointCatalogFromStage(controller, stage, layerText, fallba
                 axisLocal,
                 lowerLimitDeg: limits.lower,
                 upperLimitDeg: limits.upper,
+                ...(Number.isFinite(Number(jointRecord.angleDeg)) ? { angleDeg: Number(jointRecord.angleDeg) } : {}),
                 localPivotInLink,
             });
             imported++;

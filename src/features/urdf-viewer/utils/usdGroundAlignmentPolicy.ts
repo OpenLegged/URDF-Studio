@@ -15,6 +15,11 @@ function hasUsdaHeader(content: string | null | undefined): boolean {
   return String(content || '').trimStart().toLowerCase().startsWith('#usda');
 }
 
+function isBinaryUsdLayerName(value: string | null | undefined): boolean {
+  const normalizedName = normalizeUsdGroundAlignmentName(value);
+  return normalizedName.endsWith('.usdc') || normalizedName.endsWith('.usdz');
+}
+
 export function isTextualUsdGroundAlignmentSource(source: UsdGroundAlignmentSource): boolean {
   if (typeof source === 'string') {
     return normalizeUsdGroundAlignmentName(source).endsWith('.usda');
@@ -24,7 +29,12 @@ export function isTextualUsdGroundAlignmentSource(source: UsdGroundAlignmentSour
     return false;
   }
 
-  if (normalizeUsdGroundAlignmentName(source.name).endsWith('.usda')) {
+  const normalizedName = normalizeUsdGroundAlignmentName(source.name);
+  if (isBinaryUsdLayerName(normalizedName)) {
+    return false;
+  }
+
+  if (normalizedName.endsWith('.usda')) {
     return true;
   }
 

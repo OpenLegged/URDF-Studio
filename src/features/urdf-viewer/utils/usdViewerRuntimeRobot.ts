@@ -42,9 +42,10 @@ export function createUsdViewerRuntimeRobot({
         ? linkRotationController.getJointInfoForLink?.(childLinkPath)
         : null;
       const resolvedLimits = resolveUsdRuntimeJointLimitsRadians(jointInfo, joint.limit);
-      const initialJointAngle =
-        typeof joint.angle === 'number' && Number.isFinite(joint.angle) ? joint.angle : 0;
       const runtimeJointAngle = degreesToRadians(jointInfo?.angleDeg);
+      const hasAuthoredJointAngle =
+        typeof joint.angle === 'number' && Number.isFinite(joint.angle);
+      const initialJointAngle = hasAuthoredJointAngle ? joint.angle : 0;
       const runtimeJoint = {
         id: jointId,
         name: joint.name || jointId,
@@ -100,10 +101,11 @@ export function createUsdViewerRuntimeRobot({
         },
       };
 
-      // Reset runtime pose to initial angle (0) if it was at a different position
+      // Only authored RobotData angles should drive the USD runtime back to a different pose.
       if (
         childLinkPath &&
         joint.type !== JointType.FIXED &&
+        hasAuthoredJointAngle &&
         runtimeJointAngle !== undefined &&
         Math.abs(runtimeJointAngle - initialJointAngle) > 1e-8
       ) {

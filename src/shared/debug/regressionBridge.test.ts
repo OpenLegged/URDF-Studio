@@ -83,6 +83,16 @@ test('regression debug API summarizes USD visual materials from stored scene sna
               ],
             },
           },
+          {
+            meshId: '/Robot/FL_thigh/visuals.proto_mesh_id0',
+            resolvedPrimPath: '/Robot/FL_thigh/visuals/thigh/mesh',
+            sectionName: 'visuals',
+            geometry: {
+              geomSubsetSections: [
+                { start: 0, length: 3, materialId: '/Robot/Looks/LegShell' },
+              ],
+            },
+          },
         ],
         materials: [
           {
@@ -96,6 +106,12 @@ test('regression debug API summarizes USD visual materials from stored scene sna
             name: 'material_______024',
             shaderName: 'UsdPreviewSurface',
             color: [0.035, 0.035, 0.035],
+          },
+          {
+            materialId: '/Robot/Looks/LegShell',
+            name: 'material_____________001',
+            shaderName: 'UsdPreviewSurface',
+            color: [0.671705, 0.692426, 0.77427],
           },
         ],
       },
@@ -149,6 +165,20 @@ test('regression debug API summarizes USD visual materials from stored scene sna
             name: 'material_______024',
             type: 'UsdPreviewSurface',
             color: '#090909',
+            emissive: null,
+          },
+        ],
+      },
+      {
+        meshId: '/Robot/FL_thigh/visuals.proto_mesh_id0',
+        linkPath: '/Robot/FL_thigh',
+        overrideColor: null,
+        hasOverrideMaterial: false,
+        materials: [
+          {
+            name: 'material_____________001',
+            type: 'UsdPreviewSurface',
+            color: '#abb1c5',
             emissive: null,
           },
         ],

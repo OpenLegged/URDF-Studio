@@ -65,6 +65,8 @@ type ExportDescriptor = {
 
 type RobotLike = RobotData | RobotState;
 const ORIGIN_EPSILON = 1e-9;
+const NORMAL_EPSILON = 1e-10;
+const NORMAL_REPAIR_DOT_THRESHOLD = -0.05;
 const EXPORT_COLOR_PLACEHOLDERS = new Set([
   DEFAULT_LINK.visual.color.toLowerCase(),
   DEFAULT_LINK.collision.color.toLowerCase(),
@@ -869,6 +871,134 @@ function buildObjBlobFromDescriptor(
   const hasFaceVaryingNormals =
     indexValues.length >= 3 && normalCount === fullTriangleIndices.length;
   const hasPerVertexNormals = hasIndexedNormals && !hasFaceVaryingNormals;
+  const positionA = new Vector3();
+  const positionB = new Vector3();
+  const positionC = new Vector3();
+  const edgeA = new Vector3();
+  const edgeB = new Vector3();
+  const faceNormal = new Vector3();
+  const authoredNormalA = new Vector3();
+  const authoredNormalB = new Vector3();
+  const authoredNormalC = new Vector3();
+  const averagedAuthoredNormal = new Vector3();
+
+  const readPositionVector = (vertexIndex: number, target: Vector3): boolean => {
+    const offset = vertexIndex * 3;
+    if (offset < 0 || offset + 2 >= positionValues.length) {
+      return false;
+    }
+    target.set(positionValues[offset], positionValues[offset + 1], positionValues[offset + 2]);
+    if (transform && shouldBakeTransform) {
+      target.applyMatrix4(transform);
+    }
+    return Number.isFinite(target.x) && Number.isFinite(target.y) && Number.isFinite(target.z);
+  };
+
+  const computeFaceNormal = (
+    vertexIndexA: number,
+    vertexIndexB: number,
+    vertexIndexC: number,
+    target: Vector3,
+  ): boolean => {
+    if (
+      !readPositionVector(vertexIndexA, positionA) ||
+      !readPositionVector(vertexIndexB, positionB) ||
+      !readPositionVector(vertexIndexC, positionC)
+    ) {
+      return false;
+    }
+    edgeA.subVectors(positionB, positionA);
+    edgeB.subVectors(positionC, positionA);
+    target.crossVectors(edgeA, edgeB);
+    if (target.lengthSq() <= NORMAL_EPSILON) {
+      return false;
+    }
+    target.normalize();
+    return true;
+  };
+
+  const readAuthoredNormalVector = (
+    faceVertexIndex: number,
+    vertexIndex: number,
+    target: Vector3,
+  ): boolean => {
+    let offset = -1;
+    if (hasFaceVaryingNormals) {
+      offset = faceVertexIndex * normalStride;
+    } else if (hasPerVertexNormals) {
+      offset = vertexIndex * normalStride;
+    }
+    if (offset < 0 || offset + 2 >= normalValues.length) {
+      return false;
+    }
+    target.set(
+      normalValues[offset] || 0,
+      normalValues[offset + 1] || 0,
+      normalValues[offset + 2] || 0,
+    );
+    if (normalMatrix) {
+      target.applyMatrix3(normalMatrix);
+    }
+    if (
+      !Number.isFinite(target.x) ||
+      !Number.isFinite(target.y) ||
+      !Number.isFinite(target.z) ||
+      target.lengthSq() <= NORMAL_EPSILON
+    ) {
+      return false;
+    }
+    target.normalize();
+    return true;
+  };
+
+  const doesAuthoredNormalOpposeFace = (
+    faceVertexIndex: number,
+    vertexIndexA: number,
+    vertexIndexB: number,
+    vertexIndexC: number,
+  ): boolean => {
+    if (!computeFaceNormal(vertexIndexA, vertexIndexB, vertexIndexC, faceNormal)) {
+      return false;
+    }
+    const hasNormalA = readAuthoredNormalVector(faceVertexIndex, vertexIndexA, authoredNormalA);
+    const hasNormalB = readAuthoredNormalVector(faceVertexIndex + 1, vertexIndexB, authoredNormalB);
+    const hasNormalC = readAuthoredNormalVector(faceVertexIndex + 2, vertexIndexC, authoredNormalC);
+    if (!hasNormalA || !hasNormalB || !hasNormalC) {
+      return true;
+    }
+    averagedAuthoredNormal
+      .copy(authoredNormalA)
+      .add(authoredNormalB)
+      .add(authoredNormalC);
+    if (averagedAuthoredNormal.lengthSq() <= NORMAL_EPSILON) {
+      return true;
+    }
+    averagedAuthoredNormal.normalize();
+    return averagedAuthoredNormal.dot(faceNormal) < NORMAL_REPAIR_DOT_THRESHOLD;
+  };
+
+  const shouldWriteRepairedFaceVaryingNormals =
+    (hasFaceVaryingNormals || hasPerVertexNormals) &&
+    (() => {
+      for (let index = 0; index + 2 < triangleIndices.length; index += 3) {
+        const a = Number(triangleIndices[index]);
+        const b = Number(triangleIndices[index + 1]);
+        const c = Number(triangleIndices[index + 2]);
+        if (!Number.isInteger(a) || !Number.isInteger(b) || !Number.isInteger(c)) {
+          continue;
+        }
+        if (doesAuthoredNormalOpposeFace(subsetStart + index, a, b, c)) {
+          return true;
+        }
+      }
+      return false;
+    })();
+  const writesFaceVaryingNormals = shouldWriteRepairedFaceVaryingNormals || hasFaceVaryingNormals;
+  const pushObjNormalLine = (normal: Vector3): void => {
+    lines.push(
+      `vn ${formatObjNumber(normal.x)} ${formatObjNumber(normal.y)} ${formatObjNumber(normal.z)}`,
+    );
+  };
 
   if (hasFaceVaryingUvs) {
     for (let uvIndex = subsetStart; uvIndex < subsetEnd; uvIndex += 1) {
@@ -886,7 +1016,42 @@ function buildObjBlobFromDescriptor(
     }
   }
 
-  if (hasFaceVaryingNormals) {
+  if (shouldWriteRepairedFaceVaryingNormals) {
+    for (let index = 0; index + 2 < triangleIndices.length; index += 3) {
+      const a = Number(triangleIndices[index]);
+      const b = Number(triangleIndices[index + 1]);
+      const c = Number(triangleIndices[index + 2]);
+      const globalFaceVertexIndex = subsetStart + index;
+      const hasComputedFaceNormal = computeFaceNormal(a, b, c, faceNormal);
+      const hasNormalA = readAuthoredNormalVector(globalFaceVertexIndex, a, authoredNormalA);
+      const hasNormalB = readAuthoredNormalVector(globalFaceVertexIndex + 1, b, authoredNormalB);
+      const hasNormalC = readAuthoredNormalVector(globalFaceVertexIndex + 2, c, authoredNormalC);
+      let useComputedFaceNormal =
+        hasComputedFaceNormal && (!hasNormalA || !hasNormalB || !hasNormalC);
+
+      if (!useComputedFaceNormal && hasComputedFaceNormal) {
+        averagedAuthoredNormal
+          .copy(authoredNormalA)
+          .add(authoredNormalB)
+          .add(authoredNormalC);
+        useComputedFaceNormal =
+          averagedAuthoredNormal.lengthSq() <= NORMAL_EPSILON ||
+          averagedAuthoredNormal.normalize().dot(faceNormal) < NORMAL_REPAIR_DOT_THRESHOLD;
+      }
+
+      if (useComputedFaceNormal) {
+        pushObjNormalLine(faceNormal);
+        pushObjNormalLine(faceNormal);
+        pushObjNormalLine(faceNormal);
+        continue;
+      }
+
+      const fallbackNormal = hasComputedFaceNormal ? faceNormal : tempVector.set(0, 0, 1);
+      pushObjNormalLine(hasNormalA ? authoredNormalA : fallbackNormal);
+      pushObjNormalLine(hasNormalB ? authoredNormalB : fallbackNormal);
+      pushObjNormalLine(hasNormalC ? authoredNormalC : fallbackNormal);
+    }
+  } else if (hasFaceVaryingNormals) {
     for (let normalIndex = subsetStart; normalIndex < subsetEnd; normalIndex += 1) {
       const offset = normalIndex * normalStride;
       tempVector.set(
@@ -897,9 +1062,7 @@ function buildObjBlobFromDescriptor(
       if (normalMatrix) {
         tempVector.applyMatrix3(normalMatrix).normalize();
       }
-      lines.push(
-        `vn ${formatObjNumber(tempVector.x)} ${formatObjNumber(tempVector.y)} ${formatObjNumber(tempVector.z)}`,
-      );
+      pushObjNormalLine(tempVector);
     }
   } else if (hasPerVertexNormals) {
     for (let vertexIndex = 0; vertexIndex < vertexCount; vertexIndex += 1) {
@@ -912,9 +1075,7 @@ function buildObjBlobFromDescriptor(
       if (normalMatrix) {
         tempVector.applyMatrix3(normalMatrix).normalize();
       }
-      lines.push(
-        `vn ${formatObjNumber(tempVector.x)} ${formatObjNumber(tempVector.y)} ${formatObjNumber(tempVector.z)}`,
-      );
+      pushObjNormalLine(tempVector);
     }
   }
 
@@ -947,7 +1108,7 @@ function buildObjBlobFromDescriptor(
       : hasPerVertexUvs
         ? [a, b, c]
         : [null, null, null];
-    const normalIndexes = hasFaceVaryingNormals
+    const normalIndexes = writesFaceVaryingNormals
       ? [index + 1, index + 2, index + 3]
       : hasPerVertexNormals
         ? [a, b, c]
@@ -2197,6 +2358,7 @@ function assignVisualDescriptorToLink(
     ...(visual || {}),
     type: GeometryType.MESH,
     meshPath: entry.exportPath,
+    doubleSided: true,
     dimensions: ensureMeshDimensions(visual?.dimensions),
     origin: visual?.origin || { ...DEFAULT_LINK.visual.origin },
   };

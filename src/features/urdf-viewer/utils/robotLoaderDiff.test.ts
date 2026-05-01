@@ -322,6 +322,45 @@ test('detectSingleGeometryPatch detects authored material colorRgba added to exi
   assert.equal(patch?.visualChanged, true);
 });
 
+test('detectSingleGeometryPatch detects visual double-sided render policy changes', () => {
+  const previousLinks = {
+    base_link: makeLink({
+      visual: {
+        type: GeometryType.MESH,
+        meshPath: 'base_link_visual_0.obj',
+        dimensions: { x: 1, y: 1, z: 1 },
+        color: '#808080',
+        origin: {
+          xyz: { x: 0, y: 0, z: 0 },
+          rpy: { r: 0, p: 0, y: 0 },
+        },
+        visible: true,
+      },
+    }),
+  };
+  const nextLinks = {
+    base_link: makeLink({
+      visual: {
+        type: GeometryType.MESH,
+        meshPath: 'base_link_visual_0.obj',
+        dimensions: { x: 1, y: 1, z: 1 },
+        color: '#808080',
+        origin: {
+          xyz: { x: 0, y: 0, z: 0 },
+          rpy: { r: 0, p: 0, y: 0 },
+        },
+        visible: true,
+        doubleSided: true,
+      },
+    }),
+  };
+
+  const patch = detectSingleGeometryPatch(previousLinks, nextLinks);
+
+  assert.ok(patch, 'double-sided policy change should produce a patch');
+  assert.equal(patch?.visualChanged, true);
+});
+
 test('detectSingleJointPatch treats joint display-name edits as compatible joint patches', () => {
   const prevJoints = {
     joint_1: makeJoint({

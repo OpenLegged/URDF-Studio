@@ -32,8 +32,19 @@ interface XacroContext {
   macros: Map<string, { params: string[]; body: string }>;
   args: XacroArgs;
   fileMap: XacroFileMap;
+  includeFileIndex: XacroIncludeFileIndex;
   basePath: string;
   includeStack: string[];
+}
+
+interface XacroIncludeFileKey {
+  original: string;
+  normalized: string;
+}
+
+interface XacroIncludeFileIndex {
+  normalizedKeys: XacroIncludeFileKey[];
+  byNormalizedPath: Map<string, XacroIncludeFileKey>;
 }
 
 const EXPRESSION_KEYWORDS = new Map<string, string>([
@@ -309,6 +320,22 @@ function normalizePath(path: string): string {
   return resolved.join('/');
 }
 
+function createIncludeFileIndex(fileMap: XacroFileMap): XacroIncludeFileIndex {
+  const normalizedKeys = Object.keys(fileMap).map((key) => ({
+    original: key,
+    normalized: normalizePath(key),
+  }));
+  const byNormalizedPath = new Map<string, XacroIncludeFileKey>();
+
+  for (const key of normalizedKeys) {
+    if (!byNormalizedPath.has(key.normalized)) {
+      byNormalizedPath.set(key.normalized, key);
+    }
+  }
+
+  return { normalizedKeys, byNormalizedPath };
+}
+
 /**
  * Find a file in the file map with fuzzy path matching
  */
@@ -328,12 +355,7 @@ function findFileInMap(filename: string, ctx: XacroContext): string | null {
   // Remove leading slash
   relativePath = normalizePath(relativePath.replace(/^\//, ''));
   const normalizedBasePath = normalizePath(ctx.basePath);
-
-  const fileMapKeys = Object.keys(ctx.fileMap);
-  const normalizedKeys = fileMapKeys.map((key) => ({
-    original: key,
-    normalized: normalizePath(key),
-  }));
+  const { normalizedKeys, byNormalizedPath } = ctx.includeFileIndex;
 
   // Strategy 1: Look for package/relativePath pattern in file map keys
   if (packageName) {
@@ -360,7 +382,7 @@ function findFileInMap(filename: string, ctx: XacroContext): string | null {
     for (let i = baseParts.length; i >= 0; i--) {
       const prefix = baseParts.slice(0, i).join('/');
       const tryPath = normalizePath(prefix ? `${prefix}/${relativePath}` : relativePath);
-      const found = normalizedKeys.find((key) => key.normalized === tryPath);
+      const found = byNormalizedPath.get(tryPath);
       if (found) {
         return found.original;
       }
@@ -653,6 +675,7 @@ export function processXacro(
     macros: new Map(),
     args,
     fileMap,
+    includeFileIndex: createIncludeFileIndex(fileMap),
     basePath: normalizePath(basePath),
     includeStack: [],
   };

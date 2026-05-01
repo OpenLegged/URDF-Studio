@@ -31,9 +31,39 @@ interface IndexedMJCFFileMap {
   byNormalized: Map<string, string>;
 }
 
+interface ResolvedSourceContentCacheSignatureEntry {
+  index: number;
+  name: string;
+  content: string;
+}
+
+interface ResolvedSourceContentCacheSignature {
+  selectedName: string;
+  selectedContent: string;
+  files: ResolvedSourceContentCacheSignatureEntry[];
+}
+
+interface ResolvedSourceContentCacheIdentity {
+  key: string;
+  signature: ResolvedSourceContentCacheSignature;
+}
+
+interface ResolvedSourceContentCacheEntry {
+  resolved: ResolvedMJCFSource;
+  signature: ResolvedSourceContentCacheSignature;
+}
+
 const indexedFileMapCache = new WeakMap<RobotFile[], IndexedMJCFFileMap>();
 const resolvedSourceCache = new WeakMap<RobotFile[], WeakMap<RobotFile, ResolvedMJCFSource>>();
+const resolvedSourceContentCache = new Map<string, ResolvedSourceContentCacheEntry>();
+const RESOLVED_SOURCE_CONTENT_CACHE_LIMIT = 32;
 export const MJCF_SOURCE_FILE_SCOPE_ATTR = 'data-urdf-studio-source-file';
+const MJCF_SOURCE_FILE_SCOPE_ATTR_PATTERN = new RegExp(
+  `\\s${MJCF_SOURCE_FILE_SCOPE_ATTR}=(?:"[^"]*"|'[^']*')`,
+  'g',
+);
+const MJCF_INCLUDE_TAG_PATTERN = /<\s*include(?=[\s>/])/i;
+const MJCF_ATTACH_TAG_PATTERN = /<\s*attach(?=[\s>/])/i;
 const MJCF_TEMPLATE_PLACEHOLDER_TOKENS = ['OBJECT_NAME'] as const;
 
 function normalizePath(path: string): string {
@@ -111,6 +141,134 @@ function getResolvedSourceMemo(files: RobotFile[]): WeakMap<RobotFile, ResolvedM
   const memo = new WeakMap<RobotFile, ResolvedMJCFSource>();
   resolvedSourceCache.set(files, memo);
   return memo;
+}
+
+function hashString(value: string): string {
+  let hash = 0x811c9dc5;
+
+  for (let i = 0; i < value.length; i += 1) {
+    hash ^= value.charCodeAt(i);
+    hash = Math.imul(hash, 0x01000193);
+  }
+
+  return `${value.length}:${(hash >>> 0).toString(36)}`;
+}
+
+function buildResolvedSourceContentCacheIdentity(
+  file: RobotFile,
+  files: RobotFile[],
+): ResolvedSourceContentCacheIdentity | null {
+  if (typeof file.content !== 'string') {
+    return null;
+  }
+
+  const selectedName = normalizePath(file.name);
+  const parts = [
+    'mjcf-resolved-v1',
+    selectedName,
+    hashString(file.content),
+  ];
+  const signature: ResolvedSourceContentCacheSignature = {
+    selectedName,
+    selectedContent: file.content,
+    files: [],
+  };
+
+  files.forEach((candidate, index) => {
+    if (candidate.format !== 'mjcf' || typeof candidate.content !== 'string') {
+      return;
+    }
+
+    const normalizedName = normalizePath(candidate.name);
+    parts.push(String(index), normalizedName, hashString(candidate.content));
+    signature.files.push({
+      index,
+      name: normalizedName,
+      content: candidate.content,
+    });
+  });
+
+  return {
+    key: parts.join('\0'),
+    signature,
+  };
+}
+
+function contentCacheSignaturesEqual(
+  left: ResolvedSourceContentCacheSignature,
+  right: ResolvedSourceContentCacheSignature,
+): boolean {
+  if (
+    left.selectedName !== right.selectedName ||
+    left.selectedContent !== right.selectedContent ||
+    left.files.length !== right.files.length
+  ) {
+    return false;
+  }
+
+  return left.files.every((leftEntry, index) => {
+    const rightEntry = right.files[index];
+    return (
+      rightEntry !== undefined &&
+      leftEntry.index === rightEntry.index &&
+      leftEntry.name === rightEntry.name &&
+      leftEntry.content === rightEntry.content
+    );
+  });
+}
+
+function cloneResolvedSourceForFile(
+  resolved: ResolvedMJCFSource,
+  file: RobotFile,
+): ResolvedMJCFSource {
+  return {
+    ...resolved,
+    sourceFile: file,
+    effectiveFile: file,
+    issues: [...resolved.issues],
+  };
+}
+
+function cacheResolvedSourceByContent(
+  identity: ResolvedSourceContentCacheIdentity,
+  resolved: ResolvedMJCFSource,
+): void {
+  if (resolvedSourceContentCache.has(identity.key)) {
+    resolvedSourceContentCache.delete(identity.key);
+  }
+
+  resolvedSourceContentCache.set(identity.key, {
+    signature: identity.signature,
+    resolved: {
+      ...resolved,
+      issues: [...resolved.issues],
+    },
+  });
+
+  while (resolvedSourceContentCache.size > RESOLVED_SOURCE_CONTENT_CACHE_LIMIT) {
+    const oldestKey = resolvedSourceContentCache.keys().next().value;
+    if (typeof oldestKey !== 'string') {
+      return;
+    }
+    resolvedSourceContentCache.delete(oldestKey);
+  }
+}
+
+function getCachedResolvedSourceByContent(
+  identity: ResolvedSourceContentCacheIdentity,
+  file: RobotFile,
+): ResolvedMJCFSource | null {
+  const cached = resolvedSourceContentCache.get(identity.key);
+  if (!cached) {
+    return null;
+  }
+  if (!contentCacheSignaturesEqual(cached.signature, identity.signature)) {
+    return null;
+  }
+
+  resolvedSourceContentCache.delete(identity.key);
+  resolvedSourceContentCache.set(identity.key, cached);
+  return cloneResolvedSourceForFile(cached.resolved, file);
 }
 
 function resolveFileInMap(
@@ -267,16 +425,7 @@ function annotateImportedNodeSourceScope(node: Node, sourceFilePath: string): vo
 }
 
 function stripMJCFSourceScopeAnnotations(content: string): string {
-  const doc = parseXml(content);
-  if (!doc) {
-    return content;
-  }
-
-  doc.querySelectorAll(`[${MJCF_SOURCE_FILE_SCOPE_ATTR}]`).forEach((element) => {
-    element.removeAttribute(MJCF_SOURCE_FILE_SCOPE_ATTR);
-  });
-
-  return new XMLSerializer().serializeToString(doc);
+  return content.replace(MJCF_SOURCE_FILE_SCOPE_ATTR_PATTERN, '');
 }
 
 function prefixAttachedModelDocument(doc: Document, prefix: string): void {
@@ -363,6 +512,10 @@ function expandIncludesRecursive(
   issues: MJCFSourceResolutionIssue[],
   includeStack: string[] = [],
 ): string {
+  if (!MJCF_INCLUDE_TAG_PATTERN.test(content)) {
+    return content;
+  }
+
   const doc = parseXml(content);
   if (!doc) {
     return content;
@@ -463,6 +616,10 @@ function expandAttachedModelsRecursive(
   issues: MJCFSourceResolutionIssue[],
   attachStack: string[] = [],
 ): string {
+  if (!MJCF_ATTACH_TAG_PATTERN.test(content)) {
+    return content;
+  }
+
   const doc = parseXml(content);
   if (!doc) {
     return content;
@@ -706,6 +863,15 @@ export function resolveMJCFSource(file: RobotFile, files: RobotFile[]): Resolved
     return cached;
   }
 
+  const contentCacheIdentity = buildResolvedSourceContentCacheIdentity(file, files);
+  if (contentCacheIdentity) {
+    const contentCached = getCachedResolvedSourceByContent(contentCacheIdentity, file);
+    if (contentCached) {
+      memo.set(file, contentCached);
+      return contentCached;
+    }
+  }
+
   const indexedFileMap = getIndexedMJCFFileMap(files);
   const selectedBasePath = getBasePath(file.name);
   const issues: MJCFSourceResolutionIssue[] = [];
@@ -726,6 +892,9 @@ export function resolveMJCFSource(file: RobotFile, files: RobotFile[]): Resolved
     issues,
   };
   memo.set(file, resolved);
+  if (contentCacheIdentity) {
+    cacheResolvedSourceByContent(contentCacheIdentity, resolved);
+  }
   return resolved;
 }
 

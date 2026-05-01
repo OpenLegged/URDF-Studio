@@ -5,6 +5,7 @@ import { JSDOM } from 'jsdom';
 
 import { GeometryType, JointType } from '@/types';
 import { computeLinkWorldMatrices } from '@/core/robot';
+import { resolveSdfIncludeSource } from './sdfIncludeResolution.ts';
 import { parseSDF } from './sdfParser.ts';
 
 const dom = new JSDOM('<!doctype html><html><body></body></html>');
@@ -426,6 +427,87 @@ test('parseSDF lets parent joints target included model links without injecting 
   assert.deepEqual(robot?.joints.mount?.origin.xyz, { x: 1, y: 0, z: 0 });
   assert.equal(robot?.links['gripper::base__root'], undefined);
   assert.equal(robot?.joints['gripper::base__root_fixed'], undefined);
+});
+
+test('parseSDF reuses one SDF include index while resolving multiple includes', () => {
+  const allFileContents = {
+    'arm/model.sdf': `<?xml version="1.0"?>
+<sdf version="1.7">
+  <model name="arm">
+    <link name="base">
+      <visual name="body">
+        <geometry>
+          <box>
+            <size>1 1 1</size>
+          </box>
+        </geometry>
+      </visual>
+    </link>
+  </model>
+</sdf>`,
+    'gripper/model.sdf': `<?xml version="1.0"?>
+<sdf version="1.7">
+  <model name="gripper">
+    <link name="base">
+      <visual name="body">
+        <geometry>
+          <box>
+            <size>0.25 0.25 0.25</size>
+          </box>
+        </geometry>
+      </visual>
+    </link>
+  </model>
+</sdf>`,
+  };
+  const originalEntries = Object.entries;
+  let includeFileContentScans = 0;
+  Object.entries = ((value: object) => {
+    if (value === allFileContents) {
+      includeFileContentScans += 1;
+    }
+    return originalEntries(value);
+  }) as typeof Object.entries;
+
+  try {
+    const robot = parseSDF(
+      `<?xml version="1.0"?>
+<sdf version="1.7">
+  <model name="assembly">
+    <include>
+      <name>arm</name>
+      <uri>model://arm</uri>
+    </include>
+    <include>
+      <name>gripper</name>
+      <uri>model://gripper</uri>
+    </include>
+  </model>
+</sdf>`,
+      {
+        sourcePath: 'assembly/model.sdf',
+        allFileContents,
+      },
+    );
+
+    assert.ok(robot);
+    assert.ok(robot?.links['arm::base']);
+    assert.ok(robot?.links['gripper::base']);
+    assert.equal(includeFileContentScans, 1);
+  } finally {
+    Object.entries = originalEntries;
+  }
+});
+
+test('resolveSdfIncludeSource keeps the legacy allFileContents API', () => {
+  const resolved = resolveSdfIncludeSource('model://sensor', {
+    'sensor/model.sdf': '<sdf version="1.7"><model name="sensor" /></sdf>',
+  });
+
+  assert.deepEqual(resolved, {
+    path: 'sensor/model.sdf',
+    content: '<sdf version="1.7"><model name="sensor" /></sdf>',
+  });
 });
 
 test('parseSDF resolves URDF-style link poses relative to joint frames', () => {

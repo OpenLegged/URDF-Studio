@@ -8,6 +8,7 @@ import type {
   UsdOffscreenViewerWorkerResponse,
 } from '@/features/urdf-viewer/utils/usdOffscreenViewerProtocol';
 import type { PreparedUsdExportCacheResult } from '@/features/urdf-viewer/utils/usdExportBundle';
+import { hydratePreparedUsdExportCacheFromWorker } from '@/features/urdf-viewer/utils/usdPreparedExportCacheWorkerTransfer';
 import type { ViewerRobotDataResolution } from '@/features/urdf-viewer/utils/viewerRobotData';
 import type { RobotData, RobotFile, UsdSceneSnapshot } from '@/types';
 import { normalizeLibraryPathKey } from '@/shared/utils/pathKeys';
@@ -68,6 +69,7 @@ export interface StartUsdRobotStateHydrationOptions {
     snapshot: UsdSceneSnapshot,
     resolution: ViewerRobotDataResolution,
   ) => Promise<PreparedUsdExportCacheResult | null>;
+  onDeferredSceneSnapshot?: (snapshot: UsdSceneSnapshot, stageSourcePath: string | null) => void;
   onEvent?: (event: UsdOffscreenViewerWorkerResponse) => void;
 }
 
@@ -123,6 +125,7 @@ export function startUsdRobotStateHydration({
   createCanvas = createDefaultOffscreenCanvas,
   workerClient = defaultWorkerClient,
   prepareExportCache = prepareUsdPreparedExportCacheWithWorker,
+  onDeferredSceneSnapshot,
   onEvent,
 }: StartUsdRobotStateHydrationOptions): UsdRobotStateHydrationHandle {
   const normalizedSourceFileName = normalizeHydrationPath(sourceFile.name);
@@ -130,7 +133,9 @@ export function startUsdRobotStateHydration({
   let cleanedUp = false;
   let resolution: ViewerRobotDataResolution | null = null;
   let sceneSnapshot: UsdSceneSnapshot | null = null;
+  let workerPreparedCache: PreparedUsdExportCacheResult | null = null;
   let rejectPromise: (reason?: unknown) => void = () => {};
+  let deferredSceneSnapshotShutdownTimer: ReturnType<typeof setTimeout> | null = null;
 
   const stageDispatch = workerClient.prepareStageOpenDispatch(sourceFile, availableFiles, assets);
   const worker = stageDispatch.worker;
@@ -148,6 +153,10 @@ export function startUsdRobotStateHydration({
       return;
     }
     cleanedUp = true;
+    if (deferredSceneSnapshotShutdownTimer) {
+      clearTimeout(deferredSceneSnapshotShutdownTimer);
+      deferredSceneSnapshotShutdownTimer = null;
+    }
     cleanupListeners();
     workerClient.shutdown();
   };
@@ -165,12 +174,22 @@ export function startUsdRobotStateHydration({
     resolve: (value: UsdRobotStateHydrationResult) => void,
     reject: (reason?: unknown) => void,
   ) => {
-    if (settled || !resolution || !sceneSnapshot) {
+    if (settled || !resolution) {
       return;
     }
 
     try {
-      const preparedCache = await prepareExportCache(sceneSnapshot, resolution);
+      const resolvedSceneSnapshot =
+        sceneSnapshot ??
+        resolution.usdSceneSnapshot ??
+        workerPreparedCache?.resolution.usdSceneSnapshot ??
+        null;
+      if (!resolvedSceneSnapshot) {
+        return;
+      }
+
+      const preparedCache =
+        workerPreparedCache ?? (await prepareExportCache(resolvedSceneSnapshot, resolution));
       if (settled) {
         return;
       }
@@ -180,13 +199,21 @@ export function startUsdRobotStateHydration({
         );
       }
 
+      const shouldWaitForDeferredSceneSnapshot = Boolean(
+        workerPreparedCache && !sceneSnapshot && onDeferredSceneSnapshot,
+      );
+
       settled = true;
-      shutdown();
+      if (shouldWaitForDeferredSceneSnapshot) {
+        deferredSceneSnapshotShutdownTimer = setTimeout(shutdown, 15_000);
+      } else {
+        shutdown();
+      }
       resolve({
         robotData: preparedCache.robotData,
         preparedCache,
         resolution,
-        sceneSnapshot,
+        sceneSnapshot: resolvedSceneSnapshot,
       });
     } catch (error) {
       if (settled) {
@@ -206,7 +233,19 @@ export function startUsdRobotStateHydration({
 
   function handleMessage(event: MessageEvent<UsdOffscreenViewerWorkerResponse | undefined>): void {
     const message = event.data;
-    if (!message || settled) {
+    if (!message) {
+      return;
+    }
+
+    if (settled) {
+      if (
+        message.type === 'scene-snapshot' &&
+        !cleanedUp &&
+        isMatchingSceneSnapshot(normalizedSourceFileName, resolution, message.stageSourcePath)
+      ) {
+        onDeferredSceneSnapshot?.(message.snapshot, message.stageSourcePath);
+        shutdown();
+      }
       return;
     }
 
@@ -230,6 +269,9 @@ export function startUsdRobotStateHydration({
         return;
       }
       resolution = message.resolution;
+      if (message.preparedCache) {
+        workerPreparedCache = hydratePreparedUsdExportCacheFromWorker(message.preparedCache);
+      }
       void tryResolve(resolvePromise, rejectPromise);
       return;
     }
@@ -303,7 +345,12 @@ export function startUsdRobotStateHydration({
 
   return {
     promise,
-    cleanup: () =>
-      rejectOnce(new Error(`USD RobotState hydration for "${sourceFile.name}" was cancelled.`)),
+    cleanup: () => {
+      if (settled) {
+        shutdown();
+        return;
+      }
+      rejectOnce(new Error(`USD RobotState hydration for "${sourceFile.name}" was cancelled.`));
+    },
   };
 }

@@ -46,7 +46,6 @@ function normalizeImportPath(path: string): string {
 }
 
 interface PathStructureInfo {
-  depth: number;
   topLevelSegment: string | null;
   hasMultipleTopLevelSegments: boolean;
   topSegmentsAreRootlessFolders: boolean;
@@ -56,7 +55,7 @@ function analyzeImportPathStructure(paths: readonly string[]): PathStructureInfo
   const normalizedPaths = paths.map(normalizeImportPath);
 
   if (normalizedPaths.length === 0) {
-    return { depth: 0, topLevelSegment: null, hasMultipleTopLevelSegments: false, topSegmentsAreRootlessFolders: false };
+    return { topLevelSegment: null, hasMultipleTopLevelSegments: false, topSegmentsAreRootlessFolders: false };
   }
 
   const topLevelSegments = new Set(
@@ -73,7 +72,6 @@ function analyzeImportPathStructure(paths: readonly string[]): PathStructureInfo
   );
 
   return {
-    depth: Math.min(...normalizedPaths.map((p) => p.split('/').length)),
     topLevelSegment,
     hasMultipleTopLevelSegments,
     topSegmentsAreRootlessFolders,

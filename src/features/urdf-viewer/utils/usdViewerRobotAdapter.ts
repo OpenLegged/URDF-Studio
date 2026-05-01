@@ -1225,6 +1225,7 @@ function createJointFromViewerEntry(
   const jointType = jointTypeFromViewerValue(entry.jointTypeName || entry.jointType);
   const lower = degreesToRadians(entry.lowerLimitDeg);
   const upper = degreesToRadians(entry.upperLimitDeg);
+  const angle = degreesToRadians(entry.angleDeg);
   const driveDamping =
     typeof entry.driveDamping === 'number' && Number.isFinite(entry.driveDamping)
       ? entry.driveDamping
@@ -1250,6 +1251,7 @@ function createJointFromViewerEntry(
     type: jointType,
     parentLinkId,
     childLinkId,
+    ...(typeof angle === 'number' && Number.isFinite(angle) ? { angle } : {}),
     origin: {
       xyz: originXyz,
       rpy: originQuatWxyz
@@ -1388,10 +1390,25 @@ export function adaptUsdViewerSnapshotToRobotData(
 
   let meshCountsByLinkPath = deriveMeshCountsByLinkPath(snapshot, linkPaths);
   Object.keys(meshCountsByLinkPath).forEach((path) => addLinkPath(path));
-  const shouldOmitInternalMeshLibraryPaths = shouldOmitUsdInternalMeshLibraryPaths(linkPaths);
+  const normalizedDefaultPrimPath = normalizeUsdPath(snapshot.stage?.defaultPrimPath);
+  const hasInternalMeshLibraryPath = Array.from(linkPaths).some((path) =>
+    isUsdInternalMeshLibraryPath(path),
+  );
+  const shouldOmitInternalMeshLibraryPaths =
+    shouldOmitUsdInternalMeshLibraryPaths(linkPaths) ||
+    (hasInternalMeshLibraryPath &&
+      Boolean(normalizedDefaultPrimPath) &&
+      !isUsdInternalMeshLibraryPath(normalizedDefaultPrimPath));
   const effectiveSourceLinkPaths = shouldOmitInternalMeshLibraryPaths
     ? new Set(Array.from(linkPaths).filter((path) => !isUsdInternalMeshLibraryPath(path)))
-    : linkPaths;
+    : new Set(linkPaths);
+  if (
+    shouldOmitInternalMeshLibraryPaths &&
+    effectiveSourceLinkPaths.size === 0 &&
+    normalizedDefaultPrimPath
+  ) {
+    effectiveSourceLinkPaths.add(normalizedDefaultPrimPath);
+  }
   const effectiveSourceLinkParentPairs = shouldOmitInternalMeshLibraryPaths
     ? linkParentPairs.filter(
         ([childPath, parentPath]) =>
@@ -1409,6 +1426,13 @@ export function adaptUsdViewerSnapshotToRobotData(
   const effectiveSourceRootLinkPaths = shouldOmitInternalMeshLibraryPaths
     ? rootLinkPaths.filter((path) => !isUsdInternalMeshLibraryPath(path))
     : rootLinkPaths;
+  if (
+    shouldOmitInternalMeshLibraryPaths &&
+    effectiveSourceRootLinkPaths.length === 0 &&
+    normalizedDefaultPrimPath
+  ) {
+    effectiveSourceRootLinkPaths.push(normalizedDefaultPrimPath);
+  }
 
   if (shouldOmitInternalMeshLibraryPaths) {
     meshCountsByLinkPath = Object.fromEntries(

@@ -52,6 +52,8 @@ import { resolveUsdRuntimeLinkPathForMesh } from '../utils/usdRuntimeMeshMapping
 import { resolveUsdVisualMeshObjectOrder } from '../utils/usdRuntimeMeshObjectOrder.ts';
 import { prepareUsdVisualMesh } from '../utils/usdVisualRendering.ts';
 import { createEmbeddedUsdViewerLoadParams } from '../utils/usdViewerRenderParams.ts';
+import { prepareUsdExportCacheFromResolvedSnapshot } from '../utils/usdExportBundle.ts';
+import { serializePreparedUsdExportCacheForWorker } from '../utils/usdPreparedExportCacheWorkerTransfer.ts';
 import {
   collectUsdSceneSnapshotTransferables,
   hasUsdSceneSnapshotHeavyBuffers,
@@ -1987,10 +1989,44 @@ async function publishResolvedRobotData(): Promise<PublishedWorkerRobotData> {
   refreshRuntimeHelperTargets();
   syncInteractionHighlights();
 
-  postWorkerMessage({
-    type: 'robot-data',
-    resolution: resolutionWithSnapshot,
-  });
+  let serializedPreparedCache: Awaited<
+    ReturnType<typeof serializePreparedUsdExportCacheForWorker>
+  > | null = null;
+  try {
+    serializedPreparedCache = await trackWorkerLoadDebugStep({
+      sourceFileName: currentSourceFileName,
+      step: 'prepare-worker-export-cache',
+      pendingDetail: {
+        rendererMode: 'offscreen-worker',
+        source: 'worker-scene-snapshot',
+      },
+      run: async () => {
+        const preparedCache = prepareUsdExportCacheFromResolvedSnapshot(
+          snapshot,
+          resolutionWithSnapshot,
+          { includeTransferBytes: true },
+        );
+        return await serializePreparedUsdExportCacheForWorker(preparedCache);
+      },
+      resolveDetail: (result) => ({
+        rendererMode: 'offscreen-worker',
+        source: 'worker-scene-snapshot',
+        meshFileCount: result.payload.meshFiles.length,
+        transferableBufferCount: result.transferables.length,
+      }),
+    });
+  } catch {
+    serializedPreparedCache = null;
+  }
+
+  postWorkerMessage(
+    {
+      type: 'robot-data',
+      resolution: resolutionWithSnapshot,
+      preparedCache: serializedPreparedCache?.payload ?? null,
+    },
+    serializedPreparedCache?.transferables,
+  );
   emitCurrentJointAngles();
 
   return {

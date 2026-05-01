@@ -56,8 +56,13 @@ function isUsdLayerPath(path: string): boolean {
   return /\.usd(?:a|c|z)?$/i.test(normalizeUsdAssetPath(path));
 }
 
+export function isTextualUsdLayerCandidatePath(path: string): boolean {
+  const normalizedPath = normalizeUsdAssetPath(path).toLowerCase();
+  return normalizedPath.endsWith('.usd') || normalizedPath.endsWith('.usda');
+}
+
 function shouldBuildUsdNormalizationCacheKey(path: string): boolean {
-  return normalizeUsdAssetPath(path).toLowerCase().endsWith('.usda');
+  return isTextualUsdLayerCandidatePath(path);
 }
 
 function hasInlineUsdLayerTextContent(
@@ -383,7 +388,9 @@ export function createUsdPreloadSource(
     return {
       kind: 'blob-url',
       loadBlob: () => fetchBlobFromUrl(resolvedBlobUrl),
-      loadText: normalizedPath.endsWith('.usda') ? () => fetchTextFromUrl(resolvedBlobUrl) : null,
+      loadText: isTextualUsdLayerCandidatePath(normalizedPath)
+        ? () => fetchTextFromUrl(resolvedBlobUrl)
+        : null,
       normalizationCacheKey: buildUsdPreloadNormalizationCacheKey(file, resolvedBlobUrl),
     };
   }
@@ -441,7 +448,7 @@ export function buildUsdBundlePreloadEntries(
       addEntry(
         virtualPath,
         () => fetchBlobFromUrl(resolvedBlobUrl),
-        virtualPath.toLowerCase().endsWith('.usda')
+        isTextualUsdLayerCandidatePath(virtualPath)
           ? () => fetchTextFromUrl(resolvedBlobUrl)
           : null,
         buildUsdPreloadNormalizationCacheKey(

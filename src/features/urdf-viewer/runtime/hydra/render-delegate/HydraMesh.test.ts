@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { BackSide, BoxGeometry, Color, DoubleSide, FrontSide, Group, MeshPhysicalMaterial, SRGBColorSpace } from 'three';
+import { BackSide, BoxGeometry, Color, DoubleSide, FrontSide, Group, MeshPhysicalMaterial } from 'three';
 
 import { isCoplanarOffsetMaterial } from '../../../../../core/loaders/coplanarMaterialOffset.ts';
 import { HydraMesh } from './HydraMesh.js';
@@ -29,7 +29,7 @@ const createHydraInterfaceStub = () => ({
     },
 });
 
-test('HydraMesh defaults to front-face culling and honors sidedness updates', () => {
+test('HydraMesh defaults to double-sided USD surfaces and honors explicit sidedness updates', () => {
     const hydraMesh = new HydraMesh('Mesh', '/robot/base_link/mesh', createHydraInterfaceStub());
     const material = Array.isArray(hydraMesh._mesh.material)
         ? hydraMesh._mesh.material[0]
@@ -38,6 +38,12 @@ test('HydraMesh defaults to front-face culling and honors sidedness updates', ()
     assert.ok(material);
     assert.equal(material.isMeshStandardMaterial, true);
     assert.notEqual(material.isMeshPhysicalMaterial, true);
+    assert.equal(material.side, DoubleSide);
+
+    hydraMesh.setCullStyle('default');
+    assert.equal(material.side, DoubleSide);
+
+    hydraMesh.setDoubleSided(false);
     assert.equal(material.side, FrontSide);
 
     hydraMesh.setDoubleSided(true);
@@ -56,7 +62,25 @@ test('HydraMesh defaults to front-face culling and honors sidedness updates', ()
     assert.equal(material.side, DoubleSide);
 });
 
-test('HydraMesh interprets displayColor constant values as SRGB-authored colors', () => {
+test('HydraMesh reapplies sidedness when setMaterial replaces the assigned material', () => {
+    const hydraInterface = createHydraInterfaceStub();
+    const replacementMaterial = new MeshPhysicalMaterial({ name: 'replacement', color: 0xffffff });
+    hydraInterface.materials['/Looks/Replacement'] = {
+        _material: replacementMaterial,
+    };
+
+    const hydraMesh = new HydraMesh('Mesh', '/robot/base_link/mesh', hydraInterface);
+    hydraMesh.setDoubleSided(true);
+    const initialVersion = replacementMaterial.version;
+    assert.equal(replacementMaterial.side, FrontSide);
+
+    hydraMesh.setMaterial('/Looks/Replacement');
+
+    assert.equal(replacementMaterial.side, DoubleSide);
+    assert.ok(replacementMaterial.version > initialVersion);
+});
+
+test('HydraMesh preserves USD displayColor constant values as raw linear colors', () => {
     const hydraMesh = new HydraMesh('Mesh', '/robot/base_link/mesh', createHydraInterfaceStub());
     const material = Array.isArray(hydraMesh._mesh.material)
         ? hydraMesh._mesh.material[0]
@@ -64,10 +88,23 @@ test('HydraMesh interprets displayColor constant values as SRGB-authored colors'
 
     hydraMesh.setDisplayColor([1, 0.5, 0.2], 'constant');
 
-    const expectedColor = new Color().setRGB(1, 0.5, 0.2, SRGBColorSpace);
+    const expectedColor = new Color().setRGB(1, 0.5, 0.2);
     assert.ok(material);
     assert.equal(material.vertexColors, false);
     assertColorClose(material.color, expectedColor);
+});
+
+test('HydraMesh preserves USD displayColor vertex values as raw linear colors', () => {
+    const hydraMesh = new HydraMesh('Mesh', '/robot/base_link/mesh', createHydraInterfaceStub());
+    const material = Array.isArray(hydraMesh._mesh.material)
+        ? hydraMesh._mesh.material[0]
+        : hydraMesh._mesh.material;
+
+    hydraMesh.setDisplayColor(new Float32Array([1, 0.5, 0.2, 0.25, 0.5, 0.75]), 'vertex');
+
+    assert.ok(material);
+    assert.equal(material.vertexColors, true);
+    assert.deepEqual(Array.from(hydraMesh._colors), [1, 0.5, 0.2, 0.25, 0.5, 0.75]);
 });
 
 test('HydraMesh stabilizes coincident visual proto meshes on the same link', () => {

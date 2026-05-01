@@ -168,6 +168,37 @@ test('USD runtime joint skips redundant work when the requested angle is unchang
   assert.equal(scheduledDecorationRefreshes, 0);
 });
 
+test('USD runtime joint defaults to neutral when RobotState has no authored angle', () => {
+  const jointAngleUpdates: Array<{ linkPath: string; angleDeg: number }> = [];
+
+  const runtimeRobot = createUsdViewerRuntimeRobot({
+    resolution: createResolution(),
+    linkRotationController: {
+      apply: () => {},
+      getJointInfoForLink: () => ({
+        angleDeg: 45,
+        lowerLimitDeg: 10,
+        upperLimitDeg: 90,
+      }),
+      setJointAngleForLink: (linkPath: string, angleDeg: number) => {
+        jointAngleUpdates.push({ linkPath, angleDeg });
+        return {
+          angleDeg,
+          lowerLimitDeg: 10,
+          upperLimitDeg: 90,
+        };
+      },
+    },
+  });
+
+  const joint = runtimeRobot.joints.arm_joint as {
+    angle: number;
+  };
+
+  assert.equal(joint.angle, 0);
+  assert.deepEqual(jointAngleUpdates, []);
+});
+
 test('USD runtime joint writes back the clamped runtime angle without re-emitting selection sync', () => {
   const jointAngleUpdates: Array<{
     angleDeg: number;

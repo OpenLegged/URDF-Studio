@@ -1,5 +1,5 @@
 // @ts-nocheck
-import { Color, FrontSide, LinearSRGBColorSpace, MeshPhysicalMaterial, MeshStandardMaterial, RGBAFormat, RepeatWrapping, SRGBColorSpace, Vector2 } from 'three';
+import { Color, DoubleSide, LinearSRGBColorSpace, MeshPhysicalMaterial, MeshStandardMaterial, RGBAFormat, RepeatWrapping, SRGBColorSpace, Vector2 } from 'three';
 import * as Shared from './shared.js';
 import { disposeTexturesFromMaterial } from '../../../../../shared/utils/three/dispose.ts';
 import { getDefaultMaterial, setDefaultMaterial } from './default-material-state.js';
@@ -81,7 +81,7 @@ class HydraMaterial {
         this._ownedMaterial = null;
         if (!getDefaultMaterial()) {
             setDefaultMaterial(createUnifiedHydraStandardMaterial({
-                side: FrontSide,
+                side: DoubleSide,
                 color: new Color(0xff2997), // a bright pink color to indicate a missing material
                 name: 'DefaultMaterial',
             }));
@@ -478,8 +478,7 @@ class HydraMaterial {
             const colorTuple = toColorArray(rawValue);
             if (!colorTuple)
                 return;
-            const colorSpace = HydraMaterial.usdPreviewToColorSpaceMap[parameterName] || null;
-            this._material[materialParameterName] = createHydraColorFromTuple(colorTuple, colorSpace);
+            this._material[materialParameterName] = createHydraColorFromTuple(colorTuple);
             return;
         }
         if (HydraMaterial.vector2MaterialProperties.has(materialParameterName)) {

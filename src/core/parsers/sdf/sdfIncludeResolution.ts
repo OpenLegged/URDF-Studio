@@ -5,6 +5,15 @@ export interface ResolvedSdfIncludeSource {
   content: string;
 }
 
+export interface SdfIncludeResolutionContext {
+  resolve(includeUri: string, sourcePath?: string | null): ResolvedSdfIncludeSource | null;
+}
+
+interface SdfIncludeSourceIndex {
+  entries: ResolvedSdfIncludeSource[];
+  byPath: Map<string, ResolvedSdfIncludeSource>;
+}
+
 function normalizePath(path: string): string {
   const segments = path.replace(/\\/g, '/').split('/');
   const stack: string[] = [];
@@ -56,22 +65,35 @@ function preferCandidate(left: ResolvedSdfIncludeSource, right: ResolvedSdfInclu
   return rank(left.path) - rank(right.path) || left.path.localeCompare(right.path);
 }
 
-export function resolveSdfIncludeSource(
-  includeUri: string,
+function createSdfIncludeSourceIndex(
   allFileContents: Record<string, string>,
-  sourcePath?: string | null,
-): ResolvedSdfIncludeSource | null {
-  const includeBasePath = resolveIncludePath(includeUri, sourcePath ?? undefined);
-  if (!includeBasePath) {
-    return null;
-  }
-
+): SdfIncludeSourceIndex {
   const entries = Object.entries(allFileContents)
     .map(([path, content]) => ({
       path: normalizePath(path),
       content,
     }))
     .filter(({ path }) => path.toLowerCase().endsWith('.sdf'));
+
+  const byPath = new Map<string, ResolvedSdfIncludeSource>();
+  entries.forEach((entry) => {
+    if (!byPath.has(entry.path)) {
+      byPath.set(entry.path, entry);
+    }
+  });
+
+  return { entries, byPath };
+}
+
+function resolveSdfIncludeSourceFromIndex(
+  includeUri: string,
+  index: SdfIncludeSourceIndex,
+  sourcePath?: string | null,
+): ResolvedSdfIncludeSource | null {
+  const includeBasePath = resolveIncludePath(includeUri, sourcePath ?? undefined);
+  if (!includeBasePath) {
+    return null;
+  }
 
   const exactCandidates = [
     includeBasePath,
@@ -80,13 +102,13 @@ export function resolveSdfIncludeSource(
   ];
 
   for (const candidatePath of exactCandidates) {
-    const matched = entries.find(({ path }) => path === candidatePath);
+    const matched = index.byPath.get(candidatePath);
     if (matched) {
       return matched;
     }
   }
 
-  const nestedCandidates = entries
+  const nestedCandidates = index.entries
     .filter(({ path }) => path.startsWith(`${includeBasePath}/`))
     .sort(preferCandidate);
 
@@ -99,9 +121,28 @@ export function resolveSdfIncludeSource(
     return null;
   }
 
-  const fallbackCandidates = entries
+  const fallbackCandidates = index.entries
     .filter(({ path }) => path.toLowerCase().includes(`/${basename}/`))
     .sort(preferCandidate);
 
   return fallbackCandidates[0] ?? null;
+}
+
+export function createSdfIncludeResolutionContext(
+  allFileContents: Record<string, string> = {},
+): SdfIncludeResolutionContext {
+  const index = createSdfIncludeSourceIndex(allFileContents);
+
+  return {
+    resolve: (includeUri, sourcePath) =>
+      resolveSdfIncludeSourceFromIndex(includeUri, index, sourcePath),
+  };
+}
+
+export function resolveSdfIncludeSource(
+  includeUri: string,
+  allFileContents: Record<string, string>,
+  sourcePath?: string | null,
+): ResolvedSdfIncludeSource | null {
+  return createSdfIncludeResolutionContext(allFileContents).resolve(includeUri, sourcePath);
 }

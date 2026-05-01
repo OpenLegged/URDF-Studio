@@ -11,11 +11,15 @@ const USD_HYDRATION_REQUIRED_MESSAGE = 'USD sources must be hydrated to RobotSta
 
 function isUsdFormat(format: string | null | undefined): boolean {
   const normalizedFormat = format?.toLowerCase();
-  return normalizedFormat === 'usd' || normalizedFormat === 'usda';
+  return normalizedFormat === 'usd';
 }
 
 function rejectUsdRendererSource(): never {
   throw new Error(USD_HYDRATION_REQUIRED_MESSAGE);
+}
+
+function rejectUnsupportedRendererSourceFormat(format: string): never {
+  throw new Error(`Unsupported renderer source format: ${format}`);
 }
 
 /**
@@ -51,10 +55,15 @@ const defaultBackendRegistry: BackendRegistry = {
 export function createRendererBackend(props: RendererSceneProps): RobotRendererBackend {
   const { sourceFile, assets, invalidate } = props;
   const format = sourceFile?.format || 'urdf';
+  const normalizedFormat = format.toLowerCase();
 
   // Determine which backend to use
-  if (isUsdFormat(format)) {
+  if (isUsdFormat(normalizedFormat)) {
     return rejectUsdRendererSource();
+  }
+
+  if (!isFormatSupported(normalizedFormat)) {
+    return rejectUnsupportedRendererSourceFormat(normalizedFormat);
   }
 
   // Default to ThreeJsBackend for all other formats
@@ -76,8 +85,13 @@ export function createRendererBackendForFormat(
   assets: Record<string, string>,
   invalidate?: () => void,
 ): RobotRendererBackend {
-  if (isUsdFormat(format)) {
+  const normalizedFormat = format.toLowerCase();
+  if (isUsdFormat(normalizedFormat)) {
     return rejectUsdRendererSource();
+  }
+
+  if (!isFormatSupported(normalizedFormat)) {
+    return rejectUnsupportedRendererSourceFormat(normalizedFormat);
   }
 
   return createThreeJsBackend(sourceFile, assets, invalidate);

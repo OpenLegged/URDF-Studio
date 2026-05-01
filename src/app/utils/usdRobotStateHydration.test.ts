@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import { DEFAULT_LINK, GeometryType, type RobotData, type RobotFile, type UsdSceneSnapshot } from '@/types';
 import type { PreparedUsdExportCacheResult } from '@/features/urdf-viewer/utils/usdExportBundle.ts';
 import type { UsdOffscreenViewerWorkerRequest, UsdOffscreenViewerWorkerResponse } from '@/features/urdf-viewer/utils/usdOffscreenViewerProtocol.ts';
+import { serializePreparedUsdExportCacheForWorker } from '@/features/urdf-viewer/utils/usdPreparedExportCacheWorkerTransfer.ts';
 import type { ViewerRobotDataResolution } from '@/features/urdf-viewer/utils/viewerRobotData.ts';
 
 import {
@@ -280,6 +281,59 @@ test('startUsdRobotStateHydration resolves a prepared cache after robot-data and
   assert.equal(client.shutdownCalls, 1);
 });
 
+test('startUsdRobotStateHydration resolves from worker-prepared cache without waiting for full scene snapshot', async () => {
+  const worker = new FakeHydrationWorker();
+  const client = createFakeHydrationClient(worker);
+  let fallbackPrepareCallCount = 0;
+  const deferredSnapshots: UsdSceneSnapshot[] = [];
+  const serializedPreparedCache = await serializePreparedUsdExportCacheForWorker(preparedCache);
+
+  const hydration = startUsdRobotStateHydration({
+    sourceFile,
+    availableFiles,
+    assets: {},
+    createCanvas: fakeCanvas,
+    workerClient: client,
+    prepareExportCache: async () => {
+      fallbackPrepareCallCount += 1;
+      return preparedCache;
+    },
+    onDeferredSceneSnapshot: (snapshot) => {
+      deferredSnapshots.push(snapshot);
+    },
+  });
+
+  worker.emitMessage({
+    type: 'robot-data',
+    resolution: {
+      ...workerResolution,
+      usdSceneSnapshot: sceneSnapshot,
+    },
+    preparedCache: serializedPreparedCache.payload,
+  } as UsdOffscreenViewerWorkerResponse);
+
+  const result = await Promise.race([
+    hydration.promise,
+    new Promise<null>((resolve) => setTimeout(() => resolve(null), 0)),
+  ]);
+
+  assert.ok(result, 'expected hydration to resolve without a scene-snapshot message');
+  assert.equal(fallbackPrepareCallCount, 0);
+  assert.equal(result.preparedCache.stageSourcePath, preparedCache.stageSourcePath);
+  assert.equal(result.robotData.links.base_link.visual.meshPath, 'base_link_visual_0.obj');
+  assert.equal(result.sceneSnapshot, sceneSnapshot);
+  assert.equal(client.shutdownCalls, 0);
+
+  worker.emitMessage({
+    type: 'scene-snapshot',
+    stageSourcePath: '/robots/demo/demo.usda',
+    snapshot: sceneSnapshot,
+  });
+
+  assert.deepEqual(deferredSnapshots, [sceneSnapshot]);
+  assert.equal(client.shutdownCalls, 1);
+});
+
 test('startUsdRobotStateHydration abort removes listeners and ignores later worker messages', async () => {
   const worker = new FakeHydrationWorker();
   const client = createFakeHydrationClient(worker);
@@ -326,4 +380,37 @@ test('startUsdRobotStateHydration abort removes listeners and ignores later work
 
   assert.equal(prepareCallCount, 0);
   assert.equal(resolved, false);
+});
+
+test('startUsdRobotStateHydration cleanup shuts down a resolved hydration that is waiting for deferred scene snapshot', async () => {
+  const worker = new FakeHydrationWorker();
+  const client = createFakeHydrationClient(worker);
+  const serializedPreparedCache = await serializePreparedUsdExportCacheForWorker(preparedCache);
+
+  const hydration = startUsdRobotStateHydration({
+    sourceFile,
+    availableFiles,
+    assets: {},
+    createCanvas: fakeCanvas,
+    workerClient: client,
+    prepareExportCache: async () => preparedCache,
+    onDeferredSceneSnapshot: () => {},
+  });
+
+  worker.emitMessage({
+    type: 'robot-data',
+    resolution: {
+      ...workerResolution,
+      usdSceneSnapshot: sceneSnapshot,
+    },
+    preparedCache: serializedPreparedCache.payload,
+  } as UsdOffscreenViewerWorkerResponse);
+
+  await hydration.promise;
+  assert.equal(client.shutdownCalls, 0);
+
+  hydration.cleanup();
+
+  assert.equal(client.shutdownCalls, 1);
+  assert.equal(worker.listenerCount('message'), 0);
 });

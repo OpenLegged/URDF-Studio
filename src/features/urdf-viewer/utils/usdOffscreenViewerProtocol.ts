@@ -8,6 +8,7 @@ import type {
 import type { ViewerRobotDataResolution } from './viewerRobotData';
 import type { UsdStageOpenPreparationWorkerContextSnapshot } from './usdStageOpenPreparationWorkerPayload';
 import type { UsdOffscreenCameraState } from './usdOffscreenCameraState';
+import type { PreparedUsdExportCacheWorkerPayload } from './usdPreparedExportCacheWorkerTransfer';
 
 type OffscreenViewerSourceFile = Pick<RobotFile, 'name' | 'content' | 'blobUrl'>;
 export type OffscreenViewerInteractionSelection = Pick<
@@ -178,6 +179,7 @@ export interface UsdOffscreenViewerDocumentLoadResponse {
 export interface UsdOffscreenViewerRobotDataResponse {
   type: 'robot-data';
   resolution: ViewerRobotDataResolution;
+  preparedCache?: PreparedUsdExportCacheWorkerPayload | null;
 }
 
 export interface UsdOffscreenViewerSceneSnapshotResponse {

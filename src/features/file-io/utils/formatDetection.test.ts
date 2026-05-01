@@ -22,6 +22,18 @@ test('detectFormat classifies sdf documents by extension and content', () => {
   assert.equal(isRobotDefinitionFile('model.sdf'), true);
 });
 
+test('detectFormat treats the full USD file family as usd robot definitions', () => {
+  assert.equal(detectFormat('', 'robot/scene.usd'), 'usd');
+  assert.equal(detectFormat('', 'robot/scene.usda'), 'usd');
+  assert.equal(detectFormat('', 'robot/scene.usdc'), 'usd');
+  assert.equal(detectFormat('', 'robot/scene.usdz'), 'usd');
+
+  assert.equal(isRobotDefinitionFile('robot/scene.usd'), true);
+  assert.equal(isRobotDefinitionFile('robot/scene.usda'), true);
+  assert.equal(isRobotDefinitionFile('robot/scene.usdc'), true);
+  assert.equal(isRobotDefinitionFile('robot/scene.usdz'), true);
+});
+
 test('detectFormat classifies MuJoCo include fragments as mjcf', () => {
   const content = `<?xml version="1.0"?>
 <mujocoinclude>

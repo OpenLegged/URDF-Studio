@@ -6,9 +6,10 @@
 [![Three.js](https://img.shields.io/badge/Three.js-0.181-black?logo=three.js)](https://threejs.org/)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.8-blue?logo=typescript)](https://www.typescriptlang.org/)
 [![Vite](https://img.shields.io/badge/Vite-6.2-purple?logo=vite)](https://vitejs.dev/)
+[![Zustand](https://img.shields.io/badge/Zustand-5-green?logo=react)](https://zustand-docs.netlify.app/)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](LICENSE)
 
-Professional robot design, assembly, visualization, and export workstation for `URDF`, `MJCF`, `USD`, `Xacro`, `SDF`, and `.usp` project workflows.
+Professional URDF design and visualization workstation. Supports rapid editing, collision optimization, modular assembly, parameter configuration, AI generation, and multi-format export.
 
 **Live demo:** [urdf.d-robotics.cc](https://urdf.d-robotics.cc/)
 
@@ -24,12 +25,11 @@ URDF Studio is a browser-based robot authoring environment built for editing rob
 
 The current app combines:
 
-- `Skeleton`, `Detail`, and `Hardware` editing modes
-- multi-robot assembly with bridge joints and workspace file management
-- worker-assisted import/export pipelines
-- USD runtime hydration, prepared export caches, and roundtrip archive flows
-- AI-assisted generation, inspection, and report export
-- a reusable `@urdf-studio/react-robot-canvas` package workspace
+- **Single-mode Editor**: topology editing, geometry/collision/measurements, hardware parameter configuration
+- **Multi-robot Assembly**: bridge joint creation, workspace file management, component-based robot assembly
+- **AI Assistant**: AI-powered robot generation, inspection, and review with PDF/CSV report export
+- **Worker-assisted Pipelines**: import/export with USD runtime hydration, prepared export caches, roundtrip archive flows
+- **Rich Visualization**: React Three Fiber workspace canvas, runtime URDF/MJCF/USD viewer with transform controls and helper overlays
 
 Package identity:
 
@@ -46,80 +46,93 @@ Versioning policy:
 
 ### Editing
 
-- Build and edit kinematic trees with link/joint topology tools
-- Author visual meshes, collision meshes, measurements, and helper overlays
-- Configure motors and hardware metadata
-- Switch between authoring modes through a unified viewer shell
+- **Topology Editing**: Build and edit kinematic trees with link/joint topology tools
+- **Geometry & Collision**: Author visual meshes, collision meshes, measurements, and collision optimization strategies
+- **Hardware Configuration**: Configure motors, transmission ratios, damping, friction, and hardware metadata
+- **Editor Modes**: Single unified Editor mode with topology, geometry/collision/measurements, and hardware configuration tabs
 
 ### Workspace and Assembly
 
-- Import single files, folders, ZIP bundles, and `.usp` project archives
-- Maintain workspace file trees, source text, and selection sync
-- Assemble multiple robots into one workspace with bridge joints
-- Preserve history, pending edits, and prepared robot resolution caches
+- **File Management**: Import single files, folders, ZIP bundles, and `.usp` project archives
+- **Workspace Sync**: Maintain workspace file trees, source text, and selection sync across viewers
+- **Multi-robot Assembly**: Assemble multiple robots into one workspace with bridge joints and component management
+- **History & Caching**: Preserve history, pending edits, and prepared robot resolution caches
 
 ### Visualization
 
-- React Three Fiber workspace canvas shared by the visualizer and URDF/USD viewer
-- Runtime URDF/MJCF viewer plus vendored USD viewer runtime
-- USD stage preparation, hydration, metadata extraction, and offscreen worker rendering paths
-- Snapshot capture, helper overlays, transform controls, and collision editing workflows
+- **React Three Fiber**: Shared workspace canvas for Editor and URDF/USD viewer
+- **Runtime Viewers**: Native URDF/MJCF viewer with vendored USD runtime support
+- **USD Integration**: Stage preparation, hydration, metadata extraction, and offscreen worker rendering
+- **Interaction**: Snapshot capture, helper overlays, transform controls, and collision editing workflows
 
 ### Export and Interop
 
-- Export `URDF`, `MJCF`, `USD`, `SDF`, `Xacro`, CSV/BOM, PDF, ZIP, and `.usp`
-- Workerized project archive, USD export, and USD binary archive conversion
-- Roundtrip-oriented USD archive generation and prepared export caches
-- Reusable `react-robot-canvas` package for external consumers
+- **Multi-format Export**: `URDF`, `MJCF`, `USD`, `SDF`, `Xacro`, CSV/BOM, PDF, ZIP, and `.usp` project archives
+- **Workerized Pipelines**: Project archive, USD export, and USD binary archive conversion
+- **Roundtrip Support**: USD archive generation with prepared export caches for roundtrip workflows
+- **Package Workspace**: Reusable `@urdf-studio/react-robot-canvas` package for external consumers
+
+### AI Assistant
+
+- **Generation**: AI-powered robot generation from natural language descriptions
+- **Inspection**: Automated robot inspection with configurable criteria and issue detection
+- **Report Export**: Generate PDF and CSV reports with inspection results
+- **Review**: AI-assisted code review and optimization suggestions
 
 ## Tech Stack
 
 - **Frontend**: React 19.2, TypeScript 5.8, Vite 6.2
-- **3D**: Three.js 0.181, React Three Fiber 9, Drei 10
+- **3D**: Three.js 0.181, React Three Fiber 9, @react-three/drei 10
 - **State**: Zustand 5
-- **Styling**: Tailwind CSS 4
-- **Parsing / Export**: custom URDF, MJCF, USD, Xacro, SDF, and mesh pipelines under `src/core`
-- **Packaging**: JSZip, jsPDF
+- **Styling**: Tailwind CSS 4.1
+- **Parsing / Export**: Custom URDF, MJCF, USD, Xacro, SDF, and mesh pipelines under `src/core`
+- **Packaging**: JSZip, jsPDF, libarchive.js
+- **AI**: OpenAI SDK, custom inspection criteria and prompt template generation
 - **Package workspace**: `packages/react-robot-canvas`
 
 ## Repository Layout
 
 ```text
 src/
-  app/                  App shell, orchestration, overlays, shared viewer handoff
-  features/             Domain features (visualizer, urdf-viewer, file-io, code-editor, ...)
-  store/                Zustand stores
-  shared/               Shared UI, 3D infrastructure, i18n, debug helpers, data
-  core/                 Parsers, generators, loaders, robot logic
-  lib/                  Reusable in-repo library surface
+  app/                  App orchestration layer: shell, viewer composition, import/export, workspace sync
+  features/             Domain features
+    ├── ai-assistant/        AI generation and inspection
+    ├── assembly/            Bridge joint creation and multi-robot assembly
+    ├── code-editor/         Source code editor with Monaco
+    ├── editor/              Unified Editor public entry
+    ├── file-io/             File I/O capabilities: format detection, project archive, exports
+    ├── hardware-config/     Motor and hardware parameter configuration
+    ├── property-editor/     Property editing, geometry editing, collision optimization
+    ├── robot-tree/           File tree and structure tree
+    └── urdf-viewer/          Editor implementation: topology/geometry/collision + USD runtime
+  store/                Zustand stores (robot, ui, selection, assets, assembly, etc.)
+  shared/               Shared components, 3D infrastructure, hooks, i18n, debug helpers
+  core/                 Pure logic: parsers, robot core, mesh loaders, diagnostics
+  lib/                  Reusable RobotCanvas wrapper for external consumption
   styles/               Global styles and semantic tokens
-  types/                Cross-module types
+  types/                Cross-module type definitions
 packages/react-robot-canvas/
-  Reusable package build and publish workspace
+  Publishable package workspace
 docs/
-  Architecture notes, runtime audits, contributor prompt context
+  Architecture notes, viewer docs, file-io docs, style guide, AI features
 scripts/
-  Regression, schema generation, comparison, and local tooling scripts
-log/
-  Local runtime logs and retained troubleshooting output
-.tmp/
-  Temporary build/runtime scratch artifacts used by some scripts
-.worktrees/
-  Local git worktree area when using isolated workspaces
+  Regression, schema generation, comparison, validation scripts
 public/
-  Static assets, Monaco, USD bindings, sample robots
+  Static assets, Monaco editor, USD WASM bindings, sample robots
+test/
+  Large fixture corpora, browser regression samples, external mirrored projects
 tmp/
   Screenshots, traces, temporary validation artifacts
 output/
   User-facing exports and retained verification artifacts
-test/
-  Fixture corpora, browser regression samples, and external mirrored projects
 ```
 
 Architecture notes:
 
-- `src/app` is not a thin shell. It is the orchestration layer split into `components/`, `hooks/`, `utils/`, and `workers/`, and owns document loading, viewer handoff, import/export coordination, pending history, and binary/archive worker bridges.
-- `src/features/urdf-viewer` is currently the heaviest feature area. It combines React UI, a vendored USD runtime, adapter/util layers, prepared-open/export helpers, and worker-backed offscreen rendering.
+- **Dependency Direction**: `app -> features -> store -> shared -> core -> types` (no reverse dependencies)
+- **Core Purity**: `src/core` maintains pure function logic without React/UI/Feature dependencies
+- **Editor Implementation**: `src/features/urdf-viewer` is the heaviest feature area, combining React UI, vendored USD runtime, adapter/util layers, and worker-backed offscreen rendering
+- **Orchestration Layer**: `src/app` handles document loading, viewer handoff, import/export coordination, pending history, and binary/archive worker bridges
 
 ## Getting Started
 
@@ -142,18 +155,27 @@ npm install
 The app can run without AI credentials. If you want AI generation / inspection enabled, set the environment variables that `vite.config.ts` injects into the frontend runtime:
 
 ```bash
+# OpenAI configuration for AI assistant
 OPENAI_API_KEY=your_api_key
 OPENAI_BASE_URL=https://api.openai.com/v1
 OPENAI_MODEL=gpt-4.1-mini
 
-# Optional alternative source used by the current Vite define shim
-GEMINI_API_KEY=
-
-# Optional Monaco override
+# Optional: Monaco editor CDN path override
 VITE_MONACO_VS_PATH=
 ```
 
 You can place them in `.env.local`.
+
+### AI Features
+
+The AI assistant provides:
+
+- **Robot Generation**: Generate robot structures from natural language descriptions
+- **Inspection**: Automated robot inspection with configurable criteria
+- **Review**: AI-assisted code review and optimization suggestions
+- **Report Export**: Generate PDF and CSV reports with inspection results
+
+Without API keys, the AI features will be disabled but the rest of the application remains fully functional.
 
 ### Run the App
 
@@ -187,36 +209,51 @@ If those headers are missing, the app shell may load but USD import / stage open
 ## Useful Commands
 
 ```bash
-# App
-npm run dev
-npm run build
-npm run preview
+# Development
+npm run dev                    # Start development server
+npm run dev:with-generate     # Start dev server with AI prompt generation
+npm run build                  # Build the app
+npm run preview                # Preview production build
+
+# Quality & Verification
+npm run lint                   # Run ESLint and stylelint
+npm run typecheck              # Full TypeScript check
+npm run typecheck:quality      # TypeScript check excluding test/spec files
+npm run check                  # Run verify:fast (format, lint, typecheck, test, build)
+npm run verify:fast            # Fast verification (no fixture tests)
+npm run verify:full            # Full verification including fixture tests
+npm test                       # Run unit tests
+
+# Formatting
+npm run format                 # Format code with Prettier
+npm run format:check           # Check formatting
 
 # Versioning
-npm run version:show
-npm run version:bump -- --app minor
-npm run version:bump -- --package patch
+npm run version:show           # Show current versions
+npm run version:bump           # Bump versions (use --app or --package flag)
 
-# Reusable package workspace
-npm run build:package:react-robot-canvas
-npm run pack:package:react-robot-canvas
+# AI Features
+npm run generate               # Generate AI prompt templates and inspection criteria
+npm run generate:check         # Check if generation is needed
+npm run build:with-generate    # Build with generation step
 
-# Schema / comparison helpers
-npm run code-editor:generate-urdf-schema
-npm run mjcf:compare
-npm run sdf:compare
+# Package Workspace
+npm run build:package:react-robot-canvas   # Build the react-robot-canvas package
+npm run pack:package:react-robot-canvas     # Pack the package for preview
 
-# Regression helpers
-npm run regression:shadow-hand-hover
-npx tsx scripts/regression/validate_unitree_model_roundtrip_archive.ts
+# Schema & Comparison
+npm run code-editor:generate-urdf-schema    # Generate URDF schema for code editor
+npm run mjcf:compare                         # Compare MJCF parsing against reference
+npm run sdf:compare                          # Compare SDF parsing against reference
 
-# Codex resilience / key-router helpers
-npm run codex:retry
-npm run codex:gui
-npm run codex:key-router:deploy:dry
+# Regression & Fixture Tests
+npm run regression:shadow-hand-hover         # Run shadow hand hover regression
+npm run test:fixtures:imports                # Validate import fixture matrix
+npm run test:fixtures:unitree-ros-urdfs      # Validate Unitree ROS URDFs
+npm run test:fixtures:unitree-usd            # Validate Unitree USD exports
+npm run test:fixtures:unitree-ros-usda       # Validate Unitree USDA exports
+npm run test:fixtures:isaacsim-truth         # Validate against IsaacSim truth
 ```
-
-Additional script families under `scripts/` include URDF inspection helpers, robot preview generation, MuJoCo/MJCF comparison utilities, regression runners, and local Codex support tooling.
 
 ## Testing and Verification
 
@@ -247,26 +284,41 @@ Validation is typically done through:
 
 - [Changelog](./CHANGELOG.md)
 - [Release Process](./RELEASING.md)
-- [Architecture Boundaries](./docs/architecture-boundaries.md)
+- [Architecture Guide](./docs/architecture.md)
+- [Viewer & Editor Guide](./docs/viewer.md)
+- [File I/O & Export Guide](./docs/file-io.md)
+- [Style Guide](./docs/style-guide.md)
+- [AI Features Guide](./docs/ai-features.md)
+- [Update Rules & Verification](./docs/update-rules.md)
 - [Robot Canvas Library](./docs/robot-canvas-lib.md)
 - [Runtime Fallback Audit](./docs/runtime-fallback-audit.md)
-- [Contributor Prompt Context](./docs/prompts/CLAUDE.md)
+- [Documentation Catalog](./docs/CATALOG.md)
 - [Agent Instructions](./AGENTS.md)
 
 ## Package Workspace
 
-The repository also contains the publishable package workspace:
+The repository contains the publishable package workspace:
 
-- [`packages/react-robot-canvas`](./packages/react-robot-canvas)
+- **`@urdf-studio/react-robot-canvas`** (`packages/react-robot-canvas`)
 
-This package currently provides a reusable `RobotCanvas` surface for external React apps that need URDF/MJCF viewing without the full URDF Studio shell.
+This package provides a reusable `RobotCanvas` component for external React apps that need URDF/MJCF viewing capabilities without the full URDF Studio shell. It includes stable, general-purpose 3D robot visualization features extracted from the main application.
+
+Build and package commands:
+
+```bash
+npm run build:package:react-robot-canvas   # Build the package
+npm run pack:package:react-robot-canvas     # Pack for preview
+```
 
 ## Contribution Notes
 
-- Keep dependency direction aligned with `app -> features -> store -> shared -> core -> types`
-- Prefer existing hooks / utilities over duplicating viewer or export logic
-- Follow the runtime and style constraints documented in [AGENTS.md](./AGENTS.md)
-- Put temporary screenshots, traces, and browser artifacts under `tmp/`
+- **Dependency Direction**: Keep aligned with `app -> features -> store -> shared -> core -> types`
+- **Code Reuse**: Prefer existing hooks / utilities over duplicating viewer or export logic
+- **Core Purity**: Maintain `core/` as pure function logic without React / UI / Feature dependencies
+- **Resource Management**: Add symmetric cleanup when introducing `ResizeObserver`, timers, worker listeners, or THREE resources
+- **Documentation**: Read [AGENTS.md](./AGENTS.md) for detailed architecture, execution guidelines, and style constraints
+- **Verification**: Run `npm run verify:fast` before sharing changes; run `npm run verify:full` for comprehensive validation
+- **Artifacts**: Put temporary screenshots, traces, and browser artifacts under `tmp/`
 
 ## License
 

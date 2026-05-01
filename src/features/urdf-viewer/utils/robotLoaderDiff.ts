@@ -123,6 +123,7 @@ export function sameGeometry(a: LinkGeometry | undefined, b: LinkGeometry | unde
     sameOrigin(a.origin, b.origin) &&
     (a.meshPath || '') === (b.meshPath || '') &&
     (a.color || '') === (b.color || '') &&
+    (a.doubleSided === true) === (b.doubleSided === true) &&
     sameAuthoredMaterials(a.authoredMaterials, b.authoredMaterials) &&
     sameMeshMaterialGroups(a.meshMaterialGroups, b.meshMaterialGroups) &&
     sameVisibleFlag(a.visible, b.visible)

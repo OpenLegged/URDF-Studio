@@ -249,6 +249,71 @@ def Scope "visuals"
   assert.doesNotMatch(normalizedSource, /token purpose = "guide"/);
 });
 
+test('prepareUsdStageOpenDataCore normalizes textual .usd sidecars with USDA content', async () => {
+  const baseLayerSource = `#usda 1.0
+def Xform "demo"
+{
+    def Xform "base_link"
+    {
+        def Xform "visuals" (
+            instanceable = true
+            prepend references = </visuals/base_link>
+        )
+        {
+        }
+    }
+}
+
+def Scope "visuals"
+{
+    token visibility = "invisible"
+
+    def Xform "base_link"
+    {
+        def Xform "mesh_0"
+        {
+            uniform token purpose = "guide"
+        }
+    }
+}
+`;
+
+  const result = await prepareUsdStageOpenDataCore(
+    {
+      name: 'robots/demo/usd/demo.usd',
+      content: '#usda 1.0\n(\n  subLayers = [@./configuration/demo_base.usd@]\n)\n',
+      blobUrl: undefined,
+    },
+    [
+      {
+        name: 'robots/demo/usd/demo.usd',
+        content: '#usda 1.0\n(\n  subLayers = [@./configuration/demo_base.usd@]\n)\n',
+        blobUrl: undefined,
+        format: 'usd',
+      },
+      {
+        name: 'robots/demo/usd/configuration/demo_base.usd',
+        content: baseLayerSource,
+        blobUrl: undefined,
+        format: 'usd',
+      },
+    ],
+    {},
+  );
+
+  const baseLayerEntry = result.preloadFiles.find(
+    (entry) => entry.path === '/robots/demo/usd/configuration/demo_base.usd',
+  );
+
+  assert.ok(baseLayerEntry?.bytes instanceof Uint8Array);
+
+  const normalizedSource = new TextDecoder().decode(baseLayerEntry!.bytes!);
+  assert.match(normalizedSource, /token visibility = "inherited"/);
+  assert.match(normalizedSource, /uniform token purpose = "render"/);
+  assert.doesNotMatch(normalizedSource, /token visibility = "invisible"/);
+  assert.doesNotMatch(normalizedSource, /token purpose = "guide"/);
+});
+
 test('prepareUsdStageOpenDataCore skips full USDA text decoding when normalization triggers are absent', async () => {
   const originalBlobText = Blob.prototype.text;
   let textDecodeCount = 0;

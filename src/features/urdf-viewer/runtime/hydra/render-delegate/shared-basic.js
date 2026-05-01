@@ -801,6 +801,7 @@ export function parseUrdfMaterialMetadataFromLayerText(layerText) {
 }
 export function parseUsdMaterialBindingsFromLayerText(layerText) {
     const materialBindingsByPrimPath = new Map();
+    const referenceTargetsByPrimPath = new Map();
     const mergeBindingEntry = (primPath, rawEntry) => {
         const normalizedPrimPath = normalizeUsdPathToken(primPath);
         if (!normalizedPrimPath || !rawEntry || typeof rawEntry !== 'object') {
@@ -863,6 +864,13 @@ export function parseUsdMaterialBindingsFromLayerText(layerText) {
         const metadataText = `${headerText}\n${immediateProperties}`;
         const normalizedPrimType = String(primType || '').trim().toLowerCase();
         const materialId = extractUsdMaterialBindingTarget(metadataText);
+        const referenceTargets = extractReferencePrimTargets(metadataText)
+            .map((target) => normalizeUsdPathToken(target))
+            .filter(Boolean);
+        const normalizedPath = normalizeUsdPathToken(path);
+        if (normalizedPath && referenceTargets.length > 0) {
+            referenceTargetsByPrimPath.set(normalizedPath, referenceTargets);
+        }
         if (normalizedPrimType === 'geomsubset') {
             if (!materialId || !Array.isArray(pathSegments) || pathSegments.length < 2) {
                 return;
@@ -893,6 +901,12 @@ export function parseUsdMaterialBindingsFromLayerText(layerText) {
         mergeBindingEntry(path, {
             materialId,
             geomSubsetSections: [],
+        });
+    });
+    Array.from(materialBindingsByPrimPath.entries()).forEach(([primPath, entry]) => {
+        const referenceTargets = referenceTargetsByPrimPath.get(primPath) || [];
+        referenceTargets.forEach((referenceTarget) => {
+            mergeBindingEntry(referenceTarget, entry);
         });
     });
     return materialBindingsByPrimPath;

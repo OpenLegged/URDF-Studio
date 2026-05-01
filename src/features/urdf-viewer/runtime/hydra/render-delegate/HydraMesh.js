@@ -1,5 +1,5 @@
 // @ts-nocheck
-import { BackSide, BoxGeometry, BufferGeometry, CapsuleGeometry, Color, CylinderGeometry, DoubleSide, Float32BufferAttribute, FrontSide, Matrix4, Mesh, MeshPhysicalMaterial, Quaternion, SkinnedMesh, SphereGeometry, SRGBColorSpace, Uint32BufferAttribute, Vector3, } from 'three';
+import { BackSide, BoxGeometry, BufferGeometry, CapsuleGeometry, Color, CylinderGeometry, DoubleSide, Float32BufferAttribute, FrontSide, Matrix4, Mesh, MeshPhysicalMaterial, Quaternion, SkinnedMesh, SphereGeometry, Uint32BufferAttribute, Vector3, } from 'three';
 import * as Shared from './shared.js';
 import { mitigateCoplanarMaterialZFighting } from '../../../../../core/loaders/coplanarMaterialOffset.shared.js';
 import { stackCoincidentVisualRoots } from '../../../../../core/loaders/visualMeshStacking.ts';
@@ -88,7 +88,9 @@ class HydraMesh {
         this._lastGeomSubsetSignature = '';
         this._pendingGeomSubsetSections = null;
         this._doubleSided = false;
+        this._hasExplicitDoubleSided = false;
         this._cullStyle = null;
+        this._hasExplicitCullStyle = false;
         this._resolvedFaceTopologyCache = new Map();
         this._decomposeScratchPositionA = new Vector3();
         this._decomposeScratchQuaternionA = new Quaternion();
@@ -97,7 +99,7 @@ class HydraMesh {
         this._decomposeScratchQuaternionB = new Quaternion();
         this._decomposeScratchScaleB = new Vector3();
         let material = createUnifiedHydraStandardMaterial({
-            side: FrontSide,
+            side: DoubleSide,
             // envMap: hydraInterface.config.envMap,
         });
         this._materials.push(material);
@@ -123,7 +125,10 @@ class HydraMesh {
     }
     _resolveMaterialSide() {
         const normalizedCullStyle = String(this._cullStyle || '').trim().toLowerCase().replace(/[\s_-]+/g, '');
-        if (!normalizedCullStyle || normalizedCullStyle === 'derived' || normalizedCullStyle === 'default') {
+        if (!this._hasExplicitCullStyle || !normalizedCullStyle || normalizedCullStyle === 'derived' || normalizedCullStyle === 'default') {
+            if (!this._hasExplicitDoubleSided) {
+                return DoubleSide;
+            }
             return this._doubleSided ? DoubleSide : FrontSide;
         }
         if (normalizedCullStyle.includes('nothing') || normalizedCullStyle === 'none' || normalizedCullStyle === 'dontcare') {
@@ -138,6 +143,9 @@ class HydraMesh {
         if (normalizedCullStyle.includes('back')) {
             return FrontSide;
         }
+        if (!this._hasExplicitDoubleSided) {
+            return DoubleSide;
+        }
         return this._doubleSided ? DoubleSide : FrontSide;
     }
     _applySurfaceState() {
@@ -145,15 +153,18 @@ class HydraMesh {
         for (const material of this._getAssignedMaterials()) {
             if (material && material.side !== side) {
                 material.side = side;
+                material.needsUpdate = true;
             }
         }
     }
     setDoubleSided(value) {
         this._doubleSided = !!value;
+        this._hasExplicitDoubleSided = true;
         this._applySurfaceState();
     }
     setCullStyle(value) {
         this._cullStyle = value ?? null;
+        this._hasExplicitCullStyle = this._cullStyle !== null && String(this._cullStyle).trim() !== '';
         this._applySurfaceState();
     }
     _getPrimitiveSegmentProfile() {
@@ -1313,23 +1324,9 @@ class HydraMesh {
         for (const material of materials) {
             if (!material || !material.color || material.map)
                 continue;
-            setHydraColorFromTuple(material.color, override, SRGBColorSpace);
+            setHydraColorFromTuple(material.color, override);
             material.needsUpdate = true;
         }
-    }
-    _linearizeDisplayColorBuffer(buffer) {
-        if (!(buffer instanceof Float32Array) || buffer.length < 3) {
-            return buffer;
-        }
-        const scratchColor = new Color();
-        const safeLength = buffer.length - (buffer.length % 3);
-        for (let colorIndex = 0; colorIndex < safeLength; colorIndex += 3) {
-            scratchColor.setRGB(buffer[colorIndex], buffer[colorIndex + 1], buffer[colorIndex + 2], SRGBColorSpace);
-            buffer[colorIndex] = scratchColor.r;
-            buffer[colorIndex + 1] = scratchColor.g;
-            buffer[colorIndex + 2] = scratchColor.b;
-        }
-        return buffer;
     }
     _nowMs() {
         return (typeof performance !== "undefined" && typeof performance.now === "function")
@@ -2098,6 +2095,7 @@ class HydraMesh {
             || (resolvedMaterialId !== materialId ? this._interface.getOrCreateMaterialById(materialId, this._id) : null);
         if (resolvedMaterial?._material) {
             this._mesh.material = resolvedMaterial._material;
+            this._applySurfaceState();
             this._pendingMaterialId = undefined;
         }
         else {
@@ -2144,7 +2142,7 @@ class HydraMesh {
         //console.log("setting subset material: ", this._id, sections)
         const previousMaterial = Array.isArray(this._mesh.material) ? this._mesh.material.find(Boolean) : this._mesh.material;
         const fallbackMaterial = previousMaterial || this._materials.find(Boolean) || getDefaultMaterial() || createUnifiedHydraStandardMaterial({
-            side: FrontSide,
+            side: DoubleSide,
         });
         const hasExplicitBaseMaterial = Boolean(previousMaterial
             && previousMaterial !== getDefaultMaterial()
@@ -2295,7 +2293,7 @@ class HydraMesh {
         this._colors = null;
         if (interpolation === 'constant') {
             this._mesh.material.vertexColors = false;
-            this._mesh.material.color = setHydraColorFromTuple(new Color(), data, SRGBColorSpace);
+            this._mesh.material.color = setHydraColorFromTuple(new Color(), data);
         }
         else if (interpolation === 'vertex') {
             // Per-vertex buffer attribute
@@ -2308,7 +2306,6 @@ class HydraMesh {
             if (!stableColors)
                 return;
             this._colors = stableColors === data ? stableColors.slice(0) : stableColors;
-            this._linearizeDisplayColorBuffer(this._colors);
             if (!this._colors)
                 return;
             this.updateOrder(this._colors, 'color');
@@ -2739,6 +2736,7 @@ class HydraMesh {
         if (this._pendingMaterialId && this._interface.materials[this._pendingMaterialId]?._material) {
             const materialStart = this._nowMs();
             this._mesh.material = this._interface.materials[this._pendingMaterialId]._material;
+            this._applySurfaceState();
             if (this.isVisualProtoMesh()) {
                 this.restackSiblingVisualProtoMeshes();
             }

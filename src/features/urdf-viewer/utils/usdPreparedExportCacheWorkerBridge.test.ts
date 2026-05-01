@@ -165,7 +165,7 @@ test('USD prepared export cache worker client rejects immediately when Worker is
     const client = createUsdPreparedExportCacheWorkerClient();
     await assert.rejects(
       client.prepare(demoSnapshot, demoResolution),
-      /Web Worker is not available in this environment/i,
+      /USD prepared export cache worker is not available in this environment/i,
     );
   } finally {
     Object.defineProperty(globalThis, 'Worker', {

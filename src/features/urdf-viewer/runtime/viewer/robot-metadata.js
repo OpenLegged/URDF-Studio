@@ -152,6 +152,7 @@ export function normalizeRenderRobotMetadataSnapshot(raw) {
         const parentLinkPath = normalizePath(entry?.parentLinkPath);
         const lowerLimitDeg = toFiniteNumber(entry?.lowerLimitDeg);
         const upperLimitDeg = toFiniteNumber(entry?.upperLimitDeg);
+        const angleDeg = toFiniteNumber(entry?.angleDeg);
         const driveDamping = toFiniteNumber(entry?.driveDamping);
         const driveMaxForce = toFiniteNumber(entry?.driveMaxForce);
         const localPivotSource = entry?.localPivotInLink;
@@ -168,6 +169,7 @@ export function normalizeRenderRobotMetadataSnapshot(raw) {
             axisLocal: toVector3Tuple(entry?.axisLocal, [1, 0, 0]),
             lowerLimitDeg: lowerLimitDeg ?? -180,
             upperLimitDeg: upperLimitDeg ?? 180,
+            angleDeg: angleDeg ?? null,
             driveDamping: driveDamping ?? null,
             driveMaxForce: driveMaxForce ?? null,
             localPivotInLink: Array.isArray(localPivotSource)

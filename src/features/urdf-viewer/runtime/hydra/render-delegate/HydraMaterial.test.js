@@ -91,7 +91,7 @@ test('HydraMaterial.applyNetworkUpdate reuses owned materials and disposes super
     assert.equal(secondCloneDisposeCount, 0);
 });
 
-test('HydraMaterial applies authored preview-surface colors using SRGB semantics', async () => {
+test('HydraMaterial applies authored preview-surface scalar colors as raw linear values', async () => {
     const hydraInterface = {
         registry: {
             async getTexture() {
@@ -119,8 +119,8 @@ test('HydraMaterial applies authored preview-surface colors using SRGB semantics
         relationships: [],
     }]);
 
-    const expectedBaseColor = new Color().setRGB(1, 0.5, 0.2, SRGBColorSpace);
-    const expectedEmissiveColor = new Color().setRGB(0.25, 0.5, 0.75, SRGBColorSpace);
+    const expectedBaseColor = new Color().setRGB(1, 0.5, 0.2);
+    const expectedEmissiveColor = new Color().setRGB(0.25, 0.5, 0.75);
 
     assert.equal(hydraMaterial._material.isMeshStandardMaterial, true);
     assert.notEqual(hydraMaterial._material.isMeshPhysicalMaterial, true);

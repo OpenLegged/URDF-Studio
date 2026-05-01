@@ -23,7 +23,12 @@ export function detectFormat(content: string, filename: string): FileFormat | nu
   if (lowerName.endsWith('.xacro') || lowerName.endsWith('.urdf.xacro')) return 'xacro';
   if (lowerName.endsWith('.urdf')) return 'urdf';
   if (lowerName.endsWith('.sdf')) return 'sdf';
-  if (lowerName.endsWith('.usda') || lowerName.endsWith('.usdc') || lowerName.endsWith('.usd'))
+  if (
+    lowerName.endsWith('.usd') ||
+    lowerName.endsWith('.usda') ||
+    lowerName.endsWith('.usdc') ||
+    lowerName.endsWith('.usdz')
+  )
     return 'usd';
 
   // For XML files, check content
@@ -56,8 +61,10 @@ export function isRobotDefinitionFile(filename: string): boolean {
     lowerName.endsWith('.sdf') ||
     lowerName.endsWith('.xml') ||
     lowerName.endsWith('.mjcf') ||
-    lowerName.endsWith('.usda') ||
     lowerName.endsWith('.usd') ||
+    lowerName.endsWith('.usda') ||
+    lowerName.endsWith('.usdc') ||
+    lowerName.endsWith('.usdz') ||
     lowerName.endsWith('.xacro')
   );
 }
