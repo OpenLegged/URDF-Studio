@@ -8,7 +8,13 @@ export { default as App } from './App';
 
 // AppContent (for external composition / extension)
 export { AppContent } from './App';
-export type { AppExtensionSlots, AppExtensionConfig, AppExposedActions } from './appExtensions';
+export type {
+  AppExtensionSlots,
+  AppExtensionConfig,
+  AppExposedActions,
+  AppImportResult,
+  AppToolboxItem,
+} from './appExtensions';
 
 // Layout components
 export { AppLayout } from './AppLayout';

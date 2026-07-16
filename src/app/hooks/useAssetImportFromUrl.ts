@@ -9,6 +9,7 @@ import {
   stripImportParamsFromUrl,
 } from '@/shared/utils/popupHandoffProtocol';
 import { getRuntimeLanguageTranslations } from '@/shared/i18n';
+import type { AppImportResult } from '../appExtensions';
 
 // ---------------------------------------------------------------------------
 //  Title blink utility — draws attention to an existing tab
@@ -103,7 +104,7 @@ interface ImportFromUrlState {
 }
 
 type UseAssetImportFromUrlOptions = {
-  handleImport: (files: readonly File[]) => Promise<{ status: 'completed' | 'skipped' | 'failed' }>;
+  handleImport: (files: readonly File[]) => Promise<AppImportResult>;
   onImportComplete?: (success: boolean) => void;
 };
 
@@ -161,6 +162,19 @@ export function assertRemoteImportBlobWithinLimits(blob: Blob, nextTotalBytes: n
         `Maximum: ${MAX_REMOTE_IMPORT_TOTAL_BYTES} bytes.`,
     );
   }
+}
+
+/** Converts the core import outcome into the success/failure contract used by remote handoffs. */
+export function assertCompletedRemoteImport(result: AppImportResult): void {
+  if (result.status === 'completed') {
+    return;
+  }
+
+  throw new Error(
+    result.status === 'failed'
+      ? 'The downloaded files could not be imported.'
+      : 'The downloaded file import was skipped.',
+  );
 }
 
 /**
@@ -336,7 +350,8 @@ export function useAssetImportFromUrl(options: UseAssetImportFromUrlOptions) {
         phase: 'importing',
         progress: { current: files.length, total: files.length },
       });
-      await handleImportRef.current(downloadedFiles);
+      const importResult = await handleImportRef.current(downloadedFiles);
+      assertCompletedRemoteImport(importResult);
 
       setState({ isImporting: false, error: null, phase: 'complete', progress: null });
 

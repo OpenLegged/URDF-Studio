@@ -4,6 +4,7 @@ import type { TranslationKeys } from '@/shared/i18n/types';
 import { useEffectiveTheme } from '@/shared/hooks/useEffectiveTheme';
 import { isIkDragToolEnabled } from '@/shared/utils/ikDragFeatureGate';
 import type { ToolboxItem } from '../components/header/types';
+import type { AppToolboxItem } from '../appExtensions';
 
 interface UseToolItemsParams {
   t: TranslationKeys;
@@ -11,6 +12,7 @@ interface UseToolItemsParams {
   openAIConversation: () => void;
   openIkTool: () => void;
   openCollisionOptimizer: () => void;
+  extensionItems?: readonly AppToolboxItem[];
 }
 
 interface UseToolItemsReturn {
@@ -23,7 +25,14 @@ const openExternal = (url: string) => {
 };
 
 export function useToolItems(params: UseToolItemsParams): UseToolItemsReturn {
-  const { t, openAIInspection, openAIConversation, openIkTool, openCollisionOptimizer } = params;
+  const {
+    t,
+    openAIInspection,
+    openAIConversation,
+    openIkTool,
+    openCollisionOptimizer,
+    extensionItems = [],
+  } = params;
   const effectiveTheme = useEffectiveTheme();
   const motrixLogoSrc =
     effectiveTheme === 'dark' ? '/logos/motrix-logo-white.svg' : '/logos/motrix-logo.svg';
@@ -126,13 +135,25 @@ export function useToolItems(params: UseToolItemsParams): UseToolItemsReturn {
         external: true,
         tone: 'logo',
       },
+      ...extensionItems,
     ],
-    [t, openAIInspection, openAIConversation, openIkTool, openCollisionOptimizer, motrixLogoSrc],
+    [
+      t,
+      openAIInspection,
+      openAIConversation,
+      openIkTool,
+      openCollisionOptimizer,
+      motrixLogoSrc,
+      extensionItems,
+    ],
   );
 
   const registry = useMemo(() => {
     const map = new Map<string, () => void>();
     for (const item of items) {
+      if (map.has(item.key)) {
+        throw new Error(`Duplicate toolbox item key: ${item.key}`);
+      }
       map.set(item.key, item.onClick);
     }
     return map;

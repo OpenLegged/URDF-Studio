@@ -7,6 +7,7 @@ import type {
   WorkspaceLoadIntent,
 } from './utils/commitResolvedRobotLoad';
 import type { RobotFile } from '@/types';
+import type { AppToolboxItem } from './appExtensions';
 
 export interface ProModeRoundtripSession {
   baselineSnapshot: string;
@@ -41,6 +42,7 @@ export interface AppLayoutProps {
   onOpenSettings: () => void;
   headerQuickAction?: HeaderAction;
   headerSecondaryAction?: HeaderAction;
+  extensionToolboxItems?: readonly AppToolboxItem[];
   viewConfig: AppLayoutViewConfig;
   setViewConfig: React.Dispatch<React.SetStateAction<AppLayoutViewConfig>>;
   onLoadRobot: (

@@ -1,6 +1,14 @@
 import type { ReactNode } from 'react';
-import type { HeaderAction } from './components/header/types';
+import type { HeaderAction, ToolboxItem } from './components/header/types';
 import type { RobotFile } from '@/types';
+
+/** Stable, brand-neutral toolbox contribution exposed to host applications. */
+export type AppToolboxItem = ToolboxItem;
+
+/** Awaitable result for every host-triggered file import. */
+export interface AppImportResult {
+  status: 'completed' | 'skipped' | 'failed';
+}
 
 /** Render slots: allows external repos to inject extra modals and overlays. */
 export interface AppExtensionSlots {
@@ -14,11 +22,13 @@ export interface AppExtensionSlots {
 export interface AppExtensionConfig {
   headerQuickAction?: HeaderAction;
   headerSecondaryAction?: HeaderAction;
+  /** Additional host-owned tools appended after the built-in toolbox entries. */
+  toolboxItems?: readonly AppToolboxItem[];
 }
 
 /** Core internal actions exposed to external consumers. */
 export interface AppExposedActions {
-  importFiles: (files: FileList | File[]) => void;
+  importFiles: (files: FileList | readonly File[]) => Promise<AppImportResult>;
   openLibraryExport: (file: RobotFile) => void;
   openAIInspection: () => void;
   openAIConversation: () => void;

@@ -86,6 +86,7 @@ export function AppLayout({
   onOpenSettings,
   headerQuickAction,
   headerSecondaryAction,
+  extensionToolboxItems,
   viewConfig,
   setViewConfig,
   onLoadRobot,
@@ -495,6 +496,7 @@ export function AppLayout({
     openAIConversation: onOpenAIConversation,
     openIkTool: handleOpenIkTool,
     openCollisionOptimizer: handleOpenCollisionOptimizer,
+    extensionItems: extensionToolboxItems,
   });
   useEffect(() => {
     onExposeLayoutActions?.({

@@ -880,6 +880,7 @@ export function AppContent({ extensions, onExposeActions }: AppContentProps = {}
         importPreparationOverlay={importPreparationOverlay}
         headerQuickAction={extensions?.config?.headerQuickAction}
         headerSecondaryAction={extensions?.config?.headerSecondaryAction}
+        extensionToolboxItems={extensions?.config?.toolboxItems}
         onExposeLayoutActions={handleExposeLayoutActions}
       />
 

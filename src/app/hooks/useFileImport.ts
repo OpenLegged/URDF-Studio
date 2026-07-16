@@ -51,6 +51,7 @@ import { normalizeLibraryPathKey } from '@/shared/utils/pathKeys';
 import { logRegressionInfo } from '@/shared/debug/consoleDiagnostics';
 import { clearPreparedUsdStageOpenCache } from '@/features/editor/usd_prewarm';
 import { isRobotDefinitionPath } from '@/core/parsers/format_detection';
+import type { AppImportResult } from '../appExtensions';
 
 export interface ImportPreparationOverlayState {
   label: string;
@@ -61,9 +62,7 @@ export interface ImportPreparationOverlayState {
 }
 
 export type ImportInputFiles = FileList | readonly File[] | null;
-export type HandleImportResult = {
-  status: 'completed' | 'skipped' | 'failed';
-};
+export type HandleImportResult = AppImportResult;
 
 class StaleImportRequestError extends Error {
   constructor() {
