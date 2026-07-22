@@ -77,6 +77,7 @@ test('Header does not reserve empty center dock width when no toolbar is mounted
   const markup = renderHeader();
 
   assert.match(markup, /id="viewer-toolbar-dock-slot"/);
+  assert.match(markup, /id="scene-toolbar-dock-slot"/);
   assert.match(markup, /min-w-0/);
   assert.doesNotMatch(markup, /min-w-\[240px\]/);
 });

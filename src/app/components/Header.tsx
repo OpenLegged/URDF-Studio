@@ -188,10 +188,16 @@ export function Header({
         /> : null}
       </div>
 
-      <div
-        id="viewer-toolbar-dock-slot"
-        className={`pointer-events-none hidden h-full min-w-0 items-center justify-center justify-self-center px-2 sm:px-3 ${isSceneSurface ? '' : 'sm:flex'}`}
-      />
+      <div className="pointer-events-none hidden h-full min-w-0 items-center justify-center justify-self-center px-2 sm:flex sm:px-3">
+        <div
+          id="viewer-toolbar-dock-slot"
+          className={isSceneSurface ? 'hidden' : 'flex h-full items-center justify-center'}
+        />
+        <div
+          id="scene-toolbar-dock-slot"
+          className={isSceneSurface ? 'flex h-full items-center justify-center' : 'hidden'}
+        />
+      </div>
 
       <HeaderActions
         responsive={actionResponsive}

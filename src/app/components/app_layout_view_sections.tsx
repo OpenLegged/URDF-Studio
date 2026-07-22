@@ -50,11 +50,13 @@ export function AppLayoutViewContent(props: AppLayoutViewContentProps) {
       <AssemblyPreparationOverlaySection assemblyPreparation={props.assemblyPreparation} />
       <AppLayoutOverlaysSection overlays={props.overlays} />
 
-      {/* Narrow-screen dock for the 3D viewer toolbar (phones, <640px).
-          The ViewerToolbar portals a touch-friendly copy here; hidden on sm+. */}
+      {/* Narrow-screen model-editor dock (phones, <640px). Scene mode owns its
+          separate bottom toolbar, so keep the underlying model controls hidden. */}
       <div
         id="viewer-toolbar-bottom-dock"
-        className="pointer-events-none fixed inset-x-0 bottom-0 z-30 sm:hidden"
+        className={`pointer-events-none fixed inset-x-0 bottom-0 z-30 ${
+          props.header.surfaceModeSelector?.current === 'scene' ? 'hidden' : 'sm:hidden'
+        }`}
       />
     </div>
   );
