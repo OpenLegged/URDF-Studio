@@ -23,6 +23,7 @@ function renderHook(
       showToast: (message, type) => events.push(`toast:${type}:${message}`),
       t: {
         addedComponent: 'Added {name}',
+        addedComponentRecovered: 'Added {name} with {count} recovery item(s)',
         loadingRobot: 'loading',
         preparingAssemblyComponent: 'preparing',
         addingAssemblyComponentToWorkspace: 'adding',
@@ -54,4 +55,54 @@ test('failed Add clears preparation without success toast or workspace mutation'
 
   assert.deepEqual(events, ['overlay:show', 'overlay:clear']);
   assert.deepEqual(useWorkspaceStore.getState().workspace, before);
+});
+
+test('failed Add preserves the underlying error detail', async () => {
+  const events: string[] = [];
+  const hook = renderHook(async () => {
+    throw new Error('duplicate parent joint for child_link');
+  }, events);
+  const file: RobotFile = { name: 'broken.urdf', format: 'urdf', content: '<broken>' };
+
+  hook.handleAddComponent(file);
+  await new Promise((resolve) => setTimeout(resolve, 0));
+
+  assert.deepEqual(events, [
+    'overlay:show',
+    'overlay:clear',
+    'toast:info:Failed to add assembly component: broken.urdf. duplicate parent joint for child_link',
+  ]);
+});
+
+test('successful recovered Add reports the ignored source item count', async () => {
+  const workspace = createDefaultWorkspace('recovered');
+  const component = structuredClone(Object.values(workspace.components)[0]!);
+  component.robot.inspectionContext = {
+    sourceFormat: 'urdf',
+    recovery: {
+      diagnostics: [
+        {
+          code: 'nonfinite_joint_limit_omitted',
+          severity: 'warning',
+          category: 'joint',
+          message: 'Omitted one non-finite bound.',
+          action: 'omitted',
+        },
+      ],
+      diagnosticCounts: { error: 0, warning: 1, info: 0 },
+      recoveredItemCount: 1,
+    },
+  };
+  const events: string[] = [];
+  const hook = renderHook(async () => ({ status: 'committed', component }), events);
+  const file: RobotFile = { name: 'recovered.urdf', format: 'urdf', content: '<robot />' };
+
+  hook.handleAddComponent(file);
+  await new Promise((resolve) => setTimeout(resolve, 0));
+
+  assert.deepEqual(events, [
+    'overlay:show',
+    'overlay:clear',
+    `toast:success:Added ${component.name} with 1 recovery item(s)`,
+  ]);
 });

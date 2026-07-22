@@ -5,6 +5,7 @@
 
 import type { RobotState, UrdfLink, UrdfJoint } from '@/types';
 import { JointType, GeometryType } from '@/types';
+import { hasFiniteJointLimitBounds } from './jointLimits';
 import { getVisualGeometryEntries } from './visualBodies';
 
 const AXIS_REQUIRED_TYPES = new Set<JointType>([
@@ -158,7 +159,10 @@ export const validateJoint = (joint: UrdfJoint, links: Record<string, UrdfLink>)
     if (joint.type === JointType.REVOLUTE || joint.type === JointType.PRISMATIC) {
         if (!joint.limit) {
             errors.push({ type: 'error', message: 'Joint limit is required for this joint type', path: 'limit' });
-        } else if (joint.limit.lower > joint.limit.upper) {
+        } else if (
+            hasFiniteJointLimitBounds(joint.limit) &&
+            joint.limit.lower > joint.limit.upper
+        ) {
             errors.push({ type: 'error', message: 'Lower limit cannot be greater than upper limit', path: 'limit' });
         }
     }
@@ -167,10 +171,10 @@ export const validateJoint = (joint: UrdfJoint, links: Record<string, UrdfLink>)
         if (!joint.limit) {
             errors.push({ type: 'error', message: 'Joint limit is required for this joint type', path: 'limit' });
         } else {
-            if (joint.limit.effort < 0) {
+            if (typeof joint.limit.effort === 'number' && joint.limit.effort < 0) {
                 errors.push({ type: 'error', message: 'Effort limit cannot be negative', path: 'limit.effort' });
             }
-            if (joint.limit.velocity < 0) {
+            if (typeof joint.limit.velocity === 'number' && joint.limit.velocity < 0) {
                 errors.push({ type: 'error', message: 'Velocity limit cannot be negative', path: 'limit.velocity' });
             }
         }

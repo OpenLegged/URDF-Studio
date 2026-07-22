@@ -8,6 +8,17 @@ export interface OrderedJointLimitBounds {
   upper: number;
 }
 
+export function hasFiniteJointLimitBounds<T extends JointLimitOrderLike>(
+  limit: T | null | undefined,
+): limit is T & Required<Pick<JointLimitOrderLike, 'lower' | 'upper'>> {
+  return (
+    typeof limit?.lower === 'number' &&
+    Number.isFinite(limit.lower) &&
+    typeof limit.upper === 'number' &&
+    Number.isFinite(limit.upper)
+  );
+}
+
 export function getOrderedJointLimitBounds(lower: number, upper: number): OrderedJointLimitBounds {
   if (Number.isFinite(lower) && Number.isFinite(upper) && lower > upper) {
     return { lower: upper, upper: lower };

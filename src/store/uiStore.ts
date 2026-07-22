@@ -749,7 +749,7 @@ export const useUIStore = create<UIState>()(
       onRehydrateStorage: () => (state) => {
         // Re-apply theme and font size on hydration
         if (state) {
-          applyDocumentTheme(state.theme, { animate: false });
+          applyDocumentTheme(state.theme);
           document.documentElement.style.fontSize = '100%';
           // Re-apply font size
           applyFontSize(normalizeGlobalFontSize(state.fontSize));

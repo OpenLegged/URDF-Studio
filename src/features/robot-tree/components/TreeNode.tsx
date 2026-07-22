@@ -3,13 +3,11 @@ import {
   Box,
   ChevronDown,
   ChevronRight,
-  Crosshair,
   Eye,
   EyeOff,
   Plus,
   Shapes,
   Shield,
-  Trash2,
 } from 'lucide-react';
 
 import {
@@ -25,7 +23,7 @@ import {
 } from '@/shared/utils/robot/mjcfDisplayNames';
 import { useSelectionStore } from '@/store/selectionStore';
 import type { WorkspacePropertyPatch } from '@/store/workspace/types';
-import { areEntityRefsEqual } from '@/types';
+import { areEntityRefsEqual, GeometryType } from '@/types';
 import type {
   AppMode,
   EntityRef,
@@ -45,12 +43,26 @@ import {
   TREE_LINK_NAME_TEXT_CLASS,
   TREE_RENAME_INPUT_BASE_CLASS,
 } from './tree-node/presentation';
+import {
+  TreeNodeContextMenu,
+  type TreeNodeContextMenuTarget,
+} from './tree-node/TreeNodeContextMenu';
 import { stripTreeDisplayNamePrefix } from './tree-node/treeDisplayNames';
+import {
+  LinkEditorLockButton,
+  type InheritedEditorLockSource,
+} from './tree_lock_controls';
 
 type LinkRef = Extract<EntityRef, { type: 'link' }>;
 type JointRef = Extract<EntityRef, { type: 'joint' }>;
 type GeometryEntry = VisualGeometryEntry | CollisionGeometryEntry;
+type ContextMenuState = TreeNodeContextMenuTarget & {
+  ref: LinkRef | JointRef;
+  targetLinkRef: LinkRef;
+  currentName: string;
+};
 const EMPTY_ANCESTOR_LINK_IDS = new Set<string>();
+const TREE_NODE_CONTEXT_MENU_OPEN_EVENT = 'urdf-studio:tree-node-context-menu-open';
 
 export interface TreeNodeProps {
   componentId: string;
@@ -78,6 +90,7 @@ export interface TreeNodeProps {
   readOnly?: boolean;
   ancestorLinkIds?: ReadonlySet<string>;
   componentDisplayNamePrefix?: string;
+  inheritedEditorLockSource?: InheritedEditorLockSource;
 }
 
 function buildChildJointsByParent(robot: RobotData): Record<string, UrdfJoint[]> {
@@ -145,6 +158,7 @@ export const TreeNode = memo(function TreeNode({
   readOnly = false,
   ancestorLinkIds = EMPTY_ANCESTOR_LINK_IDS,
   componentDisplayNamePrefix,
+  inheritedEditorLockSource,
 }: TreeNodeProps) {
   const selection = useSelectionStore((state) => state.selection);
   const hoveredSelection = useSelectionStore((state) => state.hoveredSelection);
@@ -157,6 +171,8 @@ export const TreeNode = memo(function TreeNode({
   const [geometryExpanded, setGeometryExpanded] = useState(showGeometryDetailsByDefault);
   const [editing, setEditing] = useState<LinkRef | JointRef | null>(null);
   const [draft, setDraft] = useState('');
+  const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
+  const contextMenuOwnerRef = useRef(Symbol('tree-node-context-menu'));
   const renameInputRef = useRef<HTMLInputElement>(null);
   const link = robot.links[linkId];
   const jointsByParent = useMemo(
@@ -188,6 +204,54 @@ export const TreeNode = memo(function TreeNode({
     setGeometryExpanded(showGeometryDetailsByDefault);
   }, [showGeometryDetailsByDefault]);
 
+  // When the canvas selects a link inside this subtree, auto-expand so the target row mounts and
+  // can be scrolled into view. Driven by attentionSelection (pulse) so tree-internal clicks don't
+  // fight the user's own collapse/expand actions.
+  const isAncestorOfSelectedLink = useMemo(() => {
+    const target = attentionSelection?.entity;
+    if (!target || target.type !== 'link' || target.componentId !== componentId) return false;
+    if (target.entityId === linkId) return false;
+    let cursor = target.entityId;
+    while (cursor) {
+      const parentJoint = Object.values(robot.joints).find((joint) => joint.childLinkId === cursor);
+      if (!parentJoint) break;
+      cursor = parentJoint.parentLinkId;
+      if (cursor === linkId) return true;
+    }
+    return false;
+  }, [attentionSelection, componentId, linkId, robot.joints]);
+
+  useEffect(() => {
+    if (isAncestorOfSelectedLink && !expanded) {
+      setExpanded(true);
+    }
+  }, [isAncestorOfSelectedLink, expanded]);
+
+  useEffect(() => {
+    if (!contextMenu) return;
+    const closeMenu = () => setContextMenu(null);
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') closeMenu();
+    };
+    const handleOtherMenuOpen = (event: Event) => {
+      const owner = (event as CustomEvent<symbol>).detail;
+      if (owner !== contextMenuOwnerRef.current) closeMenu();
+    };
+
+    window.addEventListener('click', closeMenu);
+    window.addEventListener('resize', closeMenu);
+    window.addEventListener('contextmenu', closeMenu);
+    window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener(TREE_NODE_CONTEXT_MENU_OPEN_EVENT, handleOtherMenuOpen);
+    return () => {
+      window.removeEventListener('click', closeMenu);
+      window.removeEventListener('resize', closeMenu);
+      window.removeEventListener('contextmenu', closeMenu);
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener(TREE_NODE_CONTEXT_MENU_OPEN_EVENT, handleOtherMenuOpen);
+    };
+  }, [contextMenu]);
+
   if (!link || ancestorLinkIds.has(linkId)) return null;
 
   const dispatchSelection = (next: WorkspaceSelection) => {
@@ -215,6 +279,71 @@ export const TreeNode = memo(function TreeNode({
   const focus = (ref: EntityRef) => {
     if (onFocus) onFocus(ref);
     else setFocusTarget(ref);
+  };
+  const openContextMenu = (
+    event: React.MouseEvent,
+    ref: LinkRef | JointRef,
+    targetLinkRef: LinkRef,
+    currentName: string,
+  ) => {
+    if (readOnly) return;
+    event.preventDefault();
+    event.stopPropagation();
+    window.dispatchEvent(new window.CustomEvent(TREE_NODE_CONTEXT_MENU_OPEN_EVENT, {
+      detail: contextMenuOwnerRef.current,
+    }));
+    dispatchSelection({ entity: ref });
+    setContextMenu({
+      type: ref.type,
+      x: event.clientX,
+      y: event.clientY,
+      ref,
+      targetLinkRef,
+      currentName,
+      hasVisual: ref.type === 'link' && hasVisual,
+      hasCollision: ref.type === 'link' && hasCollision,
+    });
+  };
+  const closeContextMenu = () => setContextMenu(null);
+  const handleContextMenuRename = () => {
+    if (!contextMenu) return;
+    beginRename(contextMenu.ref, contextMenu.currentName);
+    closeContextMenu();
+  };
+  const handleContextMenuAddChild = () => {
+    if (!contextMenu) return;
+    onAddChild(contextMenu.targetLinkRef);
+    setExpanded(true);
+    closeContextMenu();
+  };
+  const handleContextMenuAddCollision = () => {
+    if (!contextMenu) return;
+    onAddCollisionBody(contextMenu.targetLinkRef);
+    if (areEntityRefsEqual(contextMenu.targetLinkRef, linkRef)) setGeometryExpanded(true);
+    closeContextMenu();
+  };
+  const handleContextMenuDelete = () => {
+    if (!contextMenu) return;
+    onDelete(contextMenu.targetLinkRef);
+    closeContextMenu();
+  };
+  const handleDeleteLinkGeometry = (subType: 'visual' | 'collision') => {
+    if (!contextMenu || contextMenu.ref.type !== 'link') return;
+    if (subType === 'visual') {
+      onUpdate(contextMenu.ref, {
+        visual: { type: GeometryType.NONE, meshPath: undefined },
+        visualBodies: [],
+      });
+    } else {
+      onUpdate(contextMenu.ref, {
+        collision: { type: GeometryType.NONE, meshPath: undefined },
+        collisionBodies: [],
+      });
+    }
+    if (selectionTargets(selection, contextMenu.ref) && selection?.subType === subType) {
+      dispatchSelection({ entity: contextMenu.ref });
+    }
+    closeContextMenu();
   };
   const toggleGeometryVisibility = (
     event: React.MouseEvent,
@@ -261,8 +390,15 @@ export const TreeNode = memo(function TreeNode({
   const hasCollision = collisionEntries.length > 0;
   const hasGeometry = hasVisual || hasCollision;
   const isLinkVisible = link.visible !== false;
+  const isLinkEditorLocked =
+    inheritedEditorLockSource !== undefined || link.editorLocked === true;
+  const childInheritedEditorLockSource = inheritedEditorLockSource === 'component'
+    ? 'component'
+    : isLinkEditorLocked
+      ? 'ancestor'
+      : undefined;
   const linkConnectorHighlighted =
-    isLinkSelected || isLinkHovered || isLinkAttentionHighlighted;
+    isLinkSelected || isLinkAttentionHighlighted;
   const selectedLinkActionClass =
     'text-system-blue hover:bg-system-blue/15 hover:text-system-blue-hover dark:hover:bg-system-blue/25';
 
@@ -325,7 +461,7 @@ export const TreeNode = memo(function TreeNode({
         onMouseLeave={readOnly ? undefined : clearCanonicalHover}
       >
         <div
-          className={getTreeConnectorElbowClass(selected || hovered || attention)}
+          className={getTreeConnectorElbowClass(selected || attention)}
           style={getTreeConnectorElbowStyle(12)}
         />
         <div
@@ -346,7 +482,7 @@ export const TreeNode = memo(function TreeNode({
           )}
         </div>
         <span className="min-w-0 flex-1 truncate text-[10px] font-medium">{label}</span>
-        {!readOnly ? (
+        {!readOnly && !isLinkEditorLocked ? (
           <button
             type="button"
             aria-label={`toggle-geometry-visibility-${componentId}-${linkId}-${subType}-${entry.objectIndex}`}
@@ -375,6 +511,7 @@ export const TreeNode = memo(function TreeNode({
     const attention = selectionTargets(attentionSelection, jointRef)
       || selectionTargets(attentionSelection, childLinkRef);
     const childLink = robot.links[joint.childLinkId];
+    const isJointEditorLocked = isLinkEditorLocked || childLink?.editorLocked === true;
     const childDisplayName = childLink
       ? stripTreeDisplayNamePrefix(
           sourceFormat === 'mjcf' ? getMjcfLinkDisplayName(childLink) : childLink.name,
@@ -390,7 +527,7 @@ export const TreeNode = memo(function TreeNode({
     );
     const JointTypeIcon = getJointTypeIcon(joint.type);
     const jointTypeLabel = getJointTypeLabel(joint.type, t);
-    const branchHighlighted = selected || hovered || attention
+    const branchHighlighted = selected || attention
       || selectionTargets(selection, childLinkRef);
 
     return (
@@ -413,18 +550,26 @@ export const TreeNode = memo(function TreeNode({
                 event,
                 () => dispatchSelection({ entity: jointRef }),
               )}
-          onDoubleClick={readOnly
+          onDoubleClick={readOnly || isJointEditorLocked
             ? undefined
             : (event) => {
                 event.preventDefault();
                 event.stopPropagation();
                 beginRename(jointRef, joint.name);
               }}
+          onContextMenu={readOnly || isJointEditorLocked
+            ? undefined
+            : (event) => openContextMenu(
+                event,
+                jointRef,
+                childLinkRef,
+                joint.name,
+              )}
           onMouseEnter={readOnly ? undefined : () => dispatchHover({ entity: jointRef })}
           onMouseLeave={readOnly ? undefined : clearCanonicalHover}
         >
           <div
-            className={getTreeConnectorElbowClass(selected || hovered || attention)}
+            className={getTreeConnectorElbowClass(selected || attention)}
             style={getTreeConnectorElbowStyle(5)}
           />
           <div
@@ -458,22 +603,6 @@ export const TreeNode = memo(function TreeNode({
               {jointDisplayName}
             </span>
           )}
-          {!readOnly && mode === 'editor' ? (
-            <button
-              type="button"
-              aria-label={`delete-joint-${componentId}-${joint.id}`}
-              className={`ml-1 rounded p-0.5 text-red-500 transition-opacity ${
-                selected ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
-              }`}
-              title={t.deleteBranch}
-              onClick={(event) => {
-                event.stopPropagation();
-                onDelete(jointRef);
-              }}
-            >
-              <Trash2 size={12} />
-            </button>
-          ) : null}
         </div>
         {!nextAncestors.has(joint.childLinkId) ? (
           <div className="relative ml-px">
@@ -500,6 +629,7 @@ export const TreeNode = memo(function TreeNode({
               readOnly={readOnly}
               ancestorLinkIds={nextAncestors}
               componentDisplayNamePrefix={componentDisplayNamePrefix}
+              inheritedEditorLockSource={childInheritedEditorLockSource}
             />
           </div>
         ) : null}
@@ -535,6 +665,14 @@ export const TreeNode = memo(function TreeNode({
               () => dispatchSelection({ entity: linkRef }),
             )}
         onDoubleClick={readOnly ? undefined : () => focus(linkRef)}
+        onContextMenu={readOnly || isLinkEditorLocked
+          ? undefined
+          : (event) => openContextMenu(
+              event,
+              linkRef,
+              linkRef,
+              link.name,
+            )}
         onMouseEnter={readOnly ? undefined : () => dispatchHover({ entity: linkRef })}
         onMouseLeave={readOnly ? undefined : clearCanonicalHover}
       >
@@ -625,64 +763,48 @@ export const TreeNode = memo(function TreeNode({
             </button>
           ) : null}
           {!readOnly ? (
-            <button
-              type="button"
-              aria-label={`toggle-link-visibility-${componentId}-${linkId}`}
-              className={`h-5 w-5 rounded p-1 transition-colors ${
-                isLinkSelected
-                  ? selectedLinkActionClass
-                  : 'text-text-tertiary hover:bg-system-blue/10 hover:text-text-primary dark:hover:bg-system-blue/20'
-              }`}
-              title={isLinkVisible ? t.hide : t.show}
-              onClick={(event) => {
-                event.stopPropagation();
-                onUpdate(linkRef, { visible: !isLinkVisible });
-              }}
-            >
-              {isLinkVisible ? <Eye size={12} /> : <EyeOff size={12} />}
-            </button>
-          ) : null}
-          {!readOnly ? (
-            <button
-              type="button"
-              aria-label={`focus-link-${componentId}-${linkId}`}
-              className="hidden rounded p-1 text-text-tertiary hover:bg-element-hover group-hover:block"
-              onClick={(event) => {
-                event.stopPropagation();
-                focus(linkRef);
-              }}
-            >
-              <Crosshair size={12} />
-            </button>
-          ) : null}
-          {!readOnly && mode === 'editor' ? (
             <>
               <button
                 type="button"
-                aria-label={`add-child-${componentId}-${linkId}`}
-                className="hidden rounded p-1 text-text-tertiary hover:bg-element-hover group-hover:block"
+                aria-label={`toggle-link-visibility-${componentId}-${linkId}`}
+                className={`h-5 w-5 rounded p-1 transition-colors ${
+                  isLinkSelected
+                    ? selectedLinkActionClass
+                    : 'text-text-tertiary hover:bg-system-blue/10 hover:text-text-primary dark:hover:bg-system-blue/20'
+                }`}
+                title={isLinkVisible ? t.hide : t.show}
                 onClick={(event) => {
                   event.stopPropagation();
-                  onAddChild(linkRef);
+                  onUpdate(linkRef, { visible: !isLinkVisible });
                 }}
               >
-                <Plus size={12} />
+                {isLinkVisible ? <Eye size={12} /> : <EyeOff size={12} />}
               </button>
-              <button
-                type="button"
-                aria-label={`delete-link-${componentId}-${linkId}`}
-                className="hidden rounded p-1 text-red-500 hover:bg-red-100 group-hover:block dark:hover:bg-red-900/30"
-                onClick={(event) => {
-                  event.stopPropagation();
-                  onDelete(linkRef);
-                }}
-              >
-                <Trash2 size={12} />
-              </button>
+              <LinkEditorLockButton
+                ariaLabel={`toggle-link-editor-lock-${componentId}-${linkId}`}
+                editorLocked={isLinkEditorLocked}
+                inheritedSource={inheritedEditorLockSource}
+                selected={isLinkSelected}
+                selectedActionClass={selectedLinkActionClass}
+                t={t}
+                onToggle={() => onUpdate(linkRef, { editorLocked: !link.editorLocked })}
+              />
             </>
           ) : null}
         </div>
       </div>
+
+      {!readOnly && !isLinkEditorLocked && mode === 'editor' ? (
+        <TreeNodeContextMenu
+          target={contextMenu}
+          t={t}
+          onRename={handleContextMenuRename}
+          onAddChild={handleContextMenuAddChild}
+          onAddCollision={handleContextMenuAddCollision}
+          onDelete={handleContextMenuDelete}
+          onDeleteLinkGeometry={handleDeleteLinkGeometry}
+        />
+      ) : null}
 
       {(expanded && hasChildren) || (geometryExpanded && hasGeometry) ? (
         <div className="relative ml-1">
@@ -694,7 +816,7 @@ export const TreeNode = memo(function TreeNode({
             <>
               {visualEntries.map((entry) => renderGeometryRow('visual', entry))}
               {collisionEntries.map((entry) => renderGeometryRow('collision', entry))}
-              {!readOnly && mode === 'editor' ? (
+              {!readOnly && !isLinkEditorLocked && mode === 'editor' ? (
                 <button
                   type="button"
                   aria-label={`add-collision-${componentId}-${linkId}`}

@@ -675,25 +675,12 @@ const quaternionNearlyEquals = (
   return Math.abs(Math.abs(normalizedLeft.dot(normalizedRight)) - 1) <= epsilon;
 };
 
-const applyMatrixToMeshNormals = (
-  attribute: THREE.BufferAttribute | THREE.InterleavedBufferAttribute,
-  normalMatrix: THREE.Matrix3,
+const bakeObjectLocalTransformIntoMeshGeometry = (
+  object: THREE.Object3D,
+  replacementLocalMatrix: THREE.Matrix4,
 ): void => {
-  const normal = new THREE.Vector3();
-  for (let index = 0; index < attribute.count; index += 1) {
-    normal
-      .set(attribute.getX(index), attribute.getY(index), attribute.getZ(index))
-      .applyMatrix3(normalMatrix)
-      .normalize();
-    attribute.setXYZ(index, normal.x, normal.y, normal.z);
-  }
-  attribute.needsUpdate = true;
-};
-
-const bakeObjectLocalTransformIntoMeshGeometry = (object: THREE.Object3D): void => {
   object.updateMatrix();
-  const localMatrix = object.matrix.clone();
-  const normalMatrix = new THREE.Matrix3().getNormalMatrix(localMatrix);
+  const bakedMatrix = replacementLocalMatrix.clone().invert().multiply(object.matrix);
 
   object.traverse((child) => {
     if (!isUsdMeshObject(child)) {
@@ -701,11 +688,8 @@ const bakeObjectLocalTransformIntoMeshGeometry = (object: THREE.Object3D): void 
     }
 
     child.geometry = child.geometry.clone();
-    child.geometry.applyMatrix4(localMatrix);
-    const normalAttribute = child.geometry.getAttribute('normal');
-    if (normalAttribute) {
-      applyMatrixToMeshNormals(normalAttribute, normalMatrix);
-    }
+    // BufferGeometry.applyMatrix4 transforms both positions and normals.
+    child.geometry.applyMatrix4(bakedMatrix);
     child.geometry.computeBoundingBox();
     child.geometry.computeBoundingSphere();
   });
@@ -720,9 +704,15 @@ const normalizeIsaacCompatibleColladaMeshTransform = (object: THREE.Object3D): v
     return;
   }
 
-  // Isaac Sim's URDF importer bakes this Blender-authored cyclic root transform into the mesh
-  // payload, then keeps the visual prim at the standard +90deg X orientation.
-  bakeObjectLocalTransformIntoMeshGeometry(object);
+  // Isaac Sim's URDF importer keeps the visual prim at the standard +90deg X orientation.
+  // Bake only the residual between that target transform and the authored cyclic transform;
+  // baking the full authored transform would apply the +90deg rotation twice.
+  const replacementLocalMatrix = new THREE.Matrix4().compose(
+    new THREE.Vector3(),
+    USD_ISAAC_COLLADA_VISUAL_QUATERNION,
+    new THREE.Vector3(1, 1, 1),
+  );
+  bakeObjectLocalTransformIntoMeshGeometry(object, replacementLocalMatrix);
   object.position.set(0, 0, 0);
   object.quaternion.copy(USD_ISAAC_COLLADA_VISUAL_QUATERNION);
   object.scale.set(1, 1, 1);

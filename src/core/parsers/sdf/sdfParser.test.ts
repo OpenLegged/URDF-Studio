@@ -20,7 +20,7 @@ test('parseSDF converts gazebo jointed models into RobotState data', () => {
   assert.ok(robot?.links.link_base);
   assert.ok(robot?.links.link_over_damping);
   assert.ok(robot?.joints.joint_over_damping);
-  assert.equal(robot?.joints.joint_over_damping.type, JointType.REVOLUTE);
+  assert.equal(robot?.joints.joint_over_damping.type, JointType.CONTINUOUS);
   assert.deepEqual(robot?.joints.joint_over_damping.axis, { x: 1, y: 0, z: 0 });
   assert.equal(robot?.joints.joint_over_damping.dynamics.damping, 5);
   assert.equal(robot?.links.link_over_damping.visual.type, GeometryType.MESH);
@@ -60,6 +60,50 @@ test('parseSDF resolves joint axis xyz expressed_in frames into the joint frame'
   assert.ok(Math.abs(axis.x) < 1e-9);
   assert.ok(Math.abs(axis.y - 1) < 1e-9);
   assert.ok(Math.abs(axis.z) < 1e-9);
+});
+
+test('parseSDF preserves tuple positions when an authored token is malformed', () => {
+  const robot = parseSDF(`<?xml version="1.0"?>
+<sdf version="1.12">
+  <model name="malformed_tuple_demo">
+    <link name="base">
+      <pose>1 broken 3 0 0 0</pose>
+      <visual name="visual">
+        <geometry><box><size>2 broken 4</size></box></geometry>
+      </visual>
+    </link>
+  </model>
+</sdf>`);
+
+  assert.ok(robot);
+  assert.deepEqual(robot.links.base.visual.dimensions, { x: 2, y: 0, z: 4 });
+  assert.deepEqual(robot.links.base.visual.origin.xyz, { x: 0, y: 0, z: 0 });
+});
+
+test('parseSDF omits unbounded and malformed joint limit values', () => {
+  const robot = parseSDF(`<?xml version="1.0"?>
+<sdf version="1.12">
+  <model name="unbounded_joint_demo">
+    <link name="base" />
+    <link name="tip" />
+    <joint name="spin" type="revolute">
+      <parent>base</parent>
+      <child>tip</child>
+      <axis>
+        <xyz>0 0 1</xyz>
+        <limit>
+          <lower>-inf</lower>
+          <upper>inf</upper>
+          <effort>broken</effort>
+          <velocity>4</velocity>
+        </limit>
+      </axis>
+    </joint>
+  </model>
+</sdf>`);
+
+  assert.ok(robot);
+  assert.deepEqual(robot.joints.spin.limit, { velocity: 4 });
 });
 
 test('parseSDF preserves additional visuals and collisions on the same link', () => {
@@ -416,6 +460,48 @@ test('parseSDF expands included models with namespaced links and include poses',
   assert.deepEqual(robot?.joints['child_box::box__root_fixed']?.origin.xyz, { x: 1, y: 2, z: 3 });
 });
 
+test('parseSDF overrides an included model own pose with the include pose per SDFormat semantics', () => {
+  // SDFormat <include><pose> overrides the included model's top-level <pose>
+  // (it does NOT compose with it). The gimbal pattern: a model file authored
+  // with a standalone spawn pose (here z=0.18) that must be replaced by the
+  // mount pose (here x=2) when included. Composing would put the base link at
+  // z=0.18; overriding puts it at z=0.
+  const robot = parseSDF(
+    `<?xml version="1.0"?>
+<sdf version="1.7">
+  <model name="parent">
+    <include>
+      <pose>2 0 0 0 0 0</pose>
+      <uri>model://child</uri>
+    </include>
+  </model>
+</sdf>`,
+    {
+      sourcePath: 'parent/model.sdf',
+      allFileContents: {
+        'child/model.sdf': `<?xml version="1.0"?>
+<sdf version="1.7">
+  <model name="child">
+    <pose>0 0 0.18 0 0 0</pose>
+    <link name="base">
+      <visual name="body">
+        <geometry>
+          <box>
+            <size>1 1 1</size>
+          </box>
+        </geometry>
+      </visual>
+    </link>
+  </model>
+</sdf>`,
+      },
+    },
+  );
+
+  assert.ok(robot);
+  assert.deepEqual(robot?.joints['child::base__root_fixed']?.origin.xyz, { x: 2, y: 0, z: 0 });
+});
+
 test('parseSDF lets parent joints target included model links without injecting duplicate root anchors', () => {
   const robot = parseSDF(
     `<?xml version="1.0"?>
@@ -491,6 +577,57 @@ test('parseSDF lets parent joints target included model links without injecting 
   assert.deepEqual(robot?.joints.mount?.origin.xyz, { x: 1, y: 0, z: 0 });
   assert.equal(robot?.links['gripper::base__root'], undefined);
   assert.equal(robot?.joints['gripper::base__root_fixed'], undefined);
+});
+
+test('parseSDF resolves included sibling models from availableFiles when allFileContents omits them', () => {
+  // Simulates the real import pipeline: nested `.sdf` files are robot files in
+  // `availableFiles` (not text files in `allFileContents`), so the include
+  // resolver must consult availableFiles to find `model://child_box`.
+  const robot = parseSDF(
+    `<?xml version="1.0"?>
+<sdf version="1.7">
+  <model name="parent">
+    <include>
+      <name>child_box</name>
+      <pose>1 2 3 0 0 0</pose>
+      <uri>model://child_box</uri>
+    </include>
+  </model>
+</sdf>`,
+    {
+      sourcePath: 'parent/model.sdf',
+      allFileContents: {},
+      availableFiles: [
+        {
+          name: 'parent/model.sdf',
+          format: 'sdf',
+          content: '<?xml version="1.0"?><sdf version="1.7"><model name="parent"></model></sdf>',
+        },
+        {
+          name: 'child_box/model.sdf',
+          format: 'sdf',
+          content: `<?xml version="1.0"?>
+<sdf version="1.7">
+  <model name="child_box">
+    <link name="box">
+      <visual name="body">
+        <geometry>
+          <box>
+            <size>1 1 1</size>
+          </box>
+        </geometry>
+      </visual>
+    </link>
+  </model>
+</sdf>`,
+        },
+      ],
+    },
+  );
+
+  assert.ok(robot, 'parseSDF returned null — sibling include was not resolved from availableFiles');
+  assert.ok(robot?.links['child_box::box']);
+  assert.deepEqual(robot?.joints['child_box::box__root_fixed']?.origin.xyz, { x: 1, y: 2, z: 3 });
 });
 
 test('parseSDF reuses one SDF include index while resolving multiple includes', () => {
@@ -783,4 +920,75 @@ test('parseSDF imports standalone Gazebo light definitions as empty placeholder 
   assert.ok(robot?.links.sun__light_anchor);
   assert.equal(robot?.links.sun__light_anchor.visual.type, GeometryType.NONE);
   assert.equal(Object.keys(robot?.joints ?? {}).length, 0);
+});
+
+test('parseSDF converts revolute joints without <limit> into continuous joints', () => {
+  const robot = parseSDF(`<?xml version="1.0"?>
+<sdf version="1.6">
+  <model name="unlimited_revolute_fixture">
+    <link name="base" />
+    <link name="spin" />
+    <joint name="spin_joint" type="revolute">
+      <parent>base</parent>
+      <child>spin</child>
+      <axis>
+        <xyz>0 0 1</xyz>
+      </axis>
+    </joint>
+    <link name="hinge" />
+    <joint name="hinge_joint" type="revolute">
+      <parent>base</parent>
+      <child>hinge</child>
+      <axis>
+        <xyz>0 1 0</xyz>
+        <limit>
+          <lower>-1.5</lower>
+          <upper>1.5</upper>
+        </limit>
+      </axis>
+    </joint>
+  </model>
+</sdf>`);
+
+  assert.ok(robot);
+
+  // Revolute without <limit> -> continuous with no limit object.
+  assert.equal(robot?.joints.spin_joint.type, JointType.CONTINUOUS);
+  assert.equal(robot?.joints.spin_joint.limit, undefined);
+  assert.deepEqual(robot?.joints.spin_joint.axis, { x: 0, y: 0, z: 1 });
+
+  // Revolute with explicit <limit> stays revolute with finite bounds.
+  assert.equal(robot?.joints.hinge_joint.type, JointType.REVOLUTE);
+  assert.equal(robot?.joints.hinge_joint.limit?.lower, -1.5);
+  assert.equal(robot?.joints.hinge_joint.limit?.upper, 1.5);
+});
+
+test('parseSDF converts revolute joints with an effort-only <limit> into continuous joints', () => {
+  // youbot wheels/casters declare <limit><effort>1.0</effort></limit> with no
+  // angle bounds, which Gazebo reads as unlimited rotation. The parser must
+  // convert the joint to continuous (so no -Infinity/+Infinity angle bounds
+  // are emitted) while preserving the finite effort the author declared —
+  // otherwise the missing <lower>/<upper> fall back to -Infinity/+Infinity and
+  // the canonical workspace validator rejects them ("must be a finite number").
+  const robot = parseSDF(`<?xml version="1.0"?>
+<sdf version="1.6">
+  <model name="effort_only_limit_fixture">
+    <link name="base" />
+    <link name="wheel" />
+    <joint name="wheel_joint" type="revolute">
+      <parent>base</parent>
+      <child>wheel</child>
+      <axis>
+        <xyz>0 1 0</xyz>
+        <limit>
+          <effort>1.0</effort>
+        </limit>
+      </axis>
+    </joint>
+  </model>
+</sdf>`);
+
+  assert.ok(robot);
+  assert.equal(robot?.joints.wheel_joint.type, JointType.CONTINUOUS);
+  assert.deepEqual(robot?.joints.wheel_joint.limit, { effort: 1.0 });
 });

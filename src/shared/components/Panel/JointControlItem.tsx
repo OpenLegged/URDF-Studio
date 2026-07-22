@@ -5,7 +5,6 @@ import { createJointDragStoreSync } from '@/shared/utils/jointDragStoreSync';
 import { getJointType } from '@/shared/utils/jointTypes';
 import {
   fromJointDisplayValue,
-  getDefaultJointLimit,
   getJointSliderStep,
   getJointValueUnitLabel,
   hasEffectivelyFiniteJointLimits,
@@ -47,7 +46,7 @@ const JointControlItemComponent: React.FC<JointControlItemProps> = ({
 }) => {
   const resolvedDisplayName = displayName?.trim() || joint?.name?.trim() || name;
   const jointType = getJointType(joint);
-  const limit = joint.limit || { ...getDefaultJointLimit(jointType), effort: 0, velocity: 0 };
+  const limit = joint.limit;
   const usesAngularUnits = isAngularJointType(jointType);
   const supportsAdjustableLimits = supportsFiniteJointLimits(jointType);
   const isContinuousJoint = normalizeJointTypeValue(jointType) === JointType.CONTINUOUS;
@@ -76,23 +75,23 @@ const JointControlItemComponent: React.FC<JointControlItemProps> = ({
 
   const [localLimits, setLocalLimits] = useState(() =>
     normalizeJointLimitOrder({
-      lower: limit.lower,
-      upper: limit.upper,
-      effort: limit.effort || 0,
-      velocity: limit.velocity || 0,
+      lower: limit?.lower,
+      upper: limit?.upper,
+      effort: limit?.effort,
+      velocity: limit?.velocity,
     }),
   );
 
   useEffect(() => {
     setLocalLimits(
       normalizeJointLimitOrder({
-        lower: limit.lower,
-        upper: limit.upper,
-        effort: limit.effort || 0,
-        velocity: limit.velocity || 0,
+        lower: limit?.lower,
+        upper: limit?.upper,
+        effort: limit?.effort,
+        velocity: limit?.velocity,
       }),
     );
-  }, [joint.id, limit.lower, limit.upper, limit.effort, limit.velocity]);
+  }, [joint.id, limit?.lower, limit?.upper, limit?.effort, limit?.velocity]);
 
   const orderedLocalLimits = React.useMemo(
     () => normalizeJointLimitOrder(localLimits),
@@ -103,6 +102,8 @@ const JointControlItemComponent: React.FC<JointControlItemProps> = ({
 
   const formatLimitInputValue = (limitValue: number | undefined) =>
     Number.isFinite(limitValue) ? Number(limitValue).toFixed(2) : '';
+  const formatLimitDisplayValue = (limitValue: number | undefined) =>
+    Number.isFinite(limitValue) ? Number(limitValue).toFixed(2) : '—';
 
   const updateLimit = useCallback(
     (key: 'lower' | 'upper' | 'effort' | 'velocity', val: number) => {
@@ -119,8 +120,22 @@ const JointControlItemComponent: React.FC<JointControlItemProps> = ({
 
       const jointId = name || (joint.id == null ? '' : String(joint.id));
       if (jointId) {
+        const finiteLimits = {
+          ...(typeof newLimits.lower === 'number' && Number.isFinite(newLimits.lower)
+            ? { lower: newLimits.lower }
+            : {}),
+          ...(typeof newLimits.upper === 'number' && Number.isFinite(newLimits.upper)
+            ? { upper: newLimits.upper }
+            : {}),
+          ...(typeof newLimits.effort === 'number' && Number.isFinite(newLimits.effort)
+            ? { effort: newLimits.effort }
+            : {}),
+          ...(typeof newLimits.velocity === 'number' && Number.isFinite(newLimits.velocity)
+            ? { velocity: newLimits.velocity }
+            : {}),
+        };
         onUpdate?.('joint', jointId, {
-          limit: newLimits,
+          limit: finiteLimits,
         });
       }
     },
@@ -231,8 +246,8 @@ const JointControlItemComponent: React.FC<JointControlItemProps> = ({
   const [lowerInput, setLowerInput] = useState(formatLimitInputValue(orderedLocalLimits.lower));
   const [upperInput, setUpperInput] = useState(formatLimitInputValue(orderedLocalLimits.upper));
 
-  const [effortInput, setEffortInput] = useState(localLimits.effort.toFixed(2));
-  const [velocityInput, setVelocityInput] = useState(localLimits.velocity.toFixed(2));
+  const [effortInput, setEffortInput] = useState(formatLimitInputValue(localLimits.effort));
+  const [velocityInput, setVelocityInput] = useState(formatLimitInputValue(localLimits.velocity));
 
   useEffect(() => {
     if (!isEditingLower) setLowerInput(formatLimitInputValue(orderedLocalLimits.lower));
@@ -243,11 +258,11 @@ const JointControlItemComponent: React.FC<JointControlItemProps> = ({
   }, [orderedLocalLimits.upper, isEditingUpper]);
 
   useEffect(() => {
-    if (!isEditingEffort) setEffortInput(localLimits.effort.toFixed(2));
+    if (!isEditingEffort) setEffortInput(formatLimitInputValue(localLimits.effort));
   }, [localLimits.effort, isEditingEffort]);
 
   useEffect(() => {
-    if (!isEditingVelocity) setVelocityInput(localLimits.velocity.toFixed(2));
+    if (!isEditingVelocity) setVelocityInput(formatLimitInputValue(localLimits.velocity));
   }, [localLimits.velocity, isEditingVelocity]);
 
   useEffect(() => {
@@ -695,7 +710,7 @@ const JointControlItemComponent: React.FC<JointControlItemProps> = ({
             τ
           </span>
           <span className="flex h-4 w-10 items-center justify-center border-b border-transparent text-center text-[10px] leading-none text-text-secondary transition-colors group-hover:border-border-strong/80 group-hover:text-text-primary">
-            {localLimits.effort.toFixed(2)}
+            {formatLimitDisplayValue(localLimits.effort)}
           </span>
         </button>
       )}
@@ -732,7 +747,7 @@ const JointControlItemComponent: React.FC<JointControlItemProps> = ({
             v
           </span>
           <span className="flex h-4 w-10 items-center justify-center border-b border-transparent text-center text-[10px] text-text-secondary transition-colors group-hover:border-border-strong/80 group-hover:text-text-primary">
-            {localLimits.velocity.toFixed(2)}
+            {formatLimitDisplayValue(localLimits.velocity)}
           </span>
         </button>
       )}

@@ -7,7 +7,7 @@ import {
   type Dispatch,
   type SetStateAction,
 } from 'react';
-import { useSelectionStore } from '@/store/selectionStore';
+import { useSelectionStore, type HoverFreezeOwner } from '@/store/selectionStore';
 import { hasJointInteractionPreview, useJointInteractionPreviewStore } from '@/store';
 import type {
   JointInteractionPreviewSnapshot,
@@ -36,15 +36,21 @@ import type {
 } from '../types';
 import { resolveInitialJointControlState } from '../utils/jointControlState';
 import { createEmptyMeasureState } from '../utils/measurements';
-import { hasRuntimeJointQuaternionSetter, type RuntimeViewerRobot } from '../utils/runtimeRobotMotion';
+import {
+  hasRuntimeJointQuaternionSetter,
+  type RuntimeViewerRobot,
+} from '../utils/runtimeRobotMotion';
 import { beginInitialGroundAlignment } from '@/shared/components/3d/robotPositioning';
 import { useViewerSettings } from './useViewerSettings';
 import { usePanelLayoutController } from './viewer-controller/usePanelLayoutController';
 import { useRegressionBridge } from './viewer-controller/useRegressionBridge';
 import { useSceneRefreshScheduler } from './viewer-controller/useSceneRefreshScheduler';
+import {
+  type ClosedLoopPreviewResolution,
+  useClosedLoopPreviewScheduler,
+} from './viewer-controller/useClosedLoopPreviewScheduler';
 import { useToolModeController } from './viewer-controller/useToolModeController';
 import {
-  CLOSED_LOOP_PREVIEW_MAX_IN_FLIGHT,
   compactJointQuaternions,
   type ClosedLoopPreviewCommitState,
   getRuntimeJointCurrentMotionQuaternion,
@@ -57,16 +63,8 @@ import {
   type RuntimePoseJointLike,
   type ViewerJointInteractionEvent,
 } from './viewer-controller/closedLoopJointPreview';
-import {
-  type InteractionSelection,
-  type JointQuaternion,
-  type RobotState,
-} from '@/types';
-import {
-  getJointMotionAngleFromActualAngle,
-  resolveMimicJointAngleTargets,
-} from '@/core/robot';
-import { createClosedLoopMotionPreviewWorkerSession } from '@/shared/utils/robot/closedLoopMotionPreview';
+import { type InteractionSelection, type JointQuaternion, type RobotState } from '@/types';
+import { getJointMotionAngleFromActualAngle, resolveMimicJointAngleTargets } from '@/core/robot';
 import { logRuntimeFailure, scheduleFailFastInDev } from '@/core/utils/runtimeDiagnostics';
 import type { RuntimeRobotObject } from '@/shared/components/3d/runtimeRobotTypes';
 
@@ -132,6 +130,11 @@ export const useViewerController = ({
   projectJointInteractionPreview,
 }: UseViewerControllerProps) => {
   const setHoverFrozen = useSelectionStore((state) => state.setHoverFrozen);
+  const hoverFreezeOwner = useRef<HoverFreezeOwner>(Symbol('viewer-controller')).current;
+  const setOwnedHoverFrozen = useCallback(
+    (frozen: boolean) => setHoverFrozen(hoverFreezeOwner, frozen),
+    [hoverFreezeOwner, setHoverFrozen],
+  );
   const isOrbitDragging = useRef(false);
   const [robot, setRobot] = useState<RuntimeRobotObject | null>(null);
   const [jointPanelRobot, setJointPanelRobot] = useState<RuntimeRobotObject | null>(null);
@@ -216,6 +219,7 @@ export const useViewerController = ({
     setPaintSelectionScope,
     paintOperation,
     setPaintOperation,
+    paintInteractionRef,
     paintStatus,
     setPaintStatus,
   } = useToolModeController({ defaultToolMode, toolModeScopeKey });
@@ -272,8 +276,7 @@ export const useViewerController = ({
   const setOriginSize: Dispatch<SetStateAction<number>> = useCallback(
     (nextValue) => {
       setOriginSizePreference((currentValue) => {
-        const resolvedValue =
-          typeof nextValue === 'function' ? nextValue(currentValue) : nextValue;
+        const resolvedValue = typeof nextValue === 'function' ? nextValue(currentValue) : nextValue;
         return normalizeOriginAxesSize(resolvedValue, currentValue, originAxesSizeMax);
       });
     },
@@ -286,11 +289,11 @@ export const useViewerController = ({
         typeof nextDragging === 'function' ? nextDragging(isDraggingRef.current) : nextDragging;
       isDraggingRef.current = resolvedDragging;
       if (active) {
-        setHoverFrozen(resolvedDragging || transformPendingRef.current);
+        setOwnedHoverFrozen(resolvedDragging || transformPendingRef.current);
       }
       setIsDraggingState(resolvedDragging);
     },
-    [active, setHoverFrozen],
+    [active, setOwnedHoverFrozen],
   );
   const previousGroundPlaneOffsetRef = useRef(groundPlaneOffset);
   const previousAppliedJointAngleStateRef = useRef<Record<string, number>>({});
@@ -302,21 +305,7 @@ export const useViewerController = ({
   const previewMotionQuaternionsRef = useRef<
     Record<string, ViewerJointMotionStateValue['quaternion']>
   >({});
-  const closedLoopMotionPreviewWorkerSessionRef = useRef(
-    createClosedLoopMotionPreviewWorkerSession(),
-  );
-  const closedLoopPreviewSolveRequestRef = useRef(0);
-  const pendingClosedLoopPreviewRef = useRef<{
-    selectedJointId: string;
-    resolvedAngle: number;
-    diagnosticLabel: string;
-    preserveActiveJointRuntime: boolean;
-  } | null>(null);
   const lastClosedLoopPreviewCommitRef = useRef<ClosedLoopPreviewCommitState | null>(null);
-  const closedLoopPreviewFrameRef = useRef<number | null>(null);
-  const closedLoopPreviewSolveInFlightCountRef = useRef(0);
-  const closedLoopPreviewWorkerRequestSerialRef = useRef(0);
-  const closedLoopPreviewLastAppliedWorkerSerialRef = useRef(0);
   const jointInteractionPreviewSessionCounterRef = useRef(0);
   const activeJointInteractionPreviewSessionRef = useRef<string | null>(null);
   const appliedTreePanelJointPreviewRef = useRef(false);
@@ -348,11 +337,7 @@ export const useViewerController = ({
     [effectiveClosedLoopRobotState],
   );
   const resolveRuntimeMotionAngle = useCallback(
-    (
-      jointNameOrId: string,
-      actualAngle: number,
-      runtimeJoint?: RuntimePoseJointLike | null,
-    ) => {
+    (jointNameOrId: string, actualAngle: number, runtimeJoint?: RuntimePoseJointLike | null) => {
       const stateJointKey =
         resolveViewerJointKey(
           effectiveClosedLoopRobotState?.joints,
@@ -729,15 +714,6 @@ export const useViewerController = ({
     [effectiveClosedLoopRobotState],
   );
 
-  const resetClosedLoopPreviewState = useCallback(() => {
-    closedLoopMotionPreviewWorkerSessionRef.current.setBaseRobot(effectiveClosedLoopRobotState);
-    closedLoopMotionPreviewWorkerSessionRef.current.reset();
-    pendingClosedLoopPreviewRef.current = null;
-    lastClosedLoopPreviewCommitRef.current = null;
-    previewMotionAnglesRef.current = {};
-    previewMotionQuaternionsRef.current = {};
-  }, [effectiveClosedLoopRobotState]);
-
   const recordPendingLocalCommittedJointAngles = useCallback(
     (nextJointAngles: Record<string, number>) => {
       const normalizedAngles = normalizeViewerJointAngleState(jointControlJoints, nextJointAngles);
@@ -775,15 +751,7 @@ export const useViewerController = ({
 
   const restoreAppliedJointMotionState = useCallback(() => {
     clearJointInteractionPreview();
-    pendingClosedLoopPreviewRef.current = null;
     lastClosedLoopPreviewCommitRef.current = null;
-    if (closedLoopPreviewFrameRef.current !== null && typeof window !== 'undefined') {
-      window.cancelAnimationFrame(closedLoopPreviewFrameRef.current);
-      closedLoopPreviewFrameRef.current = null;
-    }
-    closedLoopPreviewSolveRequestRef.current += 1;
-    closedLoopMotionPreviewWorkerSessionRef.current.setBaseRobot(effectiveClosedLoopRobotState);
-    closedLoopMotionPreviewWorkerSessionRef.current.reset();
     previewMotionAnglesRef.current = { ...previousAppliedJointAngleStateRef.current };
     previewMotionQuaternionsRef.current = Object.fromEntries(
       Object.entries(previousAppliedJointMotionStateRef.current)
@@ -839,7 +807,6 @@ export const useViewerController = ({
     }
   }, [
     clearJointInteractionPreview,
-    effectiveClosedLoopRobotState,
     jointControlJoints,
     jointControlRobot,
     replaceJointPanelAngles,
@@ -888,7 +855,77 @@ export const useViewerController = ({
 
       applyTreePanelJointPreview(state.preview);
     });
-  }, [applyRuntimeJointMotionPreview, restoreAppliedJointMotionState]);
+  }, [applyRuntimeJointMotionPreview]);
+
+  const handleClosedLoopPreviewResolved = useCallback(
+    ({
+      request: pendingPreview,
+      compensation,
+      hasNewerPendingPreview,
+    }: ClosedLoopPreviewResolution) => {
+      const preview = resolveClosedLoopPreviewAngles(
+        pendingPreview.selectedJointId,
+        pendingPreview.resolvedAngle,
+        compensation,
+      );
+      const activePanelAngle = jointAnglesRef.current[pendingPreview.selectedJointId];
+      const activePanelMovedPastRequest =
+        pendingPreview.preserveActiveJointRuntime &&
+        isDraggingRef.current &&
+        typeof activePanelAngle === 'number' &&
+        !isSameJointAngle(activePanelAngle, pendingPreview.resolvedAngle);
+      const shouldPreserveActiveJointPreview =
+        pendingPreview.preserveActiveJointRuntime &&
+        isDraggingRef.current &&
+        (hasNewerPendingPreview || activePanelMovedPastRequest);
+
+      rememberClosedLoopPreviewCommit(
+        pendingPreview.selectedJointId,
+        pendingPreview.resolvedAngle,
+        preview.angles,
+        compensation.quaternions,
+      );
+      applyRuntimeJointMotionPreview(
+        preview.angles,
+        compensation.quaternions,
+        pendingPreview.selectedJointId,
+        {
+          preserveActiveJointRuntime:
+            pendingPreview.preserveActiveJointRuntime &&
+            (preview.preserveActiveJointRuntime || shouldPreserveActiveJointPreview),
+          preserveActiveJointPanel: shouldPreserveActiveJointPreview,
+        },
+      );
+    },
+    [applyRuntimeJointMotionPreview, rememberClosedLoopPreviewCommit],
+  );
+
+  const handleClosedLoopPreviewRejected = useCallback(
+    (pendingPreview: ClosedLoopPreviewResolution['request'], error: unknown) => {
+      logRuntimeFailure(
+        'useViewerController:scheduleClosedLoopPreviewWorkerSolve',
+        new Error(`${pendingPreview.diagnosticLabel} worker solve failed.`, {
+          cause: error,
+        }),
+        'warn',
+      );
+      if (!pendingPreview.preserveActiveJointRuntime) {
+        restoreAppliedJointMotionState();
+      }
+    },
+    [restoreAppliedJointMotionState],
+  );
+
+  const {
+    schedule: scheduleClosedLoopPreview,
+    solve: solveClosedLoopPreview,
+    cancel: cancelClosedLoopPreviewScheduler,
+    reset: resetClosedLoopPreviewScheduler,
+  } = useClosedLoopPreviewScheduler({
+    baseRobot: effectiveClosedLoopRobotState,
+    onResolved: handleClosedLoopPreviewResolved,
+    onRejected: handleClosedLoopPreviewRejected,
+  });
 
   const scheduleClosedLoopPreviewWorkerSolve = useCallback(
     (
@@ -897,134 +934,27 @@ export const useViewerController = ({
       diagnosticLabel: string,
       options?: { preserveActiveJointRuntime?: boolean },
     ) => {
-      closedLoopMotionPreviewWorkerSessionRef.current.setBaseRobot(effectiveClosedLoopRobotState);
-      pendingClosedLoopPreviewRef.current = {
+      scheduleClosedLoopPreview({
         selectedJointId,
         resolvedAngle,
         diagnosticLabel,
         preserveActiveJointRuntime: options?.preserveActiveJointRuntime ?? false,
-      };
-
-      if (
-        closedLoopPreviewFrameRef.current !== null ||
-        closedLoopPreviewSolveInFlightCountRef.current >= CLOSED_LOOP_PREVIEW_MAX_IN_FLIGHT
-      ) {
-        return;
-      }
-
-      const scheduleRunPreviewSolve = (runPreviewSolve: () => void) => {
-        if (typeof window === 'undefined' || typeof window.requestAnimationFrame !== 'function') {
-          runPreviewSolve();
-          return;
-        }
-
-        closedLoopPreviewFrameRef.current = window.requestAnimationFrame(runPreviewSolve);
-      };
-
-      const runPreviewSolve = () => {
-        closedLoopPreviewFrameRef.current = null;
-        const pendingPreview = pendingClosedLoopPreviewRef.current;
-        pendingClosedLoopPreviewRef.current = null;
-        if (!pendingPreview) {
-          return;
-        }
-
-        const solveRequestId = closedLoopPreviewSolveRequestRef.current;
-        const workerRequestSerial = ++closedLoopPreviewWorkerRequestSerialRef.current;
-        closedLoopPreviewSolveInFlightCountRef.current += 1;
-        void closedLoopMotionPreviewWorkerSessionRef.current
-          .solve(pendingPreview.selectedJointId, pendingPreview.resolvedAngle)
-          .then((compensation) => {
-            if (
-              solveRequestId !== closedLoopPreviewSolveRequestRef.current ||
-              workerRequestSerial <= closedLoopPreviewLastAppliedWorkerSerialRef.current
-            ) {
-              return;
-            }
-            closedLoopPreviewLastAppliedWorkerSerialRef.current = workerRequestSerial;
-
-            const hasNewerPendingPreview = pendingClosedLoopPreviewRef.current !== null;
-
-            const preview = resolveClosedLoopPreviewAngles(
-              pendingPreview.selectedJointId,
-              pendingPreview.resolvedAngle,
-              compensation,
-            );
-            const activePanelAngle = jointAnglesRef.current[pendingPreview.selectedJointId];
-            const activePanelMovedPastRequest =
-              pendingPreview.preserveActiveJointRuntime &&
-              isDraggingRef.current &&
-              typeof activePanelAngle === 'number' &&
-              !isSameJointAngle(activePanelAngle, pendingPreview.resolvedAngle);
-            const shouldPreserveActiveJointPreview =
-              pendingPreview.preserveActiveJointRuntime &&
-              isDraggingRef.current &&
-              (hasNewerPendingPreview || activePanelMovedPastRequest);
-
-            rememberClosedLoopPreviewCommit(
-              pendingPreview.selectedJointId,
-              pendingPreview.resolvedAngle,
-              preview.angles,
-              compensation.quaternions,
-            );
-            applyRuntimeJointMotionPreview(
-              preview.angles,
-              compensation.quaternions,
-              pendingPreview.selectedJointId,
-              {
-                preserveActiveJointRuntime:
-                  pendingPreview.preserveActiveJointRuntime &&
-                  (preview.preserveActiveJointRuntime || shouldPreserveActiveJointPreview),
-                preserveActiveJointPanel: shouldPreserveActiveJointPreview,
-              },
-            );
-          })
-          .catch((error) => {
-            if (
-              solveRequestId !== closedLoopPreviewSolveRequestRef.current ||
-              workerRequestSerial <= closedLoopPreviewLastAppliedWorkerSerialRef.current
-            ) {
-              return;
-            }
-
-            logRuntimeFailure(
-              'useViewerController:scheduleClosedLoopPreviewWorkerSolve',
-              new Error(`${pendingPreview.diagnosticLabel} worker solve failed.`, {
-                cause: error,
-              }),
-              'warn',
-            );
-            if (!pendingPreview.preserveActiveJointRuntime) {
-              restoreAppliedJointMotionState();
-            }
-          })
-          .finally(() => {
-            closedLoopPreviewSolveInFlightCountRef.current = Math.max(
-              0,
-              closedLoopPreviewSolveInFlightCountRef.current - 1,
-            );
-            if (
-              pendingClosedLoopPreviewRef.current &&
-              closedLoopPreviewSolveInFlightCountRef.current < CLOSED_LOOP_PREVIEW_MAX_IN_FLIGHT
-            ) {
-              scheduleRunPreviewSolve(runPreviewSolve);
-            }
-          });
-      };
-
-      scheduleRunPreviewSolve(runPreviewSolve);
+      });
     },
-    [
-      applyRuntimeJointMotionPreview,
-      effectiveClosedLoopRobotState,
-      rememberClosedLoopPreviewCommit,
-      restoreAppliedJointMotionState,
-    ],
+    [scheduleClosedLoopPreview],
   );
 
+  const resetClosedLoopPreviewState = useCallback(() => {
+    resetClosedLoopPreviewScheduler();
+    lastClosedLoopPreviewCommitRef.current = null;
+    previewMotionAnglesRef.current = {};
+    previewMotionQuaternionsRef.current = {};
+  }, [resetClosedLoopPreviewScheduler]);
+
   const clearIkJointKinematicsPreview = useCallback(() => {
+    resetClosedLoopPreviewScheduler();
     restoreAppliedJointMotionState();
-  }, [restoreAppliedJointMotionState]);
+  }, [resetClosedLoopPreviewScheduler, restoreAppliedJointMotionState]);
 
   const scheduleClosedLoopDragPreview = useCallback(
     (selectedJointId: string, resolvedAngle: number) => {
@@ -1038,16 +968,13 @@ export const useViewerController = ({
         },
       );
     },
-    [
-      applyImmediateClosedLoopActiveJointPreview,
-      scheduleClosedLoopPreviewWorkerSolve,
-    ],
+    [applyImmediateClosedLoopActiveJointPreview, scheduleClosedLoopPreviewWorkerSolve],
   );
 
   useEffect(() => {
     if (!active) return;
-    setHoverFrozen(isDragging || transformPendingRef.current);
-  }, [active, isDragging, setHoverFrozen]);
+    setOwnedHoverFrozen(isDragging || transformPendingRef.current);
+  }, [active, isDragging, setOwnedHoverFrozen]);
 
   useEffect(() => {
     isDraggingRef.current = isDragging;
@@ -1055,9 +982,9 @@ export const useViewerController = ({
 
   useEffect(() => {
     if (!active) {
-      setHoverFrozen(false);
+      setOwnedHoverFrozen(false);
     }
-  }, [active, setHoverFrozen]);
+  }, [active, setOwnedHoverFrozen]);
 
   useEffect(() => {
     const releaseDragLock = () => setIsDragging(false);
@@ -1084,10 +1011,6 @@ export const useViewerController = ({
     return () => {
       clearJointInteractionPreview();
       cancelSceneRefresh();
-      if (closedLoopPreviewFrameRef.current !== null && typeof window !== 'undefined') {
-        window.cancelAnimationFrame(closedLoopPreviewFrameRef.current);
-        closedLoopPreviewFrameRef.current = null;
-      }
     };
   }, [cancelSceneRefresh, clearJointInteractionPreview]);
 
@@ -1142,7 +1065,8 @@ export const useViewerController = ({
   const initializeJointControlState = useCallback(
     (loadedRobot: RuntimeRobotObject) => {
       const loadedJoints = (loadedRobot as RuntimeViewerRobot | null)?.joints;
-      const preservePreviousAngles = jointStateScopeRef.current !== null && jointStateScopeRef.current === jointStateScopeKey;
+      const preservePreviousAngles =
+        jointStateScopeRef.current !== null && jointStateScopeRef.current === jointStateScopeKey;
       const { currentAngles, defaultAngles } = resolveInitialJointControlState({
         joints: loadedJoints,
         previousAngles: jointAnglesRef.current,
@@ -1222,8 +1146,10 @@ export const useViewerController = ({
           const joint = jointControlRobot.joints?.[jointKey];
           if (joint && isSingleDofJoint(joint)) {
             const stateJointKey =
-              resolveViewerJointKey(effectiveClosedLoopRobotState?.joints, joint.name || jointKey) ??
-              (jointKey in (effectiveClosedLoopRobotState?.joints ?? {}) ? jointKey : null);
+              resolveViewerJointKey(
+                effectiveClosedLoopRobotState?.joints,
+                joint.name || jointKey,
+              ) ?? (jointKey in (effectiveClosedLoopRobotState?.joints ?? {}) ? jointKey : null);
             const stateJoint = stateJointKey
               ? effectiveClosedLoopRobotState?.joints?.[stateJointKey]
               : undefined;
@@ -1260,13 +1186,9 @@ export const useViewerController = ({
           return;
         }
 
-        const runtimeSolveRequestId = ++closedLoopPreviewSolveRequestRef.current;
-        closedLoopMotionPreviewWorkerSessionRef.current.setBaseRobot(effectiveClosedLoopRobotState);
-
-        void closedLoopMotionPreviewWorkerSessionRef.current
-          .solve(activeRuntimeJointKey, activeRuntimeAngle)
+        void solveClosedLoopPreview(activeRuntimeJointKey, activeRuntimeAngle)
           .then((compensation) => {
-            if (runtimeSolveRequestId !== closedLoopPreviewSolveRequestRef.current) {
+            if (!compensation) {
               return;
             }
 
@@ -1282,14 +1204,10 @@ export const useViewerController = ({
               activeRuntimeJointKey && jointControlRobot?.joints
                 ? jointControlRobot.joints[activeRuntimeJointKey]
                 : undefined;
-            emitJointChangeToApp(
-              activeJoint?.name || activeRuntimeJointKey,
-              preview.activeAngle,
-              {
-                jointAngles: committedAngles,
-                jointQuaternions: compensation.quaternions,
-              },
-            );
+            emitJointChangeToApp(activeJoint?.name || activeRuntimeJointKey, preview.activeAngle, {
+              jointAngles: committedAngles,
+              jointQuaternions: compensation.quaternions,
+            });
 
             applyRuntimeJointMotionPreview(
               committedAngles,
@@ -1298,10 +1216,6 @@ export const useViewerController = ({
             );
           })
           .catch((error) => {
-            if (runtimeSolveRequestId !== closedLoopPreviewSolveRequestRef.current) {
-              return;
-            }
-
             logRuntimeFailure(
               'useViewerController:handleRuntimeJointAnglesChange',
               new Error('Closed-loop runtime worker solve failed; keeping local joint state.', {
@@ -1367,6 +1281,7 @@ export const useViewerController = ({
       recordPendingLocalCommittedJointAngles,
       resolveDrivenMotion,
       scheduleClosedLoopDragPreview,
+      solveClosedLoopPreview,
       storeAppliedJointMotionState,
     ],
   );
@@ -1375,20 +1290,20 @@ export const useViewerController = ({
     (pending: boolean) => {
       transformPendingRef.current = pending;
       if (active) {
-        setHoverFrozen(pending || isDraggingRef.current);
+        setOwnedHoverFrozen(pending || isDraggingRef.current);
       }
       onTransformPendingChange?.(pending);
     },
-    [active, onTransformPendingChange, setHoverFrozen],
+    [active, onTransformPendingChange, setOwnedHoverFrozen],
   );
 
   useEffect(() => {
     return () => {
       transformPendingRef.current = false;
-      setHoverFrozen(false);
+      setOwnedHoverFrozen(false);
       onTransformPendingChange?.(false);
     };
-  }, [onTransformPendingChange, setHoverFrozen]);
+  }, [onTransformPendingChange, setOwnedHoverFrozen]);
 
   useEffect(() => {
     previousAppliedJointAngleStateRef.current = jointControlRobot?.joints
@@ -1405,21 +1320,15 @@ export const useViewerController = ({
     // snap back to its pre-drag value for ~0.5s before jumping forward. The
     // pending map self-clears in the re-sync effect once the store-derived
     // state catches up; a genuine model/scope switch is handled below.
-    pendingClosedLoopPreviewRef.current = null;
     lastClosedLoopPreviewCommitRef.current = null;
-    if (closedLoopPreviewFrameRef.current !== null && typeof window !== 'undefined') {
-      window.cancelAnimationFrame(closedLoopPreviewFrameRef.current);
-      closedLoopPreviewFrameRef.current = null;
-    }
-    closedLoopMotionPreviewWorkerSessionRef.current.setBaseRobot(effectiveClosedLoopRobotState);
-    closedLoopMotionPreviewWorkerSessionRef.current.reset();
-    closedLoopPreviewSolveRequestRef.current += 1;
+    resetClosedLoopPreviewScheduler();
     clearJointInteractionPreview();
   }, [
     clearJointInteractionPreview,
     effectiveClosedLoopRobotState,
     jointControlRobot,
     jointStateScopeKey,
+    resetClosedLoopPreviewScheduler,
   ]);
 
   // Drop any locally-committed-but-not-yet-propagated joint angles ONLY when the
@@ -1610,8 +1519,7 @@ export const useViewerController = ({
         resolveViewerJointKey(
           effectiveClosedLoopRobotState?.joints,
           runtimeJoint?.name || runtimeJointKey || jointName,
-        ) ??
-        (jointName in (effectiveClosedLoopRobotState?.joints ?? {}) ? jointName : null);
+        ) ?? (jointName in (effectiveClosedLoopRobotState?.joints ?? {}) ? jointName : null);
       const stateJoint = stateJointKey
         ? effectiveClosedLoopRobotState?.joints?.[stateJointKey]
         : undefined;
@@ -1740,14 +1648,7 @@ export const useViewerController = ({
       const jointName = interaction.jointName;
       const angle = resolveJointInteractionActualAngle(interaction);
       clearJointInteractionPreview();
-      pendingClosedLoopPreviewRef.current = null;
-      if (closedLoopPreviewFrameRef.current !== null && typeof window !== 'undefined') {
-        window.cancelAnimationFrame(closedLoopPreviewFrameRef.current);
-        closedLoopPreviewFrameRef.current = null;
-      }
-      closedLoopPreviewSolveRequestRef.current += 1;
-      const commitSolveRequestId = closedLoopPreviewSolveRequestRef.current;
-      closedLoopMotionPreviewWorkerSessionRef.current.setBaseRobot(effectiveClosedLoopRobotState);
+      cancelClosedLoopPreviewScheduler();
       const jointKey = resolveViewerJointKey(jointControlJoints, jointName);
       const joint = jointKey ? jointControlRobot?.joints?.[jointKey] : undefined;
       let shouldRefresh = false;
@@ -1792,11 +1693,11 @@ export const useViewerController = ({
             committedQuaternions = { ...previewCommit.jointQuaternions };
           } else {
             try {
-              const compensation = await closedLoopMotionPreviewWorkerSessionRef.current.solve(
+              const compensation = await solveClosedLoopPreview(
                 selectedClosedLoopJointId,
                 resolvedAngle,
               );
-              if (commitSolveRequestId !== closedLoopPreviewSolveRequestRef.current) {
+              if (!compensation) {
                 return;
               }
               const preview = resolveClosedLoopPreviewAngles(
@@ -1807,14 +1708,14 @@ export const useViewerController = ({
               committedAngles = preview.angles;
               committedQuaternions = compensation.quaternions;
             } catch (workerError) {
-              if (commitSolveRequestId !== closedLoopPreviewSolveRequestRef.current) {
-                return;
-              }
               logRuntimeFailure(
                 'useViewerController:handleJointChangeCommit',
-                new Error('Closed-loop joint commit worker solve failed; keeping local joint state.', {
-                  cause: workerError,
-                }),
+                new Error(
+                  'Closed-loop joint commit worker solve failed; keeping local joint state.',
+                  {
+                    cause: workerError,
+                  },
+                ),
                 'warn',
               );
               committedAngles = { [selectedClosedLoopJointId]: resolvedAngle };
@@ -1871,10 +1772,7 @@ export const useViewerController = ({
           drivenJoint,
         );
         if (
-          !isSameJointAngle(
-            Number(drivenJoint.angle ?? drivenJoint.jointValue),
-            runtimeMotionAngle,
-          )
+          !isSameJointAngle(Number(drivenJoint.angle ?? drivenJoint.jointValue), runtimeMotionAngle)
         ) {
           drivenJoint.setJointValue?.(runtimeMotionAngle);
           shouldRefresh = true;
@@ -1906,6 +1804,7 @@ export const useViewerController = ({
     },
     [
       applyRuntimeJointMotionPreview,
+      cancelClosedLoopPreviewScheduler,
       clearJointInteractionPreview,
       effectiveClosedLoopRobotState,
       emitJointChangeToApp,
@@ -1918,6 +1817,7 @@ export const useViewerController = ({
       resetClosedLoopPreviewState,
       resolveDrivenMotion,
       resolveRuntimeMotionAngle,
+      solveClosedLoopPreview,
       storeAppliedJointMotionState,
     ],
   );
@@ -2198,6 +2098,7 @@ export const useViewerController = ({
     setPaintSelectionScope,
     paintOperation,
     setPaintOperation,
+    paintInteractionRef,
     paintStatus,
     setPaintStatus,
     containerRef,

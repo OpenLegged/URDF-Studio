@@ -16,6 +16,9 @@ export default defineConfig({
       '@': path.resolve(repoRoot, 'src'),
     },
   },
+  worker: {
+    format: 'es',
+  },
   build: {
     outDir: path.resolve(packageDir, 'dist'),
     emptyOutDir: true,
@@ -28,13 +31,7 @@ export default defineConfig({
       fileName: () => 'index.js',
     },
     rollupOptions: {
-      external: [
-        'react',
-        'react-dom',
-        'three',
-        '@react-three/fiber',
-        '@react-three/drei',
-      ],
+      external: ['react', 'react-dom', 'three', '@react-three/fiber', '@react-three/drei'],
       output: {
         globals: {
           react: 'React',

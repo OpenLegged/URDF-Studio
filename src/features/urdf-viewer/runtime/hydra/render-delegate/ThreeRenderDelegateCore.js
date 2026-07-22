@@ -1138,8 +1138,19 @@ export class ThreeRenderDelegateCore {
                 if (!linkPath)
                     continue;
                 const existingCounts = meshCountsByLinkPath[linkPath];
-                if (Number(existingCounts?.collisionMeshCount || 0) > 0)
+                if (Number(existingCounts?.collisionMeshCount || 0) > 0) {
+                    const parsedGeometries = entries
+                        .map((entry) => entry?.primitiveGeometry || entry?.geometry || null)
+                        .filter((geometry) => geometry && typeof geometry === 'object');
+                    if (parsedGeometries.length > 0) {
+                        // Runtime proto descriptors provide the mesh count, but older
+                        // Hydra builds can report unit-sized primitive defaults. Retain
+                        // the authored layer dimensions as the authoritative geometry
+                        // source even when the runtime already found the colliders.
+                        existingCounts.collisionPrimitiveGeometries = parsedGeometries;
+                    }
                     continue;
+                }
                 for (const entry of entries) {
                     incrementMeshCountsForLinkPath(
                         linkPath,
@@ -2844,6 +2855,42 @@ export class ThreeRenderDelegateCore {
                 return typedEntries[0];
             if (typedEntries.length === 0 && linkCollisions.all?.length === 1)
                 return linkCollisions.all[0];
+        }
+        return null;
+    }
+    getCollisionPrimitiveGeometryOverride(meshId) {
+        const proto = parseProtoMeshIdentifier(meshId);
+        if (!proto || proto.sectionName !== 'collisions')
+            return null;
+        const snapshot = this.getCachedRobotMetadataSnapshot();
+        const counts = snapshot?.meshCountsByLinkPath?.[proto.linkPath];
+        const geometries = Array.isArray(counts?.collisionPrimitiveGeometries)
+            ? counts.collisionPrimitiveGeometries
+            : [];
+        const expectedType = proto.protoType === 'box' ? 'cube' : String(proto.protoType || '').toLowerCase();
+        const typedGeometries = geometries.filter((geometry) => {
+            const geometryType = String(geometry?.primitiveType || '').toLowerCase();
+            const normalizedType = geometryType === 'box' ? 'cube' : geometryType;
+            return normalizedType === expectedType;
+        });
+        const geometry = typedGeometries[proto.protoIndex] || null;
+        const dimensions = Array.isArray(geometry?.dimensions)
+            ? geometry.dimensions.map((value) => Math.abs(Number(value)))
+            : null;
+        if (!dimensions || dimensions.length < 3 || dimensions.some((value) => !Number.isFinite(value)))
+            return null;
+        if (expectedType === 'cube') {
+            return { extentSize: dimensions.slice(0, 3) };
+        }
+        if (expectedType === 'sphere') {
+            return { radius: Math.max(...dimensions.slice(0, 3)) * 0.5 };
+        }
+        if (expectedType === 'cylinder' || expectedType === 'capsule') {
+            return {
+                radius: Math.max(dimensions[0], dimensions[1]) * 0.5,
+                height: dimensions[2],
+                axis: 'Z',
+            };
         }
         return null;
     }

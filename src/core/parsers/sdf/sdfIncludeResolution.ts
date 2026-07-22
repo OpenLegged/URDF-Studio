@@ -125,3 +125,51 @@ export function resolveSdfIncludeSource(
 ): ResolvedSdfIncludeSource | null {
   return createSdfIncludeResolutionContext(allFileContents).resolve(includeUri, sourcePath);
 }
+
+/**
+ * Robot definition files (`.sdf`) are classified as robot files in the import
+ * pipeline and land in `availableFiles`, not in the text-file `allFileContents`
+ * map. Composite Gazebo SDF models use `<include><uri>model://child</uri></include>`
+ * to pull in sibling model directories, so the include resolver must see those
+ * nested `.sdf` contents too. This merges sdf robot file contents into the
+ * allFileContents map without mutating the inputs.
+ */
+export interface SdfIncludeAvailableFile {
+  name: string;
+  format?: string;
+  content?: string;
+}
+
+export function mergeSdfRobotFileContentsInto(
+  allFileContents: Record<string, string> = {},
+  availableFiles: readonly SdfIncludeAvailableFile[] = [],
+): Record<string, string> {
+  // Collect sdf robot files that carry inline content. If none contribute, the
+  // original allFileContents reference is returned unchanged so callers that
+  // track object identity (e.g. the include-index-once regression test) are
+  // unaffected.
+  const contributions: Array<{ key: string; content: string }> = [];
+  for (const file of availableFiles) {
+    if (file.format !== 'sdf') {
+      continue;
+    }
+    const content = file.content;
+    if (typeof content !== 'string' || content.length === 0) {
+      continue;
+    }
+    const key = normalizeRelativePath(file.name);
+    if (!Object.prototype.hasOwnProperty.call(allFileContents, key)) {
+      contributions.push({ key, content });
+    }
+  }
+
+  if (contributions.length === 0) {
+    return allFileContents;
+  }
+
+  const merged: Record<string, string> = { ...allFileContents };
+  for (const { key, content } of contributions) {
+    merged[key] = content;
+  }
+  return merged;
+}

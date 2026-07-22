@@ -1,4 +1,4 @@
-import type { UnifiedViewerMode } from './unifiedViewerMountState';
+import type { UnifiedViewerMode } from './unifiedViewerContract';
 
 export function resolveUnifiedViewerSceneMode(mode: UnifiedViewerMode): 'editor' {
   void mode;

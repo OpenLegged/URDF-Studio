@@ -281,7 +281,7 @@ export const RotationValueInput: React.FC<RotationValueInputProps> = ({
           {quickRotateAxisOptions.map((axis) => (
             <div
               key={axis.key}
-              className="flex min-w-0 flex-nowrap items-center gap-1 rounded-lg border border-border-black/70 bg-panel-bg/85 px-1 py-1 transition-colors hover:border-border-strong hover:bg-element-bg/45"
+              className="flex min-w-0 flex-nowrap items-center gap-1 rounded-lg border border-border-black/70 bg-panel-bg/85 px-1 py-1 transition-colors hover:border-border-strong hover:bg-element-hover"
             >
               <div className="flex min-w-[3.1rem] shrink-0 items-center gap-1">
                 <span

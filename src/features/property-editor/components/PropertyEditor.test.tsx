@@ -325,6 +325,11 @@ test('component identity fields keep long names and source paths inside a narrow
     assert.ok(nameRow, 'display name should use the responsive property row');
     assert.ok(visibilityRow, 'visibility should use the responsive property row');
     assert.ok(sourceFileRow, 'source file should stay in the same responsive property grid');
+    assert.match(
+      nameRow.parentElement?.className ?? '',
+      /\bgap-y-1\b/,
+      'component fields should keep a visible vertical gap at every panel width',
+    );
     assert.match(nameRow.className, /\bmin-w-0\b/);
     assert.match(visibilityRow.className, /\bmin-w-0\b/);
     assert.match(sourceFileRow.className, /\bmin-w-0\b/);

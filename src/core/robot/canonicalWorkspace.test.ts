@@ -441,6 +441,22 @@ test('canonical validation rejects malformed nested geometry and material collec
   );
 });
 
+test('canonical validation accepts stage-scoped USD material metadata', () => {
+  const workspace = createSingleComponentWorkspace(createRobot('unitree_usd')) as unknown;
+  asRecord(getFirstComponent(workspace).robot).materials = {
+    FL_foot: {
+      color: '#111111',
+      usdMaterial: {
+        materialId: '/World/Looks/FL_foot',
+        stageSourcePath: '/unitree_model/Go2/usd/go2.viewer_roundtrip.usd',
+      },
+    },
+  };
+
+  assert.equal(validateCanonicalWorkspace(workspace).valid, true);
+  assert.doesNotThrow(() => assertCanonicalWorkspace(workspace));
+});
+
 test('canonical validation rejects malformed URDF inspection collections before runtime use', () => {
   const invalidDiagnostics = structuredClone(createDefaultWorkspace()) as unknown;
   asRecord(getFirstComponent(invalidDiagnostics).robot).inspectionContext = {
@@ -622,16 +638,30 @@ test('canonical validation rejects malformed MJCF site and inspection metadata',
     'components.component_1.robot.inspectionContext.mjcf.tendons.0.attachments',
   );
 
-  const foreignSiteRef = structuredClone(validMjcf) as unknown;
-  const foreignAttachment = (
+  const sourceOnlySiteRef = structuredClone(validMjcf) as unknown;
+  const sourceOnlyAttachment = (
     (
-      asRecord(asRecord(asRecord(getFirstComponent(foreignSiteRef).robot).inspectionContext).mjcf)
+      asRecord(asRecord(asRecord(getFirstComponent(sourceOnlySiteRef).robot).inspectionContext).mjcf)
         .tendons as Array<Record<string, unknown>>
     )[0]!.attachments as Array<Record<string, unknown>>
   )[0]!;
-  foreignAttachment.ref = 'missing_site';
+  sourceOnlyAttachment.ref = 'source_only_helper_site';
+  (
+    asRecord(asRecord(asRecord(getFirstComponent(sourceOnlySiteRef).robot).inspectionContext).mjcf)
+      .tendons as Array<Record<string, unknown>>
+  )[0]!.attachmentRefs = ['source_only_helper_site'];
+  assert.doesNotThrow(() => assertCanonicalWorkspace(sourceOnlySiteRef));
+
+  const emptySiteRef = structuredClone(validMjcf) as unknown;
+  const emptyAttachment = (
+    (
+      asRecord(asRecord(asRecord(getFirstComponent(emptySiteRef).robot).inspectionContext).mjcf)
+        .tendons as Array<Record<string, unknown>>
+    )[0]!.attachments as Array<Record<string, unknown>>
+  )[0]!;
+  emptyAttachment.ref = '';
   assertInvalid(
-    foreignSiteRef,
+    emptySiteRef,
     'components.component_1.robot.inspectionContext.mjcf.tendons.0.attachments.0.ref',
   );
 

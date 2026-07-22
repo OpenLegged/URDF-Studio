@@ -1,4 +1,7 @@
 import type { RobotData } from './robot';
+import type { UsdSceneMaterialRecord } from './usdMaterial';
+
+export type { UsdSceneMaterialRecord } from './usdMaterial';
 
 export interface UsdMeshRange {
   offset: number;
@@ -60,71 +63,6 @@ export interface UsdLayerInfo {
   rootLayerPath: string | null;
   usedLayerPaths: string[];
   layerTextByPath?: Record<string, string>;
-}
-
-export interface UsdSceneMaterialRecord {
-  materialId?: string | null;
-  name?: string | null;
-  shaderPath?: string | null;
-  shaderName?: string | null;
-  shaderInfoId?: string | null;
-  isOmniPbr?: boolean | null;
-  opacityEnabled?: boolean | null;
-  opacityTextureEnabled?: boolean | null;
-  emissiveEnabled?: boolean | null;
-  colorSpace?: string | null;
-  colorSource?: string | null;
-  authoredColorSpace?: string | null;
-  emissiveColorSpace?: string | null;
-  specularColorSpace?: string | null;
-  attenuationColorSpace?: string | null;
-  sheenColorSpace?: string | null;
-  color?: ArrayLike<number> | null;
-  authoredColor?: ArrayLike<number> | null;
-  emissive?: ArrayLike<number> | null;
-  specularColor?: ArrayLike<number> | null;
-  attenuationColor?: ArrayLike<number> | null;
-  sheenColor?: ArrayLike<number> | null;
-  normalScale?: ArrayLike<number> | null;
-  clearcoatNormalScale?: ArrayLike<number> | null;
-  roughness?: number | null;
-  metalness?: number | null;
-  opacity?: number | null;
-  alphaTest?: number | null;
-  clearcoat?: number | null;
-  clearcoatRoughness?: number | null;
-  specularIntensity?: number | null;
-  transmission?: number | null;
-  thickness?: number | null;
-  attenuationDistance?: number | null;
-  aoMapIntensity?: number | null;
-  sheen?: number | null;
-  sheenRoughness?: number | null;
-  iridescence?: number | null;
-  iridescenceIOR?: number | null;
-  anisotropy?: number | null;
-  anisotropyRotation?: number | null;
-  emissiveIntensity?: number | null;
-  ior?: number | null;
-  mapPath?: string | null;
-  emissiveMapPath?: string | null;
-  roughnessMapPath?: string | null;
-  metalnessMapPath?: string | null;
-  normalMapPath?: string | null;
-  aoMapPath?: string | null;
-  alphaMapPath?: string | null;
-  clearcoatMapPath?: string | null;
-  clearcoatRoughnessMapPath?: string | null;
-  clearcoatNormalMapPath?: string | null;
-  specularColorMapPath?: string | null;
-  specularIntensityMapPath?: string | null;
-  transmissionMapPath?: string | null;
-  thicknessMapPath?: string | null;
-  sheenColorMapPath?: string | null;
-  sheenRoughnessMapPath?: string | null;
-  anisotropyMapPath?: string | null;
-  iridescenceMapPath?: string | null;
-  iridescenceThicknessMapPath?: string | null;
 }
 
 export interface UsdMeshCountsEntry {

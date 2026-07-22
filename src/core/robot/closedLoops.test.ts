@@ -118,8 +118,14 @@ function findNearestDrivenJointCandidate(
 }
 
 function chooseDrivenJointTestAngle(joint: RobotState['joints'][string]): number {
-  const lower = Number.isFinite(joint.limit?.lower) ? joint.limit!.lower : -1;
-  const upper = Number.isFinite(joint.limit?.upper) ? joint.limit!.upper : 1;
+  const authoredLower = joint.limit?.lower;
+  const authoredUpper = joint.limit?.upper;
+  const lower = typeof authoredLower === 'number' && Number.isFinite(authoredLower)
+    ? authoredLower
+    : -1;
+  const upper = typeof authoredUpper === 'number' && Number.isFinite(authoredUpper)
+    ? authoredUpper
+    : 1;
   const current = Number.isFinite(joint.angle) ? joint.angle! : 0;
   const span = upper - lower;
   const step = Math.min(0.3, Math.abs(span) > 1e-6 ? Math.max(0.05, Math.abs(span) * 0.12) : 0.1);

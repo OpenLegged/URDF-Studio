@@ -1,4 +1,5 @@
 import fs from 'fs';
+import { createRequire } from 'node:module';
 import path from 'path';
 import { defineConfig, loadEnv, type ServerOptions } from 'vite';
 import react from '@vitejs/plugin-react';
@@ -7,9 +8,11 @@ import tailwindcss from '@tailwindcss/vite';
 const appPackageVersion =
   JSON.parse(fs.readFileSync(path.resolve(__dirname, 'package.json'), 'utf8')).version ?? '0.0.0';
 
-const threeRoot = path.resolve(__dirname, 'node_modules/three');
+const requireFromApp = createRequire(path.resolve(__dirname, 'package.json'));
+const threeRoot = path.resolve(path.dirname(requireFromApp.resolve('three')), '..');
 const threeModuleEntry = path.resolve(threeRoot, 'build/three.module.js');
 const threeExamplesDir = path.resolve(threeRoot, 'examples/jsm');
+const DEFAULT_VITE_CACHE_DIR = path.resolve(__dirname, 'node_modules/.vite/urdf-studio-app');
 
 function buildConfigurationFileIndex(rootDirs: string[]): Map<string, string> {
   const fileIndex = new Map<string, string>();
@@ -123,9 +126,11 @@ const GENERATED_ARTIFACT_WATCH_IGNORE_ROOTS = [
   path.resolve(__dirname, 'dist'),
   path.resolve(__dirname, 'log'),
   path.resolve(__dirname, 'test'),
+  path.resolve(__dirname, 'scripts/test'),
 ].map((entryPath) => entryPath.replace(/\\/g, '/'));
 
 const GENERATED_ARTIFACT_WATCH_IGNORE_SEGMENTS = ['/.git/', '/.svn/', '/.hg/'];
+const TEST_FILE_WATCH_IGNORE_PATTERN = /(?:^|\/)[^/]+\.(?:test|spec)\.(?:[cm]?[jt]sx?)$/;
 const ISOLATED_DOCUMENT_HEADERS = {
   'Cross-Origin-Embedder-Policy': 'require-corp',
   'Cross-Origin-Opener-Policy': 'same-origin',
@@ -187,6 +192,11 @@ function resolveDevServerHost(env: Record<string, string | undefined>): string {
   return configuredHost || '127.0.0.1';
 }
 
+function resolveViteCacheDir(env: Record<string, string | undefined>): string {
+  const configuredCacheDir = env.URDF_STUDIO_VITE_CACHE_DIR?.trim();
+  return configuredCacheDir ? path.resolve(__dirname, configuredCacheDir) : DEFAULT_VITE_CACHE_DIR;
+}
+
 function resolveDevServerAllowedHosts(
   env: Record<string, string | undefined>,
 ): ServerOptions['allowedHosts'] | undefined {
@@ -214,7 +224,8 @@ function shouldIgnoreWatchPath(watchPath: string): boolean {
     GENERATED_ARTIFACT_WATCH_IGNORE_ROOTS.some(
       (rootPath) => normalizedPath === rootPath || normalizedPath.startsWith(`${rootPath}/`),
     ) ||
-    GENERATED_ARTIFACT_WATCH_IGNORE_SEGMENTS.some((segment) => normalizedPath.includes(segment))
+    GENERATED_ARTIFACT_WATCH_IGNORE_SEGMENTS.some((segment) => normalizedPath.includes(segment)) ||
+    TEST_FILE_WATCH_IGNORE_PATTERN.test(normalizedPath)
   );
 }
 
@@ -336,13 +347,21 @@ export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, '.', '');
   const devServerAllowedHosts = resolveDevServerAllowedHosts(env);
   const aiRuntimeEnv = resolveAiRuntimeEnv(env);
+  const viteCacheDir = resolveViteCacheDir(env);
 
   return {
+    cacheDir: viteCacheDir,
     server: {
       port: 3000,
       strictPort: false,
       host: resolveDevServerHost(env),
       ...(devServerAllowedHosts ? { allowedHosts: devServerAllowedHosts } : {}),
+      // Optimized dependency URLs can retain the same Vite browser hash across
+      // a no-reload optimizer update. Revalidate their ETags on page reload so
+      // an old wrapper cannot keep importing chunks from a replaced cache graph.
+      headers: {
+        'Cache-Control': 'no-cache',
+      },
       // Verification artifacts are intentionally written into tmp/ by repo policy.
       // Ignore generated directories so exports, screenshots, logs, and pid files
       // do not trigger full-page reloads and wipe imported workspace state.

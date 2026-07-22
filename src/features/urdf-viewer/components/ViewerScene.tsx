@@ -1,4 +1,4 @@
-import { Suspense, useCallback, useEffect, useMemo, useRef } from 'react';
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { MeasureTool } from './MeasureTool';
 import { AssemblyJointPickLayer } from './AssemblyJointPickLayer';
 import { useSnapshotRenderActive } from '@/shared/components/3d/scene/SnapshotRenderContext';
@@ -102,6 +102,8 @@ export const ViewerScene = ({
   onAssemblyTransform,
   onComponentTransform,
   onBridgeTransform,
+  pendingAutoGroundComponentIds,
+  onAssemblyComponentAutoGroundResolved,
   toolMode,
   t,
 }: ViewerSceneProps) => {
@@ -109,6 +111,7 @@ export const ViewerScene = ({
   const effectiveHoverSelectionEnabled =
     hoverSelectionEnabled && isContinuousHoverEnabledForToolMode(toolMode);
   const measureTargetResolverRef = useRef<MeasureTargetResolver | null>(null);
+  const [runtimeRobotRevision, setRuntimeRobotRevision] = useState(0);
   const readyNotificationFrameARef = useRef<number | null>(null);
   const readyNotificationFrameBRef = useRef<number | null>(null);
   const regressionRuntimeEnabled = isRegressionDebugEnabled();
@@ -203,6 +206,7 @@ export const ViewerScene = ({
   const handleRobotLoaded = useCallback(
     (robot: Parameters<NonNullable<RobotModelProps['onRobotLoaded']>>[0]) => {
       controller.handleRobotLoaded(robot);
+      setRuntimeRobotRevision((revision) => revision + 1);
       if (regressionRuntimeEnabled && sourceFile) {
         setRegressionRuntimeRobot(
           resolveRegressionRuntimeRobot({
@@ -237,6 +241,7 @@ export const ViewerScene = ({
 
       <AssemblyJointPickLayer
         robot={controller.robot}
+        runtimeRobotRevision={runtimeRobotRevision}
         workspace={workspace ?? null}
         sceneProjection={sceneProjection ?? null}
         hidden={snapshotRenderActive}
@@ -269,6 +274,7 @@ export const ViewerScene = ({
           paintColor={controller.paintColor}
           paintSelectionScope={controller.paintSelectionScope}
           paintOperation={controller.paintOperation}
+          paintInteractionRef={controller.paintInteractionRef}
           onPaintStatusChange={controller.setPaintStatus}
           onJointChange={controller.handleJointAngleChange}
           onJointChangeCommit={controller.handleJointChangeCommit}
@@ -324,6 +330,8 @@ export const ViewerScene = ({
           onAssemblyTransform={onAssemblyTransform}
           onComponentTransform={onComponentTransform}
           onBridgeTransform={onBridgeTransform}
+          pendingAutoGroundComponentIds={pendingAutoGroundComponentIds}
+          onAssemblyComponentAutoGroundResolved={onAssemblyComponentAutoGroundResolved}
         />
       </Suspense>
     </>

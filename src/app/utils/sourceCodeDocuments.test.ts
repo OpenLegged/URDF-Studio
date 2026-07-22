@@ -16,9 +16,14 @@ import {
   buildCanonicalWorkspaceSourceDocuments,
   buildSourceCodeDocuments,
 } from './sourceCodeDocuments.ts';
+import type { SourceCodeDocumentChangeTarget } from './sourceCodeDocuments.ts';
 
 const dom = new JSDOM('<!doctype html><html><body></body></html>');
 globalThis.DOMParser = dom.window.DOMParser as typeof DOMParser;
+
+function componentTargetId(target: SourceCodeDocumentChangeTarget | undefined): string | null {
+  return target?.kind === 'component' ? target.componentId : null;
+}
 
 function robot(name: string): RobotData {
   return {
@@ -59,6 +64,7 @@ test('primary source apply target always carries explicit component ownership', 
   });
 
   assert.deepEqual(documents[0].changeTarget, {
+    kind: 'component',
     componentId: 'arm-instance',
     name: 'robots/arm.urdf',
     format: 'urdf',
@@ -117,10 +123,39 @@ test('canonical source contract routes a matching single-component draft explici
   assert.equal(result.content, content);
   assert.equal(result.directComponentDocument, result.documents[0]);
   assert.equal(result.documents[0].readOnly, false);
-  assert.equal(result.documents[0].changeTarget?.componentId, 'arm-instance');
+  assert.equal(componentTargetId(result.documents[0].changeTarget), 'arm-instance');
 });
 
-test('same-source component instances retain isolated direct draft resources', () => {
+test('editor locks make owned source drafts read-only so raw text cannot bypass them', () => {
+  const workspace = createSingleComponentWorkspace(robot('arm'), {
+    componentId: 'arm-instance',
+    sourceFile: 'library/arm.urdf',
+  });
+  workspace.components['arm-instance'].robot.links.base!.editorLocked = true;
+  const draft = createComponentSourceDraft({
+    componentId: 'arm-instance',
+    format: 'urdf',
+    content: '<robot name="arm-draft" />',
+    robot: workspace.components['arm-instance'].robot,
+  });
+
+  const result = buildCanonicalWorkspaceSourceDocuments({
+    workspace,
+    activeComponentId: 'arm-instance',
+    componentSourceDrafts: { 'arm-instance': draft },
+    availableFiles: [{
+      name: 'library/arm.urdf',
+      format: 'urdf',
+      content: draft.content,
+    }],
+    allFileContents: {},
+  });
+
+  assert.equal(result.documents[0].readOnly, true);
+  assert.equal(result.documents[0].changeTarget, undefined);
+});
+
+test('disconnected component instances each expose an isolated editable tab', () => {
   const workspace = sharedSourceWorkspace();
   const drafts = {
     left: createComponentSourceDraft({
@@ -155,12 +190,14 @@ test('same-source component instances retain isolated direct draft resources', (
     activeComponentId: 'right',
   });
 
-  assert.equal(left.mode, 'assembly');
-  assert.equal(left.documents[0].readOnly, true);
+  // Multiple robots without a bridge each get their own editable tab; no merge.
+  assert.equal(left.mode, 'component');
+  assert.equal(left.documents.length, 2);
+  assert.ok(left.documents.every((document) => document.readOnly === false));
   assert.equal(left.directComponentDocument?.content, '<mujoco model="left_draft"/>');
-  assert.equal(left.directComponentDocument?.changeTarget?.componentId, 'left');
+  assert.equal(componentTargetId(left.directComponentDocument?.changeTarget), 'left');
   assert.equal(right.directComponentDocument?.content, '<mujoco model="right_draft"/>');
-  assert.equal(right.directComponentDocument?.changeTarget?.componentId, 'right');
+  assert.equal(componentTargetId(right.directComponentDocument?.changeTarget), 'right');
 });
 
 test('stale single-component drafts remain editable while missing drafts use a read-only projection', () => {
@@ -192,7 +229,7 @@ test('stale single-component drafts remain editable while missing drafts use a r
   assert.equal(staleResult.content, staleDraft.content);
   assert.equal(staleResult.documents[0].readOnly, false);
   assert.equal(staleResult.directComponentDocument, staleResult.documents[0]);
-  assert.equal(staleResult.documents[0].changeTarget?.componentId, 'left');
+  assert.equal(componentTargetId(staleResult.documents[0].changeTarget), 'left');
 
   const missingResult = buildCanonicalWorkspaceSourceDocuments({
     workspace,
@@ -250,6 +287,68 @@ test('multi-component and bridged workspaces expose a transformed read-only proj
   assert.equal(result.documents[0].readOnly, true);
   assert.ok(Object.values(parsed.joints).some((joint) => joint.origin.xyz.x === 5));
   assert.ok(Object.values(parsed.joints).some((joint) => joint.origin.xyz.x === 3));
+});
+
+test('bridged urdf components graft into one editable group tab preserving the master source', () => {
+  const workspace = sharedSourceWorkspace();
+  workspace.name = 'bridged_assembly';
+  workspace.bridges.mount = {
+    id: 'mount',
+    name: 'mount',
+    parentComponentId: 'left',
+    parentLinkId: 'base',
+    childComponentId: 'right',
+    childLinkId: 'base',
+    joint: {
+      ...structuredClone(DEFAULT_JOINT),
+      id: 'mount',
+      name: 'mount',
+      type: JointType.FIXED,
+      parentLinkId: 'base',
+      childLinkId: 'base',
+    },
+  };
+  const masterText = '<?xml version="1.0"?>\n<robot name="left_robot">\n  <link name="base" />\n</robot>\n';
+  const result = buildCanonicalWorkspaceSourceDocuments({
+    workspace,
+    activeComponentId: 'left',
+    componentSourceDrafts: {
+      left: createComponentSourceDraft({
+        componentId: 'left',
+        format: 'urdf',
+        content: masterText,
+        robot: workspace.components.left.robot,
+      }),
+      right: createComponentSourceDraft({
+        componentId: 'right',
+        format: 'urdf',
+        content: '<robot name="right_robot"><link name="base"/></robot>',
+        robot: workspace.components.right.robot,
+      }),
+    },
+    availableFiles: [],
+    allFileContents: {},
+  });
+
+  assert.equal(result.mode, 'assembly');
+  assert.equal(result.documents.length, 1);
+  assert.equal(result.documents[0].readOnly, false);
+  const target = result.documents[0].changeTarget;
+  assert.equal(target?.kind, 'group');
+  if (target?.kind === 'group') {
+    assert.equal(target.rootComponentId, 'left');
+    assert.deepEqual(target.groupComponentIds, ['left', 'right']);
+    assert.equal(target.provenance.masterComponentId, 'left');
+    assert.equal(target.provenance.linkOwnerByName.get('Right_instance__base')?.componentId, 'right');
+  }
+  // Master URDF text is preserved verbatim at the top of the flattened document.
+  assert.ok(result.content.startsWith('<?xml version="1.0"?>\n<robot name="left_robot">'));
+  assert.ok(result.content.includes('  <link name="base" />'));
+  // The slave's colliding "base" link is namespaced by its component name.
+  assert.match(result.content, /name="Right_instance__base"/);
+  // The bridge joint is injected and the result parses as a single robot.
+  assert.match(result.content, /<joint name="mount"/);
+  assert.ok(parseURDF(result.content));
 });
 
 test('USD direct source resources remain read-only with an explicit format signal', () => {

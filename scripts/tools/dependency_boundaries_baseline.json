@@ -1,14 +1,6 @@
 {
-  "generatedAt": "2026-06-05",
+  "generatedAt": "2026-07-11",
   "note": "Grandfathered import cycles and app feature deep imports. Ratchet down only; remove entries when fixed. New cycles and new/stale feature deep imports fail dependency_boundaries.mjs --check.",
-  "knownCycles": [
-    "src/types/robot.ts|src/types/usd.ts",
-    "src/core/parsers/filePreview.ts|src/core/parsers/index.ts",
-    "src/features/property-editor/utils/collision-optimization/coaxialMergeCandidates.ts|src/features/property-editor/utils/collisionOptimization.ts",
-    "src/app/utils/importPreparation.ts|src/app/utils/preResolvedRobotImportCache.ts",
-    "src/shared/utils/robot/closedLoopMotionPreview.ts|src/shared/utils/robot/closedLoopMotionPreviewWorkerBridge.ts",
-    "src/app/utils/unifiedViewerMountState.ts|src/app/utils/unifiedViewerSceneMode.ts",
-    "src/app/utils/exportArchiveAssets.ts|src/app/utils/exportArchiveAssetsWorker.ts"
-  ],
+  "knownCycles": [],
   "knownFeatureDeepImports": []
 }

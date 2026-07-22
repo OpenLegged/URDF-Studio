@@ -3,6 +3,7 @@ import {
   assertCanonicalWorkspace,
   createAssemblySceneProjection,
   createDefaultWorkspace,
+  isEntityEditorLocked,
   resolveClosedLoopDrivenJointMotion,
 } from '@/core/robot';
 
@@ -352,6 +353,17 @@ export function createWorkspaceRuntime(
     }
     const component = get().workspace.components[componentId];
     if (!component) {
+      return false;
+    }
+
+    const requestedJointIds = new Set([
+      ...Object.keys(angles),
+      ...Object.keys(quaternions),
+    ]);
+    if ([...requestedJointIds].some((entityId) => isEntityEditorLocked(
+      get().workspace,
+      { type: 'joint', componentId, entityId },
+    ))) {
       return false;
     }
 

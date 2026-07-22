@@ -419,6 +419,55 @@ test('advanced limit commit does not leak non-serializable runtime joint fields 
   dom.window.close();
 });
 
+test('advanced limit editing does not persist display defaults for missing fields', async () => {
+  const { dom, container, root } = createComponentRoot();
+  const updates: Array<{
+    limit?: { lower?: number; upper?: number; effort?: number; velocity?: number };
+  }> = [];
+
+  await renderJointControlItem(root, {
+    isAdvanced: true,
+    joint: {
+      id: 'wheel_joint',
+      name: 'wheel_joint',
+      jointType: 'continuous',
+      limit: {},
+    },
+    onUpdate: (_type, _id, data) => {
+      updates.push(data as { limit?: { effort?: number } });
+    },
+  });
+
+  const effortSymbol = Array.from(container.querySelectorAll('span')).find(
+    (node) => node.textContent === 'τ',
+  );
+  const effortButton = effortSymbol?.closest('button');
+  assert.ok(effortButton, 'missing effort should still have an editable display');
+
+  await act(async () => {
+    effortButton.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+  });
+
+  const effortInput = container.querySelector<HTMLInputElement>('input[type="text"]');
+  const nameLabel = container.querySelector('span[title="wheel_joint"]');
+  assert.ok(effortInput, 'effort editor should open');
+  assert.ok(nameLabel, 'joint name label should render');
+
+  await act(async () => {
+    effortInput.value = '5';
+    effortInput.dispatchEvent(new Event('input', { bubbles: true }));
+    nameLabel.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
+  });
+
+  assert.equal(updates.length, 1);
+  assert.deepEqual(updates[0]?.limit, { effort: 5 });
+
+  await act(async () => {
+    root.unmount();
+  });
+  dom.window.close();
+});
+
 test('limit edits keep crossed lower and upper bounds ordered before updating the joint', async () => {
   const { dom, container, root } = createComponentRoot();
   const updates: Array<{

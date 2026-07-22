@@ -1,4 +1,4 @@
-import React, { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import React, { useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { Camera, X } from 'lucide-react';
 import {
   Button,
@@ -6,14 +6,15 @@ import {
   CompactSwitch,
   PanelSegmentedControl,
   PanelSelect,
-  type SegmentedControlOption,
-  type SelectOption,
 } from '@/shared/components/ui';
-import { DraggableWindow } from '@/shared/components/DraggableWindow';
+import {
+  DraggableWindow,
+  FLOATING_WINDOW_HEADER_HEIGHT_CLASS,
+  FLOATING_WINDOW_RADIUS_CLASS,
+  FLOATING_WINDOW_TITLE_CLASS,
+} from '@/shared/components/DraggableWindow';
 import { useDraggableWindow } from '@/shared/hooks/useDraggableWindow';
 import {
-  DEFAULT_SNAPSHOT_CAPTURE_OPTIONS,
-  SNAPSHOT_ASPECT_RATIO_PRESETS,
   resolveSnapshotAspectRatio,
   type SnapshotCaptureAction,
   type SnapshotAspectRatioPreset,
@@ -24,14 +25,12 @@ import { translations, type Language, type TranslationKeys } from '@/shared/i18n
 import { useManagedWindowLayer } from '@/store';
 import { SnapshotPreviewRenderer } from './snapshot-preview/SnapshotPreviewRenderer';
 import type { SnapshotDialogPreviewState, SnapshotPreviewSession } from './snapshot-preview/types';
-
-const SNAPSHOT_RESOLUTION_OPTIONS = [
-  { value: '1280', label: '720p' },
-  { value: '1920', label: '1080p' },
-  { value: '2560', label: '2K' },
-  { value: '3840', label: '4K' },
-  { value: '7680', label: '8K' },
-] as const;
+import {
+  createSnapshotCaptureChoiceModel,
+  resolveSnapshotCompressionControlValue,
+  SNAPSHOT_RESOLUTION_OPTIONS,
+  useSnapshotCaptureForm,
+} from './snapshot-dialog/snapshotCaptureForm.ts';
 
 const PANEL_SECTION_CLASS_NAME =
   'rounded-lg border border-border-black bg-panel-bg px-2.5 py-1.5 shadow-sm';
@@ -163,27 +162,19 @@ export function SnapshotDialog({
 }: SnapshotDialogProps) {
   const t = translations[lang];
   const snapshotWindowLayer = useManagedWindowLayer('snapshot');
-  const [resolutionPreset, setResolutionPreset] = useState(
-    String(DEFAULT_SNAPSHOT_CAPTURE_OPTIONS.longEdgePx),
-  );
-  const [aspectRatioPreset, setAspectRatioPreset] = useState(
-    DEFAULT_SNAPSHOT_CAPTURE_OPTIONS.aspectRatioPreset,
-  );
-  const [imageFormat, setImageFormat] = useState(DEFAULT_SNAPSHOT_CAPTURE_OPTIONS.imageFormat);
-  const [imageQuality, setImageQuality] = useState(DEFAULT_SNAPSHOT_CAPTURE_OPTIONS.imageQuality);
-  const [detailLevel, setDetailLevel] = useState(DEFAULT_SNAPSHOT_CAPTURE_OPTIONS.detailLevel);
-  const [environmentPreset, setEnvironmentPreset] = useState(
-    DEFAULT_SNAPSHOT_CAPTURE_OPTIONS.environmentPreset,
-  );
-  const [shadowStyle, setShadowStyle] = useState(DEFAULT_SNAPSHOT_CAPTURE_OPTIONS.shadowStyle);
-  const [groundStyle, setGroundStyle] = useState(DEFAULT_SNAPSHOT_CAPTURE_OPTIONS.groundStyle);
-  const [backgroundStyle, setBackgroundStyle] = useState(
-    DEFAULT_SNAPSHOT_CAPTURE_OPTIONS.backgroundStyle,
-  );
-  const [hideGrid, setHideGrid] = useState(DEFAULT_SNAPSHOT_CAPTURE_OPTIONS.hideGrid);
-  const [pngOptimizeLevel, setPngOptimizeLevel] = useState(
-    DEFAULT_SNAPSHOT_CAPTURE_OPTIONS.pngOptimizeLevel,
-  );
+  const { options: resolvedOptions, updateOptions } = useSnapshotCaptureForm(isOpen);
+  const {
+    aspectRatioPreset,
+    backgroundStyle,
+    detailLevel,
+    environmentPreset,
+    groundStyle,
+    hideGrid,
+    imageFormat,
+    longEdgePx,
+    shadowStyle,
+  } = resolvedOptions;
+  const resolutionPreset = String(longEdgePx);
   const [internalPreviewState, setInternalPreviewState] = useState<SnapshotDialogPreviewState>({
     status: 'idle',
     imageUrl: null,
@@ -216,17 +207,6 @@ export function SnapshotDialog({
       return;
     }
 
-    setResolutionPreset(String(DEFAULT_SNAPSHOT_CAPTURE_OPTIONS.longEdgePx));
-    setAspectRatioPreset(DEFAULT_SNAPSHOT_CAPTURE_OPTIONS.aspectRatioPreset);
-    setImageFormat(DEFAULT_SNAPSHOT_CAPTURE_OPTIONS.imageFormat);
-    setImageQuality(DEFAULT_SNAPSHOT_CAPTURE_OPTIONS.imageQuality);
-    setDetailLevel(DEFAULT_SNAPSHOT_CAPTURE_OPTIONS.detailLevel);
-    setEnvironmentPreset(DEFAULT_SNAPSHOT_CAPTURE_OPTIONS.environmentPreset);
-    setShadowStyle(DEFAULT_SNAPSHOT_CAPTURE_OPTIONS.shadowStyle);
-    setGroundStyle(DEFAULT_SNAPSHOT_CAPTURE_OPTIONS.groundStyle);
-    setBackgroundStyle(DEFAULT_SNAPSHOT_CAPTURE_OPTIONS.backgroundStyle);
-    setHideGrid(DEFAULT_SNAPSHOT_CAPTURE_OPTIONS.hideGrid);
-    setPngOptimizeLevel(DEFAULT_SNAPSHOT_CAPTURE_OPTIONS.pngOptimizeLevel);
     setInternalPreviewState({
       status: 'idle',
       imageUrl: null,
@@ -302,149 +282,19 @@ export function SnapshotDialog({
     };
   }, [isOpen, windowState.size.width]);
 
-  useEffect(() => {
-    if (imageFormat === 'jpeg' && backgroundStyle === 'transparent') {
-      setBackgroundStyle(DEFAULT_SNAPSHOT_CAPTURE_OPTIONS.backgroundStyle);
-    }
-  }, [backgroundStyle, imageFormat]);
-
-  const resolvedOptions = useMemo<SnapshotCaptureOptions>(
-    () => ({
-      longEdgePx: Number(resolutionPreset),
-      aspectRatioPreset,
-      imageFormat,
-      imageQuality,
-      detailLevel,
-      environmentPreset,
-      shadowStyle,
-      groundStyle,
-      dofMode: 'off',
-      backgroundStyle,
-      hideGrid,
-      pngOptimizeLevel,
-    }),
-    [
-      backgroundStyle,
-      aspectRatioPreset,
-      detailLevel,
-      environmentPreset,
-      groundStyle,
-      hideGrid,
-      imageFormat,
-      imageQuality,
-      pngOptimizeLevel,
-      resolutionPreset,
-      shadowStyle,
-    ],
-  );
-
   const supportsLossyCompression = imageFormat !== 'png';
-  const resolutionOptions = useMemo<SelectOption[]>(
-    () =>
-      SNAPSHOT_RESOLUTION_OPTIONS.map((option) => ({
-        value: option.value,
-        label: option.label,
-      })),
-    [],
-  );
-  const formatOptions = useMemo<SelectOption[]>(
-    () => [
-      { value: 'png', label: t.snapshotFormatPng },
-      { value: 'jpeg', label: t.snapshotFormatJpeg },
-      { value: 'webp', label: t.snapshotFormatWebp },
-    ],
-    [t],
-  );
-  const aspectRatioOptions = useMemo<SelectOption[]>(
-    () =>
-      SNAPSHOT_ASPECT_RATIO_PRESETS.map((preset) => ({
-        value: preset,
-        label: preset === 'viewport' ? t.snapshotAspectViewport : preset,
-      })),
-    [t],
-  );
-  const environmentOptions = useMemo<SelectOption[]>(
-    () => [
-      { value: 'viewport', label: t.snapshotEnvironmentViewport },
-      { value: 'studio', label: t.snapshotEnvironmentStudio },
-      { value: 'city', label: t.snapshotEnvironmentCity },
-      { value: 'contrast', label: t.snapshotEnvironmentContrast },
-    ],
-    [t],
-  );
-  const backgroundOptions = useMemo<SelectOption[]>(() => {
-    const options: SelectOption[] = [
-      { value: 'viewport', label: t.snapshotBackgroundViewport },
-      { value: 'studio', label: t.snapshotBackgroundStudio },
-      { value: 'sky', label: t.snapshotBackgroundSky },
-      { value: 'dark', label: t.snapshotBackgroundDark },
-    ];
-
-    if (imageFormat !== 'jpeg') {
-      options.push({ value: 'transparent', label: t.snapshotBackgroundTransparent });
-    }
-
-    return options;
-  }, [imageFormat, t]);
-  const shadowOptions = useMemo<SelectOption[]>(
-    () => [
-      { value: 'soft', label: t.snapshotShadowSoft },
-      { value: 'balanced', label: t.snapshotShadowBalanced },
-      { value: 'crisp', label: t.snapshotShadowCrisp },
-    ],
-    [t],
-  );
-  const groundOptions = useMemo<SelectOption[]>(
-    () => [
-      { value: 'shadow', label: t.snapshotFloorShadow },
-      { value: 'contact', label: t.snapshotFloorContact },
-      { value: 'reflective', label: t.snapshotFloorReflective },
-    ],
-    [t],
-  );
-  const antialiasOptions = useMemo<
-    ReadonlyArray<SegmentedControlOption<SnapshotCaptureOptions['detailLevel']>>
-  >(
-    () => [
-      { value: 'viewport', label: '1x' },
-      { value: 'high', label: '2x' },
-      { value: 'ultra', label: '4x' },
-    ],
-    [],
-  );
-  const compressionOptions = useMemo<ReadonlyArray<SegmentedControlOption<number>>>(
-    () =>
-      supportsLossyCompression
-        ? [
-            { value: 60, label: t.compressionLevelCompact },
-            { value: 80, label: t.compressionLevelBalanced },
-            { value: 96, label: t.compressionLevelPreserve },
-          ]
-        : [
-            // PNG stays lossless; these tiers select oxipng optimization effort.
-            { value: 1, label: t.snapshotPngOptimizeFast },
-            { value: 2, label: t.snapshotPngOptimizeBalanced },
-            { value: 3, label: t.snapshotPngOptimizeSmallest },
-          ],
-    [supportsLossyCompression, t],
-  );
-  const compactLabels = useMemo(
-    () => ({
-      output: t.snapshotCompactOutput,
-      scene: t.snapshotCompactScene,
-      resolution: t.snapshotCompactResolution,
-      aspect: t.snapshotCompactAspect,
-      format: t.snapshotCompactFormat,
-      aa: 'AA',
-      quality: t.snapshotCompactQuality,
-      lighting: t.snapshotCompactLighting,
-      background: t.snapshotCompactBackground,
-      shadow: t.snapshotCompactShadow,
-      ground: t.snapshotCompactGround,
-      grid: t.snapshotCompactGrid,
-    }),
-    [t],
-  );
+  const {
+    antialiasOptions,
+    aspectRatioOptions,
+    backgroundOptions,
+    compactLabels,
+    compressionOptions,
+    environmentOptions,
+    formatOptions,
+    groundOptions,
+    resolutionOptions,
+    shadowOptions,
+  } = useMemo(() => createSnapshotCaptureChoiceModel(imageFormat, t), [imageFormat, t]);
   const selectedAntialiasOption =
     antialiasOptions.find((option) => option.value === detailLevel) ?? antialiasOptions[1];
   const selectedResolutionLabel =
@@ -459,10 +309,7 @@ export function SnapshotDialog({
     imageFormat.toUpperCase(),
     selectedAntialiasOption.label,
   ].join(' · ');
-  const compressionPreset = imageQuality >= 90 ? 96 : imageQuality >= 70 ? 80 : 60;
-  // The same segmented control drives lossy quality (JPEG/WebP) and lossless
-  // oxipng effort (PNG), so resolve the active numeric value per format.
-  const compressionControlValue = supportsLossyCompression ? compressionPreset : pngOptimizeLevel;
+  const compressionControlValue = resolveSnapshotCompressionControlValue(resolvedOptions);
   const effectivePreviewState = previewState ?? internalPreviewState;
   const captureProgressPhase = captureProgress?.phase ?? 'preparing';
   const captureProgressPercent = clamp(
@@ -536,13 +383,13 @@ export function SnapshotDialog({
           <div className="rounded-lg border border-border-black bg-panel-bg p-1 text-system-blue shadow-sm">
             <Camera className="h-3 w-3" />
           </div>
-          <div className="text-[11px] font-semibold text-text-primary">{t.snapshotCapture}</div>
+          <div className={FLOATING_WINDOW_TITLE_CLASS}>{t.snapshotCapture}</div>
         </div>
       }
-      className="overflow-hidden rounded-2xl border border-border-black bg-panel-bg text-text-primary shadow-xl pointer-events-auto"
+      className={`overflow-hidden ${FLOATING_WINDOW_RADIUS_CLASS} border border-border-black bg-panel-bg text-text-primary shadow-xl pointer-events-auto`}
       zIndex={snapshotWindowLayer.zIndex}
       onActivate={snapshotWindowLayer.onActivate}
-      headerClassName="flex h-10 items-center justify-between border-b border-border-black bg-element-bg px-3"
+      headerClassName={`flex ${FLOATING_WINDOW_HEADER_HEIGHT_CLASS} shrink-0 items-center justify-between border-b border-border-black bg-element-bg px-3`}
       interactionClassName="select-none"
       controlButtonClassName="rounded-md p-1 text-text-tertiary transition-colors hover:bg-panel-bg hover:text-text-primary"
       closeButtonClassName={`rounded-md p-1 ${CLOSE_BUTTON_DANGER_TERTIARY_CLASS}`}
@@ -578,7 +425,7 @@ export function SnapshotDialog({
                     value={resolutionPreset}
                     options={resolutionOptions}
                     disabled={isCapturing}
-                    onChange={(event) => setResolutionPreset(event.target.value)}
+                    onChange={(event) => updateOptions({ longEdgePx: Number(event.target.value) })}
                   />
                 </SnapshotField>
                 <SnapshotField label={compactLabels.aspect}>
@@ -588,7 +435,9 @@ export function SnapshotDialog({
                     options={aspectRatioOptions}
                     disabled={isCapturing}
                     onChange={(event) =>
-                      setAspectRatioPreset(event.target.value as SnapshotAspectRatioPreset)
+                      updateOptions({
+                        aspectRatioPreset: event.target.value as SnapshotAspectRatioPreset,
+                      })
                     }
                   />
                 </SnapshotField>
@@ -599,7 +448,9 @@ export function SnapshotDialog({
                     options={formatOptions}
                     disabled={isCapturing}
                     onChange={(event) =>
-                      setImageFormat(event.target.value as SnapshotCaptureOptions['imageFormat'])
+                      updateOptions({
+                        imageFormat: event.target.value as SnapshotCaptureOptions['imageFormat'],
+                      })
                     }
                   />
                 </SnapshotField>
@@ -612,7 +463,9 @@ export function SnapshotDialog({
                     itemClassName={SNAPSHOT_SEGMENTED_ITEM_CLASS_NAME}
                     stretch
                     onChange={(value) =>
-                      setDetailLevel(value as SnapshotCaptureOptions['detailLevel'])
+                      updateOptions({
+                        detailLevel: value as SnapshotCaptureOptions['detailLevel'],
+                      })
                     }
                   />
                 </SnapshotField>
@@ -629,9 +482,11 @@ export function SnapshotDialog({
                         return;
                       }
                       if (supportsLossyCompression) {
-                        setImageQuality(value);
+                        updateOptions({ imageQuality: value });
                       } else {
-                        setPngOptimizeLevel(value as SnapshotCaptureOptions['pngOptimizeLevel']);
+                        updateOptions({
+                          pngOptimizeLevel: value as SnapshotCaptureOptions['pngOptimizeLevel'],
+                        });
                       }
                     }}
                   />
@@ -648,9 +503,10 @@ export function SnapshotDialog({
                     options={environmentOptions}
                     disabled={isCapturing}
                     onChange={(event) =>
-                      setEnvironmentPreset(
-                        event.target.value as SnapshotCaptureOptions['environmentPreset'],
-                      )
+                      updateOptions({
+                        environmentPreset: event.target
+                          .value as SnapshotCaptureOptions['environmentPreset'],
+                      })
                     }
                   />
                 </SnapshotField>
@@ -661,9 +517,10 @@ export function SnapshotDialog({
                     options={backgroundOptions}
                     disabled={isCapturing}
                     onChange={(event) =>
-                      setBackgroundStyle(
-                        event.target.value as SnapshotCaptureOptions['backgroundStyle'],
-                      )
+                      updateOptions({
+                        backgroundStyle: event.target
+                          .value as SnapshotCaptureOptions['backgroundStyle'],
+                      })
                     }
                   />
                 </SnapshotField>
@@ -674,7 +531,9 @@ export function SnapshotDialog({
                     options={shadowOptions}
                     disabled={isCapturing}
                     onChange={(event) =>
-                      setShadowStyle(event.target.value as SnapshotCaptureOptions['shadowStyle'])
+                      updateOptions({
+                        shadowStyle: event.target.value as SnapshotCaptureOptions['shadowStyle'],
+                      })
                     }
                   />
                 </SnapshotField>
@@ -685,14 +544,16 @@ export function SnapshotDialog({
                     options={groundOptions}
                     disabled={isCapturing}
                     onChange={(event) =>
-                      setGroundStyle(event.target.value as SnapshotCaptureOptions['groundStyle'])
+                      updateOptions({
+                        groundStyle: event.target.value as SnapshotCaptureOptions['groundStyle'],
+                      })
                     }
                   />
                 </SnapshotField>
                 <SnapshotField label={compactLabels.grid}>
                   <CompactSwitch
                     checked={!hideGrid}
-                    onChange={(checked) => setHideGrid(!checked)}
+                    onChange={(checked) => updateOptions({ hideGrid: !checked })}
                     disabled={isCapturing}
                     ariaLabel={t.snapshotHideGrid}
                     className="w-full justify-start"

@@ -82,6 +82,7 @@ test('cloneColladaScenePreservingRootTransform applies shared coplanar shell fix
     normalizeColladaUpAxis(colladaText).content,
     THREE.LoaderUtils.extractUrlBase(meshPath),
   );
+  assert.ok(dae);
 
   const { clone } = cloneColladaScenePreservingRootTransform(dae.scene);
   let firstMesh: THREE.Mesh | null = null as THREE.Mesh | null;
@@ -111,6 +112,7 @@ test('cloneColladaScenePreservingRootTransform skips override mesh collection wh
   const colladaText = fs.readFileSync(meshPath, 'utf8');
   const loader = new ColladaLoader();
   const dae = loader.parse(colladaText, THREE.LoaderUtils.extractUrlBase(meshPath));
+  assert.ok(dae);
 
   const defaultClone = cloneColladaScenePreservingRootTransform(dae.scene);
   const preservedClone = cloneColladaScenePreservingRootTransform(dae.scene, false, true);

@@ -28,6 +28,7 @@ export interface HeaderProps {
   onImportFile: () => void;
   onImportFolder: () => void;
   onOpenExport: () => void;
+  onPrefetchExport: () => void;
   onExportProject: () => void;
   isExportingProject?: boolean;
   // Toolbox items
@@ -36,11 +37,13 @@ export interface HeaderProps {
   onOpenCodeViewer: () => void;
   onPrefetchCodeViewer: () => void;
   onOpenSettings: () => void;
+  onPrefetchSettings: () => void;
   quickAction?: HeaderAction;
   secondaryAction?: HeaderAction;
   surfaceModeSelector?: HeaderSurfaceModeSelectorConfig;
   // Snapshot
   onSnapshot: () => void;
+  onPrefetchSnapshot: () => void;
   // View config
   viewConfig: {
     showOptionsPanel: boolean;
@@ -55,16 +58,19 @@ export function Header({
   onImportFile,
   onImportFolder,
   onOpenExport,
+  onPrefetchExport,
   onExportProject,
   isExportingProject = false,
   toolboxItems,
   onOpenCodeViewer,
   onPrefetchCodeViewer,
   onOpenSettings,
+  onPrefetchSettings,
   quickAction,
   secondaryAction,
   surfaceModeSelector,
   onSnapshot,
+  onPrefetchSnapshot,
   viewConfig,
   viewAvailability = { jointPanel: true },
   setViewConfig,
@@ -132,7 +138,7 @@ export function Header({
   return (
     <header
       ref={headerRef}
-      className="relative z-[300] h-10 border-b shrink-0 select-none bg-panel-bg dark:bg-panel-bg border-border-black grid grid-cols-[auto_1fr] sm:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2 px-2.5"
+      className="relative z-[200] h-10 border-b shrink-0 select-none bg-panel-bg dark:bg-panel-bg border-border-black grid grid-cols-[auto_1fr] sm:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2 px-2.5"
     >
       {/* Left Section - Logo & Menus */}
       <div className="flex items-center gap-1 min-w-0">
@@ -169,6 +175,7 @@ export function Header({
           onImportFile={onImportFile}
           onImportFolder={onImportFolder}
           onOpenExport={onOpenExport}
+          onPrefetchExport={onPrefetchExport}
           onExportProject={onExportProject}
           isExportingProject={isExportingProject}
           toolboxItems={toolboxItems}
@@ -203,7 +210,9 @@ export function Header({
         onOpenCodeViewer={onOpenCodeViewer}
         onPrefetchCodeViewer={onPrefetchCodeViewer}
         onSnapshot={onSnapshot}
+        onPrefetchSnapshot={onPrefetchSnapshot}
         onOpenSettings={onOpenSettings}
+        onPrefetchSettings={onPrefetchSettings}
         t={t}
       />
     </header>

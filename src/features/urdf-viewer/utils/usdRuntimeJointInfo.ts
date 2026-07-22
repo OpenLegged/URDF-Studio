@@ -18,11 +18,11 @@ interface UsdRuntimeJointLike {
 }
 
 export function radiansToDegrees(value: number | null | undefined): number | undefined {
-  return Number.isFinite(Number(value)) ? (Number(value) * 180) / Math.PI : undefined;
+  return typeof value === 'number' && Number.isFinite(value) ? (value * 180) / Math.PI : undefined;
 }
 
 export function degreesToRadians(value: number | null | undefined): number | undefined {
-  return Number.isFinite(Number(value)) ? (Number(value) * Math.PI) / 180 : undefined;
+  return typeof value === 'number' && Number.isFinite(value) ? (value * Math.PI) / 180 : undefined;
 }
 
 export function getUsdRuntimeJointLimitDegrees(

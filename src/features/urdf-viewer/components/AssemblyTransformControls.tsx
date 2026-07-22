@@ -9,7 +9,7 @@ import type {
 } from '@/core/robot';
 import { entityRefKey, type AssemblyTransform, type UrdfOrigin, type WorkspaceSelection } from '@/types';
 import type { UpdateCommitOptions } from '@/types/viewer';
-import { useSelectionStore } from '@/store/selectionStore';
+import { useSelectionStore, type HoverFreezeOwner } from '@/store/selectionStore';
 
 import { decomposeJointPivotMatrixToOrigin } from '../utils/assemblyTransformControlsShared';
 import { AssemblySelectionBounds } from './AssemblySelectionBounds';
@@ -78,6 +78,9 @@ export const AssemblyTransformControls = memo(function AssemblyTransformControls
   onTransformPendingChange,
 }: AssemblyTransformControlsProps) {
   const setHoverFrozen = useSelectionStore((state) => state.setHoverFrozen);
+  const hoverFreezeOwner = useRef<HoverFreezeOwner>(
+    Symbol('assembly-transform-controls'),
+  ).current;
   const dragTargetRef = useRef<ActiveTransformTarget | null>(null);
   const runtimeJoints = useMemo(() => resolveRuntimeJoints(runtimeRobot), [runtimeRobot]);
 
@@ -155,7 +158,7 @@ export const AssemblyTransformControls = memo(function AssemblyTransformControls
   const handleDraggingChanged = useCallback(
     (event?: { value?: boolean }) => {
       const dragging = Boolean(event?.value);
-      setHoverFrozen(dragging);
+      setHoverFrozen(hoverFreezeOwner, dragging);
       onTransformPendingChange?.(dragging);
 
       if (dragging) {
@@ -165,16 +168,16 @@ export const AssemblyTransformControls = memo(function AssemblyTransformControls
       commitTransform();
       dragTargetRef.current = null;
     },
-    [activeTarget, commitTransform, onTransformPendingChange, setHoverFrozen],
+    [activeTarget, commitTransform, hoverFreezeOwner, onTransformPendingChange, setHoverFrozen],
   );
 
   useEffect(
     () => () => {
-      setHoverFrozen(false);
+      setHoverFrozen(hoverFreezeOwner, false);
       onTransformPendingChange?.(false);
       dragTargetRef.current = null;
     },
-    [onTransformPendingChange, setHoverFrozen],
+    [hoverFreezeOwner, onTransformPendingChange, setHoverFrozen],
   );
 
   if (!activeTarget) {

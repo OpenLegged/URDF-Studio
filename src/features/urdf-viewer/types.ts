@@ -17,10 +17,7 @@ import type {
   UrdfOrigin,
   WorkspaceSelection,
 } from '@/types';
-import type {
-  AssemblyScenePlacement,
-  AssemblySceneProjection,
-} from '@/core/robot';
+import type { AssemblyScenePlacement, AssemblySceneProjection } from '@/core/robot';
 import type {
   MeasureAnchorMode,
   MeasureGroup,
@@ -81,6 +78,12 @@ export type ViewerPaintStatusTone = 'info' | 'success' | 'error';
 export type ViewerPaintSelectionScope = 'face' | 'island';
 export type ViewerPaintOperation = 'paint' | 'erase';
 
+export interface ViewerPaintInteractionState {
+  color: string;
+  operation: ViewerPaintOperation;
+  selectionScope: ViewerPaintSelectionScope;
+}
+
 export interface ViewerPaintStatus {
   tone: ViewerPaintStatusTone;
   message: string;
@@ -111,11 +114,7 @@ export interface ViewerProps {
   availableFiles?: RobotFile[];
   sourceFilePath?: string;
   onDocumentLoadEvent?: (event: ViewerDocumentLoadEvent) => void;
-  onJointChange?: (
-    jointName: string,
-    angle: number,
-    context?: ViewerJointChangeContext,
-  ) => void;
+  onJointChange?: (jointName: string, angle: number, context?: ViewerJointChangeContext) => void;
   /** Runtime-global joint IDs; workspace adapters resolve these through projection maps. */
   onJointMotionCommit?: (context: ViewerJointChangeContext) => void;
   syncJointChangesToApp?: boolean;
@@ -196,6 +195,10 @@ export interface ViewerProps {
     origin: UrdfOrigin,
     options?: import('@/types/viewer').UpdateCommitOptions,
   ) => void;
+  pendingAutoGroundComponentIds?: readonly string[];
+  onAssemblyComponentAutoGroundResolved?: (
+    resolution: AssemblyComponentAutoGroundResolution,
+  ) => void;
 }
 
 export interface RobotModelProps {
@@ -240,14 +243,13 @@ export interface RobotModelProps {
   paintColor?: string;
   paintSelectionScope?: ViewerPaintSelectionScope;
   paintOperation?: ViewerPaintOperation;
+  paintInteractionRef?: React.RefObject<ViewerPaintInteractionState>;
   onPaintStatusChange?: (status: ViewerPaintStatus | null) => void;
   onJointChange?: (name: string, angle: number, context?: ViewerJointChangeContext) => void;
   onJointChangeCommit?: (name: string, angle: number) => void;
   onJointMotionCommit?: (context: ViewerJointChangeContext) => void;
   initialJointAngles?: Record<string, number>;
-  registerSceneRefresh?: (
-    refreshScene: ((options?: { force?: boolean }) => void) | null,
-  ) => void;
+  registerSceneRefresh?: (refreshScene: ((options?: { force?: boolean }) => void) | null) => void;
   setIsDragging?: (dragging: boolean) => void;
   onIkPreviewKinematicOverrides?: (
     jointAngles: Record<string, number>,
@@ -325,6 +327,21 @@ export interface RobotModelProps {
     origin: UrdfOrigin,
     options?: import('@/types/viewer').UpdateCommitOptions,
   ) => void;
+  pendingAutoGroundComponentIds?: readonly string[];
+  onAssemblyComponentAutoGroundResolved?: (
+    resolution: AssemblyComponentAutoGroundResolution,
+  ) => void;
+}
+
+export interface AssemblyComponentGroundAdjustment {
+  componentId: string;
+  transform: AssemblyTransform;
+}
+
+export interface AssemblyComponentAutoGroundResolution {
+  adjustments: AssemblyComponentGroundAdjustment[];
+  measuredComponentIds: string[];
+  runtimeRobotLocalPositionDelta: { x: number; y: number; z: number } | null;
 }
 
 export interface CollisionTransformControlsProps {

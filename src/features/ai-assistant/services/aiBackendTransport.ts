@@ -15,15 +15,15 @@
  * via `setAiBackendAuthTokenProvider` and requests carry it as a Bearer token.
  */
 
+import {
+  getAiBackendAuthToken,
+  setAiBackendAuthTokenProvider,
+} from '../../../shared/hostIntegrationState';
 import { resolveAiRuntimeEnv } from './aiRuntimeEnv';
 
-type AuthTokenProvider = () => string | null | undefined;
-
-let authTokenProvider: AuthTokenProvider | null = null;
-
-export function setAiBackendAuthTokenProvider(provider: AuthTokenProvider | null): void {
-  authTokenProvider = provider;
-}
+// Preserve the feature-level public API while keeping the provider state in
+// the import-free host facade.
+export { setAiBackendAuthTokenProvider };
 
 export function getAiBackendBaseUrl(): string {
   return resolveAiRuntimeEnv().backendUrl;
@@ -54,7 +54,7 @@ export function isAiBackendAuthError(error: unknown): boolean {
 
 const buildRequestHeaders = (): Record<string, string> => {
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-  const token = authTokenProvider?.();
+  const token = getAiBackendAuthToken();
   if (token) {
     headers.Authorization = `Bearer ${token}`;
   }

@@ -418,6 +418,64 @@ test('buildRuntimeRobotFromState exposes referenced joint limits in runtime moti
   assert.ok(Math.abs((joint.jointValue?.[0] ?? Number.NaN) - 0.8) <= 1e-12);
 });
 
+test('buildRuntimeRobotFromState keeps scalar joints unbounded without finite bound pairs', async () => {
+  const robot = await buildRuntimeRobotFromState({
+    robotName: 'continuous_joint_robot',
+    links: {
+      base_link: { ...DEFAULT_LINK, id: 'base_link', name: 'base_link' },
+      wheel_link: { ...DEFAULT_LINK, id: 'wheel_link', name: 'wheel_link' },
+      slider_link: { ...DEFAULT_LINK, id: 'slider_link', name: 'slider_link' },
+    },
+    joints: {
+      wheel_joint: {
+        ...DEFAULT_JOINT,
+        id: 'wheel_joint',
+        name: 'wheel_joint',
+        type: JointType.REVOLUTE,
+        parentLinkId: 'base_link',
+        childLinkId: 'wheel_link',
+        axis: { x: 0, y: 0, z: 1 },
+        limit: { effort: 12, velocity: 8 },
+      },
+      slider_joint: {
+        ...DEFAULT_JOINT,
+        id: 'slider_joint',
+        name: 'slider_joint',
+        type: JointType.PRISMATIC,
+        parentLinkId: 'wheel_link',
+        childLinkId: 'slider_link',
+        axis: { x: 1, y: 0, z: 0 },
+        limit: { velocity: 2 },
+      },
+    },
+    manager: new THREE.LoadingManager(),
+    loadMeshCb: createNoopMeshLoadCb(),
+  });
+
+  const joint = robot.joints.wheel_joint as {
+    ignoreLimits: boolean;
+    jointValue?: number[];
+    limit: { effort?: number; velocity?: number };
+    setJointValue: (value: number) => boolean;
+  };
+  assert.equal(joint.ignoreLimits, true);
+  assert.equal(joint.limit.effort, 12);
+  assert.equal(joint.limit.velocity, 8);
+  joint.setJointValue(4);
+  assert.equal(joint.jointValue?.[0], 4);
+
+  const clonedJoint = (robot.joints.wheel_joint.clone() as typeof joint);
+  assert.equal(clonedJoint.ignoreLimits, true);
+  clonedJoint.setJointValue(5);
+  assert.equal(clonedJoint.jointValue?.[0], 5);
+
+  const sliderJoint = robot.joints.slider_joint as typeof joint;
+  assert.equal(sliderJoint.ignoreLimits, true);
+  assert.equal(sliderJoint.limit.velocity, 2);
+  sliderJoint.setJointValue(3);
+  assert.equal(sliderJoint.jointValue?.[0], 3);
+});
+
 test('buildRuntimeRobotFromState orders crossed finite limits before runtime clamping', async () => {
   const robot = await buildRuntimeRobotFromState({
     robotName: 'crossed_limit_robot',
@@ -1391,4 +1449,88 @@ test('buildRuntimeRobotFromState logs when a mesh callback completes without an 
     /Mesh loader completed without an object for robot state geometry/,
   );
   assert.equal(loggedErrors[0]?.[1], 'package://aliengo_description/meshes/hip.dae');
+});
+
+test('buildRuntimeRobotFromState falls back to prefix match when submesh name is missing from flattened Collada scene', async () => {
+  // Simulates the WASM fast-mesh parser output for DAE files where an authored
+  // `<node name="Propeller">` wraps an unnamed intermediate `<node>` that hosts
+  // `<instance_geometry url="#geom-Prop">` (with `<geometry name="Prop">`).
+  // The flattening emits a leaf mesh named "Prop" while the SDF requests the
+  // submesh by the authored node name "Propeller".
+  const robotState = {
+    name: 'flattened_submesh_robot',
+    rootLinkId: 'base_link',
+    links: {
+      base_link: {
+        ...DEFAULT_LINK,
+        id: 'base_link',
+        name: 'base_link',
+        visual: {
+          ...DEFAULT_LINK.visual,
+          type: GeometryType.MESH,
+          meshPath: 'meshes/wing.dae',
+          submeshName: 'Propeller',
+          submeshCenter: false,
+        },
+      },
+    },
+    joints: {},
+  };
+
+  const manager = new THREE.LoadingManager();
+  let robot: Awaited<ReturnType<typeof buildRuntimeRobotFromState>> | null = null as Awaited<ReturnType<typeof buildRuntimeRobotFromState>> | null;
+  const ready = new Promise<void>((resolve) => {
+    manager.onLoad = () => resolve();
+  });
+  const completionKey = '__build_runtime_robot_from_state_submesh_fallback_test__';
+  manager.itemStart(completionKey);
+
+  const originalConsoleWarn = console.warn;
+  const warnings: unknown[][] = [];
+  console.warn = (...args) => {
+    warnings.push(args);
+  };
+
+  try {
+    robot = await buildRuntimeRobotFromState({
+      robotName: robotState.name,
+      links: robotState.links,
+      joints: robotState.joints,
+      manager,
+      loadMeshCb: (_path, _manager, done) => {
+        // Mirror the WASM output: a flat scene whose only mesh child is named
+        // "Prop" (geometry name) rather than the authored "Propeller".
+        const scene = new THREE.Group();
+        const propMesh = new THREE.Mesh(
+          new THREE.BoxGeometry(0.1, 0.1, 0.1),
+          new THREE.MeshPhongMaterial({ color: new THREE.Color('#990000') }),
+        );
+        propMesh.name = 'Prop';
+        scene.add(propMesh);
+        done(scene);
+      },
+    });
+  } finally {
+    console.warn = originalConsoleWarn;
+    manager.itemEnd(completionKey);
+  }
+
+  await ready;
+
+  const baseLink = robot?.links.base_link;
+  assert.ok(baseLink, 'expected base link');
+
+  const visualGroup = baseLink.children.find(isUrdfVisualGroup);
+  assert.ok(visualGroup, 'expected visual group');
+  assert.equal(visualGroup.children.length, 1, 'expected the prefix-matched submesh to attach');
+
+  const attachedMesh = visualGroup.children[0] as THREE.Mesh;
+  assert.ok(attachedMesh.isMesh, 'expected attached mesh');
+  assert.equal(attachedMesh.name, 'Prop');
+
+  // The fuzzy fallback must not log the "Submesh not found" warning.
+  const submeshWarnings = warnings.filter((args) =>
+    String(args[0] || '').includes('Submesh "Propeller" not found'),
+  );
+  assert.equal(submeshWarnings.length, 0, 'expected no submesh-not-found warning');
 });

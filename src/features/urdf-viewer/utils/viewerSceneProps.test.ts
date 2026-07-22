@@ -60,6 +60,7 @@ test('buildViewerSceneProps preserves explicit overrides for preview and handoff
   const onAssemblyTransform = () => {};
   const onComponentTransform = () => {};
   const onBridgeTransform = () => {};
+  const onAssemblyComponentAutoGroundResolved = () => {};
   const workspace = createAssemblyStateStub();
   const sceneProjection = createAssemblySceneProjection(workspace);
 
@@ -89,6 +90,8 @@ test('buildViewerSceneProps preserves explicit overrides for preview and handoff
     onAssemblyTransform,
     onComponentTransform,
     onBridgeTransform,
+    pendingAutoGroundComponentIds: ['comp_alpha'],
+    onAssemblyComponentAutoGroundResolved,
     isMeshPreview: true,
     runtimeInstanceKey: 7,
   });
@@ -106,6 +109,11 @@ test('buildViewerSceneProps preserves explicit overrides for preview and handoff
   assert.equal(sceneProps.onAssemblyTransform, onAssemblyTransform);
   assert.equal(sceneProps.onComponentTransform, onComponentTransform);
   assert.equal(sceneProps.onBridgeTransform, onBridgeTransform);
+  assert.deepEqual(sceneProps.pendingAutoGroundComponentIds, ['comp_alpha']);
+  assert.equal(
+    sceneProps.onAssemblyComponentAutoGroundResolved,
+    onAssemblyComponentAutoGroundResolved,
+  );
   assert.equal(sceneProps.isMeshPreview, true);
   assert.equal(sceneProps.runtimeInstanceKey, 7);
 });

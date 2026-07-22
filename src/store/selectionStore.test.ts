@@ -1,8 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { createComponentSourceDraft, createSingleComponentWorkspace } from '@/core/robot';
-import { buildCanonicalWorkspaceSourceDocuments } from '@/app/utils/sourceCodeDocuments';
+import { createSingleComponentWorkspace } from '@/core/robot';
 import {
   DEFAULT_JOINT,
   DEFAULT_LINK,
@@ -101,7 +100,9 @@ function selection(entity: EntityRef): WorkspaceSelection {
 function resetSelectionStore(): void {
   const state = useSelectionStore.getState();
   state.setInteractionGuard(null);
-  state.setHoverFrozen(false);
+  state.interactionHoverFreezeOwners.forEach((owner) => {
+    useSelectionStore.getState().setHoverFrozen(owner, false);
+  });
   while (useSelectionStore.getState().hoverBlockCount > 0) {
     useSelectionStore.getState().endHoverBlock();
   }
@@ -133,47 +134,20 @@ test('explicit selection APIs preserve component ownership for identical local I
   assert.equal(matchesSelection(leftSelection, rightSelection), false);
 });
 
-test('owned selections centrally switch active component and canonical source documents', () => {
+test('selection actions do not mutate workspace ownership state', () => {
   resetSelectionStore();
   const workspace = createWorkspace();
-  workspace.components.left!.sourceFile = 'left.urdf';
-  workspace.components.right!.sourceFile = 'right.urdf';
   useWorkspaceStore.getState().replaceWorkspace(workspace, { resetHistory: true });
   useWorkspaceStore.getState().setActiveComponent('left');
-  const drafts = {
-    left: createComponentSourceDraft({
-      componentId: 'left',
-      format: 'urdf',
-      content: '<robot name="left" />',
-      robot: workspace.components.left!.robot,
-    }),
-    right: createComponentSourceDraft({
-      componentId: 'right',
-      format: 'urdf',
-      content: '<robot name="right" />',
-      robot: workspace.components.right!.robot,
-    }),
-  };
 
   useSelectionStore.getState().selectLink({
     type: 'link', componentId: 'right', entityId: 'base_link',
   });
-  assert.equal(useWorkspaceStore.getState().activeComponentId, 'right');
-  const source = buildCanonicalWorkspaceSourceDocuments({
-    workspace,
-    activeComponentId: useWorkspaceStore.getState().activeComponentId,
-    componentSourceDrafts: drafts,
-    availableFiles: [
-      { name: 'left.urdf', format: 'urdf', content: '<library-left />' },
-      { name: 'right.urdf', format: 'urdf', content: '<library-right />' },
-    ],
-    allFileContents: {},
-  });
-  assert.equal(source.componentId, 'right');
+  assert.equal(useWorkspaceStore.getState().activeComponentId, 'left');
 
   useSelectionStore.getState().selectBridge('mount');
   useSelectionStore.getState().clearSelection();
-  assert.equal(useWorkspaceStore.getState().activeComponentId, 'right');
+  assert.equal(useWorkspaceStore.getState().activeComponentId, 'left');
 });
 
 test('assembly, component, bridge, joint, and tendon APIs produce EntityRef selections', () => {
@@ -255,11 +229,12 @@ test('interaction guard receives owned selections while null always clears', () 
 
 test('hover freeze preserves visible hover and applies the latest deferred intent', () => {
   resetSelectionStore();
+  const owner = Symbol('primary-viewer');
   const left = { type: 'link', componentId: 'left', entityId: 'base_link' } as const;
   const right = { type: 'link', componentId: 'right', entityId: 'base_link' } as const;
   const state = useSelectionStore.getState();
   state.hoverLink(left, { subType: 'visual', objectIndex: 0 });
-  state.setHoverFrozen(true);
+  state.setHoverFrozen(owner, true);
 
   assert.deepEqual(useSelectionStore.getState().hoveredSelection, {
     entity: left,
@@ -273,13 +248,38 @@ test('hover freeze preserves visible hover and applies the latest deferred inten
     objectIndex: 1,
   });
 
-  state.setHoverFrozen(false);
+  state.setHoverFrozen(owner, false);
   assert.deepEqual(useSelectionStore.getState().hoveredSelection, {
     entity: right,
     subType: 'collision',
     objectIndex: 1,
   });
   assert.equal(useSelectionStore.getState().deferredHoveredSelection, null);
+});
+
+test('hover freeze remains held until its owning viewer releases it', () => {
+  resetSelectionStore();
+  const primaryViewer = Symbol('primary-viewer');
+  const snapshotViewer = Symbol('snapshot-viewer');
+  const state = useSelectionStore.getState();
+
+  state.setHoverFrozen(primaryViewer, true);
+  state.setHoverFrozen(snapshotViewer, false);
+
+  assert.equal(useSelectionStore.getState().interactionHoverFrozen, true);
+  assert.equal(useSelectionStore.getState().interactionHoverFreezeOwners.size, 1);
+
+  state.setHoverFrozen(snapshotViewer, true);
+  state.setHoverFrozen(snapshotViewer, false);
+  assert.equal(useSelectionStore.getState().interactionHoverFrozen, true);
+  assert.deepEqual(
+    [...useSelectionStore.getState().interactionHoverFreezeOwners],
+    [primaryViewer],
+  );
+
+  state.setHoverFrozen(primaryViewer, false);
+  assert.equal(useSelectionStore.getState().interactionHoverFrozen, false);
+  assert.equal(useSelectionStore.getState().interactionHoverFreezeOwners.size, 0);
 });
 
 test('hover blocks hide and restore the existing intent while ignoring new hover targets', () => {
@@ -302,14 +302,15 @@ test('hover blocks hide and restore the existing intent while ignoring new hover
 
 test('null clears frozen hover intent and guard-rejected hover targets', () => {
   resetSelectionStore();
+  const owner = Symbol('primary-viewer');
   const state = useSelectionStore.getState();
   state.setHoveredSelection(
     selection({ type: 'component', componentId: 'left' }),
   );
-  state.setHoverFrozen(true);
+  state.setHoverFrozen(owner, true);
   state.clearHover();
   assert.equal(useSelectionStore.getState().deferredHoveredSelection, null);
-  state.setHoverFrozen(false);
+  state.setHoverFrozen(owner, false);
   assert.equal(useSelectionStore.getState().hoveredSelection, null);
 
   state.setInteractionGuard((candidate) =>

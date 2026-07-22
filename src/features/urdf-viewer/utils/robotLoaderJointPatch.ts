@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { URDFJoint as RuntimeURDFJoint } from '@/core/parsers/urdf/loader';
-import { normalizeJointLimitOrder } from '@/core/robot';
+import { hasFiniteJointLimitBounds, normalizeJointLimitOrder } from '@/core/robot';
 import type { JointPatchCandidate } from './robotLoaderDiff';
 import { applyOriginToJoint } from './robotLoaderPatchUtils';
 
@@ -186,11 +186,26 @@ function applyJointPatch(joint: RuntimeURDFJoint, patch: JointPatchCandidate): v
   const nextLimit = patch.jointData.limit;
   if (nextLimit) {
     const orderedLimit = normalizeJointLimitOrder(nextLimit);
-    jointLimit.lower = orderedLimit.lower;
-    jointLimit.upper = orderedLimit.upper;
-    jointLimit.effort = orderedLimit.effort;
-    jointLimit.velocity = orderedLimit.velocity;
-    jointWithMutableState.ignoreLimits = false;
+    if (hasFiniteJointLimitBounds(orderedLimit)) {
+      jointLimit.lower = orderedLimit.lower;
+      jointLimit.upper = orderedLimit.upper;
+      jointWithMutableState.ignoreLimits = false;
+    } else {
+      jointLimit.lower = 0;
+      jointLimit.upper = 0;
+      jointWithMutableState.ignoreLimits =
+        joint.jointType === 'revolute' || joint.jointType === 'prismatic';
+    }
+    if (typeof orderedLimit.effort === 'number' && Number.isFinite(orderedLimit.effort)) {
+      jointLimit.effort = orderedLimit.effort;
+    } else {
+      delete jointLimit.effort;
+    }
+    if (typeof orderedLimit.velocity === 'number' && Number.isFinite(orderedLimit.velocity)) {
+      jointLimit.velocity = orderedLimit.velocity;
+    } else {
+      delete jointLimit.velocity;
+    }
   } else {
     jointLimit.lower = 0;
     jointLimit.upper = 0;

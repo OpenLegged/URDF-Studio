@@ -44,6 +44,8 @@ export {
 export { resolveSnapshotPreviewCaptureOptions } from './snapshotPreviewConfig';
 export { NeutralStudioEnvironment } from './NeutralStudioEnvironment';
 export { SceneLighting } from './SceneLighting';
+export { SemanticOutlineProvider, useSemanticOutline } from './SemanticOutline';
+export type { SemanticOutlineIntent } from './semanticOutlineComposer';
 export { GroundShadowPlane } from './GroundShadowPlane';
 export { ReferenceGrid } from './ReferenceGrid';
 export { AdaptiveGroundPlane } from './AdaptiveGroundPlane';
@@ -83,6 +85,7 @@ export {
 } from './viewerOverlaySafeArea';
 export {
   LIGHTING_CONFIG,
+  resolveCameraFollowLightingStyle,
   STUDIO_ENVIRONMENT_INTENSITY,
   WORKSPACE_CANVAS_BACKGROUND,
   WORKSPACE_DEFAULT_CAMERA_FOV,

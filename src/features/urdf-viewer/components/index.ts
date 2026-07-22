@@ -5,4 +5,3 @@ export { JointInteraction } from './JointInteraction';
 export { ViewerToolbar } from './ViewerToolbar';
 export { MeasureTool } from './MeasureTool';
 export { CollisionTransformControls } from './CollisionTransformControls';
-export { ViewerCanvas } from './ViewerCanvas';

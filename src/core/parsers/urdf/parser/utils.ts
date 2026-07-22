@@ -76,7 +76,15 @@ export function preprocessXML(content: string): string {
 export const parseFloatSafe = (val: string | null | undefined, def: number): number => {
   if (val === null || val === undefined) return def;
   const n = parseFloat(val);
-  return isNaN(n) ? def : n;
+  return Number.isFinite(n) ? n : def;
+};
+
+export const parseOptionalFiniteFloat = (
+  val: string | null | undefined,
+): number | undefined => {
+  if (val === null || val === undefined || val.trim() === '') return undefined;
+  const parsed = Number.parseFloat(val);
+  return Number.isFinite(parsed) ? parsed : undefined;
 };
 
 export const parseVec3 = (str: string | null): Vector3 => {
@@ -86,9 +94,9 @@ export const parseVec3 = (str: string | null): Vector3 => {
     .split(/\s+/)
     .map((v) => parseFloat(v));
   const result = {
-    x: isNaN(parts[0]) ? 0 : parts[0],
-    y: isNaN(parts[1]) ? 0 : parts[1],
-    z: isNaN(parts[2]) ? 0 : parts[2],
+    x: Number.isFinite(parts[0]) ? parts[0] : 0,
+    y: Number.isFinite(parts[1]) ? parts[1] : 0,
+    z: Number.isFinite(parts[2]) ? parts[2] : 0,
   };
   return result;
 };
@@ -100,9 +108,9 @@ export const parseRPY = (str: string | null): Euler => {
     .split(/\s+/)
     .map((v) => parseFloat(v));
   return {
-    r: isNaN(parts[0]) ? 0 : parts[0],
-    p: isNaN(parts[1]) ? 0 : parts[1],
-    y: isNaN(parts[2]) ? 0 : parts[2],
+    r: Number.isFinite(parts[0]) ? parts[0] : 0,
+    p: Number.isFinite(parts[1]) ? parts[1] : 0,
+    y: Number.isFinite(parts[2]) ? parts[2] : 0,
   };
 };
 

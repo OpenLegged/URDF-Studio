@@ -24,16 +24,7 @@ const IGNORED_PREFIXES = [
   'third_party/',
   'src/features/urdf-viewer/runtime/',
 ];
-const SCANNED_EXTENSIONS = new Set([
-  '.cjs',
-  '.css',
-  '.html',
-  '.js',
-  '.jsx',
-  '.mjs',
-  '.ts',
-  '.tsx',
-]);
+const SCANNED_EXTENSIONS = new Set(['.cjs', '.css', '.html', '.js', '.jsx', '.mjs', '.ts', '.tsx']);
 const JS_TS_EXTENSIONS = new Set(['.cjs', '.js', '.jsx', '.mjs', '.ts', '.tsx']);
 const VOID_ELEMENTS = [
   'area',
@@ -52,8 +43,9 @@ const VOID_ELEMENTS = [
 ];
 
 // Size / complexity hard ceilings (src/** product code only). Each violation is one
-// finding; google_style_baseline.json grandfathers the current count so only NET-NEW
-// violations fail --check (same ratchet model as css-important / file-name-snake-case).
+// finding; google_style_baseline.json grandfathers the exact current count. Active
+// baselines fail in either direction so improvements must be recorded immediately and
+// cannot be consumed as headroom by later changes.
 const SIZE_BUDGETS = {
   'file-too-long': 800,
   'function-too-long': 200,
@@ -282,7 +274,11 @@ function shouldScanFile(relPath) {
 
 function shouldIgnorePath(relPath) {
   const normalized = toPosix(relPath);
-  if (IGNORED_PREFIXES.some((prefix) => normalized === prefix.slice(0, -1) || normalized.startsWith(prefix))) {
+  if (
+    IGNORED_PREFIXES.some(
+      (prefix) => normalized === prefix.slice(0, -1) || normalized.startsWith(prefix),
+    )
+  ) {
     return true;
   }
   return normalized.split('/').some((segment) => IGNORED_DIRS.has(segment));
@@ -302,12 +298,7 @@ function auditJsTsFileName(relPath) {
   if (segments.every(isSnakeCaseSegment)) {
     return;
   }
-  addFinding(
-    'file-name-snake-case',
-    relPath,
-    1,
-    `File name "${fileName}" is not snake_case.`,
-  );
+  addFinding('file-name-snake-case', relPath, 1, `File name "${fileName}" is not snake_case.`);
 }
 
 function stripKnownExtension(fileName) {
@@ -429,7 +420,9 @@ function auditSizeAndComplexity(relPath, text) {
       );
     }
 
-    const bodyLines = countCodeLines(text.slice(node.body.getStart(sourceFile), node.body.getEnd()));
+    const bodyLines = countCodeLines(
+      text.slice(node.body.getStart(sourceFile), node.body.getEnd()),
+    );
     if (bodyLines > SIZE_BUDGETS['function-too-long']) {
       addFinding(
         'function-too-long',
@@ -609,7 +602,9 @@ function auditJavaScriptText(relPath, text) {
 }
 
 function isProductionCode(relPath) {
-  return !/(?:^|\/)scripts\/test\//.test(relPath) && !/\.(?:test|spec)\.[cm]?[jt]sx?$/.test(relPath);
+  return (
+    !/(?:^|\/)scripts\/test\//.test(relPath) && !/\.(?:test|spec)\.[cm]?[jt]sx?$/.test(relPath)
+  );
 }
 
 function auditHtmlText(relPath, text) {
@@ -620,10 +615,7 @@ function auditHtmlText(relPath, text) {
     addFinding('html-inline-style', relPath, line, 'Inline style attribute.');
   });
 
-  const voidElementPattern = new RegExp(
-    `<(?:${VOID_ELEMENTS.join('|')})\\b[^>]*\\/\\s*>`,
-    'gi',
-  );
+  const voidElementPattern = new RegExp(`<(?:${VOID_ELEMENTS.join('|')})\\b[^>]*\\/\\s*>`, 'gi');
   findMatches(text, voidElementPattern, (match, line) => {
     addFinding(
       'html-void-element-slash',
@@ -670,7 +662,9 @@ function auditCssSelectors(relPath, text) {
     }
     const selectorLine = lineForIndex(text, block.index || 0);
 
-    for (const classMatch of selectorText.matchAll(/\.(-?[_a-zA-Z][-_a-zA-Z0-9]*(?:\\\[[^\]]+\\\])?)/g)) {
+    for (const classMatch of selectorText.matchAll(
+      /\.(-?[_a-zA-Z][-_a-zA-Z0-9]*(?:\\\[[^\]]+\\\])?)/g,
+    )) {
       const className = classMatch[1];
       if (!isAllowedCssClassName(className)) {
         addFinding(
@@ -706,13 +700,9 @@ function isAllowedCssIdName(idName) {
 }
 
 function auditCssValues(relPath, text) {
-  findMatches(
-    text,
-    /(?<![\w-])0(?:px|em|rem|vh|vw|vmin|vmax|%)\b/g,
-    (match, line) => {
-      addFinding('css-zero-unit', relPath, line, `Zero value has a unit: ${match[0]}`);
-    },
-  );
+  findMatches(text, /(?<![\w-])0(?:px|em|rem|vh|vw|vmin|vmax|%)\b/g, (match, line) => {
+    addFinding('css-zero-unit', relPath, line, `Zero value has a unit: ${match[0]}`);
+  });
 
   findMatches(text, /!important\b/g, (_match, line) => {
     addFinding('css-important', relPath, line, 'Avoid !important declarations.');
@@ -753,9 +743,7 @@ function auditCssDeclarationOrder(relPath, text) {
 }
 
 function isKeyframeSelector(selectorText) {
-  return /^(?:from|to|\d+(?:\.\d+)?%)(?:\s*,\s*(?:from|to|\d+(?:\.\d+)?%))*$/.test(
-    selectorText,
-  );
+  return /^(?:from|to|\d+(?:\.\d+)?%)(?:\s*,\s*(?:from|to|\d+(?:\.\d+)?%))*$/.test(selectorText);
 }
 
 function normalizeCssProperty(property) {
@@ -763,7 +751,9 @@ function normalizeCssProperty(property) {
 }
 
 function stripCssComments(text) {
-  return text.replace(/\/\*[\s\S]*?\*\//g, (comment) => '\n'.repeat(comment.split('\n').length - 1));
+  return text.replace(/\/\*[\s\S]*?\*\//g, (comment) =>
+    '\n'.repeat(comment.split('\n').length - 1),
+  );
 }
 
 function findMatches(text, pattern, callback) {
@@ -804,12 +794,14 @@ function buildReport(allFindings, currentBaseline) {
     const baselineRule = currentBaseline?.rules?.[rule.id] ?? null;
     const allowed = baselineRule?.max ?? null;
     const retired = baselineRule?.retired === true;
+    const stale = !retired && allowed !== null && count < allowed;
     return {
       ...rule,
       count,
       allowed,
       retired,
-      failed: !retired && allowed !== null && count > allowed,
+      stale,
+      failed: !retired && allowed !== null && count !== allowed,
     };
   });
 
@@ -831,13 +823,11 @@ function printReport(report, currentBaseline) {
   console.log('');
 
   for (const rule of report.summary) {
-    const status = rule.retired ? 'RETIRED' : rule.failed ? 'FAIL' : 'OK';
+    const status = rule.retired ? 'RETIRED' : rule.stale ? 'STALE' : rule.failed ? 'FAIL' : 'OK';
     const allowance = rule.allowed === null ? '' : ` / allowed ${rule.allowed}`;
     console.log(`[${status}] ${rule.id}: ${rule.count}${allowance} - ${rule.title}`);
 
-    const examples = report.findings
-      .filter((finding) => finding.ruleId === rule.id)
-      .slice(0, 5);
+    const examples = report.findings.filter((finding) => finding.ruleId === rule.id).slice(0, 5);
     for (const example of examples) {
       console.log(`  ${example.path}:${example.line} ${example.message}`);
     }

@@ -1,4 +1,7 @@
-@import 'tailwindcss';
+@import 'tailwindcss' source(none);
+
+@source '../**/*.{ts,tsx}';
+@source not '../**/*.{test,spec}.{ts,tsx}';
 
 @font-face {
   font-family: 'JetBrains Mono';
@@ -34,8 +37,8 @@
   --color-app-bg: var(--ui-bg);
   --color-panel-bg: var(--ui-panel-bg);
   --color-element-bg: var(--ui-surface);
-  --color-element-hover: var(--ui-surface-elevated);
-  --color-element-active: var(--ui-surface);
+  --color-element-hover: var(--ui-element-hover);
+  --color-element-active: var(--ui-element-active);
   --color-input-bg: var(--ui-input-bg);
   --color-system-blue: var(--ui-accent);
   --color-system-blue-solid: var(--ui-accent-solid);
@@ -69,6 +72,8 @@
   --ui-panel-bg: #ffffff;
   --ui-surface: #f8f9fa;
   --ui-surface-elevated: #ffffff;
+  --ui-element-hover: #f1f5f9;
+  --ui-element-active: #e2e8f0;
   --ui-input-bg: #ffffff;
 
   --ui-border: #e2e8f0;
@@ -127,6 +132,8 @@
   --ui-panel-bg: #1c1c1e;
   --ui-surface: #2c2c2e;
   --ui-surface-elevated: #3a3a3c;
+  --ui-element-hover: #3a3a3c;
+  --ui-element-active: #48484a;
   --ui-input-bg: #1c1c1e;
 
   --ui-border: #3a3a3c;
@@ -160,6 +167,8 @@
   .urdf-studio-canvas {
     --ui-border: #8e8e93;
     --ui-border-strong: #636366;
+    --ui-element-hover: #e2e8f0;
+    --ui-element-active: #cbd5e1;
     --ui-text-secondary: #1c1c1e;
     --ui-text-tertiary: #3a3a3c;
     --ui-accent-solid: #0050a8;
@@ -179,6 +188,8 @@
   .urdf-studio-canvas.dark {
     --ui-border: #8e8e93;
     --ui-border-strong: #aeaeb2;
+    --ui-element-hover: #48484a;
+    --ui-element-active: #636366;
     --ui-text-secondary: #f2f2f7;
     --ui-text-tertiary: #d1d1d6;
     --ui-accent-solid: #0068d1;

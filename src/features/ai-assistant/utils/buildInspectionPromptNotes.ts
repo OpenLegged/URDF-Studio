@@ -2,7 +2,12 @@ import {
   getMjcfLinkDisplayName,
   getMjcfRawDisplayName,
 } from '@/shared/utils/robot/mjcfDisplayNames';
-import type { RobotSourceDiagnostic, RobotState, RobotUrdfInspectionContext } from '@/types';
+import type {
+  RobotImportRecoveryReport,
+  RobotSourceDiagnostic,
+  RobotState,
+  RobotUrdfInspectionContext,
+} from '@/types';
 import { buildInspectionEvidence, formatInspectionEvidenceForPrompt } from './inspectionEvidence';
 import type { SelectedInspectionProfileMap } from './inspectionProfileSelection';
 
@@ -136,6 +141,28 @@ const formatUrdfDiagnostics = (diagnostics: RobotSourceDiagnostic[]) => {
       return `${diagnostic.code} [${diagnostic.severity}]${related ? ` (${related})` : ''}: ${diagnostic.message}`;
     })
     .join('; ');
+};
+
+const formatImportRecoveryPromptNotes = (
+  recovery: RobotImportRecoveryReport,
+  lang: 'en' | 'zh',
+) => {
+  const summary = recovery.diagnostics
+    .slice(0, MAX_SUMMARY_ITEMS)
+    .map((diagnostic) => `${diagnostic.code} [${diagnostic.action}]: ${diagnostic.message}`)
+    .join('; ');
+  if (lang === 'zh') {
+    return [
+      '**导入恢复说明:**',
+      `- 导入时安全忽略或降级了 ${recovery.recoveredItemCount} 项源数据问题。`,
+      ...(summary ? [`- 恢复详情：${summary}`] : []),
+    ].join('\n');
+  }
+  return [
+    '**Import Recovery Notes:**',
+    `- ${recovery.recoveredItemCount} source item(s) were safely omitted or downgraded during import.`,
+    ...(summary ? [`- Recovery details: ${summary}`] : []),
+  ].join('\n');
 };
 
 const formatUrdfInspectionPromptNotes = (
@@ -279,6 +306,12 @@ export const buildInspectionPromptNotes = (
   if (!inspectionContext) {
     return noteSections.join('\n\n');
   }
+  const recoveryNotes = inspectionContext.recovery
+    ? formatImportRecoveryPromptNotes(inspectionContext.recovery, lang)
+    : '';
+  if (recoveryNotes) {
+    noteSections.unshift(recoveryNotes);
+  }
 
   const urdfContext = inspectionContext.urdf;
   if (urdfContext) {
@@ -293,5 +326,6 @@ export const buildInspectionPromptNotes = (
     return noteSections.join('\n\n');
   }
 
-  return formatMjcfInspectionPromptNotes(robot, selectedItems, lang);
+  const mjcfNotes = formatMjcfInspectionPromptNotes(robot, selectedItems, lang);
+  return [recoveryNotes, mjcfNotes].filter(Boolean).join('\n\n');
 };

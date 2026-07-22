@@ -1,10 +1,8 @@
-import React, { lazy, Suspense } from 'react';
+import { Suspense } from 'react';
 import { LazyOverlayFallback } from './LazyOverlayFallback';
-import { loadSourceCodeEditorModule } from '@/app/utils/sourceCodeEditorLoader';
-import {
-  loadBridgeCreateModalModule,
-  loadCollisionOptimizationDialogModule,
-} from '@/app/utils/overlayLoaders';
+import { SourceCodeEditorErrorBoundary } from './SourceCodeEditorErrorBoundary';
+import { BridgeCreateModal, CollisionOptimizationDialog } from '@/app/utils/overlayLoaders';
+import { SourceCodeEditor } from '@/app/utils/sourceCodeEditorLoader';
 import type { Language } from '@/shared/i18n';
 import type { BridgeJoint, InteractionSelection, Theme, UrdfJoint } from '@/types';
 import type { AssemblyState } from '@/types';
@@ -15,28 +13,14 @@ import type {
 } from '@/features/property-editor';
 import type { SourceCodeEditorDocument } from '@/features/code-editor';
 
-const SourceCodeEditor = lazy(() =>
-  loadSourceCodeEditorModule().then((module) => ({ default: module.SourceCodeEditor })),
-);
-
-const CollisionOptimizationDialog = lazy(() =>
-  loadCollisionOptimizationDialogModule().then((module) => ({
-    default: module.CollisionOptimizationDialog,
-  })),
-);
-
-const BridgeCreateModal = lazy(() =>
-  loadBridgeCreateModalModule().then((module) => ({ default: module.BridgeCreateModal })),
-);
-
 interface AppLayoutOverlaysProps {
   isCodeViewerOpen: boolean;
   sourceCodeDocuments: SourceCodeEditorDocument[];
   autoApplyEnabled?: boolean;
+  loadingSourceCodeEditorLabel: string;
   onCloseCodeViewer: () => void;
   theme: Theme;
   lang: Language;
-  loadingEditorLabel: string;
   isCollisionOptimizerOpen: boolean;
   loadingOptimizerLabel: string;
   collisionOptimizationSource: CollisionOptimizationSource;
@@ -68,10 +52,10 @@ export function AppLayoutOverlays({
   isCodeViewerOpen,
   sourceCodeDocuments,
   autoApplyEnabled = true,
+  loadingSourceCodeEditorLabel,
   onCloseCodeViewer,
   theme,
   lang,
-  loadingEditorLabel,
   isCollisionOptimizerOpen,
   loadingOptimizerLabel,
   collisionOptimizationSource,
@@ -92,15 +76,17 @@ export function AppLayoutOverlays({
   return (
     <>
       {isCodeViewerOpen && (
-        <Suspense fallback={<LazyOverlayFallback label={loadingEditorLabel} />}>
-          <SourceCodeEditor
-            documents={sourceCodeDocuments}
-            onClose={onCloseCodeViewer}
-            theme={theme}
-            lang={lang}
-            autoApplyEnabled={autoApplyEnabled}
-          />
-        </Suspense>
+        <SourceCodeEditorErrorBoundary lang={lang} onClose={onCloseCodeViewer}>
+          <Suspense fallback={<LazyOverlayFallback label={loadingSourceCodeEditorLabel} />}>
+            <SourceCodeEditor
+              documents={sourceCodeDocuments}
+              onClose={onCloseCodeViewer}
+              theme={theme}
+              lang={lang}
+              autoApplyEnabled={autoApplyEnabled}
+            />
+          </Suspense>
+        </SourceCodeEditorErrorBoundary>
       )}
 
       {isCollisionOptimizerOpen && (

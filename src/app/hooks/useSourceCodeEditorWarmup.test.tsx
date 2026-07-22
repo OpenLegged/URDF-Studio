@@ -98,7 +98,9 @@ function renderHook(params: Parameters<typeof useSourceCodeEditorWarmup>[0]): {
   hook: ReturnType<typeof useSourceCodeEditorWarmup>;
   cleanup: () => Promise<void>;
 } {
-  let hookValue: ReturnType<typeof useSourceCodeEditorWarmup> | null = null as ReturnType<typeof useSourceCodeEditorWarmup> | null;
+  let hookValue: ReturnType<typeof useSourceCodeEditorWarmup> | null = null as ReturnType<
+    typeof useSourceCodeEditorWarmup
+  > | null;
   const container = document.createElement('div');
   document.body.appendChild(container);
 
@@ -128,7 +130,6 @@ function renderHook(params: Parameters<typeof useSourceCodeEditorWarmup>[0]): {
 test('useSourceCodeEditorWarmup reuses a single preload promise while warming', async () => {
   const dom = installDomEnvironment();
   let preloadCalls = 0;
-  let prefetchCalls = 0;
 
   try {
     const { hook, cleanup } = renderHook({
@@ -139,9 +140,6 @@ test('useSourceCodeEditorWarmup reuses a single preload promise while warming', 
       preloadRuntime: async () => {
         preloadCalls += 1;
       },
-      prefetchSourceCodeEditor: () => {
-        prefetchCalls += 1;
-      },
     });
 
     const first = hook.warmSourceCodeEditorRuntime();
@@ -149,7 +147,6 @@ test('useSourceCodeEditorWarmup reuses a single preload promise while warming', 
     await Promise.all([first, second]);
 
     assert.equal(preloadCalls, 1);
-    assert.equal(prefetchCalls, 2);
     await cleanup();
   } finally {
     dom.restore();
@@ -172,13 +169,75 @@ test('useSourceCodeEditorWarmup blocks code viewer opening while USD is hydratin
       },
       usdLoadInProgressMessage: 'USD loading',
       preloadRuntime: async () => {},
-      prefetchSourceCodeEditor: () => {},
     });
 
     hook.handleOpenCodeViewer();
 
     assert.deepEqual(openCalls, []);
     assert.deepEqual(toastCalls, [{ message: 'USD loading', type: 'info' }]);
+    await cleanup();
+  } finally {
+    dom.restore();
+  }
+});
+
+test('useSourceCodeEditorWarmup catches a failed warmup and allows a later retry', async () => {
+  const dom = installDomEnvironment();
+  const preloadErrors: unknown[] = [];
+  let preloadCalls = 0;
+
+  try {
+    const { hook, cleanup } = renderHook({
+      isSelectedUsdHydrating: false,
+      setIsCodeViewerOpen: () => {},
+      showToast: () => {},
+      usdLoadInProgressMessage: 'USD loading',
+      preloadRuntime: async () => {
+        preloadCalls += 1;
+        throw new Error(`warmup failure ${preloadCalls}`);
+      },
+      onPreloadError: (error) => {
+        preloadErrors.push(error);
+      },
+    });
+
+    await hook.warmSourceCodeEditorRuntime();
+    await hook.warmSourceCodeEditorRuntime();
+
+    assert.equal(preloadCalls, 2);
+    assert.equal(preloadErrors.length, 2);
+    await cleanup();
+  } finally {
+    dom.restore();
+  }
+});
+
+test('useSourceCodeEditorWarmup opens immediately while runtime warmup is pending', async () => {
+  const dom = installDomEnvironment();
+  const openCalls: boolean[] = [];
+  let resolvePreload: () => void = () => {
+    throw new Error('runtime warmup did not start');
+  };
+
+  try {
+    const { hook, cleanup } = renderHook({
+      isSelectedUsdHydrating: false,
+      setIsCodeViewerOpen: (open) => {
+        openCalls.push(open);
+      },
+      showToast: () => {},
+      usdLoadInProgressMessage: 'USD loading',
+      preloadRuntime: () =>
+        new Promise<void>((resolve) => {
+          resolvePreload = resolve;
+        }),
+    });
+
+    hook.handleOpenCodeViewer();
+    assert.deepEqual(openCalls, [true]);
+
+    resolvePreload();
+    await hook.warmSourceCodeEditorRuntime();
     await cleanup();
   } finally {
     dom.restore();

@@ -60,7 +60,7 @@ export type WorkspaceBridgePatch = Partial<Omit<BridgeJoint, 'id' | 'joint'>> & 
 
 export type WorkspaceAssemblyPropertyPatch = Partial<Pick<AssemblyState, 'name' | 'transform'>>;
 export type WorkspaceComponentPropertyPatch = Partial<
-  Pick<AssemblyComponent, 'name' | 'visible' | 'transform'>
+  Pick<AssemblyComponent, 'name' | 'visible' | 'editorLocked' | 'transform'>
 >;
 type WorkspaceOriginPropertyPatch = Partial<
   Omit<UrdfJoint['origin'], 'xyz' | 'rpy'>
@@ -176,6 +176,11 @@ export interface WorkspaceActions {
     visible: boolean,
     options?: WorkspaceMutationOptions,
   ) => boolean;
+  setComponentEditorLocked: (
+    componentId: string,
+    locked: boolean,
+    options?: WorkspaceMutationOptions,
+  ) => boolean;
   replaceComponentRobot: (
     componentId: string,
     robot: RobotData,
@@ -202,6 +207,11 @@ export interface WorkspaceActions {
   setLinkVisibility: (
     ref: LinkEntityRef,
     visible: boolean,
+    options?: WorkspaceMutationOptions,
+  ) => boolean;
+  setLinkEditorLocked: (
+    ref: LinkEntityRef,
+    locked: boolean,
     options?: WorkspaceMutationOptions,
   ) => boolean;
   setAllLinksVisibility: (

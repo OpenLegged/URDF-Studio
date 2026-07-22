@@ -360,7 +360,14 @@ class HydraMesh {
         }
         const existingPositions = this._geometry.getAttribute('position');
         const hasExistingGeometry = !!(existingPositions && existingPositions.count > 0);
-        if (PREFER_HYDRA_COLLISION_GEOMETRY && hasExistingGeometry && this._hasHydraGeometryPayload) {
+        const hasDimensionedCollisionPrimitive = this.isCollisionProtoMesh()
+            && (this._primitiveFallbackType === 'box'
+                || this._primitiveFallbackType === 'sphere'
+                || this._primitiveFallbackType === 'cylinder');
+        if (PREFER_HYDRA_COLLISION_GEOMETRY
+            && hasExistingGeometry
+            && this._hasHydraGeometryPayload
+            && !hasDimensionedCollisionPrimitive) {
             // If Hydra already provided authored geometry, skip expensive stage/URDF
             // collision override resolution in the first commit hot-path.
             this._hasGeneratedPrimitiveFallback = true;
@@ -373,6 +380,14 @@ class HydraMesh {
             return;
         }
         if (this._interface?.strictOneShotSceneLoad === true) {
+            return;
+        }
+        if (this.isCollisionProtoMesh()) {
+            // Collision primitives must never be drawn from the generic unit-sized
+            // visual fallback below. Their authored dimensions can arrive after the
+            // proto mesh is created; synthesizing a 0.5 m radius / 1 m tall cylinder
+            // in that gap produces enormous, fixed-size colliders. Keep the proto
+            // pending so a later stage/driver override can provide the real geometry.
             return;
         }
         const segmentProfile = this._getPrimitiveSegmentProfile();
@@ -737,6 +752,10 @@ class HydraMesh {
         const primType = String(overridePayload.primType || '').toLowerCase();
         if (!primType)
             return false;
+        const authoredGeometryOverride = this._interface?.getCollisionPrimitiveGeometryOverride?.(this._id) || null;
+        const geometryDescriptor = authoredGeometryOverride
+            ? { ...overridePayload, ...authoredGeometryOverride }
+            : overridePayload;
         let geometryApplied = false;
         if (primType === 'mesh') {
             const meshPayload = (overridePayload?.meshPayload && overridePayload.meshPayload.valid === true)
@@ -762,11 +781,11 @@ class HydraMesh {
                 // Mesh proto IDs can still provide authored extents even when direct
                 // mesh payload hydration fails. Use a box proxy from extents so collider
                 // dimensions remain physically meaningful instead of default 0.12 cubes.
-                geometryApplied = this.applyPrimitiveGeometryFromDescriptor('cube', overridePayload) === true;
+                geometryApplied = this.applyPrimitiveGeometryFromDescriptor('cube', geometryDescriptor) === true;
             }
         }
         else if (primType === 'cube' || primType === 'sphere' || primType === 'cylinder' || primType === 'capsule') {
-            geometryApplied = this.applyPrimitiveGeometryFromDescriptor(primType, overridePayload) === true;
+            geometryApplied = this.applyPrimitiveGeometryFromDescriptor(primType, geometryDescriptor) === true;
         }
         if (!geometryApplied)
             return false;

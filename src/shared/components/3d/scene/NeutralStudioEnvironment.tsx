@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
 import { useThree } from '@react-three/fiber';
 import * as THREE from 'three';
-import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
+import { createZUpRoomEnvironment } from './zUpRoomEnvironment';
 
 type SceneWithEnvironmentIntensity = THREE.Scene & {
   environmentIntensity?: number;
@@ -19,20 +19,20 @@ export function NeutralStudioEnvironment({
   enabled?: boolean;
   intensity?: number;
 }) {
-  const { scene, gl } = useThree();
+  const { scene, gl, invalidate } = useThree();
 
   useEffect(() => {
     if (!enabled) return;
 
-    const sceneWithEnvironmentIntensity = scene as SceneWithEnvironmentIntensity;
     const previousEnvironment = scene.environment;
+    const sceneWithEnvironmentIntensity = scene as SceneWithEnvironmentIntensity;
     const previousEnvironmentIntensity = sceneWithEnvironmentIntensity.environmentIntensity;
     const pmremGenerator = new THREE.PMREMGenerator(gl);
-    const envScene = new RoomEnvironment();
+    const envScene = createZUpRoomEnvironment();
     const renderTarget = pmremGenerator.fromScene(envScene, 0.04);
 
     scene.environment = renderTarget.texture;
-    sceneWithEnvironmentIntensity.environmentIntensity = intensity;
+    invalidate();
 
     return () => {
       scene.environment = previousEnvironment;
@@ -48,8 +48,19 @@ export function NeutralStudioEnvironment({
         }
       });
       pmremGenerator.dispose();
+      invalidate();
     };
-  }, [enabled, gl, intensity, scene]);
+  }, [enabled, gl, invalidate, scene]);
+
+  useEffect(() => {
+    if (!enabled) return;
+
+    const sceneWithEnvironmentIntensity = scene as SceneWithEnvironmentIntensity;
+    if (sceneWithEnvironmentIntensity.environmentIntensity === intensity) return;
+
+    sceneWithEnvironmentIntensity.environmentIntensity = intensity;
+    invalidate();
+  }, [enabled, gl, intensity, invalidate, scene]);
 
   return null;
 }

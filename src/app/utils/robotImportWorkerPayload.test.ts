@@ -132,6 +132,57 @@ test('buildResolveRobotImportWorkerDispatch moves mjcf context into a reusable w
   });
 });
 
+test('buildResolveRobotImportWorkerDispatch forwards sdf sibling models so composite includes resolve', () => {
+  const availableFiles = [
+    demoUrdfFile,
+    {
+      name: 'robots/demo/iris/model.sdf',
+      format: 'sdf',
+      content: '<sdf version="1.6"><model name="iris"></model></sdf>',
+    },
+    {
+      name: 'robots/demo/gimbal/model.sdf',
+      format: 'sdf',
+      content: '<sdf version="1.6"><model name="gimbal"></model></sdf>',
+    },
+    {
+      name: 'robots/demo/meshes/base.stl',
+      format: 'mesh',
+      content: 'solid demo',
+    },
+  ] as const;
+
+  const result = buildResolveRobotImportWorkerDispatch(
+    {
+      name: 'robots/demo/iris/model.sdf',
+      format: 'sdf',
+      content: '<sdf version="1.6"><model name="iris"></model></sdf>',
+    },
+    {
+      availableFiles: [...availableFiles],
+      allFileContents: {
+        'robots/demo/materials/demo.material': 'material Demo {}',
+      },
+    },
+  );
+
+  assert.deepEqual(result.options, {});
+  assert.equal(typeof result.contextCacheKey, 'string');
+  assert.deepEqual(
+    result.contextSnapshot?.availableFiles?.map((file) => ({
+      name: file.name,
+      format: file.format,
+    })),
+    [
+      { name: 'robots/demo/iris/model.sdf', format: 'sdf' },
+      { name: 'robots/demo/gimbal/model.sdf', format: 'sdf' },
+    ],
+  );
+  assert.deepEqual(result.contextSnapshot?.allFileContents, {
+    'robots/demo/materials/demo.material': 'material Demo {}',
+  });
+});
+
 test('buildResolveRobotImportWorkerDispatch forwards exact URDF source context only when inline content is missing', () => {
   const result = buildResolveRobotImportWorkerDispatch(
     {

@@ -408,6 +408,7 @@ export const Select: React.FC<SelectProps> = ({
             className={`
               w-full appearance-none
               rounded-lg border border-border-black bg-input-bg px-3 py-1.5 text-sm text-text-primary
+              hover:border-border-strong
               focus:outline-none focus:ring-2 focus:ring-system-blue/30 focus:border-system-blue
               transition-all duration-200 disabled:cursor-not-allowed disabled:opacity-50
               ${error ? 'border-danger focus:border-danger focus:ring-danger/30' : ''}
@@ -467,7 +468,7 @@ export const Select: React.FC<SelectProps> = ({
                 className={`flex w-full items-center justify-between gap-2 text-left font-medium transition-colors ${optionButtonClassName} ${optionClassName} ${
                   isSelected
                     ? 'bg-system-blue/12 text-system-blue'
-                    : 'text-text-primary hover:bg-element-bg hover:text-text-primary'
+                    : 'text-text-primary hover:bg-element-hover hover:text-text-primary'
                 }`}
                 onClick={() => commitValue(option.value)}
                 onKeyDown={(event) => handleOptionKeyDown(event, optionIndex)}
@@ -537,6 +538,7 @@ export const Select: React.FC<SelectProps> = ({
           disabled={disabled}
           className={`
             relative inline-flex w-full items-center rounded-lg border border-border-black bg-input-bg px-3 py-1.5 pr-8 text-left text-sm text-text-primary
+            hover:border-border-strong
             transition-all duration-200 focus:outline-none focus:ring-2 focus:ring-system-blue/30 focus:border-system-blue
             disabled:cursor-not-allowed disabled:opacity-50
             ${error ? 'border-danger focus:border-danger focus:ring-danger/30' : ''}

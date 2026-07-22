@@ -21,7 +21,12 @@ import {
 } from '@/core/utils/visualMaterialOverrides';
 import { GeometryType } from '@/types';
 import type { UrdfLink, UrdfVisual as LinkGeometry } from '@/types';
-import { collisionBaseMaterial, createMatteMaterial, enhanceMaterials } from './materials';
+import {
+  collisionBaseMaterial,
+  createHighlightOverrideMaterial,
+  createMatteMaterial,
+  enhanceMaterials,
+} from './materials';
 import { disposeObject3D } from './dispose';
 import { SHARED_MATERIALS } from '../constants';
 import {
@@ -34,9 +39,11 @@ import {
 } from './robotLoaderDiff';
 import {
   applyOriginToGroup,
+  captureHighlightedMaterialState,
   clearGroupChildren,
   disposeReplacedMaterials,
   findRobotLinkObject,
+  getHighlightedMeshSnapshot,
   markCollisionObject,
   markVisualObject,
   rebuildLinkMeshMapForLink,
@@ -643,11 +650,19 @@ function getAuthoredMaterialSignature(geometry: LinkGeometry | undefined): strin
       color: (material.color || '').trim().toLowerCase(),
       colorRgba: material.colorRgba ?? null,
       texture: (material.texture || '').trim(),
+      textureRotation: material.textureRotation ?? null,
       opacity: material.opacity ?? null,
       roughness: material.roughness ?? null,
       metalness: material.metalness ?? null,
       emissive: (material.emissive || '').trim().toLowerCase(),
       emissiveIntensity: material.emissiveIntensity ?? null,
+      alphaTest: material.alphaTest ?? null,
+      passes: material.passes?.map((pass) => ({
+        texture: (pass.texture || '').trim(),
+        sceneBlend: pass.sceneBlend ?? null,
+        depthWrite: pass.depthWrite ?? null,
+        lighting: pass.lighting ?? null,
+      })) ?? null,
     })),
   );
 }
@@ -902,12 +917,16 @@ function patchGeometryGroupInPlace({
     (authoredMaterialsChanged || meshMaterialGroupsChanged)
   ) {
     const disposedMaterials = new Set<THREE.Material>();
+    const highlightedSnapshots = new Map<
+      THREE.Mesh,
+      NonNullable<ReturnType<typeof getHighlightedMeshSnapshot>>
+    >();
     targetGroup.traverse((child: any) => {
       if (!child.isMesh) {
         return;
       }
 
-      const highlightSnapshot = child.userData?.__urdfHighlightSnapshot;
+      const highlightSnapshot = getHighlightedMeshSnapshot(child as THREE.Mesh);
       if (!highlightSnapshot?.activeRole) {
         return;
       }
@@ -917,12 +936,30 @@ function patchGeometryGroupInPlace({
         | THREE.Material[]
         | undefined;
       child.material = highlightSnapshot.material;
-      delete child.userData.__urdfHighlightSnapshot;
+      highlightedSnapshots.set(child as THREE.Mesh, highlightSnapshot);
       disposeReplacedMaterials(previousVisibleMaterial, disposedMaterials, false);
     });
 
     targetGroup.children.forEach((child) => {
       applyVisualMeshMaterialGroupsToObject(child, geometry);
+    });
+
+    highlightedSnapshots.forEach((highlightSnapshot, mesh) => {
+      const nextBaseMaterial = mesh.material as THREE.Material | THREE.Material[];
+      const nextBaseMaterials = Array.isArray(nextBaseMaterial)
+        ? nextBaseMaterial
+        : [nextBaseMaterial];
+      const nextVisibleMaterials = nextBaseMaterials.map((material) =>
+        createHighlightOverrideMaterial(material, highlightSnapshot.activeRole || 'visual'),
+      );
+      highlightSnapshot.material = nextBaseMaterial;
+      highlightSnapshot.materialStates = nextBaseMaterials.map((material) =>
+        captureHighlightedMaterialState(material),
+      );
+      mesh.material = Array.isArray(nextBaseMaterial)
+        ? nextVisibleMaterials
+        : nextVisibleMaterials[0]!;
+      mesh.userData.__urdfHighlightSnapshot = highlightSnapshot;
     });
   }
 

@@ -213,6 +213,61 @@ test('AIConversationModal opens at the front and remains front when activated', 
   }
 });
 
+test('compact conversation layout fits the viewport and keeps content scrollable', async () => {
+  const dom = installDom();
+  Object.defineProperty(dom.window, 'innerWidth', { value: 613, configurable: true });
+  Object.defineProperty(dom.window, 'innerHeight', { value: 618, configurable: true });
+  const container = dom.window.document.getElementById('root');
+  assert.ok(container, 'root container should exist');
+
+  const { AIConversationModal } = await import('./AIConversationModal.tsx');
+  const root = createRoot(container);
+
+  try {
+    await act(async () => {
+      root.render(
+        <AIConversationModal
+          isOpen
+          onClose={() => {}}
+          lang="zh"
+          launchContext={createLaunchContext()}
+          onStartNewConversation={() => {}}
+        />,
+      );
+    });
+    await flush();
+
+    const windowRoot = Array.from(container.querySelectorAll<HTMLDivElement>('div')).find(
+      (element) => element.style.width === '589px' && element.style.height === '554px',
+    );
+    assert.ok(windowRoot, 'expected the compact conversation window to fit inside the viewport');
+
+    const scrollViewport = container.querySelector<HTMLElement>(
+      '[data-ai-conversation-scroll-viewport]',
+    );
+    assert.ok(scrollViewport, 'expected a dedicated conversation scroll viewport');
+    assert.equal(scrollViewport.className.includes('overflow-y-auto'), true);
+
+    const emptyState = scrollViewport.firstElementChild as HTMLElement | null;
+    assert.ok(emptyState, 'expected the prompt suggestions to render');
+    assert.equal(emptyState.className.includes('justify-start'), true);
+
+    const textarea = getTextarea(container);
+    assert.equal(textarea.className.includes('min-h-[64px]'), true);
+    assert.equal(
+      container
+        .querySelector<HTMLButtonElement>('button[aria-label="新开对话"]')
+        ?.textContent?.trim(),
+      '',
+    );
+  } finally {
+    await act(async () => {
+      root.unmount();
+    });
+    dom.window.close();
+  }
+});
+
 test('new conversation requires confirmation, preserves history, and inserts a divider', async () => {
   const previousApiKey = process.env.API_KEY;
   process.env.API_KEY = '';

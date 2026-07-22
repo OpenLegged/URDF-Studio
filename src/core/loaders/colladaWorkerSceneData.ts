@@ -481,7 +481,13 @@ export function parseColladaSceneData(
   const loader = new ColladaLoader();
   const baseUrl = THREE.LoaderUtils.extractUrlBase(assetUrl);
   const { capturedImageUrls, result: scene } = captureTextureSourceUrls(
-    () => loader.parse(sanitizedContent, baseUrl).scene,
+    () => {
+      const collada = loader.parse(sanitizedContent, baseUrl);
+      if (!collada) {
+        throw new Error(`ColladaLoader returned no scene for ${assetUrl}`);
+      }
+      return collada.scene;
+    },
   );
   fixDegenerateColladaOpacity(scene);
   const sceneJson = scene.toJSON() as unknown as Record<string, unknown>;

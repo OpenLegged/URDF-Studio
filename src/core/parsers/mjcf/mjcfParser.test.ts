@@ -54,6 +54,25 @@ function parseMJCF(xmlContent: string): RobotState {
   return robot;
 }
 
+test('parseMJCF represents unbounded joints without infinite limit values', () => {
+  installDomGlobals();
+  const robot = parseMJCF(`
+    <mujoco model="unbounded_joint_demo">
+      <worldbody>
+        <body name="base">
+          <body name="tip">
+            <joint name="spin" type="hinge" limited="false" />
+          </body>
+        </body>
+      </worldbody>
+    </mujoco>
+  `);
+
+  assert.ok(robot.joints.spin);
+  assert.equal(robot.joints.spin.type, 'continuous');
+  assert.deepEqual(robot.joints.spin.limit, undefined);
+});
+
 const MYOSUITE_FIXTURE_ROOT = path.resolve('test/myosuite-main');
 let myosuiteMjcfFilesCache: RobotFile[] | null = null as RobotFile[] | null;
 const CASSIE_MUJOCO_HOME_CONNECT_ANCHOR_TOLERANCE = 0.0025;

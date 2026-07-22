@@ -81,6 +81,7 @@ test('Select renders a custom listbox while preserving select-compatible change 
     assert.ok(trigger instanceof dom.window.HTMLButtonElement);
     assert.equal(trigger.textContent?.includes('Alpha'), true);
     assert.equal(trigger.getAttribute('title'), 'Select theme preset');
+    assert.match(trigger.className, /hover:border-border-strong/);
 
     await act(async () => {
       trigger.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
@@ -93,6 +94,7 @@ test('Select renders a custom listbox while preserving select-compatible change 
       dom.window.document.querySelectorAll('button[role="option"]'),
     ).find((node) => node.textContent?.includes('Beta'));
     assert.ok(betaOption instanceof dom.window.HTMLButtonElement);
+    assert.match(betaOption.className, /hover:bg-element-hover/);
 
     await act(async () => {
       betaOption.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));

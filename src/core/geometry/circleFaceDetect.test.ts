@@ -110,12 +110,23 @@ test('detectCircleFaceFromHit rejects non-circular coplanar regions by RMS', () 
   assert.equal(detectCircleFaceFromHit(ellipse, 0), null);
 });
 
-test('detectCircleFaceFromHit safely ignores non-indexed geometry', () => {
+test('detectCircleFaceFromHit detects STL-style non-indexed cylinder caps', () => {
   const geometry = new THREE.CylinderGeometry(1, 1, 2, 24).toNonIndexed();
-  assert.equal(detectCircleFaceFromHit(geometry, 0), null);
+  const capFace = Array.from({ length: geometry.getAttribute('position').count / 3 }, (_, index) => index)
+    .find((faceIndex) => {
+      const normal = getFaceNormal(geometry, faceIndex);
+      const center = getFaceCenter(geometry, faceIndex);
+      return normal && center && Math.abs(normal.y) > 0.9 && center.y > 0.5;
+    });
+  assert.notEqual(capFace, undefined);
+
+  const result = detectCircleFaceFromHit(geometry, capFace!);
+  assert.ok(result);
+  assertVecNearlyEqual(result!.center, new THREE.Vector3(0, 1, 0), 1e-4);
+  assertNearlyEqual(result!.radius, 1, 1e-4);
 });
 
-test('detectCircleFaceFromHit reuses the geometry adjacency cache', () => {
+test('detectCircleFaceFromHit reuses the geometry topology cache', () => {
   const geometry = new THREE.CylinderGeometry(1, 1, 2, 32);
   const capFace = findFaceIndex(
     geometry,
@@ -123,8 +134,13 @@ test('detectCircleFaceFromHit reuses the geometry adjacency cache', () => {
   );
 
   assert.ok(detectCircleFaceFromHit(geometry, capFace));
-  const cache = geometry.userData.__circleAdjCache;
+  const cache = geometry.userData.__planarRegionTopologyCache;
   assert.ok(cache);
+  assert.equal(Object.keys(geometry.userData).includes('__planarRegionTopologyCache'), false);
   assert.ok(detectCircleFaceFromHit(geometry, capFace));
-  assert.equal(geometry.userData.__circleAdjCache, cache);
+  assert.equal(geometry.userData.__planarRegionTopologyCache, cache);
+
+  geometry.getAttribute('position').needsUpdate = true;
+  assert.ok(detectCircleFaceFromHit(geometry, capFace));
+  assert.notEqual(geometry.userData.__planarRegionTopologyCache, cache);
 });

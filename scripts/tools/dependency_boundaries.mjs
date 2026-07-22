@@ -101,11 +101,6 @@ const ALLOWLIST = [
   },
   {
     importer: 'src/lib/components/RobotCanvas.tsx',
-    specifier: '../../features/urdf-viewer/components/ViewerCanvas',
-    resolved: 'src/features/urdf-viewer/components/ViewerCanvas.tsx',
-  },
-  {
-    importer: 'src/lib/components/RobotCanvas.tsx',
     specifier: '../../features/urdf-viewer/components/JointInteraction',
     resolved: 'src/features/urdf-viewer/components/JointInteraction.tsx',
   },
@@ -150,7 +145,8 @@ for (const relPath of files) {
   const importerLayer = classifyLayer(relPath);
   const edges = new Set();
 
-  for (const spec of extractImportSpecifiers(text)) {
+  for (const dependency of extractDependencies(text)) {
+    const spec = dependency.specifier;
     const resolvedRel = resolveInternal(relPath, spec);
     const targetLayer = resolvedRel ? classifyLayer(resolvedRel) : classifyExternal(spec);
     if (!targetLayer) {
@@ -161,7 +157,17 @@ for (const relPath of files) {
       observedFeatureDeepImports.set(deepImport.key, deepImport);
     }
 
-    const violation = checkBoundary(relPath, importerLayer, targetLayer, spec, resolvedRel);
+    const violation =
+      dependency.syntax === 'require' && path.extname(relPath) !== '.cjs'
+        ? {
+            importer: relPath,
+            importerLayer,
+            target: spec,
+            targetLayer,
+            reason:
+              'require() is not allowed in ESM product source; use an import or an explicit .cjs/tool boundary',
+          }
+        : checkBoundary(relPath, importerLayer, targetLayer, spec, resolvedRel);
     if (violation) {
       boundaryViolations.push(violation);
     }
@@ -291,21 +297,26 @@ async function walk(relDir, out) {
   }
 }
 
-function extractImportSpecifiers(text) {
-  const specs = [];
+function extractDependencies(text) {
+  const dependencies = [];
   // import ... from 'x'  |  export ... from 'x'
   for (const match of text.matchAll(/\b(?:import|export)\b[^;'"]*?\bfrom\s*['"]([^'"]+)['"]/g)) {
-    specs.push(match[1]);
+    dependencies.push({ specifier: match[1], syntax: 'esm' });
   }
   // bare side-effect import 'x'
   for (const match of text.matchAll(/\bimport\s*['"]([^'"]+)['"]/g)) {
-    specs.push(match[1]);
+    dependencies.push({ specifier: match[1], syntax: 'esm' });
   }
   // dynamic import('x')
   for (const match of text.matchAll(/\bimport\s*\(\s*['"]([^'"]+)['"]\s*\)/g)) {
-    specs.push(match[1]);
+    dependencies.push({ specifier: match[1], syntax: 'esm' });
   }
-  return specs;
+  // Static CommonJS require calls still create dependency edges, but are rejected in
+  // ESM product files so they cannot bypass the architecture gate.
+  for (const match of text.matchAll(/\brequire\s*\(\s*['"]([^'"]+)['"]\s*\)/g)) {
+    dependencies.push({ specifier: match[1], syntax: 'require' });
+  }
+  return dependencies;
 }
 
 function resolveInternal(importerRel, spec) {
@@ -365,7 +376,22 @@ function classifyExternal(spec) {
 }
 
 function checkBoundary(importerRel, importerLayer, targetLayer, spec, resolvedRel) {
-  if (!importerLayer || targetLayer === 'external' || targetLayer === 'types') {
+  if (!importerLayer || targetLayer === 'external') {
+    return null;
+  }
+  if (importerLayer === 'types') {
+    if (targetLayer === 'types') {
+      return null;
+    }
+    return {
+      importer: importerRel,
+      importerLayer,
+      target: spec,
+      targetLayer,
+      reason: `types is a leaf layer and must not import ${targetLayer}`,
+    };
+  }
+  if (targetLayer === 'types') {
     return null;
   }
   if (isAllowlisted(importerRel, spec, resolvedRel)) {

@@ -1,12 +1,16 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
-import { createPortal } from 'react-dom';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { MessageCircle, ScanSearch, Square, X } from 'lucide-react';
 import type { InspectionReport, RobotState } from '@/types';
 import type { Language, TranslationKeys } from '@/shared/i18n';
 import { translations } from '@/shared/i18n';
 import { useWorkspaceStore } from '@/store/workspaceStore';
 import { isIdentityAssemblyTransform } from '@/core/robot/assemblyTransforms';
-import { DraggableWindow } from '@/shared/components/DraggableWindow';
+import {
+  DraggableWindow,
+  FLOATING_WINDOW_HEADER_HEIGHT_CLASS,
+  FLOATING_WINDOW_RADIUS_CLASS,
+  FLOATING_WINDOW_TITLE_CLASS,
+} from '@/shared/components/DraggableWindow';
 import { Button } from '@/shared/components/ui/Button';
 import { CLOSE_BUTTON_DANGER_TERTIARY_CLASS } from '@/shared/components/ui/closeButtonStyles';
 import { Dialog } from '@/shared/components/ui/Dialog';
@@ -14,9 +18,7 @@ import { SegmentedControl } from '@/shared/components/ui/SegmentedControl';
 import { useDraggableWindow } from '@/shared/hooks/useDraggableWindow';
 import { useManagedWindowLayer } from '@/store';
 import { runRobotInspection } from '../services/aiService';
-import {
-  INSPECTION_PROFILE_DEFINITIONS,
-} from '../config/inspectionProfiles';
+import { INSPECTION_PROFILE_DEFINITIONS } from '../config/inspectionProfiles';
 import {
   buildInspectionRunContext,
   type InspectionRunContext,
@@ -49,13 +51,10 @@ import { InspectionSetupNormalView } from './InspectionSetupNormalView';
 import { InspectionSetupView } from './InspectionSetupView';
 import {
   recalculateReportMetrics,
-  RUN_INSPECTION_POINTER_DURATION_MS,
   TOTAL_INSPECTION_ITEM_COUNT,
-  type InspectionRunPointerLayout,
   type InspectionSetupMode,
   type ReportScrollTarget,
   type RetestingItemState,
-  type SetupItemScrollTarget,
 } from './inspectionModalState';
 
 interface AIInspectionModalProps {
@@ -166,6 +165,14 @@ export function AIInspectionModal({
     [profileRecommendationKey],
   );
   const [normalPlanOverride, setNormalPlanOverride] = useState<NormalInspectionPlanOverride>({});
+  const automaticInspectionPlan = useMemo(
+    () =>
+      buildNormalInspectionPlan({
+        robot,
+        workflowContext: assemblyWorkflowContext,
+      }),
+    [assemblyWorkflowContext, robot],
+  );
   const normalInspectionPlan = useMemo(
     () =>
       buildNormalInspectionPlan({
@@ -176,13 +183,6 @@ export function AIInspectionModal({
     [assemblyWorkflowContext, normalPlanOverride, robot],
   );
   const recommendedProfiles = normalInspectionPlan.selectedProfiles;
-  const normalInspectionPlanKey = useMemo(
-    () =>
-      normalInspectionPlan.includedProfileIds
-        .map((profileId) => `${profileId}:${normalInspectionPlan.selectedProfiles[profileId]?.size ?? 0}`)
-        .join('\u0000'),
-    [normalInspectionPlan],
-  );
   const normalInspectionPlanSelectionKey = useMemo(
     () =>
       normalInspectionPlan.includedProfileIds
@@ -193,34 +193,29 @@ export function AIInspectionModal({
         .join('\u0000'),
     [normalInspectionPlan],
   );
-  // Size the inspection window to the viewport on open so it never overshoots
-  // a narrow screen. Keep the 1080x720 design size on large screens, fall back
-  // to viewport-minus-margin on narrower/shorter ones, clamped to the minimums.
+  // Keep the large-screen design size while allowing the window to become a
+  // true single-column surface on narrow screens.
   const defaultWindowSize = useMemo(() => {
     const DESIGN_WIDTH = 1080;
     const DESIGN_HEIGHT = 720;
-    const MIN_WIDTH = 760;
-    const MIN_HEIGHT = 520;
-    const VIEWPORT_MARGIN = 80;
-    const VERTICAL_RESERVE = 120; // header bar + top offset + bottom breathing room
+    const MIN_WIDTH = 480;
+    const MIN_HEIGHT = 420;
+    const VIEWPORT_MARGIN = 24;
+    const VERTICAL_RESERVE = 64;
     const hasWindow = typeof window !== 'undefined';
     const viewportWidth = hasWindow ? window.innerWidth : DESIGN_WIDTH;
     const viewportHeight = hasWindow ? window.innerHeight : DESIGN_HEIGHT;
     const width = Math.max(MIN_WIDTH, Math.min(DESIGN_WIDTH, viewportWidth - VIEWPORT_MARGIN));
-    const height = Math.max(
-      MIN_HEIGHT,
-      Math.min(DESIGN_HEIGHT, viewportHeight - VERTICAL_RESERVE),
-    );
+    const height = Math.max(MIN_HEIGHT, Math.min(DESIGN_HEIGHT, viewportHeight - VERTICAL_RESERVE));
     return { width, height };
   }, []);
   const windowState = useDraggableWindow({
     isOpen,
     defaultSize: defaultWindowSize,
-    minSize: { width: 760, height: 520 },
+    minSize: { width: 480, height: 420 },
+    viewportMinSize: { width: 360, height: 320 },
     centerOnMount: true,
     enableMinimize: true,
-    // Match the source-code editor: let the window slide off-screen and resize
-    // without being clamped to the viewport.
     clampResizeToViewport: false,
     dragBounds: {
       allowNegativeX: true,
@@ -229,6 +224,7 @@ export function AIInspectionModal({
     },
   });
   const { isMinimized, size, isResizing } = windowState;
+  const isCompactLayout = size.width < 720;
 
   const [inspectionReport, setInspectionReport] = useState<InspectionReport | null>(null);
   const [inspectionRobotSnapshot, setInspectionRobotSnapshot] = useState<RobotState | null>(null);
@@ -251,22 +247,11 @@ export function AIInspectionModal({
     createSelectedInspectionProfilesForProfileIds(profileRecommendation.profileIds),
   );
   const [inspectionSetupMode, setInspectionSetupMode] = useState<InspectionSetupMode>('normal');
-  const [showRunInspectionPointer, setShowRunInspectionPointer] = useState(false);
-  const [runInspectionPointerReplayToken, setRunInspectionPointerReplayToken] = useState(0);
-  const [runInspectionPointerLayout, setRunInspectionPointerLayout] =
-    useState<InspectionRunPointerLayout>({
-      deltaX: 0,
-      deltaY: 0,
-      targetX: 0,
-      targetY: 0,
-    });
   const [focusedProfileId, setFocusedProfileId] = useState<string>(
     profileRecommendation.profileIds[0] ?? INSPECTION_PROFILE_DEFINITIONS[0]?.id ?? '',
   );
   const [pendingReportScrollTarget, setPendingReportScrollTarget] =
     useState<ReportScrollTarget | null>(null);
-  const [pendingSetupItemScrollTarget, setPendingSetupItemScrollTarget] =
-    useState<SetupItemScrollTarget | null>(null);
   const inspectionSidebarReadOnly = Boolean(inspectionProgress || inspectionReport);
 
   const isMountedRef = useRef(false);
@@ -275,17 +260,13 @@ export function AIInspectionModal({
   const retestRequestIdRef = useRef(0);
   const reportScrollViewportRef = useRef<HTMLDivElement | null>(null);
   const inspectionTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const runInspectionPointerTimerRef = useRef<number | null>(null);
-  const lastRunInspectionPointerKeyRef = useRef<string | null>(null);
   const lastInspectionSetupSelectionSyncKeyRef = useRef<string | null>(null);
-  const runInspectionButtonRef = useRef<HTMLButtonElement | null>(null);
 
   const totalSelectedCount = countSelectedInspectionProfileItems(selectedProfiles);
   const selectedProfileCount = countSelectedInspectionProfiles(selectedProfiles);
   const selectedCoveragePercentage = Math.round(
     (selectedProfileCount / Math.max(INSPECTION_PROFILE_DEFINITIONS.length, 1)) * 100,
   );
-  const maxPossibleScore = totalSelectedCount * 10;
   const reportRobot = inspectionRobotSnapshot ?? robot;
 
   const clearInspectionTimer = useCallback(() => {
@@ -295,34 +276,15 @@ export function AIInspectionModal({
     }
   }, []);
 
-  const clearRunInspectionPointerTimer = useCallback(() => {
-    if (runInspectionPointerTimerRef.current !== null) {
-      window.clearTimeout(runInspectionPointerTimerRef.current);
-      runInspectionPointerTimerRef.current = null;
-    }
-  }, []);
-
   useEffect(() => {
-    const selectionSyncKey = `${inspectionSetupMode}:${normalInspectionPlanSelectionKey}`;
-    if (lastInspectionSetupSelectionSyncKeyRef.current === selectionSyncKey) {
+    if (
+      lastInspectionSetupSelectionSyncKeyRef.current === normalInspectionPlanSelectionKey
+    ) {
       return;
     }
 
-    lastInspectionSetupSelectionSyncKeyRef.current = selectionSyncKey;
-
-    if (inspectionSetupMode === 'normal') {
-      setExpandedProfiles(new Set(normalInspectionPlan.includedProfileIds));
-      setSelectedProfiles(cloneSelectedInspectionProfiles(normalInspectionPlan.selectedProfiles));
-      setFocusedProfileId(
-        normalInspectionPlan.includedProfileIds[0] ??
-          recommendedProfileIds[0] ??
-          INSPECTION_PROFILE_DEFINITIONS[0]?.id ??
-          '',
-      );
-      return;
-    }
-
-    setExpandedProfiles(new Set());
+    lastInspectionSetupSelectionSyncKeyRef.current = normalInspectionPlanSelectionKey;
+    setExpandedProfiles(new Set(normalInspectionPlan.includedProfileIds));
     setSelectedProfiles(cloneSelectedInspectionProfiles(normalInspectionPlan.selectedProfiles));
     setFocusedProfileId(
       normalInspectionPlan.includedProfileIds[0] ??
@@ -331,10 +293,8 @@ export function AIInspectionModal({
         '',
     );
   }, [
-    inspectionSetupMode,
     normalInspectionPlan.includedProfileIds,
     normalInspectionPlan.selectedProfiles,
-    normalInspectionPlanKey,
     normalInspectionPlanSelectionKey,
     recommendedProfileIds,
   ]);
@@ -349,14 +309,12 @@ export function AIInspectionModal({
       inspectionAbortControllerRef.current = null;
       retestRequestIdRef.current += 1;
       clearInspectionTimer();
-      clearRunInspectionPointerTimer();
     };
-  }, [clearInspectionTimer, clearRunInspectionPointerTimer]);
+  }, [clearInspectionTimer]);
 
   const handleClose = useCallback(() => {
     setIsRegenerateConfirmOpen(false);
     setIsSavingReportBeforeRegenerate(false);
-    setShowRunInspectionPointer(false);
     onClose();
   }, [onClose]);
 
@@ -596,39 +554,6 @@ export function AIInspectionModal({
     };
   }, [expandedProfiles, inspectionReport, pendingReportScrollTarget, scrollToReportAnchor]);
 
-  useEffect(() => {
-    if (
-      !pendingSetupItemScrollTarget ||
-      inspectionProgress ||
-      inspectionReport ||
-      inspectionSetupMode !== 'advanced'
-    ) {
-      return;
-    }
-
-    const frameId = window.requestAnimationFrame(() => {
-      const target = reportScrollViewportRef.current?.querySelector<HTMLElement>(
-        `[data-inspection-setup-item-anchor="${pendingSetupItemScrollTarget.profileId}:${pendingSetupItemScrollTarget.itemId}"]`,
-      );
-
-      if (!target) {
-        return;
-      }
-
-      target.scrollIntoView?.({
-        behavior: 'smooth',
-        block: 'start',
-        inline: 'nearest',
-      });
-      target.focus({ preventScroll: true });
-      setPendingSetupItemScrollTarget(null);
-    });
-
-    return () => {
-      window.cancelAnimationFrame(frameId);
-    };
-  }, [inspectionProgress, inspectionReport, inspectionSetupMode, pendingSetupItemScrollTarget]);
-
   const handleDownloadPDF = () => {
     return exportInspectionReportPdf({
       inspectionReport,
@@ -725,115 +650,15 @@ export function AIInspectionModal({
   );
 
   const isSetupView = !inspectionProgress && !inspectionReport;
-  const shouldShowRunInspectionPointer =
-    isSetupView && showRunInspectionPointer && totalSelectedCount > 0 && !isMinimized;
-  const runInspectionPointerKey = `${isOpen}:${isSetupView}:${inspectionSetupMode}:${isMinimized}`;
   const inspectionSetupSummary =
     `${t.inspectionRunDetails}${t.inspectionRunDetailsSeparator}` +
     `${t.inspectionSelectedChecks.replace('{count}', String(totalSelectedCount))} | ` +
     `${t.inspectionSelectedCategories}: ${selectedProfileCount} | ` +
-    `${t.inspectionWeightedCoverage}: ${selectedCoveragePercentage}% | ` +
-    `${t.inspectionMaxPossibleScore}: ${maxPossibleScore}`;
-
-  useEffect(() => {
-    if (!isOpen || !isSetupView) {
-      lastRunInspectionPointerKeyRef.current = null;
-      setShowRunInspectionPointer(false);
-      clearRunInspectionPointerTimer();
-      return;
-    }
-
-    if (isMinimized || totalSelectedCount === 0) {
-      setShowRunInspectionPointer(false);
-      clearRunInspectionPointerTimer();
-      return;
-    }
-
-    if (lastRunInspectionPointerKeyRef.current === runInspectionPointerKey) {
-      return;
-    }
-
-    lastRunInspectionPointerKeyRef.current = runInspectionPointerKey;
-    setShowRunInspectionPointer(true);
-    setRunInspectionPointerReplayToken((current) => current + 1);
-    clearRunInspectionPointerTimer();
-
-    runInspectionPointerTimerRef.current = window.setTimeout(() => {
-      if (isMountedRef.current) {
-        setShowRunInspectionPointer(false);
-      }
-    }, RUN_INSPECTION_POINTER_DURATION_MS);
-
-    return () => {
-      clearRunInspectionPointerTimer();
-    };
-  }, [
-    clearRunInspectionPointerTimer,
-    isMinimized,
-    isOpen,
-    isSetupView,
-    inspectionSetupMode,
-    runInspectionPointerKey,
-    totalSelectedCount,
-  ]);
-
-  useEffect(() => {
-    if (!shouldShowRunInspectionPointer) {
-      return;
-    }
-
-    const frameId = window.requestAnimationFrame(() => {
-      const windowContainer = windowState.containerRef.current;
-      const runButton = runInspectionButtonRef.current;
-      const containerRect = windowContainer?.getBoundingClientRect();
-      const buttonRect = runButton?.getBoundingClientRect();
-      const containerWidth = containerRect?.width || size.width;
-      const containerHeight = containerRect?.height || size.height;
-      const originX = containerWidth / 2;
-      const originY = containerHeight / 2;
-      const fallbackTargetX = containerWidth - 116;
-      const fallbackTargetY = containerHeight - 54;
-      const targetX =
-        containerRect && buttonRect && buttonRect.width > 0
-          ? buttonRect.left - containerRect.left + buttonRect.width * 0.5
-          : fallbackTargetX;
-      const targetY =
-        containerRect && buttonRect && buttonRect.height > 0
-          ? buttonRect.top - containerRect.top + buttonRect.height * 0.5
-          : fallbackTargetY;
-
-      setRunInspectionPointerLayout({
-        deltaX: targetX - originX,
-        deltaY: targetY - originY,
-        targetX,
-        targetY,
-      });
-    });
-
-    return () => {
-      window.cancelAnimationFrame(frameId);
-    };
-  }, [
-    shouldShowRunInspectionPointer,
-    inspectionSetupMode,
-    isOpen,
-    size.height,
-    size.width,
-    windowState.containerRef,
-  ]);
+    `${t.inspectionWeightedCoverage}: ${selectedCoveragePercentage}%`;
 
   if (!isOpen) {
     return null;
   }
-
-  const runInspectionPointerOverlayStyle = {
-    '--inspection-run-pointer-origin-x': '50%',
-    '--inspection-run-pointer-origin-y': '50%',
-    '--inspection-run-pointer-dx': `${runInspectionPointerLayout.deltaX}px`,
-    '--inspection-run-pointer-dy': `${runInspectionPointerLayout.deltaY}px`,
-    '--inspection-run-pointer-target-x': `${runInspectionPointerLayout.targetX}px`,
-    '--inspection-run-pointer-target-y': `${runInspectionPointerLayout.targetY}px`,
-  } as CSSProperties;
 
   return (
     <>
@@ -842,24 +667,27 @@ export function AIInspectionModal({
       <DraggableWindow
         window={windowState}
         onClose={handleClose}
+        role="dialog"
+        ariaLabel={t.aiInspection}
+        ariaModal={false}
         title={
           isSetupView ? (
-            <div className="flex min-w-0 items-center gap-3">
+            <div className="flex min-w-0 items-center gap-2">
               <div
                 data-inspection-setup-header-logo
-                className="flex h-9 w-9 items-center justify-center rounded-xl border border-border-black bg-panel-bg text-system-blue shadow-sm dark:bg-element-bg"
+                className="flex h-7 w-7 items-center justify-center rounded-lg border border-border-black bg-panel-bg text-system-blue shadow-sm dark:bg-element-bg"
               >
-                <ScanSearch className="h-[18px] w-[18px]" />
+                <ScanSearch className="h-4 w-4" />
               </div>
-              <h1 className="text-sm font-semibold text-text-primary">{t.aiInspection}</h1>
+              <h1 className={FLOATING_WINDOW_TITLE_CLASS}>{t.aiInspection}</h1>
             </div>
           ) : (
             <>
               <div className="flex items-center gap-2">
-                <div className="rounded-lg border border-border-black bg-panel-bg p-1.5 text-system-blue dark:bg-element-bg dark:text-system-blue">
-                  <ScanSearch className="w-4 h-4" />
+                <div className="flex h-7 w-7 items-center justify-center rounded-lg border border-border-black bg-panel-bg text-system-blue dark:bg-element-bg dark:text-system-blue">
+                  <ScanSearch className="h-4 w-4" />
                 </div>
-                <h1 className="text-sm font-semibold text-text-primary">{t.aiInspection}</h1>
+                <h1 className={FLOATING_WINDOW_TITLE_CLASS}>{t.aiInspection}</h1>
               </div>
 
               {inspectionReport && !isMinimized && (
@@ -879,16 +707,16 @@ export function AIInspectionModal({
             </>
           )
         }
-        className="flex flex-col overflow-hidden rounded-2xl border border-border-black bg-panel-bg text-text-primary shadow-xl select-none dark:bg-panel-bg"
+        className={`flex flex-col overflow-hidden ${FLOATING_WINDOW_RADIUS_CLASS} border border-border-black bg-panel-bg text-text-primary shadow-xl select-none dark:bg-panel-bg`}
         zIndex={inspectionWindowLayer.zIndex}
         onActivate={inspectionWindowLayer.onActivate}
-        headerClassName="relative h-12 border-b border-border-black flex items-center justify-between px-4 bg-element-bg shrink-0"
+        headerClassName={`relative ${FLOATING_WINDOW_HEADER_HEIGHT_CLASS} shrink-0 border-b border-border-black flex items-center justify-between px-4 bg-element-bg`}
         headerLeftClassName={isSetupView ? 'flex min-w-0 items-center' : 'flex items-center gap-3'}
         headerRightClassName={
           isSetupView ? 'flex shrink-0 items-center gap-1 ml-auto' : 'flex items-center gap-1'
         }
         headerActions={
-          isSetupView && !isMinimized ? (
+          isSetupView && !isMinimized && !isCompactLayout ? (
             <div
               data-inspection-setup-mode-switcher
               className="absolute left-1/2 top-1/2 z-10 -translate-x-1/2 -translate-y-1/2"
@@ -898,11 +726,11 @@ export function AIInspectionModal({
                   { value: 'normal', label: t.inspectionNormalMode },
                   { value: 'advanced', label: t.inspectionAdvancedMode },
                 ]}
-	                value={inspectionSetupMode}
-	                onChange={setInspectionSetupMode}
-	                stretch={false}
-	                ariaLabel={t.aiInspection}
-	                className="w-full max-w-[300px]"
+                value={inspectionSetupMode}
+                onChange={setInspectionSetupMode}
+                stretch={false}
+                ariaLabel={t.aiInspection}
+                className="w-full max-w-[300px]"
                 itemClassName="min-w-[126px]"
               />
             </div>
@@ -923,150 +751,172 @@ export function AIInspectionModal({
         cornerResizeHandle={<div className="h-2 w-2 border-b border-r border-border-strong" />}
       >
         {!isMinimized && (
-          <div className="relative flex min-h-0 flex-1 overflow-hidden">
-            {isSetupView ? (
-              inspectionSetupMode === 'advanced' ? (
-                <div
-                  ref={reportScrollViewportRef}
-                  className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-app-bg dark:bg-panel-bg"
-                >
-                  <div className="flex min-h-0 flex-1 flex-col gap-4 p-6">
-                    {inspectionCancellationNotice && (
-                      <DismissibleInspectionCancellationNotice
-                        notice={inspectionCancellationNotice}
-                        t={t}
-                        onDismiss={handleDismissInspectionCancellationNotice}
-                      />
-                    )}
-                    <InspectionSetupView
-                      robot={robot}
-                      lang={lang}
-                      t={t}
-                      plan={normalInspectionPlan}
-                      override={normalPlanOverride}
-                      selectedProfiles={selectedProfiles}
-                      recommendedProfiles={recommendedProfiles}
-                      focusedProfileId={focusedProfileId}
-                      onOverrideChange={setNormalPlanOverride}
-                      onSelectedProfilesChange={setSelectedProfiles}
-                      onToggleItem={handleToggleSelectedItem}
-                      onFocusProfile={setFocusedProfileId}
-                      onRestoreRecommendation={handleRestoreRecommendation}
-                      onRestoreProfileRecommendation={handleRestoreProfileRecommendation}
-                    />
-                  </div>
-                </div>
-              ) : (
-                <div
-                  ref={reportScrollViewportRef}
-                  className="flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto bg-app-bg dark:bg-panel-bg"
-                >
-                  <div className="flex flex-1 flex-col p-6">
-                    {inspectionCancellationNotice && (
-                      <div className="mb-4">
+          <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
+            {isSetupView && isCompactLayout ? (
+              <div
+                data-inspection-setup-mode-switcher
+                className="shrink-0 border-b border-border-black bg-element-bg px-3 py-2"
+              >
+                <SegmentedControl<InspectionSetupMode>
+                  options={[
+                    { value: 'normal', label: t.inspectionNormalMode },
+                    { value: 'advanced', label: t.inspectionAdvancedMode },
+                  ]}
+                  value={inspectionSetupMode}
+                  onChange={setInspectionSetupMode}
+                  stretch
+                  ariaLabel={t.aiInspection}
+                  className="w-full"
+                  itemClassName="min-w-0"
+                />
+              </div>
+            ) : null}
+
+            <div className="relative flex min-h-0 flex-1 overflow-hidden">
+              {isSetupView ? (
+                inspectionSetupMode === 'advanced' ? (
+                  <div
+                    ref={reportScrollViewportRef}
+                    data-inspection-advanced-scroll-viewport
+                    className="flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto bg-app-bg dark:bg-panel-bg"
+                  >
+                    <div
+                      className={`flex flex-none flex-col gap-4 ${
+                        isCompactLayout ? 'p-3' : 'p-6'
+                      }`}
+                    >
+                      {inspectionCancellationNotice && (
                         <DismissibleInspectionCancellationNotice
                           notice={inspectionCancellationNotice}
                           t={t}
                           onDismiss={handleDismissInspectionCancellationNotice}
                         />
-                      </div>
-                    )}
-                    <InspectionSetupNormalView
+                      )}
+                      <InspectionSetupView
+                        robot={robot}
+                        lang={lang}
+                        t={t}
+                        override={normalPlanOverride}
+                        selectedProfiles={selectedProfiles}
+                        recommendedProfiles={recommendedProfiles}
+                        onSelectedProfilesChange={setSelectedProfiles}
+                        onToggleItem={handleToggleSelectedItem}
+                        onFocusProfile={setFocusedProfileId}
+                        onRestoreRecommendation={handleRestoreRecommendation}
+                        onRestoreProfileRecommendation={handleRestoreProfileRecommendation}
+                      />
+                    </div>
+                  </div>
+                ) : (
+                  <div
+                    ref={reportScrollViewportRef}
+                    className="flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto bg-app-bg dark:bg-panel-bg"
+                  >
+                    <div className={`flex flex-1 flex-col ${isCompactLayout ? 'p-3' : 'p-6'}`}>
+                      {inspectionCancellationNotice && (
+                        <div className="mb-4">
+                          <DismissibleInspectionCancellationNotice
+                            notice={inspectionCancellationNotice}
+                            t={t}
+                            onDismiss={handleDismissInspectionCancellationNotice}
+                          />
+                        </div>
+                      )}
+                      <InspectionSetupNormalView
+                        t={t}
+                        automaticPlan={automaticInspectionPlan}
+                        override={normalPlanOverride}
+                        onOverrideChange={setNormalPlanOverride}
+                      />
+                    </div>
+                  </div>
+                )
+              ) : (
+                <>
+                  {inspectionProgress ? null : (
+                    <InspectionSidebar
                       lang={lang}
                       t={t}
-                      plan={normalInspectionPlan}
-                      override={normalPlanOverride}
-                      onOverrideChange={setNormalPlanOverride}
+                      isGeneratingAI={isInspecting}
+                      readOnly={inspectionSidebarReadOnly}
+                      focusedProfileId={focusedProfileId}
+                      expandedProfiles={expandedProfiles}
+                      selectedProfiles={selectedProfiles}
+                      recommendedProfiles={recommendedProfiles}
+                      setExpandedProfiles={setExpandedProfiles}
+                      setSelectedProfiles={setSelectedProfiles}
+                      onFocusProfile={setFocusedProfileId}
+                      onNavigateToProfile={
+                        inspectionReport ? handleNavigateToReportProfile : undefined
+                      }
+                      onNavigateToItem={inspectionReport ? handleNavigateToReportItem : undefined}
                     />
-                  </div>
-                </div>
-              )
-            ) : (
-              <>
-                {inspectionProgress ? null : (
-                  <InspectionSidebar
-                    lang={lang}
-                    t={t}
-                    isGeneratingAI={isInspecting}
-                    readOnly={inspectionSidebarReadOnly}
-                    focusedProfileId={focusedProfileId}
-                    expandedProfiles={expandedProfiles}
-                    selectedProfiles={selectedProfiles}
-                    recommendedProfiles={recommendedProfiles}
-                    setExpandedProfiles={setExpandedProfiles}
-                    setSelectedProfiles={setSelectedProfiles}
-                    onFocusProfile={setFocusedProfileId}
-                    onNavigateToProfile={
-                      inspectionReport ? handleNavigateToReportProfile : undefined
-                    }
-                    onNavigateToItem={inspectionReport ? handleNavigateToReportItem : undefined}
-                  />
-                )}
+                  )}
 
-                <div
-                  ref={reportScrollViewportRef}
-                  className="flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto bg-app-bg dark:bg-panel-bg"
-                >
-                  <div className="flex flex-1 flex-col p-6">
-                    {inspectionProgress && inspectionRunContext ? (
-                      <InspectionProgress
-                        progress={inspectionProgress}
-                        elapsedSeconds={inspectionElapsedSeconds}
-                        runContext={inspectionRunContext}
-                        t={t}
-                      />
-                    ) : inspectionReport ? (
-                      <div className="animate-in slide-in-from-bottom-2 fade-in duration-300">
-                        <div className="space-y-6 pb-20">
-                          <InspectionReportView
-                            report={inspectionReport}
-                            robot={reportRobot}
-                            lang={lang}
-                            t={t}
-                            expandedProfiles={expandedProfiles}
-                            retestingItem={retestingItem}
-                            isGeneratingAI={isInspecting}
-                            onToggleProfile={handleToggleReportProfile}
-                            onRetestItem={handleRetestItem}
-                            onDownloadPDF={handleDownloadPDF}
-                            onSelectItem={onSelectItem}
-                            onAskAboutIssue={handleAskAboutIssue}
-                          />
+                  <div
+                    ref={reportScrollViewportRef}
+                    className="flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto bg-app-bg dark:bg-panel-bg"
+                  >
+                    <div className="flex flex-1 flex-col p-6">
+                      {inspectionProgress && inspectionRunContext ? (
+                        <InspectionProgress
+                          progress={inspectionProgress}
+                          elapsedSeconds={inspectionElapsedSeconds}
+                          runContext={inspectionRunContext}
+                          t={t}
+                        />
+                      ) : inspectionReport ? (
+                        <div className="animate-in slide-in-from-bottom-2 fade-in duration-300">
+                          <div className="space-y-6 pb-20">
+                            <InspectionReportView
+                              report={inspectionReport}
+                              robot={reportRobot}
+                              lang={lang}
+                              t={t}
+                              expandedProfiles={expandedProfiles}
+                              retestingItem={retestingItem}
+                              isGeneratingAI={isInspecting}
+                              onToggleProfile={handleToggleReportProfile}
+                              onRetestItem={handleRetestItem}
+                              onDownloadPDF={handleDownloadPDF}
+                              onSelectItem={onSelectItem}
+                              onAskAboutIssue={handleAskAboutIssue}
+                            />
 
-                          <div className="flex justify-center">
-                            <button
-                              onClick={() =>
-                                onOpenConversationWithReport(inspectionReport, reportRobot)
-                              }
-                              className="h-8 rounded-lg border border-border-black bg-panel-bg px-4 text-xs font-medium text-system-blue shadow-sm transition-colors hover:bg-element-bg dark:bg-element-bg"
-                            >
-                              <span className="flex items-center gap-2">
-                                <MessageCircle className="w-4 h-4" />
-                                {t.discussReportWithAI}
-                              </span>
-                            </button>
+                            <div className="flex justify-center">
+                              <button
+                                onClick={() =>
+                                  onOpenConversationWithReport(inspectionReport, reportRobot)
+                                }
+                                className="h-8 rounded-lg border border-border-black bg-panel-bg px-4 text-xs font-medium text-system-blue shadow-sm transition-colors hover:bg-element-hover dark:bg-element-bg dark:hover:bg-element-hover"
+                              >
+                                <span className="flex items-center gap-2">
+                                  <MessageCircle className="w-4 h-4" />
+                                  {t.discussReportWithAI}
+                                </span>
+                              </button>
+                            </div>
                           </div>
                         </div>
-                      </div>
-                    ) : null}
+                      ) : null}
+                    </div>
                   </div>
-                </div>
-              </>
-            )}
+                </>
+              )}
+            </div>
           </div>
         )}
 
         <div
           data-inspection-progress-footer={inspectionProgress ? 'true' : undefined}
-          className="flex min-h-14 shrink-0 items-center justify-between gap-3 border-t border-border-black bg-element-bg px-4 py-2"
+          className={`flex min-h-14 shrink-0 justify-between gap-3 border-t border-border-black bg-element-bg px-4 py-2 ${
+            isCompactLayout ? 'flex-wrap items-center' : 'items-center'
+          }`}
         >
           {inspectionProgress ? (
             <>
               <div className="flex min-w-0 items-center gap-2 text-xs font-medium text-text-secondary">
-                <span
-                  aria-hidden="true"
-                  className="h-2 w-2 shrink-0 rounded-full bg-system-blue"
-                />
+                <span aria-hidden="true" className="h-2 w-2 shrink-0 rounded-full bg-system-blue" />
                 <span className="truncate">
                   {getInspectionProgressStageLabel(inspectionProgress.stage, t)}
                 </span>
@@ -1098,11 +948,15 @@ export function AIInspectionModal({
             </>
           ) : (
             <>
-              <div className="min-w-0 flex-1">
+              <div className={isCompactLayout ? 'min-w-0 flex-1 basis-full' : 'min-w-0 flex-1'}>
                 {inspectionSetupMode === 'normal' ? (
                   <div
                     data-inspection-normal-footer-summary
-                    className="inline-flex items-center gap-3 rounded-xl border border-border-black bg-panel-bg px-3 py-2 shadow-sm"
+                    className={`rounded-xl border border-border-black bg-panel-bg px-3 py-2 shadow-sm ${
+                      isCompactLayout
+                        ? 'flex w-full items-center justify-between gap-2'
+                        : 'inline-flex items-center gap-3'
+                    }`}
                   >
                     <span className="text-[10px] font-medium uppercase tracking-[0.08em] text-text-tertiary">
                       {t.inspectionSelectedChecksLabel}
@@ -1133,7 +987,9 @@ export function AIInspectionModal({
                 )}
               </div>
 
-              <div className="relative flex items-center gap-2">
+              <div
+                className={`relative flex items-center gap-2 ${isCompactLayout ? 'ml-auto' : ''}`}
+              >
                 <button
                   onClick={handleClose}
                   className="h-8 rounded-lg px-4 text-xs font-medium text-text-secondary transition-colors hover:bg-element-hover hover:text-text-primary"
@@ -1141,20 +997,10 @@ export function AIInspectionModal({
                   {t.cancel}
                 </button>
                 <button
-                  key={
-                    shouldShowRunInspectionPointer
-                      ? `run-inspection-cue-${runInspectionPointerReplayToken}`
-                      : 'run-inspection'
-                  }
-                  ref={runInspectionButtonRef}
                   data-inspection-run-button
                   onClick={handleRunInspection}
                   disabled={isInspecting || totalSelectedCount === 0}
-                  className={`h-8 rounded-lg bg-system-blue-solid px-5 text-xs font-semibold text-white shadow-sm transition-colors hover:bg-system-blue-hover disabled:opacity-30 ${
-                    shouldShowRunInspectionPointer
-                      ? 'inspection-run-cta-pulse inspection-run-cta-breathe-sync'
-                      : ''
-                  }`}
+                  className="h-8 rounded-lg bg-system-blue-solid px-5 text-xs font-semibold text-white shadow-sm transition-colors hover:bg-system-blue-hover disabled:opacity-30"
                   title={totalSelectedCount === 0 ? t.inspectionNoChecksSelected : undefined}
                 >
                   {isInspecting ? t.thinking : t.runInspection}
@@ -1169,52 +1015,6 @@ export function AIInspectionModal({
           </div>
         )}
       </DraggableWindow>
-
-      {shouldShowRunInspectionPointer &&
-        windowState.containerRef.current &&
-        createPortal(
-          <div
-            key={`run-inspection-pointer-${runInspectionPointerReplayToken}`}
-            data-inspection-run-pointer-overlay
-            aria-hidden="true"
-            className="pointer-events-none absolute inset-0 z-40 overflow-hidden"
-            style={runInspectionPointerOverlayStyle}
-          >
-            <span
-              className="inspection-run-pointer-target absolute h-3 w-3 rounded-full border border-system-blue/25 bg-system-blue/10"
-              style={{
-                left: 'var(--inspection-run-pointer-target-x)',
-                top: 'var(--inspection-run-pointer-target-y)',
-                transform: 'translate(-50%, -50%)',
-              }}
-            />
-            <div
-              data-inspection-run-pointer
-              className="absolute"
-              style={{
-                left: 'var(--inspection-run-pointer-origin-x)',
-                top: 'var(--inspection-run-pointer-origin-y)',
-                transform: 'translate(-50%, -50%)',
-              }}
-            >
-              <svg
-                viewBox="0 0 20 24"
-                fill="none"
-                xmlns="http://www.w3.org/2000/svg"
-                className="inspection-run-pointer-cta h-8 w-7 text-system-blue"
-              >
-                <path
-                  d="M3 1.75V17.2L7.4 14.02L9.72 19.25L12.65 17.94L10.35 12.75L16.02 12.4L3 1.75Z"
-                  fill="var(--ui-panel-bg)"
-                  stroke="currentColor"
-                  strokeWidth="1.35"
-                  strokeLinejoin="round"
-                />
-              </svg>
-            </div>
-          </div>,
-          windowState.containerRef.current,
-        )}
 
       <Dialog
         isOpen={isRegenerateConfirmOpen}

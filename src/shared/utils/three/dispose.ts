@@ -1,7 +1,8 @@
 import * as THREE from 'three';
+import { isSharedThreeResource } from '@/core/utils/threeResourceOwnership';
 
 type DisposableObject3D = THREE.Object3D & {
-  geometry?: { dispose?: () => void };
+  geometry?: THREE.BufferGeometry;
   material?: THREE.Material | THREE.Material[];
   skeleton?: THREE.Skeleton;
 };
@@ -69,7 +70,7 @@ export function disposeObject3D(
 
   object.traverse((child) => {
     const disposableChild = child as DisposableObject3D;
-    if (disposableChild.geometry) {
+    if (disposableChild.geometry && !isSharedThreeResource(disposableChild.geometry)) {
       disposableChild.geometry.dispose?.();
     }
 
@@ -136,6 +137,7 @@ export function disposeMaterial(
     if (!mat) continue;
 
     if (excludeMaterials?.has(mat)) continue;
+    if (isSharedThreeResource(mat)) continue;
 
     if (disposeTextures) {
       disposeTexturesFromMaterial(mat);

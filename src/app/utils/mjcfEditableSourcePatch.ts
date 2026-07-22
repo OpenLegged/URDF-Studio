@@ -1050,11 +1050,11 @@ function getMujocoJointRange(
   limit: NonNullable<UrdfJoint['limit']>,
   jointType: UrdfJoint['type'],
   angleUnit: 'radian' | 'degree',
-): [number, number] {
+): [number, number] | null {
   const lower = Number(limit.lower);
   const upper = Number(limit.upper);
   if (!Number.isFinite(lower) || !Number.isFinite(upper)) {
-    throw new Error('Cannot patch MJCF joint range with non-finite limits.');
+    return null;
   }
 
   if (upper > lower) {
@@ -1092,7 +1092,15 @@ function buildPatchedMJCFJointLimitTag(
     );
   }
 
-  const [lower, upper] = getMujocoJointRange(limit, jointType, angleUnit);
+  const range = getMujocoJointRange(limit, jointType, angleUnit);
+  if (!range) {
+    return replaceOrRemoveXmlAttribute(
+      replaceOrRemoveXmlAttribute(rawTag, 'range', null),
+      'limited',
+      null,
+    );
+  }
+  const [lower, upper] = range;
   return replaceOrRemoveXmlAttribute(
     replaceOrRemoveXmlAttribute(rawTag, 'limited', 'true'),
     'range',

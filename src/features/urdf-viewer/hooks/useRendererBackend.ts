@@ -149,9 +149,7 @@ export function useRendererBackend(
   const robotRef = useRef<RuntimeRobotObject | null>(initialRobot);
   const backendRef = useRef<RobotRendererBackend | null>(null);
   const inFlightBackendRef = useRef<RobotRendererBackend | null>(null);
-  const pendingDisposeBackendRef = useRef<RobotRendererBackend | null>(null);
-  const pendingDisposeFrameARef = useRef<number | null>(null);
-  const pendingDisposeFrameBRef = useRef<number | null>(null);
+  const pendingCommitDisposeBackendsRef = useRef<Set<RobotRendererBackend>>(new Set());
   const linkMeshMapRef = useRef<Map<string, THREE.Mesh[]>>(new Map());
   const isMountedRef = useRef(true);
   const loadIdRef = useRef(0);
@@ -299,6 +297,29 @@ export function useRendererBackend(
   }, [robot]);
 
   useEffect(() => {
+    if (!robot || pendingCommitDisposeBackendsRef.current.size === 0) {
+      return;
+    }
+
+    // This effect is the handoff acknowledgement: R3F has committed the new
+    // <primitive> before passive effects run, so older scene resources are no
+    // longer reachable from the visible graph. A fixed RAF delay cannot provide
+    // that guarantee because a transition may be postponed by urgent updates.
+    pendingCommitDisposeBackendsRef.current.forEach((backend) => {
+      if (
+        backend === backendRef.current
+        || backend === inFlightBackendRef.current
+        || backend.getRobotObject() === robot
+      ) {
+        return;
+      }
+
+      pendingCommitDisposeBackendsRef.current.delete(backend);
+      backend.dispose();
+    });
+  }, [robot]);
+
+  useEffect(() => {
     const nextLinks = robotData?.links ?? providedRobotLinks ?? null;
     const previousLinks = previousPatchRobotLinksRef.current;
     previousPatchRobotLinksRef.current = nextLinks;
@@ -400,63 +421,16 @@ export function useRendererBackend(
     };
   }, []);
 
-  const flushPendingBackendDispose = useCallback(() => {
-    if (pendingDisposeFrameARef.current !== null && typeof window !== 'undefined') {
-      window.cancelAnimationFrame(pendingDisposeFrameARef.current);
-      pendingDisposeFrameARef.current = null;
-    }
-    if (pendingDisposeFrameBRef.current !== null && typeof window !== 'undefined') {
-      window.cancelAnimationFrame(pendingDisposeFrameBRef.current);
-      pendingDisposeFrameBRef.current = null;
-    }
-
-    const backend = pendingDisposeBackendRef.current;
-    pendingDisposeBackendRef.current = null;
-    if (backend && backend !== backendRef.current && backend !== inFlightBackendRef.current) {
-      backend.dispose();
-    }
-  }, []);
-
-  const scheduleBackendDispose = useCallback(
-    (backend: RobotRendererBackend | null) => {
-      if (!backend || backend === backendRef.current || backend === inFlightBackendRef.current) {
-        return;
-      }
-
-      flushPendingBackendDispose();
-      pendingDisposeBackendRef.current = backend;
-
-      const disposePendingBackend = () => {
-        pendingDisposeFrameARef.current = null;
-        pendingDisposeFrameBRef.current = null;
-        const pendingBackend = pendingDisposeBackendRef.current;
-        pendingDisposeBackendRef.current = null;
-        if (
-          pendingBackend &&
-          pendingBackend !== backendRef.current &&
-          pendingBackend !== inFlightBackendRef.current
-        ) {
-          pendingBackend.dispose();
-        }
-      };
-
-      if (typeof window !== 'undefined' && typeof window.requestAnimationFrame === 'function') {
-        pendingDisposeFrameARef.current = window.requestAnimationFrame(() => {
-          pendingDisposeFrameARef.current = null;
-          pendingDisposeFrameBRef.current = window.requestAnimationFrame(disposePendingBackend);
-        });
-        return;
-      }
-
-      queueMicrotask(disposePendingBackend);
-    },
-    [flushPendingBackendDispose],
-  );
-
   // Cleanup on unmount
   useEffect(() => {
+    const pendingCommitDisposeBackends = pendingCommitDisposeBackendsRef.current;
     return () => {
-      flushPendingBackendDispose();
+      pendingCommitDisposeBackends.forEach((backend) => {
+        if (backend !== inFlightBackendRef.current && backend !== backendRef.current) {
+          backend.dispose();
+        }
+      });
+      pendingCommitDisposeBackends.clear();
       if (inFlightBackendRef.current && inFlightBackendRef.current !== backendRef.current) {
         inFlightBackendRef.current.dispose();
         inFlightBackendRef.current = null;
@@ -469,7 +443,7 @@ export function useRendererBackend(
       activeBaseLoadScopeKeyRef.current = null;
       mountedRobotHasCollisionGroupsRef.current = false;
     };
-  }, [flushPendingBackendDispose]);
+  }, []);
 
   // Load robot
   useEffect(() => {
@@ -549,6 +523,9 @@ export function useRendererBackend(
         if (previousRobot) {
           // Update replacements in one transition so the old runtime scene remains mounted
           // until the prepared scene graph is ready to replace it.
+          if (previousBackend && previousBackend !== backend) {
+            pendingCommitDisposeBackendsRef.current.add(previousBackend);
+          }
           startTransition(commitLoadedRobot);
         } else {
           commitLoadedRobot();
@@ -557,9 +534,6 @@ export function useRendererBackend(
         // Notify callbacks
         onRobotLoadedRef.current?.(nextRobot);
         onRuntimeRobotLoadedRef.current?.(nextRobot);
-        if (previousBackend && previousBackend !== backend) {
-          scheduleBackendDispose(previousBackend);
-        }
         invalidate?.();
       } catch (err) {
         if (!isMountedRef.current || loadIdRef.current !== loadId) {
@@ -617,7 +591,7 @@ export function useRendererBackend(
         backend.dispose();
       }
     };
-  }, [baseLoadScopeKey, invalidate, loadScopeKey, prepareRobotHandoff, scheduleBackendDispose]);
+  }, [baseLoadScopeKey, invalidate, loadScopeKey, prepareRobotHandoff]);
 
   return {
     robot,

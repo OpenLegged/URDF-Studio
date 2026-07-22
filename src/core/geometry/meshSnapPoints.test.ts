@@ -6,6 +6,7 @@ import {
   collectSnapCandidatesFromFace,
   getFaceCenter,
   getFaceNormal,
+  getGeometryCenter,
   getNearestEdgeMidpointOnFace,
   getNearestVertexInRadius,
   getNearestVertexOnFace,
@@ -62,4 +63,32 @@ test('collectSnapCandidatesFromFace returns all face kinds when filter is null',
   const candidates = collectSnapCandidatesFromFace(triangleGeometry(), 0, vec(0.1, 0.1, 0), null);
   const kinds = candidates.map((candidate) => candidate.kind).sort();
   assert.deepEqual(kinds, ['edgeMidpoint', 'faceCenter', 'surface', 'vertex']);
+});
+
+test('getGeometryCenter uses the volume centroid for a closed mesh with mixed winding', () => {
+  const geometry = new THREE.BoxGeometry(2, 4, 6).toNonIndexed();
+  geometry.translate(3, -2, 5);
+  const position = geometry.getAttribute('position') as THREE.BufferAttribute;
+  for (let faceIndex = 1; faceIndex < position.count / 3; faceIndex += 2) {
+    const first = new THREE.Vector3().fromBufferAttribute(position, faceIndex * 3);
+    const second = new THREE.Vector3().fromBufferAttribute(position, faceIndex * 3 + 1);
+    position.setXYZ(faceIndex * 3, second.x, second.y, second.z);
+    position.setXYZ(faceIndex * 3 + 1, first.x, first.y, first.z);
+  }
+  position.needsUpdate = true;
+
+  const result = getGeometryCenter(geometry);
+
+  assert.ok(result);
+  assert.equal(result!.kind, 'volumeCentroid');
+  assertVecNearlyEqual(result!.pointLocal, vec(3, -2, 5));
+});
+
+test('getGeometryCenter falls back to the bounding box for an open mesh', () => {
+  const geometry = triangleGeometry();
+  const result = getGeometryCenter(geometry);
+
+  assert.ok(result);
+  assert.equal(result!.kind, 'boundingBox');
+  assertVecNearlyEqual(result!.pointLocal, vec(1, 1, 0));
 });

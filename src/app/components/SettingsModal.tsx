@@ -22,6 +22,11 @@ import { useShallow } from 'zustand/react/shallow';
 
 import { OptionsPanelContainer } from '@/shared/components/Panel';
 import {
+  FLOATING_WINDOW_HEADER_HEIGHT_CLASS,
+  FLOATING_WINDOW_RADIUS_CLASS,
+  FLOATING_WINDOW_TITLE_CLASS,
+} from '@/shared/components/DraggableWindow';
+import {
   Button,
   CompactSwitch,
   IconButton,
@@ -612,8 +617,6 @@ export function SettingsModal() {
     setCodeEditorFontSize(DEFAULT_CODE_EDITOR_FONT_SIZE);
   }, [setCodeEditorFontFamily, setCodeEditorFontSize]);
 
-  const pageTitle = settingsPages.find((page) => page.key === activePage)?.title ?? t.settings;
-
   const detailPane = (() => {
     switch (activePage) {
       case 'sourceCode':
@@ -929,7 +932,7 @@ export function SettingsModal() {
         maxHeight={maxPanelHeight}
         resizable
         resizeTitle={t.resize}
-        className="overflow-hidden rounded-[18px] bg-settings-shell shadow-[0_18px_48px_rgba(15,23,42,0.08),0_8px_18px_rgba(15,23,42,0.06),0_1px_3px_rgba(15,23,42,0.04)] dark:shadow-[0_20px_52px_rgba(0,0,0,0.42),0_10px_28px_rgba(0,0,0,0.34)]"
+        className={`overflow-hidden ${FLOATING_WINDOW_RADIUS_CLASS} bg-settings-shell shadow-[0_18px_48px_rgba(15,23,42,0.08),0_8px_18px_rgba(15,23,42,0.06),0_1px_3px_rgba(15,23,42,0.04)] dark:shadow-[0_20px_52px_rgba(0,0,0,0.42),0_10px_28px_rgba(0,0,0,0.34)]`}
       >
         <div className="flex h-full min-h-0 flex-col bg-settings-shell">
           <div
@@ -938,17 +941,16 @@ export function SettingsModal() {
             aria-label={`${t.settings} window controls`}
             tabIndex={-1}
             onMouseDown={handleDragStart}
-            className="flex min-h-11 select-none items-center justify-between gap-3 border-b border-border-black bg-panel-bg/95 px-3.5 py-2.5"
+            className={`flex ${FLOATING_WINDOW_HEADER_HEIGHT_CLASS} shrink-0 select-none items-center justify-between gap-3 border-b border-border-black bg-panel-bg/95 px-3.5`}
           >
             <div className="flex min-w-0 items-center gap-2.5">
               <div className="rounded-[7px] border border-border-black bg-settings-card p-1.25 text-text-secondary">
                 <Settings className="h-3.5 w-3.5" strokeWidth={SETTINGS_ICON_STROKE_WIDTH} />
               </div>
-              <div className="flex min-w-0 items-baseline gap-2">
-                <h2 className="truncate text-[13px] font-semibold tracking-[-0.01em] text-text-primary">
+              <div className="flex min-w-0 items-baseline">
+                <h2 className={`truncate tracking-[-0.01em] ${FLOATING_WINDOW_TITLE_CLASS}`}>
                   {t.settings}
                 </h2>
-                <p className="truncate text-[11px] font-medium text-text-tertiary">{pageTitle}</p>
               </div>
             </div>
             <IconButton

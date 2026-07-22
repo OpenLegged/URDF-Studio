@@ -142,7 +142,7 @@ const FileTreeNodeComponentBase: React.FC<FileTreeNodeComponentProps> = ({
           ${
             isSelectedFile
               ? 'bg-element-bg dark:bg-element-hover shadow-sm ring-1 ring-inset ring-border-strong'
-              : 'hover:bg-element-bg dark:hover:bg-element-hover'
+              : 'hover:bg-element-hover'
           }`}
         style={{ paddingLeft: `${paddingLeft}px` }}
         onClick={handleClick}
@@ -199,73 +199,82 @@ const FileTreeNodeComponentBase: React.FC<FileTreeNodeComponentProps> = ({
           )}
         </div>
 
-        {(showAddButton || showDeleteButton) && !isEditingFolder && (
+        {(showAddButton || showDeleteButton || (node.file && fileTypeLabel)) &&
+          !isEditingFolder && (
           <div
-            className={`ml-auto sticky right-0 z-[1] flex shrink-0 items-center gap-1 bg-element-bg pl-2 transition-opacity dark:bg-element-hover ${
+            className={`ml-auto sticky right-0 z-[1] flex shrink-0 items-center gap-1 pl-2 ${
               isSelectedFile
-                ? 'opacity-100'
-                : 'opacity-0 group-hover:opacity-100 group-focus-within:opacity-100'
+                ? 'bg-element-bg dark:bg-element-hover'
+                : 'bg-white group-hover:bg-element-hover dark:bg-panel-bg dark:group-hover:bg-element-hover'
             }`}
           >
-            {showAddButton && (
-              <button
-                type="button"
-                onClick={handleAddAsComponent}
-                className="flex shrink-0 items-center gap-1 rounded border border-green-200 bg-green-50 px-1.5 py-0.5 text-green-600 transition-colors hover:bg-green-100 dark:border-green-800/50 dark:bg-green-900/20 dark:text-green-400 dark:hover:bg-green-900/40 group/btn"
-                title={t.addComponent}
+            {(showAddButton || showDeleteButton) && (
+              <div
+                className={`flex shrink-0 items-center gap-1 transition-opacity ${
+                  isSelectedFile
+                    ? 'opacity-100'
+                    : 'opacity-0 group-hover:opacity-100 group-focus-within:opacity-100'
+                }`}
               >
-                <Plus
-                  size={10}
-                  strokeWidth={3}
-                  className="group-hover/btn:scale-110 transition-transform"
-                />
-                <span className="hidden text-[9px] font-semibold tracking-[0.01em] @[260px]:inline">
-                  {t.add}
-                </span>
-              </button>
+                {showAddButton && (
+                  <button
+                    type="button"
+                    onClick={handleAddAsComponent}
+                    className="flex shrink-0 items-center gap-1 rounded border border-green-200 bg-green-50 px-1.5 py-0.5 text-green-600 transition-colors hover:bg-green-100 dark:border-green-800/50 dark:bg-green-900/20 dark:text-green-400 dark:hover:bg-green-900/40 group/btn"
+                    title={t.addComponent}
+                  >
+                    <Plus
+                      size={10}
+                      strokeWidth={3}
+                      className="group-hover/btn:scale-110 transition-transform"
+                    />
+                    <span className="hidden text-[9px] font-semibold tracking-[0.01em] @[260px]:inline">
+                      {t.add}
+                    </span>
+                  </button>
+                )}
+                {showDeleteButton && (
+                  <button
+                    type="button"
+                    onClick={handleDeleteFromLibrary}
+                    className="flex h-5 shrink-0 items-center justify-center rounded border border-danger-border bg-danger-soft px-1.5 text-danger transition-colors hover:bg-danger-soft hover:text-danger-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-danger/20 group/btn"
+                    title={t.removeFromLibrary}
+                    aria-label={t.removeFromLibrary}
+                  >
+                    <Trash2
+                      size={10}
+                      strokeWidth={2.5}
+                      className="transition-transform group-hover/btn:scale-110"
+                    />
+                  </button>
+                )}
+              </div>
             )}
-            {showDeleteButton && (
-              <button
-                type="button"
-                onClick={handleDeleteFromLibrary}
-                className="flex h-5 shrink-0 items-center justify-center rounded border border-danger-border bg-danger-soft px-1.5 text-danger transition-colors hover:bg-danger-soft hover:text-danger-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-danger/20 group/btn"
-                title={t.removeFromLibrary}
-                aria-label={t.removeFromLibrary}
+
+            {node.file && fileTypeLabel && (
+              <span
+                className={`inline-flex h-4 w-9 shrink-0 items-center justify-center overflow-hidden rounded px-1 text-center text-[8px] font-medium leading-none ${
+                  node.file.format === 'urdf'
+                    ? 'bg-system-blue/10 dark:bg-system-blue/20 text-system-blue'
+                    : node.file.format === 'sdf'
+                      ? 'bg-teal-100 dark:bg-teal-900/25 text-teal-700 dark:text-teal-300'
+                      : node.file.format === 'xacro'
+                        ? 'bg-element-bg dark:bg-element-hover text-text-secondary'
+                        : node.file.format === 'mjcf'
+                          ? 'bg-orange-100 dark:bg-orange-900/25 text-orange-600 dark:text-orange-300'
+                          : node.file.format === 'usd'
+                            ? 'bg-violet-100 dark:bg-violet-900/25 text-violet-700 dark:text-violet-300'
+                            : fileKind === 'image'
+                              ? 'bg-pink-100 dark:bg-pink-900/30 text-pink-700 dark:text-pink-300'
+                              : fileKind === 'mesh'
+                                ? 'bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400'
+                                : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300'
+                }`}
               >
-                <Trash2
-                  size={10}
-                  strokeWidth={2.5}
-                  className="transition-transform group-hover/btn:scale-110"
-                />
-              </button>
+                <span className="min-w-0 truncate">{fileTypeLabel}</span>
+              </span>
             )}
           </div>
-        )}
-
-        {node.file && fileTypeLabel && (
-          <span
-            className={`inline-flex h-4 w-9 shrink-0 items-center justify-center overflow-hidden rounded px-1 text-center text-[8px] font-medium leading-none ${
-              showAddButton || showDeleteButton ? '' : 'ml-auto'
-            } ${
-              node.file.format === 'urdf'
-                ? 'bg-system-blue/10 dark:bg-system-blue/20 text-system-blue'
-                : node.file.format === 'sdf'
-                  ? 'bg-teal-100 dark:bg-teal-900/25 text-teal-700 dark:text-teal-300'
-                  : node.file.format === 'xacro'
-                    ? 'bg-element-bg dark:bg-element-hover text-text-secondary'
-                    : node.file.format === 'mjcf'
-                      ? 'bg-orange-100 dark:bg-orange-900/25 text-orange-600 dark:text-orange-300'
-                      : node.file.format === 'usd'
-                        ? 'bg-violet-100 dark:bg-violet-900/25 text-violet-700 dark:text-violet-300'
-                        : fileKind === 'image'
-                          ? 'bg-pink-100 dark:bg-pink-900/30 text-pink-700 dark:text-pink-300'
-                          : fileKind === 'mesh'
-                            ? 'bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400'
-                            : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300'
-            }`}
-          >
-            <span className="min-w-0 truncate">{fileTypeLabel}</span>
-          </span>
         )}
       </div>
 

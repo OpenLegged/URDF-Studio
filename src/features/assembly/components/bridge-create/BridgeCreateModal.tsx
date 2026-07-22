@@ -3,7 +3,12 @@
  */
 import React, { useCallback, useEffect, useMemo } from 'react';
 import { Link2 } from 'lucide-react';
-import { DraggableWindow } from '@/shared/components/DraggableWindow';
+import {
+  DraggableWindow,
+  FLOATING_WINDOW_HEADER_HEIGHT_CLASS,
+  FLOATING_WINDOW_RADIUS_CLASS,
+  FLOATING_WINDOW_TITLE_CLASS,
+} from '@/shared/components/DraggableWindow';
 import {
   Button,
   CLOSE_BUTTON_DANGER_TERTIARY_CLASS,
@@ -23,27 +28,28 @@ import { filterSelectableBridgeComponents } from '../../utils/bridgeSelection';
 import { buildBridgeJointFromDraft, buildBridgePreview } from '../../utils/bridgePreview';
 import {
   BridgeAxisSpinnerField,
-  BridgeCompactRelationRow,
   BridgeInlineFieldRow,
   BridgeQuickRotateButtonGroup,
-  BridgeRelationConnector,
   BridgeSection,
-  BridgeSideCard,
   BridgeSpinnerField,
 } from './BridgeCreateFields';
+import { BridgeEndpointChooser } from './BridgeEndpointInputs';
 import {
-  BRIDGE_EMPTY_SELECT_OPTION,
   BRIDGE_PANEL_SELECT_CLASS,
-  BRIDGE_RELATION_GRID_CLASS,
   BRIDGE_ROTATION_SHORTCUT_DEGREES,
   BRIDGE_SELECT_CLASS,
 } from './bridgeCreateModalStyles';
-import type { BridgeCreateModalProps, BridgeEulerAxisKey } from './bridgeCreateModalTypes';
+import type {
+  BridgeCreateModalProps,
+  BridgeEndpointInputMode,
+  BridgeEulerAxisKey,
+} from './bridgeCreateModalTypes';
 import {
+  buildFlatBridgeLinkOptions,
   buildSuggestedBridgeName,
   getBridgeLinkDisplayName,
   hasIncomingStructuralBridge,
-  resolveBridgeComponentDefaultLinkId,
+  resolveFlatBridgeLinkValue,
 } from './bridgeCreateModalUtils';
 import { useBridgeCreateDraft } from './useBridgeCreateDraft';
 import { useBridgeCreateSelectionSync } from './useBridgeCreateSelectionSync';
@@ -87,7 +93,6 @@ export const BridgeCreateModal: React.FC<BridgeCreateModalProps> = ({
   const t = translations[lang];
   const bridgeCreateWindowLayer = useManagedWindowLayer('bridgeCreate');
   const sideCardTitle = { parent: t.bridgeBaseLink, child: t.bridgeAttachLink };
-  const relationSectionTitle = t.bridgeRelationLinks;
   const compactLabelWidthClassName = lang === 'zh' ? 'w-[30px]' : 'w-[44px]';
   const fullRowLabelClassName = 'w-auto whitespace-nowrap';
   const axisLabelWidthClassName = 'w-4 justify-center';
@@ -95,9 +100,9 @@ export const BridgeCreateModal: React.FC<BridgeCreateModalProps> = ({
   const compactLimitLabelClassName = lang === 'zh' ? 'w-[34px]' : 'w-[64px]';
   const nameInputId = React.useId();
   const jointTypeSelectId = React.useId();
-  const defaultWindowSize = useMemo(() => ({ width: 600, height: 500 }), []);
+  const defaultWindowSize = useMemo(() => ({ width: 420, height: 480 }), []);
   const workspace = useWorkspaceStore((state) => state.workspace);
-  const comps = Object.values(workspace.components);
+  const comps = useMemo(() => Object.values(workspace.components), [workspace.components]);
   const defaultPosition = useMemo(() => {
     if (typeof window === 'undefined') {
       return { x: 72, y: 92 };
@@ -112,7 +117,7 @@ export const BridgeCreateModal: React.FC<BridgeCreateModalProps> = ({
     isOpen,
     defaultPosition,
     defaultSize: defaultWindowSize,
-    minSize: { width: 480, height: 320 },
+    minSize: { width: 360, height: 320 },
     centerOnMount: false,
     enableMinimize: false,
     enableMaximize: false,
@@ -133,9 +138,6 @@ export const BridgeCreateModal: React.FC<BridgeCreateModalProps> = ({
       }`
     : 'space-y-1.5';
   const xyzStackClassName = 'space-y-1';
-  const relationGridClassName = usesCadInspectorLayout
-    ? BRIDGE_RELATION_GRID_CLASS
-    : 'grid grid-cols-1 gap-1.5';
   const transformPanelClassName = usesCadInspectorLayout
     ? 'grid grid-cols-[minmax(0,0.68fr)_minmax(0,1fr)] gap-1.5'
     : 'space-y-1.5';
@@ -163,6 +165,9 @@ export const BridgeCreateModal: React.FC<BridgeCreateModalProps> = ({
     axisZ,
     childCompId,
     childLinkId,
+    endpointInputMode,
+    handleNameBlur,
+    handleNameChange,
     handleOriginXChange,
     handleOriginYChange,
     handleOriginZChange,
@@ -195,17 +200,18 @@ export const BridgeCreateModal: React.FC<BridgeCreateModalProps> = ({
     setAxisZ,
     setChildCompId,
     setChildLinkId,
+    setEndpointInputMode,
     setHardwareInterface,
     setJointType,
     setLimitEffort,
     setLimitLower,
     setLimitUpper,
     setLimitVelocity,
-    setName,
     setParentCompId,
     setParentLinkId,
     setPickTarget,
     setRotationDisplayMode,
+    syncSuggestedName,
     yawDeg,
   } = useBridgeCreateDraft({
     defaultLimitEffort,
@@ -213,6 +219,33 @@ export const BridgeCreateModal: React.FC<BridgeCreateModalProps> = ({
     defaultLimitUpper,
     defaultLimitVelocity,
   });
+
+  const geometryPickingEnabled = endpointInputMode === 'geometry';
+  const jointPick = useJointPickController({
+    isOpen,
+    enabled: geometryPickingEnabled,
+    parentComponentId: parentCompId,
+    parentLinkId,
+    childComponentId: childCompId,
+    childLinkId,
+    setParentCompId,
+    setParentLinkId,
+    setChildCompId,
+    setChildLinkId,
+    setPickTarget,
+    applyPickedOrigin,
+  });
+  const hasCurrentParentSnap = Boolean(
+    jointPick.parentSnap &&
+    jointPick.parentSnap.componentId === parentCompId &&
+    jointPick.parentSnap.linkId === parentLinkId,
+  );
+  const hasCurrentChildSnap = Boolean(
+    jointPick.childSnap &&
+    jointPick.childSnap.componentId === childCompId &&
+    jointPick.childSnap.linkId === childLinkId,
+  );
+  const hasPickedOriginForCurrentRelation = hasCurrentParentSnap && hasCurrentChildSnap;
 
   const parentComp = parentCompId ? workspace.components[parentCompId] : null;
   const childComp = childCompId ? workspace.components[childCompId] : null;
@@ -231,8 +264,6 @@ export const BridgeCreateModal: React.FC<BridgeCreateModalProps> = ({
       ),
     [comps, parentCompId, workspace],
   );
-  const parentLinks = parentComp ? Object.values(parentComp.robot.links) : [];
-  const childLinks = childComp ? Object.values(childComp.robot.links) : [];
   const jointTypeSelectOptions = useMemo<SelectOption[]>(
     () => [
       { value: JointType.FIXED, label: t.jointTypeFixed },
@@ -250,45 +281,23 @@ export const BridgeCreateModal: React.FC<BridgeCreateModalProps> = ({
     ],
     [t.hardwareInterfaceEffort, t.hardwareInterfacePosition, t.hardwareInterfaceVelocity],
   );
-  const parentComponentSelectOptions = useMemo<SelectOption[]>(
-    () => [
-      BRIDGE_EMPTY_SELECT_OPTION,
-      ...parentComponentOptions.map((component) => ({
-        value: component.id,
-        label: component.name,
-      })),
-    ],
+  const parentFlatLinkOptions = useMemo(
+    () => buildFlatBridgeLinkOptions(parentComponentOptions),
     [parentComponentOptions],
   );
-  const childComponentSelectOptions = useMemo<SelectOption[]>(
-    () => [
-      BRIDGE_EMPTY_SELECT_OPTION,
-      ...childComponentOptions.map((component) => ({
-        value: component.id,
-        label: component.name,
-      })),
-    ],
+  const childFlatLinkOptions = useMemo(
+    () => buildFlatBridgeLinkOptions(childComponentOptions),
     [childComponentOptions],
   );
-  const parentLinkSelectOptions = useMemo<SelectOption[]>(
-    () => [
-      BRIDGE_EMPTY_SELECT_OPTION,
-      ...parentLinks.map((link) => ({
-        value: link.id,
-        label: getBridgeLinkDisplayName(parentComp?.robot, link.id),
-      })),
-    ],
-    [parentComp?.robot, parentLinks],
+  const parentFlatLinkValue = resolveFlatBridgeLinkValue(
+    parentFlatLinkOptions,
+    parentCompId,
+    parentLinkId,
   );
-  const childLinkSelectOptions = useMemo<SelectOption[]>(
-    () => [
-      BRIDGE_EMPTY_SELECT_OPTION,
-      ...childLinks.map((link) => ({
-        value: link.id,
-        label: getBridgeLinkDisplayName(childComp?.robot, link.id),
-      })),
-    ],
-    [childComp?.robot, childLinks],
+  const childFlatLinkValue = resolveFlatBridgeLinkValue(
+    childFlatLinkOptions,
+    childCompId,
+    childLinkId,
   );
   const suggestedBridgeName = useMemo(
     () =>
@@ -304,6 +313,20 @@ export const BridgeCreateModal: React.FC<BridgeCreateModalProps> = ({
   const childSummary = childComp?.name ?? '--';
   const parentLinkSummary = getBridgeLinkDisplayName(parentComp?.robot, parentLinkId);
   const childLinkSummary = getBridgeLinkDisplayName(childComp?.robot, childLinkId);
+  const parentEndpointSummary =
+    parentCompId && parentLinkId ? `${parentSummary} › ${parentLinkSummary}` : t.bridgePickEndpoint;
+  const childEndpointSummary =
+    childCompId && childLinkId ? `${childSummary} › ${childLinkSummary}` : t.bridgePickEndpoint;
+  const snapKindLabels = {
+    surface: t.bridgeSnapKindSurface,
+    faceCenter: t.bridgeSnapKindFaceCenter,
+    bboxCenter: t.bridgeSnapKindObjectCenter,
+    geometryCenter: t.bridgeSnapKindObjectCenter,
+    circleCenter: t.bridgeSnapKindCircleCenter,
+    cylinderAxis: t.bridgeSnapKindCylinderAxis,
+    vertex: t.bridgeSnapKindVertex,
+    edgeMidpoint: t.bridgeSnapKindEdgeMidpoint,
+  } as const;
   const jointSupportsAxisAndLimits = jointType !== JointType.FIXED;
   const jointSupportsPositionLimits =
     jointType === JointType.REVOLUTE || jointType === JointType.PRISMATIC;
@@ -348,14 +371,8 @@ export const BridgeCreateModal: React.FC<BridgeCreateModalProps> = ({
           increase: formatTemplateValue(t.increaseValue, 'π/2'),
         }
       : {
-          decrease: formatTemplateValue(
-            t.decreaseValue,
-            `${BRIDGE_ROTATION_SHORTCUT_DEGREES}°`,
-          ),
-          increase: formatTemplateValue(
-            t.increaseValue,
-            `${BRIDGE_ROTATION_SHORTCUT_DEGREES}°`,
-          ),
+          decrease: formatTemplateValue(t.decreaseValue, `${BRIDGE_ROTATION_SHORTCUT_DEGREES}°`),
+          increase: formatTemplateValue(t.increaseValue, `${BRIDGE_ROTATION_SHORTCUT_DEGREES}°`),
         };
   const rotationAxisFields = [
     {
@@ -500,7 +517,8 @@ export const BridgeCreateModal: React.FC<BridgeCreateModalProps> = ({
     !childCompId ||
     !childLinkId ||
     parentCompId === childCompId ||
-    childComponentHasIncomingBridge;
+    childComponentHasIncomingBridge ||
+    (geometryPickingEnabled && !hasPickedOriginForCurrentRelation);
 
   const isConfirmActuallyDisabled =
     isBridgeSelectionIncomplete ||
@@ -558,10 +576,63 @@ export const BridgeCreateModal: React.FC<BridgeCreateModalProps> = ({
     onClose();
   }, [onClose, onPreviewChange, resetForm]);
 
+  const handleEndpointInputModeChange = useCallback(
+    (nextMode: BridgeEndpointInputMode) => {
+      if (nextMode === endpointInputMode) {
+        return;
+      }
+
+      // Component/link ownership survives mode changes, while geometric frames
+      // cannot: a frame is meaningful only in the geometry-pick workflow.
+      jointPick.clearSide('parent');
+      jointPick.clearSide('child');
+      setEndpointInputMode(nextMode);
+
+      if (nextMode === 'geometry') {
+        setPickTarget('parent');
+        jointPick.startPick('parent');
+        return;
+      }
+
+      originDirtyRef.current = false;
+      jointPick.cancelPick();
+    },
+    [endpointInputMode, jointPick, originDirtyRef, setEndpointInputMode, setPickTarget],
+  );
+
+  const handleFlatLinkChange = useCallback(
+    (side: 'parent' | 'child', value: string) => {
+      const options = side === 'parent' ? parentFlatLinkOptions : childFlatLinkOptions;
+      const selectedOption = options.find((option) => option.value === value);
+      const componentId = selectedOption?.componentId ?? '';
+      const linkId = selectedOption?.linkId ?? '';
+
+      setPickTarget(side);
+      if (side === 'parent') {
+        setParentCompId(componentId);
+        setParentLinkId(linkId);
+        return;
+      }
+
+      setChildCompId(componentId);
+      setChildLinkId(linkId);
+    },
+    [
+      childFlatLinkOptions,
+      parentFlatLinkOptions,
+      setChildCompId,
+      setChildLinkId,
+      setParentCompId,
+      setParentLinkId,
+      setPickTarget,
+    ],
+  );
+
   useBridgeCreateSelectionSync({
     parentCompId,
     childCompId,
     childLinkId,
+    enabled: geometryPickingEnabled,
     handleClose,
     isOpen,
     onPreviewChange,
@@ -572,26 +643,27 @@ export const BridgeCreateModal: React.FC<BridgeCreateModalProps> = ({
     setParentLinkId,
     setPickTarget,
   });
-
-  const jointPick = useJointPickController({
-    isOpen,
-    parentComponentId: parentCompId,
-    parentLinkId,
-    childComponentId: childCompId,
-    childLinkId,
-    setParentCompId,
-    setParentLinkId,
-    setChildCompId,
-    setChildLinkId,
-    setPickTarget,
-    applyPickedOrigin,
-  });
   const canPickJointOrigin = comps.length >= 2;
-  const jointPickHintLabel = canPickJointOrigin
-    ? t.bridgeSnapHintSmart
-    : t.bridgeSelectRelationFirst;
+  const resolveEndpointDetail = (side: 'parent' | 'child') => {
+    const snap = side === 'parent' ? jointPick.parentSnap : jointPick.childSnap;
+    if (snap) {
+      return snapKindLabels[snap.kind];
+    }
+    if (!canPickJointOrigin) {
+      return t.bridgeSelectRelationFirst;
+    }
+    return jointPick.active && jointPick.side === side
+      ? t.bridgePickEndpointActive
+      : t.bridgePickEndpointInactive;
+  };
 
-  const namePlaceholder = suggestedBridgeName || t.bridgeJointNamePlaceholder;
+  useEffect(() => {
+    if (!isOpen) {
+      return;
+    }
+
+    syncSuggestedName(suggestedBridgeName);
+  }, [isOpen, suggestedBridgeName, syncSuggestedName]);
 
   useEffect(() => {
     if (!isOpen) {
@@ -640,6 +712,7 @@ export const BridgeCreateModal: React.FC<BridgeCreateModalProps> = ({
     if (
       !isOpen ||
       originDirtyRef.current ||
+      hasPickedOriginForCurrentRelation ||
       !parentCompId ||
       !parentLinkId ||
       !childCompId ||
@@ -682,6 +755,8 @@ export const BridgeCreateModal: React.FC<BridgeCreateModalProps> = ({
     workspace,
     childCompId,
     childLinkId,
+    hasPickedOriginForCurrentRelation,
+    endpointInputMode,
     isOpen,
     originX,
     originY,
@@ -715,16 +790,16 @@ export const BridgeCreateModal: React.FC<BridgeCreateModalProps> = ({
             <Link2 className="h-3.5 w-3.5" />
           </div>
           <div className="min-w-0">
-            <div className="truncate text-[13px] font-semibold text-text-primary">
+            <div className={`truncate ${FLOATING_WINDOW_TITLE_CLASS}`}>
               {t.createBridge}
             </div>
           </div>
         </div>
       }
-      className="flex flex-col overflow-hidden rounded-xl border border-border-black bg-panel-bg text-text-primary shadow-2xl"
+      className={`flex flex-col overflow-hidden ${FLOATING_WINDOW_RADIUS_CLASS} border border-border-black bg-panel-bg text-text-primary shadow-2xl`}
       zIndex={bridgeCreateWindowLayer.zIndex}
       onActivate={bridgeCreateWindowLayer.onActivate}
-      headerClassName="flex h-9 shrink-0 items-center justify-between gap-2 border-b border-border-black bg-element-bg px-2.5"
+      headerClassName={`flex ${FLOATING_WINDOW_HEADER_HEIGHT_CLASS} shrink-0 items-center justify-between gap-2 border-b border-border-black bg-element-bg px-2.5`}
       headerLeftClassName="flex min-w-0 flex-1 items-center gap-2"
       headerRightClassName="flex shrink-0 items-center gap-1"
       interactionClassName="select-none"
@@ -758,8 +833,9 @@ export const BridgeCreateModal: React.FC<BridgeCreateModalProps> = ({
                 id={nameInputId}
                 type="text"
                 value={name}
-                onChange={(event) => setName(event.target.value)}
-                placeholder={namePlaceholder}
+                onChange={(event) => handleNameChange(event.target.value)}
+                onBlur={() => handleNameBlur(suggestedBridgeName)}
+                placeholder={t.bridgeJointNamePlaceholder}
                 className={BRIDGE_SELECT_CLASS}
               />
             </BridgeInlineFieldRow>
@@ -781,25 +857,6 @@ export const BridgeCreateModal: React.FC<BridgeCreateModalProps> = ({
                 className={BRIDGE_PANEL_SELECT_CLASS}
               />
             </BridgeInlineFieldRow>
-            {jointSupportsAxisAndLimits ? (
-              <BridgeInlineFieldRow
-                label={t.hardwareInterface}
-                fieldKey="hardware-interface"
-                className={`${usesInlineIdentityRow ? 'col-span-full ' : ''}min-w-0`.trim()}
-                labelClassName={fullRowLabelClassName}
-              >
-                <PanelSelect
-                  variant="property"
-                  aria-label={t.hardwareInterface}
-                  options={hardwareInterfaceSelectOptions}
-                  value={hardwareInterface}
-                  onChange={(event) =>
-                    setHardwareInterface(event.target.value as JointHardwareInterface)
-                  }
-                  className={BRIDGE_PANEL_SELECT_CLASS}
-                />
-              </BridgeInlineFieldRow>
-            ) : null}
           </div>
 
           {validationMessages.length > 0 ? (
@@ -815,163 +872,124 @@ export const BridgeCreateModal: React.FC<BridgeCreateModalProps> = ({
             </div>
           ) : null}
 
-          <div data-bridge-section-panel="relation" className="space-y-2">
-            <BridgeSection title={relationSectionTitle}>
-              {usesCadInspectorLayout ? (
-                <BridgeCompactRelationRow
-                  parentTitle={sideCardTitle.parent}
-                  childTitle={sideCardTitle.child}
-                  parentComponentValue={parentCompId}
-                  parentLinkValue={parentLinkId}
-                  childComponentValue={childCompId}
-                  childLinkValue={childLinkId}
-                  parentComponentOptions={parentComponentSelectOptions}
-                  parentLinkOptions={parentLinkSelectOptions}
-                  childComponentOptions={childComponentSelectOptions}
-                  childLinkOptions={childLinkSelectOptions}
-                  parentComponentLabel={t.parentComponent}
-                  parentLinkLabel={t.parentLink}
-                  childComponentLabel={t.childComponent}
-                  childLinkLabel={t.childLink}
-                  onParentComponentChange={(value) => {
-                    setPickTarget('parent');
-                    setParentCompId(value);
-                    setParentLinkId(resolveBridgeComponentDefaultLinkId(workspace, value));
-                  }}
-                  onParentLinkChange={(value) => {
-                    setPickTarget('parent');
-                    setParentLinkId(value);
-                  }}
-                  onChildComponentChange={(value) => {
-                    setPickTarget('child');
-                    setChildCompId(value);
-                    setChildLinkId(resolveBridgeComponentDefaultLinkId(workspace, value));
-                  }}
-                  onChildLinkChange={(value) => {
-                    setPickTarget('child');
-                    setChildLinkId(value);
-                  }}
-                />
-              ) : (
-                <div className={relationGridClassName}>
-                  <BridgeSideCard
-                    side="parent"
-                    title={sideCardTitle.parent}
-                    componentLabel={t.parentComponent}
-                    linkLabel={t.parentLink}
-                    componentValue={parentCompId}
-                    linkValue={parentLinkId}
-                    componentSummary={parentSummary}
-                    linkSummary={parentLinkSummary}
-                    onComponentChange={(value) => {
-                      setPickTarget('parent');
-                      setParentCompId(value);
-                      setParentLinkId(resolveBridgeComponentDefaultLinkId(workspace, value));
-                    }}
-                    onLinkChange={(value) => {
-                      setPickTarget('parent');
-                      setParentLinkId(value);
-                    }}
-                    componentOptions={parentComponentSelectOptions}
-                    linkOptions={parentLinkSelectOptions}
+          <BridgeEndpointChooser
+            mode={endpointInputMode}
+            modeAriaLabel={t.bridgeInputMode}
+            geometryModeLabel={t.bridgeGeometryMode}
+            linkListModeLabel={t.bridgeLinkListMode}
+            liveStatus={
+              geometryPickingEnabled
+                ? jointPick.side === 'parent'
+                  ? t.bridgePickActiveParent
+                  : t.bridgePickActiveChild
+                : t.bridgeLinkListMode
+            }
+            parentEndpoint={{
+              title: sideCardTitle.parent,
+              summary: parentEndpointSummary,
+              detail: resolveEndpointDetail('parent'),
+              componentId: parentCompId,
+              linkId: parentLinkId,
+              componentSummary: parentSummary,
+              linkSummary: parentLinkSummary,
+              active: jointPick.active && jointPick.side === 'parent',
+              snapped: hasCurrentParentSnap,
+              clearLabel: t.bridgeRepickBase,
+            }}
+            childEndpoint={{
+              title: sideCardTitle.child,
+              summary: childEndpointSummary,
+              detail: resolveEndpointDetail('child'),
+              componentId: childCompId,
+              linkId: childLinkId,
+              componentSummary: childSummary,
+              linkSummary: childLinkSummary,
+              active: jointPick.active && jointPick.side === 'child',
+              snapped: hasCurrentChildSnap,
+              clearLabel: t.bridgeRepickAttach,
+            }}
+            freePointHint={t.bridgeSnapHintFreePoint}
+            parentLinkAriaLabel={t.parentLink}
+            childLinkAriaLabel={t.childLink}
+            parentLinkOptions={parentFlatLinkOptions}
+            childLinkOptions={childFlatLinkOptions}
+            parentLinkValue={parentFlatLinkValue}
+            childLinkValue={childFlatLinkValue}
+            onModeChange={handleEndpointInputModeChange}
+            onEndpointActivate={(side) => {
+              setPickTarget(side);
+              jointPick.startPick(side);
+            }}
+            onEndpointClear={(side) => {
+              jointPick.clearSide(side);
+              setPickTarget(side);
+              jointPick.startPick(side);
+            }}
+            onLinkChange={handleFlatLinkChange}
+          />
+
+          <BridgeSection
+            title={t.bridgeAdvancedSettings}
+            collapsible
+            collapsedSummary="XYZ · RPY"
+            stateDataAttribute="bridge-advanced"
+          >
+            <div className="min-h-0 space-y-2" data-bridge-section-content>
+              {jointSupportsAxisAndLimits ? (
+                <BridgeInlineFieldRow
+                  label={t.hardwareInterface}
+                  fieldKey="hardware-interface"
+                  className="min-w-0"
+                  labelClassName={fullRowLabelClassName}
+                >
+                  <PanelSelect
+                    variant="property"
+                    aria-label={t.hardwareInterface}
+                    options={hardwareInterfaceSelectOptions}
+                    value={hardwareInterface}
+                    onChange={(event) =>
+                      setHardwareInterface(event.target.value as JointHardwareInterface)
+                    }
+                    className={BRIDGE_PANEL_SELECT_CLASS}
                   />
+                </BridgeInlineFieldRow>
+              ) : null}
 
-                  <BridgeRelationConnector orientation="horizontal" />
-
-                  <BridgeSideCard
-                    side="child"
-                    title={sideCardTitle.child}
-                    componentLabel={t.childComponent}
-                    linkLabel={t.childLink}
-                    componentValue={childCompId}
-                    linkValue={childLinkId}
-                    componentSummary={childSummary}
-                    linkSummary={childLinkSummary}
-                    onComponentChange={(value) => {
-                      setPickTarget('child');
-                      setChildCompId(value);
-                      setChildLinkId(resolveBridgeComponentDefaultLinkId(workspace, value));
-                    }}
-                    onLinkChange={(value) => {
-                      setPickTarget('child');
-                      setChildLinkId(value);
-                    }}
-                    componentOptions={childComponentSelectOptions}
-                    linkOptions={childLinkSelectOptions}
-                  />
-                </div>
-              )}
-            </BridgeSection>
-          </div>
-
-          <div className="min-h-0 space-y-2" data-bridge-section-content>
-            <div data-bridge-section-panel="transform" className={transformPanelClassName}>
-              <BridgeSection title={t.originRelativeParent}>
-                <div className="mb-1.5 space-y-1">
-                  <div className="grid grid-cols-2 gap-1.5">
-                    <div
-                      data-bridge-snap-status="parent"
-                      className={`flex h-6 items-center justify-center rounded-md border text-[10px] font-medium ${
-                        jointPick.parentSnap
-                          ? 'border-system-blue/30 bg-system-blue/12 text-system-blue'
-                          : 'border-border-black bg-panel-bg text-text-tertiary'
-                      }`}
-                    >
-                      {jointPick.parentSnap ? t.bridgeBaseSnapped : sideCardTitle.parent}
-                    </div>
-                    <div
-                      data-bridge-snap-status="child"
-                      className={`flex h-6 items-center justify-center rounded-md border text-[10px] font-medium ${
-                        jointPick.childSnap
-                          ? 'border-success/30 bg-success/10 text-success'
-                          : 'border-border-black bg-panel-bg text-text-tertiary'
-                      }`}
-                    >
-                      {jointPick.childSnap ? t.bridgeAttachSnapped : sideCardTitle.child}
-                    </div>
+              <div data-bridge-section-panel="transform" className={transformPanelClassName}>
+                <BridgeSection title={t.originRelativeParent}>
+                  <div data-bridge-row="origin" className={xyzStackClassName}>
+                    <BridgeAxisSpinnerField
+                      axis="x"
+                      fieldKey="origin-x"
+                      label="X"
+                      value={originX}
+                      step={0.01}
+                      precision={4}
+                      onChange={handleOriginXChange}
+                      className="min-w-0"
+                    />
+                    <BridgeAxisSpinnerField
+                      axis="y"
+                      fieldKey="origin-y"
+                      label="Y"
+                      value={originY}
+                      step={0.01}
+                      precision={4}
+                      onChange={handleOriginYChange}
+                      className="min-w-0"
+                    />
+                    <BridgeAxisSpinnerField
+                      axis="z"
+                      fieldKey="origin-z"
+                      label="Z"
+                      value={originZ}
+                      step={0.01}
+                      precision={4}
+                      onChange={handleOriginZChange}
+                      className="min-w-0"
+                    />
                   </div>
-                  <p className="text-[10px] leading-tight text-text-tertiary">
-                    {canPickJointOrigin ? jointPickHintLabel : t.bridgeSelectRelationFirst}
-                  </p>
-                  {canPickJointOrigin ? (
-                    <p className="text-[10px] leading-tight text-text-tertiary">
-                      {t.bridgeSnapHintFreePoint}
-                    </p>
-                  ) : null}
-                </div>
-                <div data-bridge-row="origin" className={xyzStackClassName}>
-                  <BridgeAxisSpinnerField
-                    axis="x"
-                    fieldKey="origin-x"
-                    label="X"
-                    value={originX}
-                    step={0.01}
-                    precision={4}
-                    onChange={handleOriginXChange}
-                    className="min-w-0"
-                  />
-                  <BridgeAxisSpinnerField
-                    axis="y"
-                    fieldKey="origin-y"
-                    label="Y"
-                    value={originY}
-                    step={0.01}
-                    precision={4}
-                    onChange={handleOriginYChange}
-                    className="min-w-0"
-                  />
-                  <BridgeAxisSpinnerField
-                    axis="z"
-                    fieldKey="origin-z"
-                    label="Z"
-                    value={originZ}
-                    step={0.01}
-                    precision={4}
-                    onChange={handleOriginZChange}
-                    className="min-w-0"
-                  />
-                </div>
-              </BridgeSection>
+                </BridgeSection>
 
                 <BridgeSection title={t.rotation}>
                   <SegmentedControl
@@ -1244,16 +1262,15 @@ export const BridgeCreateModal: React.FC<BridgeCreateModalProps> = ({
                 </div>
               ) : null}
             </div>
+          </BridgeSection>
         </div>
       </div>
 
-      <div className="flex shrink-0 justify-end gap-2 border-t border-border-black bg-element-bg px-2 py-2">
-        <Button
-          variant="secondary"
-          size="sm"
-          onClick={handleClose}
-          type="button"
-        >
+      <div
+        data-bridge-footer
+        className="flex shrink-0 justify-end gap-2 border-t border-border-black bg-element-bg px-2 py-2"
+      >
+        <Button variant="secondary" size="sm" onClick={handleClose} type="button">
           {t.cancel}
         </Button>
         <Button

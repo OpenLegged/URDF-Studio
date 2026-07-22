@@ -6,17 +6,14 @@ import {
   type CollisionOptimizationBaseAnalysis,
 } from './collisionOptimization';
 import { buildCollisionOptimizationClearanceWorld } from './collision-optimization/clearanceContext';
+import { buildCollisionOptimizationMeshAnalysisOptions } from './collision-optimization/meshAnalysisOptions';
 import {
   collectCollisionTargets,
   filterCollisionTargets,
   type CollisionOptimizationSource,
   type CollisionTargetRef,
 } from './collision-optimization/collisionTargets';
-import {
-  computeMeshAnalysisFromAssets,
-  type MeshAnalysis,
-  type MeshAnalysisOptions,
-} from './geometryConversion';
+import { computeMeshAnalysisFromAssets, type MeshAnalysis } from './geometryConversion';
 import type {
   CollisionOptimizationInlineAnalyzeArgs,
   CollisionOptimizationWorkerProgress,
@@ -76,24 +73,24 @@ function emitProgress(
 function shouldIncludePrimitiveFits(args: CollisionOptimizationInlineAnalyzeArgs): boolean {
   return (
     args.options?.includePrimitiveFits ??
-    (args.settings.coaxialJointMergeStrategy !== 'keep' ||
+    (args.settings.meshStrategy !== 'keep' ||
+      args.settings.coaxialJointMergeStrategy !== 'keep' ||
       Boolean(args.settings.manualMergePairs?.length))
   );
 }
 
-function buildMeshAnalysisOptions(args: CollisionOptimizationInlineAnalyzeArgs): MeshAnalysisOptions {
-  const includeClearanceData = args.options?.includeClearanceData ?? args.settings.avoidSiblingOverlap;
+function buildMeshAnalysisOptions(args: CollisionOptimizationInlineAnalyzeArgs) {
+  const includeClearanceData =
+    args.options?.includeClearanceData ?? args.settings.avoidSiblingOverlap;
   const includeMeshClearanceObstacles =
     args.options?.includeMeshClearanceObstacles ?? includeClearanceData;
-  const clearancePointCollectionLimit = Math.max(args.options?.pointCollectionLimit ?? 1024, 1);
-  const clearanceSurfacePointLimit = Math.max(args.options?.surfacePointLimit ?? 512, 1);
 
-  return {
+  return buildCollisionOptimizationMeshAnalysisOptions({
+    includeMeshClearanceObstacles,
     includePrimitiveFits: shouldIncludePrimitiveFits(args),
-    includeSurfacePoints: includeMeshClearanceObstacles,
-    pointCollectionLimit: includeMeshClearanceObstacles ? clearancePointCollectionLimit : 1,
-    surfacePointLimit: includeMeshClearanceObstacles ? clearanceSurfacePointLimit : 1,
-  };
+    pointCollectionLimit: args.options?.pointCollectionLimit,
+    surfacePointLimit: args.options?.surfacePointLimit,
+  });
 }
 
 export async function prepareCollisionOptimizationBaseAnalysisInline(
@@ -157,7 +154,8 @@ export async function prepareCollisionOptimizationBaseAnalysisInline(
   });
 
   throwIfAborted(args.signal);
-  const includeClearanceData = args.options?.includeClearanceData ?? args.settings.avoidSiblingOverlap;
+  const includeClearanceData =
+    args.options?.includeClearanceData ?? args.settings.avoidSiblingOverlap;
   emitProgress(args, 'clearance', 'started', {
     completed: 0,
     total: includeClearanceData ? 1 : 0,

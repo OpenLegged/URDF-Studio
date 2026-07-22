@@ -1,4 +1,6 @@
-import { generateURDF, processXacro, parseURDF } from '@/core/parsers';
+import { parseURDF } from './urdf/parser';
+import { generateURDF } from './urdf/urdfGenerator';
+import { processXacro } from './xacro/xacroParser';
 import { GeometryType, type RobotFile, type RobotState } from '@/types';
 import { resolveMJCFSource } from '@/core/parsers/mjcf/mjcfSourceResolver';
 import {

@@ -6,7 +6,6 @@ interface UseSourceCodeEditorWarmupParams {
   showToast: (message: string, type?: 'info' | 'success') => void;
   usdLoadInProgressMessage: string;
   preloadRuntime: () => Promise<void>;
-  prefetchSourceCodeEditor: () => void;
   onPreloadError?: (error: unknown) => void;
 }
 
@@ -16,14 +15,11 @@ export function useSourceCodeEditorWarmup({
   showToast,
   usdLoadInProgressMessage,
   preloadRuntime,
-  prefetchSourceCodeEditor,
   onPreloadError,
 }: UseSourceCodeEditorWarmupParams) {
   const sourceCodeEditorRuntimeWarmupPromiseRef = useRef<Promise<void> | null>(null);
 
   const warmSourceCodeEditorRuntime = useCallback(() => {
-    prefetchSourceCodeEditor();
-
     if (!sourceCodeEditorRuntimeWarmupPromiseRef.current) {
       sourceCodeEditorRuntimeWarmupPromiseRef.current = preloadRuntime().catch((error) => {
         sourceCodeEditorRuntimeWarmupPromiseRef.current = null;
@@ -32,7 +28,7 @@ export function useSourceCodeEditorWarmup({
     }
 
     return sourceCodeEditorRuntimeWarmupPromiseRef.current;
-  }, [onPreloadError, prefetchSourceCodeEditor, preloadRuntime]);
+  }, [onPreloadError, preloadRuntime]);
 
   const handleOpenCodeViewer = useCallback(() => {
     if (isSelectedUsdHydrating) {

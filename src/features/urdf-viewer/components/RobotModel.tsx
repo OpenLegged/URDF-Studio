@@ -15,6 +15,7 @@ import {
   applyMeshMaterialPaintEdit,
   getVisualGeometryByObjectIndex,
   hasGeometryMeshMaterialGroups,
+  isWorkspaceSelectionEditorLocked,
   resolveDirectManipulableLinkIkDescriptor,
   resolveDirectManipulableLinkIkJointIds,
   resolveLinkIkHandleDescriptor,
@@ -24,7 +25,9 @@ import {
 } from '@/core/robot';
 import { cloneAssemblyTransform } from '@/core/robot/assemblyTransformUtils';
 import {
+  captureRuntimeVisualMaterialDescriptor,
   getBufferGeometryTriangleCount,
+  hasDistinctRuntimeBaseMaterialsWithinVisual,
   resolveMeshFaceSelection,
   resolveRuntimeMeshMaterialGroupKey,
   resolveRuntimeMeshRootWithinVisual,
@@ -38,6 +41,7 @@ import type { RobotModelProps, ViewerDocumentLoadEvent, ViewerPaintFaceHit } fro
 import { buildViewerLoadingHudState } from '../utils/viewerLoadingHud';
 import { useSnapshotRenderActive } from '@/shared/components/3d/scene/SnapshotRenderContext';
 import { useSelectionStore, useUIStore } from '@/store';
+import type { HoverFreezeOwner } from '@/store/selectionStore';
 import { GeometryType, type RobotFile } from '@/types';
 
 import { useRendererBackend } from '../hooks/useRendererBackend';
@@ -46,6 +50,7 @@ import { useCameraFocus } from '../hooks/useCameraFocus';
 import { useMouseInteraction } from '../hooks/useMouseInteraction';
 import { useHoverDetection } from '../hooks/useHoverDetection';
 import { useVisualizationEffects } from '../hooks/useVisualizationEffects';
+import { useAssemblyComponentAutoGrounding } from '../hooks/useAssemblyComponentAutoGrounding';
 import { resolveCameraAutoFrameLoadScopeKey } from '../utils/cameraAutoFrame';
 import { isSingleDofJoint } from '@/shared/utils/jointTypes';
 import {
@@ -186,6 +191,7 @@ export const RobotModel: React.FC<RobotModelProps> = memo(
     paintColor = '#ff6c0a',
     paintSelectionScope = 'island',
     paintOperation = 'paint',
+    paintInteractionRef,
     onPaintStatusChange,
     onJointChange,
     onJointChangeCommit,
@@ -242,12 +248,25 @@ export const RobotModel: React.FC<RobotModelProps> = memo(
     onAssemblyTransform,
     onComponentTransform,
     onBridgeTransform,
+    pendingAutoGroundComponentIds,
+    onAssemblyComponentAutoGroundResolved,
   }) => {
     const { gl, invalidate } = useThree();
     const snapshotRenderActive = useSnapshotRenderActive();
     const showMjcfWorldLink = useUIStore((state) => state.viewOptions.showMjcfWorldLink);
     const cameraProjection = useUIStore((state) => state.viewOptions.cameraProjection);
     const setHoverFrozen = useSelectionStore((state) => state.setHoverFrozen);
+    const hoverFreezeOwner = useRef<HoverFreezeOwner>(Symbol('robot-model')).current;
+    const setOwnedHoverFrozen = useCallback(
+      (frozen: boolean) => setHoverFrozen(hoverFreezeOwner, frozen),
+      [hoverFreezeOwner, setHoverFrozen],
+    );
+    useEffect(() => {
+      if (!interactionEnabled) {
+        setOwnedHoverFrozen(false);
+      }
+      return () => setOwnedHoverFrozen(false);
+    }, [interactionEnabled, setOwnedHoverFrozen]);
     const autoFrameScopeFallbackRef = useRef<string | null>(null);
     const [assemblyRoot, setAssemblyRoot] = useState<Group | null>(null);
     const [directComponentRoot, setDirectComponentRoot] = useState<Group | null>(null);
@@ -606,6 +625,13 @@ export const RobotModel: React.FC<RobotModelProps> = memo(
     );
     const ikRobotState = providedIkRobotState ?? fallbackIkRobotState;
     const workspaceTransformSelectionArmed = isWorkspaceTransformSelection(workspaceSelection);
+    const workspaceSelectionEditorLocked = useMemo(
+      () => Boolean(
+        workspace
+        && isWorkspaceSelectionEditorLocked(workspace, workspaceSelection),
+      ),
+      [workspace, workspaceSelection],
+    );
     // ============================================================
     // HOOK: Highlight Manager
     // ============================================================
@@ -639,6 +665,10 @@ export const RobotModel: React.FC<RobotModelProps> = memo(
 
     const handlePaintFace = useCallback(
       async ({ linkId, objectIndex, mesh, faceIndex }: ViewerPaintFaceHit) => {
+        const activePaintColor = paintInteractionRef?.current.color ?? paintColor;
+        const activePaintOperation = paintInteractionRef?.current.operation ?? paintOperation;
+        const activePaintSelectionScope =
+          paintInteractionRef?.current.selectionScope ?? paintSelectionScope;
         if (isMeshPreview) {
           onPaintStatusChange?.({
             tone: 'error',
@@ -678,7 +708,7 @@ export const RobotModel: React.FC<RobotModelProps> = memo(
         const builtInMultiMaterialTarget =
           !hasCustomMeshGroups &&
           (Array.isArray(mesh.material) || (visualGeometry.authoredMaterials?.length || 0) > 1);
-        if (builtInMultiMaterialTarget) {
+        if (builtInMultiMaterialTarget || hasDistinctRuntimeBaseMaterialsWithinVisual(mesh)) {
           onPaintStatusChange?.({
             tone: 'error',
             message: t.paintErrorMultiMaterial,
@@ -698,7 +728,7 @@ export const RobotModel: React.FC<RobotModelProps> = memo(
         const selectedFaceIndices = resolveMeshFaceSelection(
           mesh.geometry,
           faceIndex,
-          paintSelectionScope,
+          activePaintSelectionScope,
         );
         if (selectedFaceIndices.length === 0) {
           onPaintStatusChange?.({
@@ -710,26 +740,35 @@ export const RobotModel: React.FC<RobotModelProps> = memo(
 
         const meshRoot = resolveRuntimeMeshRootWithinVisual(mesh);
         const meshKey = resolveRuntimeMeshMaterialGroupKey(mesh, meshRoot);
-        const baseMaterial = visualGeometry.authoredMaterials?.[0] ?? {
-          name: `paint_base_${objectIndex}`,
-          color: resolvedMaterial.color ?? undefined,
-          colorRgba: resolvedMaterial.colorRgba ?? undefined,
-          opacity: resolvedMaterial.opacity ?? undefined,
-          texture: resolvedMaterial.texture ?? undefined,
-        };
-        const nextLink = updateVisualGeometryByObjectIndex(link, objectIndex, {
-          ...applyMeshMaterialPaintEdit({
-            geometry: visualGeometry,
-            meshKey,
-            triangleCount,
-            selectedFaceIndices,
-            paintColor,
-            erase: paintOperation === 'erase',
-            baseMaterial,
-            materialNamePrefix: `paint_${linkId}_${objectIndex}`,
-          }),
-          color: undefined,
+        const baseMaterial = captureRuntimeVisualMaterialDescriptor(
+          mesh,
+          visualGeometry.authoredMaterials?.[0],
+          {
+            name: `paint_base_${objectIndex}`,
+            color: resolvedMaterial.color,
+            colorRgba: resolvedMaterial.colorRgba,
+            texture: resolvedMaterial.texture,
+            textureRotation: resolvedMaterial.textureRotation,
+            opacity: resolvedMaterial.opacity,
+            roughness: resolvedMaterial.roughness,
+            metalness: resolvedMaterial.metalness,
+            emissive: resolvedMaterial.emissive,
+            emissiveIntensity: resolvedMaterial.emissiveIntensity,
+            alphaTest: resolvedMaterial.alphaTest,
+            passes: resolvedMaterial.passes,
+          },
+        );
+        const paintEdit = applyMeshMaterialPaintEdit({
+          geometry: visualGeometry,
+          meshKey,
+          triangleCount,
+          selectedFaceIndices,
+          paintColor: activePaintColor,
+          erase: activePaintOperation === 'erase',
+          baseMaterial,
+          materialNamePrefix: `paint_${linkId}_${objectIndex}`,
         });
+        const { changed, ...geometryPatch } = paintEdit;
         if (!onUpdate) {
           onPaintStatusChange?.({
             tone: 'error',
@@ -737,10 +776,23 @@ export const RobotModel: React.FC<RobotModelProps> = memo(
           });
           return;
         }
+        if (!changed) {
+          if (activePaintOperation === 'erase') {
+            onPaintStatusChange?.({
+              tone: 'info',
+              message: t.paintStatusNothingToRestore,
+            });
+          }
+          return;
+        }
+        const nextLink = updateVisualGeometryByObjectIndex(link, objectIndex, {
+          ...geometryPatch,
+          color: undefined,
+        });
         onUpdate('link', link.id, nextLink);
         onPaintStatusChange?.({
           tone: 'success',
-          message: paintOperation === 'erase' ? t.paintStatusRemoved : t.paintStatusApplied,
+          message: activePaintOperation === 'erase' ? t.paintStatusRemoved : t.paintStatusApplied,
         });
       },
       [
@@ -749,6 +801,7 @@ export const RobotModel: React.FC<RobotModelProps> = memo(
         onPaintStatusChange,
         onUpdate,
         paintColor,
+        paintInteractionRef,
         paintOperation,
         paintSelectionScope,
         effectiveRobotLinks,
@@ -783,7 +836,7 @@ export const RobotModel: React.FC<RobotModelProps> = memo(
         throttleJointChangeDuringDrag: true,
         deferDirectJointRuntimeUpdate: Boolean(ikRobotState?.closedLoopConstraints?.length),
         setIsDragging,
-        setHoverFrozen,
+        setHoverFrozen: interactionEnabled ? setOwnedHoverFrozen : undefined,
         setActiveJoint,
         justSelectedRef,
         isOrbitDragging,
@@ -947,6 +1000,16 @@ export const RobotModel: React.FC<RobotModelProps> = memo(
       [boundingBoxNeedsUpdateRef, gl, invalidate, needsRaycastRef, robot],
     );
 
+    useAssemblyComponentAutoGrounding({
+      groundPlaneOffset,
+      onResolved: onAssemblyComponentAutoGroundResolved,
+      pendingComponentIds: pendingAutoGroundComponentIds,
+      requestSceneRefresh,
+      runtimeRobot: robot,
+      scenePlacement,
+      workspace,
+    });
+
     useEffect(() => {
       registerSceneRefresh?.(requestSceneRefresh);
       return () => {
@@ -1051,7 +1114,11 @@ export const RobotModel: React.FC<RobotModelProps> = memo(
             delayMs={0}
           />
         ) : null}
-        {!snapshotRenderActive && interactionEnabled && robot && toolMode !== 'measure' && (
+        {!snapshotRenderActive
+        && interactionEnabled
+        && !workspaceSelectionEditorLocked
+        && robot
+        && toolMode !== 'measure' && (
           <LinkIkTransformControls
             selectedLinkId={selectedIkHandleLinkId}
             selectedHandle={selectedIkHandle}
@@ -1076,6 +1143,7 @@ export const RobotModel: React.FC<RobotModelProps> = memo(
         )}
         {!snapshotRenderActive &&
         active &&
+        !workspaceSelectionEditorLocked &&
         selection?.helperKind === 'origin-axes' &&
         transformMode !== 'select' ? (
           <OriginTransformControls
@@ -1091,6 +1159,7 @@ export const RobotModel: React.FC<RobotModelProps> = memo(
           />
         ) : !snapshotRenderActive &&
           active &&
+          !workspaceSelectionEditorLocked &&
           selectedJointEntry &&
           transformMode !== 'select' &&
           !workspaceTransformSelectionArmed ? (
@@ -1105,6 +1174,7 @@ export const RobotModel: React.FC<RobotModelProps> = memo(
         ) : null}
         {!snapshotRenderActive &&
         active &&
+        !workspaceSelectionEditorLocked &&
         sceneProjection &&
         scenePlacement &&
         transformMode !== 'select' &&
@@ -1123,6 +1193,7 @@ export const RobotModel: React.FC<RobotModelProps> = memo(
             onTransformPendingChange={onTransformPending}
           />
         ) : !snapshotRenderActive &&
+          !workspaceSelectionEditorLocked &&
           transformMode !== 'select' &&
           selection?.subType === 'collision' ? (
           <CollisionTransformControls

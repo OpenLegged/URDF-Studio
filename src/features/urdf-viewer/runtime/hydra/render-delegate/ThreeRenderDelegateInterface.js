@@ -8,6 +8,7 @@ import { HydraMesh } from './HydraMesh.js';
 import { getDefaultMaterial } from './default-material-state.js';
 import { createHydraColorFromTuple, HYDRA_UNIFIED_MATERIAL_DEFAULTS } from './material-defaults.js';
 const { buildProtoPrimPathCandidates, clamp01, createMatrixFromXformOp, debugInstancer, debugMaterials, debugMeshes, debugPrims, debugTextures, defaultGrayComponent, disableMaterials, disableTextures, extractPrimPathFromMaterialBindingWarning, extractReferencePrimTargets, extractScopeBodyText, extractUsdAssetReferencesFromLayerText, getActiveMaterialBindingWarningOwner, getAngleInRadians, getCollisionGeometryTypeFromUrdfElement, getExpectedPrimTypesForCollisionProto, getExpectedPrimTypesForProtoType, getMatrixMaxElementDelta, getPathBasename, getPathWithoutRoot, getRawConsoleMethod, getRootPathFromPrimPath, getSafePrimTypeName, hasNonZeroTranslation, hydraCallbackErrorCounts, installMaterialBindingApiWarningInterceptor, isIdentityQuaternion, isLikelyDefaultGrayMaterial, isLikelyInverseTransform, isMaterialBindingApiWarningMessage, isMatrixApproximatelyIdentity, isNonZero, isPotentiallyLargeBaseAssetPath, logHydraCallbackError, materialBindingRepairMaxLayerTextLength, materialBindingWarningHandlers, maxHydraCallbackErrorLogsPerMethod, nearlyEqual, normalizeHydraPath, normalizeUsdPathToken, parseGuideCollisionReferencesFromLayerText, parseProtoMeshIdentifier, parseUrdfMaterialMetadataFromLayerText, parseUrdfTruthFromText, parseUsdMaterialBindingsFromLayerText, parseUsdReferenceTargetsByPrimPathFromLayerText, parseVector3Text, parseXformOpFallbacksFromLayerText, rawConsoleError, rawConsoleWarn, registerMaterialBindingApiWarningHandler, remapRootPathIfNeeded, resolveUrdfTruthFileNameForStagePath, resolveUsdAssetPath, setActiveMaterialBindingWarningOwner, shouldAllowLargeBaseAssetScan, stringifyConsoleArgs, toArrayLike, toColorArray, toFiniteNumber, toFiniteQuaternionWxyzTuple, toFiniteVector2Tuple, toFiniteVector3Tuple, toMatrixFromUrdfOrigin, toQuaternionWxyzFromRpy, transformEpsilon, wrapHydraCallbackObject } = Shared;
+const { parseColliderEntriesFromLayerText } = Shared;
 const COLLISION_SEGMENT_PATTERN = /(?:^|\/)coll(?:isions?|iders?)(?:$|[/.])/i;
 function normalizeDescriptorSectionName(sectionName) {
     const normalized = String(sectionName || '').trim().toLowerCase();
@@ -3706,6 +3707,70 @@ export class ThreeRenderDelegateInterface extends ThreeRenderDelegateMaterialOps
                     count: packedBlobCount,
                     source: 'packed-buffers',
                 };
+            }
+        }
+        const hasCollisionPrimitiveDescriptors = normalizedMeshDescriptors.some((descriptor) => {
+            if (normalizeDescriptorSectionName(descriptor?.sectionName) !== 'collisions')
+                return false;
+            const proto = parseProtoMeshIdentifier(descriptor?.meshId || '');
+            const primitiveType = String(proto?.protoType || descriptor?.primType || '').trim().toLowerCase();
+            return ['box', 'cube', 'sphere', 'cylinder', 'capsule'].includes(primitiveType);
+        });
+        if (hasCollisionPrimitiveDescriptors) {
+            const authoredColliderEntriesByLinkName = new Map();
+            for (const layerText of getStageLayerTexts()) {
+                const parsedEntries = parseColliderEntriesFromLayerText(layerText);
+                if (!(parsedEntries instanceof Map))
+                    continue;
+                for (const [linkName, entries] of parsedEntries.entries()) {
+                    if (Array.isArray(entries) && entries.length > 0) {
+                        authoredColliderEntriesByLinkName.set(String(linkName || '').trim(), entries);
+                    }
+                }
+            }
+            if (authoredColliderEntriesByLinkName.size > 0) {
+                normalizedMeshDescriptors = normalizedMeshDescriptors.map((descriptor) => {
+                    if (normalizeDescriptorSectionName(descriptor?.sectionName) !== 'collisions')
+                        return descriptor;
+                    const proto = parseProtoMeshIdentifier(descriptor?.meshId || '');
+                    const linkName = String(proto?.linkName || getPathBasename(getDescriptorLinkPath(descriptor)) || '').trim();
+                    const protoType = String(proto?.protoType || descriptor?.primType || '').trim().toLowerCase();
+                    const expectedType = protoType === 'box' ? 'cube' : protoType;
+                    const entries = authoredColliderEntriesByLinkName.get(linkName) || [];
+                    const typedEntries = entries.filter((entry) => {
+                        const entryType = String(entry?.primitiveType || entry?.primitiveGeometry?.primitiveType || '').toLowerCase();
+                        return (entryType === 'box' ? 'cube' : entryType) === expectedType;
+                    });
+                    const entryIndex = Number.isFinite(Number(proto?.protoIndex)) ? Math.max(0, Number(proto.protoIndex)) : 0;
+                    const indexedEntryName = `collision_${entryIndex}`;
+                    const indexedEntry = entries.find((entry) => {
+                        if (String(entry?.entryName || '').trim() !== indexedEntryName)
+                            return false;
+                        const entryType = String(entry?.primitiveType || entry?.primitiveGeometry?.primitiveType || '').toLowerCase();
+                        return (entryType === 'box' ? 'cube' : entryType) === expectedType;
+                    });
+                    const geometry = indexedEntry?.primitiveGeometry || typedEntries[entryIndex]?.primitiveGeometry || null;
+                    const dimensions = Array.isArray(geometry?.dimensions)
+                        ? geometry.dimensions.map((value) => Math.abs(Number(value)))
+                        : null;
+                    if (!dimensions || dimensions.length < 3 || dimensions.some((value) => !Number.isFinite(value)))
+                        return descriptor;
+                    if (expectedType === 'cube') {
+                        return { ...descriptor, extentSize: dimensions.slice(0, 3) };
+                    }
+                    if (expectedType === 'sphere') {
+                        return { ...descriptor, radius: Math.max(...dimensions.slice(0, 3)) * 0.5 };
+                    }
+                    if (expectedType === 'cylinder' || expectedType === 'capsule') {
+                        return {
+                            ...descriptor,
+                            radius: Math.max(dimensions[0], dimensions[1]) * 0.5,
+                            height: dimensions[2],
+                            axis: 'Z',
+                        };
+                    }
+                    return descriptor;
+                });
             }
         }
         let snapshotMaterialRecords = toPlainArray(renderPayload.materials);

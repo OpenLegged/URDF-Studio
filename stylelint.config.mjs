@@ -14,7 +14,7 @@ export default {
     'at-rule-no-unknown': [
       true,
       {
-        ignoreAtRules: ['custom-variant', 'theme'],
+        ignoreAtRules: ['custom-variant', 'source', 'theme'],
       },
     ],
     'color-function-alias-notation': null,

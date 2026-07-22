@@ -6,11 +6,16 @@ import type {
   PreparedExportArchiveAssetFile,
   PrepareExportArchiveAssetsProgress,
   PrepareExportArchiveAssetsResult,
-} from './exportArchiveAssetsWorker.ts';
+  RobotAssetPackagingFailure,
+} from './exportArchiveAssetsContract.ts';
 import { prepareExportArchiveAssets } from './exportArchiveAssetsWorker.ts';
 import { prepareExportArchiveAssetsWithWorker } from './exportArchiveAssetsWorkerBridge.ts';
 
 export { collectRobotAssetReferences } from './exportArchiveAssetReferences.ts';
+export type {
+  RobotAssetPackagingFailure,
+  RobotAssetPackagingFailureCode,
+} from './exportArchiveAssetsContract.ts';
 
 interface CompressOptions {
   compressSTL: boolean;
@@ -25,20 +30,6 @@ interface AddRobotAssetsToZipOptions {
   extraMeshFiles?: Map<string, Blob>;
   skipMeshPaths?: ReadonlySet<string>;
   onProgress?: (progress: { completed: number; total: number; currentFile: string }) => void;
-}
-
-export type RobotAssetPackagingFailureCode =
-  | 'mesh_asset_missing'
-  | 'mesh_fetch_failed'
-  | 'texture_asset_missing'
-  | 'texture_fetch_failed';
-
-export interface RobotAssetPackagingFailure {
-  code: RobotAssetPackagingFailureCode;
-  assetType: 'mesh' | 'texture';
-  sourcePath: string;
-  exportPath: string;
-  message: string;
 }
 
 export interface AddRobotAssetsToZipResult {

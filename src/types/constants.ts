@@ -19,7 +19,7 @@ type DefaultJoint = UrdfJoint & {
   limit: NonNullable<UrdfJoint['limit']>;
 };
 
-export const DEFAULT_VISUAL_COLOR = '#f2f0e8';
+export const DEFAULT_VISUAL_COLOR = '#ffffff';
 export const DEFAULT_COLLISION_COLOR = '#ef4444';
 export const DEFAULT_MESH_PREVIEW_COLOR = '#6b9bd2';
 export const DEFAULT_PAINT_COLOR = '#ff6c0a';

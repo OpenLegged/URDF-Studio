@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 
 import * as THREE from 'three';
 
+import { markSharedThreeResource } from '@/core/utils/threeResourceOwnership';
 import { disposeObject3D, disposeObject3DGraph, disposeWebGLRenderer } from './dispose.ts';
 
 test('disposeObject3D disposes shared skeletons once and clears the object tree', () => {
@@ -82,6 +83,27 @@ test('disposeObject3DGraph clears primitive clones without disposing shared geom
   disposeObject3DGraph(root);
 
   assert.equal(skeletonDisposeCount, 1);
+  assert.equal(geometryDisposeCount, 0);
+  assert.equal(materialDisposeCount, 0);
+  assert.equal(root.children.length, 0);
+});
+
+test('disposeObject3D preserves resources explicitly shared across backend scene graphs', () => {
+  const root = new THREE.Group();
+  const sharedGeometry = markSharedThreeResource(new THREE.BoxGeometry(1, 1, 1));
+  const sharedMaterial = markSharedThreeResource(new THREE.MeshBasicMaterial());
+  let geometryDisposeCount = 0;
+  let materialDisposeCount = 0;
+  sharedGeometry.addEventListener('dispose', () => {
+    geometryDisposeCount += 1;
+  });
+  sharedMaterial.addEventListener('dispose', () => {
+    materialDisposeCount += 1;
+  });
+  root.add(new THREE.Mesh(sharedGeometry, sharedMaterial));
+
+  disposeObject3D(root);
+
   assert.equal(geometryDisposeCount, 0);
   assert.equal(materialDisposeCount, 0);
   assert.equal(root.children.length, 0);

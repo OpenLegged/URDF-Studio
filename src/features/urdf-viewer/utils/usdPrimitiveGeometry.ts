@@ -240,7 +240,7 @@ export function resolveUsdPrimitiveGeometryFromDescriptor(
         scaledSphereBaseRadius
       : null;
 
-    const resolvedRadius = radiusFromScale ?? radiusFromExtent ?? radius;
+    const resolvedRadius = radiusFromScale ?? radius ?? radiusFromExtent;
     if (resolvedRadius === null) {
       return null;
     }
@@ -299,8 +299,8 @@ export function resolveUsdPrimitiveGeometryFromDescriptor(
     }
   }
 
-  const resolvedRadius = radiusFromScale ?? radiusFromExtent ?? radius;
-  const resolvedHeight = heightFromScale ?? heightFromExtent ?? height;
+  const resolvedRadius = radiusFromScale ?? radius ?? radiusFromExtent;
+  const resolvedHeight = heightFromScale ?? height ?? heightFromExtent;
   if (resolvedRadius === null || resolvedHeight === null) {
     return null;
   }

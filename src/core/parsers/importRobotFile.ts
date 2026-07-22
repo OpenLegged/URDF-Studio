@@ -4,6 +4,7 @@ import {
   type LoadingProgressMode,
   type RobotData,
   type RobotFile,
+  type RobotImportRecoveryDiagnostic,
   type RobotState,
 } from '@/types';
 import { parseURDF } from './urdf/parser';
@@ -18,6 +19,7 @@ import { syncRobotVisualColorsFromMaterials } from '@/core/robot/materials';
 import { isImageAssetPath } from '@/core/utils/assetFileTypes';
 import { isSourceOnlyMJCFDocument } from './mjcf/mjcfXml';
 import { inspectMJCFImportExternalAssets } from './mjcf/mjcfImportValidation';
+import { finalizeImportedRobotData } from './finalizeImportedRobotData';
 
 export interface ResolveRobotFileDataOptions {
   availableFiles?: RobotFile[];
@@ -62,8 +64,6 @@ export type RobotImportResult =
     };
 
 type RobotImportProgressReporter = (progress: RobotImportProgress) => void;
-type RobotInspectionSourceFormat = NonNullable<RobotData['inspectionContext']>['sourceFormat'];
-
 const ROBOT_IMPORT_FAILURE_MESSAGE_PREFIX = /^Failed to import [A-Z0-9_+-]+ file "[^"]+"\.\s*/i;
 
 function emitRobotImportProgress(
@@ -102,31 +102,6 @@ function toRobotData(robot: RobotState | RobotData): RobotData {
     materials: robot.materials,
     closedLoopConstraints: robot.closedLoopConstraints,
     inspectionContext: robot.inspectionContext,
-  };
-}
-
-function isRobotInspectionSourceFormat(format: RobotFile['format']): format is RobotInspectionSourceFormat {
-  return (
-    format === 'urdf' ||
-    format === 'mjcf' ||
-    format === 'usd' ||
-    format === 'xacro' ||
-    format === 'sdf' ||
-    format === 'mesh'
-  );
-}
-
-function stampRobotDataSourceFormat(robotData: RobotData, format: RobotFile['format']): RobotData {
-  if (!isRobotInspectionSourceFormat(format)) {
-    return robotData;
-  }
-
-  return {
-    ...robotData,
-    inspectionContext: {
-      ...robotData.inspectionContext,
-      sourceFormat: format,
-    },
   };
 }
 
@@ -213,6 +188,7 @@ interface CreateReadyImportResultOptions {
   allFileContents?: Record<string, string>;
   assetPaths?: Iterable<string>;
   importAssetPaths?: Iterable<string>;
+  recoveryDiagnostics?: RobotImportRecoveryDiagnostic[];
 }
 
 function createReadyImportResult(
@@ -226,6 +202,7 @@ function createReadyImportResult(
     allFileContents = {},
     assetPaths = [],
     importAssetPaths = [],
+    recoveryDiagnostics = [],
   } = options;
   const rewrittenRobotData = rewriteRobotMeshPathsForSource(robotData, sourceFilePath, {
     candidateAssetPaths: importAssetPaths,
@@ -242,11 +219,23 @@ function createReadyImportResult(
       ? syncMjcfMeshTextMaterialColors(rewrittenRobotData, allFileContents)
       : meshTextMaterialSyncedRobotData;
   const syncedRobotData = syncRobotVisualColorsFromMaterials(mjcfMeshColorSyncedRobotData);
+  const finalized = finalizeImportedRobotData(
+    syncedRobotData,
+    file.format,
+    recoveryDiagnostics,
+  );
+  if (finalized.status === 'error') {
+    return createErrorImportResult(
+      file,
+      finalized.reason,
+      buildImportFailureMessage(file, finalized.detail),
+    );
+  }
 
   return {
     status: 'ready',
     format: file.format,
-    robotData: stampRobotDataSourceFormat(syncedRobotData, file.format),
+    robotData: finalized.robotData,
     resolvedUrdfContent,
     resolvedUrdfSourceFilePath: resolvedUrdfContent ? sourceFilePath : null,
   };
@@ -664,6 +653,7 @@ export function resolveRobotFileData(
         emitRobotImportProgress(reportProgress, 45, 'Checking MJCF external assets', {
           phase: 'checking-assets',
         });
+        let recoveryDiagnostics: RobotImportRecoveryDiagnostic[] = [];
         if (mjcfExternalAssetValidation !== 'never') {
           const assetValidation = inspectMJCFImportExternalAssets(
             resolved.sourceFile.name,
@@ -671,21 +661,43 @@ export function resolveRobotFileData(
             availableFiles,
             assets,
           );
-          if (
+          const shouldApplyAssetValidation =
             shouldValidateMJCFExternalAssets(
               mjcfExternalAssetValidation,
               assetValidation.resolvedAssetCount,
-            ) &&
-            assetValidation.issues.length > 0
-          ) {
+            );
+          const fatalAssetIssues = shouldApplyAssetValidation
+            ? assetValidation.issues.filter((issue) =>
+                mjcfExternalAssetValidation === 'always'
+                || issue.referenceKind === 'include'
+                || issue.referenceKind === 'model')
+            : [];
+          if (fatalAssetIssues.length > 0) {
             return createErrorImportResult(
               file,
               'parse_failed',
               buildImportFailureMessage(
                 file,
-                buildImportFailureDetail(file, parsePhase, assetValidation.issues[0]?.detail),
+                buildImportFailureDetail(file, parsePhase, fatalAssetIssues[0]?.detail),
               ),
             );
+          }
+          if (shouldApplyAssetValidation) {
+            recoveryDiagnostics = assetValidation.issues
+              .filter((issue) => !fatalAssetIssues.includes(issue))
+              .map((issue) => ({
+                code: 'missing_render_asset_placeholder',
+                severity: 'warning',
+                category: issue.referenceKind === 'texture' ? 'material' : 'geometry',
+                message: `${issue.detail} A placeholder will be used.`,
+                relatedIds: issue.elementName ? [issue.elementName] : undefined,
+                source: {
+                  tag: issue.referenceKind,
+                  name: issue.elementName ?? undefined,
+                  attribute: issue.attributeName,
+                },
+                action: 'downgraded',
+              }));
           }
         }
 
@@ -710,6 +722,7 @@ export function resolveRobotFileData(
         return createReady(file, toRobotData(parsed), {
           sourceFilePath: resolved.sourceFile.name,
           allFileContents,
+          recoveryDiagnostics,
           ...(meshTextMaterialAssetPaths ? { assetPaths: meshTextMaterialAssetPaths } : {}),
         });
       }

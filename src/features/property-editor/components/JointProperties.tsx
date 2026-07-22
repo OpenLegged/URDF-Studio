@@ -135,7 +135,8 @@ export const JointProperties: React.FC<JointPropertiesProps> = ({
   const sectionInlineLabelWidthClassName = 'w-16 whitespace-nowrap';
   const sectionCompactInlineLabelWidthClassName = 'w-auto min-w-[2.5rem] whitespace-nowrap';
   const sectionWideInlineLabelWidthClassName = 'w-24 whitespace-nowrap';
-  const sectionUnitInlineLabelWidthClassName = 'w-24 whitespace-nowrap';
+  const sectionUnitInlineLabelWidthClassName =
+    'w-24 min-w-24 max-w-24 shrink-0 whitespace-nowrap';
   const jointType = (data.type as JointType | undefined) || JointType.REVOLUTE;
   const origin = data.origin ?? DEFAULT_ORIGIN;
   const supportsAxis = AXIS_BASED_TYPES.has(jointType);
@@ -147,13 +148,19 @@ export const JointProperties: React.FC<JointPropertiesProps> = ({
     jointType !== JointType.PLANAR &&
     jointType !== JointType.BALL;
   const defaultLimit = getDefaultJointLimit(jointType);
-  const resolvedLimit = normalizeJointLimitOrder({ ...defaultLimit, ...data.limit });
+  const displayLimit = normalizeJointLimitOrder({ ...defaultLimit, ...data.limit });
   const limitUnit = getJointValueUnitLabel(jointType, 'rad');
   const velocityUnit = getJointVelocityUnitLabel(jointType);
   const effortUnit = getJointEffortUnitLabel(jointType);
 
   const updateJoint = (updates: Partial<JointData>) => {
     onUpdate('joint', selection.id!, { ...data, ...updates } as WorkspaceJointPropertyPatch);
+  };
+
+  const updateLimitValue = (key: 'lower' | 'upper' | 'effort' | 'velocity', value: number) => {
+    updateJoint({
+      limit: normalizeJointLimitOrder({ ...(data.limit ?? {}), [key]: value }),
+    });
   };
 
   const handleJointTypeChange = (nextType: JointType) => {
@@ -167,9 +174,10 @@ export const JointProperties: React.FC<JointPropertiesProps> = ({
       nextData.limit = getDefaultJointLimit(nextType);
     }
     if (EFFORT_VELOCITY_ONLY_TYPES.has(nextType)) {
+      const nextDefaultLimit = getDefaultJointLimit(nextType);
       nextData.limit = {
-        ...getDefaultJointLimit(nextType),
-        ...nextData.limit,
+        effort: nextData.limit?.effort ?? nextDefaultLimit.effort,
+        velocity: nextData.limit?.velocity ?? nextDefaultLimit.velocity,
       };
     }
     onUpdate('joint', selection.id!, nextData);
@@ -255,7 +263,60 @@ export const JointProperties: React.FC<JointPropertiesProps> = ({
         )}
       </CollapsibleSection>
 
-      <div className="space-y-2.5">
+      <div className="@container space-y-2.5">
+        {(supportsFullLimit || supportsEffortVelocityLimit) && (
+          <CollapsibleSection title={t.limits} storageKey="limits">
+            <div className="grid grid-cols-1 gap-2 @[300px]:grid-cols-2">
+              {supportsFullLimit && (
+                <>
+                  <InlineInputGroup
+                    label={withUnitLabel(t.lower, limitUnit)}
+                    className="min-w-0 mb-0"
+                    labelWidthClassName={sectionUnitInlineLabelWidthClassName}
+                  >
+                    <NumberInput
+                      value={displayLimit.lower}
+                      onChange={(v: number) => updateLimitValue('lower', v)}
+                    />
+                  </InlineInputGroup>
+                  <InlineInputGroup
+                    label={withUnitLabel(t.upper, limitUnit)}
+                    className="min-w-0 mb-0"
+                    labelWidthClassName={sectionUnitInlineLabelWidthClassName}
+                  >
+                    <NumberInput
+                      value={displayLimit.upper}
+                      onChange={(v: number) => updateLimitValue('upper', v)}
+                    />
+                  </InlineInputGroup>
+                </>
+              )}
+              <InlineInputGroup
+                label={withUnitLabel(t.effort, effortUnit)}
+                className="min-w-0 mb-0"
+                labelWidthClassName={sectionUnitInlineLabelWidthClassName}
+              >
+                <NumberInput
+                  value={displayLimit.effort}
+                  min={0}
+                  onChange={(v: number) => updateLimitValue('effort', v)}
+                />
+              </InlineInputGroup>
+              <InlineInputGroup
+                label={withUnitLabel(t.velocity, velocityUnit)}
+                className="min-w-0 mb-0"
+                labelWidthClassName={sectionUnitInlineLabelWidthClassName}
+              >
+                <NumberInput
+                  value={displayLimit.velocity}
+                  min={0}
+                  onChange={(v: number) => updateLimitValue('velocity', v)}
+                />
+              </InlineInputGroup>
+            </div>
+          </CollapsibleSection>
+        )}
+
         {supportsMotorSection && (
           <CollapsibleSection title={t.hardwareConfig} storageKey="hardware_config">
             <InlineInputGroup
@@ -397,75 +458,6 @@ export const JointProperties: React.FC<JointPropertiesProps> = ({
                 </InlineInputGroup>
               </>
             )}
-          </CollapsibleSection>
-        )}
-
-        {(supportsFullLimit || supportsEffortVelocityLimit) && (
-          <CollapsibleSection title={t.limits} storageKey="limits">
-            <div className="grid grid-cols-2 gap-2">
-              {supportsFullLimit && (
-                <>
-                  <InlineInputGroup
-                    label={withUnitLabel(t.lower, limitUnit)}
-                    className="min-w-0 mb-0"
-                    labelWidthClassName={sectionUnitInlineLabelWidthClassName}
-                  >
-                    <NumberInput
-                      value={resolvedLimit.lower}
-                      onChange={(v: number) =>
-                        updateJoint({
-                          limit: normalizeJointLimitOrder({ ...resolvedLimit, lower: v }),
-                        })
-                      }
-                    />
-                  </InlineInputGroup>
-                  <InlineInputGroup
-                    label={withUnitLabel(t.upper, limitUnit)}
-                    className="min-w-0 mb-0"
-                    labelWidthClassName={sectionUnitInlineLabelWidthClassName}
-                  >
-                    <NumberInput
-                      value={resolvedLimit.upper}
-                      onChange={(v: number) =>
-                        updateJoint({
-                          limit: normalizeJointLimitOrder({ ...resolvedLimit, upper: v }),
-                        })
-                      }
-                    />
-                  </InlineInputGroup>
-                </>
-              )}
-              <InlineInputGroup
-                label={withUnitLabel(t.velocity, velocityUnit)}
-                className="min-w-0 mb-0"
-                labelWidthClassName={sectionUnitInlineLabelWidthClassName}
-              >
-                <NumberInput
-                  value={resolvedLimit.velocity}
-                  min={0}
-                  onChange={(v: number) =>
-                    updateJoint({
-                      limit: normalizeJointLimitOrder({ ...resolvedLimit, velocity: v }),
-                    })
-                  }
-                />
-              </InlineInputGroup>
-              <InlineInputGroup
-                label={withUnitLabel(t.effort, effortUnit)}
-                className="min-w-0 mb-0"
-                labelWidthClassName={sectionUnitInlineLabelWidthClassName}
-              >
-                <NumberInput
-                  value={resolvedLimit.effort}
-                  min={0}
-                  onChange={(v: number) =>
-                    updateJoint({
-                      limit: normalizeJointLimitOrder({ ...resolvedLimit, effort: v }),
-                    })
-                  }
-                />
-              </InlineInputGroup>
-            </div>
           </CollapsibleSection>
         )}
 

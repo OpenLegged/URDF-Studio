@@ -136,6 +136,18 @@ test('SettingsModal removes drag listeners when unmounted mid-drag', async () =>
 
     const dragHandle = container.querySelector('[data-testid="settings-drag-handle"]');
     assert.ok(dragHandle, 'settings modal should render a draggable header');
+    assert.match(dragHandle.className, /\bh-10\b/);
+    const settingsFrame = dragHandle.parentElement?.parentElement;
+    assert.ok(settingsFrame, 'settings modal should render a window frame');
+    assert.match(settingsFrame.className, /\brounded-lg\b/);
+    const settingsTitle = dragHandle.querySelector('h2');
+    assert.ok(settingsTitle, 'settings modal should render its title');
+    assert.equal(settingsTitle.className.includes('text-[13px]'), true);
+    assert.equal(
+      dragHandle.querySelector('h2 + p'),
+      null,
+      'settings modal header should omit the active page subtitle',
+    );
 
     await act(async () => {
       dragHandle.dispatchEvent(

@@ -62,6 +62,7 @@ export interface UseVisualizationEffectsOptions {
     revert: boolean,
     subType?: 'visual' | 'collision',
     meshToHighlight?: THREE.Object3D | null | number,
+    intent?: 'hover' | 'selection',
   ) => void;
   highlightedMeshesRef: React.RefObject<Map<THREE.Mesh, HighlightedMeshSnapshot>>;
   linkMeshMapRef?: RefObject<Map<string, THREE.Mesh[]>>;
@@ -812,6 +813,7 @@ export function useVisualizationEffects({
                 selectionHighlightObjectId,
                 selectionHighlightObjectIndex,
               ),
+              'selection',
             );
             didMutateGeometryHighlight = true;
           }
@@ -898,6 +900,7 @@ export function useVisualizationEffects({
         false,
         targetSubType,
         resolveStoredHighlightTarget(targetHighlightObjectId, targetObjectIndex),
+        'selection',
       );
       currentSelectionRef.current = {
         id: targetId,

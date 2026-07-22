@@ -79,6 +79,17 @@ test('buildInspectionEvidence reports deterministic structural, inertia, and lim
   assert.ok(failedEvidenceIds.includes('joint_limit_order'))
 })
 
+test('buildInspectionEvidence does not treat missing optional bounds as reversed', () => {
+  const robot = createRobot()
+  robot.joints.broken_joint.limit = { effort: 10, velocity: 5 }
+
+  const limitEvidence = buildInspectionEvidence(robot).find(
+    (entry) => entry.id === 'joint_limit_order',
+  )
+
+  assert.equal(limitEvidence?.status, 'pass')
+})
+
 test('mergeInspectionEvidenceIntoReport promotes local evidence into report issues and removes conflicting pass items', () => {
   const baseReport: InspectionReport = {
     summary: 'AI report',

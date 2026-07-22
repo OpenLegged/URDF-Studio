@@ -52,6 +52,10 @@ import {
 import { resolveViewerJointChangeContext } from './workspace-mutations/jointMotion';
 import { hasLinkInertialChanged } from './workspace-mutations/linkInertialDiff';
 import { applyLinkPatch } from './workspace-mutations/linkPatch';
+import {
+  applyComponentEditorLockPatch,
+  applyLinkEditorControlPatch,
+} from './workspace-mutations/editor_lock_mutations';
 import { useCollisionTransformHandlers } from './workspace-mutations/useCollisionTransformHandlers';
 
 type TransactionMutation = (operationId: string) => boolean;
@@ -564,12 +568,16 @@ export function useWorkspaceMutations({
           if (typeof patch.visible === 'boolean') {
             handleSetComponentVisibility(ref, patch.visible);
           }
+          applyComponentEditorLockPatch({ ref, patch, commitPendingHistory });
           if (patch.transform) handleComponentTransform(ref, patch.transform, options);
           return;
         }
-        case 'link':
-          updateLinkProperty(ref, data as WorkspaceLinkPropertyPatch, options);
+        case 'link': {
+          const patch = data as WorkspaceLinkPropertyPatch;
+          if (applyLinkEditorControlPatch({ ref, patch, commitPendingHistory })) return;
+          updateLinkProperty(ref, patch, options);
           return;
+        }
         case 'joint':
           updateJointProperty(ref, data as WorkspaceJointPropertyPatch, options);
           return;
@@ -585,6 +593,7 @@ export function useWorkspaceMutations({
       }
     },
     [
+      commitPendingHistory,
       handleAssemblyTransform,
       handleComponentNameChange,
       handleComponentTransform,

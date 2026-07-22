@@ -1,29 +1,29 @@
 {
-  "generatedAt": "2026-07-05",
+  "generatedAt": "2026-07-17",
   "rules": {
     "file-name-snake-case": {
-      "max": 1480,
+      "max": 1534,
       "retired": true,
-      "note": "DEAD RULE — count equals every PascalCase component + camelCase module in src/** (the project's real convention), so it grows with the codebase. Retired in Phase 5 in favor of @typescript-eslint/naming-convention; the audit runner reports it as informational only. NEVER rename a file to satisfy it. 1463->1480: sync retired file-name count to the current workspace after the viewer renderer ownership move and obsolete app worker/helper removals."
+      "note": "DEAD RULE — count equals every PascalCase component + camelCase module in src/** (the project's real convention), so it grows with the codebase. Retired in Phase 5 in favor of @typescript-eslint/naming-convention; the audit runner reports it as informational only. NEVER rename a file to satisfy it. Count synchronized to the 2026-07-16 post-merge workspace snapshot for accurate reporting."
     },
     "file-too-long": {
-      "max": 56,
-      "note": "src/** files over 800 code lines (blank/comment lines skipped). Baseline synchronized on 2026-07-05 after the checked-in baseline had drifted behind HEAD; ratchet down from here as targeted splits land. Avoid splitting cohesive parsers/solvers only to satisfy the counter."
+      "max": 52,
+      "note": "src/** files over 800 code lines (blank/comment lines skipped). Exact count synchronized on 2026-07-17 after upstream integration; --check rejects both increases and stale headroom. Avoid splitting cohesive parsers/solvers only to satisfy the counter."
     },
     "function-too-long": {
-      "max": 119,
-      "note": "Function bodies over 200 code lines in src/**. Baseline synchronized on 2026-07-05 after the checked-in baseline had drifted behind HEAD; ratchet down from here when a function has a clean ownership split."
+      "max": 113,
+      "note": "Function bodies over 200 code lines in src/**. Exact count synchronized on 2026-07-16 (post-merge re-sync); ratchet down when a function has a clean ownership split."
     },
     "function-too-complex": {
-      "max": 183,
+      "max": 177,
       "note": "Cyclomatic complexity over 20 in src/**. Parser/solver heavy; ratchet down only."
     },
     "too-many-params": {
-      "max": 126,
-      "note": "Functions with more than 4 params in src/**. Prefer an options object; ratchet down only."
+      "max": 127,
+      "note": "Functions with more than 4 params in src/**. Exact count synchronized on 2026-07-16 (post-merge re-sync). Prefer an options object; ratchet down only."
     },
     "too-deep": {
-      "max": 9,
+      "max": 8,
       "note": "Block nesting deeper than 4 in src/**. Ratchet down only."
     },
     "nullable-undefined-type-alias": {
@@ -62,8 +62,8 @@
       "max": 0
     },
     "css-important": {
-      "max": 34,
-      "note": "Historical Tailwind utility font-size overrides, theme-transition guards, and scrollbar styling."
+      "max": 32,
+      "note": "Historical Tailwind utility font-size overrides and scrollbar styling."
     },
     "css-declaration-order": {
       "max": 0,

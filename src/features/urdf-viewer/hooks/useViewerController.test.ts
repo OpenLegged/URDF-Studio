@@ -562,7 +562,9 @@ function assertAlmostEqual(actual: number | undefined, expected: number, epsilon
 
 function resetSelectionStore() {
   const state = useSelectionStore.getState();
-  state.setHoverFrozen(false);
+  state.interactionHoverFreezeOwners.forEach((owner) => {
+    useSelectionStore.getState().setHoverFrozen(owner, false);
+  });
   state.clearHover();
   state.setHoveredSelection(null);
 }
@@ -619,13 +621,26 @@ test('paint tool state switches back to select when the paint panel closes', asy
   try {
     assert.equal(getHook().paintColor, '#ff6c0a');
     assert.equal(getHook().paintStatus, null);
+    assert.deepEqual(getHook().paintInteractionRef.current, {
+      color: '#ff6c0a',
+      operation: 'paint',
+      selectionScope: 'island',
+    });
 
     await act(async () => {
       getHook().handleToolModeChange('paint');
+      getHook().setPaintColor('#123456');
+      getHook().setPaintOperation('erase');
+      getHook().setPaintSelectionScope('face');
       getHook().setPaintStatus({ tone: 'success', message: 'painted' });
     });
 
     assert.equal(getHook().toolMode, 'paint');
+    assert.deepEqual(getHook().paintInteractionRef.current, {
+      color: '#123456',
+      operation: 'erase',
+      selectionScope: 'face',
+    });
     assert.deepEqual(getHook().paintStatus, { tone: 'success', message: 'painted' });
 
     await act(async () => {
@@ -1606,6 +1621,28 @@ test('setIsDragging freezes hover updates without clearing the visible hover for
       root.unmount();
     });
   }
+});
+
+test('inactive viewer cleanup does not release another viewer hover freeze owner', async () => {
+  resetSelectionStore();
+  const primaryViewer = Symbol('primary-viewer');
+  useSelectionStore.getState().setHoverFrozen(primaryViewer, true);
+  const { root } = await mountControllerWithProps({ active: false });
+
+  try {
+    assert.equal(useSelectionStore.getState().interactionHoverFrozen, true);
+    assert.deepEqual(
+      [...useSelectionStore.getState().interactionHoverFreezeOwners],
+      [primaryViewer],
+    );
+  } finally {
+    await act(async () => {
+      root.unmount();
+    });
+  }
+
+  assert.equal(useSelectionStore.getState().interactionHoverFrozen, true);
+  useSelectionStore.getState().setHoverFrozen(primaryViewer, false);
 });
 
 test('handleJointAngleChange batches closed-loop slider preview into one frame-aligned update', async () => {

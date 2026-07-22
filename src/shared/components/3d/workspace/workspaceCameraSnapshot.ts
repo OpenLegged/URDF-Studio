@@ -208,14 +208,35 @@ export function captureWorkspaceCameraSnapshot(
   };
 }
 
+export interface ApplyWorkspaceCameraSnapshotOptions {
+  /**
+   * Overrides the perspective aspect ratio applied to the camera. A snapshot
+   * stores the aspect ratio of the workspace it was captured in, which is only
+   * correct when the destination render surface has the same shape. The
+   * snapshot dialog preview intentionally renders into its own frame aspect
+   * (viewport-follow or a fixed 16:9/1:1/… preset), so it passes the live
+   * render-surface aspect here to avoid a squished image. When omitted the
+   * snapshot's own aspect ratio is used (the full-resolution export path relies
+   * on this to drive its view-offset framing).
+   */
+  aspectRatioOverride?: number | null;
+}
+
 export function applyWorkspaceCameraSnapshot(
   camera: THREE.Camera,
   controls: OrbitControlsLike | null | undefined,
   snapshot: WorkspaceCameraSnapshot | null | undefined,
+  options?: ApplyWorkspaceCameraSnapshotOptions,
 ) {
   if (!snapshot || !isPerspectiveCamera(camera)) {
     return;
   }
+
+  const overrideAspect = options?.aspectRatioOverride;
+  const aspect =
+    typeof overrideAspect === 'number' && Number.isFinite(overrideAspect) && overrideAspect > 0
+      ? overrideAspect
+      : snapshot.aspectRatio;
 
   camera.position.set(snapshot.position.x, snapshot.position.y, snapshot.position.z);
   camera.quaternion
@@ -223,7 +244,7 @@ export function applyWorkspaceCameraSnapshot(
     .normalize();
   camera.up.set(snapshot.up.x, snapshot.up.y, snapshot.up.z);
   camera.zoom = snapshot.zoom;
-  camera.aspect = snapshot.aspectRatio;
+  camera.aspect = aspect;
   camera.fov = snapshot.fov;
   camera.near = snapshot.near;
   camera.far = snapshot.far;

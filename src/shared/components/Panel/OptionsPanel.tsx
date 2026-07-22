@@ -5,6 +5,12 @@
 
 import React, { useRef, useState, useCallback, useEffect, ReactNode } from 'react';
 import { Paperclip } from 'lucide-react';
+import { ResizeCornerIndicator } from '@/shared/components/DraggableWindow/ResizeCornerIndicator';
+import {
+  FLOATING_WINDOW_HEADER_HEIGHT_CLASS,
+  FLOATING_WINDOW_RADIUS_CLASS,
+  FLOATING_WINDOW_TITLE_CLASS,
+} from '@/shared/components/DraggableWindow/floatingWindowStyles';
 import { Checkbox, IconButton, Slider as UiSlider } from '@/shared/components/ui';
 import { useOverlayHoverBlock } from '@/shared/hooks/useOverlayHoverBlock';
 
@@ -442,6 +448,7 @@ interface OptionsPanelHeaderProps {
   closeText?: string;
   additionalControls?: ReactNode;
   className?: string;
+  titleClassName?: string;
 }
 
 export const OptionsPanelHeader: React.FC<OptionsPanelHeaderProps> = ({
@@ -457,10 +464,11 @@ export const OptionsPanelHeader: React.FC<OptionsPanelHeaderProps> = ({
   closeText = 'Close',
   additionalControls,
   className = '',
+  titleClassName = '',
 }) => {
   return (
     <div
-      className={`group flex min-w-0 shrink-0 select-none touch-none items-center justify-between gap-1.5 border-b border-border-black/60 bg-element-bg px-2 py-1.5 text-[10px] transition-colors hover:bg-element-hover ${className}`}
+      className={`group flex min-w-0 ${FLOATING_WINDOW_HEADER_HEIGHT_CLASS} shrink-0 select-none touch-none items-center justify-between gap-1.5 border-b border-border-black/60 bg-element-bg px-2 text-[10px] transition-colors hover:bg-element-hover ${className}`}
       onMouseDown={onMouseDown}
       onKeyDown={(e) => e.stopPropagation()}
       role="toolbar"
@@ -473,7 +481,9 @@ export const OptionsPanelHeader: React.FC<OptionsPanelHeaderProps> = ({
             <DragGripIcon className="w-3.5 h-3.5" />
           </span>
         ) : null}
-        <span className="truncate whitespace-nowrap text-[11px] font-semibold leading-4 text-text-secondary group-hover:text-text-primary">
+        <span
+          className={`truncate whitespace-nowrap leading-4 ${FLOATING_WINDOW_TITLE_CLASS} ${titleClassName}`}
+        >
           {title}
         </span>
       </div>
@@ -725,7 +735,7 @@ export const OptionsPanelContainer: React.FC<OptionsPanelContainerProps> = ({
 
   return (
     <div
-      className={`bg-panel-bg rounded-lg border border-border-black flex flex-col shadow-xl overflow-hidden relative @container ${className}`}
+      className={`bg-panel-bg ${FLOATING_WINDOW_RADIUS_CLASS} border border-border-black flex flex-col shadow-xl overflow-hidden relative @container ${className}`}
       style={{
         width: panelSize.width,
         height: currentHeight,
@@ -765,12 +775,7 @@ export const OptionsPanelContainer: React.FC<OptionsPanelContainerProps> = ({
             onPointerDown={(e) => handleResizeStart(e, 'corner')}
             title={resizeTitle}
           >
-            <svg
-              viewBox="0 0 6 6"
-              className="pointer-events-none h-2 w-2 rotate-45 transform fill-current text-text-tertiary opacity-0 transition-all group-hover:text-system-blue group-hover:opacity-100 group-active:text-system-blue"
-            >
-              <path d="M4 4 L6 6 M2 2 L6 2 L6 6 L2 6 Z" />
-            </svg>
+            <ResizeCornerIndicator />
           </button>
         </>
       )}

@@ -12,7 +12,12 @@ import {
 } from 'lucide-react';
 import type { Language } from '@/shared/i18n';
 import { translations } from '@/shared/i18n';
-import { DraggableWindow } from '@/shared/components/DraggableWindow';
+import {
+  DraggableWindow,
+  FLOATING_WINDOW_HEADER_HEIGHT_CLASS,
+  FLOATING_WINDOW_RADIUS_CLASS,
+  FLOATING_WINDOW_TITLE_CLASS,
+} from '@/shared/components/DraggableWindow';
 import { useDraggableWindow } from '@/shared/hooks/useDraggableWindow';
 import { Button } from '@/shared/components/ui/Button';
 import { CLOSE_BUTTON_DANGER_TERTIARY_CLASS } from '@/shared/components/ui/closeButtonStyles';
@@ -139,15 +144,24 @@ export function AIConversationModal({
 }: AIConversationModalProps) {
   const t = translations[lang];
   const conversationWindowLayer = useManagedWindowLayer('aiConversation');
+  const defaultWindowSize = useMemo(() => {
+    if (typeof window === 'undefined') {
+      return { width: 760, height: 620 };
+    }
+
+    return {
+      width: Math.min(760, Math.max(480, window.innerWidth - 24)),
+      height: Math.min(620, Math.max(420, window.innerHeight - 64)),
+    };
+  }, []);
   const windowState = useDraggableWindow({
     isOpen,
-    defaultSize: { width: 760, height: 620 },
-    minSize: { width: 560, height: 400 },
+    defaultSize: defaultWindowSize,
+    minSize: { width: 480, height: 420 },
+    viewportMinSize: { width: 360, height: 320 },
     centerOnMount: true,
     enableMinimize: true,
-    // Match the source-code editor: let the window slide off-screen and resize
-    // without being clamped to the viewport.
-    clampResizeToViewport: false,
+    clampResizeToViewport: true,
     dragBounds: {
       allowNegativeX: true,
       minVisibleWidth: 100,
@@ -155,6 +169,7 @@ export function AIConversationModal({
     },
   });
   const { isMinimized, size, isResizing } = windowState;
+  const isCompactLayout = size.width < 700;
 
   const [messages, setMessages] = useState<AIConversationMessage[]>([]);
   const [input, setInput] = useState('');
@@ -195,7 +210,7 @@ export function AIConversationModal({
 
     return isConversationChatMessage(lastMessage) ? lastMessage.content : lastMessage.marker;
   })();
-  const showHeaderActionLabels = !isMinimized && size.width >= 700;
+  const showHeaderActionLabels = !isMinimized && !isCompactLayout;
   const suggestedPrompts = useMemo(
     () =>
       buildConversationPromptSuggestions({
@@ -518,7 +533,7 @@ export function AIConversationModal({
             <div className="rounded-lg border border-border-black bg-panel-bg p-1.5 text-system-blue dark:bg-element-bg dark:text-system-blue">
               <MessageCircle className="w-4 h-4" />
             </div>
-            <h1 className="text-sm font-semibold text-text-primary">{headerTitle}</h1>
+            <h1 className={FLOATING_WINDOW_TITLE_CLASS}>{headerTitle}</h1>
           </div>
         }
         headerActions={
@@ -547,10 +562,12 @@ export function AIConversationModal({
             </button>
           </div>
         }
-        className="flex flex-col overflow-hidden rounded-2xl border border-border-black bg-panel-bg text-text-primary shadow-xl dark:bg-panel-bg"
+        className={`flex flex-col overflow-hidden ${FLOATING_WINDOW_RADIUS_CLASS} border border-border-black bg-panel-bg text-text-primary shadow-xl dark:bg-panel-bg`}
         zIndex={conversationWindowLayer.zIndex}
         onActivate={conversationWindowLayer.onActivate}
-        headerClassName="h-12 border-b border-border-black flex items-center justify-between px-4 bg-element-bg shrink-0"
+        headerClassName={`${FLOATING_WINDOW_HEADER_HEIGHT_CLASS} border-b border-border-black flex items-center justify-between bg-element-bg shrink-0 ${
+          isCompactLayout ? 'px-3' : 'px-4'
+        }`}
         interactionClassName="select-none"
         showMinimizeButton={false}
         showMaximizeButton={false}
@@ -568,8 +585,10 @@ export function AIConversationModal({
         {!isMinimized && (
           <div className="flex flex-1 flex-col overflow-hidden">
             <div
-              className={`flex-1 overflow-y-auto bg-white px-6 pt-6 dark:bg-panel-bg custom-scrollbar ${
-                messages.length === 0 ? 'pb-2' : 'pb-6'
+              data-ai-conversation-scroll-viewport
+              className={`min-h-0 flex-1 overflow-y-auto bg-white dark:bg-panel-bg custom-scrollbar ${
+                isCompactLayout ? 'px-3 pt-3' : 'px-6 pt-6'
+              } ${messages.length === 0 ? 'pb-2' : isCompactLayout ? 'pb-3' : 'pb-6'}
               }`}
               role="log"
               aria-live="polite"
@@ -577,9 +596,17 @@ export function AIConversationModal({
               aria-label={headerTitle}
             >
               {messages.length === 0 ? (
-                <div className="flex h-full min-h-0 flex-col items-center justify-end px-10 text-center">
-                  <div className="mt-4 w-full max-w-2xl">
-                    <div className="space-y-3 rounded-2xl border border-border-black bg-panel-bg/80 px-4 py-4 text-left shadow-sm dark:bg-element-bg/70">
+                <div
+                  className={`flex min-h-full flex-col items-center text-center ${
+                    isCompactLayout ? 'justify-start px-0' : 'justify-end px-10'
+                  }`}
+                >
+                  <div className={`${isCompactLayout ? '' : 'mt-4'} w-full max-w-2xl`}>
+                    <div
+                      className={`space-y-3 rounded-2xl border border-border-black bg-panel-bg/80 text-left shadow-sm dark:bg-element-bg/70 ${
+                        isCompactLayout ? 'px-3 py-3' : 'px-4 py-4'
+                      }`}
+                    >
                       <div className="flex items-center gap-3 rounded-xl border border-border-black/60 bg-element-bg/70 px-3 py-3 dark:bg-element-bg">
                         <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border border-system-blue/20 bg-system-blue/10 text-system-blue">
                           <MessageCircle className="h-4 w-4" />
@@ -588,7 +615,11 @@ export function AIConversationModal({
                           {t.examples}
                         </div>
                       </div>
-                      <div className="grid grid-cols-1 gap-2 md:grid-cols-2">
+                      <div
+                        className={`grid grid-cols-1 gap-2 ${
+                          isCompactLayout ? '' : 'md:grid-cols-2'
+                        }`}
+                      >
                         {suggestedPrompts.map((prompt) => (
                           <button
                             key={prompt}
@@ -702,7 +733,11 @@ export function AIConversationModal({
               )}
             </div>
 
-            <div className="border-t border-border-black bg-element-bg p-4">
+            <div
+              className={`shrink-0 border-t border-border-black bg-element-bg ${
+                isCompactLayout ? 'p-2.5' : 'p-4'
+              }`}
+            >
               <div className="rounded-xl border border-border-black bg-panel-bg p-2 shadow-sm dark:bg-panel-bg">
                 {requestError && (
                   <div className="mb-2 rounded-xl border border-danger-border bg-danger-soft px-3 py-2 text-[12px] text-danger">
@@ -728,10 +763,22 @@ export function AIConversationModal({
                     }
                   }}
                   placeholder={t.chatPlaceholder}
-                  className="min-h-[88px] w-full resize-none rounded-lg border-none bg-transparent px-2 py-2 text-sm text-text-primary outline-none placeholder:text-text-tertiary"
+                  className={`w-full resize-none rounded-lg border-none bg-transparent px-2 py-2 text-sm text-text-primary outline-none placeholder:text-text-tertiary ${
+                    isCompactLayout ? 'min-h-[64px]' : 'min-h-[88px]'
+                  }`}
                 />
-                <div className="mt-2 flex items-center justify-between gap-3">
-                  <span className="px-2 text-[10px] font-medium text-text-tertiary">
+                <div
+                  className={`mt-2 flex gap-3 ${
+                    isCompactLayout
+                      ? 'flex-wrap items-center justify-end'
+                      : 'items-center justify-between'
+                  }`}
+                >
+                  <span
+                    className={`px-2 text-[10px] font-medium text-text-tertiary ${
+                      isCompactLayout ? 'mr-auto' : ''
+                    }`}
+                  >
                     {t.sendOnEnterHint}
                   </span>
                   <div className="flex items-center gap-2">

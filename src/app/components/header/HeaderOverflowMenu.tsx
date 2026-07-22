@@ -32,7 +32,9 @@ export function HeaderOverflowMenu({
   onOpenCodeViewer,
   onPrefetchCodeViewer,
   onSnapshot,
+  onPrefetchSnapshot,
   onOpenSettings,
+  onPrefetchSettings,
   t,
   showQuickAction,
   showSourceCode,
@@ -93,9 +95,9 @@ export function HeaderOverflowMenu({
                       onOpenCodeViewer();
                       setActiveMenu(null);
                     }}
-                    onMouseEnter={onPrefetchCodeViewer}
+                    onPointerEnter={onPrefetchCodeViewer}
+                    onPointerDown={onPrefetchCodeViewer}
                     onFocus={onPrefetchCodeViewer}
-                    onTouchStart={onPrefetchCodeViewer}
                   >
                     {t.sourceCode}
                   </HeaderMenuItem>
@@ -147,6 +149,9 @@ export function HeaderOverflowMenu({
                 {showSnapshot && (
                   <HeaderMenuItem
                     icon={Camera}
+                    onPointerEnter={onPrefetchSnapshot}
+                    onPointerDown={onPrefetchSnapshot}
+                    onFocus={onPrefetchSnapshot}
                     onClick={() => {
                       onSnapshot();
                       setActiveMenu(null);
@@ -187,6 +192,9 @@ export function HeaderOverflowMenu({
                 {showSettings && (
                   <HeaderMenuItem
                     icon={Settings}
+                    onPointerEnter={onPrefetchSettings}
+                    onPointerDown={onPrefetchSettings}
+                    onFocus={onPrefetchSettings}
                     onClick={() => {
                       onOpenSettings();
                       setActiveMenu(null);

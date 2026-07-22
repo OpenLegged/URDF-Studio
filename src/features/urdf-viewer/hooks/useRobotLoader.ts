@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { useThree } from '@react-three/fiber';
 import * as THREE from 'three';
 import { buildRuntimeRobotFromState, URDFLoader } from '@/core/parsers/urdf/loader';
-import { getJointMotionAngleFromActualAngle } from '@/core/robot';
+import { getJointMotionAngleFromActualAngle, hasFiniteJointLimitBounds } from '@/core/robot';
 import { normalizeLoadingProgress } from '@/shared/components/3d/loadingHudState';
 import { disposeObject3D } from '../utils/dispose';
 import {
@@ -857,12 +857,37 @@ export function useRobotLoader({
                     const parsedJoint = sourceRobotJoints[name];
                     if (parsedJoint && parsedJoint.limit) {
                       if (!joint.limit) joint.limit = {};
-                      joint.limit.effort = parsedJoint.limit.effort;
-                      joint.limit.velocity = parsedJoint.limit.velocity;
-                      if (joint.limit.lower === undefined)
-                        joint.limit.lower = parsedJoint.limit.lower;
-                      if (joint.limit.upper === undefined)
-                        joint.limit.upper = parsedJoint.limit.upper;
+                      if (
+                        typeof parsedJoint.limit.effort === 'number' &&
+                        Number.isFinite(parsedJoint.limit.effort)
+                      ) {
+                        joint.limit.effort = parsedJoint.limit.effort;
+                      }
+                      if (
+                        typeof parsedJoint.limit.velocity === 'number' &&
+                        Number.isFinite(parsedJoint.limit.velocity)
+                      ) {
+                        joint.limit.velocity = parsedJoint.limit.velocity;
+                      }
+                      if (hasFiniteJointLimitBounds(parsedJoint.limit)) {
+                        if (joint.limit.lower === undefined) {
+                          joint.limit.lower = parsedJoint.limit.lower;
+                        }
+                        if (joint.limit.upper === undefined) {
+                          joint.limit.upper = parsedJoint.limit.upper;
+                        }
+                        joint.ignoreLimits = false;
+                      } else if (
+                        parsedJoint.type === 'revolute' ||
+                        parsedJoint.type === 'prismatic'
+                      ) {
+                        joint.ignoreLimits = true;
+                      }
+                    } else if (
+                      parsedJoint &&
+                      (parsedJoint.type === 'revolute' || parsedJoint.type === 'prismatic')
+                    ) {
+                      joint.ignoreLimits = true;
                     }
                   },
                 );

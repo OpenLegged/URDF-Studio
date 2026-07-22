@@ -15,6 +15,7 @@ export const en: TranslationKeys = {
   aiMenu: 'AI',
   aiInspection: 'AI Inspection',
   aiConversation: 'AI Conversation',
+  feedback: 'Feedback',
   file: 'File',
   import: 'Import',
   importFolder: 'Import Folder',
@@ -98,8 +99,12 @@ export const en: TranslationKeys = {
     'Hover shows snap origins; clicking a Link or snap point fills parent / child automatically.',
   bridgeSnapHintFreePoint: 'Hold Ctrl/Cmd to pick any point on the face.',
   bridgeSnapKindCircleCenter: 'Circle Center',
+  bridgeSnapKindCylinderAxis: 'Cylinder Axis',
   bridgeSnapKindObjectCenter: 'Object Center',
   bridgeSnapKindFaceCenter: 'Face Center',
+  bridgeSnapKindVertex: 'Vertex',
+  bridgeSnapKindEdgeMidpoint: 'Edge Midpoint',
+  bridgeSnapKindSurface: 'Surface Point',
   bridgePickActiveParent: 'The next click prefers the parent side',
   bridgePickActiveChild: 'The next click prefers the child side',
   bridgeSelectRelationFirst: 'At least two components are required to create a bridge',
@@ -107,6 +112,13 @@ export const en: TranslationKeys = {
   bridgedComponent: 'Connected',
   bridgedComponentLockedHint:
     'This component is already part of a bridge and cannot move independently.',
+  lockEditing: 'Lock editing',
+  unlockEditing: 'Unlock editing',
+  editingLockedByComponent: 'Editing is locked by the component',
+  editingLockedByAncestor: 'Editing is locked by a parent link',
+  editingLockedBadge: 'Locked',
+  editingLockedMessage:
+    'This item is locked. Unlock it in the scene tree before editing or moving it.',
   bridgeLimitRangeInvalid: 'Lower limit must be less than or equal to upper limit.',
   bridgeNonFixedCycleUnsupported:
     'Cycle-closing bridges only support fixed joints. Use a fixed bridge for closed-loop conversion.',
@@ -119,6 +131,15 @@ export const en: TranslationKeys = {
   bridgePositionUpperLimit: 'Position Upper Limit',
   bridgeBaseSnapped: 'Base ✓',
   bridgeAttachSnapped: 'Attach ✓',
+  bridgeInputMode: 'Selection mode',
+  bridgeGeometryMode: 'Geometry Snap',
+  bridgeLinkListMode: 'Link List',
+  bridgeAdvancedSettings: 'Advanced settings',
+  bridgePickEndpoint: 'Pick a candidate on the model',
+  bridgePickEndpointActive: 'Picking now — hover a surface for candidates',
+  bridgePickEndpointInactive: 'Select this endpoint to pick again',
+  bridgeRepickBase: 'Pick base endpoint again',
+  bridgeRepickAttach: 'Pick attach endpoint again',
 
   // Property Editor
   properties: 'Properties',
@@ -133,8 +154,7 @@ export const en: TranslationKeys = {
   componentDisplayName: 'Display name',
   componentSourceFile: 'Source file',
   componentBridgeAttachmentTransform: 'Bridge attachment transform',
-  componentBridgePlacementControlledBy:
-    'Placement is controlled by incoming bridge “{name}”.',
+  componentBridgePlacementControlledBy: 'Placement is controlled by incoming bridge “{name}”.',
   name: 'Name',
   visualGeometry: 'Visual Geometry',
   material: 'Material',
@@ -380,9 +400,6 @@ export const en: TranslationKeys = {
   restore: 'Restore',
   inspectionNormalMode: 'Normal Mode',
   inspectionAdvancedMode: 'Professional Mode',
-  inspectionConfigureChecks: 'Configure Inspection Checks',
-  inspectionConfigureChecksDescription:
-    'Normal mode keeps setup focused on selection only. Switch to professional mode to review weights, impact labels, and detailed scoring guidance.',
   inspectionSelectedChecksLabel: 'Selected Checks',
   inspectionSelectAll: 'Select All',
   inspectionClearAll: 'Clear All',
@@ -691,6 +708,10 @@ export const en: TranslationKeys = {
   sourceCodeModified: 'Modified',
   sourceCodeApplyFailed: 'Save failed',
   sourceCodeApplyFailedMessage: 'Could not apply the source changes. Fix the source and try again.',
+  sourceCodeLoadErrorTitle: 'Source editor failed to load',
+  sourceCodeLoadErrorMessage:
+    'The editor could not be initialized. Your workspace is still available. Close and open it again; if that fails, reload the page.',
+  sourceCodeLoadErrorLogPrefix: '[URDF Studio] Source editor load error:',
   sourceCodeReadOnlyView: 'Read-only view',
   sourceCodeGenerated: 'Generated',
   sourceCodeMaximized: 'Maximized',
@@ -798,6 +819,7 @@ export const en: TranslationKeys = {
   jointName: 'Joint Name',
   motorType: 'Motor Type',
   addedComponent: 'Added component: {name}',
+  addedComponentRecovered: 'Added component: {name} ({count} source issue(s) ignored)',
   noCollisionOptimizationApplied: 'No collision optimization was applied.',
   collisionOptimizationApplied:
     'Applied {count} collision optimizations (Mesh {meshCount}, Primitive {primitiveCount})',
@@ -973,21 +995,26 @@ export const en: TranslationKeys = {
   paintTool: 'Paint',
   paintColor: 'Paint Color',
   paintToolHint:
-    'Paint edits visual surfaces through the same face or face-island material workflow.',
+    'How to use: choose Paint or Restore Original, then click the model. Selection Scope controls the affected area.',
   paintSelectionScope: 'Selection Scope',
-  paintSelectionFace: 'Face',
-  paintSelectionIsland: 'Island',
-  paintOperation: 'Edit Mode',
+  paintSelectionFace: 'Triangle',
+  paintSelectionIsland: 'Connected Surface',
+  paintOperation: 'Operation',
   paintOperationPaint: 'Paint',
-  paintOperationErase: 'Erase',
+  paintOperationErase: 'Restore Original',
+  paintOperationEraseActive: 'Active · Click Model',
+  paintEraseHint:
+    'The restore tool is active. Click a painted surface on the model to restore its original material using the current selection scope.',
   paintUnsupportedRobotOnly:
     'Paint mode currently only works on the RobotModel mesh canvas in Editor. USD and offscreen stages are not supported.',
   paintStatusReady: 'Ready to paint the clicked visual surface.',
   paintStatusApplied: 'Paint applied to the selected visual surface.',
   paintStatusRemoved: 'Paint removed from the selected visual surfaces.',
+  paintStatusNothingToRestore:
+    'This surface has no paint to restore. Paint it first, or click an area that is still painted.',
   paintErrorVisualMeshOnly: 'Paint only supports visual geometry with selectable faces.',
   paintErrorMultiMaterial:
-    'Paint does not yet support editing built-in multi-material targets that were not authored by the paint tool.',
+    'Paint cannot safely edit this visual because it contains built-in material slots or child meshes with different base materials.',
   paintErrorFaceUnavailable: 'Could not resolve the clicked visual face.',
   paintErrorSelectionUnavailable:
     'Could not resolve a valid face selection from the clicked visual.',

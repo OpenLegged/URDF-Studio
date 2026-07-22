@@ -9,8 +9,18 @@ import {
   Sparkles,
   Wand2,
 } from 'lucide-react';
-import { DraggableWindow } from '@/shared/components/DraggableWindow';
-import { CLOSE_BUTTON_DANGER_TERTIARY_CLASS, CompactSwitch } from '@/shared/components/ui';
+import {
+  DraggableWindow,
+  FLOATING_WINDOW_HEADER_HEIGHT_CLASS,
+  FLOATING_WINDOW_RADIUS_CLASS,
+  FLOATING_WINDOW_TITLE_CLASS,
+} from '@/shared/components/DraggableWindow';
+import {
+  Button,
+  CLOSE_BUTTON_DANGER_TERTIARY_CLASS,
+  CompactSwitch,
+  PanelSegmentedControl,
+} from '@/shared/components/ui';
 import { useDraggableWindow } from '@/shared/hooks/useDraggableWindow';
 import { translations } from '@/shared/i18n';
 import { useManagedWindowLayer } from '@/store/useManagedWindowLayer';
@@ -37,12 +47,16 @@ import {
 } from '../utils/collisionOptimization';
 import { analyzeCollisionOptimizationWithWorker } from '../utils/collisionOptimizationWorkerBridge';
 import type { CollisionOptimizationWorkerStage } from '../utils/collisionOptimizationWorkerTypes';
-import { applyCandidateTypeOverride, getCandidateOverrideOptions } from '../utils/collision-optimization/candidateOverrides';
+import {
+  applyCandidateTypeOverride,
+  getCandidateOverrideOptions,
+} from '../utils/collision-optimization/candidateOverrides';
 import {
   CollisionOptimizationCandidatesPanel,
   type CollisionOptimizationCandidatesViewMode,
 } from './CollisionOptimizationCandidatesPanel';
 import type { CollisionOptimizationPlanarGraphConnectionState } from './CollisionOptimizationPlanarGraph';
+import { CollisionOptimizationSplitPane } from './CollisionOptimizationSplitPane';
 import { CollisionOptimizationStrategyPanel } from './CollisionOptimizationStrategyPanel';
 
 interface CollisionOptimizationDialogProps {
@@ -103,7 +117,7 @@ function createManualMergePairKey(primaryTargetId: string, secondaryTargetId: st
 
 function SectionLabel({ children }: { children: React.ReactNode }) {
   return (
-    <div className="mb-1 mt-2 text-[8.5px] font-semibold tracking-[0.02em] text-text-tertiary first:mt-0">
+    <div className="mb-1.5 mt-2.5 text-[11px] font-semibold tracking-[0.02em] text-text-tertiary first:mt-0">
       {children}
     </div>
   );
@@ -141,77 +155,14 @@ function StatCard({
 
   return (
     <div
-      className={`flex w-full min-w-0 items-center justify-between gap-1.5 rounded-md border px-1.75 py-1 ${surfaceClass}`}
+      className={`flex w-full min-w-0 items-center justify-between gap-2 rounded-md border px-2.5 py-2 ${surfaceClass}`}
     >
-      <div className={`flex min-w-0 items-center gap-1.25 ${accentClass}`}>
+      <div className={`flex min-w-0 items-center gap-1.5 ${accentClass}`}>
         <span className="shrink-0">{icon}</span>
-        <span className="truncate text-[8px] font-medium tracking-[0.02em]">{label}</span>
+        <span className="truncate text-[11px] font-medium tracking-[0.02em]">{label}</span>
       </div>
-      <div className={`shrink-0 text-[10px] font-semibold tabular-nums ${valueClass}`}>{value}</div>
+      <div className={`shrink-0 text-[13px] font-semibold tabular-nums ${valueClass}`}>{value}</div>
     </div>
-  );
-}
-
-function OptionButton({
-  active,
-  onClick,
-  children,
-  disabled = false,
-}: {
-  active: boolean;
-  onClick: () => void;
-  children: React.ReactNode;
-  disabled?: boolean;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      disabled={disabled}
-      className={`min-h-6.5 rounded-md border px-1.75 py-1 text-[9.5px] font-medium leading-none transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-system-blue/30 ${
-        disabled
-          ? 'opacity-40 cursor-not-allowed border-border-black text-text-tertiary'
-          : active
-            ? 'bg-white dark:bg-segmented-active text-text-primary shadow-sm border-border-black'
-            : 'bg-transparent text-text-secondary border-transparent hover:text-text-primary hover:bg-element-hover'
-      }`}
-    >
-      {children}
-    </button>
-  );
-}
-
-function PanelSwitchButton({
-  active,
-  onClick,
-  icon,
-  label,
-  badge,
-}: {
-  active: boolean;
-  onClick: () => void;
-  icon: React.ReactNode;
-  label: string;
-  badge?: React.ReactNode;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={`flex min-w-0 flex-1 items-center justify-center gap-1.25 rounded-lg px-2 py-1.25 text-[10px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-system-blue/30 ${
-        active
-          ? 'bg-white dark:bg-segmented-active text-text-primary shadow-sm'
-          : 'text-text-secondary hover:bg-element-hover hover:text-text-primary'
-      }`}
-    >
-      {icon}
-      <span className="truncate">{label}</span>
-      {badge ? (
-        <span className="rounded-full border border-border-black bg-element-bg px-1 py-0.5 text-[9px] leading-none text-text-tertiary">
-          {badge}
-        </span>
-      ) : null}
-    </button>
   );
 }
 
@@ -226,10 +177,8 @@ function StrategyField({
 }) {
   return (
     <div className="rounded-lg border border-border-black bg-panel-bg px-2 py-2">
-      <div className="text-[10px] font-medium leading-tight text-text-primary">{label}</div>
-      {desc ? (
-        <div className="mt-0.5 text-[9px] leading-snug text-text-tertiary">{desc}</div>
-      ) : null}
+      <div className="text-xs font-medium leading-tight text-text-primary">{label}</div>
+      {desc ? <div className="mt-1 text-[11px] leading-snug text-text-tertiary">{desc}</div> : null}
       <div className={`${desc ? 'mt-1.5' : 'mt-1'} flex flex-wrap gap-1`}>{children}</div>
     </div>
   );
@@ -254,9 +203,7 @@ export const CollisionOptimizationDialog: React.FC<CollisionOptimizationDialogPr
     scopeMesh: t.collisionOptimizerScopeMesh,
     scopePrimitive: t.collisionOptimizerScopePrimitive,
     scopeSelected: t.collisionOptimizerScopeSelected,
-    panelCandidates: t.collisionOptimizerCandidates,
     panelSettings: t.collisionOptimizerSettings,
-    strategies: t.collisionOptimizerStrategies,
     strategySmart: t.collisionOptimizerStrategySmart,
     strategyKeep: t.collisionOptimizerStrategyKeep,
     strategyBox: t.box,
@@ -269,7 +216,6 @@ export const CollisionOptimizationDialog: React.FC<CollisionOptimizationDialogPr
     selectCandidateHint: t.collisionOptimizerSelectCandidateHint,
     selectedCandidate: t.collisionOptimizerSelectedCandidate,
     includeCandidate: t.collisionOptimizerIncludeCandidate,
-    excludeCandidate: t.collisionOptimizerExcludeCandidate,
     meshStrategyLabel: t.collisionOptimizerMeshStrategyLabel,
     meshStrategyDesc: t.collisionOptimizerMeshStrategyDesc,
     cylinderStrategyLabel: t.collisionOptimizerCylinderStrategyLabel,
@@ -345,7 +291,6 @@ export const CollisionOptimizationDialog: React.FC<CollisionOptimizationDialogPr
     Record<string, GeometryType | undefined>
   >({});
   const [activeCandidateKey, setActiveCandidateKey] = useState<string | null>(null);
-  const [stackedPanel, setStackedPanel] = useState<'candidates' | 'settings'>('candidates');
   const [showDefaultStrategies, setShowDefaultStrategies] = useState(false);
   const [candidatesViewMode, setCandidatesViewMode] =
     useState<CollisionOptimizationCandidatesViewMode>('list');
@@ -360,12 +305,12 @@ export const CollisionOptimizationDialog: React.FC<CollisionOptimizationDialogPr
 
   const defaultWindowSize = useMemo(() => {
     if (typeof window === 'undefined') {
-      return { width: 560, height: 460 };
+      return { width: 820, height: 460 };
     }
 
     return {
-      width: Math.min(660, Math.max(520, Math.round(window.innerWidth * 0.4))),
-      height: Math.min(500, Math.max(400, Math.round(window.innerHeight * 0.52))),
+      width: Math.min(840, Math.max(480, Math.round(window.innerWidth - 24))),
+      height: Math.min(560, Math.max(400, Math.round(window.innerHeight - 120))),
     };
   }, []);
 
@@ -385,11 +330,9 @@ export const CollisionOptimizationDialog: React.FC<CollisionOptimizationDialogPr
     },
   });
   const dialogWidth = windowState.size.width;
-  const isStackedLayout = dialogWidth < 960;
   const isCompactLayout = dialogWidth < 840;
   const isDenseLayout = dialogWidth < 720;
   const isWideLayout = dialogWidth >= 1180;
-  const isUltraWideLayout = dialogWidth >= 1400;
 
   const selectedTargetId = useMemo(() => {
     if (
@@ -471,6 +414,7 @@ export const CollisionOptimizationDialog: React.FC<CollisionOptimizationDialogPr
   const effectiveSelectedTargetId = scope === 'selected' ? selectedTargetId : null;
   const shouldIncludePrimitiveFits =
     hasRequestedPrimitiveFits ||
+    meshStrategy !== 'keep' ||
     coaxialJointMergeStrategy !== 'keep' ||
     manualMergePairs.length > 0;
 
@@ -1069,8 +1013,6 @@ export const CollisionOptimizationDialog: React.FC<CollisionOptimizationDialogPr
 
   const footerLabel = `${copy.selectedCount} ${selectedCandidateCount} / ${eligibleCount}`;
   const hasOverlapWarnings = warningBefore > 0 || warningAfter > 0;
-  const showCandidatesPanel = !isStackedLayout || stackedPanel === 'candidates';
-  const showSettingsPanel = !isStackedLayout || stackedPanel === 'settings';
   const candidatePanelLabels = useMemo(
     () => ({
       analyzing: copy.analyzing,
@@ -1097,7 +1039,6 @@ export const CollisionOptimizationDialog: React.FC<CollisionOptimizationDialogPr
       collisionIndex: copy.collisionIndex,
       component: copy.component,
       jointPair: copy.jointPair,
-      mergeTo: copy.mergeTo,
       noCandidates: copy.noCandidates,
       selectedCount: copy.selectedCount,
     }),
@@ -1124,17 +1065,7 @@ export const CollisionOptimizationDialog: React.FC<CollisionOptimizationDialogPr
     }),
     [copy],
   );
-  const statsGridClass = 'grid-cols-4';
-  const isGraphView = candidatesViewMode === 'graph';
-  const mainPanelsGridClass = isStackedLayout
-    ? 'grid-cols-1'
-    : isGraphView
-      ? isUltraWideLayout
-        ? 'grid-cols-[minmax(0,1.7fr)_minmax(300px,360px)]'
-        : 'grid-cols-[minmax(0,1.45fr)_minmax(280px,340px)]'
-      : isUltraWideLayout
-        ? 'grid-cols-[minmax(500px,1.35fr)_minmax(320px,0.88fr)]'
-        : 'grid-cols-[minmax(420px,1.22fr)_minmax(300px,0.92fr)]';
+  const statsGridClass = isDenseLayout ? 'grid-cols-2' : 'grid-cols-4';
   const settingsLayoutClass = isWideLayout
     ? 'grid grid-cols-[minmax(0,1.35fr)_minmax(280px,0.95fr)] items-start gap-2.5'
     : 'space-y-2.5';
@@ -1176,20 +1107,23 @@ export const CollisionOptimizationDialog: React.FC<CollisionOptimizationDialogPr
             <Sparkles className="h-3 w-3" />
           </div>
           <div className="min-w-0">
-            <div className="text-[11px] font-semibold text-text-primary">{copy.title}</div>
+            <div className={FLOATING_WINDOW_TITLE_CLASS}>{copy.title}</div>
           </div>
         </div>
       }
-      className="flex flex-col overflow-hidden rounded-lg border border-border-black bg-panel-bg text-text-primary shadow-lg"
+      className={`flex flex-col overflow-hidden ${FLOATING_WINDOW_RADIUS_CLASS} border border-border-black bg-panel-bg text-text-primary shadow-lg`}
       zIndex={collisionOptimizationWindowLayer.zIndex}
       onActivate={collisionOptimizationWindowLayer.onActivate}
-      headerClassName="flex h-10 shrink-0 items-center justify-between border-b border-border-black bg-element-bg px-2"
+      headerClassName={`flex ${FLOATING_WINDOW_HEADER_HEIGHT_CLASS} shrink-0 items-center justify-between border-b border-border-black bg-element-bg px-2`}
       interactionClassName="select-none"
       showMinimizeButton={false}
       showMaximizeButton={false}
       closeTitle={t.close}
       closeButtonClassName={`rounded-md p-1 ${CLOSE_BUTTON_DANGER_TERTIARY_CLASS}`}
       showResizeHandles={true}
+      role="dialog"
+      ariaLabel={copy.title}
+      ariaModal={false}
     >
       <div className="flex-1 min-h-0 overflow-hidden px-2 py-2 sm:px-2.5">
         <div className="flex h-full min-h-0 flex-col gap-2">
@@ -1218,248 +1152,238 @@ export const CollisionOptimizationDialog: React.FC<CollisionOptimizationDialogPr
             />
           </div>
 
-          {isStackedLayout && (
-            <div className="shrink-0 rounded-lg border border-border-black bg-segmented-bg p-0.5">
-              <div className="flex gap-1">
-                <PanelSwitchButton
-                  active={stackedPanel === 'candidates'}
-                  onClick={() => setStackedPanel('candidates')}
-                  icon={<Boxes className="h-3.5 w-3.5 shrink-0" />}
-                  label={copy.panelCandidates}
-                  badge={displayCandidates.length}
+          <div
+            className={`min-h-0 flex-1 ${isDenseLayout ? 'overflow-y-auto' : 'overflow-hidden'}`}
+          >
+            <CollisionOptimizationSplitPane
+              dialogWidth={dialogWidth}
+              primaryPanelId="collision-optimization-candidates-panel"
+              secondaryPanelId="collision-optimization-editor-panel"
+              resizeLabel={`${t.resize}: ${copy.candidates}`}
+              primary={
+                <CollisionOptimizationCandidatesPanel
+                  id="collision-optimization-candidates-panel"
+                  activeCandidateKey={activeCandidateKey}
+                  source={source}
+                  analysis={analysis}
+                  candidates={displayCandidates}
+                  selection={selection}
+                  scope={scope}
+                  viewMode={candidatesViewMode}
+                  checkedCandidateKeys={checkedCandidateKeys}
+                  eligibleCount={eligibleCount}
+                  activeSelectionCount={selectedCandidateCount}
+                  isAnalyzing={isAnalyzing}
+                  isSelectedScopeWithoutSelection={isSelectedScopeWithoutSelection}
+                  manualMergePairs={manualMergePairs}
+                  manualConnection={manualConnection}
+                  labels={candidatePanelLabels}
+                  listLabels={candidateListLabels}
+                  graphLabels={graphLabels}
+                  formatGeometryType={formatGeometryType}
+                  getStatusLabel={getStatusLabel}
+                  canCreateManualPair={canCreateManualPair}
+                  onActivateCandidate={activateCandidate}
+                  onScopeChange={setScope}
+                  onViewModeChange={setCandidatesViewMode}
+                  onSelectAll={handleSelectAll}
+                  onClearAll={handleClearAll}
+                  onClearManualPairs={handleClearManualPairs}
+                  onToggleCandidate={toggleCandidate}
+                  onSelectTarget={onSelectTarget}
+                  onManualConnectionStart={handleManualConnectionStart}
+                  onManualConnectionMove={handleManualConnectionMove}
+                  onManualConnectionEnd={handleManualConnectionEnd}
+                  onManualConnectionCancel={handleManualConnectionCancel}
                 />
-                <PanelSwitchButton
-                  active={stackedPanel === 'settings'}
-                  onClick={() => setStackedPanel('settings')}
-                  icon={<Wand2 className="h-3.5 w-3.5 shrink-0" />}
-                  label={copy.strategies}
-                />
-              </div>
-            </div>
-          )}
-
-          <div className={`grid flex-1 min-h-0 gap-2 ${mainPanelsGridClass}`}>
-            {showCandidatesPanel && (
-              <CollisionOptimizationCandidatesPanel
-                activeCandidateKey={activeCandidateKey}
-                source={source}
-                analysis={analysis}
-                candidates={displayCandidates}
-                selection={selection}
-                scope={scope}
-                viewMode={candidatesViewMode}
-                checkedCandidateKeys={checkedCandidateKeys}
-                eligibleCount={eligibleCount}
-                activeSelectionCount={selectedCandidateCount}
-                isAnalyzing={isAnalyzing}
-                isSelectedScopeWithoutSelection={isSelectedScopeWithoutSelection}
-                manualMergePairs={manualMergePairs}
-                manualConnection={manualConnection}
-                labels={candidatePanelLabels}
-                listLabels={candidateListLabels}
-                graphLabels={graphLabels}
-                formatGeometryType={formatGeometryType}
-                getStatusLabel={getStatusLabel}
-                canCreateManualPair={canCreateManualPair}
-                onActivateCandidate={activateCandidate}
-                onScopeChange={setScope}
-                onViewModeChange={setCandidatesViewMode}
-                onSelectAll={handleSelectAll}
-                onClearAll={handleClearAll}
-                onClearManualPairs={handleClearManualPairs}
-                onToggleCandidate={toggleCandidate}
-                onSelectTarget={onSelectTarget}
-                onManualConnectionStart={handleManualConnectionStart}
-                onManualConnectionMove={handleManualConnectionMove}
-                onManualConnectionEnd={handleManualConnectionEnd}
-                onManualConnectionCancel={handleManualConnectionCancel}
-              />
-            )}
-
-            {showSettingsPanel && (
-              <div className="min-h-0 flex flex-col overflow-hidden rounded-lg border border-border-black bg-element-bg">
-                <div className="shrink-0 border-b border-border-black bg-panel-bg px-2 py-1.5">
-                  <div className="text-[10px] font-semibold text-text-primary">
-                    {copy.strategies}
-                  </div>
-                </div>
-
-                <div className={`flex-1 min-h-0 overflow-y-auto px-2 py-2 ${settingsLayoutClass}`}>
-                  <div className="space-y-2">
-                    <CollisionOptimizationStrategyPanel
-                      activeCandidate={activeCandidate}
-                      activeCandidateKey={activeCandidateKey}
-                      getCandidateOverrideOptions={getCandidateOverrideOptions}
-                      getReasonLabel={getReasonLabel}
-                      getStatusLabel={getStatusLabel}
-                      isChecked={
-                        activeCandidate
-                          ? checkedCandidateKeys.has(
-                              createCollisionOptimizationCandidateKey(activeCandidate),
-                            )
-                          : false
-                      }
-                      labels={{
-                        current: copy.current,
-                        excludeCandidate: copy.excludeCandidate,
-                        includeCandidate: copy.includeCandidate,
-                        reason: t.collisionOptimizerReason,
-                        selectCandidateHint: copy.selectCandidateHint,
-                        selectedCandidate: copy.selectedCandidate,
-                        status: t.collisionOptimizerStatus,
-                        suggested: copy.suggested,
-                      }}
-                      onSelectTarget={onSelectTarget}
-                      onSetCandidateOverride={setCandidateOverride}
-                      onToggleCandidate={toggleCandidate}
-                      formatGeometryType={formatGeometryType}
-                      strategyField={activeCandidateStrategyField}
-                    />
-
-                    <button
-                      type="button"
-                      onClick={() => setShowDefaultStrategies((previous) => !previous)}
-                      className="flex w-full items-center justify-between rounded-lg border border-border-black bg-element-bg px-2 py-1.5 text-left transition-colors hover:bg-panel-bg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-system-blue/30"
-                    >
-                      <div>
-                        <div className="text-[10px] font-semibold text-text-primary">
-                          {copy.defaultStrategies}
-                        </div>
-                        <div className="mt-0.5 text-[9px] text-text-tertiary">
-                          {showDefaultStrategies
-                            ? copy.hideDefaultStrategies
-                            : copy.showDefaultStrategies}
-                        </div>
-                      </div>
-                      {showDefaultStrategies ? (
-                        <ChevronDown className="h-4 w-4 text-text-tertiary" />
-                      ) : (
-                        <ChevronRight className="h-4 w-4 text-text-tertiary" />
-                      )}
-                    </button>
-
-                    {showDefaultStrategies ? (
-                      <div className="rounded-lg border border-border-black bg-element-bg px-2 py-2">
-                        <div className={`grid gap-2 ${strategyGridClass}`}>
-                          <StrategyField
-                            label={copy.meshStrategyLabel}
-                            desc={copy.meshStrategyDesc}
-                          >
-                            {meshStrategyOptions.map((option) => (
-                              <OptionButton
-                                key={option.value}
-                                active={meshStrategy === option.value}
-                                onClick={() => setMeshStrategy(option.value)}
-                              >
-                                {option.label}
-                              </OptionButton>
-                            ))}
-                          </StrategyField>
-
-                          <StrategyField
-                            label={copy.cylinderStrategyLabel}
-                            desc={copy.cylinderStrategyDesc}
-                          >
-                            {cylinderStrategyOptions.map((option) => (
-                              <OptionButton
-                                key={option.value}
-                                active={cylinderStrategy === option.value}
-                                onClick={() => setCylinderStrategy(option.value)}
-                              >
-                                {option.label}
-                              </OptionButton>
-                            ))}
-                          </StrategyField>
-
-                          <div className={isWideLayout ? 'col-span-2' : ''}>
-                            <StrategyField
-                              label={copy.rodBoxStrategyLabel}
-                              desc={copy.rodBoxStrategyDesc}
-                            >
-                              {rodBoxStrategyOptions.map((option) => (
-                                <OptionButton
-                                  key={option.value}
-                                  active={rodBoxStrategy === option.value}
-                                  onClick={() => setRodBoxStrategy(option.value)}
-                                >
-                                  {option.label}
-                                </OptionButton>
-                              ))}
-                            </StrategyField>
-                          </div>
-
-                          <div className={isWideLayout ? 'col-span-2' : ''}>
-                            <StrategyField
-                              label={copy.coaxialMergeStrategyLabel}
-                              desc={copy.coaxialMergeStrategyDesc}
-                            >
-                              {coaxialMergeStrategyOptions.map((option) => (
-                                <OptionButton
-                                  key={option.value}
-                                  active={coaxialJointMergeStrategy === option.value}
-                                  onClick={() => setCoaxialJointMergeStrategy(option.value)}
-                                >
-                                  {option.label}
-                                </OptionButton>
-                              ))}
-                            </StrategyField>
-                          </div>
-                        </div>
-                      </div>
-                    ) : null}
+              }
+              secondary={
+                <div
+                  id="collision-optimization-editor-panel"
+                  data-collision-optimization-panel="editor"
+                  className="min-h-0 flex flex-col overflow-hidden rounded-lg border border-border-black bg-element-bg"
+                >
+                  <div className="shrink-0 border-b border-border-black bg-panel-bg px-2 py-1.5">
+                    <div className="text-xs font-semibold text-text-primary">
+                      {copy.panelSettings}
+                    </div>
                   </div>
 
-                  <div className="space-y-2">
-                    <div className="rounded-lg border border-border-black bg-element-bg px-2 py-2">
-                      <SectionLabel>{copy.rules}</SectionLabel>
-                      <div
-                        className={`rounded-lg border border-border-black bg-panel-bg px-2 py-2 gap-2 ${isDenseLayout ? 'flex flex-col' : 'flex items-start justify-between'}`}
+                  <div
+                    className={`flex-1 min-h-0 overflow-y-auto px-2 py-2 ${settingsLayoutClass}`}
+                  >
+                    <div className="space-y-2">
+                      <CollisionOptimizationStrategyPanel
+                        activeCandidate={activeCandidate}
+                        activeCandidateKey={activeCandidateKey}
+                        getCandidateOverrideOptions={getCandidateOverrideOptions}
+                        getReasonLabel={getReasonLabel}
+                        getStatusLabel={getStatusLabel}
+                        isChecked={
+                          activeCandidate
+                            ? checkedCandidateKeys.has(
+                                createCollisionOptimizationCandidateKey(activeCandidate),
+                              )
+                            : false
+                        }
+                        labels={{
+                          current: copy.current,
+                          includeCandidate: copy.includeCandidate,
+                          reason: t.collisionOptimizerReason,
+                          selectCandidateHint: copy.selectCandidateHint,
+                          selectedCandidate: copy.selectedCandidate,
+                          status: t.collisionOptimizerStatus,
+                          suggested: copy.suggested,
+                        }}
+                        onSelectTarget={onSelectTarget}
+                        onSetCandidateOverride={setCandidateOverride}
+                        onToggleCandidate={toggleCandidate}
+                        formatGeometryType={formatGeometryType}
+                        strategyField={activeCandidateStrategyField}
+                      />
+
+                      <button
+                        type="button"
+                        onClick={() => setShowDefaultStrategies((previous) => !previous)}
+                        className="flex w-full items-center justify-between rounded-lg border border-border-black bg-element-bg px-2 py-1.5 text-left transition-colors hover:border-border-strong hover:bg-element-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-system-blue/30"
                       >
-                        <div className="min-w-0">
-                          <div className="text-[10px] font-medium leading-tight text-text-primary">
-                            {copy.avoidSiblingOverlap}
+                        <div>
+                          <div className="text-xs font-semibold text-text-primary">
+                            {copy.defaultStrategies}
                           </div>
-                          <div className="mt-0.5 text-[9px] leading-relaxed text-text-tertiary">
-                            {copy.avoidSiblingOverlapDesc}
+                          <div className="mt-1 text-[11px] text-text-tertiary">
+                            {showDefaultStrategies
+                              ? copy.hideDefaultStrategies
+                              : copy.showDefaultStrategies}
                           </div>
                         </div>
-                        <CompactSwitch
-                          checked={avoidSiblingOverlap}
-                          onChange={setAvoidSiblingOverlap}
-                          ariaLabel={copy.avoidSiblingOverlap}
-                        />
-                      </div>
+                        {showDefaultStrategies ? (
+                          <ChevronDown className="h-4 w-4 text-text-tertiary" />
+                        ) : (
+                          <ChevronRight className="h-4 w-4 text-text-tertiary" />
+                        )}
+                      </button>
+
+                      {showDefaultStrategies ? (
+                        <div className="rounded-lg border border-border-black bg-element-bg px-2 py-2">
+                          <div className={`grid gap-2 ${strategyGridClass}`}>
+                            <StrategyField
+                              label={copy.meshStrategyLabel}
+                              desc={copy.meshStrategyDesc}
+                            >
+                              <PanelSegmentedControl<MeshOptimizationStrategy>
+                                value={meshStrategy}
+                                onChange={setMeshStrategy}
+                                options={meshStrategyOptions}
+                                stretch
+                                ariaLabel={copy.meshStrategyLabel}
+                                className="w-full"
+                              />
+                            </StrategyField>
+
+                            <StrategyField
+                              label={copy.cylinderStrategyLabel}
+                              desc={copy.cylinderStrategyDesc}
+                            >
+                              <PanelSegmentedControl<CylinderOptimizationStrategy>
+                                value={cylinderStrategy}
+                                onChange={setCylinderStrategy}
+                                options={cylinderStrategyOptions}
+                                stretch
+                                ariaLabel={copy.cylinderStrategyLabel}
+                                className="w-full"
+                              />
+                            </StrategyField>
+
+                            <div className={isWideLayout ? 'col-span-2' : ''}>
+                              <StrategyField
+                                label={copy.rodBoxStrategyLabel}
+                                desc={copy.rodBoxStrategyDesc}
+                              >
+                                <PanelSegmentedControl<RodBoxOptimizationStrategy>
+                                  value={rodBoxStrategy}
+                                  onChange={setRodBoxStrategy}
+                                  options={rodBoxStrategyOptions}
+                                  stretch
+                                  ariaLabel={copy.rodBoxStrategyLabel}
+                                  className="w-full"
+                                />
+                              </StrategyField>
+                            </div>
+
+                            <div className={isWideLayout ? 'col-span-2' : ''}>
+                              <StrategyField
+                                label={copy.coaxialMergeStrategyLabel}
+                                desc={copy.coaxialMergeStrategyDesc}
+                              >
+                                <PanelSegmentedControl<CoaxialJointMergeStrategy>
+                                  value={coaxialJointMergeStrategy}
+                                  onChange={setCoaxialJointMergeStrategy}
+                                  options={coaxialMergeStrategyOptions}
+                                  stretch
+                                  ariaLabel={copy.coaxialMergeStrategyLabel}
+                                  className="w-full"
+                                />
+                              </StrategyField>
+                            </div>
+                          </div>
+                        </div>
+                      ) : null}
                     </div>
 
-                    {hasOverlapWarnings && (
+                    <div className="space-y-2">
                       <div className="rounded-lg border border-border-black bg-element-bg px-2 py-2">
-                        <SectionLabel>{copy.warningTitle}</SectionLabel>
+                        <SectionLabel>{copy.rules}</SectionLabel>
                         <div
-                          className={`grid gap-1.5 ${isDenseLayout ? 'grid-cols-1' : 'grid-cols-2'}`}
+                          className={`rounded-lg border border-border-black bg-panel-bg px-2 py-2 gap-2 ${isDenseLayout ? 'flex flex-col' : 'flex items-start justify-between'}`}
                         >
-                          <div className="rounded-lg border border-border-black bg-panel-bg px-2 py-1.5">
-                            <div className="text-[8px] font-medium tracking-[0.02em] text-text-tertiary">
-                              {copy.warningBefore}
+                          <div className="min-w-0">
+                            <div className="text-xs font-medium leading-tight text-text-primary">
+                              {copy.avoidSiblingOverlap}
                             </div>
-                            <div className="mt-0.5 text-[12px] font-semibold text-text-primary">
-                              {warningBefore}
+                            <div className="mt-1 text-[11px] leading-relaxed text-text-tertiary">
+                              {copy.avoidSiblingOverlapDesc}
                             </div>
                           </div>
-                          <div className="rounded-lg border border-border-black bg-panel-bg px-2 py-1.5">
-                            <div className="text-[8px] font-medium tracking-[0.02em] text-text-tertiary">
-                              {copy.warningAfter}
+                          <CompactSwitch
+                            checked={avoidSiblingOverlap}
+                            onChange={setAvoidSiblingOverlap}
+                            ariaLabel={copy.avoidSiblingOverlap}
+                            className="rounded-md p-0.5 transition-colors hover:bg-element-hover"
+                          />
+                        </div>
+                      </div>
+
+                      {hasOverlapWarnings && (
+                        <div className="rounded-lg border border-border-black bg-element-bg px-2 py-2">
+                          <SectionLabel>{copy.warningTitle}</SectionLabel>
+                          <div
+                            className={`grid gap-1.5 ${isDenseLayout ? 'grid-cols-1' : 'grid-cols-2'}`}
+                          >
+                            <div className="rounded-lg border border-border-black bg-panel-bg px-2 py-1.5">
+                              <div className="text-[11px] font-medium tracking-[0.02em] text-text-tertiary">
+                                {copy.warningBefore}
+                              </div>
+                              <div className="mt-0.5 text-[12px] font-semibold text-text-primary">
+                                {warningBefore}
+                              </div>
                             </div>
-                            <div className="mt-0.5 text-[12px] font-semibold text-text-primary">
-                              {warningAfter}
+                            <div className="rounded-lg border border-border-black bg-panel-bg px-2 py-1.5">
+                              <div className="text-[11px] font-medium tracking-[0.02em] text-text-tertiary">
+                                {copy.warningAfter}
+                              </div>
+                              <div className="mt-0.5 text-[12px] font-semibold text-text-primary">
+                                {warningAfter}
+                              </div>
                             </div>
                           </div>
                         </div>
-                      </div>
-                    )}
+                      )}
+                    </div>
                   </div>
                 </div>
-              </div>
-            )}
+              }
+            />
           </div>
         </div>
       </div>
@@ -1468,28 +1392,32 @@ export const CollisionOptimizationDialog: React.FC<CollisionOptimizationDialogPr
         className={`shrink-0 gap-2 border-t border-border-black bg-element-bg px-2.5 py-2 ${isCompactLayout ? 'flex flex-wrap items-center' : 'flex items-center'}`}
       >
         <div
-          className={`flex items-center gap-1.25 text-[9px] text-text-tertiary ${isCompactLayout ? 'order-1' : ''}`}
+          className={`flex items-center gap-1.25 text-[11px] text-text-tertiary ${isCompactLayout ? 'order-1' : ''}`}
         >
           <RefreshCw className="h-3 w-3" />
           <span>{footerLabel}</span>
         </div>
         <div className="flex-1" />
-        <button
+        <Button
           type="button"
+          variant="ghost"
+          size="dense"
           onClick={onClose}
-          className={`rounded-md px-2.25 py-1.25 text-[10px] font-medium text-text-secondary transition-colors hover:bg-panel-bg hover:text-text-primary ${isCompactLayout ? 'order-2' : ''}`}
+          className={isCompactLayout ? 'order-2' : ''}
         >
           {t.cancel}
-        </button>
-        <button
+        </Button>
+        <Button
           type="button"
+          variant="primary"
+          size="dense"
+          icon={<Sparkles className="h-3 w-3" />}
           onClick={handleApply}
           disabled={activeOperations.length === 0 || isAnalyzing}
-          className={`flex items-center gap-1.25 rounded-md bg-system-blue-solid px-3 py-1.25 text-[10px] font-semibold text-white transition-colors hover:bg-system-blue disabled:cursor-not-allowed disabled:opacity-50 ${isCompactLayout ? 'order-3 ml-auto' : ''}`}
+          className={`px-3 font-semibold ${isCompactLayout ? 'order-3 ml-auto' : ''}`}
         >
-          <Sparkles className="h-3 w-3" />
           {copy.apply}
-        </button>
+        </Button>
       </div>
     </DraggableWindow>
   );

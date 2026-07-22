@@ -1,7 +1,11 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { ThickerAxes, WorldOriginAxes } from './CoordinateAxes.tsx';
+import {
+  resolveCoordinateAxesDimensions,
+  ThickerAxes,
+  WorldOriginAxes,
+} from './CoordinateAxes.tsx';
 import {
   normalizeOriginAxesSize,
   resolveOriginAxesSizeMax,
@@ -21,6 +25,22 @@ test('ThickerAxes accepts interactive hover and selection affordance props', () 
       selected: true,
     });
   });
+});
+
+test('slim profile reduces the joint-pick frame shaft and arrowhead dimensions', () => {
+  const standard = resolveCoordinateAxesDimensions(0.05, 'standard');
+  const slim = resolveCoordinateAxesDimensions(0.05, 'slim');
+
+  assert.equal(slim.axisLength, standard.axisLength);
+  assert.equal(standard.shaftRadius, 0.0055);
+  assert.equal(standard.headRadius, 0.0055 * 2.6);
+  assert.equal(standard.headLength, 0.0055 * 4.5);
+  assert.equal(slim.shaftRadius, 0.05 * 0.03);
+  assert.equal(slim.headRadius, 0.05 * 0.065);
+  assert.equal(slim.headLength, 0.05 * 0.14);
+  assert.ok(slim.shaftRadius < standard.shaftRadius);
+  assert.ok(slim.headRadius < standard.headRadius);
+  assert.ok(slim.headLength < standard.headLength);
 });
 
 test('WorldOriginAxes can render with default props', () => {

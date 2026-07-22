@@ -1,17 +1,25 @@
 import { useCallback } from 'react';
 
 import {
-  loadBridgeCreateModalModule,
-  loadCollisionOptimizationDialogModule,
+  preloadBridgeCreateModal,
+  preloadCollisionOptimizationDialog,
 } from '@/app/utils/overlayLoaders';
 import type {
   CommitResolvedRobotLoadOutcome,
   WorkspaceLoadIntent,
 } from '@/app/utils/commitResolvedRobotLoad';
 import type { BridgeJoint, RobotFile } from '@/types';
+import { logRegressionError } from '@/shared/debug/consoleDiagnostics';
+
+function preloadWorkspaceOverlay(label: string, preload: () => Promise<unknown>): void {
+  void preload().catch((error: unknown) => {
+    logRegressionError(`[AppLayout] Failed to preload ${label}:`, error);
+  });
+}
 
 interface UseWorkspaceOverlayActionsTranslations {
   addedComponent: string;
+  addedComponentRecovered: string;
   loadingRobot: string;
   preparingAssemblyComponent: string;
   addingAssemblyComponentToWorkspace: string;
@@ -66,15 +74,24 @@ export function useWorkspaceOverlayActions({
           }
           clearAssemblyComponentPreparationOverlay();
           if (outcome?.status === 'committed') {
+            const recoveredItemCount =
+              outcome.component.robot.inspectionContext?.recovery?.recoveredItemCount ?? 0;
             showToast(
-              t.addedComponent.replace('{name}', outcome.component.name),
+              (recoveredItemCount > 0
+                ? t.addedComponentRecovered
+                    .replace('{name}', outcome.component.name)
+                    .replace('{count}', String(recoveredItemCount))
+                : t.addedComponent.replace('{name}', outcome.component.name)),
               'success',
             );
           }
         })
-        .catch(() => {
+        .catch((error: unknown) => {
           clearAssemblyComponentPreparationOverlay();
-          showToast(`Failed to add assembly component: ${file.name}`, 'info');
+          const detail = error instanceof Error && error.message.trim()
+            ? ` ${error.message.trim()}`
+            : '';
+          showToast(`Failed to add assembly component: ${file.name}.${detail}`, 'info');
         });
     },
     [
@@ -86,12 +103,21 @@ export function useWorkspaceOverlayActions({
     ],
   );
 
+  const handlePrefetchBridgeCreateModal = useCallback(() => {
+    preloadWorkspaceOverlay('bridge create modal', preloadBridgeCreateModal);
+  }, []);
+
   const handleCreateBridge = useCallback(() => {
     setBridgePreview(null);
     setShouldRenderBridgeModal(true);
-    void loadBridgeCreateModalModule();
+    handlePrefetchBridgeCreateModal();
     setIsBridgeModalOpen(true);
-  }, [setBridgePreview, setIsBridgeModalOpen, setShouldRenderBridgeModal]);
+  }, [
+    handlePrefetchBridgeCreateModal,
+    setBridgePreview,
+    setIsBridgeModalOpen,
+    setShouldRenderBridgeModal,
+  ]);
 
   const handleCloseBridgeModal = useCallback(() => {
     setBridgePreview(null);
@@ -113,17 +139,23 @@ export function useWorkspaceOverlayActions({
     [addBridge, setBridgePreview],
   );
 
+  const handlePrefetchCollisionOptimizer = useCallback(() => {
+    preloadWorkspaceOverlay('collision optimization dialog', preloadCollisionOptimizationDialog);
+  }, []);
+
   const handleOpenCollisionOptimizer = useCallback(() => {
-    void loadCollisionOptimizationDialogModule();
+    handlePrefetchCollisionOptimizer();
     setIsCollisionOptimizerOpen(true);
-  }, [setIsCollisionOptimizerOpen]);
+  }, [handlePrefetchCollisionOptimizer, setIsCollisionOptimizerOpen]);
 
   return {
     handleAddComponent,
     handleCreateBridge,
+    handlePrefetchBridgeCreateModal,
     handleCloseBridgeModal,
     handleBridgePreviewChange,
     handleCreateBridgeCommit,
     handleOpenCollisionOptimizer,
+    handlePrefetchCollisionOptimizer,
   };
 }

@@ -1,5 +1,6 @@
 import { DEFAULT_JOINT, JointType, type BridgeJoint, type UrdfJoint } from '@/types';
 import { resolveAlignedAssemblyComponentTransformForBridge } from '@/core/robot/assemblyBridgeAlignment';
+import { isEntityEditorLocked } from '@/core/robot/editorLock';
 
 import {
   assertBridgeCanBeApplied,
@@ -43,6 +44,20 @@ export function createBridgeActions(
         params.id ?? createUniqueEntityId(Object.keys(get().workspace.bridges), 'bridge');
       if (get().workspace.bridges[id]) {
         throw new Error(`Bridge "${id}" already exists.`);
+      }
+      if (
+        isEntityEditorLocked(get().workspace, {
+          type: 'link',
+          componentId: params.parentComponentId,
+          entityId: params.parentLinkId,
+        })
+        || isEntityEditorLocked(get().workspace, {
+          type: 'link',
+          componentId: params.childComponentId,
+          entityId: params.childLinkId,
+        })
+      ) {
+        throw new Error('Locked links cannot be used to create a bridge.');
       }
       const defaultJoint = structuredClone(DEFAULT_JOINT);
       const joint: UrdfJoint = {
@@ -98,7 +113,32 @@ export function createBridgeActions(
 
     updateBridge: (bridgeId, patch, options) => {
       const current = get().workspace.bridges[bridgeId];
-      if (!current) {
+      if (
+        !current
+        || isEntityEditorLocked(get().workspace, { type: 'bridge', bridgeId })
+      ) {
+        return false;
+      }
+      const nextParentComponentId = patch.parentComponentId ?? current.parentComponentId;
+      const nextParentLinkId = patch.joint?.parentLinkId
+        ?? patch.parentLinkId
+        ?? current.parentLinkId;
+      const nextChildComponentId = patch.childComponentId ?? current.childComponentId;
+      const nextChildLinkId = patch.joint?.childLinkId
+        ?? patch.childLinkId
+        ?? current.childLinkId;
+      if (
+        isEntityEditorLocked(get().workspace, {
+          type: 'link',
+          componentId: nextParentComponentId,
+          entityId: nextParentLinkId,
+        })
+        || isEntityEditorLocked(get().workspace, {
+          type: 'link',
+          componentId: nextChildComponentId,
+          entityId: nextChildLinkId,
+        })
+      ) {
         return false;
       }
       const realign = shouldRealignBridge(current, patch);
@@ -158,8 +198,11 @@ export function createBridgeActions(
       return changed;
     },
 
-    removeBridge: (bridgeId, options) =>
-      runtime.applyMutation(
+    removeBridge: (bridgeId, options) => {
+      if (isEntityEditorLocked(get().workspace, { type: 'bridge', bridgeId })) {
+        return false;
+      }
+      return runtime.applyMutation(
         'Remove bridge',
         (draft) => {
           if (draft.bridges[bridgeId]) {
@@ -167,6 +210,7 @@ export function createBridgeActions(
           }
         },
         options,
-      ),
+      );
+    },
   };
 }

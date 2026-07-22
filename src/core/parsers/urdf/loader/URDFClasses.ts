@@ -112,7 +112,7 @@ export class URDFJoint extends URDFBase {
         this.limit.upper = source.limit.upper;
         this.limit.effort = source.limit.effort;
         this.limit.velocity = source.limit.velocity;
-        this.ignoreLimits = false;
+        this.ignoreLimits = source.ignoreLimits;
         this.jointValue = source.jointValue ? [...source.jointValue] : [];
         this.origPosition = source.origPosition ? source.origPosition.clone() : null;
         this.origQuaternion = source.origQuaternion ? source.origQuaternion.clone() : null;

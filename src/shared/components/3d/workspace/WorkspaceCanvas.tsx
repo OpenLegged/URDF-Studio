@@ -19,6 +19,7 @@ import {
   CanvasResizeSync,
   NeutralStudioEnvironment,
   SceneLighting,
+  SemanticOutlineProvider,
   SnapshotManager,
   DEFAULT_WORKSPACE_OVERLAY_GIZMO_MARGIN,
   type SnapshotCaptureAction,
@@ -27,6 +28,7 @@ import {
   useAdaptiveInteractionQuality,
   WorkspaceCanvasInteractionStateProvider,
   WorkspaceOrbitControls,
+  resolveCameraFollowLightingStyle,
   WORKSPACE_CANVAS_BACKGROUND,
   WORKSPACE_DEFAULT_CAMERA_FOV,
   WORKSPACE_DEFAULT_CAMERA_ORTHOGRAPHIC_ZOOM,
@@ -73,6 +75,7 @@ interface WorkspaceCanvasProps {
   environmentIntensity?: number;
   environmentIntensityByTheme?: WorkspaceCanvasEnvironmentIntensityByTheme;
   groundOffset?: number;
+  enableAmbientOcclusion?: boolean;
   enableShadows?: boolean;
   shadowMapSize?: number;
   maxDpr?: number;
@@ -170,6 +173,7 @@ export const WorkspaceCanvas = ({
   environmentIntensity = 0.36,
   environmentIntensityByTheme,
   groundOffset = 0,
+  enableAmbientOcclusion = false,
   enableShadows = true,
   shadowMapSize,
   maxDpr,
@@ -216,6 +220,7 @@ export const WorkspaceCanvas = ({
   );
   const failureResetKey = useMemo(() => `${renderKey}:${contextEpoch}`, [renderKey, contextEpoch]);
   const activeBackgroundColor = effectiveTheme === 'light' ? background.light : background.dark;
+  const cameraFollowLightingStyle = resolveCameraFollowLightingStyle(effectiveTheme);
 
   const resolvedEnvironmentIntensity = useMemo(
     () =>
@@ -260,12 +265,20 @@ export const WorkspaceCanvas = ({
       antialias: true,
       alpha: true,
       logarithmicDepthBuffer: true,
-      toneMapping,
-      toneMappingExposure: toneMappingExposure ?? (environment === 'hdr' ? 1.0 : 1.1),
+      toneMapping: cameraFollowPrimary ? THREE.NeutralToneMapping : toneMapping,
+      toneMappingExposure: cameraFollowPrimary
+        ? cameraFollowLightingStyle.toneMappingExposure
+        : (toneMappingExposure ?? (environment === 'hdr' ? 1.0 : 1.1)),
       powerPreference: 'high-performance' as const,
       failIfMajorPerformanceCaveat: false,
     }),
-    [environment, toneMapping, toneMappingExposure],
+    [
+      cameraFollowLightingStyle.toneMappingExposure,
+      cameraFollowPrimary,
+      environment,
+      toneMapping,
+      toneMappingExposure,
+    ],
   );
 
   useEffect(() => {
@@ -559,6 +572,7 @@ export const WorkspaceCanvas = ({
                   setSnapshotRenderActive,
                 }}
               >
+                <SemanticOutlineProvider enableAmbientOcclusion={enableAmbientOcclusion}>
                 <CanvasRenderKeyInvalidator renderKey={renderKey} />
                 <CanvasResizeSync />
                 {cameraProjection === 'orthographic' && (
@@ -571,7 +585,9 @@ export const WorkspaceCanvas = ({
                     far={1000}
                   />
                 )}
-                <color attach="background" args={[activeBackgroundColor]} />
+                {/* Keep the live stage transparent so tone mapping only grades
+                    rendered geometry. The container supplies the exact theme
+                    background, avoiding a washed-grey flat color. */}
                 <Suspense fallback={null}>
                   {environment === 'hdr' && (
                     <Environment
@@ -586,11 +602,8 @@ export const WorkspaceCanvas = ({
                 <SceneLighting
                   theme={effectiveTheme}
                   cameraFollowPrimary={cameraFollowPrimary}
-                  // Keep the shadow feature flag stable across interaction so the
-                  // shadow map is frozen (not toggled on/off, which forces a
-                  // material recompile hitch) while orbiting/dragging. The
-                  // per-frame cost is removed inside SceneLighting via
-                  // shadowMap.autoUpdate, not by disabling shadows here.
+                  // Keep shadows enabled and updating across interaction so
+                  // orbiting and dragging use the exact same lighting path.
                   enableShadows={enableShadows}
                   shadowMapSize={shadowMapSize}
                 />
@@ -633,6 +646,7 @@ export const WorkspaceCanvas = ({
                     />
                   </GizmoHelper>
                 )}
+                </SemanticOutlineProvider>
               </SnapshotRenderStateProvider>
             </WorkspaceCanvasInteractionStateProvider>
           </Canvas>

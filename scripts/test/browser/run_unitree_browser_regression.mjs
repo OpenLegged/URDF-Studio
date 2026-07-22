@@ -349,10 +349,9 @@ export function buildPuppeteerLaunchArgs() {
 export function isIgnorableBrowserConsoleWarning(text) {
   const message = String(text || '');
   return (
-    (message.includes('GL Driver Message') &&
-      message.includes('Performance') &&
-      message.includes('ReadPixels')) ||
-    message.includes('RGBELoader has been deprecated')
+    message.includes('GL Driver Message') &&
+    message.includes('Performance') &&
+    message.includes('ReadPixels')
   );
 }
 

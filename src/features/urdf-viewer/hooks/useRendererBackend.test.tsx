@@ -352,10 +352,14 @@ function StateProbe({
   robotData,
   onRobotLoaded,
   onState,
+  shouldSuspend,
+  suspension,
 }: {
   robotData: RobotData;
   onRobotLoaded: (robot: THREE.Object3D) => void;
   onState: (state: { robot: THREE.Object3D | null; isLoading: boolean }) => void;
+  shouldSuspend?: (robot: THREE.Object3D | null) => boolean;
+  suspension?: Promise<void>;
 }) {
   const state = useRendererBackend({
     sourceFile,
@@ -367,6 +371,10 @@ function StateProbe({
     robotData,
     onRobotLoaded,
   });
+
+  if (suspension && shouldSuspend?.(state.robot)) {
+    throw suspension;
+  }
 
   React.useEffect(() => {
     onState({ robot: state.robot, isLoading: state.isLoading });
@@ -401,12 +409,20 @@ function renderStateProbe(
   robotData: RobotData,
   onRobotLoaded: (robot: THREE.Object3D) => void,
   onState: (state: { robot: THREE.Object3D | null; isLoading: boolean }) => void,
+  options: {
+    shouldSuspend?: (robot: THREE.Object3D | null) => boolean;
+    suspension?: Promise<void>;
+  } = {},
 ) {
   return root.render(
     React.createElement(
       r3fContext.Provider,
       { value: useR3fStore as unknown as React.ContextType<typeof r3fContext> },
-      React.createElement(StateProbe, { robotData, onRobotLoaded, onState }),
+      React.createElement(
+        React.Suspense,
+        { fallback: null },
+        React.createElement(StateProbe, { robotData, onRobotLoaded, onState, ...options }),
+      ),
     ),
   );
 }
@@ -564,6 +580,102 @@ test('useRendererBackend keeps the previous runtime mounted while a full reload 
       'reload should not publish a blank runtime state after a robot has mounted',
     );
   } finally {
+    await act(async () => {
+      root.unmount();
+    });
+    dom.window.close();
+  }
+});
+
+test('useRendererBackend does not dispose the visible runtime before a transition replacement commits', async () => {
+  const { dom, root } = createComponentRoot();
+  const loadedRobots: THREE.Object3D[] = [];
+  const committedRobots: THREE.Object3D[] = [];
+  let replacementRobot: THREE.Object3D | null = null;
+  let suspensionPending = true;
+  let releaseSuspension = () => {};
+  const suspension = new Promise<void>((resolve) => {
+    releaseSuspension = () => {
+      suspensionPending = false;
+      resolve();
+    };
+  });
+
+  const handleRobotLoaded = (robot: THREE.Object3D) => {
+    loadedRobots.push(robot);
+    if (loadedRobots.length === 2) {
+      replacementRobot = robot;
+    }
+  };
+  const handleState = (state: { robot: THREE.Object3D | null }) => {
+    if (state.robot) {
+      committedRobots.push(state.robot);
+    }
+  };
+
+  try {
+    await act(async () => {
+      renderStateProbe(root, createRobotData('#808080'), handleRobotLoaded, handleState);
+    });
+    await waitForCondition(
+      () => loadedRobots.length === 1 && committedRobots.includes(loadedRobots[0]),
+      'expected initial robot load to commit',
+    );
+
+    const visibleRobot = loadedRobots[0];
+    const visibleGeometry = findFirstMesh(visibleRobot).geometry;
+    let visibleGeometryDisposed = false;
+    visibleGeometry.addEventListener('dispose', () => {
+      visibleGeometryDisposed = true;
+    });
+
+    await act(async () => {
+      renderStateProbe(
+        root,
+        createJointOriginRobotData(0.35),
+        handleRobotLoaded,
+        handleState,
+        {
+          shouldSuspend: (robot) =>
+            suspensionPending && replacementRobot !== null && robot === replacementRobot,
+          suspension,
+        },
+      );
+    });
+    await waitForCondition(
+      () => replacementRobot !== null,
+      'expected replacement runtime load to finish',
+    );
+
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    });
+
+    assert.equal(
+      committedRobots.includes(replacementRobot!),
+      false,
+      'replacement should still be waiting for its React commit',
+    );
+    assert.equal(
+      visibleGeometryDisposed,
+      false,
+      'the currently visible runtime must retain its resources until replacement commit',
+    );
+
+    await act(async () => {
+      releaseSuspension();
+      await suspension;
+    });
+    await waitForCondition(
+      () => committedRobots.includes(replacementRobot!),
+      'expected replacement runtime to commit after suspension releases',
+    );
+    await waitForCondition(
+      () => visibleGeometryDisposed,
+      'expected previous runtime resources to dispose after replacement commit',
+    );
+  } finally {
+    releaseSuspension();
     await act(async () => {
       root.unmount();
     });

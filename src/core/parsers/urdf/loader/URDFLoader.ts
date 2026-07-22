@@ -1082,7 +1082,13 @@ export class URDFLoader {
           const loader = new ColladaLoader(manager);
           loader.load(
             path,
-            (dae) => done(dae.scene),
+            (dae) => {
+              if (!dae) {
+                done(null, new Error(`URDFLoader: Collada loader returned no scene for ${path}.`));
+                return;
+              }
+              done(dae.scene);
+            },
             undefined,
             (err) => done(null, err as Error),
           );

@@ -83,7 +83,7 @@ async function main() {
         assertGreaterThan(suite, runtimeTransforms.length, 0, `${label}: runtime transforms present`);
         assert(suite, state.selectedFile?.format === 'usd', `${label}: selected file is USD`);
         assert(suite, state.loadState?.format === 'usd', `${label}: load state is USD`);
-        assertEqual(suite, topo.jointCount, 0, `${label}: fixture hydrates without URDF joints`);
+        assertGreaterThan(suite, topo.jointCount, 0, `${label}: joints > 0 (${topo.jointCount})`);
 
         results.push({
           model: label,
@@ -122,7 +122,12 @@ async function main() {
         assertEqual(suite, state.selectedFile?.name, resolvedFileName, `${fixture.label}: selected file matches upload`);
         assert(suite, state.selectedFile?.format === 'usd', `${fixture.label}: selected file is USD`);
         assert(suite, state.loadState?.format === 'usd', `${fixture.label}: load state is USD`);
-        assertEqual(suite, topo.jointCount, 0, `${fixture.label}: fixture hydrates without URDF joints`);
+        assertGreaterThan(
+          suite,
+          topo.jointCount,
+          0,
+          `${fixture.label}: joints > 0 (${topo.jointCount})`,
+        );
 
         results.push({
           model: fixture.label,

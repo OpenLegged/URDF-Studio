@@ -133,6 +133,7 @@ test('buildUnifiedViewerSceneProps preserves live interaction wiring without pre
   const onAssemblyTransform = () => {};
   const onComponentTransform = () => {};
   const onBridgeTransform = () => {};
+  const onAssemblyComponentAutoGroundResolved = () => {};
 
   const sceneProps = buildUnifiedViewerSceneProps(createSceneArgs({
     controller,
@@ -151,6 +152,8 @@ test('buildUnifiedViewerSceneProps preserves live interaction wiring without pre
       onAssemblyTransform,
       onComponentTransform,
       onBridgeTransform,
+      pendingAutoGroundComponentIds: ['comp_alpha'],
+      onAssemblyComponentAutoGroundResolved,
     },
   }));
 
@@ -172,6 +175,11 @@ test('buildUnifiedViewerSceneProps preserves live interaction wiring without pre
   assert.equal(sceneProps.onAssemblyTransform, onAssemblyTransform);
   assert.equal(sceneProps.onComponentTransform, onComponentTransform);
   assert.equal(sceneProps.onBridgeTransform, onBridgeTransform);
+  assert.deepEqual(sceneProps.pendingAutoGroundComponentIds, ['comp_alpha']);
+  assert.equal(
+    sceneProps.onAssemblyComponentAutoGroundResolved,
+    onAssemblyComponentAutoGroundResolved,
+  );
 });
 
 test('buildUnifiedViewerSceneProps forwards snapshot display overrides without changing interaction rules', () => {

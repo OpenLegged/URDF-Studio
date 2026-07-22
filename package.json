@@ -107,6 +107,7 @@
     "test:browser:mjcf-export": "node scripts/test/browser/test_mjcf_export.mjs",
     "test:browser:sdf-usd-export": "node scripts/test/browser/test_sdf_usd_export.mjs",
     "test:browser:urdf-assembly": "node scripts/test/browser/test_urdf_assembly.mjs",
+    "test:browser:component-grounding": "node scripts/test/browser/test_component_auto_grounding.mjs",
     "test:browser:cross-format-assembly": "node scripts/test/browser/test_cross_format_assembly.mjs",
     "test:browser:assembly-export": "node scripts/test/browser/test_assembly_export.mjs",
     "test:browser:joint-pick": "node scripts/test/browser/test_joint_pick.mjs",

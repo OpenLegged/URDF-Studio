@@ -14,6 +14,7 @@ interface UseBridgeCreateSelectionSyncOptions {
   childCompId: string;
   childLinkId: string;
   handleClose: () => void;
+  enabled: boolean;
   isOpen: boolean;
   onPreviewChange?: (bridge: BridgeJoint | null) => void;
   pickTarget: BridgePickTarget;
@@ -42,6 +43,7 @@ export function useBridgeCreateSelectionSync({
   parentCompId,
   childCompId,
   childLinkId,
+  enabled,
   handleClose,
   isOpen,
   onPreviewChange,
@@ -71,6 +73,12 @@ export function useBridgeCreateSelectionSync({
       return undefined;
     }
 
+    if (!enabled) {
+      resetSelectionSyncState();
+      setInteractionGuard(null);
+      return undefined;
+    }
+
     // Bridge picking starts clean so a selection made before opening the
     // dialog cannot silently fill either endpoint.
     clearSelection();
@@ -79,6 +87,7 @@ export function useBridgeCreateSelectionSync({
   }, [
     clearHover,
     clearSelection,
+    enabled,
     isOpen,
     onPreviewChange,
     resetSelectionSyncState,
@@ -87,6 +96,23 @@ export function useBridgeCreateSelectionSync({
 
   useEffect(() => {
     if (!isOpen) {
+      return undefined;
+    }
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        handleClose();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [handleClose, isOpen]);
+
+  useEffect(() => {
+    if (!isOpen || !enabled) {
       return undefined;
     }
 
@@ -106,29 +132,13 @@ export function useBridgeCreateSelectionSync({
       );
     });
 
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') {
-        handleClose();
-      }
-    };
-
-    window.addEventListener('keydown', handleKeyDown);
     return () => {
       setInteractionGuard(null);
-      window.removeEventListener('keydown', handleKeyDown);
     };
-  }, [
-    childCompId,
-    handleClose,
-    isOpen,
-    parentCompId,
-    pickTarget,
-    setInteractionGuard,
-    workspace,
-  ]);
+  }, [childCompId, enabled, isOpen, parentCompId, pickTarget, setInteractionGuard, workspace]);
 
   useEffect(() => {
-    if (!isOpen) {
+    if (!isOpen || !enabled) {
       return;
     }
 
@@ -183,6 +193,7 @@ export function useBridgeCreateSelectionSync({
   }, [
     childCompId,
     childLinkId,
+    enabled,
     isOpen,
     parentCompId,
     pickTarget,

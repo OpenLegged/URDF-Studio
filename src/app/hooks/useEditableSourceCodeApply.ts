@@ -15,8 +15,8 @@ import type {
 } from '@/types';
 import type { SourceCodeEditorApplyRequest } from '@/features/code-editor';
 import { useAssetsStore } from '@/store/assetsStore';
-import { useWorkspaceStore } from '@/store/workspaceStore';
-import type { SourceCodeDocumentChangeTarget } from '@/app/utils/sourceCodeDocuments';
+import { useWorkspaceStore, type WorkspaceMutationOptions } from '@/store/workspaceStore';
+import type { ComponentSourceCodeDocumentChangeTarget } from '@/app/utils/sourceCodeDocuments';
 import { parseEditableRobotSourceWithWorker } from './robotImportWorkerBridge';
 
 export interface PreparedComponentSourceApply {
@@ -24,6 +24,7 @@ export interface PreparedComponentSourceApply {
   expectedWorkspaceRevision: number;
   robot: RobotData;
   draft: ComponentSourceDraft;
+  workspaceMutationOptions?: WorkspaceMutationOptions;
 }
 
 /** Synchronous CAS commit; validation failures mutate neither workspace nor drafts. */
@@ -32,6 +33,7 @@ export function commitPreparedComponentSourceApply({
   expectedWorkspaceRevision,
   robot,
   draft,
+  workspaceMutationOptions,
 }: PreparedComponentSourceApply): boolean {
   const normalizedRobot = normalizeComponentRobot(robot);
   if (
@@ -44,6 +46,12 @@ export function commitPreparedComponentSourceApply({
   const before = useWorkspaceStore.getState();
   const component = before.workspace.components[componentId];
   if (!component || before.revision !== expectedWorkspaceRevision) return false;
+  if (
+    (before.transaction?.id ?? null)
+    !== (workspaceMutationOptions?.operationId ?? null)
+  ) {
+    return false;
+  }
 
   const robotChanged = createSourceSemanticRobotHash(component.robot) !== draft.robotSnapshotHash;
   if (robotChanged) {
@@ -51,7 +59,7 @@ export function commitPreparedComponentSourceApply({
       componentId,
       expectedWorkspaceRevision,
       normalizedRobot,
-      { label: 'Apply component source' },
+      { label: 'Apply component source', ...workspaceMutationOptions },
     );
     if (!replaced) return false;
   } else if (useWorkspaceStore.getState().revision !== expectedWorkspaceRevision) {
@@ -111,11 +119,11 @@ export function useEditableSourceCodeApply({
 
   const handleCodeChange = useCallback(async (
     newCode: string,
-    target: SourceCodeDocumentChangeTarget | undefined = undefined,
+    target: ComponentSourceCodeDocumentChangeTarget | undefined = undefined,
     _applyRequest: SourceCodeEditorApplyRequest | undefined = undefined,
   ): Promise<boolean> => {
-    const componentId = target?.componentId;
-    if (!componentId) return false;
+    if (target?.kind !== 'component') return false;
+    const componentId = target.componentId;
 
     const workspaceState = useWorkspaceStore.getState();
     const component = workspaceState.workspace.components[componentId];

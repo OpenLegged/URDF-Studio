@@ -1,13 +1,9 @@
 import {
   removeCollisionGeometryByObjectIndex,
+  replaceCollisionGeometriesByObjectIndex,
   updateCollisionGeometryByObjectIndex,
 } from '@/core/robot';
-import type {
-  GeometryType as GeometryTypeValue,
-  RobotData,
-  UrdfLink,
-  UrdfVisual,
-} from '@/types';
+import type { GeometryType as GeometryTypeValue, RobotData, UrdfLink, UrdfVisual } from '@/types';
 import { GeometryType } from '@/types';
 import {
   convertGeometryType,
@@ -28,13 +24,22 @@ import {
   buildCoaxialMergeCandidates,
   buildManualMergeCandidates,
 } from './collision-optimization/coaxialMergeCandidates';
+import { buildCollisionOptimizationMeshAnalysisOptions } from './collision-optimization/meshAnalysisOptions';
+import { buildApproximateMeshCapsuleGeometries } from './collision-optimization/meshCapsuleGeometries';
+import type {
+  CollisionOptimizationBaseAnalysis,
+  CollisionOptimizationCandidate,
+  CollisionOptimizationMutation,
+  CollisionOptimizationReason,
+  CollisionOptimizationSettings,
+  MeshOptimizationStrategy,
+} from './collision-optimization/contracts';
 import {
   cloneCollisionGeometry as cloneGeometry,
   collectCollisionTargets,
   filterCollisionTargets as filterTargets,
   getCollisionTargetLinkGroupKey as getLinkGroupKey,
   normalizeCollisionGeometry as normalizeGeometry,
-  type CollisionOptimizationScope,
   type CollisionOptimizationSource,
   type CollisionTargetRef,
 } from './collision-optimization/collisionTargets';
@@ -54,59 +59,20 @@ export type {
   CollisionOptimizationSource,
   CollisionTargetRef,
 } from './collision-optimization/collisionTargets';
-export type MeshOptimizationStrategy = 'keep' | 'smart' | 'box' | 'sphere' | 'cylinder' | 'capsule';
-export type CylinderOptimizationStrategy = 'keep' | 'capsule';
-export type RodBoxOptimizationStrategy = 'keep' | 'capsule' | 'cylinder';
-export type CoaxialJointMergeStrategy = 'keep' | 'capsule' | 'cylinder';
-export type CollisionOptimizationManualMergeStrategy = Exclude<CoaxialJointMergeStrategy, 'keep'>;
-
-export interface CollisionOptimizationManualMergePair {
-  primaryTargetId: string;
-  secondaryTargetId: string;
-  strategy?: CollisionOptimizationManualMergeStrategy | null;
-}
-
-export interface CollisionOptimizationSettings {
-  scope: CollisionOptimizationScope;
-  meshStrategy: MeshOptimizationStrategy;
-  cylinderStrategy: CylinderOptimizationStrategy;
-  rodBoxStrategy: RodBoxOptimizationStrategy;
-  coaxialJointMergeStrategy: CoaxialJointMergeStrategy;
-  manualMergePairs?: CollisionOptimizationManualMergePair[];
-  avoidSiblingOverlap: boolean;
-  selectedTargetId?: string | null;
-}
-
-export type CollisionOptimizationReason =
-  | 'mesh-smart-fit'
-  | 'mesh-manual-fit'
-  | 'cylinder-to-capsule'
-  | 'rod-box-to-capsule'
-  | 'rod-box-to-cylinder'
-  | 'coaxial-merge-to-capsule'
-  | 'coaxial-merge-to-cylinder';
-
-export type CollisionOptimizationStatus =
-  | 'ready'
-  | 'disabled'
-  | 'missing-mesh-path'
-  | 'mesh-analysis-failed'
-  | 'no-rule-match';
-
-export interface CollisionOptimizationCandidate {
-  target: CollisionTargetRef;
-  secondaryTarget?: CollisionTargetRef;
-  eligible: boolean;
-  currentType: GeometryTypeValue;
-  suggestedType: GeometryTypeValue | null;
-  status: CollisionOptimizationStatus;
-  reason?: CollisionOptimizationReason;
-  nextGeometry?: UrdfVisual;
-  mutations?: CollisionOptimizationMutation[];
-  affectedTargetIds?: string[];
-  conflictPriority?: number;
-  autoSelect?: boolean;
-}
+export type {
+  CoaxialJointMergeStrategy,
+  CollisionOptimizationBaseAnalysis,
+  CollisionOptimizationCandidate,
+  CollisionOptimizationManualMergePair,
+  CollisionOptimizationManualMergeStrategy,
+  CollisionOptimizationMutation,
+  CollisionOptimizationReason,
+  CollisionOptimizationSettings,
+  CollisionOptimizationStatus,
+  CylinderOptimizationStrategy,
+  MeshOptimizationStrategy,
+  RodBoxOptimizationStrategy,
+} from './collision-optimization/contracts';
 
 export function createCollisionOptimizationCandidateKey(
   candidate: Pick<CollisionOptimizationCandidate, 'target' | 'secondaryTarget'>,
@@ -123,14 +89,6 @@ export function createCollisionOptimizationCandidateKeyFromTargets(
   return secondaryTargetId
     ? `${primaryTargetId}::${secondaryTargetId}`
     : `${primaryTargetId}::single`;
-}
-
-export interface CollisionOptimizationMutation {
-  componentId?: string;
-  linkId: string;
-  objectIndex: number;
-  type: 'update' | 'remove';
-  nextGeometry?: UrdfVisual;
 }
 
 export interface CollisionOptimizationOperation {
@@ -151,13 +109,6 @@ export interface CollisionOptimizationAnalysis {
   filteredTargets: CollisionTargetRef[];
   candidates: CollisionOptimizationCandidate[];
   meshAnalysisByTargetId: Record<string, MeshAnalysis | null>;
-}
-
-export interface CollisionOptimizationBaseAnalysis {
-  source: CollisionOptimizationSource;
-  targets: CollisionTargetRef[];
-  meshAnalysisByTargetId: Record<string, MeshAnalysis | null>;
-  clearanceWorld: CollisionOptimizationClearanceWorld | null;
 }
 
 const DEFAULT_CANDIDATE_ANALYSIS_YIELD_EVERY = 8;
@@ -230,20 +181,6 @@ function resolveCollisionTargetSourceFilePath(
   }
 
   return fallbackSourceFilePath;
-}
-
-function isRodLikeBox(geometry: UrdfVisual): boolean {
-  if (geometry.type !== GeometryType.BOX) return false;
-
-  const dims = [geometry.dimensions.x, geometry.dimensions.y, geometry.dimensions.z]
-    .map((value) => Math.max(value, 1e-6))
-    .sort((left, right) => left - right);
-  const [smallest, middle, largest] = dims;
-
-  return (
-    largest / Math.max(middle, smallest) >= 1.75 &&
-    Math.abs(middle - smallest) / Math.max(middle, smallest) <= 0.35
-  );
 }
 
 function pickSmartMeshStrategy(analysis: MeshAnalysis): MeshOptimizationStrategy {
@@ -323,6 +260,34 @@ function buildMeshCandidate(
   const resolvedStrategy =
     settings.meshStrategy === 'smart' ? pickSmartMeshStrategy(analysis) : settings.meshStrategy;
   const suggestedType = toGeometryType(resolvedStrategy);
+  if (suggestedType === GeometryType.CAPSULE) {
+    const nextGeometries = buildApproximateMeshCapsuleGeometries(
+      target.geometry,
+      analysis,
+      settings.avoidSiblingOverlap ? clearanceContext : undefined,
+    );
+    const nextGeometry = nextGeometries[0]!;
+
+    return {
+      target,
+      eligible: true,
+      currentType: target.geometry.type,
+      suggestedType,
+      status: 'ready',
+      reason: settings.meshStrategy === 'smart' ? 'mesh-smart-fit' : 'mesh-manual-fit',
+      nextGeometry,
+      mutations: [
+        {
+          componentId: target.componentId,
+          linkId: target.linkId,
+          objectIndex: target.objectIndex,
+          type: 'replace-many',
+          nextGeometries,
+        },
+      ],
+    };
+  }
+
   const converted = convertGeometryType(
     target.geometry,
     suggestedType,
@@ -394,11 +359,7 @@ function buildPrimitiveCandidate(
     };
   }
 
-  if (
-    target.geometry.type === GeometryType.BOX &&
-    settings.rodBoxStrategy !== 'keep' &&
-    isRodLikeBox(target.geometry)
-  ) {
+  if (target.geometry.type === GeometryType.BOX && settings.rodBoxStrategy !== 'keep') {
     const suggestedType =
       settings.rodBoxStrategy === 'capsule' ? GeometryType.CAPSULE : GeometryType.CYLINDER;
     const converted = convertGeometryType(
@@ -502,8 +463,12 @@ export async function prepareCollisionOptimizationBaseAnalysisWithAnalyzer(
   const includeMeshClearanceObstacles =
     options.includeMeshClearanceObstacles ?? includeClearanceData;
   const includePrimitiveFits = options.includePrimitiveFits ?? false;
-  const clearancePointCollectionLimit = Math.max(options.pointCollectionLimit ?? 1024, 1);
-  const clearanceSurfacePointLimit = Math.max(options.surfacePointLimit ?? 512, 1);
+  const meshAnalysisOptions = buildCollisionOptimizationMeshAnalysisOptions({
+    includeMeshClearanceObstacles,
+    includePrimitiveFits,
+    pointCollectionLimit: options.pointCollectionLimit,
+    surfacePointLimit: options.surfacePointLimit,
+  });
   const workerResults = await analyzeMeshBatch({
     assets,
     tasks: meshTargets.map((target) => {
@@ -521,12 +486,7 @@ export async function prepareCollisionOptimizationBaseAnalysisWithAnalyzer(
         sourceFilePath: targetSourceFilePath,
       };
     }),
-    options: {
-      includePrimitiveFits,
-      includeSurfacePoints: includeMeshClearanceObstacles,
-      pointCollectionLimit: includeMeshClearanceObstacles ? clearancePointCollectionLimit : 1,
-      surfacePointLimit: includeMeshClearanceObstacles ? clearanceSurfacePointLimit : 1,
-    },
+    options: meshAnalysisOptions,
     signal: options.signal,
   });
 
@@ -667,7 +627,9 @@ export async function analyzeCollisionOptimization(
 ): Promise<CollisionOptimizationAnalysis> {
   const baseAnalysis = await prepareCollisionOptimizationBaseAnalysis(source, assets, {
     includePrimitiveFits:
-      settings.coaxialJointMergeStrategy !== 'keep' || Boolean(settings.manualMergePairs?.length),
+      settings.meshStrategy !== 'keep' ||
+      settings.coaxialJointMergeStrategy !== 'keep' ||
+      Boolean(settings.manualMergePairs?.length),
   });
   return buildCollisionOptimizationAnalysisAsync(baseAnalysis, settings);
 }
@@ -756,10 +718,21 @@ export function buildCollisionOptimizationOperations(
 
       affectedTargetIds.forEach((targetId) => consumedTargetIds.add(targetId));
       const mutations = candidate.mutations?.length
-        ? candidate.mutations.map((mutation) => ({
-            ...mutation,
-            nextGeometry: mutation.nextGeometry ? cloneGeometry(mutation.nextGeometry) : undefined,
-          }))
+        ? candidate.mutations.map((mutation) => {
+            if (mutation.type === 'replace-many') {
+              return {
+                ...mutation,
+                nextGeometries: mutation.nextGeometries.map(cloneGeometry),
+              };
+            }
+            if (mutation.type === 'update') {
+              return {
+                ...mutation,
+                nextGeometry: cloneGeometry(mutation.nextGeometry),
+              };
+            }
+            return { ...mutation };
+          })
         : [
             {
               componentId: candidate.target.componentId,
@@ -796,8 +769,22 @@ export function applyCollisionOptimizationOperationsToLinks(
 ): Record<string, UrdfLink> {
   const nextLinks: Record<string, UrdfLink> = { ...links };
 
-  operations.forEach((operation) => {
-    operation.mutations.forEach((mutation) => {
+  const mutations = operations.flatMap((operation) => operation.mutations);
+  const mutationKeys = new Set<string>();
+  mutations.forEach((mutation) => {
+    const key = `${mutation.linkId}::${mutation.objectIndex}`;
+    if (mutationKeys.has(key)) {
+      throw new Error(`Duplicate collision optimization mutation target: ${key}`);
+    }
+    mutationKeys.add(key);
+  });
+
+  mutations
+    .sort(
+      (left, right) =>
+        left.linkId.localeCompare(right.linkId) || right.objectIndex - left.objectIndex,
+    )
+    .forEach((mutation) => {
       const link = nextLinks[mutation.linkId];
       if (!link) return;
 
@@ -809,15 +796,24 @@ export function applyCollisionOptimizationOperationsToLinks(
         return;
       }
 
-      if (mutation.nextGeometry) {
-        nextLinks[mutation.linkId] = updateCollisionGeometryByObjectIndex(
+      if (mutation.type === 'replace-many') {
+        if (mutation.nextGeometries.length < 1 || mutation.nextGeometries.length > 3) {
+          throw new Error('Mesh capsule replacement must contain between 1 and 3 geometries');
+        }
+        nextLinks[mutation.linkId] = replaceCollisionGeometriesByObjectIndex(
           link,
           mutation.objectIndex,
-          mutation.nextGeometry,
-        );
+          mutation.nextGeometries,
+        ).link;
+        return;
       }
+
+      nextLinks[mutation.linkId] = updateCollisionGeometryByObjectIndex(
+        link,
+        mutation.objectIndex,
+        mutation.nextGeometry,
+      );
     });
-  });
 
   return nextLinks;
 }

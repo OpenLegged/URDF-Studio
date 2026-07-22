@@ -1,7 +1,12 @@
 import React, { useEffect, useMemo, useSyncExternalStore } from 'react';
 import { AlertCircle, FileCode, LoaderCircle, Plus } from 'lucide-react';
 
-import { DraggableWindow } from '@/shared/components/DraggableWindow';
+import {
+  DraggableWindow,
+  FLOATING_WINDOW_HEADER_HEIGHT_CLASS,
+  FLOATING_WINDOW_RADIUS_CLASS,
+  FLOATING_WINDOW_TITLE_CLASS,
+} from '@/shared/components/DraggableWindow';
 import { useDraggableWindow } from '@/shared/hooks/useDraggableWindow';
 import { translations } from '@/shared/i18n';
 import {
@@ -284,7 +289,7 @@ export function FilePreviewWindow({
       window={windowState}
       onClose={onClose}
       title={
-        <div className="flex items-center gap-2 text-sm font-medium text-text-primary">
+        <div className={`flex items-center gap-2 ${FLOATING_WINDOW_TITLE_CLASS}`}>
           <FileCode className="h-4 w-4 text-system-blue" />
           <span className="max-w-[320px] truncate" title={file.name}>
             {t.filePreview}: {displayName}
@@ -305,10 +310,10 @@ export function FilePreviewWindow({
           </button>
         ) : null
       }
-      className="flex flex-col overflow-hidden rounded-lg border border-border-black bg-panel-bg shadow-2xl"
+      className={`flex flex-col overflow-hidden ${FLOATING_WINDOW_RADIUS_CLASS} border border-border-black bg-panel-bg shadow-2xl`}
       zIndex={filePreviewWindowLayer.zIndex}
       onActivate={filePreviewWindowLayer.onActivate}
-      headerClassName="flex h-11 items-center justify-between border-b border-border-black bg-element-bg px-3"
+      headerClassName={`flex ${FLOATING_WINDOW_HEADER_HEIGHT_CLASS} shrink-0 items-center justify-between border-b border-border-black bg-element-bg px-3`}
       showResizeHandles
       showMinimizeButton={false}
       closeTitle={t.closePreview}

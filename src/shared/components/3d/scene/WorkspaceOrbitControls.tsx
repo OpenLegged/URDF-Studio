@@ -91,6 +91,7 @@ export function WorkspaceOrbitControls({
   const invalidate = useThree((state) => state.invalidate);
   const set = useThree((state) => state.set);
   const get = useThree((state) => state.get);
+  const size = useThree((state) => state.size);
   const controls = useMemo(() => new OrbitControlsImpl(camera), [camera]);
   const controlsRef = useRef<OrbitControlsImpl | null>(controls);
   const { getClipBounds, getPanBounds, invalidate: invalidateSceneBounds } = useSceneBoundsCache();
@@ -261,9 +262,46 @@ export function WorkspaceOrbitControls({
       return;
     }
 
-    applyWorkspaceCameraSnapshot(camera, controlsRef.current, initialCameraSnapshot);
+    // The snapshot stores the aspect ratio of the workspace it was captured in.
+    // When it seeds a preview whose frame has a different shape (a fixed
+    // 16:9 / 1:1 / … preset, or the inset-adjusted viewport aspect), copying
+    // that stored aspect squishes the model. Seed with the live render-surface
+    // aspect instead so only the initial view angle is inherited.
+    const { width, height } = get().size;
+    const surfaceAspectRatio = width > 0 && height > 0 ? width / height : null;
+    applyWorkspaceCameraSnapshot(camera, controlsRef.current, initialCameraSnapshot, {
+      aspectRatioOverride: surfaceAspectRatio,
+    });
     invalidate();
-  }, [camera, initialCameraSnapshot, invalidate]);
+  }, [camera, get, initialCameraSnapshot, invalidate]);
+
+  // Keep the perspective aspect ratio locked to the actual render surface on
+  // every resize (e.g. switching the snapshot aspect preset reshapes the
+  // preview canvas). This only touches the projection aspect, so a user's
+  // current orbit/pan/zoom is preserved. Orthographic cameras manage their own
+  // framing via drei's <OrthographicCamera>, so they are left untouched.
+  useEffect(() => {
+    const perspectiveCamera = camera as typeof camera & {
+      isPerspectiveCamera?: boolean;
+      aspect?: number;
+      updateProjectionMatrix?: () => void;
+    };
+    if (!perspectiveCamera.isPerspectiveCamera || typeof perspectiveCamera.aspect !== 'number') {
+      return;
+    }
+    if (size.width <= 0 || size.height <= 0) {
+      return;
+    }
+
+    const nextAspect = size.width / size.height;
+    if (Math.abs(perspectiveCamera.aspect - nextAspect) <= 1e-6) {
+      return;
+    }
+
+    perspectiveCamera.aspect = nextAspect;
+    perspectiveCamera.updateProjectionMatrix?.();
+    invalidate();
+  }, [camera, invalidate, size.height, size.width]);
 
   // Sync clip planes + pan/zoom speed on every controls 'change' event
   // (rotate / pan / zoom / damping ticks / programmatic controls.update())

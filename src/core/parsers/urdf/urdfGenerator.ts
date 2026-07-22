@@ -249,11 +249,30 @@ const generateLimitTag = (joint: UrdfJoint, formatScalar: (n: number) => string)
   if (!joint.limit) {
     return null;
   }
+  const finiteAttribute = (name: string, value: number | undefined): string[] =>
+    Number.isFinite(value) ? [`${name}="${formatScalar(Number(value))}"`] : [];
+  const attributes = FULL_LIMIT_EXPORT_TYPES.has(jointType)
+    ? [
+        ...finiteAttribute('lower', joint.limit.lower),
+        ...finiteAttribute('upper', joint.limit.upper),
+        ...finiteAttribute('effort', joint.limit.effort),
+        ...finiteAttribute('velocity', joint.limit.velocity),
+      ]
+    : EFFORT_VELOCITY_LIMIT_EXPORT_TYPES.has(jointType)
+      ? [
+          ...finiteAttribute('effort', joint.limit.effort),
+          ...finiteAttribute('velocity', joint.limit.velocity),
+        ]
+      : [];
+
+  if (attributes.length === 0) {
+    return null;
+  }
   if (FULL_LIMIT_EXPORT_TYPES.has(jointType)) {
-    return `    <limit lower="${formatScalar(joint.limit.lower)}" upper="${formatScalar(joint.limit.upper)}" effort="${formatScalar(joint.limit.effort)}" velocity="${formatScalar(joint.limit.velocity)}" />`;
+    return `    <limit ${attributes.join(' ')} />`;
   }
   if (EFFORT_VELOCITY_LIMIT_EXPORT_TYPES.has(jointType)) {
-    return `    <limit effort="${formatScalar(joint.limit.effort)}" velocity="${formatScalar(joint.limit.velocity)}" />`;
+    return `    <limit ${attributes.join(' ')} />`;
   }
   return null;
 };

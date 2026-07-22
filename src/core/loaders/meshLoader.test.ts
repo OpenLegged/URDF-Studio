@@ -814,10 +814,12 @@ test('parseColladaSceneData round-trips textureless Collada scenes through Objec
   assert.equal(restoredScene.children.length > 0, true);
 
   const referenceLoader = new ColladaLoader();
-  const referenceScene = referenceLoader.parse(
+  const referenceDae = referenceLoader.parse(
     normalizeColladaUpAxis(colladaText).content,
     THREE.LoaderUtils.extractUrlBase(meshPath),
-  ).scene;
+  );
+  assert.ok(referenceDae);
+  const referenceScene = referenceDae.scene;
 
   const restoredBox = getWorldBox(restoredScene);
   const referenceBox = getWorldBox(referenceScene);
@@ -1605,6 +1607,48 @@ test('findAssetByIndex ranks filename-only package fallbacks by the closest urdf
       'onshape-to-robot-examples/dog_mujoco/',
     ),
     'blob:dog-cube',
+  );
+});
+
+test('findAssetByIndex does not substitute a same-stem mesh file for a missing image/texture request', () => {
+  // Regression: when a Collada mesh (wing.dae) is present but its referenced
+  // texture (wing.png) is missing from the asset index, the mesh-extension
+  // candidate fallback (Strategy 7) used to return wing.dae as the texture
+  // path. The runtime then tried to load the .dae as an image and errored.
+  const assets = {
+    'zephyr_delta_wing/meshes/wing.dae': 'blob:wing-mesh',
+  };
+  const index = buildAssetIndex(assets, 'zephyr_delta_wing/meshes/');
+
+  assert.equal(
+    findAssetByIndex(
+      'http://localhost/zephyr_delta_wing/meshes/zephyr_delta_wing/materials/textures/wing.png',
+      index,
+      'zephyr_delta_wing/meshes/',
+    ),
+    null,
+  );
+  // The mesh itself still resolves normally for genuine mesh requests.
+  assert.equal(
+    findAssetByIndex('zephyr_delta_wing/meshes/wing.dae', index, 'zephyr_delta_wing/meshes/'),
+    'blob:wing-mesh',
+  );
+});
+
+test('findAssetByIndex still resolves a present texture even when a same-stem mesh exists', () => {
+  const assets = {
+    'zephyr_delta_wing/meshes/wing.dae': 'blob:wing-mesh',
+    'zephyr_delta_wing/materials/textures/wing.png': 'blob:wing-texture',
+  };
+  const index = buildAssetIndex(assets, 'zephyr_delta_wing/meshes/');
+
+  assert.equal(
+    findAssetByIndex(
+      'http://localhost/zephyr_delta_wing/meshes/zephyr_delta_wing/materials/textures/wing.png',
+      index,
+      'zephyr_delta_wing/meshes/',
+    ),
+    'blob:wing-texture',
   );
 });
 

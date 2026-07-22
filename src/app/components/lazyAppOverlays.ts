@@ -1,4 +1,4 @@
-import { lazy } from 'react';
+import { createPreloadableComponent } from '../utils/preloadableComponent';
 
 export const loadAIInspectionConnectorModule = () => import('./ai/AIInspectionConnector');
 export const loadAIConversationConnectorModule = () => import('./ai/AIConversationConnector');
@@ -8,36 +8,52 @@ export const loadDisconnectedWorkspaceUrdfExportDialogModule = () =>
 export const loadExportProgressDialogModule = () => import('@/features/file-io');
 export const loadSettingsModalModule = () => import('./SettingsModal');
 
-export const AIInspectionConnector = lazy(() =>
-  loadAIInspectionConnectorModule().then((module) => ({
-    default: module.AIInspectionConnector,
-  })),
+const aiInspectionConnectorResource = createPreloadableComponent(
+  loadAIInspectionConnectorModule,
+  (module) => module.AIInspectionConnector,
 );
 
-export const AIConversationConnector = lazy(() =>
-  loadAIConversationConnectorModule().then((module) => ({
-    default: module.AIConversationConnector,
-  })),
+const aiConversationConnectorResource = createPreloadableComponent(
+  loadAIConversationConnectorModule,
+  (module) => module.AIConversationConnector,
 );
 
-export const DisconnectedWorkspaceUrdfExportDialog = lazy(() =>
-  loadDisconnectedWorkspaceUrdfExportDialogModule().then((module) => ({
-    default: module.DisconnectedWorkspaceUrdfExportDialog,
-  })),
+const disconnectedWorkspaceUrdfExportDialogResource = createPreloadableComponent(
+  loadDisconnectedWorkspaceUrdfExportDialogModule,
+  (module) => module.DisconnectedWorkspaceUrdfExportDialog,
 );
 
-export const ExportProgressDialog = lazy(() =>
-  loadExportProgressDialogModule().then((module) => ({
-    default: module.ExportProgressDialog,
-  })),
+const exportProgressDialogResource = createPreloadableComponent(
+  loadExportProgressDialogModule,
+  (module) => module.ExportProgressDialog,
 );
 
-export const ExportDialogConnector = lazy(() =>
-  loadExportDialogConnectorModule().then((module) => ({
-    default: module.ExportDialogConnector,
-  })),
+const exportDialogConnectorResource = createPreloadableComponent(
+  loadExportDialogConnectorModule,
+  (module) => module.ExportDialogConnector,
 );
 
-export const SettingsModal = lazy(() =>
-  loadSettingsModalModule().then((module) => ({ default: module.SettingsModal })),
+const settingsModalResource = createPreloadableComponent(
+  loadSettingsModalModule,
+  (module) => module.SettingsModal,
 );
+
+export const AIInspectionConnector = aiInspectionConnectorResource.Component;
+export const preloadAIInspectionConnector = aiInspectionConnectorResource.preload;
+
+export const AIConversationConnector = aiConversationConnectorResource.Component;
+export const preloadAIConversationConnector = aiConversationConnectorResource.preload;
+
+export const DisconnectedWorkspaceUrdfExportDialog =
+  disconnectedWorkspaceUrdfExportDialogResource.Component;
+export const preloadDisconnectedWorkspaceUrdfExportDialog =
+  disconnectedWorkspaceUrdfExportDialogResource.preload;
+
+export const ExportProgressDialog = exportProgressDialogResource.Component;
+export const preloadExportProgressDialog = exportProgressDialogResource.preload;
+
+export const ExportDialogConnector = exportDialogConnectorResource.Component;
+export const preloadExportDialogConnector = exportDialogConnectorResource.preload;
+
+export const SettingsModal = settingsModalResource.Component;
+export const preloadSettingsModal = settingsModalResource.preload;

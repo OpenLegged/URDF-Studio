@@ -46,9 +46,7 @@ export function Providers({ children }: ProvidersProps) {
   );
 
   useLayoutEffect(() => {
-    applyDocumentTheme(effectiveTheme, {
-      animate: document.documentElement.dataset.theme !== undefined,
-    });
+    applyDocumentTheme(effectiveTheme);
   }, [effectiveTheme]);
 
   // Update document title based on language
@@ -56,15 +54,6 @@ export function Providers({ children }: ProvidersProps) {
     document.title = t.documentTitle;
     document.documentElement.lang = lang === 'zh' ? 'zh-CN' : 'en';
     document.documentElement.setAttribute('data-lang', lang);
-
-    // Keep the canonical link aligned with the active language variant.
-    const canonical = document.querySelector('link[rel="canonical"]');
-    if (canonical) {
-      canonical.setAttribute(
-        'href',
-        lang === 'zh' ? 'https://urdf.enkeebot.com/zh/' : 'https://urdf.enkeebot.com/',
-      );
-    }
   }, [lang, t]);
 
   return (

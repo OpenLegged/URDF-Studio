@@ -313,7 +313,7 @@ export const generateSkeletonXML = (robot: RobotState, options: SkeletonExportOp
     const rangeAttribute =
       joint.type === JointType.CONTINUOUS || !hasFiniteJointRange(joint)
         ? ''
-        : ` range="${formatScalar(joint.limit!.lower)} ${formatScalar(joint.limit!.upper)}"`;
+        : ` range="${formatScalar(Number(joint.limit!.lower))} ${formatScalar(Number(joint.limit!.upper))}"`;
     const effortAttribute =
       (joint.limit?.effort ?? 0) > 0
         ? ` actuatorfrcrange="${formatScalar(-(joint.limit?.effort ?? 0))} ${formatScalar(joint.limit?.effort ?? 0)}"`

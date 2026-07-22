@@ -52,9 +52,9 @@ export function getJointTypeIcon(type: JointType) {
 }
 
 const treeRowHoverClass =
-  'hover:bg-system-blue/10 hover:text-text-primary hover:ring-1 hover:ring-inset hover:ring-system-blue/15 dark:hover:bg-system-blue/20 dark:hover:ring-system-blue/25';
+  'hover:bg-element-hover/80 hover:text-text-primary hover:ring-1 hover:ring-inset hover:ring-border-black/60';
 const treeRowHoveredClass =
-  'bg-system-blue/10 text-text-primary ring-1 ring-inset ring-system-blue/15 dark:bg-system-blue/18 dark:ring-system-blue/25';
+  'bg-element-hover/80 text-text-primary ring-1 ring-inset ring-border-black/60';
 const treeRowSelectedClass =
   'bg-system-blue/10 text-text-primary shadow-sm ring-1 ring-inset ring-system-blue/20 dark:bg-system-blue/20 dark:ring-system-blue/30';
 const treeRowAttentionClass =

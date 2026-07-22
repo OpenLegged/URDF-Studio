@@ -2694,6 +2694,7 @@ bool appendInstanceGeometryNode(
   const char* instanceGeometryEnd,
   const char* instanceElementEnd,
   const float worldMatrix[16],
+  const std::string& parentName,
   ParseState& state
 ) {
   Node node;
@@ -2704,6 +2705,14 @@ bool appendInstanceGeometryNode(
   const std::string instanceName = readAttribute(instanceGeometry, instanceGeometryEnd, "name");
   if (!instanceName.empty()) {
     node.name = instanceName;
+  }
+  // When the node itself carries no name (and the instance_geometry has no
+  // name override), fall back to the nearest named ancestor node.  This keeps
+  // submesh lookups (e.g. SDF `<submesh><name>Propeller</name>`) working when
+  // an authored `<node name="Propeller">` wraps a transform-only intermediate
+  // `<node>` that ultimately hosts the `<instance_geometry>`.
+  if (node.name.empty() && !parentName.empty()) {
+    node.name = parentName;
   }
   node.geometryId = stripFragment(readAttribute(instanceGeometry, instanceGeometryEnd, "url"));
   if (node.geometryId.empty()) {
@@ -2744,6 +2753,7 @@ bool parseNodeBlock(
   const char* nodeStart,
   const char* nodeEnd,
   const float parentMatrix[16],
+  const std::string& parentName,
   ParseState& state,
   uint32_t depth = 0
 ) {
@@ -2762,6 +2772,16 @@ bool parseNodeBlock(
   if (!parseNodeTransforms(nodeTagEnd + 1, nodeEnd, localNode)) {
     return false;
   }
+
+  // Resolve this node's own name so we can propagate it to unnamed children.
+  // A node with only an `id` attribute (no `name`) is still considered named
+  // for propagation purposes; only completely anonymous `<node>` elements
+  // fall through to the inherited ancestor name.
+  std::string ownName = readAttribute(nodeStart, nodeTagEnd, "name");
+  if (ownName.empty()) {
+    ownName = readAttribute(nodeStart, nodeTagEnd, "id");
+  }
+  const std::string childInheritedName = ownName.empty() ? parentName : ownName;
 
   float worldMatrix[16];
   multiplyMatrices(parentMatrix, localNode.matrix, worldMatrix);
@@ -2790,7 +2810,7 @@ bool parseNodeBlock(
     }
 
     if (name == "instance_geometry") {
-      if (!appendInstanceGeometryNode(nodeStart, nodeTagEnd, elementStart, tagEnd, elementEnd, worldMatrix, state)) {
+      if (!appendInstanceGeometryNode(nodeStart, nodeTagEnd, elementStart, tagEnd, elementEnd, worldMatrix, childInheritedName, state)) {
         return false;
       }
     } else if (name == "instance_node") {
@@ -2800,11 +2820,11 @@ bool parseNodeBlock(
         errorMessage = "Collada instance_node references an unknown library node.";
         return false;
       }
-      if (!parseNodeBlock(libraryNode->second.start, libraryNode->second.end, worldMatrix, state, depth + 1)) {
+      if (!parseNodeBlock(libraryNode->second.start, libraryNode->second.end, worldMatrix, childInheritedName, state, depth + 1)) {
         return false;
       }
     } else if (name == "node") {
-      if (!parseNodeBlock(elementStart, elementEnd, worldMatrix, state, depth + 1)) {
+      if (!parseNodeBlock(elementStart, elementEnd, worldMatrix, childInheritedName, state, depth + 1)) {
         return false;
       }
     }
@@ -2853,7 +2873,7 @@ bool parseVisualSceneNodes(const char* start, const char* end, ParseState& state
       errorMessage = "Malformed Collada visual_scene child block.";
       return false;
     }
-    if (name == "node" && !parseNodeBlock(elementStart, elementEnd, identity, state)) {
+    if (name == "node" && !parseNodeBlock(elementStart, elementEnd, identity, std::string(), state)) {
       return false;
     }
     cursor = elementEnd;

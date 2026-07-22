@@ -162,6 +162,37 @@ test('applyWorkspaceCameraSnapshot restores camera transform and orbit target', 
   assert.equal(controlsUpdated, true);
 });
 
+test('applyWorkspaceCameraSnapshot honours aspectRatioOverride for mismatched surfaces', () => {
+  const snapshot = {
+    kind: 'perspective' as const,
+    position: { x: 0, y: 0, z: 5 },
+    quaternion: { x: 0, y: 0, z: 0, w: 1 },
+    up: { x: 0, y: 1, z: 0 },
+    zoom: 1,
+    target: { x: 0, y: 0, z: 0 },
+    aspectRatio: 1.6,
+    fov: 50,
+    near: 0.1,
+    far: 100,
+  };
+
+  // A preview surface that differs from the captured workspace uses its own
+  // aspect so the model is not squished; the view angle is still inherited.
+  const previewCamera = new THREE.PerspectiveCamera(60, 1, 0.1, 100);
+  applyWorkspaceCameraSnapshot(previewCamera, null, snapshot, { aspectRatioOverride: 1 });
+  assert.equal(previewCamera.aspect, 1);
+  assert.equal(previewCamera.fov, 50);
+  assert.equal(previewCamera.position.z, 5);
+
+  // Invalid or absent overrides fall back to the snapshot's own aspect ratio so
+  // the full-resolution export path keeps its view-offset framing.
+  for (const override of [undefined, null, 0, -2, Number.NaN, Number.POSITIVE_INFINITY]) {
+    const exportCamera = new THREE.PerspectiveCamera(60, 1, 0.1, 100);
+    applyWorkspaceCameraSnapshot(exportCamera, null, snapshot, { aspectRatioOverride: override });
+    assert.equal(exportCamera.aspect, 1.6);
+  }
+});
+
 test('resolveSnapshotPreviewSurfaceSize preserves the frozen viewport aspect ratio', () => {
   assert.deepEqual(resolveSnapshotPreviewSurfaceSize(2), { width: 960, height: 480 });
   assert.deepEqual(resolveSnapshotPreviewSurfaceSize(0.5), { width: 480, height: 960 });

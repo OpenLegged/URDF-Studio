@@ -48,6 +48,8 @@ interface BuildViewerScenePropsArgs {
   onAssemblyTransform?: ViewerProps['onAssemblyTransform'];
   onComponentTransform?: ViewerProps['onComponentTransform'];
   onBridgeTransform?: ViewerProps['onBridgeTransform'];
+  pendingAutoGroundComponentIds?: ViewerProps['pendingAutoGroundComponentIds'];
+  onAssemblyComponentAutoGroundResolved?: ViewerProps['onAssemblyComponentAutoGroundResolved'];
 }
 
 export interface ViewerSceneBaseProps extends BuildViewerScenePropsArgs {
@@ -96,6 +98,8 @@ export function buildViewerSceneProps({
   onAssemblyTransform,
   onComponentTransform,
   onBridgeTransform,
+  pendingAutoGroundComponentIds,
+  onAssemblyComponentAutoGroundResolved,
 }: BuildViewerScenePropsArgs): ViewerSceneBaseProps {
   return {
     resolvedTheme,
@@ -140,6 +144,8 @@ export function buildViewerSceneProps({
     onAssemblyTransform,
     onComponentTransform,
     onBridgeTransform,
+    pendingAutoGroundComponentIds,
+    onAssemblyComponentAutoGroundResolved,
     toolMode: controller.toolMode,
   };
 }

@@ -691,16 +691,25 @@ function buildCollisionPrimitiveGeometry(primitiveType, metadataText, cumulative
         : [1, 1, 1];
     let dimensions = null;
     if (normalizedPrimitiveType === 'cube' || normalizedPrimitiveType === 'box') {
-        const size = parseImmediateUsdNumberProperty(metadataText, 'size') ?? 1;
+        const size = parseImmediateUsdNumberProperty(metadataText, 'size');
+        if (!Number.isFinite(size)) {
+            return null;
+        }
         dimensions = [scale[0] * size, scale[1] * size, scale[2] * size];
     }
     else if (normalizedPrimitiveType === 'sphere') {
-        const radius = parseImmediateUsdNumberProperty(metadataText, 'radius') ?? 1;
+        const radius = parseImmediateUsdNumberProperty(metadataText, 'radius');
+        if (!Number.isFinite(radius)) {
+            return null;
+        }
         dimensions = [scale[0] * radius * 2, scale[1] * radius * 2, scale[2] * radius * 2];
     }
     else if (normalizedPrimitiveType === 'cylinder' || normalizedPrimitiveType === 'capsule') {
-        const radius = parseImmediateUsdNumberProperty(metadataText, 'radius') ?? 1;
-        const height = parseImmediateUsdNumberProperty(metadataText, 'height') ?? 2;
+        const radius = parseImmediateUsdNumberProperty(metadataText, 'radius');
+        const height = parseImmediateUsdNumberProperty(metadataText, 'height');
+        if (!Number.isFinite(radius) || !Number.isFinite(height)) {
+            return null;
+        }
         dimensions = [scale[0] * radius * 2, scale[1] * radius * 2, scale[2] * height];
     }
     if (!dimensions) {
@@ -721,9 +730,15 @@ function addScopedEntry(targetMap, linkName, entryName, referencePath = null, pr
         return;
     }
     const existingEntries = targetMap.get(normalizedLinkName) || [];
-    if (existingEntries.some((entry) => entry.entryName === normalizedEntryName
-        && entry.referencePath === normalizedReferencePath
-        && (entry.primitiveType || null) === normalizedPrimitiveType)) {
+    const existingEntry = existingEntries.find((entry) => entry.entryName === normalizedEntryName
+        && entry.referencePath === normalizedReferencePath);
+    if (existingEntry) {
+        if (normalizedPrimitiveType) {
+            existingEntry.primitiveType = normalizedPrimitiveType;
+        }
+        if (primitiveGeometry) {
+            existingEntry.primitiveGeometry = primitiveGeometry;
+        }
         return;
     }
     existingEntries.push({
@@ -891,7 +906,27 @@ export function parseColliderEntriesFromLayerText(layerText) {
         const scopedPath = parseScopedLinkEntryPath(path, COLLISION_SCOPE_NAMES);
         if (!scopedPath?.linkName || !scopedPath.entryName || scopedPath.normalizedPath !== scopedPath.entryPath) {
             const primitiveType = normalizeCollisionPrimitiveType(primType);
-            if (!primitiveType || !hasPhysicsCollisionApi(text) || !Array.isArray(pathSegments) || pathSegments.length < 2) {
+            if (!primitiveType || !Array.isArray(pathSegments) || pathSegments.length < 2) {
+                return;
+            }
+            if (scopedPath?.linkName && scopedPath.entryName) {
+                const primitiveGeometry = buildCollisionPrimitiveGeometry(
+                    primitiveType,
+                    metadataText,
+                    cumulativeScale,
+                    localTranslate,
+                );
+                addScopedEntry(
+                    linkToColliderEntries,
+                    scopedPath.linkName,
+                    scopedPath.entryName,
+                    null,
+                    primitiveGeometry ? primitiveType : null,
+                    primitiveGeometry,
+                );
+                return;
+            }
+            if (!hasPhysicsCollisionApi(text)) {
                 return;
             }
             const linkName = String(pathSegments[pathSegments.length - 2] || '').trim();

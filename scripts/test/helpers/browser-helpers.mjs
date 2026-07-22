@@ -37,7 +37,8 @@ export const DEFAULT_OUTPUT_DIR = path.resolve('tmp/e2e');
 export const DEFAULT_SCREENSHOT_DIR = path.join(DEFAULT_OUTPUT_DIR, 'screenshots');
 export const DEFAULT_RESULTS_PATH = path.join(DEFAULT_OUTPUT_DIR, 'results.json');
 
-const DEFAULT_START_COMMAND = (host, port) => `npm run dev -- --host ${host} --port ${port}`;
+const DEFAULT_START_COMMAND = (host, port) =>
+  `npm run dev -- --host ${host} --port ${port} --strictPort`;
 const DEFAULT_EXECUTABLE_CANDIDATES = [
   process.env.CHROME_PATH,
   '/usr/bin/google-chrome',
@@ -51,6 +52,13 @@ const PUPPETEER_LAUNCH_ARGS = [
   '--disable-dev-shm-usage',
   '--enable-unsafe-swiftshader',
 ];
+
+export function resolveBrowserTestViteCacheDir(siteUrl) {
+  const parsedUrl = new URL(siteUrl);
+  const port = parsedUrl.port || (parsedUrl.protocol === 'https:' ? '443' : '80');
+  const endpoint = `${parsedUrl.hostname}-${port}`.replace(/[^a-zA-Z0-9._-]+/g, '-');
+  return path.resolve('tmp/vite-cache/browser', endpoint);
+}
 
 export function fail(message) {
   throw new Error(message);
@@ -226,14 +234,14 @@ function createLogBuffer(limit = 200) {
   };
 }
 
-function spawnSiteProcess(command, cwd) {
+function spawnSiteProcess(command, cwd, environment = {}) {
   const logs = createLogBuffer();
   const child = spawn(command, {
     cwd,
     shell: true,
     detached: true,
     stdio: ['ignore', 'pipe', 'pipe'],
-    env: { ...process.env, BROWSER: 'none' },
+    env: { ...process.env, ...environment, BROWSER: 'none' },
   });
 
   child.stdout?.setEncoding('utf8');
@@ -286,7 +294,12 @@ export async function ensureSite(siteUrl, options = {}) {
   const host = parsedUrl.hostname;
   const port = parsedUrl.port || (parsedUrl.protocol === 'https:' ? '443' : '80');
   const command = options.startCommand ?? DEFAULT_START_COMMAND(host, port);
-  const siteProcess = spawnSiteProcess(command, process.cwd());
+  const siteProcess = spawnSiteProcess(command, process.cwd(), {
+    // A browser regression often runs on 4173 while an interactive dev server
+    // remains on 3000. Vite's optimizer cache has no cross-process lock, so the
+    // test server must not replace the interactive server's dependency graph.
+    URDF_STUDIO_VITE_CACHE_DIR: resolveBrowserTestViteCacheDir(siteUrl),
+  });
   const deadline = Date.now() + siteTimeoutMs;
 
   try {
@@ -487,9 +500,15 @@ export async function triggerRobotLoad(page, fileName, timeoutMs = DEFAULT_OPERA
  * @param {import('puppeteer').Browser} browser
  * @param {string} siteUrl
  * @param {number} [timeoutMs]
+ * @param {{ beforeNavigate?: (page: import('puppeteer').Page) => Promise<void> | void }} [options]
  * @returns {Promise<{ page: import('puppeteer').Page, consoleMessages: { snapshot(): string[] }, pageErrors: { snapshot(): string[] } }>}
  */
-export async function createPage(browser, siteUrl, timeoutMs = DEFAULT_OPERATION_TIMEOUT_MS) {
+export async function createPage(
+  browser,
+  siteUrl,
+  timeoutMs = DEFAULT_OPERATION_TIMEOUT_MS,
+  options = {},
+) {
   const page = await browser.newPage();
   const consoleMessages = ringBuffer(100);
   const pageErrors = ringBuffer(50);
@@ -499,6 +518,7 @@ export async function createPage(browser, siteUrl, timeoutMs = DEFAULT_OPERATION
   page.on('console', (message) => consoleMessages.push(`[${message.type()}] ${message.text()}`));
   page.on('pageerror', (error) => pageErrors.push(String(error?.stack || error?.message || error)));
 
+  await options.beforeNavigate?.(page);
   await page.goto(siteUrl, { waitUntil: 'domcontentloaded', timeout: timeoutMs });
   await stabilizeDebugPage(page, timeoutMs);
 

@@ -3,6 +3,10 @@ import * as THREE from 'three';
 import type { UrdfLink } from '@/types';
 import { getCollisionGeometryByObjectIndex } from '@/core/robot';
 import { createHighlightOverrideMaterial, disposeMaterial } from '../utils/materials';
+import {
+  useSemanticOutline,
+  type SemanticOutlineIntent,
+} from '@/shared/components/3d';
 import { _pooledRay, _pooledBox3 } from '../constants';
 import { collectPickTargets, type PickTargetMode } from '../utils/pickTargets';
 import { resolveTopLayerInteractionSubType } from '../utils/interactionMode';
@@ -27,6 +31,7 @@ export interface UseHighlightManagerResult {
     revert: boolean,
     subType?: 'visual' | 'collision',
     meshToHighlight?: THREE.Object3D | null | number,
+    intent?: SemanticOutlineIntent,
   ) => void;
   revertAllHighlights: () => void;
   getRobotBoundingBox: (forceRefresh?: boolean) => THREE.Box3 | null;
@@ -59,6 +64,12 @@ export interface HighlightedMeshSnapshot {
   activeRole: 'visual' | 'collision' | null;
 }
 
+type HighlightGeometryArguments = [
+  subType?: 'visual' | 'collision',
+  meshToHighlight?: THREE.Object3D | null | number,
+  intent?: SemanticOutlineIntent,
+];
+
 export function useHighlightManager({
   robot,
   robotVersion,
@@ -76,6 +87,8 @@ export function useHighlightManager({
 
   // Map to track currently highlighted meshes for O(1) revert instead of traverse
   const highlightedMeshesRef = useRef<Map<THREE.Mesh, HighlightedMeshSnapshot>>(new Map());
+  const semanticOutline = useSemanticOutline();
+  const semanticOutlineOwnerRef = useRef(Symbol('urdf-semantic-outline'));
 
   // Refs for visibility state
   const showVisualRef = useRef(showVisual);
@@ -360,8 +373,23 @@ export function useHighlightManager({
     [disposeHighlightOverrideMaterials],
   );
 
+  const syncSemanticOutline = useCallback(
+    (intent: SemanticOutlineIntent = 'hover') => {
+      semanticOutline?.setTargets(
+        semanticOutlineOwnerRef.current,
+        [...highlightedMeshesRef.current.keys()],
+        intent,
+      );
+    },
+    [semanticOutline],
+  );
+
   const applyHighlightToMesh = useCallback(
-    (mesh: THREE.Mesh, targetSubType: 'visual' | 'collision') => {
+    (
+      mesh: THREE.Mesh,
+      targetSubType: 'visual' | 'collision',
+      intent: SemanticOutlineIntent,
+    ) => {
       let snapshot = highlightedMeshesRef.current.get(mesh);
       if (!snapshot) {
         snapshot = captureHighlightedMeshSnapshot(mesh);
@@ -372,27 +400,37 @@ export function useHighlightManager({
         if (targetSubType === 'collision') {
           mesh.renderOrder = 1000;
         }
+        syncSemanticOutline(intent);
         return;
       } else {
         restoreHighlightedMeshSnapshot(mesh, snapshot, true);
+        mesh.userData.__urdfHighlightSnapshot = snapshot;
       }
 
-      const sourceMaterials = Array.isArray(snapshot.material)
-        ? snapshot.material
-        : [snapshot.material];
-      const overrideMaterials = sourceMaterials.map((sourceMaterial) =>
-        createHighlightOverrideMaterial(sourceMaterial, targetSubType),
-      );
-
-      mesh.material = Array.isArray(snapshot.material) ? overrideMaterials : overrideMaterials[0];
+      // Link hover/selection is a screen-space outline. Keep the original PBR
+      // material attached so authored color, textures, and highlights do not shift.
+      // Tendons retain their legacy high-contrast overlay because thin line-like
+      // geometry is not reliably visible through a silhouette pass alone.
+      if (mesh.userData?.isMjcfTendon === true) {
+        const sourceMaterials = Array.isArray(snapshot.material)
+          ? snapshot.material
+          : [snapshot.material];
+        const overrideMaterials = sourceMaterials.map((sourceMaterial) =>
+          createHighlightOverrideMaterial(sourceMaterial, targetSubType),
+        );
+        mesh.material = Array.isArray(snapshot.material)
+          ? overrideMaterials
+          : overrideMaterials[0];
+      }
       mesh.visible = true;
       if (mesh.parent) mesh.parent.visible = true;
       if (targetSubType === 'collision' || mesh.userData?.isMjcfTendon === true) {
         mesh.renderOrder = 1000;
       }
       snapshot.activeRole = targetSubType;
+      syncSemanticOutline(intent);
     },
-    [captureHighlightedMeshSnapshot, restoreHighlightedMeshSnapshot],
+    [captureHighlightedMeshSnapshot, restoreHighlightedMeshSnapshot, syncSemanticOutline],
   );
 
   // Revert all highlighted meshes using the tracked Map (O(n) where n = highlighted, not total)
@@ -408,11 +446,17 @@ export function useHighlightManager({
       }
     });
     highlightedMeshesRef.current.clear();
-  }, [getMeshVisibility, restoreHighlightedMeshSnapshot]);
+    semanticOutline?.clearTargets(semanticOutlineOwnerRef.current);
+  }, [getMeshVisibility, restoreHighlightedMeshSnapshot, semanticOutline]);
 
   useEffect(() => {
     revertAllHighlights();
   }, [revertAllHighlights, robot, robotVersion]);
+
+  useEffect(
+    () => () => semanticOutline?.clearTargets(semanticOutlineOwnerRef.current),
+    [semanticOutline],
+  );
 
   // PERFORMANCE: Helper function to highlight/unhighlight link geometry
   // Uses pre-built linkMeshMap for O(1) lookup instead of traverse
@@ -420,8 +464,11 @@ export function useHighlightManager({
     (
       linkName: string | null,
       revert: boolean,
-      subType: 'visual' | 'collision' | undefined = undefined,
-      meshToHighlight?: THREE.Object3D | null | number,
+      ...[
+        subType,
+        meshToHighlight,
+        intent = 'hover',
+      ]: HighlightGeometryArguments
     ) => {
       if (!robot) return;
 
@@ -482,7 +529,7 @@ export function useHighlightManager({
             if (!getMeshVisibility(child)) return;
 
             highlightedAnyMesh = true;
-            applyHighlightToMesh(child, targetSubType);
+            applyHighlightToMesh(child, targetSubType, intent);
           });
 
           if (highlightedAnyMesh) {
@@ -510,7 +557,7 @@ export function useHighlightManager({
                 targetGroup.traverse((c: any) => {
                   if (c.isMesh && !c.userData?.isGizmo) {
                     if (!getMeshVisibility(c)) return;
-                    applyHighlightToMesh(c, targetSubType);
+                    applyHighlightToMesh(c, targetSubType, intent);
                   }
                 });
                 return;
@@ -527,7 +574,7 @@ export function useHighlightManager({
               if (mesh.userData?.isGizmo) continue;
               if (!getMeshVisibility(mesh)) continue;
 
-              applyHighlightToMesh(mesh, targetSubType);
+              applyHighlightToMesh(mesh, targetSubType, intent);
             }
             return;
           }
@@ -543,7 +590,7 @@ export function useHighlightManager({
                   (targetSubType === 'collision' && isCollider) ||
                   (targetSubType === 'visual' && !isCollider);
                 if (shouldHighlight && getMeshVisibility(c)) {
-                  applyHighlightToMesh(c, targetSubType);
+                  applyHighlightToMesh(c, targetSubType, intent);
                 }
               }
               c.children?.forEach(fallbackTraverse);

@@ -48,7 +48,11 @@ import {
   collectProjectedHelperInteractionTargets,
   resolveScreenSpaceHelperInteraction,
 } from '../utils/screenSpaceHelperInteraction';
-import { resolveRevoluteDragDelta } from '../utils/jointDragDelta';
+import {
+  resolveRevoluteDragDelta,
+  resolveRevoluteDragStep,
+  resolveRevoluteTangentAngleDelta,
+} from '../utils/jointDragDelta';
 import { createJointDragStoreSync } from '../utils/jointDragStoreSync';
 import { createJointDragFrameSync } from '../utils/jointDragFrameSync';
 import { resolveActiveViewerJointKeyFromSelection } from '../utils/activeJointSelection';
@@ -70,9 +74,11 @@ import {
   shouldTreatPointerUpAsBackgroundMiss,
 } from '../utils/selectionMissGuard';
 import { unwrapContinuousJointAngle } from '@/shared/utils/continuousJointAngle';
+import { isRuntimeInteractionEditorLocked } from '../utils/editorInteractionLock';
 
 const JOINT_DRAG_EPSILON = 1e-5;
-const MAX_REVOLUTE_DELTA_PER_EVENT = Math.PI / 8;
+const MAX_REVOLUTE_DELTA_PER_FRAME = Math.PI / 8;
+const MAX_REVOLUTE_DELTA_PER_INPUT = Math.PI;
 const JOINT_DRAG_STORE_SYNC_INTERVAL = 16;
 const POINTER_TARGET_PREWARM_IDLE_TIMEOUT_MS = 180;
 const POINTER_TARGET_PREWARM_SETTLE_FRAMES = 1;
@@ -137,6 +143,7 @@ export interface UseMouseInteractionOptions {
     revert: boolean,
     subType?: 'visual' | 'collision',
     meshToHighlight?: THREE.Object3D | null | number,
+    intent?: 'hover' | 'selection',
   ) => void;
   resolveDirectIkHandleLink?: (linkId: string) => string | null;
 }
@@ -748,6 +755,7 @@ export function useMouseInteraction({
               false,
               resolvedSubType,
               resolvedHit.highlightTarget ?? resolvedHit.objectIndex,
+              'selection',
             );
           }
         } else if (resolvedHit.type === 'tendon') {
@@ -804,9 +812,18 @@ export function useMouseInteraction({
 
       camera.getWorldDirection(tempCameraForward);
       tempTangentWorld.copy(tempCameraForward).cross(tempAxisWorld);
-      const tangentDelta =
+      const tangentDistance =
         tempTangentWorld.lengthSq() > JOINT_DRAG_EPSILON
-          ? tempTangentWorld.dot(tempDelta.subVectors(endPt, startPt))
+          ? tempTangentWorld.normalize().dot(tempDelta.subVectors(endPt, startPt))
+          : 0;
+      const tangentDelta =
+        Math.abs(tangentDistance) > JOINT_DRAG_EPSILON
+          ? resolveRevoluteTangentAngleDelta({
+              tangentDistance,
+              startRadius: tempProjStart.length(),
+              endRadius: tempProjEnd.length(),
+              epsilon: JOINT_DRAG_EPSILON,
+            })
           : 0;
 
       return resolveRevoluteDragDelta({
@@ -814,7 +831,9 @@ export function useMouseInteraction({
         tangentDelta,
         planeFacingRatio: Math.abs(tempCameraView.dot(tempAxisWorld)),
         epsilon: JOINT_DRAG_EPSILON,
-        maxDelta: MAX_REVOLUTE_DELTA_PER_EVENT,
+        // Keep a generous singularity guard here. The smaller per-frame safety
+        // step is applied below without discarding the remaining pointer travel.
+        maxDelta: MAX_REVOLUTE_DELTA_PER_INPUT,
       });
     };
 
@@ -826,6 +845,102 @@ export function useMouseInteraction({
       syncJointWorldFrame(joint);
       tempDelta.subVectors(endPt, startPt);
       return tempDelta.dot(tempAxisWorld);
+    };
+
+    let pendingRevoluteDelta = 0;
+    let revoluteDeltaFrameHandle: number | null = null;
+
+    const applyJointDelta = (delta: number) => {
+      if (!dragJoint.current || Math.abs(delta) <= JOINT_DRAG_EPSILON) {
+        return;
+      }
+
+      const step = resolveJointDragRuntimeStep({
+        currentRuntimeValue: dragJointRuntimeValueRef.current,
+        fallbackRuntimeValue: dragJoint.current.angle ?? dragJoint.current.jointValue ?? 0,
+        delta,
+        jointType: dragJoint.current.jointType,
+        limit: dragJoint.current.limit,
+        deferRuntimeUpdate: deferDirectJointRuntimeUpdate,
+        epsilon: JOINT_DRAG_EPSILON,
+      });
+
+      if (step.changed && dragJoint.current.setJointValue) {
+        const newAngle = step.nextRuntimeValue;
+        dragJointRuntimeValueRef.current = newAngle;
+        if (step.shouldApplyRuntimeUpdate) {
+          dragJoint.current.setJointValue(newAngle);
+          requestShadowMapRefresh(gl);
+        }
+        jointDragStoreSync.emit(
+          dragJoint.current.name,
+          resolveDraggedRuntimeJointActualAngle(dragJoint.current.name, newAngle),
+        );
+      }
+    };
+
+    const cancelPendingRevoluteDelta = () => {
+      if (revoluteDeltaFrameHandle !== null) {
+        window.cancelAnimationFrame(revoluteDeltaFrameHandle);
+        revoluteDeltaFrameHandle = null;
+      }
+      pendingRevoluteDelta = 0;
+    };
+
+    const schedulePendingRevoluteDelta = () => {
+      if (
+        revoluteDeltaFrameHandle !== null ||
+        Math.abs(pendingRevoluteDelta) <= JOINT_DRAG_EPSILON
+      ) {
+        return;
+      }
+
+      revoluteDeltaFrameHandle = window.requestAnimationFrame(() => {
+        revoluteDeltaFrameHandle = null;
+        if (!isDraggingJoint.current || !dragJoint.current) {
+          pendingRevoluteDelta = 0;
+          return;
+        }
+
+        const dragStep = resolveRevoluteDragStep({
+          pendingDelta: pendingRevoluteDelta,
+          maxStep: MAX_REVOLUTE_DELTA_PER_FRAME,
+          epsilon: JOINT_DRAG_EPSILON,
+        });
+        pendingRevoluteDelta = dragStep.pendingDelta;
+        applyJointDelta(dragStep.appliedDelta);
+        invalidateRef.current();
+        schedulePendingRevoluteDelta();
+      });
+    };
+
+    const applyRevoluteJointDelta = (delta: number) => {
+      const dragStep = resolveRevoluteDragStep({
+        pendingDelta: pendingRevoluteDelta,
+        nextDelta: delta,
+        maxStep: MAX_REVOLUTE_DELTA_PER_FRAME,
+        epsilon: JOINT_DRAG_EPSILON,
+      });
+      pendingRevoluteDelta = dragStep.pendingDelta;
+      applyJointDelta(dragStep.appliedDelta);
+      schedulePendingRevoluteDelta();
+    };
+
+    const flushPendingRevoluteDelta = () => {
+      if (revoluteDeltaFrameHandle !== null) {
+        window.cancelAnimationFrame(revoluteDeltaFrameHandle);
+        revoluteDeltaFrameHandle = null;
+      }
+
+      while (Math.abs(pendingRevoluteDelta) > JOINT_DRAG_EPSILON) {
+        const dragStep = resolveRevoluteDragStep({
+          pendingDelta: pendingRevoluteDelta,
+          maxStep: MAX_REVOLUTE_DELTA_PER_FRAME,
+          epsilon: JOINT_DRAG_EPSILON,
+        });
+        pendingRevoluteDelta = dragStep.pendingDelta;
+        applyJointDelta(dragStep.appliedDelta);
+      }
     };
 
     const moveRay = (toRay: THREE.Ray) => {
@@ -844,29 +959,10 @@ export function useMouseInteraction({
         delta = getPrismaticDelta(dragJoint.current, tempPrevHitPoint, tempNewHitPoint);
       }
 
-      if (Math.abs(delta) > JOINT_DRAG_EPSILON) {
-        const step = resolveJointDragRuntimeStep({
-          currentRuntimeValue: dragJointRuntimeValueRef.current,
-          fallbackRuntimeValue: dragJoint.current.angle ?? dragJoint.current.jointValue ?? 0,
-          delta,
-          jointType: jt,
-          limit: dragJoint.current.limit,
-          deferRuntimeUpdate: deferDirectJointRuntimeUpdate,
-          epsilon: JOINT_DRAG_EPSILON,
-        });
-
-        if (step.changed && dragJoint.current.setJointValue) {
-          const newAngle = step.nextRuntimeValue;
-          dragJointRuntimeValueRef.current = newAngle;
-          if (step.shouldApplyRuntimeUpdate) {
-            dragJoint.current.setJointValue(newAngle);
-            requestShadowMapRefresh(gl);
-          }
-          jointDragStoreSync.emit(
-            dragJoint.current.name,
-            resolveDraggedRuntimeJointActualAngle(dragJoint.current.name, newAngle),
-          );
-        }
+      if (jt === 'revolute' || jt === 'continuous') {
+        applyRevoluteJointDelta(delta);
+      } else {
+        applyJointDelta(delta);
       }
 
       lastRayRef.current.copy(toRay);
@@ -931,10 +1027,8 @@ export function useMouseInteraction({
         }
       }
       if (isDraggingJoint.current && dragJoint.current) {
-        // Drag math updates the live joint model and can become expensive on
-        // dense robots or high-frequency pointers. Coalesce raw mousemove
-        // bursts into a single animation-frame update to keep interaction
-        // responsive without starving rendering.
+        // Apply the leading event immediately so demand rendering does not trail
+        // the pointer by a full frame, then coalesce only the remaining burst.
         jointDragFrameSync.schedule(e.offsetX, e.offsetY);
       } else {
         // Throttled for normal hover detection
@@ -1024,7 +1118,9 @@ export function useMouseInteraction({
           interactionLayerPriority,
         });
         const helperCandidates = [helperInteraction, projectedHelperInteraction].filter(
-          (candidate): candidate is ResolvedHoverInteractionCandidate => candidate !== null,
+          (candidate): candidate is ResolvedHoverInteractionCandidate =>
+            candidate !== null &&
+            !isRuntimeInteractionEditorLocked(candidate, robotLinks, robotJoints),
         );
         helperInteraction =
           helperCandidates.length > 0
@@ -1053,7 +1149,10 @@ export function useMouseInteraction({
           ResolvedHoverInteractionCandidate[]
         >((candidates, rayHit) => {
           const selectionHit = resolveInteractionSelectionHit(robot, rayHit.object);
-          if (selectionHit) {
+          if (
+            selectionHit &&
+            !isRuntimeInteractionEditorLocked(selectionHit, robotLinks, robotJoints)
+          ) {
             candidates.push({
               ...selectionHit,
               distance: rayHit.distance,
@@ -1081,7 +1180,15 @@ export function useMouseInteraction({
             }
 
             const selectionHit = resolveInteractionSelectionHit(robot, intersection.object);
-            return selectionHit?.type === 'link' && selectionHit.subType === 'visual';
+            return (
+              selectionHit?.type === 'link' &&
+              selectionHit.subType === 'visual' &&
+              !isRuntimeInteractionEditorLocked(
+                selectionHit,
+                robotLinks,
+                robotJoints,
+              )
+            );
           });
 
           if (!paintIntersection) {
@@ -1215,6 +1322,7 @@ export function useMouseInteraction({
           : clickedJoint;
 
       if (joint) {
+        cancelPendingRevoluteDelta();
         isDraggingJoint.current = true;
         dragJoint.current = joint;
         dragJointRuntimeValueRef.current = Number(joint.angle ?? joint.jointValue ?? 0);
@@ -1307,6 +1415,7 @@ export function useMouseInteraction({
 
       if (isDraggingJoint.current) {
         jointDragFrameSync.flush();
+        flushPendingRevoluteDelta();
         const committedRuntimeValue = dragJointRuntimeValueRef.current;
 
         const commitPayload = dragJoint.current
@@ -1430,6 +1539,7 @@ export function useMouseInteraction({
       // Cancel throttled handler to prevent pending callbacks
       throttledMouseMove.cancel();
       jointDragFrameSync.cancel();
+      cancelPendingRevoluteDelta();
       jointDragStoreSync.dispose();
       dragJointRuntimeValueRef.current = null;
       clearSelectionMissGuardTimer(selectionResetTimerRef);

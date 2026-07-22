@@ -4,6 +4,7 @@ import { JointType, type RobotData, type UrdfLink, type UrdfMjcfSite, type Vecto
 
 import { resolveLinkRenderableBounds } from './assemblyPlacement';
 import { solveClosedLoopMotionCompensation } from './closedLoops';
+import { hasFiniteJointLimitBounds } from './jointLimits';
 import {
   computeLinkWorldMatrices,
   createOriginMatrix,
@@ -262,7 +263,10 @@ function clampJointActualAngle(
     return requestedAngle;
   }
 
-  if ((joint.type === JointType.REVOLUTE || joint.type === JointType.PRISMATIC) && joint.limit) {
+  if (
+    (joint.type === JointType.REVOLUTE || joint.type === JointType.PRISMATIC) &&
+    hasFiniteJointLimitBounds(joint.limit)
+  ) {
     return THREE.MathUtils.clamp(requestedAngle, joint.limit.lower, joint.limit.upper);
   }
 

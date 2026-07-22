@@ -6,7 +6,11 @@ import {
   normalizeBridgeQuaternion,
 } from '../../utils/bridgePreview';
 import type { BridgePickTarget } from '../../utils/bridgeSelection';
-import type { BridgeEulerAxisKey, BridgeRotationDisplayMode } from './bridgeCreateModalTypes';
+import type {
+  BridgeEndpointInputMode,
+  BridgeEulerAxisKey,
+  BridgeRotationDisplayMode,
+} from './bridgeCreateModalTypes';
 import { BRIDGE_ROTATION_SHORTCUT_DEGREES } from './bridgeCreateModalStyles';
 import { normalizeBridgeDegreesAngle } from './bridgeCreateModalUtils';
 
@@ -17,17 +21,47 @@ interface UseBridgeCreateDraftOptions {
   defaultLimitVelocity: number;
 }
 
+function useBridgeDraftName() {
+  const [name, setName] = useState('');
+  const customizedRef = useRef(false);
+  const valueRef = useRef('');
+  const syncSuggestedName = useCallback((suggestedName: string) => {
+    if (customizedRef.current || valueRef.current === suggestedName) return;
+    valueRef.current = suggestedName;
+    setName(suggestedName);
+  }, []);
+  const handleNameChange = useCallback((value: string) => {
+    customizedRef.current = true;
+    valueRef.current = value;
+    setName(value);
+  }, []);
+  const handleNameBlur = useCallback((suggestedName: string) => {
+    if (valueRef.current.trim()) return;
+    customizedRef.current = false;
+    valueRef.current = suggestedName;
+    setName(suggestedName);
+  }, []);
+  const resetName = useCallback(() => {
+    customizedRef.current = false;
+    valueRef.current = '';
+    setName('');
+  }, []);
+  return { handleNameBlur, handleNameChange, name, resetName, syncSuggestedName };
+}
+
 export function useBridgeCreateDraft({
   defaultLimitEffort,
   defaultLimitLower,
   defaultLimitUpper,
   defaultLimitVelocity,
 }: UseBridgeCreateDraftOptions) {
-  const [name, setName] = useState('');
+  const { handleNameBlur, handleNameChange, name, resetName, syncSuggestedName } =
+    useBridgeDraftName();
   const [parentCompId, setParentCompId] = useState('');
   const [parentLinkId, setParentLinkId] = useState('');
   const [childCompId, setChildCompId] = useState('');
   const [childLinkId, setChildLinkId] = useState('');
+  const [endpointInputMode, setEndpointInputMode] = useState<BridgeEndpointInputMode>('geometry');
   const [jointType, setJointType] = useState<JointType>(JointType.FIXED);
   const [hardwareInterface, setHardwareInterface] = useState<JointHardwareInterface>('position');
   const [originX, setOriginX] = useState(0);
@@ -136,11 +170,12 @@ export function useBridgeCreateDraft({
   }, []);
 
   const resetForm = useCallback(() => {
-    setName('');
+    resetName();
     setParentCompId('');
     setParentLinkId('');
     setChildCompId('');
     setChildLinkId('');
+    setEndpointInputMode('geometry');
     setJointType(JointType.FIXED);
     setHardwareInterface('position');
     setOriginX(0);
@@ -165,7 +200,7 @@ export function useBridgeCreateDraft({
     setPickTarget('parent');
     originDirtyRef.current = false;
     previousBridgeRelationSignatureRef.current = '';
-  }, [defaultLimitEffort, defaultLimitLower, defaultLimitUpper, defaultLimitVelocity]);
+  }, [defaultLimitEffort, defaultLimitLower, defaultLimitUpper, defaultLimitVelocity, resetName]);
 
   return {
     applyEulerRotation,
@@ -177,6 +212,9 @@ export function useBridgeCreateDraft({
     axisZ,
     childCompId,
     childLinkId,
+    endpointInputMode,
+    handleNameBlur,
+    handleNameChange,
     handleOriginXChange,
     handleOriginYChange,
     handleOriginZChange,
@@ -209,17 +247,18 @@ export function useBridgeCreateDraft({
     setAxisZ,
     setChildCompId,
     setChildLinkId,
+    setEndpointInputMode,
     setHardwareInterface,
     setJointType,
     setLimitEffort,
     setLimitLower,
     setLimitUpper,
     setLimitVelocity,
-    setName,
     setParentCompId,
     setParentLinkId,
     setPickTarget,
     setRotationDisplayMode,
+    syncSuggestedName,
     yawDeg,
   };
 }

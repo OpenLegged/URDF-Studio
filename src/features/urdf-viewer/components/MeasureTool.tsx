@@ -16,6 +16,10 @@ import {
   type MeasureMeasurement,
 } from '../utils/measurements';
 import { resolveRobotMeasureTargetFromSelection } from '../utils/measureTargetResolvers';
+import {
+  resolveMeasureLabelDragOffset,
+  type MeasureLabelScreenPoint,
+} from '../utils/measureLabelDrag';
 import { throttle } from '@/shared/utils';
 
 const EMPTY_MEASURE_SELECTION: NonNullable<ViewerProps['selection']> = {
@@ -292,6 +296,114 @@ const MeasureEndpointMarker = memo(({ point }: { point: THREE.Vector3 }) => (
   </Html>
 ));
 
+type MeasureAxis = 'x' | 'y' | 'z';
+type MeasureLabelOffsets = Partial<Record<MeasureAxis, MeasureLabelScreenPoint>>;
+
+const DraggableMeasureAxisLabel = memo(
+  ({
+    axis,
+    text,
+    offset,
+    onOffsetChange,
+  }: {
+    axis: MeasureAxis;
+    text: string;
+    offset: MeasureLabelScreenPoint;
+    onOffsetChange: (axis: MeasureAxis, offset: MeasureLabelScreenPoint) => void;
+  }) => {
+    const dragRef = useRef<{
+      pointerId: number;
+      pointerStart: MeasureLabelScreenPoint;
+      initialOffset: MeasureLabelScreenPoint;
+      screenScale: MeasureLabelScreenPoint;
+    } | null>(null);
+
+    const handlePointerDown = useCallback(
+      (event: React.PointerEvent<HTMLButtonElement>) => {
+        event.preventDefault();
+        event.stopPropagation();
+        event.currentTarget.setPointerCapture(event.pointerId);
+        const rect = event.currentTarget.getBoundingClientRect();
+        dragRef.current = {
+          pointerId: event.pointerId,
+          pointerStart: { x: event.clientX, y: event.clientY },
+          initialOffset: offset,
+          screenScale: {
+            x:
+              event.currentTarget.offsetWidth > 0
+                ? rect.width / event.currentTarget.offsetWidth
+                : 1,
+            y:
+              event.currentTarget.offsetHeight > 0
+                ? rect.height / event.currentTarget.offsetHeight
+                : 1,
+          },
+        };
+      },
+      [offset],
+    );
+
+    const handlePointerMove = useCallback(
+      (event: React.PointerEvent<HTMLButtonElement>) => {
+        const drag = dragRef.current;
+        if (!drag || drag.pointerId !== event.pointerId) return;
+
+        event.preventDefault();
+        event.stopPropagation();
+        onOffsetChange(
+          axis,
+          resolveMeasureLabelDragOffset(
+            drag.initialOffset,
+            drag.pointerStart,
+            {
+              x: event.clientX,
+              y: event.clientY,
+            },
+            drag.screenScale,
+          ),
+        );
+      },
+      [axis, onOffsetChange],
+    );
+
+    const finishDrag = useCallback((event: React.PointerEvent<HTMLButtonElement>) => {
+      if (dragRef.current?.pointerId !== event.pointerId) return;
+      event.preventDefault();
+      event.stopPropagation();
+      if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+        event.currentTarget.releasePointerCapture(event.pointerId);
+      }
+      dragRef.current = null;
+    }, []);
+
+    return (
+      <button
+        type="button"
+        data-measure-axis-label={axis}
+        className="pointer-events-auto touch-none cursor-grab rounded-[7px] border-0 bg-slate-950/62 px-1.5 py-[3px] font-mono text-[9px] leading-none font-semibold whitespace-nowrap shadow-[0_1px_6px_rgba(2,6,23,0.24)] select-none active:cursor-grabbing [text-rendering:geometricPrecision]"
+        style={{
+          color: `${MEASURE_AXIS_COLORS[axis]}F2`,
+          transform: `translate3d(${offset.x}px, ${offset.y}px, 0)`,
+        }}
+        onPointerDown={handlePointerDown}
+        onPointerMove={handlePointerMove}
+        onPointerUp={finishDrag}
+        onPointerCancel={finishDrag}
+        onClick={(event) => event.stopPropagation()}
+        onDoubleClick={(event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          onOffsetChange(axis, { x: 0, y: 0 });
+        }}
+        aria-label={text}
+        title={text}
+      >
+        {text}
+      </button>
+    );
+  },
+);
+
 const MeasurementItem = memo(
   ({
     measurement,
@@ -312,6 +424,15 @@ const MeasurementItem = memo(
     onDelete: () => void;
     deleteTooltip: string;
   }) => {
+    const [decompositionLabelOffsets, setDecompositionLabelOffsets] = useState<MeasureLabelOffsets>(
+      {},
+    );
+    const handleDecompositionLabelOffsetChange = useCallback(
+      (axis: MeasureAxis, offset: MeasureLabelScreenPoint) => {
+        setDecompositionLabelOffsets((current) => ({ ...current, [axis]: offset }));
+      },
+      [],
+    );
     const midpoint = useMemo(
       () =>
         new THREE.Vector3()
@@ -400,17 +521,16 @@ const MeasurementItem = memo(
               transform
               sprite
               distanceFactor={MEASURE_AXIS_LABEL_DISTANCE_FACTOR}
+              pointerEvents="none"
               className="pointer-events-none select-none"
               zIndexRange={MEASURE_LABEL_Z_INDEX_RANGE}
             >
-              <div
-                className="rounded-[7px] bg-slate-950/62 px-1.5 py-[3px] font-mono text-[9px] leading-none font-semibold whitespace-nowrap shadow-[0_1px_6px_rgba(2,6,23,0.24)] [text-rendering:geometricPrecision]"
-                style={{
-                  color: `${MEASURE_AXIS_COLORS[segmentLabel.axis]}F2`,
-                }}
-              >
-                {segmentLabel.text}
-              </div>
+              <DraggableMeasureAxisLabel
+                axis={segmentLabel.axis}
+                text={segmentLabel.text}
+                offset={decompositionLabelOffsets[segmentLabel.axis] ?? { x: 0, y: 0 }}
+                onOffsetChange={handleDecompositionLabelOffsetChange}
+              />
             </Html>
           ))}
         <Html
@@ -419,6 +539,7 @@ const MeasurementItem = memo(
           transform
           sprite
           distanceFactor={MEASURE_TOTAL_LABEL_DISTANCE_FACTOR}
+          pointerEvents="none"
           className="pointer-events-none select-none"
           zIndexRange={MEASURE_LABEL_Z_INDEX_RANGE}
         >
@@ -536,7 +657,14 @@ export const MeasureTool: React.FC<MeasureToolProps> = ({
 
       return setMeasureHoverTarget(prev, target);
     });
-  }, [active, hoveredSelection, measureState.mode, resolveMeasureTarget, selection, setMeasureState]);
+  }, [
+    active,
+    hoveredSelection,
+    measureState.mode,
+    resolveMeasureTarget,
+    selection,
+    setMeasureState,
+  ]);
 
   useEffect(() => {
     if (!active) {
@@ -718,7 +846,10 @@ export const MeasureTool: React.FC<MeasureToolProps> = ({
         return;
       }
       const targetEl = event.target as HTMLElement | null;
-      if (targetEl && MEASURE_POINTER_IGNORE_SELECTORS.some((selector) => targetEl.closest(selector))) {
+      if (
+        targetEl &&
+        MEASURE_POINTER_IGNORE_SELECTORS.some((selector) => targetEl.closest(selector))
+      ) {
         return;
       }
       // Ignore the click that ends an orbit drag.
@@ -821,18 +952,10 @@ export const MeasureTool: React.FC<MeasureToolProps> = ({
   return (
     <group>
       {shouldShowFirstMarker && activeGroup.first ? (
-        <MeasureTargetMarker
-          target={activeGroup.first}
-          tone={firstMarkerTone}
-          badge="1"
-        />
+        <MeasureTargetMarker target={activeGroup.first} tone={firstMarkerTone} badge="1" />
       ) : null}
       {shouldShowSecondMarker && activeGroup.second ? (
-        <MeasureTargetMarker
-          target={activeGroup.second}
-          tone={secondMarkerTone}
-          badge="2"
-        />
+        <MeasureTargetMarker target={activeGroup.second} tone={secondMarkerTone} badge="2" />
       ) : null}
       {shouldShowHoverMarker && measureState.hoverTarget ? (
         <MeasureTargetMarker

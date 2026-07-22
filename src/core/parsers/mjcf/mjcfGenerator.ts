@@ -1866,7 +1866,7 @@ export const generateMujocoXML = (robot: RobotState, options: MujocoExportOption
         // Use joint dynamics for actuator gains
         const kv = j.dynamics?.damping ?? 1.0;
         const kp = j.limit?.effort ? j.limit.effort * 0.5 : 100.0;
-        const effortLimit = Number.isFinite(j.limit?.effort) ? Math.abs(j.limit!.effort) : 0;
+        const effortLimit = Number.isFinite(j.limit?.effort) ? Math.abs(Number(j.limit?.effort)) : 0;
         const forceRangeStr =
           effortLimit > 1e-12
             ? ` forcelimited="true" forcerange="${formatScalar(-effortLimit)} ${formatScalar(effortLimit)}"`
@@ -1888,7 +1888,7 @@ export const generateMujocoXML = (robot: RobotState, options: MujocoExportOption
         j.type !== JointType.FLOATING &&
         j.type !== JointType.BALL
       ) {
-        const effortLimit = Number.isFinite(j.limit?.effort) ? Math.abs(j.limit!.effort) : 0;
+        const effortLimit = Number.isFinite(j.limit?.effort) ? Math.abs(Number(j.limit?.effort)) : 0;
         const controlRangeStr =
           effortLimit > 1e-12
             ? ` ctrllimited="true" ctrlrange="${formatScalar(-effortLimit)} ${formatScalar(effortLimit)}"`

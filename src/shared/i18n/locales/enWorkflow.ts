@@ -273,7 +273,7 @@ export const enWorkflow: TranslationWorkflowKeys = {
   collisionOptimizerScopeMesh: 'Mesh only',
   collisionOptimizerScopePrimitive: 'Primitive only',
   collisionOptimizerScopeSelected: 'Selected only',
-  collisionOptimizerSettings: 'Rules',
+  collisionOptimizerSettings: 'Target collider & rules',
   collisionOptimizerDefaultStrategies: 'Default strategies',
   collisionOptimizerShowDefaultStrategies: 'Open defaults',
   collisionOptimizerHideDefaultStrategies: 'Hide defaults',
@@ -285,9 +285,9 @@ export const enWorkflow: TranslationWorkflowKeys = {
   collisionOptimizerCylinderStrategyLabel: 'Cylinder becomes',
   collisionOptimizerCylinderStrategyDesc:
     'Capsules usually feel smoother for elongated collision bodies.',
-  collisionOptimizerRodBoxStrategyLabel: 'Rod-like box becomes',
+  collisionOptimizerRodBoxStrategyLabel: 'Box becomes',
   collisionOptimizerRodBoxStrategyDesc:
-    'Only applies to obviously elongated boxes; choose capsule or cylinder.',
+    'All boxes use a compact capsule fit by default; choose cylinder or keep the original when needed.',
   collisionOptimizerCoaxialMergeStrategyLabel: 'Coaxial joint pair becomes',
   collisionOptimizerCoaxialMergeStrategyDesc:
     'When a parent-child joint pair is nearly coaxial and rod-like, merge their collision envelopes onto the parent link as one primitive.',
@@ -298,10 +298,10 @@ export const enWorkflow: TranslationWorkflowKeys = {
   collisionOptimizerSelectedCandidate: 'Selected candidate',
   collisionOptimizerSelectCandidateHint:
     'Select a candidate on the left to adjust its detailed strategy.',
-  collisionOptimizerIncludeCandidate: 'Include in apply',
+  collisionOptimizerIncludeCandidate: 'Apply this change',
   collisionOptimizerExcludeCandidate: 'Exclude from apply',
   collisionOptimizerCurrent: 'Current',
-  collisionOptimizerSuggested: 'Suggested',
+  collisionOptimizerSuggested: 'Target type',
   collisionOptimizerReason: 'Reason',
   collisionOptimizerStatus: 'Status',
   collisionOptimizerNoSelectedCollision:
@@ -318,9 +318,8 @@ export const enWorkflow: TranslationWorkflowKeys = {
   collisionOptimizerReasonMeshManual: 'Fits the mesh to the currently selected primitive strategy.',
   collisionOptimizerReasonCylinder:
     'Replaces flat cylinder cap contact with a capsule-style contact body.',
-  collisionOptimizerReasonRodBox: 'Detected an elongated box that likely fits a capsule better.',
-  collisionOptimizerReasonRodBoxCylinder:
-    'Detected an elongated box that is better reduced to a cylinder.',
+  collisionOptimizerReasonRodBox: 'Boxes use a compact capsule fit by default.',
+  collisionOptimizerReasonRodBoxCylinder: 'This box will use a compact cylinder fit.',
   collisionOptimizerReasonCoaxialCapsule:
     'Detected a parent-child coaxial joint pair and merged both collision bodies into one capsule proxy on the parent link.',
   collisionOptimizerReasonCoaxialCylinder:

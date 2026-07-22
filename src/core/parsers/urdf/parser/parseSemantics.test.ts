@@ -515,8 +515,8 @@ test('parseURDF preserves continuous joint effort and velocity without synthesiz
 
   assert.ok(robot);
   assert.ok(robot.joints.spin_joint?.limit);
-  assert.equal(Number.isFinite(robot.joints.spin_joint.limit?.lower), false);
-  assert.equal(Number.isFinite(robot.joints.spin_joint.limit?.upper), false);
+  assert.equal(robot.joints.spin_joint.limit?.lower, undefined);
+  assert.equal(robot.joints.spin_joint.limit?.upper, undefined);
   assert.equal(robot.joints.spin_joint.limit?.effort, 35.278);
   assert.equal(robot.joints.spin_joint.limit?.velocity, 20);
 
@@ -528,6 +528,52 @@ test('parseURDF preserves continuous joint effort and velocity without synthesiz
   assert.match(urdf, /<limit effort="35\.278" velocity="20" \/>/);
   assert.doesNotMatch(urdf, /<limit[^>]*lower=/);
   assert.doesNotMatch(urdf, /<limit[^>]*upper=/);
+});
+
+test('parseURDF omits malformed joint metadata and preserves invalid geometry for import recovery', () => {
+  const robot = parseURDF(`<?xml version="1.0"?>
+<robot name="malformed_optional_numbers">
+  <link name="base_link">
+    <inertial>
+      <mass value="not-a-number" />
+      <inertia ixx="1" ixy="0" ixz="0" iyy="1" iyz="0" izz="1" />
+    </inertial>
+    <visual>
+      <geometry><cylinder radius="infinity" length="0.5" /></geometry>
+    </visual>
+  </link>
+  <link name="tip_link" />
+  <joint name="bad_metadata_joint" type="revolute">
+    <parent link="base_link" />
+    <child link="tip_link" />
+    <origin xyz="Infinity 2 broken" rpy="broken 0 0" />
+    <limit lower="broken" upper="1" effort="Infinity" velocity="2" />
+    <calibration rising="broken" falling="0.25" />
+    <safety_controller soft_lower_limit="broken" soft_upper_limit="0.8" k_position="Infinity" k_velocity="4" />
+    <hardware>
+      <motorDirection>broken</motorDirection>
+      <armature>Infinity</armature>
+    </hardware>
+  </joint>
+</robot>`);
+
+  assert.ok(robot);
+  assert.equal(Number.isFinite(robot.links.base_link.inertial?.mass), false);
+  assert.equal(Number.isFinite(robot.links.base_link.visual.dimensions.x), false);
+  assert.deepEqual(
+    { y: robot.links.base_link.visual.dimensions.y, z: robot.links.base_link.visual.dimensions.z },
+    { y: 0.5, z: 0 },
+  );
+  assert.deepEqual(robot.joints.bad_metadata_joint.origin.xyz, { x: 0, y: 2, z: 0 });
+  assert.deepEqual(robot.joints.bad_metadata_joint.origin.rpy, { r: 0, p: 0, y: 0 });
+  assert.deepEqual(robot.joints.bad_metadata_joint.limit, { upper: 1, velocity: 2 });
+  assert.deepEqual(robot.joints.bad_metadata_joint.calibration, { falling: 0.25 });
+  assert.deepEqual(robot.joints.bad_metadata_joint.safetyController, {
+    softUpperLimit: 0.8,
+    kVelocity: 4,
+  });
+  assert.equal(robot.joints.bad_metadata_joint.hardware.motorDirection, 1);
+  assert.equal(robot.joints.bad_metadata_joint.hardware.armature, 0);
 });
 
 test('parseURDF and generateURDF preserve joint calibration reference_position', () => {

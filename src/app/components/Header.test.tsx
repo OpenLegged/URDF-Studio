@@ -5,6 +5,7 @@ import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { Box } from 'lucide-react';
 
+import { MANAGED_WINDOW_Z_INDEX_BASE } from '@/store/uiStore';
 import { Header } from './Header.tsx';
 
 const noopToolboxItems: import('./header/types').ToolboxItem[] = [];
@@ -32,12 +33,15 @@ function renderHeader(withSurfaceModeSelector = false) {
       onImportFile: () => {},
       onImportFolder: () => {},
       onOpenExport: () => {},
+      onPrefetchExport: () => {},
       onExportProject: () => {},
       toolboxItems: noopToolboxItems,
       onOpenCodeViewer: () => {},
       onPrefetchCodeViewer: () => {},
       onOpenSettings: () => {},
+      onPrefetchSettings: () => {},
       onSnapshot: () => {},
+      onPrefetchSnapshot: () => {},
       quickAction: {
         label: 'Quick action',
         icon: Box,
@@ -77,13 +81,12 @@ test('Header does not reserve empty center dock width when no toolbar is mounted
   assert.doesNotMatch(markup, /min-w-\[240px\]/);
 });
 
-test('Header renders above managed windows so its dropdowns stay clickable', () => {
+test('Header renders below managed floating windows', () => {
   const markup = renderHeader();
 
-  // The header element itself must establish a stacking context above the
-  // managed-window layer (220-235). Without `relative` + a z-index >= 235,
-  // dropdown panels (z-50) are stacked at the document root and get buried
-  // under source-code/AI/settings windows.
+  // Managed floating windows intentionally cover the application header when
+  // their bounds overlap it. Keep the header in an explicit lower stacking
+  // context so every dynamically ordered window (220+) remains above it.
   const headerTag = markup.match(/<header[^>]*>/)?.[0];
   assert.ok(headerTag, 'expected a <header> element');
   assert.match(headerTag, /relative/, 'header must be positioned to establish a stacking context');
@@ -96,8 +99,8 @@ test('Header renders above managed windows so its dropdowns stay clickable', () 
   assert.ok(zIndexMatch, 'header z-index utility should include a numeric value');
   const zIndex = Number(zIndexMatch[1]);
   assert.ok(
-    zIndex > 235,
-    `header z-index (${zIndex}) must exceed the managed-window ceiling (235) so dropdowns render above windows`,
+    zIndex < MANAGED_WINDOW_Z_INDEX_BASE,
+    `header z-index (${zIndex}) must remain below the managed-window floor (${MANAGED_WINDOW_Z_INDEX_BASE})`,
   );
 });
 
@@ -118,4 +121,26 @@ test('Header places the optional surface mode selector after the logo and before
   assert.ok(logoIndex >= 0, 'expected the header logo');
   assert.ok(selectorIndex > logoIndex, 'surface mode selector should follow the logo');
   assert.ok(fileIndex > selectorIndex, 'File should follow the surface mode selector');
+});
+
+test('Header links to the feedback form in a new tab', () => {
+  const markup = renderHeader();
+
+  const feedbackLink = markup.match(
+    /<a[^>]*href="https:\/\/enkeebot\.feishu\.cn\/share\/base\/form\/shrcnok1dXPePgAxuu2qnXiVxYf"[^>]*>/,
+  )?.[0];
+  assert.ok(feedbackLink, 'header should render the feedback link');
+  assert.match(feedbackLink, /target="_blank"/, 'feedback should open in a new tab');
+  assert.match(
+    feedbackLink,
+    /rel="noopener noreferrer"/,
+    'feedback link should isolate the opened tab',
+  );
+  assert.match(feedbackLink, /aria-label="Feedback"/);
+
+  const feedbackLinkContent = markup.match(
+    /<a[^>]*aria-label="Feedback"[^>]*>(.*?)<\/a>/,
+  )?.[1];
+  assert.ok(feedbackLinkContent, 'feedback link should render an icon');
+  assert.doesNotMatch(feedbackLinkContent, />Feedback</, 'feedback button should remain icon-only');
 });

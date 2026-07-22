@@ -9,10 +9,13 @@ import type { AppToolboxItem } from '../appExtensions';
 interface UseToolItemsParams {
   t: TranslationKeys;
   openAIInspection: () => void;
+  prefetchAIInspection: () => void;
   openAIConversation: () => void;
+  prefetchAIConversation: () => void;
   openIkTool: () => void;
   openCollisionOptimizer: () => void;
   extensionItems?: readonly AppToolboxItem[];
+  prefetchCollisionOptimizer: () => void;
 }
 
 interface UseToolItemsReturn {
@@ -28,9 +31,12 @@ export function useToolItems(params: UseToolItemsParams): UseToolItemsReturn {
   const {
     t,
     openAIInspection,
+    prefetchAIInspection,
     openAIConversation,
+    prefetchAIConversation,
     openIkTool,
     openCollisionOptimizer,
+    prefetchCollisionOptimizer,
     extensionItems = [],
   } = params;
   const effectiveTheme = useEffectiveTheme();
@@ -45,6 +51,7 @@ export function useToolItems(params: UseToolItemsParams): UseToolItemsReturn {
         description: t.aiInspectionDesc,
         icon: <ScanSearch className="h-[18px] w-[18px]" />,
         onClick: openAIInspection,
+        onPrefetch: prefetchAIInspection,
         tone: 'primary',
       },
       {
@@ -53,6 +60,7 @@ export function useToolItems(params: UseToolItemsParams): UseToolItemsReturn {
         description: t.aiConversationDesc,
         icon: <MessageSquare className="h-[18px] w-[18px]" />,
         onClick: openAIConversation,
+        onPrefetch: prefetchAIConversation,
         tone: 'primary',
       },
       ...(isIkDragToolEnabled()
@@ -73,6 +81,7 @@ export function useToolItems(params: UseToolItemsParams): UseToolItemsReturn {
         description: t.collisionOptimizerToolboxDesc,
         icon: <Box className="h-[18px] w-[18px]" />,
         onClick: openCollisionOptimizer,
+        onPrefetch: prefetchCollisionOptimizer,
         tone: 'primary',
       },
       {
@@ -140,9 +149,12 @@ export function useToolItems(params: UseToolItemsParams): UseToolItemsReturn {
     [
       t,
       openAIInspection,
+      prefetchAIInspection,
       openAIConversation,
+      prefetchAIConversation,
       openIkTool,
       openCollisionOptimizer,
+      prefetchCollisionOptimizer,
       motrixLogoSrc,
       extensionItems,
     ],

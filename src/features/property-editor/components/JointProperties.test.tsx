@@ -94,8 +94,20 @@ test('joint properties render hardware, limit, and dynamics fields with inline l
     markup,
     createInlineFieldPattern(`${translations.en.effort} (${effortUnit})`, 'w-24'),
   );
+  assert.match(markup, /grid grid-cols-1 gap-2 @\[300px\]:grid-cols-2/);
+  assert.match(markup, /w-24 min-w-24 max-w-24 shrink-0 whitespace-nowrap/);
   assert.match(markup, createInlineFieldPattern(translations.en.friction, 'w-16'));
   assert.match(markup, createInlineFieldPattern(translations.en.damping, 'w-16'));
+  assert.ok(
+    markup.indexOf(`>${translations.en.limits}<`)
+      < markup.indexOf(`>${translations.en.hardwareConfig}<`),
+    'limits should render before hardware configuration',
+  );
+  assert.ok(
+    markup.indexOf(`>${translations.en.effort} (${effortUnit})<`)
+      < markup.indexOf(`>${translations.en.velocity} (${velocityUnit})<`),
+    'effort should render before velocity to match the joints panel',
+  );
   assert.doesNotMatch(markup, new RegExp(`>${escapeForRegExp(limitUnit)}<`));
   assert.doesNotMatch(markup, new RegExp(`>${escapeForRegExp(velocityUnit)}<`));
   assert.doesNotMatch(markup, new RegExp(`>${escapeForRegExp(effortUnit)}<`));

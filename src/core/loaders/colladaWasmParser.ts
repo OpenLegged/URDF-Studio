@@ -70,7 +70,7 @@ function buildPublicAssetUrl(path: string): string {
   const baseUrl = getViteBaseUrl().replace(/\/?$/, '/');
   const normalizedPath = path.replace(/^\/+/, '');
   if (typeof location === 'undefined') {
-    const root = new URL('../../../', import.meta.url);
+    const root = new URL(/* @vite-ignore */ '../../../', import.meta.url);
     return new URL('public/' + normalizedPath, root).href;
   }
 

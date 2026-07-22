@@ -244,6 +244,45 @@ test('folds Unitree B2 USD cylinder scale along the schema Z axis', () => {
   });
 });
 
+test('prefers authored B2 cylinder dimensions over the USD schema default extent', () => {
+  const descriptor: UsdSceneMeshDescriptor = {
+    meshId: '/b2_description/FR_hip_rotor/collisions.proto_cylinder_id0',
+    sectionName: 'collisions',
+    resolvedPrimPath: '/b2_description/FR_hip_rotor/collisions/collision_0/cylinder',
+    primType: 'cylinder',
+    axis: 'Z',
+    radius: 0.05,
+    height: 0.02,
+    extentSize: [2, 2, 2],
+    ranges: {
+      transform: {
+        offset: 0,
+        count: 16,
+        stride: 16,
+      },
+    },
+  };
+  const snapshot: UsdSceneSnapshot = {
+    buffers: {
+      transforms: [
+        1, 0, 0, 0,
+        0, 1, 0, 0,
+        0, 0, 1, 0,
+        0, 0, 0, 1,
+      ],
+    },
+  };
+
+  assert.deepEqual(resolveUsdPrimitiveGeometryFromDescriptor(descriptor, null, snapshot), {
+    type: GeometryType.CYLINDER,
+    dimensions: {
+      x: 0.05,
+      y: 0.02,
+      z: 0,
+    },
+  });
+});
+
 test('does not invent primitive dimensions when the baked USD descriptor has no size evidence', () => {
   const descriptor: UsdSceneMeshDescriptor = {
     meshId: '/Robot/base_link/collisions.proto_box_id0',

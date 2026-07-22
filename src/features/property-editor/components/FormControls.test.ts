@@ -327,6 +327,62 @@ test('pointer down applies the first step immediately before pointer up', async 
   }
 });
 
+test('dragging a number input horizontally applies its configured step in both directions', async () => {
+  const { dom, container, root } = createComponentRoot();
+  try {
+    await renderHarness(root, {
+      initialValue: 1,
+      label: 'Radius',
+      step: 0.1,
+    });
+
+    const input = getTextInput(container);
+
+    await act(async () => {
+      input.dispatchEvent(
+        new PointerEvent('pointerdown', {
+          bubbles: true,
+          button: 0,
+          clientX: 100,
+          pointerId: 7,
+        }),
+      );
+      input.dispatchEvent(
+        new PointerEvent('pointermove', {
+          bubbles: true,
+          clientX: 124,
+          pointerId: 7,
+        }),
+      );
+    });
+
+    assert.equal(getCommittedValue(container), '1.6');
+    assert.equal(dom.window.document.body.style.userSelect, 'none');
+
+    await act(async () => {
+      input.dispatchEvent(
+        new PointerEvent('pointermove', {
+          bubbles: true,
+          clientX: 108,
+          pointerId: 7,
+        }),
+      );
+      input.dispatchEvent(
+        new PointerEvent('pointerup', {
+          bubbles: true,
+          clientX: 108,
+          pointerId: 7,
+        }),
+      );
+    });
+
+    assert.equal(getCommittedValue(container), '1.2');
+    assert.equal(dom.window.document.body.style.userSelect, '');
+  } finally {
+    await destroyComponentRoot(dom, root);
+  }
+});
+
 test('typing a parseable value updates the committed value before blur', async () => {
   const { dom, container, root } = createComponentRoot();
   try {

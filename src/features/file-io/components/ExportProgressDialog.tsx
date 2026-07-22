@@ -1,7 +1,12 @@
 import React from 'react';
 import { Briefcase } from 'lucide-react';
 
-import { DraggableWindow } from '@/shared/components/DraggableWindow';
+import {
+  DraggableWindow,
+  FLOATING_WINDOW_HEADER_HEIGHT_CLASS,
+  FLOATING_WINDOW_RADIUS_CLASS,
+  FLOATING_WINDOW_TITLE_CLASS,
+} from '@/shared/components/DraggableWindow';
 import { useDraggableWindow } from '@/shared/hooks/useDraggableWindow';
 import { translations, type Language } from '@/shared/i18n';
 import { useManagedWindowLayer } from '@/store';
@@ -34,13 +39,13 @@ export function ExportProgressDialog({ lang, progress }: ExportProgressDialogPro
           <div className="rounded-md border border-border-black bg-element-bg p-1 text-text-secondary">
             <Briefcase className="h-3.5 w-3.5" />
           </div>
-          <span className="text-xs font-semibold text-text-primary">{t.exportProject}</span>
+          <span className={FLOATING_WINDOW_TITLE_CLASS}>{t.exportProject}</span>
         </div>
       }
-      className="flex flex-col overflow-hidden rounded-2xl border border-border-black bg-panel-bg text-text-primary shadow-xl"
+      className={`flex flex-col overflow-hidden ${FLOATING_WINDOW_RADIUS_CLASS} border border-border-black bg-panel-bg text-text-primary shadow-xl`}
       zIndex={exportProgressWindowLayer.zIndex}
       onActivate={exportProgressWindowLayer.onActivate}
-      headerClassName="flex h-10 shrink-0 items-center justify-between border-b border-border-black bg-element-bg px-3"
+      headerClassName={`flex ${FLOATING_WINDOW_HEADER_HEIGHT_CLASS} shrink-0 items-center justify-between border-b border-border-black bg-element-bg px-3`}
       interactionClassName="select-none"
       showMinimizeButton={false}
       showMaximizeButton={false}

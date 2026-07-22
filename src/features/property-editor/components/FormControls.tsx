@@ -29,6 +29,7 @@ import {
   PROPERTY_EDITOR_STEPPER_RAIL_CLASS,
   PROPERTY_EDITOR_SUBLABEL_CLASS,
 } from './formControlClasses';
+import { useHorizontalNumberScrub } from './useHorizontalNumberScrub';
 
 export {
   PROPERTY_EDITOR_COMPACT_INPUT_CLASS,
@@ -495,15 +496,23 @@ const useNumberInputController = ({
     revertToCommittedValue(false);
   }, [commitValue, parseValue, revertToCommittedValue, formatValue]);
 
-  const applyStep = useCallback(
-    (direction: 1 | -1) => {
+  const applyStepDelta = useCallback(
+    (stepCount: number) => {
+      if (stepCount === 0) {
+        return;
+      }
+
       collapseInputSelection();
       const parsed = parseValue(draftValueRef.current);
       const baseValue =
         parsed !== null ? clampNumberToBounds(parsed, min, max) : latestCommittedValueRef.current;
-      commitValue(baseValue + direction * step);
+      commitValue(baseValue + stepCount * step);
     },
     [collapseInputSelection, commitValue, max, min, parseValue, step],
+  );
+  const applyStep = useCallback(
+    (direction: 1 | -1) => applyStepDelta(direction),
+    [applyStepDelta],
   );
 
   const handleKeyDown = useCallback(
@@ -556,6 +565,7 @@ const useNumberInputController = ({
 
   return {
     applyStep,
+    applyStepDelta,
     handleBlur,
     handleFocus,
     handleChange,
@@ -608,7 +618,15 @@ export const NumberInput = ({
     clearPointerFocusIntent,
     collapseInputSelection,
   } = useInputSelectionBehavior();
-  const { applyStep, handleBlur, handleFocus, handleChange, handleKeyDown, localValue } =
+  const {
+    applyStep,
+    applyStepDelta,
+    handleBlur,
+    handleFocus,
+    handleChange,
+    handleKeyDown,
+    localValue,
+  } =
     useNumberInputController({
       value,
       onChange,
@@ -625,6 +643,13 @@ export const NumberInput = ({
       inputRef,
       collapseInputSelection,
     });
+
+  const { isScrubbing, scrubInputProps } = useHorizontalNumberScrub({
+    applyStepDelta,
+    collapseInputSelection,
+    onPointerDown: handleInputPointerDown,
+    onPointerEnd: clearPointerFocusIntent,
+  });
 
   const { stepperButtonProps } = usePressAndHoldStepper(applyStep, repeatIntervalMs);
 
@@ -653,10 +678,10 @@ export const NumberInput = ({
             handleInputFocus(e);
           }}
           onKeyDown={handleKeyDown}
-          onPointerDown={handleInputPointerDown}
-          onPointerUp={clearPointerFocusIntent}
-          onPointerCancel={clearPointerFocusIntent}
+          {...scrubInputProps}
           className={`min-w-0 flex-1 bg-transparent leading-4 text-text-primary tabular-nums outline-none ${
+            isScrubbing ? 'cursor-ew-resize' : 'cursor-text hover:cursor-ew-resize'
+          } ${
             compact ? 'px-1.5 text-[10px]' : 'px-1.5 text-[10px]'
           }`}
         />
@@ -734,7 +759,15 @@ export const InlineNumberInput = ({
     clearPointerFocusIntent,
     collapseInputSelection,
   } = useInputSelectionBehavior();
-  const { applyStep, handleBlur, handleFocus, handleChange, handleKeyDown, localValue } =
+  const {
+    applyStep,
+    applyStepDelta,
+    handleBlur,
+    handleFocus,
+    handleChange,
+    handleKeyDown,
+    localValue,
+  } =
     useNumberInputController({
       value,
       onChange,
@@ -750,6 +783,13 @@ export const InlineNumberInput = ({
       inputRef,
       collapseInputSelection,
     });
+
+  const { isScrubbing, scrubInputProps } = useHorizontalNumberScrub({
+    applyStepDelta,
+    collapseInputSelection,
+    onPointerDown: handleInputPointerDown,
+    onPointerEnd: clearPointerFocusIntent,
+  });
 
   const { stepperButtonProps } = usePressAndHoldStepper(applyStep, repeatIntervalMs);
 
@@ -777,11 +817,11 @@ export const InlineNumberInput = ({
             handleInputFocus(e);
           }}
           onKeyDown={handleKeyDown}
-          onPointerDown={handleInputPointerDown}
-          onPointerUp={clearPointerFocusIntent}
-          onPointerCancel={clearPointerFocusIntent}
+          {...scrubInputProps}
           aria-label={label}
           className={`min-w-0 flex-1 bg-transparent leading-4 text-text-primary tabular-nums outline-none ${
+            isScrubbing ? 'cursor-ew-resize' : 'cursor-text hover:cursor-ew-resize'
+          } ${
             compact ? 'px-1.5 text-[10px]' : 'px-1.5 text-[10px]'
           }`}
         />

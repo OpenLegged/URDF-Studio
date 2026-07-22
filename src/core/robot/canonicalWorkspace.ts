@@ -54,6 +54,7 @@ const COMPONENT_KEYS = new Set([
   'renderableBounds',
   'transform',
   'visible',
+  'editorLocked',
 ]);
 const ROBOT_DATA_KEYS = new Set([
   'name',
@@ -78,7 +79,53 @@ const GEOMETRY_TYPES = new Set<string>(Object.values(GeometryType));
 const JOINT_TYPES = new Set<string>(Object.values(JointType));
 const HARDWARE_INTERFACES = new Set(['effort', 'position', 'velocity']);
 const ROBOT_SOURCE_FORMATS = new Set(['urdf', 'mjcf', 'usd', 'xacro', 'sdf', 'mesh']);
-const INSPECTION_CONTEXT_KEYS = new Set(['sourceFormat', 'urdf', 'mjcf']);
+const INSPECTION_CONTEXT_KEYS = new Set(['sourceFormat', 'recovery', 'urdf', 'mjcf']);
+const IMPORT_RECOVERY_KEYS = new Set([
+  'diagnostics',
+  'diagnosticCounts',
+  'recoveredItemCount',
+  'omittedDiagnosticCount',
+]);
+const IMPORT_RECOVERY_DIAGNOSTIC_KEYS = new Set([
+  'code',
+  'severity',
+  'category',
+  'message',
+  'relatedIds',
+  'source',
+  'action',
+]);
+const IMPORT_RECOVERY_DIAGNOSTIC_SOURCE_KEYS = new Set(['tag', 'name', 'attribute']);
+const DIAGNOSTIC_SEVERITIES = new Set(['info', 'warning', 'error']);
+const DIAGNOSTIC_CATEGORIES = new Set([
+  'source',
+  'topology',
+  'joint',
+  'geometry',
+  'material',
+  'physical',
+  'simulation',
+]);
+const IMPORT_RECOVERY_ACTIONS = new Set(['omitted', 'defaulted', 'downgraded']);
+const USD_JOINT_PHYSICS_KEYS = new Set([
+  'jointTypeName',
+  'axisToken',
+  'localPos0',
+  'localRot0Wxyz',
+  'localPos1',
+  'localRot1Wxyz',
+  'limitAxes',
+  'driveAxes',
+]);
+const USD_JOINT_LIMIT_KEYS = new Set(['low', 'high']);
+const USD_JOINT_DRIVE_KEYS = new Set([
+  'type',
+  'stiffness',
+  'damping',
+  'maxForce',
+  'targetPosition',
+  'targetVelocity',
+]);
 const MJCF_INSPECTION_KEYS = new Set([
   'siteCount',
   'tendonCount',
@@ -496,6 +543,16 @@ function validateRobotLinks(
     if (linkValue.visible !== undefined && typeof linkValue.visible !== 'boolean') {
       addIssue(issues, `${linkPath}.visible`, 'must be a boolean when provided');
     }
+    if (
+      linkValue.editorLocked !== undefined &&
+      typeof linkValue.editorLocked !== 'boolean'
+    ) {
+      addIssue(
+        issues,
+        `${linkPath}.editorLocked`,
+        'must be a boolean when provided',
+      );
+    }
     links[linkKey] = linkValue;
   }
   return links;
@@ -512,12 +569,76 @@ function validateJointFields(
   validateOrigin(joint.origin, `${path}.origin`, issues);
   if (joint.axis !== undefined) validateVector3(joint.axis, `${path}.axis`, issues);
 
+  if (joint.usdPhysics !== undefined) {
+    const usdPhysicsPath = `${path}.usdPhysics`;
+    if (!isRecord(joint.usdPhysics)) {
+      addIssue(issues, usdPhysicsPath, 'must be a USD joint physics object');
+    } else {
+      const usdPhysics = joint.usdPhysics;
+      validateAllowedKeys(usdPhysics, USD_JOINT_PHYSICS_KEYS, usdPhysicsPath, issues);
+      for (const field of ['jointTypeName', 'axisToken'] as const) {
+        if (usdPhysics[field] !== undefined && typeof usdPhysics[field] !== 'string') {
+          addIssue(issues, `${usdPhysicsPath}.${field}`, 'must be a string when provided');
+        }
+      }
+      for (const field of ['localPos0', 'localPos1'] as const) {
+        if (usdPhysics[field] !== undefined) {
+          validateVector3(usdPhysics[field], `${usdPhysicsPath}.${field}`, issues);
+        }
+      }
+      for (const field of ['localRot0Wxyz', 'localRot1Wxyz'] as const) {
+        if (usdPhysics[field] !== undefined) {
+          validateFiniteNumberArray(usdPhysics[field], `${usdPhysicsPath}.${field}`, issues, 4);
+        }
+      }
+      for (const [field, allowedKeys, numericFields] of [
+        ['limitAxes', USD_JOINT_LIMIT_KEYS, ['low', 'high']],
+        [
+          'driveAxes',
+          USD_JOINT_DRIVE_KEYS,
+          ['stiffness', 'damping', 'maxForce', 'targetPosition', 'targetVelocity'],
+        ],
+      ] as const) {
+        const axes = usdPhysics[field];
+        if (axes === undefined) continue;
+        if (!isRecord(axes)) {
+          addIssue(issues, `${usdPhysicsPath}.${field}`, 'must be an axis map');
+          continue;
+        }
+        Object.entries(axes).forEach(([axis, axisValue]) => {
+          const axisPath = `${usdPhysicsPath}.${field}.${axis}`;
+          if (!isRecord(axisValue)) {
+            addIssue(issues, axisPath, 'must be an axis settings object');
+            return;
+          }
+          validateAllowedKeys(axisValue, allowedKeys, axisPath, issues);
+          numericFields.forEach((numericField) => {
+            const value = axisValue[numericField];
+            if (value !== undefined && value !== null) {
+              validateFiniteNumber(value, `${axisPath}.${numericField}`, issues);
+            }
+          });
+          if (
+            field === 'driveAxes'
+            && axisValue.type !== undefined
+            && axisValue.type !== null
+            && typeof axisValue.type !== 'string'
+          ) {
+            addIssue(issues, `${axisPath}.type`, 'must be a string or null');
+          }
+        });
+      }
+    }
+  }
+
   if (joint.limit !== undefined) {
     if (!isRecord(joint.limit)) {
       addIssue(issues, `${path}.limit`, 'must be a joint limit object');
     } else {
       for (const field of ['lower', 'upper', 'effort', 'velocity']) {
-        validateFiniteNumber(joint.limit[field], `${path}.limit.${field}`, issues);
+        if (joint.limit[field] !== undefined) {
+          validateFiniteNumber(joint.limit[field], `${path}.limit.${field}`, issues);
+        }
       }
     }
   }
@@ -582,6 +703,20 @@ function validateJointFields(
         validateFiniteNumber(joint.mimic.offset, `${path}.mimic.offset`, issues);
       }
     }
+  }
+  for (const [field, allowedFields] of [
+    ['calibration', new Set(['referencePosition', 'rising', 'falling'])],
+    ['safetyController', new Set(['softLowerLimit', 'softUpperLimit', 'kPosition', 'kVelocity'])],
+  ] as const) {
+    const value = joint[field];
+    if (value === undefined) continue;
+    if (!isRecord(value)) {
+      addIssue(issues, `${path}.${field}`, `must be a joint ${field} object`);
+      continue;
+    }
+    validateAllowedKeys(value, allowedFields, `${path}.${field}`, issues);
+    Object.entries(value).forEach(([key, nestedValue]) =>
+      validateFiniteNumber(nestedValue, `${path}.${field}.${key}`, issues));
   }
 }
 
@@ -724,12 +859,10 @@ function collectRobotReferenceAliases(
   links: ReferenceAliases;
   joints: ReferenceAliases;
   sites: ReferenceAliases;
-  geometries: ReferenceAliases;
 } {
   const linkAliases = createReferenceAliases();
   const jointAliases = createReferenceAliases();
   const siteAliases = createReferenceAliases();
-  const geometryAliases = createReferenceAliases();
 
   Object.entries(links ?? {}).forEach(([linkId, link]) => {
     addReferenceAlias(linkAliases, linkId, linkId);
@@ -743,17 +876,6 @@ function collectRobotReferenceAliases(
         addReferenceAlias(siteAliases, site.sourceName, target);
       });
     }
-    const geometries = [
-      link.visual,
-      ...(Array.isArray(link.visualBodies) ? link.visualBodies : []),
-      link.collision,
-      ...(Array.isArray(link.collisionBodies) ? link.collisionBodies : []),
-    ];
-    geometries.forEach((geometry, index) => {
-      if (isRecord(geometry)) {
-        addReferenceAlias(geometryAliases, geometry.name, `${linkId}:geometry:${index}`);
-      }
-    });
   });
   Object.entries(joints ?? {}).forEach(([jointId, joint]) => {
     addReferenceAlias(jointAliases, jointId, jointId);
@@ -765,7 +887,6 @@ function collectRobotReferenceAliases(
     links: linkAliases,
     joints: jointAliases,
     sites: siteAliases,
-    geometries: geometryAliases,
   };
 }
 
@@ -789,6 +910,111 @@ function validateReference({
       `references a missing or ambiguous source-local ${referenceType} "${String(value)}"`,
     );
   }
+}
+
+function validateImportRecovery(
+  recovery: unknown,
+  path: string,
+  issues: CanonicalWorkspaceValidationIssue[],
+): void {
+  if (recovery === undefined) return;
+  if (!isRecord(recovery)) {
+    addIssue(issues, path, 'must be an import recovery report');
+    return;
+  }
+  validateAllowedKeys(recovery, IMPORT_RECOVERY_KEYS, path, issues);
+  validateFiniteNumber(recovery.recoveredItemCount, `${path}.recoveredItemCount`, issues);
+  if (recovery.omittedDiagnosticCount !== undefined) {
+    validateFiniteNumber(
+      recovery.omittedDiagnosticCount,
+      `${path}.omittedDiagnosticCount`,
+      issues,
+    );
+  }
+  if (!isRecord(recovery.diagnosticCounts)) {
+    addIssue(issues, `${path}.diagnosticCounts`, 'must be a diagnostic count object');
+  } else {
+    const diagnosticCounts = recovery.diagnosticCounts;
+    validateAllowedKeys(
+      diagnosticCounts,
+      DIAGNOSTIC_SEVERITIES,
+      `${path}.diagnosticCounts`,
+      issues,
+    );
+    DIAGNOSTIC_SEVERITIES.forEach((severity) =>
+      validateFiniteNumber(
+        diagnosticCounts[severity],
+        `${path}.diagnosticCounts.${severity}`,
+        issues,
+      ));
+  }
+  if (!Array.isArray(recovery.diagnostics)) {
+    addIssue(issues, `${path}.diagnostics`, 'must be an array');
+    return;
+  }
+  recovery.diagnostics.forEach((diagnostic, index) => {
+    const diagnosticPath = `${path}.diagnostics.${index}`;
+    if (!isRecord(diagnostic)) {
+      addIssue(issues, diagnosticPath, 'must be an import recovery diagnostic');
+      return;
+    }
+    validateAllowedKeys(
+      diagnostic,
+      IMPORT_RECOVERY_DIAGNOSTIC_KEYS,
+      diagnosticPath,
+      issues,
+    );
+    for (const field of ['code', 'message'] as const) {
+      validateNonEmptyString(diagnostic[field], `${diagnosticPath}.${field}`, issues);
+    }
+    if (
+      typeof diagnostic.severity !== 'string'
+      || !DIAGNOSTIC_SEVERITIES.has(diagnostic.severity)
+    ) {
+      addIssue(issues, `${diagnosticPath}.severity`, 'must be info, warning, or error');
+    }
+    if (
+      typeof diagnostic.category !== 'string'
+      || !DIAGNOSTIC_CATEGORIES.has(diagnostic.category)
+    ) {
+      addIssue(issues, `${diagnosticPath}.category`, 'must be a diagnostic category');
+    }
+    if (
+      typeof diagnostic.action !== 'string'
+      || !IMPORT_RECOVERY_ACTIONS.has(diagnostic.action)
+    ) {
+      addIssue(
+        issues,
+        `${diagnosticPath}.action`,
+        'must be omitted, defaulted, or downgraded',
+      );
+    }
+    if (diagnostic.relatedIds !== undefined) {
+      validateStringArray(diagnostic.relatedIds, `${diagnosticPath}.relatedIds`, issues);
+    }
+    if (diagnostic.source !== undefined) {
+      if (!isRecord(diagnostic.source)) {
+        addIssue(issues, `${diagnosticPath}.source`, 'must be a diagnostic source object');
+      } else {
+        const source = diagnostic.source;
+        validateAllowedKeys(
+          source,
+          IMPORT_RECOVERY_DIAGNOSTIC_SOURCE_KEYS,
+          `${diagnosticPath}.source`,
+          issues,
+        );
+        IMPORT_RECOVERY_DIAGNOSTIC_SOURCE_KEYS.forEach((field) => {
+          if (source[field] !== undefined) {
+            validateNonEmptyString(
+              source[field],
+              `${diagnosticPath}.source.${field}`,
+              issues,
+            );
+          }
+        });
+      }
+    }
+  });
 }
 
 
@@ -818,6 +1044,7 @@ function validateTendonIdentities({
     addIssue(issues, `${path}.sourceFormat`, 'must be a supported source format');
   }
   validateCanonicalUrdfInspection(inspectionContext.urdf, `${path}.urdf`, issues);
+  validateImportRecovery(inspectionContext.recovery, `${path}.recovery`, issues);
   const mjcf = inspectionContext.mjcf;
   if (mjcf === undefined) return;
   if (!isRecord(mjcf)) {
@@ -958,19 +1185,11 @@ function validateTendonIdentities({
           validateNonEmptyString(attachment.ref, `${attachmentPath}.ref`, issues);
         }
         if (attachment.sidesite !== undefined) {
-          if (validateNonEmptyString(
+          validateNonEmptyString(
             attachment.sidesite,
             `${attachmentPath}.sidesite`,
             issues,
-          )) {
-            validateReference({
-              aliases: aliases.sites,
-              value: attachment.sidesite,
-              path: `${attachmentPath}.sidesite`,
-              referenceType: 'MJCF site',
-              issues,
-            });
-          }
+          );
         }
         if (attachment.divisor !== undefined) {
           validateFiniteNumber(attachment.divisor, `${attachmentPath}.divisor`, issues);
@@ -988,18 +1207,19 @@ function validateTendonIdentities({
           `${attachmentPath}.ref`,
           issues,
         )) {
-          const referenceAliases = attachment.type === 'site'
-            ? aliases.sites
-            : attachment.type === 'geom'
-              ? aliases.geometries
-              : aliases.joints;
-          validateReference({
-            aliases: referenceAliases,
-            value: attachment.ref,
-            path: `${attachmentPath}.ref`,
-            referenceType: `${String(attachment.type)} attachment`,
-            issues,
-          });
+          // MJCF spatial tendons may reference helper sites/geoms that are kept
+          // only in source inspection metadata and are not projected into the
+          // canonical render graph. Joint attachments, however, point at the
+          // canonical articulation and must still resolve.
+          if (attachment.type === 'joint') {
+            validateReference({
+              aliases: aliases.joints,
+              value: attachment.ref,
+              path: `${attachmentPath}.ref`,
+              referenceType: 'joint attachment',
+              issues,
+            });
+          }
         }
         const attachmentRef = typeof attachment.ref === 'string'
           ? attachment.ref
@@ -1162,6 +1382,16 @@ function validateComponents(
     }
     if (typeof componentValue.visible !== 'boolean') {
       addIssue(issues, `${path}.visible`, 'must be a boolean');
+    }
+    if (
+      componentValue.editorLocked !== undefined &&
+      typeof componentValue.editorLocked !== 'boolean'
+    ) {
+      addIssue(
+        issues,
+        `${path}.editorLocked`,
+        'must be a boolean when provided',
+      );
     }
     validateTransform(componentValue.transform, `${path}.transform`, issues);
     if (componentValue.renderableBounds !== undefined) {

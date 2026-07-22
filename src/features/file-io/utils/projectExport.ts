@@ -174,10 +174,24 @@ const generateBridgeXml = (bridges: Record<string, BridgeJoint>): string => {
     if (AXIS_EXPORT_TYPES.has(joint.type) && joint.axis) {
       xml += `      <axis xyz="${joint.axis.x} ${joint.axis.y} ${joint.axis.z}" />\n`;
 
-      if (FULL_LIMIT_EXPORT_TYPES.has(joint.type) && joint.limit) {
-        xml += `      <limit lower="${joint.limit.lower}" upper="${joint.limit.upper}" effort="${joint.limit.effort}" velocity="${joint.limit.velocity}" />\n`;
-      } else if (EFFORT_VELOCITY_LIMIT_EXPORT_TYPES.has(joint.type) && joint.limit) {
-        xml += `      <limit effort="${joint.limit.effort}" velocity="${joint.limit.velocity}" />\n`;
+      if (joint.limit) {
+        const limitAttributes: string[] = [];
+        const appendFiniteLimitAttribute = (name: string, value: number | undefined) => {
+          if (typeof value === 'number' && Number.isFinite(value)) {
+            limitAttributes.push(`${name}="${value}"`);
+          }
+        };
+        if (FULL_LIMIT_EXPORT_TYPES.has(joint.type)) {
+          appendFiniteLimitAttribute('lower', joint.limit.lower);
+          appendFiniteLimitAttribute('upper', joint.limit.upper);
+        }
+        if (EFFORT_VELOCITY_LIMIT_EXPORT_TYPES.has(joint.type)) {
+          appendFiniteLimitAttribute('effort', joint.limit.effort);
+          appendFiniteLimitAttribute('velocity', joint.limit.velocity);
+        }
+        if (limitAttributes.length > 0) {
+          xml += `      <limit ${limitAttributes.join(' ')} />\n`;
+        }
       }
     }
 

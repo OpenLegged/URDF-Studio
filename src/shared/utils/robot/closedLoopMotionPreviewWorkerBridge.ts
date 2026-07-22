@@ -1,47 +1,16 @@
 import type {
   ClosedLoopDrivenJointMotionResult,
   ClosedLoopMotionCompensation,
-  ClosedLoopMotionSolveOptions,
 } from '@/core/robot/closedLoops';
 import { resolveDefaultWorkerCount } from '@/core/workers/workerPoolClient';
 import type { RobotState } from '@/types';
-import type { ClosedLoopMotionPreviewState } from './closedLoopMotionPreview';
-
-type ClosedLoopMotionPreviewWorkerSolveOptions = Omit<
-  ClosedLoopMotionSolveOptions,
-  'angles' | 'quaternions' | 'lockedJointIds'
->;
-
-interface ClosedLoopMotionPreviewWorkerRequest {
-  type: 'resolve-motion-preview';
-  requestId: number;
-  robot?: Pick<RobotState, 'links' | 'joints' | 'rootLinkId' | 'closedLoopConstraints'>;
-  jointId: string;
-  angle: number;
-  options?: ClosedLoopMotionPreviewWorkerSolveOptions;
-  previewState?: ClosedLoopMotionPreviewState;
-}
-
-interface ClosedLoopMotionPreviewWorkerSetBaseRobotRequest {
-  type: 'set-base-robot';
-  robot: Pick<RobotState, 'links' | 'joints' | 'rootLinkId' | 'closedLoopConstraints'> | null;
-}
-
-interface ClosedLoopMotionPreviewWorkerSuccessResponse {
-  type: 'resolve-motion-preview-result';
-  requestId: number;
-  solution: ClosedLoopDrivenJointMotionResult;
-}
-
-interface ClosedLoopMotionPreviewWorkerErrorResponse {
-  type: 'resolve-motion-preview-error';
-  requestId: number;
-  error: string;
-}
-
-type ClosedLoopMotionPreviewWorkerResponse =
-  | ClosedLoopMotionPreviewWorkerSuccessResponse
-  | ClosedLoopMotionPreviewWorkerErrorResponse;
+import type {
+  ClosedLoopMotionPreviewState,
+  ClosedLoopMotionPreviewWorkerRequest,
+  ClosedLoopMotionPreviewWorkerResponse,
+  ClosedLoopMotionPreviewWorkerSetBaseRobotRequest,
+  ClosedLoopMotionPreviewWorkerSolveOptions,
+} from './closedLoopMotionPreviewContract';
 
 interface PendingRequest {
   resolve: (value: ClosedLoopDrivenJointMotionResult) => void;
@@ -224,7 +193,10 @@ export async function resolveClosedLoopDrivenJointMotionWithWorker(
       return;
     }
 
-    const request: ClosedLoopMotionPreviewWorkerRequest = {
+    const request: Extract<
+      ClosedLoopMotionPreviewWorkerRequest,
+      { type: 'resolve-motion-preview' }
+    > = {
       type: 'resolve-motion-preview',
       requestId,
       jointId,

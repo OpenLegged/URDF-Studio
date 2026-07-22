@@ -1,6 +1,14 @@
 import React from 'react';
-import { Loader2, MousePointerClick } from 'lucide-react';
-import { SegmentedControl } from '@/shared/components/ui';
+import {
+  CheckCheck,
+  CheckSquare2,
+  Link2,
+  Loader2,
+  MousePointerClick,
+  Unlink,
+  X,
+} from 'lucide-react';
+import { IconButton, SegmentedControl } from '@/shared/components/ui';
 import { GeometryType, type InteractionSelection } from '@/types';
 import type {
   CollisionOptimizationAnalysis,
@@ -43,6 +51,7 @@ export interface CollisionOptimizationCandidatesPanelLabels {
 }
 
 export interface CollisionOptimizationCandidatesPanelProps {
+  id?: string;
   activeCandidateKey?: string | null;
   source: CollisionOptimizationSource;
   analysis: CollisionOptimizationAnalysis | null;
@@ -78,45 +87,8 @@ export interface CollisionOptimizationCandidatesPanelProps {
   onManualConnectionCancel?: () => void;
 }
 
-function HeaderActionButton({
-  children,
-  onClick,
-}: {
-  children: React.ReactNode;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className="rounded-md px-1.5 py-0.5 text-[9px] font-medium text-text-secondary transition-colors hover:bg-element-hover hover:text-text-primary"
-    >
-      {children}
-    </button>
-  );
-}
-
-function HeaderBadge({
-  children,
-  active = false,
-}: {
-  children: React.ReactNode;
-  active?: boolean;
-}) {
-  return (
-    <span
-      className={`inline-flex items-center rounded-full border px-1.5 py-0.5 text-[9px] ${
-        active
-          ? 'border-system-blue/20 bg-system-blue/10 text-system-blue'
-          : 'border-border-black bg-element-bg text-text-tertiary'
-      }`}
-    >
-      {children}
-    </span>
-  );
-}
-
 export function CollisionOptimizationCandidatesPanel({
+  id,
   activeCandidateKey = null,
   source,
   analysis,
@@ -152,42 +124,80 @@ export function CollisionOptimizationCandidatesPanel({
   onManualConnectionCancel,
 }: CollisionOptimizationCandidatesPanelProps) {
   return (
-    <div className="min-h-0 flex flex-col overflow-hidden rounded-lg border border-border-black bg-element-bg">
+    <div
+      id={id}
+      data-collision-optimization-panel="candidates"
+      className="@container flex min-h-0 flex-col overflow-hidden rounded-lg border border-border-black bg-element-bg"
+    >
       <div className="shrink-0 border-b border-border-black bg-panel-bg px-1.75 py-1.25">
         <div className="space-y-1.25">
-          <div className="flex flex-wrap items-center justify-between gap-1.5">
-            <div className="min-w-0 flex flex-wrap items-center gap-1.5">
-              <div className="text-[10px] font-semibold text-text-primary">{labels.title}</div>
-              <HeaderBadge>
-                {labels.eligible} {eligibleCount}
-              </HeaderBadge>
-              <HeaderBadge active={activeSelectionCount > 0}>
-                {labels.selectedCount} {activeSelectionCount}
-              </HeaderBadge>
+          <div className="flex min-w-0 items-center gap-1.5">
+            <div className="min-w-0 flex flex-1 items-center gap-1.5">
+              <div className="shrink-0 text-xs font-semibold text-text-primary">{labels.title}</div>
+              <div
+                aria-label={`${labels.eligible} ${eligibleCount}, ${labels.selectedCount} ${activeSelectionCount}`}
+                className={`inline-flex min-w-0 items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] tabular-nums ${
+                  activeSelectionCount > 0
+                    ? 'border-system-blue/20 bg-system-blue/10 text-system-blue'
+                    : 'border-border-black bg-element-bg text-text-tertiary'
+                }`}
+              >
+                <span className="hidden @[320px]:inline">{labels.eligible}</span>
+                <span>{eligibleCount}</span>
+                <span className="text-text-tertiary">·</span>
+                <CheckSquare2 className="h-2.5 w-2.5 shrink-0" />
+                <span className="hidden @[320px]:inline">{labels.selectedCount}</span>
+                <span>{activeSelectionCount}</span>
+              </div>
               {manualMergePairs.length > 0 ? (
-                <HeaderBadge>
-                  {labels.clearManualPairs} {manualMergePairs.length}
-                </HeaderBadge>
+                <span
+                  title={labels.clearManualPairs}
+                  className="inline-flex shrink-0 items-center gap-0.5 rounded-full border border-border-black bg-element-bg px-2 py-0.5 text-[11px] text-text-tertiary"
+                >
+                  <Link2 className="h-2.5 w-2.5" />
+                  {manualMergePairs.length}
+                </span>
               ) : null}
             </div>
 
-            <div className="flex flex-wrap items-center gap-1">
-              <HeaderActionButton onClick={onSelectAll}>{labels.selectAll}</HeaderActionButton>
-              <HeaderActionButton onClick={onClearAll}>{labels.clearAll}</HeaderActionButton>
+            <div className="flex shrink-0 items-center gap-0.5">
+              <IconButton
+                size="xs"
+                title={labels.selectAll}
+                aria-label={labels.selectAll}
+                onClick={onSelectAll}
+              >
+                <CheckCheck className="h-3.5 w-3.5" />
+              </IconButton>
+              <IconButton
+                size="xs"
+                title={labels.clearAll}
+                aria-label={labels.clearAll}
+                onClick={onClearAll}
+              >
+                <X className="h-3.5 w-3.5" />
+              </IconButton>
               {manualMergePairs.length > 0 ? (
-                <HeaderActionButton onClick={onClearManualPairs}>
-                  {labels.clearManualPairs}
-                </HeaderActionButton>
+                <IconButton
+                  size="xs"
+                  title={labels.clearManualPairs}
+                  aria-label={labels.clearManualPairs}
+                  onClick={onClearManualPairs}
+                >
+                  <Unlink className="h-3.5 w-3.5" />
+                </IconButton>
               ) : null}
             </div>
           </div>
 
-          <div className="flex flex-wrap items-center gap-1.25">
+          <div className="grid grid-cols-1 gap-1 @[360px]:grid-cols-[minmax(0,1fr)_minmax(8rem,0.58fr)]">
             <SegmentedControl<CollisionOptimizationScope>
               size="xs"
               value={scope}
               onChange={onScopeChange}
-              className="min-w-[16rem] max-w-full"
+              ariaLabel={labels.title}
+              className="w-full"
+              itemClassName="text-[11px]"
               options={[
                 { value: 'all', label: labels.scopeAll },
                 { value: 'mesh', label: labels.scopeMesh },
@@ -200,7 +210,9 @@ export function CollisionOptimizationCandidatesPanel({
               size="xs"
               value={viewMode}
               onChange={onViewModeChange}
-              className="min-w-[9rem]"
+              ariaLabel={`${labels.viewList} / ${labels.viewGraph}`}
+              className="w-full"
+              itemClassName="text-[11px]"
               options={[
                 { value: 'list', label: labels.viewList },
                 { value: 'graph', label: labels.viewGraph },
@@ -212,20 +224,20 @@ export function CollisionOptimizationCandidatesPanel({
 
       <div className="min-h-0 flex-1 overflow-hidden p-0.75">
         {isAnalyzing ? (
-          <div className="flex h-full flex-col items-center justify-center gap-1.5 text-[10px] text-text-tertiary">
+          <div className="flex h-full flex-col items-center justify-center gap-1.5 text-xs text-text-tertiary">
             <Loader2 className="h-4.5 w-4.5 animate-spin" />
             <span>{labels.analyzing}</span>
           </div>
         ) : isSelectedScopeWithoutSelection ? (
           <div className="flex h-full items-center justify-center">
-            <div className="rounded-lg border border-dashed border-border-black bg-panel-bg px-2 py-3 text-center text-[9px] leading-relaxed text-text-secondary">
+            <div className="rounded-lg border border-dashed border-border-black bg-panel-bg px-3 py-4 text-center text-[11px] leading-relaxed text-text-secondary">
               <MousePointerClick className="mx-auto mb-1.5 h-4.5 w-4.5 text-text-tertiary" />
               {labels.noSelectedCollision}
             </div>
           </div>
         ) : candidates.length === 0 || !analysis ? (
           <div className="flex h-full items-center justify-center">
-            <div className="rounded-lg border border-dashed border-border-black bg-panel-bg px-2 py-3 text-center text-[9px] leading-relaxed text-text-secondary">
+            <div className="rounded-lg border border-dashed border-border-black bg-panel-bg px-3 py-4 text-center text-[11px] leading-relaxed text-text-secondary">
               {labels.noCandidates}
             </div>
           </div>

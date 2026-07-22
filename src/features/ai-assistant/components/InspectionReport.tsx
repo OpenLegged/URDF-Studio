@@ -581,7 +581,7 @@ export function InspectionReportView({
                       <button
                         type="button"
                         onClick={() => onAskAboutIssue(issue)}
-                        className="inline-flex items-center gap-1.5 rounded-lg border border-border-black bg-panel-bg px-3 py-1.5 text-[11px] font-medium text-system-blue transition-colors hover:bg-element-bg dark:bg-element-bg"
+                        className="inline-flex items-center gap-1.5 rounded-lg border border-border-black bg-panel-bg px-3 py-1.5 text-[11px] font-medium text-system-blue transition-colors hover:bg-element-hover dark:bg-element-bg dark:hover:bg-element-hover"
                       >
                         <MessageCircle className="h-3.5 w-3.5" />
                         {t.askAboutThisIssue}

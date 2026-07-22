@@ -708,22 +708,36 @@ export const findAssetByIndex = (
 
   // Strategy 7: Candidate-based lookup for imported package paths like
   // "/pkg/meshes/part.dae" when the asset library only stores "meshes/part.dae".
-  for (const candidate of buildMeshLookupCandidates(path)) {
-    pushUniqueCandidate(referencePaths, seenReferencePaths, candidate);
-    result = index.direct.get(candidate);
-    if (result) return result;
-
-    result = index.lowercase.get(candidate.toLowerCase());
-    if (result) return result;
-
-    if (requestedExtension !== '.mesh') {
-      result = selectBestAssetMatch(
-        index.suffixCandidates.get(candidate.toLowerCase()),
-        index,
-        referencePaths,
-        urdfDir,
-      );
+  //
+  // `buildMeshLookupCandidates` rewrites the request stem with mesh extensions
+  // (.dae/.obj/.stl/...), so this strategy is only meaningful for mesh asset
+  // requests. Running it for an image/texture request (.png/.jpg/...) would
+  // wrongly substitute a same-stem mesh file when the texture is missing — e.g.
+  // return "wing.dae" for an unresolved "wing.png". Non-mesh requests fall
+  // through to Strategy 8, whose `selectBestApproximateFilenameMatch` already
+  // enforces extension compatibility and returns null instead of a mismatch.
+  const requestedExtensionIsMesh =
+    !requestedExtension ||
+    requestedExtension === '.mesh' ||
+    SUPPORTED_MESH_EXTENSIONS.has(requestedExtension.slice(1));
+  if (requestedExtensionIsMesh) {
+    for (const candidate of buildMeshLookupCandidates(path)) {
+      pushUniqueCandidate(referencePaths, seenReferencePaths, candidate);
+      result = index.direct.get(candidate);
       if (result) return result;
+
+      result = index.lowercase.get(candidate.toLowerCase());
+      if (result) return result;
+
+      if (requestedExtension !== '.mesh') {
+        result = selectBestAssetMatch(
+          index.suffixCandidates.get(candidate.toLowerCase()),
+          index,
+          referencePaths,
+          urdfDir,
+        );
+        if (result) return result;
+      }
     }
   }
 

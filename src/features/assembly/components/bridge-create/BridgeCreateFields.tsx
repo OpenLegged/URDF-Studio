@@ -554,9 +554,7 @@ export function BridgeSideCard({
       <div data-bridge-side-header={side} className={BRIDGE_SIDE_CARD_HEADER_ROW_CLASS}>
         <div className="min-w-0">
           <div className="flex items-center gap-1.5">
-            <span
-              className="inline-flex items-center rounded-md border border-border-black bg-panel-bg px-1.5 py-px text-[8px] font-semibold uppercase tracking-[0.12em] text-text-secondary"
-            >
+            <span className="inline-flex items-center rounded-md border border-border-black bg-panel-bg px-1.5 py-px text-[8px] font-semibold uppercase tracking-[0.12em] text-text-secondary">
               {title}
             </span>
             <div className="h-px flex-1 bg-border-black/80" />
@@ -565,10 +563,7 @@ export function BridgeSideCard({
       </div>
 
       <div data-bridge-side-fields={side} className="mt-2 grid grid-cols-2 gap-1.5">
-        <div
-          data-bridge-field={`${side}-component`}
-          className="min-w-0"
-        >
+        <div data-bridge-field={`${side}-component`} className="min-w-0">
           <PanelSelect
             variant="property"
             aria-label={componentLabel}
@@ -579,10 +574,7 @@ export function BridgeSideCard({
           />
         </div>
 
-        <div
-          data-bridge-field={`${side}-link`}
-          className="min-w-0"
-        >
+        <div data-bridge-field={`${side}-link`} className="min-w-0">
           <PanelSelect
             variant="property"
             aria-label={linkLabel}
@@ -604,6 +596,7 @@ interface BridgeSectionProps {
   collapsible?: boolean;
   defaultCollapsed?: boolean;
   collapsedSummary?: string;
+  stateDataAttribute?: string;
 }
 
 export function BridgeSection({
@@ -613,16 +606,21 @@ export function BridgeSection({
   collapsible = false,
   defaultCollapsed = false,
   collapsedSummary,
+  stateDataAttribute,
 }: BridgeSectionProps) {
   const [collapsed, setCollapsed] = useState(defaultCollapsed);
+  const stateDataProps = stateDataAttribute
+    ? { [`data-${stateDataAttribute}`]: collapsed ? 'collapsed' : 'expanded' }
+    : {};
 
   if (collapsible && collapsed) {
     return (
-      <div className={`${BRIDGE_SECTION_CLASS} ${className}`.trim()}>
+      <div {...stateDataProps} className={`${BRIDGE_SECTION_CLASS} ${className}`.trim()}>
         <button
           type="button"
+          aria-expanded={false}
           onClick={() => setCollapsed(false)}
-          className="flex w-full items-center gap-1.5 text-left"
+          className="flex w-full items-center gap-1.5 rounded-sm text-left outline-none focus-visible:ring-2 focus-visible:ring-system-blue/30"
         >
           <div className={BRIDGE_SECTION_TITLE_CLASS}>{title}</div>
           <div className="h-px flex-1 bg-border-black" />
@@ -638,13 +636,14 @@ export function BridgeSection({
   }
 
   return (
-    <div className={`${BRIDGE_SECTION_CLASS} ${className}`.trim()}>
+    <div {...stateDataProps} className={`${BRIDGE_SECTION_CLASS} ${className}`.trim()}>
       <div className="mb-1.5 flex items-center gap-1.5">
         {collapsible ? (
           <button
             type="button"
+            aria-expanded={true}
             onClick={() => setCollapsed(true)}
-            className="flex items-center gap-1.5"
+            className="flex items-center gap-1.5 rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-system-blue/30"
           >
             <div className={BRIDGE_SECTION_TITLE_CLASS}>{title}</div>
             <span className="text-[9px] text-text-tertiary">▾</span>

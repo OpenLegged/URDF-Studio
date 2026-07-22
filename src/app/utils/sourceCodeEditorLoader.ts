@@ -1,38 +1,11 @@
-let sourceCodeEditorModulePromise: Promise<typeof import('@/features/code-editor')> | null = null;
-let sourceCodeEditorRuntimePromise: Promise<
-  [typeof import('@monaco-editor/react'), typeof import('@/features/code-editor')]
-> | null = null;
+import { createPreloadableComponent } from './preloadableComponent';
 
-export const loadSourceCodeEditorModule = () => {
-  if (!sourceCodeEditorModulePromise) {
-    // Reset the cache on failure so a transient chunk/network error during an
-    // idle prewarm does not poison a later user-initiated open with the same
-    // rejected promise (mirrors monacoLoader's loader.init reset).
-    sourceCodeEditorModulePromise = import('@/features/code-editor').catch((error) => {
-      sourceCodeEditorModulePromise = null;
-      throw error;
-    });
-  }
+export const loadSourceCodeEditorModule = () => import('@/features/code-editor');
 
-  return sourceCodeEditorModulePromise;
-};
+const sourceCodeEditorResource = createPreloadableComponent(
+  loadSourceCodeEditorModule,
+  (module) => module.SourceCodeEditor,
+);
 
-export const loadSourceCodeEditorRuntime = () => {
-  if (!sourceCodeEditorRuntimePromise) {
-    sourceCodeEditorRuntimePromise = Promise.all([
-      import('@monaco-editor/react'),
-      import('@/features/code-editor'),
-    ]).catch((error) => {
-      sourceCodeEditorRuntimePromise = null;
-      throw error;
-    });
-  }
-
-  return sourceCodeEditorRuntimePromise;
-};
-
-export const preloadSourceCodeEditor = () => loadSourceCodeEditorModule();
-
-export const preloadSourceCodeEditorRuntime = async () => {
-  await loadSourceCodeEditorRuntime();
-};
+export const SourceCodeEditor = sourceCodeEditorResource.Component;
+export const preloadSourceCodeEditorRuntime = sourceCodeEditorResource.preload;

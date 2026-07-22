@@ -21,6 +21,13 @@ interface WindowSize {
   height: number;
 }
 
+interface ViewportRect {
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+}
+
 interface DragBoundsOptions {
   allowNegativeX?: boolean;
   minVisibleWidth?: number;
@@ -70,6 +77,25 @@ const clamp = (value: number, min: number, max: number) => {
   return Math.max(min, Math.min(max, value));
 };
 
+const getViewportRect = (): ViewportRect => {
+  if (typeof window === 'undefined') {
+    return {
+      left: 0,
+      top: 0,
+      width: Number.POSITIVE_INFINITY,
+      height: Number.POSITIVE_INFINITY,
+    };
+  }
+
+  const visualViewport = window.visualViewport;
+  return {
+    left: visualViewport?.offsetLeft ?? 0,
+    top: visualViewport?.offsetTop ?? 0,
+    width: visualViewport?.width ?? window.innerWidth,
+    height: visualViewport?.height ?? window.innerHeight,
+  };
+};
+
 const normalizeResizeDirection = (
   direction: ResizeDirection,
 ): 'right' | 'bottom' | 'corner' | 'left' => {
@@ -90,9 +116,23 @@ const getViewportWindowSizeLimit = (
     };
   }
 
+  const viewport = getViewportRect();
+  const viewportWidth = Math.max(1, viewport.width);
+  const viewportHeight = Math.max(1, viewport.height);
+
   return {
-    width: Math.max(viewportMinSize.width, window.innerWidth - VIEWPORT_WINDOW_MARGIN),
-    height: Math.max(viewportMinSize.height, window.innerHeight - VIEWPORT_WINDOW_MARGIN),
+    // Keep the configured compact-layout floor while there is room for it. On
+    // exceptionally small or zoomed viewports, the visible viewport itself is
+    // the hard limit so the title bar and window controls cannot be stranded
+    // off-screen.
+    width: Math.min(
+      viewportWidth,
+      Math.max(viewportMinSize.width, viewportWidth - VIEWPORT_WINDOW_MARGIN),
+    ),
+    height: Math.min(
+      viewportHeight,
+      Math.max(viewportMinSize.height, viewportHeight - VIEWPORT_WINDOW_MARGIN),
+    ),
   };
 };
 
@@ -132,10 +172,14 @@ export const useDraggableWindow = ({
   clampResizeToViewport = true,
   dragBounds,
 }: DraggableWindowOptions): DraggableWindowReturn => {
+  const minWidth = minSize.width;
+  const minHeight = minSize.height;
+  const viewportMinWidth = viewportMinSize.width;
+  const viewportMinHeight = viewportMinSize.height;
   const [isMaximized, setIsMaximized] = useState(false);
   const [isMinimized, setIsMinimized] = useState(false);
   const [position, setPosition] = useState<Position>(defaultPosition);
-  const [size, setSize] = useState<WindowSize>(() =>
+  const [size, setSizeState] = useState<WindowSize>(() =>
     constrainWindowSizeToViewport(defaultSize, clampResizeToViewport, viewportMinSize),
   );
   const [isDragging, setIsDragging] = useState(false);
@@ -161,6 +205,28 @@ export const useDraggableWindow = ({
   const preMaximizeRef = useRef<{ position: Position; size: WindowSize } | null>(null);
   const bodyUserSelectRef = useRef('');
   const bodyCursorRef = useRef('');
+
+  const setSize = useCallback<Dispatch<SetStateAction<WindowSize>>>(
+    (nextSizeAction) => {
+      setSizeState((previousSize) => {
+        const requestedSize =
+          typeof nextSizeAction === 'function'
+            ? nextSizeAction(previousSize)
+            : nextSizeAction;
+        const nextSize = constrainWindowSizeToViewport(
+          requestedSize,
+          clampResizeToViewport,
+          { width: viewportMinWidth, height: viewportMinHeight },
+        );
+
+        sizeRef.current = nextSize;
+        return nextSize.width === previousSize.width && nextSize.height === previousSize.height
+          ? previousSize
+          : nextSize;
+      });
+    },
+    [clampResizeToViewport, viewportMinHeight, viewportMinWidth],
+  );
 
   useEffect(() => {
     positionRef.current = position;
@@ -208,17 +274,44 @@ export const useDraggableWindow = ({
 
   const getDragLimits = useCallback(
     (currentSize: WindowSize) => {
+      const viewport = getViewportRect();
+      const viewportRight = viewport.left + viewport.width;
+      const viewportBottom = viewport.top + viewport.height;
       const allowNegativeX = dragBounds?.allowNegativeX ?? false;
       const minVisibleWidth = dragBounds?.minVisibleWidth ?? 100;
-      const minX = allowNegativeX ? -currentSize.width + minVisibleWidth : 0;
-      const maxX = allowNegativeX
-        ? window.innerWidth - minVisibleWidth
-        : window.innerWidth - currentSize.width;
-      const minY = dragBounds?.topMargin ?? 0;
-      const maxY = window.innerHeight - (dragBounds?.bottomMargin ?? 48);
+      const fullyVisibleMaxX = viewportRight - currentSize.width;
+      const fitsViewportWidth = fullyVisibleMaxX >= viewport.left;
+      const minX =
+        clampResizeToViewport && fitsViewportWidth
+          ? viewport.left
+          : allowNegativeX
+            ? viewport.left - currentSize.width + minVisibleWidth
+            : viewport.left;
+      const maxX =
+        clampResizeToViewport && fitsViewportWidth
+          ? fullyVisibleMaxX
+          : allowNegativeX
+            ? viewportRight - minVisibleWidth
+            : fullyVisibleMaxX;
+
+      const preferredMinY = viewport.top + (dragBounds?.topMargin ?? 0);
+      const fullyVisibleMaxY = viewportBottom - currentSize.height;
+      const fitsViewportHeight = fullyVisibleMaxY >= viewport.top;
+      const canHonorTopMargin = fullyVisibleMaxY >= preferredMinY;
+      const minY =
+        clampResizeToViewport && fitsViewportHeight
+          ? canHonorTopMargin
+            ? preferredMinY
+            : viewport.top
+          : preferredMinY;
+      const maxY =
+        clampResizeToViewport && fitsViewportHeight
+          ? fullyVisibleMaxY
+          : viewportBottom - (dragBounds?.bottomMargin ?? 48);
       return { minX, maxX, minY, maxY };
     },
     [
+      clampResizeToViewport,
       dragBounds?.allowNegativeX,
       dragBounds?.bottomMargin,
       dragBounds?.minVisibleWidth,
@@ -228,13 +321,17 @@ export const useDraggableWindow = ({
 
   const centerWindow = useCallback(() => {
     const currentSize = sizeRef.current;
-    const centerX = (window.innerWidth - currentSize.width) / 2;
-    const centerY = (window.innerHeight - currentSize.height) / 2;
-    setPosition({
-      x: Math.max(0, centerX),
-      y: Math.max(0, centerY),
-    });
-  }, []);
+    const viewport = getViewportRect();
+    const centerX = viewport.left + (viewport.width - currentSize.width) / 2;
+    const centerY = viewport.top + (viewport.height - currentSize.height) / 2;
+    const limits = getDragLimits(currentSize);
+    const nextPosition = {
+      x: clamp(centerX, limits.minX, limits.maxX),
+      y: clamp(centerY, limits.minY, limits.maxY),
+    };
+    positionRef.current = nextPosition;
+    setPosition(nextPosition);
+  }, [getDragLimits]);
 
   useEffect(() => {
     if (!centerOnMount) return;
@@ -269,7 +366,8 @@ export const useDraggableWindow = ({
         const limits = getDragLimits(sizeRef.current);
         const nextX = clamp(positionRef.current.x + transform.x, limits.minX, limits.maxX);
         const nextY = clamp(positionRef.current.y + transform.y, limits.minY, limits.maxY);
-        setPosition({ x: nextX, y: nextY });
+        positionRef.current = { x: nextX, y: nextY };
+        setPosition(positionRef.current);
       }
 
       dragTransformRef.current = { x: 0, y: 0 };
@@ -302,28 +400,35 @@ export const useDraggableWindow = ({
       const deltaX = e.clientX - resizeStartRef.current.x;
       const deltaY = e.clientY - resizeStartRef.current.y;
       const effectiveMinSize = getEffectiveMinWindowSize(
-        minSize,
+        { width: minWidth, height: minHeight },
         clampResizeToViewport,
-        viewportMinSize,
+        { width: viewportMinWidth, height: viewportMinHeight },
       );
 
       if (resizeDirection === 'left') {
+        const viewport = getViewportRect();
         const newWidth = clamp(
           resizeStartRef.current.width - deltaX,
           effectiveMinSize.width,
-          resizeStartRef.current.width + resizeStartRef.current.posX,
+          resizeStartRef.current.width + resizeStartRef.current.posX - viewport.left,
         );
         const newX = resizeStartRef.current.posX + (resizeStartRef.current.width - newWidth);
         setSize((prev) => (prev.width === newWidth ? prev : { ...prev, width: newWidth }));
-        setPosition((prev) => (prev.x === newX ? prev : { ...prev, x: newX }));
+        setPosition((prev) => {
+          if (prev.x === newX) return prev;
+          const nextPosition = { ...prev, x: newX };
+          positionRef.current = nextPosition;
+          return nextPosition;
+        });
         return;
       }
 
+      const viewport = getViewportRect();
       const maxWidth = clampResizeToViewport
-        ? window.innerWidth - positionRef.current.x
+        ? viewport.left + viewport.width - positionRef.current.x
         : Number.POSITIVE_INFINITY;
       const maxHeight = clampResizeToViewport
-        ? window.innerHeight - positionRef.current.y
+        ? viewport.top + viewport.height - positionRef.current.y
         : Number.POSITIVE_INFINITY;
 
       const shouldResizeWidth = resizeDirection === 'right' || resizeDirection === 'corner';
@@ -363,12 +468,13 @@ export const useDraggableWindow = ({
   }, [
     clampResizeToViewport,
     isResizing,
-    minSize.height,
-    minSize.width,
+    minHeight,
+    minWidth,
     resizeDirection,
     restoreBodyInteractionStyles,
-    viewportMinSize.height,
-    viewportMinSize.width,
+    setSize,
+    viewportMinHeight,
+    viewportMinWidth,
   ]);
 
   useEffect(() => {
@@ -386,12 +492,12 @@ export const useDraggableWindow = ({
       const constrainedSize = constrainWindowSizeToViewport(
         sizeRef.current,
         clampResizeToViewport,
-        viewportMinSize,
+        { width: viewportMinWidth, height: viewportMinHeight },
       );
       const effectiveMinSize = getEffectiveMinWindowSize(
-        minSize,
+        { width: minWidth, height: minHeight },
         clampResizeToViewport,
-        viewportMinSize,
+        { width: viewportMinWidth, height: viewportMinHeight },
       );
       const nextSize = {
         width: clamp(constrainedSize.width, effectiveMinSize.width, constrainedSize.width),
@@ -409,21 +515,45 @@ export const useDraggableWindow = ({
       };
 
       if (nextPosition.x !== positionRef.current.x || nextPosition.y !== positionRef.current.y) {
+        positionRef.current = nextPosition;
         setPosition(nextPosition);
       }
     };
 
     handleViewportResize();
+    const visualViewport = window.visualViewport;
     window.addEventListener('resize', handleViewportResize);
-    return () => window.removeEventListener('resize', handleViewportResize);
+    visualViewport?.addEventListener('resize', handleViewportResize);
+    visualViewport?.addEventListener('scroll', handleViewportResize);
+    return () => {
+      window.removeEventListener('resize', handleViewportResize);
+      visualViewport?.removeEventListener('resize', handleViewportResize);
+      visualViewport?.removeEventListener('scroll', handleViewportResize);
+    };
   }, [
     clampResizeToViewport,
     getDragLimits,
-    minSize.height,
-    minSize.width,
-    viewportMinSize.height,
-    viewportMinSize.width,
+    minHeight,
+    minWidth,
+    setSize,
+    viewportMinHeight,
+    viewportMinWidth,
   ]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || !clampResizeToViewport) return;
+
+    const limits = getDragLimits({ width: size.width, height: size.height });
+    const nextPosition = {
+      x: clamp(positionRef.current.x, limits.minX, limits.maxX),
+      y: clamp(positionRef.current.y, limits.minY, limits.maxY),
+    };
+
+    if (nextPosition.x !== positionRef.current.x || nextPosition.y !== positionRef.current.y) {
+      positionRef.current = nextPosition;
+      setPosition(nextPosition);
+    }
+  }, [clampResizeToViewport, getDragLimits, size.height, size.width]);
 
   const handleDragStart = useCallback(
     (e: MouseEvent) => {
@@ -485,13 +615,15 @@ export const useDraggableWindow = ({
           const restoredSize = constrainWindowSizeToViewport(
             preMaximizeRef.current.size,
             clampResizeToViewport,
-            viewportMinSize,
+            { width: viewportMinWidth, height: viewportMinHeight },
           );
           const limits = getDragLimits(restoredSize);
-          setPosition({
+          const restoredPosition = {
             x: clamp(preMaximizeRef.current.position.x, limits.minX, limits.maxX),
             y: clamp(preMaximizeRef.current.position.y, limits.minY, limits.maxY),
-          });
+          };
+          positionRef.current = restoredPosition;
+          setPosition(restoredPosition);
           setSize(restoredSize);
         }
         return false;
@@ -504,7 +636,14 @@ export const useDraggableWindow = ({
       setIsMinimized(false);
       return true;
     });
-  }, [clampResizeToViewport, enableMaximize, getDragLimits, viewportMinSize]);
+  }, [
+    clampResizeToViewport,
+    enableMaximize,
+    getDragLimits,
+    setSize,
+    viewportMinHeight,
+    viewportMinWidth,
+  ]);
 
   const toggleMinimize = useCallback(() => {
     if (!enableMinimize) return;

@@ -5,7 +5,7 @@ import type {
   PrepareExportArchiveAssetsResult,
   PrepareExportArchiveAssetsWorkerRequest,
   PrepareExportArchiveAssetsProgress,
-} from './exportArchiveAssetsWorker.ts';
+} from './exportArchiveAssetsContract.ts';
 
 interface WorkerLike {
   addEventListener: Worker['addEventListener'];

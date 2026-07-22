@@ -59,6 +59,7 @@ export function parseEditableRobotSource({
       case 'sdf':
         return parseSDF(content, {
           allFileContents,
+          availableFiles,
           sourcePath: file.name,
         });
       case 'urdf':
@@ -69,10 +70,9 @@ export function parseEditableRobotSource({
   } catch (error) {
     throw failFastInDev(
       'parseEditableRobotSource',
-      new Error(
-        `Failed to parse editable source for "${file.name}" (${file.format}).`,
-        { cause: error },
-      ),
+      new Error(`Failed to parse editable source for "${file.name}" (${file.format}).`, {
+        cause: error,
+      }),
     );
   }
 }

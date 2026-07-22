@@ -334,7 +334,7 @@ function resolveJointMechanicalRange(
 function resolveJointEffortLimit(
   joint: MJCFJointDef | undefined,
   actuators: MJCFActuator[] | undefined,
-): number {
+): number | undefined {
   if (joint?.actuatorForceLimited !== false) {
     const jointActuatorForce = toEffortMagnitude(joint?.actuatorForceRange);
     if (jointActuatorForce != null) {
@@ -354,14 +354,13 @@ function resolveJointEffortLimit(
       .filter((actuator) => actuator.type.toLowerCase() === 'motor')
       .map((actuator) => toEffortMagnitude(actuator.ctrlrange)),
   );
-  return motorControlLimit ?? 0;
+  return motorControlLimit;
 }
 
 function buildImportedJointLimit(
   jointType: JointType,
   range: [number, number] | undefined,
-  effort: number,
-  velocity = 0,
+  effort: number | undefined,
 ): NonNullable<UrdfJoint['limit']> | undefined {
   if (
     jointType === JointType.FIXED ||
@@ -371,12 +370,15 @@ function buildImportedJointLimit(
     return undefined;
   }
 
-  return {
-    lower: range?.[0] ?? Number.NEGATIVE_INFINITY,
-    upper: range?.[1] ?? Number.POSITIVE_INFINITY,
-    effort,
-    velocity,
+  const lower = range?.[0];
+  const upper = range?.[1];
+  const limit: NonNullable<UrdfJoint['limit']> = {
+    ...(Number.isFinite(lower) ? { lower: Number(lower) } : {}),
+    ...(Number.isFinite(upper) ? { upper: Number(upper) } : {}),
+    ...(Number.isFinite(effort) ? { effort: Number(effort) } : {}),
   };
+
+  return Object.keys(limit).length > 0 ? limit : undefined;
 }
 
 function resolveJointInitialAngle(
@@ -1267,7 +1269,7 @@ function mjcfToRobotState(
         : JointType.FIXED;
       const jointMechanicalRange = resolveJointMechanicalRange(mjcfJoint, jointType);
       const jointEffort = resolveJointEffortLimit(mjcfJoint, actuatorMap.get(jointId));
-      const jointLimit = buildImportedJointLimit(jointType, jointMechanicalRange, jointEffort, 0);
+      const jointLimit = buildImportedJointLimit(jointType, jointMechanicalRange, jointEffort);
       const jointInitialAngle = resolveJointInitialAngle(mjcfJoint, jointType);
       const jointOrigin = {
         xyz: {
@@ -1286,7 +1288,7 @@ function mjcfToRobotState(
         childLinkId: mainLinkId,
         origin: jointOrigin,
         axis: mjcfJoint?.axis || { x: 0, y: 0, z: 1 },
-        limit: jointLimit as UrdfJoint['limit'],
+        limit: jointLimit,
         dynamics: {
           ...DEFAULT_JOINT.dynamics,
           damping: mjcfJoint?.damping ?? DEFAULT_JOINT.dynamics.damping,

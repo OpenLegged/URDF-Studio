@@ -1,7 +1,5 @@
 import type { RobotFile } from '@/types';
-import type {
-  PreResolvedImportEntry,
-} from './importPreparation';
+import type { PreResolvedImportEntry } from './preResolvedImportContract.ts';
 import type {
   RobotImportResult,
 } from '@/core/parsers/importRobotFile';

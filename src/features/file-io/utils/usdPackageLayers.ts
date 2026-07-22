@@ -394,6 +394,9 @@ const serializeJointDefinition = (
     shouldConvertAngularDriveGains,
   );
   const jointLimit = joint.limit;
+  const finiteJointLower = formatOptionalUsdNumber(jointLimit?.lower);
+  const finiteJointUpper = formatOptionalUsdNumber(jointLimit?.upper);
+  const hasFiniteJointBounds = finiteJointLower !== null && finiteJointUpper !== null;
   const jointEffort = jointLimit?.effort;
   const jointVelocity = jointLimit?.velocity;
   const driveMaxForce =
@@ -457,17 +460,17 @@ const serializeJointDefinition = (
   if (
     typeName === 'PhysicsRevoluteJoint' &&
     String(joint.type || '').toLowerCase() !== 'continuous' &&
-    joint.limit
+    hasFiniteJointBounds
   ) {
     lines.push(
-      `${childIndent}float physics:lowerLimit = ${formatUsdFloat(radiansToDegrees(joint.limit.lower))}`,
+      `${childIndent}float physics:lowerLimit = ${formatUsdFloat(radiansToDegrees(Number(jointLimit?.lower)))}`,
     );
     lines.push(
-      `${childIndent}float physics:upperLimit = ${formatUsdFloat(radiansToDegrees(joint.limit.upper))}`,
+      `${childIndent}float physics:upperLimit = ${formatUsdFloat(radiansToDegrees(Number(jointLimit?.upper)))}`,
     );
-  } else if (typeName === 'PhysicsPrismaticJoint' && joint.limit) {
-    lines.push(`${childIndent}float physics:lowerLimit = ${formatUsdFloat(joint.limit.lower)}`);
-    lines.push(`${childIndent}float physics:upperLimit = ${formatUsdFloat(joint.limit.upper)}`);
+  } else if (typeName === 'PhysicsPrismaticJoint' && hasFiniteJointBounds) {
+    lines.push(`${childIndent}float physics:lowerLimit = ${finiteJointLower}`);
+    lines.push(`${childIndent}float physics:upperLimit = ${finiteJointUpper}`);
   }
   usdLimitAxisKeys.forEach((axis) => {
     const limit = joint.usdPhysics?.limitAxes?.[axis];

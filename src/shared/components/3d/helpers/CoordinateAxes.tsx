@@ -7,6 +7,7 @@ import { ignoreRaycast } from '@/shared/utils/three/ignoreRaycast';
 
 interface CoordinateAxesProps {
   size?: number;
+  profile?: CoordinateAxesProfile;
   position?: [number, number, number];
   depthTest?: boolean;
   depthWrite?: boolean;
@@ -18,8 +19,47 @@ interface CoordinateAxesProps {
   onClick?: (e: any) => void;
 }
 
+export type CoordinateAxesProfile = 'standard' | 'slim';
+
+export interface CoordinateAxesDimensions {
+  axisLength: number;
+  headLength: number;
+  headRadius: number;
+  shaftRadius: number;
+}
+
+/**
+ * Resolves the visible dimensions for a coordinate-axes profile.
+ * `standard` intentionally preserves the legacy sizing exactly.
+ */
+export function resolveCoordinateAxesDimensions(
+  size: number,
+  profile: CoordinateAxesProfile = 'standard',
+  isActive = false,
+): CoordinateAxesDimensions {
+  const axisLength = size * (isActive ? 1.04 : 1);
+  if (profile === 'slim') {
+    const shaftRadius = Math.max(size * 0.03, 0.0012) * (isActive ? 1.35 : 1);
+    return {
+      axisLength,
+      headLength: Math.max(size * 0.14, shaftRadius * 3) * (isActive ? 1.08 : 1),
+      headRadius: Math.max(size * 0.065, 0.0026) * (isActive ? 1.06 : 1),
+      shaftRadius,
+    };
+  }
+
+  const shaftRadius = Math.max(size * 0.05, 0.0055) * (isActive ? 1.35 : 1);
+  return {
+    axisLength,
+    headLength: Math.max(size * 0.22, shaftRadius * 4.5) * (isActive ? 1.08 : 1),
+    headRadius: Math.max(shaftRadius * 2.6, 0.012) * (isActive ? 1.06 : 1),
+    shaftRadius,
+  };
+}
+
 export const ThickerAxes = ({
   size = 0.1,
+  profile = 'standard',
   position = [0, 0, 0],
   depthTest = true,
   depthWrite,
@@ -37,10 +77,12 @@ export const ThickerAxes = ({
   const resolvedDepthWrite = depthWrite ?? (depthTest && effectiveOpacity >= 1);
   const effectiveDepthWrite = isActive ? false : resolvedDepthWrite;
   const effectiveRenderOrder = isActive ? Math.max(renderOrder, 10020) : renderOrder;
-  const axisLength = size * (isActive ? 1.04 : 1);
-  const thickness = Math.max(size * 0.05, 0.0055) * (isActive ? 1.35 : 1);
-  const headSize = Math.max(size * 0.22, thickness * 4.5) * (isActive ? 1.08 : 1);
-  const headRadius = Math.max(thickness * 2.6, 0.012) * (isActive ? 1.06 : 1);
+  const {
+    axisLength,
+    headLength: headSize,
+    headRadius,
+    shaftRadius: thickness,
+  } = resolveCoordinateAxesDimensions(size, profile, isActive);
   const pickRadius = Math.max(headRadius * 1.08, thickness * 2.2);
   const pickCenterRadius = Math.max(thickness * 1.8, 0.01);
   const pickLength = axisLength + headSize * 0.3;
@@ -84,7 +126,13 @@ export const ThickerAxes = ({
 
       {isActive && (
         <mesh renderOrder={effectiveRenderOrder} raycast={ignoreRaycast}>
-          <sphereGeometry args={[Math.max(thickness * 1.6, 0.014), 12, 12]} />
+          <sphereGeometry
+            args={[
+              Math.max(thickness * 1.6, profile === 'slim' ? 0.003 : 0.014),
+              12,
+              12,
+            ]}
+          />
           <meshBasicMaterial
             color={centerColor}
             depthTest={effectiveDepthTest}

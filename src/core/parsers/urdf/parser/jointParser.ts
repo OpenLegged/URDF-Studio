@@ -1,5 +1,5 @@
 import { UrdfJoint, JointType, type JointHardwareInterface } from '@/types';
-import { parseVec3, parseOrigin, parseFloatSafe } from './utils';
+import { parseVec3, parseOrigin, parseFloatSafe, parseOptionalFiniteFloat } from './utils';
 
 const AXIS_IMPORT_TYPES = new Set<JointType>([
   JointType.REVOLUTE,
@@ -13,14 +13,6 @@ const LIMIT_IMPORT_TYPES = new Set<JointType>([
   JointType.CONTINUOUS,
   JointType.PRISMATIC,
 ]);
-
-const parseLimitAttribute = (limitEl: Element | null, attribute: string): number => {
-  const rawValue = limitEl?.getAttribute(attribute);
-  if (rawValue === null || rawValue === undefined) {
-    return Number.NaN;
-  }
-  return parseFloatSafe(rawValue, Number.NaN);
-};
 
 const findOriginElement = (jointEl: Element): Element | null => {
   const queryResult = jointEl.querySelector('origin');
@@ -58,14 +50,17 @@ const parseJointHardware = (hardwareEl: Element | null): UrdfJoint['hardware'] =
     };
   }
 
+  const motorDirection = Number.parseInt(
+    hardwareEl.querySelector('motorDirection')?.textContent || '1',
+    10,
+  );
+
   return {
     brand: hardwareEl.querySelector('brand')?.textContent || '',
     motorType: hardwareEl.querySelector('motorType')?.textContent || 'None',
     motorId: hardwareEl.querySelector('motorId')?.textContent || '',
-    motorDirection: parseInt(hardwareEl.querySelector('motorDirection')?.textContent || '1') as
-      | 1
-      | -1,
-    armature: parseFloat(hardwareEl.querySelector('armature')?.textContent || '0'),
+    motorDirection: motorDirection === -1 ? -1 : 1,
+    armature: parseFloatSafe(hardwareEl.querySelector('armature')?.textContent, 0),
     hardwareInterface:
       (hardwareEl.querySelector('hardwareInterface')?.textContent as JointHardwareInterface | null) ||
       undefined,
@@ -80,12 +75,18 @@ const parseJointLimit = (
     return undefined;
   }
 
-  return {
-    lower: parseLimitAttribute(limitEl, 'lower'),
-    upper: parseLimitAttribute(limitEl, 'upper'),
-    effort: parseLimitAttribute(limitEl, 'effort'),
-    velocity: parseLimitAttribute(limitEl, 'velocity'),
+  const lower = parseOptionalFiniteFloat(limitEl.getAttribute('lower'));
+  const upper = parseOptionalFiniteFloat(limitEl.getAttribute('upper'));
+  const effort = parseOptionalFiniteFloat(limitEl.getAttribute('effort'));
+  const velocity = parseOptionalFiniteFloat(limitEl.getAttribute('velocity'));
+  const limit: NonNullable<UrdfJoint['limit']> = {
+    ...(lower !== undefined ? { lower } : {}),
+    ...(upper !== undefined ? { upper } : {}),
+    ...(effort !== undefined ? { effort } : {}),
+    ...(velocity !== undefined ? { velocity } : {}),
   };
+
+  return Object.keys(limit).length > 0 ? limit : undefined;
 };
 
 const parseJointCalibration = (
@@ -94,27 +95,24 @@ const parseJointCalibration = (
   calibration?: UrdfJoint['calibration'];
   referencePosition?: number;
 } => {
-  const referencePosition = parseFloatSafe(
+  const referencePosition = parseOptionalFiniteFloat(
     calibrationEl?.getAttribute('reference_position'),
-    Number.NaN,
   );
   if (!calibrationEl) {
-    return Number.isFinite(referencePosition) ? { referencePosition } : {};
+    return referencePosition !== undefined ? { referencePosition } : {};
   }
 
+  const rising = parseOptionalFiniteFloat(calibrationEl.getAttribute('rising'));
+  const falling = parseOptionalFiniteFloat(calibrationEl.getAttribute('falling'));
   const calibration = {
-    ...(Number.isFinite(referencePosition) ? { referencePosition } : {}),
-    ...(calibrationEl.hasAttribute('rising')
-      ? { rising: parseFloatSafe(calibrationEl.getAttribute('rising'), Number.NaN) }
-      : {}),
-    ...(calibrationEl.hasAttribute('falling')
-      ? { falling: parseFloatSafe(calibrationEl.getAttribute('falling'), Number.NaN) }
-      : {}),
+    ...(referencePosition !== undefined ? { referencePosition } : {}),
+    ...(rising !== undefined ? { rising } : {}),
+    ...(falling !== undefined ? { falling } : {}),
   };
 
   return {
     ...(Object.keys(calibration).length > 0 ? { calibration } : {}),
-    ...(Number.isFinite(referencePosition) ? { referencePosition } : {}),
+    ...(referencePosition !== undefined ? { referencePosition } : {}),
   };
 };
 
@@ -125,33 +123,19 @@ const parseJointSafetyController = (
     return undefined;
   }
 
+  const softLowerLimit = parseOptionalFiniteFloat(
+    safetyControllerEl.getAttribute('soft_lower_limit'),
+  );
+  const softUpperLimit = parseOptionalFiniteFloat(
+    safetyControllerEl.getAttribute('soft_upper_limit'),
+  );
+  const kPosition = parseOptionalFiniteFloat(safetyControllerEl.getAttribute('k_position'));
+  const kVelocity = parseOptionalFiniteFloat(safetyControllerEl.getAttribute('k_velocity'));
   const safetyController = {
-    ...(safetyControllerEl.hasAttribute('soft_lower_limit')
-      ? {
-          softLowerLimit: parseFloatSafe(
-            safetyControllerEl.getAttribute('soft_lower_limit'),
-            Number.NaN,
-          ),
-        }
-      : {}),
-    ...(safetyControllerEl.hasAttribute('soft_upper_limit')
-      ? {
-          softUpperLimit: parseFloatSafe(
-            safetyControllerEl.getAttribute('soft_upper_limit'),
-            Number.NaN,
-          ),
-        }
-      : {}),
-    ...(safetyControllerEl.hasAttribute('k_position')
-      ? {
-          kPosition: parseFloatSafe(safetyControllerEl.getAttribute('k_position'), Number.NaN),
-        }
-      : {}),
-    ...(safetyControllerEl.hasAttribute('k_velocity')
-      ? {
-          kVelocity: parseFloatSafe(safetyControllerEl.getAttribute('k_velocity'), Number.NaN),
-        }
-      : {}),
+    ...(softLowerLimit !== undefined ? { softLowerLimit } : {}),
+    ...(softUpperLimit !== undefined ? { softUpperLimit } : {}),
+    ...(kPosition !== undefined ? { kPosition } : {}),
+    ...(kVelocity !== undefined ? { kVelocity } : {}),
   };
 
   return Object.keys(safetyController).length > 0 ? safetyController : undefined;

@@ -3,11 +3,6 @@ import { ArrowRight } from 'lucide-react';
 
 import type { TranslationKeys } from '@/shared/i18n';
 
-const APP_VERSION =
-  typeof __APP_VERSION__ === 'string' && __APP_VERSION__.trim().length > 0
-    ? __APP_VERSION__
-    : 'dev';
-
 interface SettingsAboutPaneProps {
   t: TranslationKeys;
 }
@@ -65,14 +60,9 @@ export function SettingsAboutPane({ t }: SettingsAboutPaneProps) {
             className="h-10 w-10 shrink-0 object-contain"
           />
           <div className="min-w-0 flex-1">
-            <div className="flex flex-wrap items-center gap-2">
-              <h3 className="text-[14px] font-semibold tracking-[-0.01em] text-text-primary">
-                URDF Studio
-              </h3>
-              <div className="inline-flex h-6 items-center rounded-[6px] border border-border-black bg-settings-muted/70 px-2 text-[10.5px] font-medium text-text-secondary">
-                {t.version}: v{APP_VERSION}
-              </div>
-            </div>
+            <h3 className="text-[14px] font-semibold tracking-[-0.01em] text-text-primary">
+              URDF Studio
+            </h3>
             <p className="mt-1 max-w-[30rem] line-clamp-2 text-[11.5px] leading-5 text-text-secondary">
               {t.aboutDescription}
             </p>
@@ -85,6 +75,38 @@ export function SettingsAboutPane({ t }: SettingsAboutPaneProps) {
           {t.resources}
         </div>
         <div className="space-y-1.5">
+          <AboutLinkCard
+            href="https://botworld.enkeebot.com/"
+            icon={
+              <img
+                src="/logos/botworld-logo.png"
+                alt="BotWorld"
+                width={20}
+                height={20}
+                loading="eager"
+                decoding="async"
+                className="h-full w-full rounded-[inherit] object-contain p-1"
+              />
+            }
+            title="BotWorld"
+            description="一站式机器人资产平台"
+          />
+          <AboutLinkCard
+            href="https://motion.enkeebot.com/"
+            icon={
+              <img
+                src="/logos/motion-studio-logo.png"
+                alt="Motion Studio"
+                width={20}
+                height={20}
+                loading="eager"
+                decoding="async"
+                className="h-full w-full rounded-[inherit] object-contain p-1"
+              />
+            }
+            title="Motion Studio"
+            description="面向多款机器人的动捕数据处理与动作重定向 Web 工作台"
+          />
           <AboutLinkCard
             href="https://github.com/OpenLegged/URDF-Studio"
             icon={<GitHubMark className="h-4.5 w-4.5" />}

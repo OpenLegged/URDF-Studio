@@ -158,7 +158,7 @@ function resolveExistingMaterialParams(material: THREE.Material) {
   };
 }
 
-interface HighlightedMaterialStateSnapshot {
+export interface HighlightedMaterialStateSnapshot {
   transparent: boolean;
   opacity: number;
   depthTest: boolean;
@@ -168,13 +168,13 @@ interface HighlightedMaterialStateSnapshot {
   emissiveIntensity?: number;
 }
 
-interface HighlightedMeshSnapshotLike {
+export interface HighlightedMeshSnapshotLike {
   material: THREE.Material | THREE.Material[];
   materialStates: HighlightedMaterialStateSnapshot[];
   activeRole: 'visual' | 'collision' | null;
 }
 
-function captureHighlightedMaterialState(
+export function captureHighlightedMaterialState(
   material: THREE.Material,
 ): HighlightedMaterialStateSnapshot {
   return {
@@ -192,7 +192,7 @@ function captureHighlightedMaterialState(
   };
 }
 
-function getHighlightedMeshSnapshot(mesh: THREE.Mesh): HighlightedMeshSnapshotLike | null {
+export function getHighlightedMeshSnapshot(mesh: THREE.Mesh): HighlightedMeshSnapshotLike | null {
   const snapshot = mesh.userData?.__urdfHighlightSnapshot;
   if (!snapshot || typeof snapshot !== 'object') {
     return null;

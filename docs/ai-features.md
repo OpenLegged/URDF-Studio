@@ -28,7 +28,7 @@ VITE_AI_BACKEND_URL=/api/ai/urdf-studio
   `{success, data:{content}}`（content 为模型原始输出，JSON 解析仍在前端，两种模式共用同一条
   处理管线）；`/chat` 为 SSE（`data: {"delta"|"done"|"error"}`）。
 - 鉴权可插拔：宿主壳通过 `setAiBackendAuthTokenProvider(() => token)` 注册用户 JWT 提供者
-  （`features/ai-assistant/index.ts` 导出），请求以 `Authorization: Bearer` 携带；自部署自建代理
+  （推荐从窄 `src/hostIntegrations.ts` facade 导入；feature 入口保留兼容导出），请求以 `Authorization: Bearer` 携带；自部署自建代理
   时可不注册。
 - 服务端提示词模板是本仓 `config/aiPromptTemplates.generated.ts` 的镜像（BotPilot
   `workflows/urdf_studio/prompt_templates.py`）；改模板时两侧一起更新。

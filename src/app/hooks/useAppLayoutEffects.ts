@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { DragEvent } from 'react';
 import type { AssemblyState, WorkspaceSelection } from '@/types';
-import { preloadSourceCodeEditor } from '@/app/utils/sourceCodeEditorLoader';
 import { validateEntityRef } from '@/store/selectionStore';
 import { useActiveHistory } from './useActiveHistory';
 
@@ -215,16 +214,11 @@ export function useAppLayoutEffects({
     [cancelPendingDragLeaveCheck, onDropError, onFileDrop],
   );
 
-  const prefetchSourceCodeEditor = useCallback(() => {
-    void preloadSourceCodeEditor();
-  }, []);
-
   return {
     isFileDragActive,
     handleDragEnter,
     handleDragOver,
     handleDragLeave,
     handleDrop,
-    prefetchSourceCodeEditor,
   };
 }

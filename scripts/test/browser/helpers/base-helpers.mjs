@@ -47,7 +47,12 @@ export async function createSession(options = {}) {
     browser = await launchBrowser({
       headed, siteUrl, timeoutMs: DEFAULT_OPERATION_TIMEOUT_MS,
     });
-    const { page, consoleMessages, pageErrors } = await createPage(browser, siteUrl, DEFAULT_OPERATION_TIMEOUT_MS);
+    const { page, consoleMessages, pageErrors } = await createPage(
+      browser,
+      siteUrl,
+      DEFAULT_OPERATION_TIMEOUT_MS,
+      { beforeNavigate: options.beforeNavigate },
+    );
     await page.evaluate(() => window.__URDF_STUDIO_DEBUG__?.setBeforeUnloadPromptEnabled?.(false));
     return {
       page, browser,

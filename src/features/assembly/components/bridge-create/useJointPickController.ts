@@ -7,15 +7,13 @@ import {
   computePointCoincidentOrigin,
   type JointAlignmentDelta,
 } from '@/core/robot/jointPickAlignment';
-import {
-  useJointPickSessionStore,
-  type JointPickSide,
-} from '@/store/jointPickSessionStore';
+import { useJointPickSessionStore, type JointPickSide } from '@/store/jointPickSessionStore';
 
 export type JointAlignMode = 'smartAlign' | 'pointCoincident';
 
 interface UseJointPickControllerOptions {
   isOpen: boolean;
+  enabled: boolean;
   parentComponentId: string;
   parentLinkId: string;
   childComponentId: string;
@@ -44,6 +42,7 @@ function matrixFrom(serialized: number[]): THREE.Matrix4 {
  */
 export function useJointPickController({
   isOpen,
+  enabled,
   parentComponentId,
   parentLinkId,
   childComponentId,
@@ -74,7 +73,7 @@ export function useJointPickController({
   // Mirror the chosen relation so the pick layer can auto-route clicks to the
   // parent or child side and drop snaps only when they no longer match.
   useEffect(() => {
-    if (!isOpen) {
+    if (!isOpen || !enabled) {
       return;
     }
     setRelation(
@@ -83,7 +82,15 @@ export function useJointPickController({
       childComponentId || null,
       childLinkId || null,
     );
-  }, [isOpen, parentComponentId, parentLinkId, childComponentId, childLinkId, setRelation]);
+  }, [
+    childComponentId,
+    childLinkId,
+    enabled,
+    isOpen,
+    parentComponentId,
+    parentLinkId,
+    setRelation,
+  ]);
 
   // Tear the session down when the modal closes.
   useEffect(() => {
@@ -97,11 +104,11 @@ export function useJointPickController({
     if (!isOpen) {
       return;
     }
-    setActive(true);
-  }, [isOpen, setActive]);
+    setActive(enabled);
+  }, [enabled, isOpen, setActive]);
 
   useEffect(() => {
-    if (!isOpen || !parentSnap) {
+    if (!isOpen || !enabled || !parentSnap) {
       return;
     }
 
@@ -111,12 +118,9 @@ export function useJointPickController({
     if (parentSnap.linkId !== parentLinkId) {
       setParentLinkId(parentSnap.linkId);
     }
-    if (!childComponentId || !childLinkId) {
-      setPickTarget('child');
-    }
+    setPickTarget('child');
   }, [
-    childComponentId,
-    childLinkId,
+    enabled,
     isOpen,
     parentComponentId,
     parentLinkId,
@@ -127,7 +131,7 @@ export function useJointPickController({
   ]);
 
   useEffect(() => {
-    if (!isOpen || !childSnap) {
+    if (!isOpen || !enabled || !childSnap) {
       return;
     }
 
@@ -144,6 +148,7 @@ export function useJointPickController({
     childComponentId,
     childLinkId,
     childSnap,
+    enabled,
     isOpen,
     parentComponentId,
     parentLinkId,
@@ -154,7 +159,7 @@ export function useJointPickController({
 
   // Derive the joint origin whenever both sides have a committed snap.
   useEffect(() => {
-    if (!isOpen || !parentSnap || !childSnap) {
+    if (!isOpen || !enabled || !parentSnap || !childSnap) {
       return;
     }
 
@@ -191,7 +196,7 @@ export function useJointPickController({
       p: radToDeg(rotation.p),
       y: radToDeg(rotation.y),
     });
-  }, [isOpen, parentSnap, childSnap, alignMode, alignment, applyPickedOrigin]);
+  }, [alignMode, alignment, applyPickedOrigin, childSnap, enabled, isOpen, parentSnap]);
 
   const startPick = useCallback(
     (nextSide: JointPickSide) => {

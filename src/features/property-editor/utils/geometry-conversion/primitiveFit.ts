@@ -69,7 +69,7 @@ function addCandidateAxis(axes: Point3[], axis: Point3): void {
   }
 }
 
-function computePrincipalAxes(points: Point3[]): Point3[] {
+export function computePrincipalAxes(points: Point3[]): Point3[] {
   if (points.length === 0) return [];
 
   let meanX = 0;

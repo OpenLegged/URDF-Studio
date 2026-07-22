@@ -280,6 +280,131 @@ test('parseColliderEntriesFromLayerText finds collider entries across nested lin
     assert.deepEqual(result.get('arm_link'), [{ entryName: 'collision_1', referencePath: null }]);
 });
 
+test('parseColliderEntriesFromLayerText keeps nested primitive dimensions on the owning collision entry', () => {
+    const result = parseColliderEntriesFromLayerText(`#usda 1.0
+def Xform "Robot"
+{
+    def Xform "RR_hip"
+    {
+        def Xform "collisions"
+        {
+            def Xform "collision_0"
+            {
+                double3 xformOp:translate = (0, -0.12, 0)
+                uniform token purpose = "guide"
+                def Cylinder "cylinder"
+                {
+                    double radius = 0.07
+                    double height = 0.05
+                    uniform token axis = "Z"
+                    uniform token purpose = "guide"
+                }
+            }
+        }
+    }
+}`);
+
+    assert.deepEqual(result.get('RR_hip'), [
+        {
+            entryName: 'collision_0',
+            referencePath: null,
+            primitiveType: 'cylinder',
+            primitiveGeometry: {
+                primitiveType: 'cylinder',
+                dimensions: [0.14, 0.14, 0.05],
+            },
+        },
+    ]);
+    assert.equal(result.has('collision_0'), false);
+});
+
+test('normalizeRobotSceneSnapshot replaces Hydra collision defaults with authored cylinder dimensions', () => {
+    const previousWindow = globalThis.window;
+    const layerText = `#usda 1.0
+def Xform "Robot"
+{
+    def Xform "RR_hip"
+    {
+        def Xform "collisions"
+        {
+            def Xform "collision_0"
+            {
+                def Cube "cube" (
+                    prepend apiSchemas = ["PhysicsCollisionAPI"]
+                )
+                {
+                    double size = 0.2
+                }
+            }
+            def Xform "collision_1"
+            {
+                def Cylinder "cylinder" (
+                    prepend apiSchemas = ["PhysicsCollisionAPI"]
+                )
+                {
+                    double radius = 0.07
+                    double height = 0.05
+                    uniform token axis = "Z"
+                }
+            }
+        }
+    }
+}`;
+    globalThis.window = { location: { search: '' } };
+    try {
+        const delegate = new ThreeRenderDelegateInterface({
+            stage: () => ({
+                GetRootLayer: () => ({
+                    ExportToString: () => layerText,
+                }),
+                GetUsedLayers: () => [],
+                GetDefaultPrim: () => ({
+                    GetPath: () => ({ pathString: '/Robot' }),
+                }),
+            }),
+            driver: () => null,
+            allowDriverStageLookup: false,
+        });
+        delegate.getStageMetadataLayerTexts = () => [layerText];
+
+        const snapshot = delegate.normalizeRobotSceneSnapshot({
+            generatedAtMs: 1,
+            stage: {
+                stageSourcePath: '/tmp/b2_description.usda',
+                defaultPrimPath: '/Robot',
+            },
+            robotTree: {
+                linkParentPairs: [['/Robot/RR_hip', null]],
+                jointCatalogEntries: [],
+                rootLinkPaths: ['/Robot/RR_hip'],
+            },
+            physics: { linkDynamicsEntries: [] },
+            render: {
+                meshDescriptors: [{
+                    meshId: '/Robot/RR_hip/collisions.proto_cylinder_id1',
+                    resolvedPrimPath: '/Robot/RR_hip/collisions/collision_1/cylinder',
+                    sectionName: 'collisions',
+                    primType: 'cylinder',
+                    radius: 0.5,
+                    height: 1,
+                    axis: 'Z',
+                }],
+                materials: [],
+            },
+        }, {
+            stageSourcePath: '/tmp/b2_description.usda',
+        });
+
+        assert.ok(snapshot);
+        assert.equal(snapshot.render.meshDescriptors[0].radius, 0.07);
+        assert.equal(snapshot.render.meshDescriptors[0].height, 0.05);
+        assert.equal(snapshot.render.meshDescriptors[0].axis, 'Z');
+    }
+    finally {
+        globalThis.window = previousWindow;
+    }
+});
+
 test('extractJointRecordsFromLayerText preserves Newton D6 UsdPhysics limits and drives', () => {
     const records = extractJointRecordsFromLayerText(`#usda 1.0
 def Xform "Robot"

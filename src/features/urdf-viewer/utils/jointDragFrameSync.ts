@@ -36,14 +36,17 @@ export function createJointDragFrameSync({
 
   return {
     schedule(clientX, clientY) {
-      pendingPointer = { clientX, clientY };
-
       if (frameHandle !== null) {
+        pendingPointer = { clientX, clientY };
         return;
       }
 
+      // Apply the leading pointer update in the event turn so a demand-driven
+      // R3F render already sees the new joint pose. Only coalesce additional
+      // events that arrive before the next browser frame.
+      onFrame(clientX, clientY);
+
       if (!requestFrame) {
-        flush();
         return;
       }
 

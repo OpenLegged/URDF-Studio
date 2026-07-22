@@ -1,6 +1,13 @@
-import type { AssemblyState, ComponentSourceDraft, RobotFile } from '@/types';
+import type {
+  AssemblyComponent,
+  AssemblyState,
+  ComponentSourceDraft,
+  RobotFile,
+} from '@/types';
 import { generateURDF } from '@/core/parsers';
 import { buildExportableAssemblyRobotData } from '@/core/robot/assemblyTransforms';
+import { analyzeAssemblyConnectivity } from '@/core/robot/assemblyConnectivity';
+import { hasComponentEditorLocks } from '@/core/robot/editorLock';
 import type { SourceCodeDocumentFlavor } from './sourceCodeDisplay';
 import { detectImportFormat } from './import-preparation/formatDetection.ts';
 import {
@@ -8,6 +15,11 @@ import {
   resolveUsdLayerReferencePath,
 } from '@/features/editor/usd_documents';
 import { getSourceCodeDocumentFlavor, isSourceCodeDocumentReadOnly } from './sourceCodeDisplay.ts';
+import {
+  graftAssemblyGroupUrdfSource,
+  resolveAssemblyGroupMasterComponentId,
+} from './assemblyUrdfSourceGraft.ts';
+import type { GraftAssemblyGroupUrdfSourceProvenance } from './assemblyUrdfSourceGraft.ts';
 
 type SourceFileFormat = RobotFile['format'] | null;
 
@@ -18,13 +30,25 @@ interface SourceTextFileEntry {
   blobUrl?: string;
 }
 
-export interface SourceCodeDocumentChangeTarget {
+export interface ComponentSourceCodeDocumentChangeTarget {
+  kind: 'component';
   componentId: string;
   name: string;
   format: SourceFileFormat;
   content?: string;
   persistContent?: boolean;
 }
+
+export interface GroupSourceCodeDocumentChangeTarget {
+  kind: 'group';
+  rootComponentId: string;
+  groupComponentIds: string[];
+  provenance: GraftAssemblyGroupUrdfSourceProvenance;
+}
+
+export type SourceCodeDocumentChangeTarget =
+  | ComponentSourceCodeDocumentChangeTarget
+  | GroupSourceCodeDocumentChangeTarget;
 
 export interface SourceCodeDocumentDescriptor {
   id: string;
@@ -502,6 +526,7 @@ export function buildSourceCodeDocuments({
         changeTarget:
           !isReadOnly && generatedDocumentFormat
             ? {
+                kind: 'component',
                 name: 'robot.urdf',
                 componentId,
                 format: generatedDocumentFormat,
@@ -531,6 +556,7 @@ export function buildSourceCodeDocuments({
         forceReadOnly || isSourceCodeDocumentReadOnly(sourceCodeDocumentFlavor)
           ? undefined
           : {
+              kind: 'component',
               componentId,
               name: activeSourceFile.name,
               format: activeSourceFile.format,
@@ -593,9 +619,190 @@ function getGeneratedWorkspaceSourceFileName(workspace: AssemblyState): string {
   return `${baseName}.urdf`;
 }
 
+function sanitizeSourceFileBaseName(name: string): string {
+  return name.trim().replace(/[^a-zA-Z0-9_-]+/g, '_') || 'workspace';
+}
+
 /**
- * Canonical source-editor contract. Mutation routing is always component-owned;
- * assembled documents are derived, read-only projections.
+ * Build the editable draft documents for a single component. Returns [] when the
+ * component has no owned draft (the caller then falls back to a generated view).
+ */
+function buildComponentDraftDocuments(
+  component: AssemblyComponent,
+  componentSourceDrafts: Record<string, ComponentSourceDraft>,
+  availableFiles: RobotFile[],
+  allFileContents: Record<string, string>,
+): SourceCodeDocumentDescriptor[] {
+  const draft = componentSourceDrafts[component.id];
+  // The source editor may recover an owned draft whose semantic hash drifted
+  // during canonical post-import normalization. Export and viewer resolution keep
+  // their stricter hash checks; an explicit source save reparses the draft and
+  // commits through the workspace-revision CAS.
+  if (draft?.componentId !== component.id) {
+    return [];
+  }
+  const sourceName = component.sourceFile ?? `component.${draft.format}`;
+  const librarySource = availableFiles.find((file) => file.name === sourceName);
+  const sourceFile: RobotFile = {
+    ...librarySource,
+    name: sourceName,
+    format: draft.format,
+    content: draft.content,
+  };
+  const documentFlavor = getSourceCodeDocumentFlavor(sourceFile);
+  return buildSourceCodeDocuments({
+    componentId: component.id,
+    activeSourceFile: sourceFile,
+    sourceCodeContent: draft.content,
+    sourceCodeDocumentFlavor: documentFlavor,
+    availableFiles,
+    allFileContents,
+    forceReadOnly: hasComponentEditorLocks(component),
+  });
+}
+
+/**
+ * Namespace a component's document ids (and tab labels) so multiple robots can
+ * coexist as distinct tabs. Only applied when more than one component is present;
+ * a lone robot keeps its original ids/labels. Edit routing is unaffected because
+ * each descriptor already carries its `changeTarget.componentId`.
+ */
+function prefixComponentDocuments(
+  documents: SourceCodeDocumentDescriptor[],
+  component: AssemblyComponent,
+  disambiguate: boolean,
+): SourceCodeDocumentDescriptor[] {
+  if (!disambiguate) {
+    return documents;
+  }
+  return documents.map((document) => ({
+    ...document,
+    id: `comp:${component.id}:${document.id}`,
+    tabLabel: `${component.name} / ${document.tabLabel ?? document.fileName}`,
+  }));
+}
+
+function buildComponentGeneratedFallbackDocument(
+  workspace: AssemblyState,
+  component: AssemblyComponent,
+  disambiguate: boolean,
+): SourceCodeDocumentDescriptor {
+  const content = component.robot
+    ? generateURDF(
+        { ...component.robot, selection: { type: null, id: null } },
+        { preserveMeshPaths: true },
+      )
+    : '';
+  const fileName = disambiguate
+    ? `${sanitizeSourceFileBaseName(component.name)}.urdf`
+    : getGeneratedWorkspaceSourceFileName(workspace);
+  return {
+    id: disambiguate ? `comp:${component.id}:generated` : 'source:workspace-projection',
+    fileName,
+    tabLabel: disambiguate ? component.name : fileName,
+    filePath: null,
+    content,
+    documentFlavor: 'urdf',
+    readOnly: true,
+    validationEnabled: true,
+  };
+}
+
+function buildGroupSubAssembly(workspace: AssemblyState, componentIds: string[]): AssemblyState {
+  const idSet = new Set(componentIds);
+  const components: AssemblyState['components'] = {};
+  for (const id of componentIds) {
+    const component = workspace.components[id];
+    if (component) {
+      components[id] = component;
+    }
+  }
+  const bridges: AssemblyState['bridges'] = {};
+  for (const [bridgeId, bridge] of Object.entries(workspace.bridges)) {
+    if (idSet.has(bridge.parentComponentId) && idSet.has(bridge.childComponentId)) {
+      bridges[bridgeId] = bridge;
+    }
+  }
+  return { ...workspace, components, bridges };
+}
+
+/**
+ * One URDF document per bridge-connected group. A source-preserving graft is
+ * editable through provenance partitioning; unsupported shapes fall back to a
+ * fully re-serialized read-only projection.
+ */
+function buildGroupMergedDocument(
+  workspace: AssemblyState,
+  componentIds: string[],
+  componentSourceDrafts: Record<string, ComponentSourceDraft>,
+): SourceCodeDocumentDescriptor {
+  const editorLocked = componentIds.some((componentId) => {
+    const component = workspace.components[componentId];
+    return Boolean(component && hasComponentEditorLocks(component));
+  });
+  const masterComponentId = resolveAssemblyGroupMasterComponentId(workspace, componentIds);
+  const masterComponent = masterComponentId ? workspace.components[masterComponentId] : null;
+  const groupName = masterComponent?.name || workspace.name;
+  const documentId = `group:${masterComponentId ?? componentIds[0]}:urdf`;
+  const fileName = `${sanitizeSourceFileBaseName(groupName)}.urdf`;
+
+  if (masterComponentId && masterComponent) {
+    const masterDraft = componentSourceDrafts[masterComponentId];
+    if (masterDraft?.componentId === masterComponentId && masterDraft.format === 'urdf') {
+      const grafted = graftAssemblyGroupUrdfSource({
+        assembly: workspace,
+        groupComponentIds: componentIds,
+        masterComponentId,
+        masterSourceUrdfText: masterDraft.content,
+      });
+      if (grafted.ok && grafted.urdfText != null && grafted.provenance) {
+        return {
+          id: documentId,
+          fileName,
+          tabLabel: groupName,
+          filePath: null,
+          content: grafted.urdfText,
+          documentFlavor: 'urdf',
+          readOnly: editorLocked,
+          validationEnabled: true,
+          changeTarget: editorLocked
+            ? undefined
+            : {
+                kind: 'group',
+                rootComponentId: masterComponentId,
+                groupComponentIds: [...componentIds],
+                provenance: grafted.provenance,
+              },
+        };
+      }
+    }
+  }
+
+  const subAssembly = buildGroupSubAssembly(workspace, componentIds);
+  const projectedRobot = buildExportableAssemblyRobotData(subAssembly);
+  const content = projectedRobot
+    ? generateURDF(
+        { ...projectedRobot, selection: { type: null, id: null } },
+        { preserveMeshPaths: true },
+      )
+    : '';
+  return {
+    id: documentId,
+    fileName,
+    tabLabel: groupName,
+    filePath: null,
+    content,
+    documentFlavor: 'urdf',
+    readOnly: true,
+    validationEnabled: true,
+  };
+}
+
+/**
+ * Canonical source-editor contract. Components with no bridge each get their own
+ * editable tab; bridge-connected components collapse into one flattened URDF tab
+ * per connected group. Successful grafts route edits through group provenance;
+ * fallback projections remain read-only.
  */
 export function buildCanonicalWorkspaceSourceDocuments({
   workspace,
@@ -609,80 +816,94 @@ export function buildCanonicalWorkspaceSourceDocuments({
     activeComponentId && workspace.components[activeComponentId]
       ? activeComponentId
       : componentIds[0] ?? null;
-  const component = resolvedComponentId
-    ? workspace.components[resolvedComponentId] ?? null
-    : null;
-  let directComponentDocuments: SourceCodeDocumentDescriptor[] = [];
+  const disambiguate = componentIds.length > 1;
 
-  if (component) {
-    const draft = componentSourceDrafts[component.id];
-    // The source editor may recover an owned draft whose semantic hash drifted
-    // during canonical post-import normalization. Export and viewer resolution
-    // keep their stricter hash checks; an explicit source save reparses the
-    // draft and commits through the workspace-revision CAS.
-    if (draft?.componentId === component.id) {
-      const sourceName = component.sourceFile ?? `component.${draft.format}`;
-      const librarySource = availableFiles.find((file) => file.name === sourceName);
-      const sourceFile: RobotFile = {
-        ...librarySource,
-        name: sourceName,
-        format: draft.format,
-        content: draft.content,
-      };
-      const documentFlavor = getSourceCodeDocumentFlavor(sourceFile);
-      directComponentDocuments = buildSourceCodeDocuments({
-        componentId: component.id,
-        activeSourceFile: sourceFile,
-        sourceCodeContent: draft.content,
-        sourceCodeDocumentFlavor: documentFlavor,
-        availableFiles,
-        allFileContents,
-      });
+  const groups = analyzeAssemblyConnectivity(workspace).connectedGroups;
+  const documents: SourceCodeDocumentDescriptor[] = [];
+  const documentIdsByComponent = new Map<string, string[]>();
+  let directComponentDocument: SourceCodeDocumentDescriptor | null = null;
+  let hasMultiComponentGroup = false;
+
+  for (const group of groups) {
+    if (group.componentIds.length > 1) {
+      hasMultiComponentGroup = true;
+      const mergedDocument = buildGroupMergedDocument(
+        workspace,
+        group.componentIds,
+        componentSourceDrafts,
+      );
+      for (const componentId of group.componentIds) {
+        documentIdsByComponent.set(componentId, [mergedDocument.id]);
+      }
+      documents.push(mergedDocument);
+      continue;
     }
+
+    const componentId = group.componentIds[0];
+    const component = componentId ? workspace.components[componentId] : undefined;
+    if (!component) {
+      continue;
+    }
+
+    const draftDocuments = prefixComponentDocuments(
+      buildComponentDraftDocuments(component, componentSourceDrafts, availableFiles, allFileContents),
+      component,
+      disambiguate,
+    );
+    const componentDocuments =
+      draftDocuments.length > 0
+        ? draftDocuments
+        : [buildComponentGeneratedFallbackDocument(workspace, component, disambiguate)];
+    documentIdsByComponent.set(
+      component.id,
+      componentDocuments.map((document) => document.id),
+    );
+    if (component.id === resolvedComponentId) {
+      // The direct component document is the active component's editable draft
+      // (may be read-only for USD); null when only a generated fallback exists.
+      directComponentDocument = draftDocuments[0] ?? null;
+    }
+    documents.push(...componentDocuments);
   }
 
-  const directComponentDocument = directComponentDocuments[0] ?? null;
-  const requiresAssemblyProjection =
-    componentIds.length > 1 || Object.keys(workspace.bridges).length > 0;
-  if (!requiresAssemblyProjection && directComponentDocument) {
+  if (documents.length === 0) {
+    const fileName = getGeneratedWorkspaceSourceFileName(workspace);
+    const emptyDocument: SourceCodeDocumentDescriptor = {
+      id: 'source:workspace-projection',
+      fileName,
+      tabLabel: fileName,
+      filePath: null,
+      content: '',
+      documentFlavor: 'urdf',
+      readOnly: true,
+      validationEnabled: true,
+    };
     return {
       mode: 'component',
       componentId: resolvedComponentId,
-      documents: directComponentDocuments,
-      content: directComponentDocument.content,
-      documentFlavor: directComponentDocument.documentFlavor,
-      fileName: directComponentDocument.fileName,
-      directComponentDocument,
+      documents: [emptyDocument],
+      content: '',
+      documentFlavor: 'urdf',
+      fileName,
+      directComponentDocument: null,
     };
   }
 
-  const projectedRobot = requiresAssemblyProjection
-    ? buildExportableAssemblyRobotData(workspace)
-    : component?.robot;
-  const content = projectedRobot
-    ? generateURDF(
-        { ...projectedRobot, selection: { type: null, id: null } },
-        { preserveMeshPaths: true },
-      )
-    : '';
-  const fileName = getGeneratedWorkspaceSourceFileName(workspace);
-  const generatedDocument: SourceCodeDocumentDescriptor = {
-    id: 'source:workspace-projection',
-    fileName,
-    tabLabel: fileName,
-    filePath: null,
-    content,
-    documentFlavor: 'urdf',
-    readOnly: true,
-    validationEnabled: true,
-  };
+  // Surface the active component's document in the window title / aggregate fields,
+  // falling back to the first document when the active component is unresolved.
+  const activeDocumentIds = resolvedComponentId
+    ? documentIdsByComponent.get(resolvedComponentId) ?? []
+    : [];
+  const activeDocument =
+    documents.find((document) => activeDocumentIds.includes(document.id)) ?? documents[0];
+
   return {
-    mode: requiresAssemblyProjection ? 'assembly' : 'component',
+    mode: hasMultiComponentGroup ? 'assembly' : 'component',
     componentId: resolvedComponentId,
-    documents: [generatedDocument],
-    content,
-    documentFlavor: 'urdf',
-    fileName,
+    documents,
+    content: activeDocument.content,
+    documentFlavor: activeDocument.documentFlavor,
+    fileName: activeDocument.fileName,
     directComponentDocument,
   };
 }

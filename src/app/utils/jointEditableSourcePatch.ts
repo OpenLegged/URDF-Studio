@@ -228,6 +228,10 @@ function formatScalar(value: number): string {
   return formatNumberWithMaxDecimals(value, MAX_PROPERTY_DECIMALS) || '0';
 }
 
+function formatFiniteLimitScalar(value: number | undefined): string | null {
+  return typeof value === 'number' && Number.isFinite(value) ? formatScalar(value) : null;
+}
+
 function formatVectorValues(values: number[]): string {
   return values.map(formatScalar).join(' ');
 }
@@ -284,22 +288,26 @@ function buildPatchedUrdfLimitTag(
   nextTag = replaceOrRemoveXmlAttribute(
     nextTag,
     'lower',
-    shouldEmitUrdfPositionLimits(jointType) ? formatScalar(limit.lower) : null,
+    shouldEmitUrdfPositionLimits(jointType) ? formatFiniteLimitScalar(limit.lower) : null,
   );
   nextTag = replaceOrRemoveXmlAttribute(
     nextTag,
     'upper',
-    shouldEmitUrdfPositionLimits(jointType) ? formatScalar(limit.upper) : null,
+    shouldEmitUrdfPositionLimits(jointType) ? formatFiniteLimitScalar(limit.upper) : null,
   );
   nextTag = replaceOrRemoveXmlAttribute(
     nextTag,
     'effort',
-    shouldEmitUrdfEffortVelocityLimits(jointType) ? formatScalar(limit.effort) : null,
+    shouldEmitUrdfEffortVelocityLimits(jointType)
+      ? formatFiniteLimitScalar(limit.effort)
+      : null,
   );
   nextTag = replaceOrRemoveXmlAttribute(
     nextTag,
     'velocity',
-    shouldEmitUrdfEffortVelocityLimits(jointType) ? formatScalar(limit.velocity) : null,
+    shouldEmitUrdfEffortVelocityLimits(jointType)
+      ? formatFiniteLimitScalar(limit.velocity)
+      : null,
   );
   return nextTag;
 }
@@ -307,17 +315,21 @@ function buildPatchedUrdfLimitTag(
 function buildNewUrdfLimitTag(
   jointType: UrdfJoint['type'],
   limit: NonNullable<UrdfJoint['limit']>,
-): string {
+): string | null {
   const attributes: string[] = [];
   if (shouldEmitUrdfPositionLimits(jointType)) {
-    attributes.push(`lower="${formatScalar(limit.lower)}"`);
-    attributes.push(`upper="${formatScalar(limit.upper)}"`);
+    const lower = formatFiniteLimitScalar(limit.lower);
+    const upper = formatFiniteLimitScalar(limit.upper);
+    if (lower !== null) attributes.push(`lower="${lower}"`);
+    if (upper !== null) attributes.push(`upper="${upper}"`);
   }
   if (shouldEmitUrdfEffortVelocityLimits(jointType)) {
-    attributes.push(`effort="${formatScalar(limit.effort)}"`);
-    attributes.push(`velocity="${formatScalar(limit.velocity)}"`);
+    const effort = formatFiniteLimitScalar(limit.effort);
+    const velocity = formatFiniteLimitScalar(limit.velocity);
+    if (effort !== null) attributes.push(`effort="${effort}"`);
+    if (velocity !== null) attributes.push(`velocity="${velocity}"`);
   }
-  return `<limit ${attributes.join(' ')} />`;
+  return attributes.length > 0 ? `<limit ${attributes.join(' ')} />` : null;
 }
 
 function buildUrdfInertialOriginTag(
@@ -433,12 +445,16 @@ function buildSdfLimitEntries(
 ): Array<[string, string]> {
   const entries: Array<[string, string]> = [];
   if (shouldEmitSdfPositionLimits(jointType)) {
-    entries.push(['lower', formatScalar(limit.lower)]);
-    entries.push(['upper', formatScalar(limit.upper)]);
+    const lower = formatFiniteLimitScalar(limit.lower);
+    const upper = formatFiniteLimitScalar(limit.upper);
+    if (lower !== null) entries.push(['lower', lower]);
+    if (upper !== null) entries.push(['upper', upper]);
   }
   if (shouldEmitSdfEffortVelocityLimits(jointType)) {
-    entries.push(['effort', formatScalar(limit.effort)]);
-    entries.push(['velocity', formatScalar(limit.velocity)]);
+    const effort = formatFiniteLimitScalar(limit.effort);
+    const velocity = formatFiniteLimitScalar(limit.velocity);
+    if (effort !== null) entries.push(['effort', effort]);
+    if (velocity !== null) entries.push(['velocity', velocity]);
   }
   return entries;
 }
@@ -717,16 +733,17 @@ export function patchUrdfJointLimitInSource({
   }
 
   const newline = getPreferredNewline(sourceContent);
+  const newLimitTag = buildNewUrdfLimitTag(jointType, limit);
+  if (!newLimitTag) {
+    return sourceContent;
+  }
   if (jointOccurrence.selfClosing) {
     const jointIndent = getIndentAt(sourceContent, jointOccurrence.start);
     const childIndent = `${jointIndent}${DEFAULT_INDENT_UNIT}`;
     const expandedJointTag = jointOccurrence.rawOpenTag.replace(/\/\s*>$/, '>');
     return (
       sourceContent.slice(0, jointOccurrence.start) +
-      `${expandedJointTag}${newline}${childIndent}${buildNewUrdfLimitTag(
-        jointType,
-        limit,
-      )}${newline}${jointIndent}</joint>` +
+      `${expandedJointTag}${newline}${childIndent}${newLimitTag}${newline}${jointIndent}</joint>` +
       sourceContent.slice(jointOccurrence.end)
     );
   }
@@ -736,7 +753,7 @@ export function patchUrdfJointLimitInSource({
   const childIndent = `${closeIndent}${DEFAULT_INDENT_UNIT}`;
   return (
     sourceContent.slice(0, closeLineStart) +
-    `${childIndent}${buildNewUrdfLimitTag(jointType, limit)}${newline}${closeIndent}` +
+    `${childIndent}${newLimitTag}${newline}${closeIndent}` +
     sourceContent.slice(jointOccurrence.closeStart)
   );
 }

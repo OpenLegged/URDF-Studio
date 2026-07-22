@@ -59,9 +59,7 @@ interface ViewerSceneConnectorProps {
     objectType: 'visual' | 'collision',
   ) => void;
   onUpdate?: (type: 'link' | 'joint', id: string, data: unknown) => void;
-  onJointMotionCommit?: (
-    context: import('@/features/editor').ViewerJointChangeContext,
-  ) => void;
+  onJointMotionCommit?: (context: import('@/features/editor').ViewerJointChangeContext) => void;
   robot: RobotData;
   showCollision?: boolean;
   showCollisionAlwaysOnTop?: boolean;
@@ -103,6 +101,8 @@ interface ViewerSceneConnectorProps {
     origin: UrdfOrigin,
     options?: import('@/types/viewer').UpdateCommitOptions,
   ) => void;
+  pendingAutoGroundComponentIds?: readonly string[];
+  onAssemblyComponentAutoGroundResolved?: import('@/features/editor').ViewerProps['onAssemblyComponentAutoGroundResolved'];
   t: typeof import('@/shared/i18n').translations.en;
 }
 
@@ -143,6 +143,8 @@ export const ViewerSceneConnector = React.memo(function ViewerSceneConnector({
   onAssemblyTransform,
   onComponentTransform,
   onBridgeTransform,
+  pendingAutoGroundComponentIds,
+  onAssemblyComponentAutoGroundResolved,
   t,
 }: ViewerSceneConnectorProps) {
   const sceneProps = buildUnifiedViewerSceneProps({
@@ -187,6 +189,8 @@ export const ViewerSceneConnector = React.memo(function ViewerSceneConnector({
       onAssemblyTransform,
       onComponentTransform,
       onBridgeTransform,
+      pendingAutoGroundComponentIds,
+      onAssemblyComponentAutoGroundResolved,
     },
   });
 

@@ -60,6 +60,8 @@ export {
   type SnapshotShadowStyle,
   NeutralStudioEnvironment,
   SceneLighting,
+  SemanticOutlineProvider,
+  useSemanticOutline,
   GroundShadowPlane,
   ReferenceGrid,
   AdaptiveGroundPlane,
@@ -95,6 +97,7 @@ export {
   WORKSPACE_DEFAULT_CAMERA_POSITION,
   WORKSPACE_DEFAULT_CAMERA_UP,
 } from './SceneUtilities';
+export type { SemanticOutlineIntent } from './SceneUtilities';
 export {
   UnifiedTransformControls,
   VISUALIZER_UNIFIED_GIZMO_SIZE,

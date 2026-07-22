@@ -13,6 +13,7 @@ export interface ToolboxItem {
   description: string;
   icon: ReactNode;
   onClick: () => void;
+  onPrefetch?: () => void;
   external?: boolean;
   tone?: ToolboxItemTone;
 }
@@ -89,7 +90,9 @@ export interface HeaderOverflowMenuProps {
   onOpenCodeViewer: () => void;
   onPrefetchCodeViewer: () => void;
   onSnapshot: () => void;
+  onPrefetchSnapshot: () => void;
   onOpenSettings: () => void;
+  onPrefetchSettings: () => void;
   t: HeaderTranslations;
   showQuickAction: boolean;
   showSourceCode: boolean;

@@ -7,13 +7,13 @@ import {
   type EntityRef,
   type WorkspaceSelection,
 } from '@/types';
-import { useWorkspaceStore } from './workspaceStore';
 
 export type WorkspaceSelectionValue = NonNullable<WorkspaceSelection>;
 export type WorkspaceSelectionDetails = Omit<WorkspaceSelectionValue, 'entity'>;
 export type LinkEntityRef = Extract<EntityRef, { type: 'link' }>;
 export type JointEntityRef = Extract<EntityRef, { type: 'joint' }>;
 export type TendonEntityRef = Extract<EntityRef, { type: 'tendon' }>;
+export type HoverFreezeOwner = symbol;
 
 export type SelectionGuard = (selection: WorkspaceSelectionValue) => boolean;
 
@@ -42,8 +42,9 @@ export interface SelectionState {
   deferredHoveredSelection: WorkspaceSelection;
   hoverFrozen: boolean;
   interactionHoverFrozen: boolean;
+  interactionHoverFreezeOwners: ReadonlySet<HoverFreezeOwner>;
   hoverBlockCount: number;
-  setHoverFrozen: (frozen: boolean) => void;
+  setHoverFrozen: (owner: HoverFreezeOwner, frozen: boolean) => void;
   beginHoverBlock: () => void;
   endHoverBlock: () => void;
   setHoveredSelection: (selection: WorkspaceSelection) => void;
@@ -350,20 +351,8 @@ export const useSelectionStore = create<SelectionState>()((set, get) => {
     }, Math.max(0, durationMs));
     unrefTimer(focusResetTimeout);
   };
-  const syncActiveComponent = (selection: WorkspaceSelection) => {
-    const ref = selection?.entity;
-    if (!ref || !('componentId' in ref)) return;
-    const workspaceState = useWorkspaceStore.getState();
-    if (
-      workspaceState.activeComponentId !== ref.componentId
-      && workspaceState.workspace.components[ref.componentId]
-    ) {
-      workspaceState.setActiveComponent(ref.componentId);
-    }
-  };
   const setCanonicalSelection = (selection: WorkspaceSelection) => {
     set((state) => resolveSelectionUpdate(state, selection));
-    syncActiveComponent(get().selection);
   };
   const setSelectedEntity = (entity: EntityRef, details?: WorkspaceSelectionDetails) => {
     setCanonicalSelection(createSelection(entity, details));
@@ -402,9 +391,31 @@ export const useSelectionStore = create<SelectionState>()((set, get) => {
     deferredHoveredSelection: null,
     hoverFrozen: false,
     interactionHoverFrozen: false,
+    interactionHoverFreezeOwners: new Set<HoverFreezeOwner>(),
     hoverBlockCount: 0,
-    setHoverFrozen: (frozen) =>
-      set((state) => resolveHoverFreezeState(state, frozen, state.hoverBlockCount)),
+    setHoverFrozen: (owner, frozen) =>
+      set((state) => {
+        const ownerAlreadyRegistered = state.interactionHoverFreezeOwners.has(owner);
+        if (ownerAlreadyRegistered === frozen) {
+          return state;
+        }
+        const interactionHoverFreezeOwners = new Set(
+          state.interactionHoverFreezeOwners,
+        );
+        if (frozen) {
+          interactionHoverFreezeOwners.add(owner);
+        } else {
+          interactionHoverFreezeOwners.delete(owner);
+        }
+        const hoverState = resolveHoverFreezeState(
+          state,
+          interactionHoverFreezeOwners.size > 0,
+          state.hoverBlockCount,
+        );
+        return hoverState === state
+          ? { interactionHoverFreezeOwners }
+          : { ...hoverState, interactionHoverFreezeOwners };
+      }),
     beginHoverBlock: () =>
       set((state) =>
         resolveHoverFreezeState(

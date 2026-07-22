@@ -225,6 +225,30 @@ function extractSubmesh(
   }
 
   if (!match) {
+    // Fall back to a fuzzy match for Collada exports where the WASM fast-mesh
+    // parser flattens nested transform-only `<node>` elements and emits the
+    // inner `<geometry name="...">` instead of the authored `<node name>`.
+    // Example: `<node name="Propeller">` wrapping `<instance_geometry url="#geom-Prop">`
+    // (where `<geometry name="Prop">`) produces a leaf named "Prop", so a
+    // request for "Propeller" should still resolve to it.  We require the
+    // candidate to share a non-trivial prefix with the requested name to
+    // avoid spurious matches.
+    const candidates: THREE.Object3D[] = [];
+    scene.traverse((child) => {
+      if (child === scene || !child.name) return;
+      if (
+        submeshName.startsWith(child.name) ||
+        child.name.startsWith(submeshName)
+      ) {
+        candidates.push(child);
+      }
+    });
+    // Prefer the longest matching name (closest to the requested name).
+    candidates.sort((a, b) => b.name.length - a.name.length);
+    match = candidates[0] ?? null;
+  }
+
+  if (!match) {
     return null;
   }
 
@@ -1034,6 +1058,11 @@ export async function buildRuntimeRobotFromState({
       );
     }
     joint.jointType = resolveRuntimeJointType(jointData.type);
+    const hasFinitePositionLimits =
+      Number.isFinite(jointData.limit?.lower) && Number.isFinite(jointData.limit?.upper);
+    if (jointData.type === JointType.REVOLUTE || jointData.type === JointType.PRISMATIC) {
+      joint.ignoreLimits = !hasFinitePositionLimits;
+    }
 
     if (jointData.axis) {
       joint.axis = new THREE.Vector3(jointData.axis.x, jointData.axis.y, jointData.axis.z);
@@ -1043,16 +1072,20 @@ export async function buildRuntimeRobotFromState({
     }
 
     if (jointData.limit) {
-      const motionLimit = normalizeJointLimitOrder({
-        lower: getJointMotionAngleFromActualAngle(jointData, jointData.limit.lower),
-        upper: getJointMotionAngleFromActualAngle(jointData, jointData.limit.upper),
-        effort: jointData.limit.effort,
-        velocity: jointData.limit.velocity,
-      });
-      joint.limit.lower = motionLimit.lower;
-      joint.limit.upper = motionLimit.upper;
-      joint.limit.effort = motionLimit.effort;
-      joint.limit.velocity = motionLimit.velocity;
+      if (hasFinitePositionLimits) {
+        const motionLimit = normalizeJointLimitOrder({
+          lower: getJointMotionAngleFromActualAngle(jointData, Number(jointData.limit.lower)),
+          upper: getJointMotionAngleFromActualAngle(jointData, Number(jointData.limit.upper)),
+        });
+        joint.limit.lower = motionLimit.lower;
+        joint.limit.upper = motionLimit.upper;
+      }
+      joint.limit.effort = Number.isFinite(jointData.limit.effort)
+        ? Number(jointData.limit.effort)
+        : undefined;
+      joint.limit.velocity = Number.isFinite(jointData.limit.velocity)
+        ? Number(jointData.limit.velocity)
+        : undefined;
     }
 
     if (joint instanceof URDFMimicJoint && jointData.mimic) {

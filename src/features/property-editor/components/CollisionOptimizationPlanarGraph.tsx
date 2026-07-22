@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { LocateFixed, ZoomIn, ZoomOut } from 'lucide-react';
-import { Checkbox } from '@/shared/components/ui';
+import { Checkbox, IconButton } from '@/shared/components/ui';
 import type {
   CollisionOptimizationAnalysis,
   CollisionOptimizationCandidate,
@@ -950,8 +950,9 @@ export function CollisionOptimizationPlanarGraph({
           </div>
 
           <div className="absolute right-2.5 top-2 z-20 flex items-center gap-1 rounded-full border border-border-black bg-element-bg/95 p-1 shadow-sm">
-            <button
-              type="button"
+            <IconButton
+              variant="toolbar"
+              size="sm"
               data-graph-no-pan="true"
               aria-label={labels.zoomOut}
               title={labels.zoomOut}
@@ -963,12 +964,13 @@ export function CollisionOptimizationPlanarGraph({
                 const rect = container.getBoundingClientRect();
                 zoomAtClientPoint(rect.left + rect.width / 2, rect.top + rect.height / 2, 1 / 1.2);
               }}
-              className="inline-flex h-7 w-7 items-center justify-center rounded-full text-text-secondary transition-colors hover:bg-element-hover hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-system-blue/30"
+              className="h-7 w-7 rounded-full"
             >
               <ZoomOut className="h-3.5 w-3.5" />
-            </button>
-            <button
-              type="button"
+            </IconButton>
+            <IconButton
+              variant="toolbar"
+              size="sm"
               data-graph-no-pan="true"
               aria-label={labels.zoomIn}
               title={labels.zoomIn}
@@ -980,20 +982,21 @@ export function CollisionOptimizationPlanarGraph({
                 const rect = container.getBoundingClientRect();
                 zoomAtClientPoint(rect.left + rect.width / 2, rect.top + rect.height / 2, 1.2);
               }}
-              className="inline-flex h-7 w-7 items-center justify-center rounded-full text-text-secondary transition-colors hover:bg-element-hover hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-system-blue/30"
+              className="h-7 w-7 rounded-full"
             >
               <ZoomIn className="h-3.5 w-3.5" />
-            </button>
-            <button
-              type="button"
+            </IconButton>
+            <IconButton
+              variant="toolbar"
+              size="sm"
               data-graph-no-pan="true"
               aria-label={labels.resetView}
               title={labels.resetView}
               onClick={handleResetViewport}
-              className="inline-flex h-7 w-7 items-center justify-center rounded-full text-text-secondary transition-colors hover:bg-element-hover hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-system-blue/30"
+              className="h-7 w-7 rounded-full"
             >
               <LocateFixed className="h-3.5 w-3.5" />
-            </button>
+            </IconButton>
           </div>
 
           <div
@@ -1099,7 +1102,7 @@ export function CollisionOptimizationPlanarGraph({
                         }}
                         className={`grid grid-cols-[auto_minmax(0,1fr)] items-center gap-2 rounded-2xl border px-2.5 py-1.5 text-left shadow-sm transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-system-blue/30 ${
                           group.checked
-                            ? 'border-system-blue/35 bg-panel-bg text-system-blue'
+                            ? 'border-system-blue/35 bg-panel-bg text-system-blue hover:bg-system-blue/8'
                             : 'border-border-black bg-panel-bg text-text-primary hover:bg-element-hover'
                         }`}
                       >

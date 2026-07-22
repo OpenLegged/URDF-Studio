@@ -218,6 +218,35 @@ test('generateSDF produces a roundtrippable model package for RobotState data', 
   assert.ok(Math.abs((reparsed?.joints.tip_joint.origin.rpy.y ?? 0) - 0.3) < 1e-6);
 });
 
+test('generateSDF omits absent joint bounds without synthesizing infinities', () => {
+  const robot: RobotState = {
+    name: 'unbounded_joint_export',
+    rootLinkId: 'base',
+    links: {
+      base: { ...DEFAULT_LINK, id: 'base', name: 'base' },
+      wheel: { ...DEFAULT_LINK, id: 'wheel', name: 'wheel' },
+    },
+    joints: {
+      spin: {
+        ...DEFAULT_JOINT,
+        id: 'spin',
+        name: 'spin',
+        type: JointType.CONTINUOUS,
+        parentLinkId: 'base',
+        childLinkId: 'wheel',
+        limit: { effort: 12, velocity: 8 },
+      },
+    },
+    selection: { type: null, id: null },
+  };
+
+  const xml = generateSDF(robot);
+  assert.match(xml, /<effort>12<\/effort>/);
+  assert.match(xml, /<velocity>8<\/velocity>/);
+  assert.doesNotMatch(xml, /<(?:lower|upper)>/);
+  assert.doesNotMatch(xml, /Infinity|NaN/);
+});
+
 test('generateSDF preserves SDF-native plane and heightmap collision geometry', () => {
   const robot: RobotState = {
     name: 'terrain_collision_demo',

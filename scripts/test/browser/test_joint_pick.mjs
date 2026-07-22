@@ -18,9 +18,47 @@ import {
 
 const CONFIRM = ['Confirm', '确认'];
 const CREATE_BRIDGE = ['Create Bridge', '创建拼接'];
-const CYLINDER_FILE = 'joint_pick_cylinder.urdf';
+const CYLINDER_FILE = 'joint_pick_stl_cylinder.urdf';
+const CYLINDER_MESH_FILE = 'meshes/joint_pick_stl_cylinder.stl';
 const BOX_FILE = 'joint_pick_box.urdf';
-const MODIFIER_KEY = process.platform === 'darwin' ? 'Meta' : 'Control';
+
+function buildCylinderStl(radialSegments = 12) {
+  const facets = [];
+  const radius = 0.6;
+  const halfLength = 0.2;
+  const point = (index, z) => {
+    const angle = (index / radialSegments) * Math.PI * 2;
+    return [radius * Math.cos(angle), radius * Math.sin(angle), z];
+  };
+  const facet = (a, b, c) => {
+    facets.push(
+      '  facet normal 0 0 0',
+      '    outer loop',
+      `      vertex ${a.join(' ')}`,
+      `      vertex ${b.join(' ')}`,
+      `      vertex ${c.join(' ')}`,
+      '    endloop',
+      '  endfacet',
+    );
+  };
+
+  for (let index = 0; index < radialSegments; index += 1) {
+    const next = (index + 1) % radialSegments;
+    // A tiny exporter-like Z jitter exercises tolerant logical-face fitting
+    // while remaining visually indistinguishable from a planar cap.
+    const topA = point(index, halfLength + (index % 2 === 0 ? 2e-6 : -2e-6));
+    const topB = point(next, halfLength + (next % 2 === 0 ? 2e-6 : -2e-6));
+    const bottomA = point(index, -halfLength);
+    const bottomB = point(next, -halfLength);
+    facet([0, 0, halfLength], topA, topB);
+    facet([0, 0, -halfLength], bottomB, bottomA);
+    facet(bottomA, bottomB, topB);
+    facet(bottomA, topB, topA);
+  }
+  return ['solid joint_pick_stl_cylinder', ...facets, 'endsolid joint_pick_stl_cylinder'].join('\n');
+}
+
+const CYLINDER_STL = buildCylinderStl();
 
 const CYLINDER_URDF = `<?xml version="1.0"?>
 <robot name="joint_pick_cylinder">
@@ -28,7 +66,7 @@ const CYLINDER_URDF = `<?xml version="1.0"?>
     <visual>
       <origin xyz="0 0 0" rpy="0 0 0"/>
       <geometry>
-        <cylinder radius="0.6" length="0.4"/>
+        <mesh filename="${CYLINDER_MESH_FILE}"/>
       </geometry>
       <material name="cyan"><color rgba="0.1 0.7 0.9 1"/></material>
     </visual>
@@ -65,9 +103,16 @@ async function seedJointPickFixtures(page) {
     { timeout: 30_000 },
   );
   await page.evaluate(
-    ({ cylinderFile, cylinderUrdf, boxFile, boxUrdf }) => {
+    ({ cylinderFile, cylinderMeshFile, cylinderStl, cylinderUrdf, boxFile, boxUrdf }) => {
       const api = window.__URDF_STUDIO_DEBUG__;
       api.resetFixtureFiles();
+      const cylinderBlobUrl = URL.createObjectURL(new Blob([cylinderStl], { type: 'model/stl' }));
+      api.seedFixtureFile({
+        name: cylinderMeshFile,
+        content: cylinderStl,
+        format: 'mesh',
+        blobUrl: cylinderBlobUrl,
+      });
       api.seedFixtureFile({
         name: cylinderFile,
         content: cylinderUrdf,
@@ -83,6 +128,8 @@ async function seedJointPickFixtures(page) {
     },
     {
       cylinderFile: CYLINDER_FILE,
+      cylinderMeshFile: CYLINDER_MESH_FILE,
+      cylinderStl: CYLINDER_STL,
       cylinderUrdf: CYLINDER_URDF,
       boxFile: BOX_FILE,
       boxUrdf: BOX_URDF,
@@ -141,17 +188,23 @@ async function waitForSnapKind(page, side, kind, timeoutMs = 5000) {
   throw new Error(`Timed out waiting for ${side} snap kind ${kind}; last=${JSON.stringify(last)}`);
 }
 
-async function clickCanvasTargetWithModifier(page, target) {
-  const point = { x: target.clientX, y: target.clientY };
-  await page.mouse.move(point.x, point.y);
-  await page.keyboard.down(MODIFIER_KEY);
-  try {
-    await page.mouse.down();
-    await page.mouse.up();
-  } finally {
-    await page.keyboard.up(MODIFIER_KEY);
-  }
-  return point;
+async function hoverCandidateRegion(page, target, componentId, timeoutMs = 5000) {
+  await page.mouse.move(target.clientX, target.clientY);
+  await page.waitForFunction(
+    (expectedComponentId) =>
+      (window.__URDF_STUDIO_DEBUG__?.getJointPickHoverSummary?.() ?? [])
+        .some((summary) =>
+          summary.componentId === expectedComponentId
+          && summary.valid
+          && summary.triangleCount > 0
+          && summary.candidateCount > 0),
+    { timeout: timeoutMs },
+    componentId,
+  );
+  return page.evaluate((expectedComponentId) =>
+    (window.__URDF_STUDIO_DEBUG__?.getJointPickHoverSummary?.() ?? [])
+      .find((summary) => summary.componentId === expectedComponentId) ?? null,
+  componentId);
 }
 
 // Click an empty canvas spot to clear any pre-existing selection so the bridge
@@ -219,10 +272,6 @@ async function targetsForComponent(page, componentId, _allIds, modalSafeMaxX) {
   );
 }
 
-async function targetById(page, linkId) {
-  return (await getProjectedInteractionTargets(page, { type: 'link' })).find((t) => t.id === linkId) ?? null;
-}
-
 async function focusComponent(page, componentId) {
   await page.evaluate((nextComponentId) => {
     window.__URDF_STUDIO_DEBUG__?.__selectionStore__?.getState?.()?.focusOn?.({
@@ -258,7 +307,9 @@ async function main() {
     // ── Two-component assembly with controlled primitive snap surfaces ──
     await seedJointPickFixtures(page);
     await loadFixtureModel(page, BOX_FILE);
-    await loadFixtureModel(page, CYLINDER_FILE);
+    // `seedJointPickFixtures` already loaded/cached the cylinder. Reloading that
+    // same source after the box can race the selected-file/workspace handoff;
+    // the assembly helper only needs both source robots in its cache.
 
     await store.initAssembly(page, 'joint_pick_asm'); await delay(300);
     const cylinderFile = await findAvailableFile(page, CYLINDER_FILE);
@@ -279,7 +330,71 @@ async function main() {
     // ── Clear selection, then open the bridge modal ──
     await clearViewerSelection(page);
     assert(suite, await clickByTitle(page, CREATE_BRIDGE), 'create-bridge button clicked');
-    assert(suite, await waitForBridgeModal(page, 10000), 'bridge modal open with link UI');
+    assert(suite, await waitForBridgeModal(page, 10000), 'bridge modal open with compact geometry UI');
+    const initialModalProbe = await page.evaluate(() => {
+      const relation = document.querySelector('[data-bridge-section-panel="relation"]');
+      const footer = document.querySelector('[data-bridge-footer]');
+      const windowRoot = footer?.parentElement ?? null;
+      const rect = windowRoot?.getBoundingClientRect() ?? null;
+      return {
+        advanced: document.querySelector('[data-bridge-advanced]')?.getAttribute('data-bridge-advanced'),
+        geometryRails: relation?.querySelectorAll('[data-bridge-endpoint-rail]').length ?? 0,
+        height: rect?.height ?? 0,
+        inputMode: relation?.getAttribute('data-bridge-input-mode'),
+        linkEndpoints: relation?.querySelectorAll('[data-bridge-link-endpoint]').length ?? 0,
+        width: rect?.width ?? 0,
+      };
+    });
+    assert(
+      suite,
+      initialModalProbe.width >= 400 && initialModalProbe.width <= 440
+        && initialModalProbe.height >= 460 && initialModalProbe.height <= 500,
+      `bridge modal uses compact 420x480 footprint; probe=${JSON.stringify(initialModalProbe)}`,
+    );
+    assertEqual(suite, initialModalProbe.inputMode, 'geometry', 'geometry snap is the default mode');
+    assertEqual(suite, initialModalProbe.geometryRails, 2, 'geometry mode shows two endpoint rails');
+    assertEqual(suite, initialModalProbe.linkEndpoints, 0, 'geometry mode hides link dropdowns');
+    assertEqual(suite, initialModalProbe.advanced, 'expanded', 'advanced settings start expanded');
+    const customBridgeName = 'editable_stl_joint';
+
+    const switchedModes = await page.evaluate(() => {
+      const relation = document.querySelector('[data-bridge-section-panel="relation"]');
+      const modeButtons = relation?.querySelectorAll('[role="radiogroup"] [role="radio"]');
+      const linkButton = modeButtons?.item(1);
+      if (!(linkButton instanceof HTMLButtonElement)) return false;
+      linkButton.click();
+      return true;
+    });
+    assert(suite, switchedModes, 'switch to Link-list mode');
+    await page.waitForFunction(() =>
+      document.querySelector('[data-bridge-section-panel="relation"]')
+        ?.getAttribute('data-bridge-input-mode') === 'link',
+    );
+    const linkModeProbe = await page.evaluate(() => {
+      const relation = document.querySelector('[data-bridge-section-panel="relation"]');
+      return {
+        active: window.__URDF_STUDIO_DEBUG__?.__jointPickSessionStore__?.getState?.()?.active,
+        geometryRails: relation?.querySelectorAll('[data-bridge-endpoint-rail]').length ?? 0,
+        linkEndpoints: relation?.querySelectorAll('[data-bridge-link-endpoint]').length ?? 0,
+      };
+    });
+    assertEqual(suite, linkModeProbe.linkEndpoints, 2, 'Link-list mode has one selector per endpoint');
+    assertEqual(suite, linkModeProbe.geometryRails, 0, 'Link-list mode hides geometry rails');
+    assertEqual(suite, linkModeProbe.active, false, 'Link-list mode disables canvas snap picking');
+
+    await page.evaluate(() => {
+      const relation = document.querySelector('[data-bridge-section-panel="relation"]');
+      const geometryButton = relation
+        ?.querySelectorAll('[role="radiogroup"] [role="radio"]')
+        .item(0);
+      if (geometryButton instanceof HTMLButtonElement) geometryButton.click();
+    });
+    await page.waitForFunction(() =>
+      document.querySelector('[data-bridge-section-panel="relation"]')
+        ?.getAttribute('data-bridge-input-mode') === 'geometry'
+      && window.__URDF_STUDIO_DEBUG__?.__jointPickSessionStore__?.getState?.()?.active === true,
+    );
+    assert(suite, true, 'switching back restores geometry snap picking');
     const hasOldSidePickers = await page.evaluate(() =>
       ['Pick parent', 'Pick child', '拾取父侧', '拾取子侧'].some((text) =>
         document.body.textContent?.includes(text),
@@ -297,6 +412,24 @@ async function main() {
     const parentTargets = await targetsForComponent(page, compA.id, allIds, modalSafeMaxX);
     assertGreaterThan(suite, parentTargets.length, 0, 'parent link targets projected');
     const parentTarget = parentTargets[0];
+
+    const parentHover = await hoverCandidateRegion(page, parentTarget, compA.id);
+    assert(
+      suite,
+      parentHover?.triangleCount > 1 && parentHover?.boundaryLoopCount > 0,
+      `hover renders a connected candidate region; summary=${JSON.stringify(parentHover)}`,
+    );
+    assertGreaterThan(
+      suite,
+      parentHover?.candidateCount ?? 0,
+      1,
+      'hover exposes multiple smart candidate points',
+    );
+    assert(
+      suite,
+      parentHover?.featureKind === 'planar' && parentHover?.truncated === false,
+      `real non-indexed STL cap resolves as a complete logical planar feature; summary=${JSON.stringify(parentHover)}`,
+    );
 
     await clickCanvasTarget(page, parentTarget); await delay(700);
     const parentClickProbe = {
@@ -316,6 +449,17 @@ async function main() {
     const childTargets = await targetsForComponent(page, compB.id, allIds, modalSafeMaxX);
     assertGreaterThan(suite, childTargets.length, 0, 'child link targets projected');
     const childTarget = childTargets[0];
+    const childHover = await hoverCandidateRegion(page, childTarget, compB.id);
+    assert(
+      suite,
+      childHover?.triangleCount > 0 && childHover?.recommendedKind === 'faceCenter',
+      `box hover recommends its connected face center; summary=${JSON.stringify(childHover)}`,
+    );
+    assert(
+      suite,
+      childHover?.candidateKinds?.includes('geometryCenter'),
+      `object geometry center is exposed as a selectable candidate; summary=${JSON.stringify(childHover)}`,
+    );
     await clickCanvasTarget(page, childTarget); await delay(800);
     await page.waitForFunction(
       () => Boolean(window.__URDF_STUDIO_DEBUG__?.__jointPickSessionStore__?.getState?.()?.childSnap),
@@ -333,15 +477,134 @@ async function main() {
       childSnap !== null && childSnap.kind !== 'surface',
       `box pick smart-snaps to a feature point (not raw surface); got ${childSnap?.kind ?? 'none'}`,
     );
-    const relChildLinkId = childSnap.linkId;
-    const childPick = (await targetById(page, relChildLinkId)) ?? childTarget;
-
-    // ── Ctrl/Cmd override: same box surface can be committed as a raw surface point ──
-    await delay(500);
-    const freePointPick = (await targetById(page, relChildLinkId)) ?? childPick;
-    await clickCanvasTargetWithModifier(page, freePointPick); await delay(1000);
-    const freePointSnap = await waitForSnapKind(page, 'child', 'surface');
-    assertEqual(suite, freePointSnap.kind, 'surface', 'Ctrl/Cmd pick commits a free surface point');
+    await page.waitForFunction(
+      () => document.querySelector('[data-bridge-inline-field="name"] input')?.value?.length > 0,
+      { timeout: 5000 },
+    );
+    const suggestedNameValue = await page.evaluate(() => {
+      const input = document.querySelector('[data-bridge-inline-field="name"] input');
+      return input instanceof HTMLInputElement ? input.value : '';
+    });
+    assert(
+      suite,
+      suggestedNameValue.length > 0,
+      `endpoint-based bridge name is stored as the input value; value=${suggestedNameValue}`,
+    );
+    await page.click('[data-bridge-inline-field="name"] input', { clickCount: 3 });
+    await page.type('[data-bridge-inline-field="name"] input', customBridgeName);
+    assertEqual(
+      suite,
+      await page.evaluate(() => {
+        const input = document.querySelector('[data-bridge-inline-field="name"] input');
+        return input instanceof HTMLInputElement ? input.value : '';
+      }),
+      customBridgeName,
+      'default bridge name can be edited directly',
+    );
+    // The preview bridge moves the child immediately. Both committed axes must
+    // stay attached to their selected runtime links instead of leaving the
+    // child axes at its click-time world pose.
+    const trackedSnapDeadline = Date.now() + 5000;
+    let trackedSnapProbe = null;
+    while (Date.now() < trackedSnapDeadline) {
+      trackedSnapProbe = await page.evaluate(() => {
+        const state = window.__URDF_STUDIO_DEBUG__?.__jointPickSessionStore__?.getState?.();
+        const snaps = window.__URDF_STUDIO_DEBUG__?.getJointPickOverlaySummary?.() ?? [];
+        const parentEntry = snaps.find((entry) => entry.side === 'parent') ?? null;
+        const childEntry = snaps.find((entry) => entry.side === 'child') ?? null;
+        const parent = parentEntry?.position ?? null;
+        const child = childEntry?.position ?? null;
+        const capturedChild = state?.childSnap?.pointWorld ?? null;
+        const inputValue = (fieldKey) => {
+          const input = document.querySelector(`[data-bridge-inline-field="${fieldKey}"] input`);
+          return input instanceof HTMLInputElement ? input.value : null;
+        };
+        const selectValue = (fieldKey) => {
+          const select = document.querySelector(`[data-bridge-field="${fieldKey}"] select`);
+          return select instanceof HTMLSelectElement ? select.value : null;
+        };
+        return {
+          tracksLiveLinks:
+            snaps.length === 2 && snaps.every((entry) => entry.tracksLiveLink === true),
+          connectorLength: parent && child
+            ? Math.hypot(
+                child[0] - parent[0],
+                child[1] - parent[1],
+                child[2] - parent[2],
+              )
+            : null,
+          connectorHidden:
+            snaps.length === 2 && snaps.every((entry) => entry.connectorVisible === false),
+          childMovedDistance: child && capturedChild
+            ? Math.hypot(
+                child[0] - capturedChild.x,
+                child[1] - capturedChild.y,
+                child[2] - capturedChild.z,
+              )
+            : null,
+          draftOrigin: {
+            x: inputValue('origin-x'),
+            y: inputValue('origin-y'),
+            z: inputValue('origin-z'),
+          },
+          draftRelation: {
+            parentComponentId: selectValue('parent-component'),
+            parentLinkId: selectValue('parent-link'),
+            childComponentId: selectValue('child-component'),
+            childLinkId: selectValue('child-link'),
+          },
+          sessionRelation: state
+            ? {
+                parentComponentId: state.parentComponentId,
+                parentLinkId: state.parentLinkId,
+                childComponentId: state.childComponentId,
+                childLinkId: state.childLinkId,
+              }
+            : null,
+          snaps,
+        };
+      });
+      if (
+        trackedSnapProbe.tracksLiveLinks
+        && trackedSnapProbe.connectorLength !== null
+        && trackedSnapProbe.connectorLength < 1e-3
+        && trackedSnapProbe.connectorHidden
+        && trackedSnapProbe.childMovedDistance !== null
+        && trackedSnapProbe.childMovedDistance > 0.1
+      ) {
+        break;
+      }
+      await delay(150);
+    }
+    if (
+      !trackedSnapProbe?.tracksLiveLinks
+      || trackedSnapProbe.connectorLength === null
+      || trackedSnapProbe.connectorLength >= 1e-3
+      || !trackedSnapProbe.connectorHidden
+      || trackedSnapProbe.childMovedDistance <= 0.1
+    ) {
+      console.error('Committed snap markers did not track:', JSON.stringify(trackedSnapProbe));
+    }
+    assert(
+      suite,
+      trackedSnapProbe.tracksLiveLinks,
+      'committed parent/child axes track the live runtime links after preview rebuild',
+    );
+    assert(
+      suite,
+      trackedSnapProbe.childMovedDistance !== null && trackedSnapProbe.childMovedDistance > 0.1,
+      `child axes moved away from their click-time world pose with the child robot; distance=${trackedSnapProbe.childMovedDistance}`,
+    );
+    assert(
+      suite,
+      trackedSnapProbe.connectorLength !== null && trackedSnapProbe.connectorLength < 1e-3,
+      `picked frames coincide so the yellow connector collapses; length=${trackedSnapProbe.connectorLength}`,
+    );
+    assert(
+      suite,
+      trackedSnapProbe.connectorHidden,
+      'yellow connector is hidden after the picked frames coincide',
+    );
 
     // ── Confirm → bridge created + child auto-aligned by the picked snaps ──
     const beforeChild = (await getAssemblyState(page)).components.find((c) => c.id === compB.id);
@@ -350,6 +613,7 @@ async function main() {
 
     const asm = await getAssemblyState(page);
     assertEqual(suite, asm.bridgeCount, 1, 'bridge created via pick flow');
+    assertEqual(suite, asm.bridges[0]?.name, customBridgeName, 'edited bridge name is committed');
     const afterChild = asm.components.find((c) => c.id === compB.id);
     assert(
       suite,

@@ -1,61 +1,19 @@
 /// <reference lib="webworker" />
 
 import { resolveClosedLoopDrivenJointMotion } from '@/core/robot';
-import type {
-  ClosedLoopDrivenJointMotionResult,
-  ClosedLoopMotionSolveOptions,
-} from '@/core/robot/closedLoops';
-import type { RobotState } from '@/types';
 import { buildClosedLoopMotionPreviewRobot } from '@/shared/utils/robot/closedLoopMotionPreview';
-import type { ClosedLoopMotionPreviewState } from '@/shared/utils/robot/closedLoopMotionPreview';
-
-type ClosedLoopMotionPreviewWorkerSolveOptions = Omit<
-  ClosedLoopMotionSolveOptions,
-  'angles' | 'quaternions' | 'lockedJointIds'
->;
-
-interface ClosedLoopMotionPreviewWorkerRequest {
-  type: 'resolve-motion-preview';
-  requestId: number;
-  robot?: Pick<RobotState, 'links' | 'joints' | 'rootLinkId' | 'closedLoopConstraints'>;
-  jointId: string;
-  angle: number;
-  options?: ClosedLoopMotionPreviewWorkerSolveOptions;
-  previewState?: ClosedLoopMotionPreviewState;
-}
-
-interface ClosedLoopMotionPreviewWorkerSetBaseRobotRequest {
-  type: 'set-base-robot';
-  robot: Pick<RobotState, 'links' | 'joints' | 'rootLinkId' | 'closedLoopConstraints'> | null;
-}
-
-interface ClosedLoopMotionPreviewWorkerSuccessResponse {
-  type: 'resolve-motion-preview-result';
-  requestId: number;
-  solution: ClosedLoopDrivenJointMotionResult;
-}
-
-interface ClosedLoopMotionPreviewWorkerErrorResponse {
-  type: 'resolve-motion-preview-error';
-  requestId: number;
-  error: string;
-}
-
-type ClosedLoopMotionPreviewWorkerResponse =
-  | ClosedLoopMotionPreviewWorkerSuccessResponse
-  | ClosedLoopMotionPreviewWorkerErrorResponse;
+import type {
+  ClosedLoopMotionPreviewRobot,
+  ClosedLoopMotionPreviewWorkerRequest,
+  ClosedLoopMotionPreviewWorkerResponse,
+} from '@/shared/utils/robot/closedLoopMotionPreviewContract';
 
 const workerScope = globalThis as unknown as DedicatedWorkerGlobalScope;
-let baseRobot: Pick<RobotState, 'links' | 'joints' | 'rootLinkId' | 'closedLoopConstraints'> | null =
-  null;
+let baseRobot: ClosedLoopMotionPreviewRobot | null = null;
 
 workerScope.addEventListener(
   'message',
-  (
-    event: MessageEvent<
-      ClosedLoopMotionPreviewWorkerRequest | ClosedLoopMotionPreviewWorkerSetBaseRobotRequest
-    >,
-  ) => {
+  (event: MessageEvent<ClosedLoopMotionPreviewWorkerRequest>) => {
     const message = event.data;
     if (!message) {
       return;

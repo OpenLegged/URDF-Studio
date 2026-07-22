@@ -14,6 +14,7 @@ export interface TranslationKeys extends TranslationWorkflowKeys {
   aiMenu: string;
   aiInspection: string;
   aiConversation: string;
+  feedback: string;
   file: string;
   import: string;
   importFolder: string;
@@ -84,14 +85,24 @@ export interface TranslationKeys extends TranslationWorkflowKeys {
   bridgeSnapHintSmart: string;
   bridgeSnapHintFreePoint: string;
   bridgeSnapKindCircleCenter: string;
+  bridgeSnapKindCylinderAxis: string;
   bridgeSnapKindObjectCenter: string;
   bridgeSnapKindFaceCenter: string;
+  bridgeSnapKindVertex: string;
+  bridgeSnapKindEdgeMidpoint: string;
+  bridgeSnapKindSurface: string;
   bridgePickActiveParent: string;
   bridgePickActiveChild: string;
   bridgeSelectRelationFirst: string;
   add: string;
   bridgedComponent: string;
   bridgedComponentLockedHint: string;
+  lockEditing: string;
+  unlockEditing: string;
+  editingLockedByComponent: string;
+  editingLockedByAncestor: string;
+  editingLockedBadge: string;
+  editingLockedMessage: string;
   bridgeLimitRangeInvalid: string;
   bridgeNonFixedCycleUnsupported: string;
   bridgeTabRelation: string;
@@ -103,6 +114,15 @@ export interface TranslationKeys extends TranslationWorkflowKeys {
   bridgePositionUpperLimit: string;
   bridgeBaseSnapped: string;
   bridgeAttachSnapped: string;
+  bridgeInputMode: string;
+  bridgeGeometryMode: string;
+  bridgeLinkListMode: string;
+  bridgeAdvancedSettings: string;
+  bridgePickEndpoint: string;
+  bridgePickEndpointActive: string;
+  bridgePickEndpointInactive: string;
+  bridgeRepickBase: string;
+  bridgeRepickAttach: string;
 
   // Property Editor
   properties: string;
@@ -347,8 +367,6 @@ export interface TranslationKeys extends TranslationWorkflowKeys {
   restore: string;
   inspectionNormalMode: string;
   inspectionAdvancedMode: string;
-  inspectionConfigureChecks: string;
-  inspectionConfigureChecksDescription: string;
   inspectionSelectedChecksLabel: string;
   inspectionSelectAll: string;
   inspectionClearAll: string;
@@ -630,6 +648,9 @@ export interface TranslationKeys extends TranslationWorkflowKeys {
   sourceCodeModified: string;
   sourceCodeApplyFailed: string;
   sourceCodeApplyFailedMessage: string;
+  sourceCodeLoadErrorTitle: string;
+  sourceCodeLoadErrorMessage: string;
+  sourceCodeLoadErrorLogPrefix: string;
   sourceCodeReadOnlyView: string;
   sourceCodeGenerated: string;
   sourceCodeMaximized: string;
@@ -729,6 +750,7 @@ export interface TranslationKeys extends TranslationWorkflowKeys {
   jointName: string;
   motorType: string;
   addedComponent: string;
+  addedComponentRecovered: string;
   noCollisionOptimizationApplied: string;
   collisionOptimizationApplied: string;
   renamedFolder: string;
@@ -896,10 +918,13 @@ export interface TranslationKeys extends TranslationWorkflowKeys {
   paintOperation: string;
   paintOperationPaint: string;
   paintOperationErase: string;
+  paintOperationEraseActive: string;
+  paintEraseHint: string;
   paintUnsupportedRobotOnly: string;
   paintStatusReady: string;
   paintStatusApplied: string;
   paintStatusRemoved: string;
+  paintStatusNothingToRestore: string;
   paintErrorVisualMeshOnly: string;
   paintErrorMultiMaterial: string;
   paintErrorFaceUnavailable: string;

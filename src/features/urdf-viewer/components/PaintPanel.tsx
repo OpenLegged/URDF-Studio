@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useState } from 'react';
 import type { Language } from '@/shared/i18n';
 import { translations } from '@/shared/i18n';
 import { WORKSPACE_OVERLAY_RIGHT_EDGE_GAP } from '@/shared/components/3d/scene';
@@ -79,18 +79,6 @@ function mergePaintOpacity(previousColor: string, opacity: number): string {
   return nextOpacity >= 0.999 ? baseColor : `${baseColor}${opacityToHex(nextOpacity)}`;
 }
 
-function getStatusClassName(tone: ViewerPaintStatus['tone']) {
-  switch (tone) {
-    case 'success':
-      return 'border-green-500/30 bg-green-500/10 text-green-100';
-    case 'error':
-      return 'border-danger-border bg-danger-soft text-danger-hover';
-    case 'info':
-    default:
-      return 'border-system-blue/20 bg-system-blue/10 text-text-primary';
-  }
-}
-
 export const PaintPanel: React.FC<PaintPanelProps> = ({
   lang,
   toolMode,
@@ -114,14 +102,13 @@ export const PaintPanel: React.FC<PaintPanelProps> = ({
   const t = translations[lang];
   const paintColorPickerValue = getPaintColorPickerValue(paintColor);
   const paintOpacity = getPaintOpacity(paintColor);
-  const status = useMemo<ViewerPaintStatus>(
-    () =>
-      paintStatus ??
-      (supported
-        ? { tone: 'info', message: t.paintStatusReady }
-        : { tone: 'error', message: t.paintUnsupportedRobotOnly }),
-    [paintStatus, supported, t.paintStatusReady, t.paintUnsupportedRobotOnly],
-  );
+  const colorControlsDisabled = !supported || paintOperation === 'erase';
+  const visibleStatus =
+    paintStatus && paintStatus.tone !== 'success'
+      ? paintStatus
+      : supported
+        ? null
+        : { tone: 'error' as const, message: t.paintUnsupportedRobotOnly };
 
   React.useEffect(() => {
     setHexInputValue(paintColor);
@@ -162,7 +149,7 @@ export const PaintPanel: React.FC<PaintPanelProps> = ({
             <input
               type="color"
               value={paintColorPickerValue}
-              disabled={!supported}
+              disabled={colorControlsDisabled}
               onChange={(event) => {
                 const nextColor = mergePaintColor(event.target.value, paintColor);
 
@@ -174,7 +161,7 @@ export const PaintPanel: React.FC<PaintPanelProps> = ({
             <input
               type="text"
               value={hexInputValue}
-              disabled={!supported}
+              disabled={colorControlsDisabled}
               onChange={(event) => {
                 const nextValue = event.target.value;
                 setHexInputValue(nextValue);
@@ -202,7 +189,7 @@ export const PaintPanel: React.FC<PaintPanelProps> = ({
               max={100}
               step={1}
               value={Math.round(paintOpacity * 100)}
-              disabled={!supported}
+              disabled={colorControlsDisabled}
               onChange={(event) => {
                 const nextColor = mergePaintOpacity(
                   paintColor,
@@ -219,7 +206,7 @@ export const PaintPanel: React.FC<PaintPanelProps> = ({
               max={1}
               step={0.01}
               value={Number(paintOpacity.toFixed(2))}
-              disabled={!supported}
+              disabled={colorControlsDisabled}
               onChange={(event) => {
                 const nextColor = mergePaintOpacity(paintColor, Number(event.currentTarget.value));
                 setHexInputValue(nextColor);
@@ -247,6 +234,7 @@ export const PaintPanel: React.FC<PaintPanelProps> = ({
                   key={option.id}
                   type="button"
                   disabled={!supported}
+                  aria-pressed={active}
                   onClick={() => onPaintSelectionScopeChange(option.id)}
                   className={`rounded border px-2 py-1 text-[10px] font-medium transition ${
                     active
@@ -277,8 +265,11 @@ export const PaintPanel: React.FC<PaintPanelProps> = ({
                 <button
                   key={option.id}
                   type="button"
+                  data-paint-operation={option.id}
                   disabled={!supported}
+                  aria-pressed={active}
                   onClick={() => onPaintOperationChange(option.id)}
+                  title={option.id === 'erase' ? t.paintEraseHint : undefined}
                   className={`rounded border px-2 py-1 text-[10px] font-medium transition ${
                     active
                       ? option.id === 'erase'
@@ -287,20 +278,24 @@ export const PaintPanel: React.FC<PaintPanelProps> = ({
                       : 'border-border-black/60 bg-element-bg text-text-secondary'
                   } disabled:cursor-not-allowed disabled:opacity-50`}
                 >
-                  {option.label}
+                  {option.id === 'erase' && active ? t.paintOperationEraseActive : option.label}
                 </button>
               );
             })}
           </div>
         </div>
 
-        <div
-          className={`rounded-md border px-2 py-1.5 text-[10px] leading-4 ${getStatusClassName(
-            status.tone,
-          )}`}
-        >
-          {status.message}
-        </div>
+        {visibleStatus && (
+          <div
+            className={`rounded-md border px-2 py-1.5 text-[10px] leading-4 ${
+              visibleStatus.tone === 'error'
+                ? 'border-danger-border bg-danger-soft text-danger-hover'
+                : 'border-system-blue/20 bg-system-blue/10 text-text-primary'
+            }`}
+          >
+            {visibleStatus.message}
+          </div>
+        )}
       </div>
     </OptionsPanel>
   );

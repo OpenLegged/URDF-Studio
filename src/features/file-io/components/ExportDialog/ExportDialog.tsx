@@ -1,6 +1,11 @@
 import React, { useState, useCallback, useEffect } from 'react';
 import { Upload, Package, FileCode, Layers, Lock, Braces, Loader2 } from 'lucide-react';
-import { DraggableWindow } from '@/shared/components/DraggableWindow';
+import {
+  DraggableWindow,
+  FLOATING_WINDOW_HEADER_HEIGHT_CLASS,
+  FLOATING_WINDOW_RADIUS_CLASS,
+  FLOATING_WINDOW_TITLE_CLASS,
+} from '@/shared/components/DraggableWindow';
 import { CLOSE_BUTTON_DANGER_TERTIARY_CLASS } from '@/shared/components/ui/closeButtonStyles';
 import { useDraggableWindow } from '@/shared/hooks/useDraggableWindow';
 import { translations } from '@/shared/i18n';
@@ -286,13 +291,13 @@ export const ExportDialog: React.FC<ExportDialogProps> = ({
             <div className="p-1 rounded-md bg-element-bg text-text-secondary border border-border-black">
               <Upload className="w-3.5 h-3.5" />
             </div>
-            <span className="text-xs font-semibold text-text-primary">{t.exportDialog}</span>
+            <span className={FLOATING_WINDOW_TITLE_CLASS}>{t.exportDialog}</span>
           </div>
         }
-        className="bg-panel-bg flex flex-col text-text-primary overflow-hidden rounded-2xl shadow-xl border border-border-black"
+        className={`bg-panel-bg flex flex-col text-text-primary overflow-hidden ${FLOATING_WINDOW_RADIUS_CLASS} shadow-xl border border-border-black`}
         zIndex={exportDialogWindowLayer.zIndex}
         onActivate={exportDialogWindowLayer.onActivate}
-        headerClassName="h-10 border-b border-border-black flex items-center justify-between px-3 bg-element-bg shrink-0"
+        headerClassName={`${FLOATING_WINDOW_HEADER_HEIGHT_CLASS} border-b border-border-black flex items-center justify-between px-3 bg-element-bg shrink-0`}
         interactionClassName="select-none"
         showMinimizeButton={false}
         showMaximizeButton={false}

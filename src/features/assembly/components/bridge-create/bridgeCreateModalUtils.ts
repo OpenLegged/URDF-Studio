@@ -1,7 +1,49 @@
 import { getMjcfLinkDisplayName } from '@/shared/utils/robot/mjcfDisplayNames';
 import { formatNumberWithMaxDecimals, roundToMaxDecimals } from '@/core/utils/numberPrecision';
-import type { AssemblyState } from '@/types';
-import { BRIDGE_HALF_ROTATION_DEGREES } from './bridgeCreateModalStyles';
+import type { AssemblyComponent, AssemblyState } from '@/types';
+import type { SelectOption } from '@/shared/components/ui';
+import {
+  BRIDGE_EMPTY_SELECT_OPTION,
+  BRIDGE_HALF_ROTATION_DEGREES,
+} from './bridgeCreateModalStyles';
+
+interface BridgeFlatLinkOption extends SelectOption {
+  componentId: string;
+  linkId: string;
+}
+
+const EMPTY_FLAT_LINK_OPTION: BridgeFlatLinkOption = {
+  ...BRIDGE_EMPTY_SELECT_OPTION,
+  componentId: '',
+  linkId: '',
+};
+
+export function buildFlatBridgeLinkOptions(
+  components: AssemblyComponent[],
+): BridgeFlatLinkOption[] {
+  return [
+    EMPTY_FLAT_LINK_OPTION,
+    ...components.flatMap((component) =>
+      Object.values(component.robot.links).map((link) => ({
+        value: JSON.stringify([component.id, link.id]),
+        label: `${component.name} › ${getBridgeLinkDisplayName(component.robot, link.id)}`,
+        componentId: component.id,
+        linkId: link.id,
+      })),
+    ),
+  ];
+}
+
+export function resolveFlatBridgeLinkValue(
+  options: BridgeFlatLinkOption[],
+  componentId: string,
+  linkId: string,
+): string {
+  return (
+    options.find((option) => option.componentId === componentId && option.linkId === linkId)
+      ?.value ?? ''
+  );
+}
 
 export function resolveBridgeComponentDefaultLinkId(
   assemblyState: AssemblyState,

@@ -1,38 +1,25 @@
 import { resolveClosedLoopDrivenJointMotion } from '@/core/robot';
-import type {
-  ClosedLoopDrivenJointMotionResult,
-  ClosedLoopMotionSolveOptions,
-} from '@/core/robot/closedLoops';
+import type { ClosedLoopDrivenJointMotionResult } from '@/core/robot/closedLoops';
 import type { JointQuaternion, RobotState } from '@/types';
 import { resolveClosedLoopDrivenJointMotionWithWorker } from './closedLoopMotionPreviewWorkerBridge';
+import type {
+  ClosedLoopMotionPreviewRobot,
+  ClosedLoopMotionPreviewState,
+  ClosedLoopMotionPreviewWorkerSolve,
+  ClosedLoopMotionPreviewWorkerSolveOptions,
+} from './closedLoopMotionPreviewContract';
 
-type ClosedLoopMotionPreviewRobot = Pick<
-  RobotState,
-  'links' | 'joints' | 'rootLinkId' | 'closedLoopConstraints'
->;
-
-type ClosedLoopMotionPreviewWorkerSolveOptions = Omit<
-  ClosedLoopMotionSolveOptions,
-  'angles' | 'quaternions' | 'lockedJointIds'
->;
+export type {
+  ClosedLoopMotionPreviewRobot,
+  ClosedLoopMotionPreviewState,
+  ClosedLoopMotionPreviewWorkerSolve,
+  ClosedLoopMotionPreviewWorkerSolveOptions,
+} from './closedLoopMotionPreviewContract';
 
 const CLOSED_LOOP_PREVIEW_SOLVE_OPTIONS: ClosedLoopMotionPreviewWorkerSolveOptions = {
   maxIterations: 12,
   tolerance: 1e-5,
 };
-
-export type ClosedLoopMotionPreviewWorkerSolve = (
-  robot: ClosedLoopMotionPreviewRobot,
-  jointId: string,
-  angle: number,
-  options?: ClosedLoopMotionPreviewWorkerSolveOptions,
-  previewState?: ClosedLoopMotionPreviewState,
-) => Promise<ClosedLoopDrivenJointMotionResult>;
-
-export interface ClosedLoopMotionPreviewState {
-  angles: Record<string, number>;
-  quaternions: Record<string, JointQuaternion>;
-}
 
 export interface ClosedLoopMotionPreviewResult extends ClosedLoopMotionPreviewState {
   appliedAngle: number | null;

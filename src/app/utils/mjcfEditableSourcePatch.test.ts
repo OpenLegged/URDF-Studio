@@ -361,6 +361,28 @@ test('patchMJCFJointLimitInSource inserts a missing range and removes limits for
   assert.doesNotMatch(continuous, /wheel_joint"[^>]*(?:range|limited)=/);
 });
 
+test('patchMJCFJointLimitInSource omits a range when optional bounds are missing', () => {
+  const source = `<mujoco model="demo">
+  <worldbody>
+    <body name="base_link">
+      <joint name="hip_joint" type="hinge" axis="0 0 1" limited="true" range="-1 1"/>
+    </body>
+  </worldbody>
+</mujoco>
+`;
+
+  const patched = patchMJCFJointLimitInSource({
+    sourceContent: source,
+    jointName: 'hip_joint',
+    jointType: JointType.REVOLUTE,
+    limit: { effort: 25 },
+  });
+
+  assert.match(patched, /<joint name="hip_joint" type="hinge" axis="0 0 1"\/>/);
+  assert.doesNotMatch(patched, /hip_joint"[^>]*(?:range|limited)=/);
+  assert.doesNotMatch(patched, /(?:undefined|NaN|Infinity)/);
+});
+
 test('removeMJCFBodyFromSource removes only the target nested body without rewriting surrounding paths or assets', () => {
   const source = `<mujoco model="demo">
   <asset>

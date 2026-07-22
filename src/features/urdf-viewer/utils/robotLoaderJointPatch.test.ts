@@ -114,6 +114,37 @@ test('patchJointInPlace preserves MJCF scalar joint values and initializes missi
   assert.equal(invalidations.length, 1);
 });
 
+test('patchJointInPlace keeps optional metadata without enabling incomplete position bounds', () => {
+  const robot = new THREE.Group() as THREE.Group & {
+    joints?: Record<string, RuntimeURDFJoint>;
+  };
+  const joint = new RuntimeURDFJoint();
+  joint.name = 'joint_1';
+  joint.jointType = JointType.REVOLUTE;
+  joint.origPosition = joint.position.clone();
+  joint.origQuaternion = joint.quaternion.clone();
+  robot.joints = { joint_1: joint };
+
+  const applied = patchJointInPlace(
+    robot,
+    {
+      jointName: 'joint_1',
+      previousJointData: makeJointPatchData(),
+      jointData: makeJointPatchData({
+        limit: { effort: 12 },
+      }),
+    },
+    () => {},
+  );
+
+  assert.equal(applied, true);
+  assert.equal(joint.limit.lower, 0);
+  assert.equal(joint.limit.upper, 0);
+  assert.equal(joint.limit.effort, 12);
+  assert.equal(joint.limit.velocity, undefined);
+  assert.equal(joint.ignoreLimits, true);
+});
+
 test('patchJointInPlace orders crossed finite limits before reapplying the current joint value', () => {
   const robot = new THREE.Group() as THREE.Group & {
     joints?: Record<string, RuntimeURDFJoint>;

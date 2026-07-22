@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { RGBELoader } from 'three/examples/jsm/loaders/RGBELoader.js';
+import { HDRLoader } from 'three/examples/jsm/loaders/HDRLoader.js';
 import { TGALoader } from 'three/examples/jsm/loaders/TGALoader.js';
 
 // Image formats the browser cannot decode natively (so a plain ImageLoader/TextureLoader
@@ -17,7 +17,7 @@ export function registerManagedTextureHandlers(
   manager: THREE.LoadingManager,
 ): THREE.LoadingManager {
   manager.addHandler(TGA_EXTENSION_PATTERN, new TGALoader(manager));
-  manager.addHandler(HDR_EXTENSION_PATTERN, new RGBELoader(manager));
+  manager.addHandler(HDR_EXTENSION_PATTERN, new HDRLoader(manager));
   return manager;
 }
 
@@ -35,7 +35,7 @@ export function loadManagedTexture(
     return new TGALoader(manager).load(requestUrl);
   }
   if (HDR_EXTENSION_PATTERN.test(extensionHintPath)) {
-    return new RGBELoader(manager).load(requestUrl);
+    return new HDRLoader(manager).load(requestUrl);
   }
   return new THREE.TextureLoader(manager).load(requestUrl);
 }

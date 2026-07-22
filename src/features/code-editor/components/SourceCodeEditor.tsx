@@ -2,15 +2,8 @@
  * SourceCodeEditor - Unified Monaco source window for editable and read-only code.
  * Supports URDF, Xacro, MJCF, USD text, and equivalent MJCF previews in one reusable shell.
  */
-import React, {
-  Suspense,
-  useState,
-  useEffect,
-  useRef,
-  useCallback,
-  useMemo,
-  startTransition,
-} from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo, startTransition } from 'react';
+import MonacoEditor from '@monaco-editor/react';
 import {
   AlertCircle,
   Check,
@@ -34,7 +27,12 @@ import {
   type CodeEditorFontFamily,
   type Language,
 } from '@/store';
-import { DraggableWindow } from '@/shared/components/DraggableWindow';
+import {
+  DraggableWindow,
+  FLOATING_WINDOW_HEADER_HEIGHT_CLASS,
+  FLOATING_WINDOW_RADIUS_CLASS,
+  FLOATING_WINDOW_TITLE_CLASS,
+} from '@/shared/components/DraggableWindow';
 import { useDraggableWindow } from '@/shared/hooks/useDraggableWindow';
 import { CLOSE_BUTTON_DANGER_TERTIARY_CLASS, Select, Tooltip } from '@/shared/components/ui';
 import { translations, type TranslationKeys } from '@/shared/i18n';
@@ -168,10 +166,6 @@ const HEADER_ACTION_CLASS =
   'inline-flex items-center gap-1.5 rounded px-2 py-1 text-[10px] font-medium text-text-secondary transition-colors hover:bg-element-hover';
 const HEADER_PRIMARY_ACTION_CLASS =
   'inline-flex items-center gap-1.5 rounded px-2 py-1 text-[10px] font-bold uppercase tracking-wide transition-colors';
-const MonacoEditor = React.lazy(() =>
-  import('@monaco-editor/react').then((module) => ({ default: module.default })),
-);
-
 const formatContentSize = (content: string): string => {
   const bytes = new Blob([content]).size;
   if (bytes < 1024) {
@@ -329,10 +323,7 @@ const attachFindWidgetTooltipSuppression = (
   };
 };
 
-const toWorkerValidationError = (
-  error: unknown,
-  t: TranslationKeys,
-): ValidationError[] => [
+const toWorkerValidationError = (error: unknown, t: TranslationKeys): ValidationError[] => [
   {
     line: 1,
     column: 1,
@@ -1069,7 +1060,7 @@ export const SourceCodeEditor: React.FC<SourceCodeEditorProps> = ({
           <Code className="h-4 w-4 shrink-0 text-system-blue" />
           <div className="flex min-w-0 flex-1 flex-col justify-center leading-tight">
             <span
-              className="min-w-0 truncate font-mono text-xs font-semibold text-text-primary"
+              className={`min-w-0 truncate font-mono ${FLOATING_WINDOW_TITLE_CLASS}`}
               title={activeDocumentPath}
             >
               {activeDocumentLabel}
@@ -1161,12 +1152,12 @@ export const SourceCodeEditor: React.FC<SourceCodeEditorProps> = ({
         </div>
       }
       style={opacityStyle}
-      className={`source-code-editor-window flex flex-col overflow-hidden rounded-lg border border-border-black text-text-primary shadow-2xl ${
+      className={`source-code-editor-window flex flex-col overflow-hidden ${FLOATING_WINDOW_RADIUS_CLASS} border border-border-black text-text-primary shadow-2xl ${
         isMaximized ? 'inset-0 !h-full !w-full !transform-none rounded-none' : ''
       }`}
       zIndex={sourceCodeWindowLayer.zIndex}
       onActivate={sourceCodeWindowLayer.onActivate}
-      headerClassName="source-code-editor-chrome flex h-10 items-center justify-between gap-3 border-b border-border-black px-3 select-none"
+      headerClassName={`source-code-editor-chrome flex ${FLOATING_WINDOW_HEADER_HEIGHT_CLASS} shrink-0 items-center justify-between gap-3 border-b border-border-black px-3 select-none`}
       headerLeftClassName="flex min-w-0 flex-1 items-center gap-2.5 overflow-hidden"
       headerRightClassName="flex shrink-0 items-center gap-1"
       showMinimizeButton={false}
@@ -1269,38 +1260,36 @@ export const SourceCodeEditor: React.FC<SourceCodeEditorProps> = ({
           </div>
         ) : null}
 
-        <Suspense fallback={null}>
-          <MonacoEditor
-            key={activeDocument.id}
-            height="100%"
-            defaultLanguage={documentMeta.language}
-            defaultValue={activeDocumentCode}
-            theme={theme === 'dark' ? 'vs-dark' : 'light'}
-            onMount={handleEditorMount}
-            onChange={handleEditorChange}
-            options={{
-              minimap: { enabled: false },
-              fontSize: codeEditorFontSize,
-              fontFamily: resolveCodeEditorFontFamily(codeEditorFontFamily),
-              fontLigatures: true,
-              scrollBeyondLastLine: false,
-              wordWrap: 'off',
-              stickyScroll: { enabled: false },
-              scrollbar: { horizontal: 'auto', vertical: 'auto' },
-              automaticLayout: false,
-              tabSize: 2,
-              formatOnPaste: !isReadOnly && documentMeta.isXmlLike,
-              formatOnType: !isReadOnly && documentMeta.isXmlLike,
-              lineNumbersMinChars: 4,
-              padding: { top: 12, bottom: 14 },
-              renderLineHighlight: 'all',
-              readOnly: isReadOnly,
-              domReadOnly: isReadOnly,
-              glyphMargin: validationEnabled,
-              renderValidationDecorations: validationEnabled ? 'editable' : 'off',
-            }}
-          />
-        </Suspense>
+        <MonacoEditor
+          key={activeDocument.id}
+          height="100%"
+          defaultLanguage={documentMeta.language}
+          defaultValue={activeDocumentCode}
+          theme={theme === 'dark' ? 'vs-dark' : 'light'}
+          onMount={handleEditorMount}
+          onChange={handleEditorChange}
+          options={{
+            minimap: { enabled: false },
+            fontSize: codeEditorFontSize,
+            fontFamily: resolveCodeEditorFontFamily(codeEditorFontFamily),
+            fontLigatures: true,
+            scrollBeyondLastLine: false,
+            wordWrap: 'off',
+            stickyScroll: { enabled: false },
+            scrollbar: { horizontal: 'auto', vertical: 'auto' },
+            automaticLayout: false,
+            tabSize: 2,
+            formatOnPaste: !isReadOnly && documentMeta.isXmlLike,
+            formatOnType: !isReadOnly && documentMeta.isXmlLike,
+            lineNumbersMinChars: 4,
+            padding: { top: 12, bottom: 14 },
+            renderLineHighlight: 'all',
+            readOnly: isReadOnly,
+            domReadOnly: isReadOnly,
+            glyphMargin: validationEnabled,
+            renderValidationDecorations: validationEnabled ? 'editable' : 'off',
+          }}
+        />
       </div>
 
       <div className="source-code-editor-chrome flex h-7 shrink-0 items-center justify-between gap-3 border-t border-border-black px-3 text-[10px] select-none">

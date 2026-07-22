@@ -1,12 +1,7 @@
-import {
-  SlidersHorizontal,
-  Sparkles,
-} from 'lucide-react';
-import { useState } from 'react';
-import type { Language, TranslationKeys } from '@/shared/i18n';
-import {
-
-} from '../config/inspectionProfiles';
+import { RotateCcw, Sparkles } from 'lucide-react';
+import type { ReactNode } from 'react';
+import type { TranslationKeys } from '@/shared/i18n';
+import type { RobotState } from '@/types';
 import type {
   NormalInspectionPlan,
   NormalInspectionPlanOverride,
@@ -18,9 +13,8 @@ import type {
 } from '../utils/inspectionProfileRecommendation';
 
 interface InspectionSetupNormalViewProps {
-  lang: Language;
   t: TranslationKeys;
-  plan: NormalInspectionPlan;
+  automaticPlan: NormalInspectionPlan;
   override: NormalInspectionPlanOverride;
   onOverrideChange: (override: NormalInspectionPlanOverride) => void;
 }
@@ -40,6 +34,26 @@ const TARGET_PLATFORM_OPTIONS: InspectionTargetPlatform[] = [
   'isaac_sim',
   'ros_control',
   'export_portability',
+];
+
+type InspectionSourceFormat = NonNullable<RobotState['inspectionContext']>['sourceFormat'];
+
+const SOURCE_FORMAT_OPTIONS: InspectionSourceFormat[] = [
+  'urdf',
+  'mjcf',
+  'usd',
+  'xacro',
+  'sdf',
+  'mesh',
+];
+
+const ROBOT_TYPE_OPTIONS: InspectionRobotType[] = [
+  'generic',
+  'humanoid',
+  'quadruped',
+  'manipulator',
+  'mobile_base',
+  'gripper',
 ];
 
 function formatRobotTypeLabel(robotType: InspectionRobotType, t: TranslationKeys) {
@@ -80,173 +94,194 @@ function formatPurposeLabel(purpose: NormalInspectionPurpose, t: TranslationKeys
   return labels[purpose];
 }
 
-function OptionButton({
-  active,
+function clearOverrideField(
+  override: NormalInspectionPlanOverride,
+  field: keyof NormalInspectionPlanOverride,
+) {
+  const nextOverride = { ...override };
+  delete nextOverride[field];
+  return nextOverride;
+}
+
+function RecognitionSelect({
+  label,
+  value,
+  autoLabel,
+  dataKey,
   children,
-  onClick,
+  onChange,
 }: {
-  active: boolean;
-  children: string;
-  onClick: () => void;
+  label: string;
+  value: string;
+  autoLabel: string;
+  dataKey: string;
+  children: ReactNode;
+  onChange: (value: string) => void;
 }) {
   return (
-    <button
-      type="button"
-      aria-pressed={active}
-      onClick={onClick}
-      className={`h-8 rounded-lg border px-3 text-[11px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-system-blue/30 ${
-        active
-          ? 'border-system-blue/30 bg-system-blue/10 text-system-blue shadow-sm'
-          : 'border-border-black bg-element-bg text-text-secondary hover:bg-element-hover hover:text-text-primary'
-      }`}
-    >
-      {children}
-    </button>
+    <label className="rounded-xl border border-border-black bg-element-bg p-3">
+      <span className="flex items-center justify-between gap-2">
+        <span className="text-[10px] font-medium uppercase tracking-[0.08em] text-text-tertiary">
+          {label}
+        </span>
+        {!value && (
+          <span
+            data-inspection-recognition-auto={dataKey}
+            className="rounded-md border border-system-blue/20 bg-system-blue/5 px-2 py-0.5 text-[10px] font-semibold text-system-blue"
+          >
+            {autoLabel}
+          </span>
+        )}
+      </span>
+      <select
+        data-inspection-recognition-select={dataKey}
+        value={value}
+        onChange={(event) => onChange(event.currentTarget.value)}
+        className="mt-2 h-9 w-full rounded-lg border border-border-black bg-panel-bg px-2.5 text-[12px] font-semibold text-text-primary transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-system-blue/30"
+      >
+        {children}
+      </select>
+    </label>
   );
 }
 
 export function InspectionSetupNormalView({
-  lang: _lang,
   t,
-  plan,
+  automaticPlan,
   override,
   onOverrideChange,
 }: InspectionSetupNormalViewProps) {
-  const [isAdjusting, setIsAdjusting] = useState(false);
-
   return (
-    <div className="space-y-5">
-      <section
-        data-inspection-profile-recommendation-card
-        className="overflow-hidden rounded-xl border border-border-black bg-panel-bg p-4 shadow-sm"
-      >
-        <div className="flex flex-col gap-3 xl:flex-row xl:items-start xl:justify-between">
+    <section
+      data-inspection-recognition-panel="true"
+      className="shrink-0 overflow-hidden rounded-2xl border border-border-black bg-panel-bg shadow-sm"
+    >
+      <div className="flex flex-col gap-3 border-b border-border-black bg-system-blue/5 px-4 py-4 xl:flex-row xl:items-start xl:justify-between">
+        <div className="flex min-w-0 items-start gap-3">
+          <div className="rounded-xl border border-system-blue/20 bg-panel-bg p-2 text-system-blue">
+            <Sparkles className="h-4 w-4" />
+          </div>
           <div className="min-w-0">
-            <div className="flex items-center gap-2">
-              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-system-blue/20 bg-system-blue/10 text-system-blue">
-                <Sparkles className="h-4 w-4" />
-              </div>
-              <div className="min-w-0">
-                <h2
-                  data-inspection-normal-title
-                  className="text-lg font-semibold leading-6 tracking-tight text-text-primary"
-                >
-                  {t.inspectionRecommendedPlan}
-                </h2>
-                <p className="mt-1 text-[12px] leading-5 text-text-secondary">
-                  {t.inspectionRecommendedPlanDescription}
-                </p>
-              </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <h2 className="text-base font-semibold text-text-primary">
+                {t.inspectionRecommendedPlan}
+              </h2>
+              <span className="rounded-md border border-system-blue/15 bg-panel-bg px-2 py-0.5 text-[10px] font-semibold text-system-blue">
+                {t.inspectionEditable}
+              </span>
             </div>
+            <p className="mt-1 text-[12px] leading-5 text-text-secondary">
+              {t.inspectionRecommendedPlanDescription}
+            </p>
           </div>
-
-          <button
-            type="button"
-            data-inspection-profile-adjust-scope
-            onClick={() => setIsAdjusting((current) => !current)}
-            className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg border border-border-black bg-element-bg px-3 text-[11px] font-medium text-text-secondary transition-colors hover:bg-element-hover hover:text-system-blue focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-system-blue/30"
-          >
-            <SlidersHorizontal className="h-3.5 w-3.5" />
-            {t.inspectionRecommendationAdjustScope}
-          </button>
         </div>
 
-        <div className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
-          {[
-            {
-              label: t.inspectionPlanPurpose,
-              value: formatPurposeLabel(plan.purpose, t),
-              auto: !override.purpose,
-            },
-            {
-              label: t.inspectionRecommendationTarget,
-              value: formatTargetPlatformLabel(plan.targetPlatform, t),
-              auto: !override.targetPlatform,
-            },
-            {
-              label: t.inspectionRecommendationRobotType,
-              value: formatRobotTypeLabel(plan.recommendation.robotType, t),
-              auto: true,
-            },
-            {
-              label: t.inspectionRecommendationSourceFormat,
-              value: plan.recommendation.sourceFormat.toUpperCase(),
-              auto: true,
-            },
-          ].map((metric) => (
-            <div
-              key={metric.label}
-              className="rounded-lg border border-border-black bg-element-bg px-3 py-2"
+        <div className="flex shrink-0 flex-wrap items-center gap-2">
+          {(override.purpose ||
+            override.targetPlatform ||
+            override.sourceFormat ||
+            override.robotType) && (
+            <button
+              type="button"
+              onClick={() => onOverrideChange({})}
+              className="inline-flex h-8 items-center gap-1.5 rounded-lg border border-border-black bg-panel-bg px-3 text-[11px] font-medium text-text-secondary transition-colors hover:bg-element-hover hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-system-blue/30"
             >
-              <div className="flex items-center justify-between gap-2">
-                <div className="text-[10px] font-medium uppercase tracking-[0.08em] text-text-tertiary">
-                  {metric.label}
-                </div>
-                {metric.auto && (
-                  <span className="rounded-md border border-system-blue/15 bg-system-blue/5 px-1.5 py-0.5 text-[9px] font-medium text-system-blue">
-                    {t.inspectionPlanAuto}
-                  </span>
-                )}
-              </div>
-              <div className="mt-1 text-[12px] font-semibold text-text-primary">
-                {metric.value}
-              </div>
-            </div>
-          ))}
+              <RotateCcw className="h-3.5 w-3.5" />
+              {t.inspectionPlanResetAuto}
+            </button>
+          )}
         </div>
+      </div>
 
-        {isAdjusting && (
-          <div
-            data-inspection-normal-adjustment
-            className="mt-4 space-y-3 rounded-xl border border-border-black bg-panel-bg p-3"
-          >
-            <div>
-              <div className="text-[11px] font-semibold text-text-secondary">
-                {t.inspectionPlanPurpose}
-              </div>
-              <div className="mt-2 flex flex-wrap gap-1.5">
-                {PURPOSE_OPTIONS.map((purpose) => (
-                  <OptionButton
-                    key={purpose}
-                    active={plan.purpose === purpose}
-                    onClick={() => onOverrideChange({ ...override, purpose })}
-                  >
-                    {formatPurposeLabel(purpose, t)}
-                  </OptionButton>
-                ))}
-              </div>
-            </div>
-
-            <div>
-              <div className="text-[11px] font-semibold text-text-secondary">
-                {t.inspectionRecommendationTarget}
-              </div>
-              <div className="mt-2 flex flex-wrap gap-1.5">
-                {TARGET_PLATFORM_OPTIONS.map((targetPlatform) => (
-                  <OptionButton
-                    key={targetPlatform}
-                    active={plan.targetPlatform === targetPlatform}
-                    onClick={() => onOverrideChange({ ...override, targetPlatform })}
-                  >
-                    {formatTargetPlatformLabel(targetPlatform, t)}
-                  </OptionButton>
-                ))}
-              </div>
-            </div>
-
-            {(override.purpose || override.targetPlatform) && (
-              <button
-                type="button"
-                onClick={() => onOverrideChange({})}
-                className="h-8 rounded-lg px-3 text-[11px] font-medium text-text-secondary transition-colors hover:bg-element-hover hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-system-blue/30"
-              >
-                {t.inspectionPlanResetAuto}
-              </button>
-            )}
-          </div>
-        )}
-      </section>
-    </div>
+      <div
+        data-inspection-recognition-grid="true"
+        className="grid gap-3 p-4"
+        style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 22rem), 1fr))' }}
+      >
+        <RecognitionSelect
+          label={t.inspectionPlanPurpose}
+          value={override.purpose ?? ''}
+          autoLabel={t.inspectionPlanAuto}
+          dataKey="purpose"
+          onChange={(value) => {
+            onOverrideChange(
+              value
+                ? { ...override, purpose: value as NormalInspectionPurpose }
+                : clearOverrideField(override, 'purpose'),
+            );
+          }}
+        >
+          <option value="">{formatPurposeLabel(automaticPlan.purpose, t)}</option>
+          {PURPOSE_OPTIONS.map((purpose) => (
+            <option key={purpose} value={purpose}>
+              {formatPurposeLabel(purpose, t)}
+            </option>
+          ))}
+        </RecognitionSelect>
+        <RecognitionSelect
+          label={t.inspectionRecommendationTarget}
+          value={override.targetPlatform ?? ''}
+          autoLabel={t.inspectionPlanAuto}
+          dataKey="targetPlatform"
+          onChange={(value) => {
+            onOverrideChange(
+              value
+                ? { ...override, targetPlatform: value as InspectionTargetPlatform }
+                : clearOverrideField(override, 'targetPlatform'),
+            );
+          }}
+        >
+          <option value="">{formatTargetPlatformLabel(automaticPlan.targetPlatform, t)}</option>
+          {TARGET_PLATFORM_OPTIONS.map((targetPlatform) => (
+            <option key={targetPlatform} value={targetPlatform}>
+              {formatTargetPlatformLabel(targetPlatform, t)}
+            </option>
+          ))}
+        </RecognitionSelect>
+        <RecognitionSelect
+          label={t.inspectionRecommendationSourceFormat}
+          value={override.sourceFormat ?? ''}
+          autoLabel={t.inspectionPlanAuto}
+          dataKey="sourceFormat"
+          onChange={(value) => {
+            onOverrideChange(
+              value
+                ? { ...override, sourceFormat: value as InspectionSourceFormat }
+                : clearOverrideField(override, 'sourceFormat'),
+            );
+          }}
+        >
+          <option value="">{automaticPlan.recommendation.sourceFormat.toUpperCase()}</option>
+          {SOURCE_FORMAT_OPTIONS.map((sourceFormat) => (
+            <option key={sourceFormat} value={sourceFormat}>
+              {sourceFormat.toUpperCase()}
+            </option>
+          ))}
+        </RecognitionSelect>
+        <RecognitionSelect
+          label={t.inspectionRecommendationRobotType}
+          value={override.robotType ?? ''}
+          autoLabel={t.inspectionPlanAuto}
+          dataKey="robotType"
+          onChange={(value) => {
+            onOverrideChange(
+              value
+                ? { ...override, robotType: value as InspectionRobotType }
+                : clearOverrideField(override, 'robotType'),
+            );
+          }}
+        >
+          <option value="">
+            {formatRobotTypeLabel(automaticPlan.recommendation.robotType, t)}
+          </option>
+          {ROBOT_TYPE_OPTIONS.map((robotType) => (
+            <option key={robotType} value={robotType}>
+              {formatRobotTypeLabel(robotType, t)}
+            </option>
+          ))}
+        </RecognitionSelect>
+      </div>
+    </section>
   );
 }
 

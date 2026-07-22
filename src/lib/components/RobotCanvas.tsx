@@ -2,7 +2,10 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Object3D } from 'three';
 import { translations } from '../../shared/i18n';
 import { useResolvedTheme } from '../../shared/hooks/useTheme';
-import { ViewerCanvas } from '../../features/urdf-viewer/components/ViewerCanvas';
+import type {
+  RuntimeJointObject,
+  RuntimeRobotObject,
+} from '../../shared/components/3d/runtimeRobotTypes';
 import { JointInteraction } from '../../features/urdf-viewer/components/JointInteraction';
 import { RobotModel } from '../../features/urdf-viewer/components/RobotModel';
 import { isSingleDofJoint } from '../../shared/utils/jointTypes';
@@ -13,6 +16,21 @@ import {
   type RobotCanvasProps,
   type RobotCanvasSelection,
 } from '../types';
+import { RobotCanvasViewport } from './RobotCanvasViewport';
+
+type InteractiveRuntimeJoint = RuntimeJointObject & {
+  angle?: number;
+  child?: Object3D;
+  setJointValue?: (value: number) => void;
+};
+
+type InteractiveRuntimeRobot = RuntimeRobotObject & {
+  joints?: Record<string, InteractiveRuntimeJoint>;
+};
+
+function asInteractiveRuntimeRobot(robot: RuntimeRobotObject): InteractiveRuntimeRobot {
+  return robot as InteractiveRuntimeRobot;
+}
 
 function mergeDisplayOptions(display?: RobotCanvasProps['display']) {
   return {
@@ -81,7 +99,7 @@ export const RobotCanvas = memo(function RobotCanvas({
     defaultValue: defaultJointAngles,
     onChange: onJointAnglesChange,
   });
-  const [robot, setRobot] = useState<any>(null);
+  const [robot, setRobot] = useState<InteractiveRuntimeRobot | null>(null);
   const [activeJoint, setActiveJoint] = useState<string | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const isOrbitDragging = useRef(false);
@@ -89,11 +107,12 @@ export const RobotCanvas = memo(function RobotCanvas({
   const transformPendingRef = useRef(false);
 
   const handleRobotLoaded = useCallback(
-    (loadedRobot: Object3D) => {
-      setRobot(loadedRobot);
+    (loadedRobot: RuntimeRobotObject) => {
+      const interactiveRobot = asInteractiveRuntimeRobot(loadedRobot);
+      setRobot(interactiveRobot);
       onRobotLoaded?.(loadedRobot);
 
-      const loadedJoints = (loadedRobot as any).joints;
+      const loadedJoints = interactiveRobot.joints;
       if (!loadedJoints || jointAngles !== undefined) {
         return;
       }
@@ -117,7 +136,7 @@ export const RobotCanvas = memo(function RobotCanvas({
   const handleJointAngleChange = useCallback(
     (jointName: string, angle: number) => {
       const loadedJoint = robot?.joints?.[jointName];
-      if (!isSingleDofJoint(loadedJoint)) {
+      if (!loadedJoint || !isSingleDofJoint(loadedJoint)) {
         return;
       }
 
@@ -220,20 +239,21 @@ export const RobotCanvas = memo(function RobotCanvas({
   }, [handleSelectionUpdate, onPointerMissed]);
 
   useEffect(() => {
-    if (!robot?.joints) {
+    const robotJoints = robot?.joints;
+    if (!robotJoints) {
       setActiveJoint(null);
       return;
     }
 
     if (resolvedSelection.type === 'joint' && resolvedSelection.id) {
-      const selectedJoint = robot.joints[resolvedSelection.id];
+      const selectedJoint = robotJoints[resolvedSelection.id];
       setActiveJoint(isSingleDofJoint(selectedJoint) ? resolvedSelection.id : null);
       return;
     }
 
     if (resolvedSelection.type === 'link' && resolvedSelection.id) {
-      const matchingJointName = Object.keys(robot.joints).find((jointName) => {
-        const joint = robot.joints[jointName];
+      const matchingJointName = Object.keys(robotJoints).find((jointName) => {
+        const joint = robotJoints[jointName];
         return joint?.child?.name === resolvedSelection.id && isSingleDofJoint(joint);
       });
 
@@ -246,12 +266,12 @@ export const RobotCanvas = memo(function RobotCanvas({
 
   return (
     <div className={rootClassName} style={style} data-lang={lang} data-theme={resolvedTheme}>
-      <ViewerCanvas
+      <RobotCanvasViewport
         lang={lang}
         resolvedTheme={resolvedTheme}
         groundOffset={groundPlaneOffset}
         snapshotAction={snapshotAction}
-        robotName={(robot as any)?.name || 'robot'}
+        robotName={robot?.name || 'robot'}
         orbitEnabled={orbitEnabled && !isDragging}
         onOrbitStart={() => {
           isOrbitDragging.current = true;
@@ -312,7 +332,7 @@ export const RobotCanvas = memo(function RobotCanvas({
           isMeshPreview={isMeshPreview}
           groundPlaneOffset={groundPlaneOffset}
         />
-      </ViewerCanvas>
+      </RobotCanvasViewport>
 
       {enableJointInteraction && activeJoint && robot?.joints?.[activeJoint] ? (
         <JointInteraction

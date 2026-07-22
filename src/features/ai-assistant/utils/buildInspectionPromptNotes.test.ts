@@ -206,7 +206,22 @@ test('buildInspectionPromptNotes explains insufficient source evidence for USD s
       },
     },
     joints: {},
-    inspectionContext: { sourceFormat: 'usd' },
+    inspectionContext: {
+      sourceFormat: 'usd',
+      recovery: {
+        diagnostics: [
+          {
+            code: 'nonfinite_usd_joint_limit_omitted',
+            severity: 'warning',
+            category: 'simulation',
+            message: 'Omitted one invalid source limit.',
+            action: 'omitted',
+          },
+        ],
+        diagnosticCounts: { error: 0, warning: 1, info: 0 },
+        recoveredItemCount: 1,
+      },
+    },
     selection: { type: 'link', id: 'base_link' },
   };
 
@@ -216,4 +231,6 @@ test('buildInspectionPromptNotes explains insufficient source evidence for USD s
   assert.match(notes, /USD/);
   assert.match(notes, /insufficient_evidence/);
   assert.match(notes, /stage/);
+  assert.match(notes, /Import Recovery Notes/);
+  assert.match(notes, /nonfinite_usd_joint_limit_omitted/);
 });

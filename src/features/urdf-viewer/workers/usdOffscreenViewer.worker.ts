@@ -4,6 +4,10 @@ import * as THREE from 'three';
 import { getCollisionGeometryEntries } from '@/core/robot';
 import type { RobotFile } from '@/types';
 import { normalizeLoadingProgress } from '@/shared/components/3d/loadingHudState';
+import {
+  createSemanticOutlineComposer,
+  type SemanticOutlineComposer,
+} from '@/shared/components/3d/scene/semanticOutlineComposer';
 import { disposeObject3D, disposeWebGLRenderer } from '@/shared/utils/three/dispose';
 import {
   WORKSPACE_DEFAULT_CAMERA_FOV,
@@ -87,12 +91,7 @@ import {
   captureUsdOffscreenCameraState,
   type UsdOffscreenCameraState,
 } from '../utils/usdOffscreenCameraState.ts';
-import {
-  resolveDeferredUsdSceneSnapshotDelayMs,
-  USD_DEFERRED_SCENE_SNAPSHOT_INITIAL_DELAY_MS,
-  USD_DEFERRED_SCENE_SNAPSHOT_INTERACTION_IDLE_MS,
-  USD_DEFERRED_SCENE_SNAPSHOT_MAX_DELAY_MS,
-} from '../utils/deferredUsdSceneSnapshot.ts';
+import { createUsdDeferredSceneSnapshotLifecycle } from '../utils/usdDeferredSceneSnapshotLifecycle.ts';
 import { resolveCameraFollowLightingStyle } from '@/shared/components/3d/scene/constants.ts';
 import {
   computeCameraFrame,
@@ -109,6 +108,13 @@ import type {
   UsdOffscreenViewerWorkerRequest,
   UsdOffscreenViewerWorkerResponse,
 } from '../utils/usdOffscreenViewerProtocol.ts';
+import {
+  areUsdOffscreenSelectionsEqual,
+  cloneUsdOffscreenSelection,
+  createUsdOffscreenInteractionState,
+  type UsdOffscreenMeshRole,
+  type UsdOffscreenRuntimeMeshMeta,
+} from '../utils/usdOffscreenInteractionState.ts';
 import type { ViewerRobotDataResolution } from '../utils/viewerRobotData.ts';
 import type { ToolMode, ViewerInteractiveLayer } from '../types.ts';
 
@@ -141,15 +147,8 @@ interface ActivePointerState {
   y: number;
 }
 
-type UsdMeshRole = 'visual' | 'collision';
-
-type RuntimeMeshMeta = {
-  linkPath: string;
-  meshId: string;
-  objectIndex?: number;
-  authoredOrder?: number;
-  role: UsdMeshRole;
-};
+type UsdMeshRole = UsdOffscreenMeshRole;
+type RuntimeMeshMeta = UsdOffscreenRuntimeMeshMeta;
 
 type RuntimeInteractionTarget =
   | {
@@ -195,16 +194,10 @@ let navigationSceneBounds: THREE.Box3 | null | undefined = undefined;
 let offscreenLightRig: UsdOffscreenLightRig | null = null;
 let offscreenStudioEnvironment: UsdOffscreenStudioEnvironmentHandle | null = null;
 let offscreenGroundShadowPlane: THREE.Mesh | null = null;
+let offscreenSemanticOutline: SemanticOutlineComposer | null = null;
 let currentDriver: unknown = null;
 let activePointer: ActivePointerState | null = null;
 let lastInteractionAt = 0;
-let deferredSceneSnapshotTimeout: ReturnType<typeof setTimeout> | null = null;
-let pendingDeferredSceneSnapshot: {
-  loadGeneration: number;
-  requestedAt: number;
-  snapshot: ViewerRobotDataResolution['usdSceneSnapshot'];
-  sourceFileName: string;
-} | null = null;
 let currentLoadGeneration = 0;
 let disposed = false;
 let viewerActive = true;
@@ -223,16 +216,29 @@ let shouldSettleGroundAlignmentAfterLoad = true;
 let groundAlignmentTimeouts: Array<ReturnType<typeof setTimeout>> = [];
 let disposeAutoFrame: (() => void) | null = null;
 let resolvedRobotData: ViewerRobotDataResolution | null = null;
-let selectionState: OffscreenViewerInteractionSelection | null = null;
-let hoveredSelectionState: OffscreenViewerInteractionSelection | null = null;
-let lastEmittedHoverState: OffscreenViewerInteractionSelection | null = null;
-let runtimeMeshMetaByObject = new Map<THREE.Object3D, RuntimeMeshMeta>();
-let runtimeMeshesByLinkKey = new Map<string, THREE.Mesh[]>();
-let runtimePickMeshes: THREE.Mesh[] = [];
-let runtimeHelperTargets: THREE.Object3D[] = [];
-const highlightedMeshes = new Map<THREE.Mesh, HighlightedMeshSnapshot>();
-const runtimeRaycaster = new THREE.Raycaster();
-const runtimePointer = new THREE.Vector2();
+const interactionState = createUsdOffscreenInteractionState<HighlightedMeshSnapshot>({
+  restoreHighlight: restoreHighlightedMeshSnapshot,
+});
+const deferredSceneSnapshotLifecycle = createUsdDeferredSceneSnapshotLifecycle<
+  NonNullable<ViewerRobotDataResolution['usdSceneSnapshot']>
+>({
+  isActive: isLoadGenerationActive,
+  interaction: () => ({
+    active: Boolean(activePointer),
+    lastInteractionAt,
+  }),
+  publish: publishDeferredSceneSnapshot,
+  log: (entry) => {
+    emitLoadDebugEntry({
+      sourceFileName: entry.sourceFileName,
+      step: 'defer-scene-snapshot',
+      status: entry.status,
+      timestamp: entry.timestamp,
+      ...('durationMs' in entry ? { durationMs: entry.durationMs } : {}),
+      detail: entry.detail,
+    });
+  },
+});
 let linkAxesController: InstanceType<typeof LinkAxesController> | null = null;
 let linkRotationController: InstanceType<typeof LinkRotationController> | null = null;
 const stageOpenContextSnapshots = new Map<
@@ -630,6 +636,16 @@ function renderScene(): void {
     syncUsdOffscreenLightRigWithCamera(offscreenLightRig, camera);
   }
 
+  if (offscreenSemanticOutline && interactionState.highlightedMeshes.length > 0) {
+    offscreenSemanticOutline.setCamera(camera);
+    offscreenSemanticOutline.setIntent(
+      interactionState.hoveredSelection ? 'hover' : 'selection',
+    );
+    offscreenSemanticOutline.setTargets(interactionState.highlightedMeshes);
+    offscreenSemanticOutline.render();
+    return;
+  }
+
   renderer.render(scene, camera);
 }
 
@@ -669,35 +685,6 @@ function getCurrentInteractionPolicy() {
   return resolveUsdStageInteractionPolicy('editor', interactionToolMode);
 }
 
-function areSelectionStatesEqual(
-  left: OffscreenViewerInteractionSelection | null | undefined,
-  right: OffscreenViewerInteractionSelection | null | undefined,
-): boolean {
-  return (
-    (left?.type ?? null) === (right?.type ?? null) &&
-    (left?.id ?? null) === (right?.id ?? null) &&
-    left?.subType === right?.subType &&
-    (left?.objectIndex ?? -1) === (right?.objectIndex ?? -1) &&
-    left?.helperKind === right?.helperKind
-  );
-}
-
-function cloneSelectionState(
-  selection: OffscreenViewerInteractionSelection | null | undefined,
-): OffscreenViewerInteractionSelection | null {
-  if (!selection || !selection.type || !selection.id) {
-    return null;
-  }
-
-  return {
-    type: selection.type,
-    id: selection.id,
-    subType: selection.subType,
-    objectIndex: selection.objectIndex,
-    helperKind: selection.helperKind,
-  };
-}
-
 function emitSelectionChange(
   selection: OffscreenViewerInteractionSelection | null,
   meshSelection: {
@@ -706,22 +693,22 @@ function emitSelectionChange(
     objectType: 'visual' | 'collision';
   } | null = null,
 ): void {
-  selectionState = cloneSelectionState(selection);
+  interactionState.setSelection(selection);
   postWorkerMessage({
     type: 'selection-change',
-    selection: selectionState,
+    selection: interactionState.selection,
     meshSelection,
   });
 }
 
 function emitHoverChange(selection: OffscreenViewerInteractionSelection | null): void {
-  if (areSelectionStatesEqual(lastEmittedHoverState, selection)) {
+  if (areUsdOffscreenSelectionsEqual(interactionState.lastEmittedHover, selection)) {
     return;
   }
 
-  const nextHoverState = cloneSelectionState(selection);
-  lastEmittedHoverState = nextHoverState;
-  hoveredSelectionState = nextHoverState;
+  const nextHoverState = cloneUsdOffscreenSelection(selection);
+  interactionState.setLastEmittedHover(nextHoverState);
+  interactionState.setHoveredSelection(nextHoverState);
   postWorkerMessage({
     type: 'hover-change',
     hoveredSelection: nextHoverState,
@@ -808,10 +795,7 @@ function restoreHighlightedMeshSnapshot(mesh: THREE.Mesh, snapshot: HighlightedM
 }
 
 function revertInteractionHighlights(): void {
-  highlightedMeshes.forEach((snapshot, mesh) => {
-    restoreHighlightedMeshSnapshot(mesh, snapshot);
-  });
-  highlightedMeshes.clear();
+  interactionState.clearHighlights();
 }
 
 function getPathBasename(path: string | null | undefined): string {
@@ -984,17 +968,19 @@ function rebuildRuntimeMeshIndex(): void {
     });
   });
 
-  runtimeMeshMetaByObject = nextMeshMetaByObject;
-  runtimeMeshesByLinkKey = nextMeshesByLinkKey;
-  runtimePickMeshes = nextPickMeshes;
-  runtimeHelperTargets = nextHelperTargets;
+  interactionState.replaceMeshIndex({
+    meshMetaByObject: nextMeshMetaByObject,
+    meshesByLinkKey: nextMeshesByLinkKey,
+    pickMeshes: nextPickMeshes,
+    helperTargets: nextHelperTargets,
+  });
 }
 
 function getRuntimeMeshRoleCounts(): { visualMeshCount: number; collisionMeshCount: number } {
   let visualMeshCount = 0;
   let collisionMeshCount = 0;
 
-  runtimeMeshMetaByObject.forEach((meta) => {
+  interactionState.meshMetaByObject.forEach((meta) => {
     if (meta.role === 'collision') {
       collisionMeshCount += 1;
       return;
@@ -1035,8 +1021,8 @@ function applyInteractionHighlight(
   if (
     targetRole === 'visual' &&
     isCollisionVisualProxyActive() &&
-    (runtimeMeshesByLinkKey.get(`${targetLinkPath}:visual`)?.length ?? 0) === 0 &&
-    (runtimeMeshesByLinkKey.get(`${targetLinkPath}:collision`)?.length ?? 0) > 0
+    (interactionState.meshesByLinkKey.get(`${targetLinkPath}:visual`)?.length ?? 0) === 0 &&
+    (interactionState.meshesByLinkKey.get(`${targetLinkPath}:collision`)?.length ?? 0) > 0
   ) {
     targetRole = 'collision';
   }
@@ -1047,7 +1033,7 @@ function applyInteractionHighlight(
     return;
   }
 
-  const meshes = runtimeMeshesByLinkKey.get(`${targetLinkPath}:${targetRole}`) || [];
+  const meshes = interactionState.meshesByLinkKey.get(`${targetLinkPath}:${targetRole}`) || [];
   for (const mesh of meshes) {
     if (!mesh.visible || mesh.userData?.isGizmo) {
       continue;
@@ -1059,10 +1045,10 @@ function applyInteractionHighlight(
       continue;
     }
 
-    let snapshot = highlightedMeshes.get(mesh);
+    let snapshot = interactionState.getHighlight(mesh);
     if (!snapshot) {
       snapshot = captureHighlightedMeshSnapshot(mesh);
-      highlightedMeshes.set(mesh, snapshot);
+      interactionState.setHighlight(mesh, snapshot);
     } else if (snapshot.activeRole === targetRole) {
       mesh.renderOrder = targetRole === 'collision' ? 1000 : 1001;
       continue;
@@ -1070,13 +1056,15 @@ function applyInteractionHighlight(
       restoreHighlightedMeshSnapshot(mesh, snapshot);
     }
 
-    const sourceMaterials = Array.isArray(snapshot.material)
-      ? snapshot.material
-      : [snapshot.material];
-    const overrideMaterials = sourceMaterials.map((sourceMaterial) =>
-      createHighlightOverrideMaterial(sourceMaterial, targetRole),
-    );
-    mesh.material = Array.isArray(snapshot.material) ? overrideMaterials : overrideMaterials[0];
+    if (mesh.userData?.isMjcfTendon === true) {
+      const sourceMaterials = Array.isArray(snapshot.material)
+        ? snapshot.material
+        : [snapshot.material];
+      const overrideMaterials = sourceMaterials.map((sourceMaterial) =>
+        createHighlightOverrideMaterial(sourceMaterial, targetRole),
+      );
+      mesh.material = Array.isArray(snapshot.material) ? overrideMaterials : overrideMaterials[0];
+    }
     mesh.renderOrder = targetRole === 'collision' ? 1000 : 1001;
     snapshot.activeRole = targetRole;
   }
@@ -1084,9 +1072,9 @@ function applyInteractionHighlight(
 
 function syncInteractionHighlights(): void {
   revertInteractionHighlights();
-  applyInteractionHighlight(selectionState);
+  applyInteractionHighlight(interactionState.selection);
   if (hoverSelectionEnabled) {
-    applyInteractionHighlight(hoveredSelectionState);
+    applyInteractionHighlight(interactionState.hoveredSelection);
   }
   renderScene();
 }
@@ -1148,10 +1136,10 @@ function pickRuntimeInteractionTargetAtLocalPoint(
     return null;
   }
 
-  runtimePointer.set((localX / width) * 2 - 1, -(localY / height) * 2 + 1);
-  runtimeRaycaster.setFromCamera(runtimePointer, camera);
+  interactionState.pointer.set((localX / width) * 2 - 1, -(localY / height) * 2 + 1);
+  interactionState.raycaster.setFromCamera(interactionState.pointer, camera);
 
-  const rawHits = runtimeRaycaster.intersectObjects(runtimePickMeshes, false);
+  const rawHits = interactionState.raycaster.intersectObjects(interactionState.pickMeshes, false);
   const geometryCandidates: Array<{
     kind: 'geometry';
     distance: number;
@@ -1171,7 +1159,7 @@ function pickRuntimeInteractionTargetAtLocalPoint(
       continue;
     }
 
-    const meta = runtimeMeshMetaByObject.get(hit.object);
+    const meta = interactionState.meshMetaByObject.get(hit.object);
     if (!meta) {
       continue;
     }
@@ -1189,23 +1177,25 @@ function pickRuntimeInteractionTargetAtLocalPoint(
   }
 
   const helperCandidates =
-    runtimeHelperTargets.length > 0
-      ? runtimeRaycaster.intersectObjects(runtimeHelperTargets, false).flatMap((hit) => {
-          const resolvedHelperHit = resolveUsdHelperHit(hit.object, resolvedRobotData);
-          if (!resolvedHelperHit) {
-            return [];
-          }
+    interactionState.helperTargets.length > 0
+      ? interactionState.raycaster
+          .intersectObjects(interactionState.helperTargets, false)
+          .flatMap((hit) => {
+            const resolvedHelperHit = resolveUsdHelperHit(hit.object, resolvedRobotData);
+            if (!resolvedHelperHit) {
+              return [];
+            }
 
-          return [
-            {
-              kind: 'helper' as const,
-              distance: hit.distance,
-              layer: resolvedHelperHit.layer,
-              object: hit.object,
-              selection: resolvedHelperHit,
-            },
-          ];
-        })
+            return [
+              {
+                kind: 'helper' as const,
+                distance: hit.distance,
+                layer: resolvedHelperHit.layer,
+                object: hit.object,
+                selection: resolvedHelperHit,
+              },
+            ];
+          })
       : [];
 
   const exactCandidates = sortUsdInteractionCandidates(
@@ -1230,7 +1220,7 @@ function pickRuntimeInteractionTargetAtLocalPoint(
   const screenSpaceHelperHit = resolveScreenSpaceUsdHelperHit({
     pointerClientX: localX,
     pointerClientY: localY,
-    helperTargets: runtimeHelperTargets,
+    helperTargets: interactionState.helperTargets,
     resolution: resolvedRobotData,
     camera,
     canvasRect: {
@@ -1296,16 +1286,12 @@ function disposeUsdRootChildren(rootGroup: THREE.Group): void {
 function disposeStageResources(): void {
   clearScheduledAutoFrame();
   clearScheduledGroundAlignmentPasses();
-  clearScheduledDeferredSceneSnapshot();
+  deferredSceneSnapshotLifecycle.clear();
   invalidateWorkerNavigationBounds();
   shouldSettleGroundAlignmentAfterLoad = true;
   useCollisionVisualProxyMode = false;
   resolvedRobotData = null;
-  runtimeMeshMetaByObject.clear();
-  runtimeMeshesByLinkKey.clear();
-  runtimePickMeshes = [];
-  runtimeHelperTargets = [];
-  revertInteractionHighlights();
+  interactionState.resetStageResources();
   if (usdRoot) {
     linkAxesController?.clear(usdRoot);
   }
@@ -1384,6 +1370,14 @@ function initializeSceneGraph(canvas: OffscreenCanvas, theme: 'light' | 'dark'):
   };
 
   renderer = createWorkerRenderer(canvas, theme);
+  offscreenSemanticOutline = createSemanticOutlineComposer({
+    renderer,
+    scene,
+    camera,
+    width: runtimeWindow.innerWidth,
+    height: runtimeWindow.innerHeight,
+    pixelRatio: getBasePixelRatio(),
+  });
   offscreenLightRig = createUsdOffscreenLightRig(scene, theme);
   offscreenStudioEnvironment = createUsdOffscreenStudioEnvironment(scene, renderer, theme);
   offscreenGroundShadowPlane = createUsdOffscreenGroundShadowPlane(theme);
@@ -1406,6 +1400,11 @@ function resizeViewer(width: number, height: number, devicePixelRatio: number): 
 
   renderer.setPixelRatio(getBasePixelRatio());
   renderer.setSize(runtimeWindow.innerWidth, runtimeWindow.innerHeight, false);
+  offscreenSemanticOutline?.setSize(
+    runtimeWindow.innerWidth,
+    runtimeWindow.innerHeight,
+    getBasePixelRatio(),
+  );
   camera.aspect = runtimeWindow.innerWidth / runtimeWindow.innerHeight;
   camera.updateProjectionMatrix();
   renderScene();
@@ -1576,7 +1575,7 @@ function refreshOriginAxes(): void {
 }
 
 function refreshRuntimeHelperTargets(): void {
-  runtimeHelperTargets = usdRoot ? collectSelectableHelperTargets(usdRoot) : [];
+  interactionState.replaceHelperTargets(usdRoot ? collectSelectableHelperTargets(usdRoot) : []);
 }
 
 function applyRuntimeVisibility(): void {
@@ -1593,8 +1592,7 @@ function applyRuntimeVisibility(): void {
   );
 
   if (isCollisionVisualProxyActive()) {
-    runtimeMeshMetaByObject.forEach((_meta, object) => {
-      const meta = runtimeMeshMetaByObject.get(object);
+    interactionState.meshMetaByObject.forEach((meta, object) => {
       if (meta?.role === 'collision') {
         object.visible = true;
       }
@@ -1899,90 +1897,17 @@ function publishDeferredSceneSnapshot(
   }
 }
 
-function clearScheduledDeferredSceneSnapshot(): void {
-  if (deferredSceneSnapshotTimeout) {
-    clearTimeout(deferredSceneSnapshotTimeout);
-    deferredSceneSnapshotTimeout = null;
-  }
-  pendingDeferredSceneSnapshot = null;
-}
-
 function scheduleDeferredSceneSnapshotPublish(
   snapshot: ViewerRobotDataResolution['usdSceneSnapshot'],
   sourceFileName: string,
   loadGeneration: number,
 ): void {
-  clearScheduledDeferredSceneSnapshot();
-
   if (!snapshot || !hasUsdSceneSnapshotHeavyBuffers(snapshot)) {
+    deferredSceneSnapshotLifecycle.clear();
     return;
   }
 
-  pendingDeferredSceneSnapshot = {
-    loadGeneration,
-    requestedAt: Date.now(),
-    snapshot,
-    sourceFileName,
-  };
-  emitLoadDebugEntry({
-    sourceFileName,
-    step: 'defer-scene-snapshot',
-    status: 'pending',
-    timestamp: Date.now(),
-    detail: {
-      initialDelayMs: USD_DEFERRED_SCENE_SNAPSHOT_INITIAL_DELAY_MS,
-      interactionIdleMs: USD_DEFERRED_SCENE_SNAPSHOT_INTERACTION_IDLE_MS,
-      maxDelayMs: USD_DEFERRED_SCENE_SNAPSHOT_MAX_DELAY_MS,
-    },
-  });
-
-  const scheduleNextAttempt = (delayMs: number): void => {
-    deferredSceneSnapshotTimeout = setTimeout(() => {
-      deferredSceneSnapshotTimeout = null;
-      const pendingSnapshot = pendingDeferredSceneSnapshot;
-      if (!pendingSnapshot) {
-        return;
-      }
-      if (!isLoadGenerationActive(pendingSnapshot.loadGeneration)) {
-        pendingDeferredSceneSnapshot = null;
-        return;
-      }
-
-      const now = Date.now();
-      const nextDelayMs = resolveDeferredUsdSceneSnapshotDelayMs({
-        activeInteraction: Boolean(activePointer),
-        lastInteractionAt,
-        now,
-        requestedAt: pendingSnapshot.requestedAt,
-      });
-      if (nextDelayMs > 0) {
-        scheduleNextAttempt(nextDelayMs);
-        return;
-      }
-
-      pendingDeferredSceneSnapshot = null;
-      publishDeferredSceneSnapshot(pendingSnapshot.snapshot, pendingSnapshot.sourceFileName);
-      emitLoadDebugEntry({
-        sourceFileName: pendingSnapshot.sourceFileName,
-        step: 'defer-scene-snapshot',
-        status: 'resolved',
-        timestamp: Date.now(),
-        durationMs: Date.now() - pendingSnapshot.requestedAt,
-        detail: {
-          deferredUntilIdle: true,
-        },
-      });
-    }, Math.max(0, delayMs));
-  };
-
-  scheduleNextAttempt(
-    resolveDeferredUsdSceneSnapshotDelayMs({
-      activeInteraction: Boolean(activePointer),
-      lastInteractionAt,
-      now: Date.now(),
-      requestedAt: pendingDeferredSceneSnapshot.requestedAt,
-    }),
-  );
+  deferredSceneSnapshotLifecycle.schedule(snapshot, sourceFileName, loadGeneration);
 }
 
 function resolveWorkerCompletionMode(
@@ -2013,11 +1938,9 @@ async function prepareAndPublishWorkerPreparedCache({
         source: 'worker-scene-snapshot',
       },
       run: async () => {
-        const preparedCache = prepareUsdExportCacheFromResolvedSnapshot(
-          snapshot,
-          resolution,
-          { includeTransferBytes: true },
-        );
+        const preparedCache = prepareUsdExportCacheFromResolvedSnapshot(snapshot, resolution, {
+          includeTransferBytes: true,
+        });
         return await serializePreparedUsdExportCacheForWorker(preparedCache);
       },
       resolveDetail: (result) => ({
@@ -2098,16 +2021,14 @@ async function publishResolvedRobotData(
   refreshRuntimeHelperTargets();
   syncInteractionHighlights();
 
-  postWorkerMessage(
-    {
-      type: 'robot-data',
-      resolution: resolutionWithSnapshot,
-      robotData: resolvedViewerRobotData.robotData,
-      preparedCache: null,
-      preparedCachePending: Boolean(snapshot),
-      deferredSceneSnapshotPending: hasUsdSceneSnapshotHeavyBuffers(snapshot),
-    },
-  );
+  postWorkerMessage({
+    type: 'robot-data',
+    resolution: resolutionWithSnapshot,
+    robotData: resolvedViewerRobotData.robotData,
+    preparedCache: null,
+    preparedCachePending: Boolean(snapshot),
+    deferredSceneSnapshotPending: hasUsdSceneSnapshotHeavyBuffers(snapshot),
+  });
 
   const preparedCacheCompletion = snapshot
     ? prepareAndPublishWorkerPreparedCache({
@@ -2324,16 +2245,22 @@ async function loadUsdStageIntoWorker(message: UsdOffscreenViewerInitRequest): P
         }),
       resolveDetail: (result) => {
         const runtimeWarmupSummary = (
-          result as { runtimeBridgeWarmupSummary?: { nativeSnapshotSource?: unknown } } | null | undefined
+          result as
+            | { runtimeBridgeWarmupSummary?: { nativeSnapshotSource?: unknown } }
+            | null
+            | undefined
         )?.runtimeBridgeWarmupSummary;
         const usdLoadProfile = (
-          result as {
-            usdLoadProfile?: {
-              driverInitProfile?: unknown;
-              runtimeBridgeWarmupSummary?: { nativeSnapshotSource?: unknown };
-              robotSceneSnapshotProfile?: unknown;
-            };
-          } | null | undefined
+          result as
+            | {
+                usdLoadProfile?: {
+                  driverInitProfile?: unknown;
+                  runtimeBridgeWarmupSummary?: { nativeSnapshotSource?: unknown };
+                  robotSceneSnapshotProfile?: unknown;
+                };
+              }
+            | null
+            | undefined
         )?.usdLoadProfile;
         const driverInitProfile =
           (result as { driverInitProfile?: unknown } | null | undefined)?.driverInitProfile ??
@@ -2352,15 +2279,17 @@ async function loadUsdStageIntoWorker(message: UsdOffscreenViewerInitRequest): P
           stageSourcePath: preparedStageOpenData.stageSourcePath,
           drawFailed: Boolean(result?.drawFailed),
           robotSceneSnapshotOnly: Boolean(
-            (result as { robotSceneSnapshotOnly?: boolean } | null | undefined)?.robotSceneSnapshotOnly ||
-              (result as { drawSkippedForRobotSceneSnapshot?: boolean } | null | undefined)
-                ?.drawSkippedForRobotSceneSnapshot,
+            (result as { robotSceneSnapshotOnly?: boolean } | null | undefined)
+              ?.robotSceneSnapshotOnly ||
+            (result as { drawSkippedForRobotSceneSnapshot?: boolean } | null | undefined)
+              ?.drawSkippedForRobotSceneSnapshot,
           ),
-          runtimeWarmupNativeSnapshotSource: String(
-            runtimeWarmupSummary?.nativeSnapshotSource ??
-              usdLoadProfile?.runtimeBridgeWarmupSummary?.nativeSnapshotSource ??
-              '',
-          ) || null,
+          runtimeWarmupNativeSnapshotSource:
+            String(
+              runtimeWarmupSummary?.nativeSnapshotSource ??
+                usdLoadProfile?.runtimeBridgeWarmupSummary?.nativeSnapshotSource ??
+                '',
+            ) || null,
           runtimeBridgeWarmupSummary,
           driverInitProfile,
           robotSceneSnapshotProfile,
@@ -2394,9 +2323,10 @@ async function loadUsdStageIntoWorker(message: UsdOffscreenViewerInitRequest): P
     }
 
     const robotSceneSnapshotOnlyLoad = Boolean(
-      (loadState as { robotSceneSnapshotOnly?: boolean } | null | undefined)?.robotSceneSnapshotOnly ||
-        (loadState as { drawSkippedForRobotSceneSnapshot?: boolean } | null | undefined)
-          ?.drawSkippedForRobotSceneSnapshot,
+      (loadState as { robotSceneSnapshotOnly?: boolean } | null | undefined)
+        ?.robotSceneSnapshotOnly ||
+      (loadState as { drawSkippedForRobotSceneSnapshot?: boolean } | null | undefined)
+        ?.drawSkippedForRobotSceneSnapshot,
     );
 
     if (!robotSceneSnapshotOnlyLoad) {
@@ -2464,11 +2394,7 @@ async function loadUsdStageIntoWorker(message: UsdOffscreenViewerInitRequest): P
     }
 
     if (completionMode === 'complete') {
-      emitWorkerLoadingStep(
-        'finalizing-scene',
-        'Completing USD hydration artifacts...',
-        99,
-      );
+      emitWorkerLoadingStep('finalizing-scene', 'Completing USD hydration artifacts...', 99);
       await workerResolvedRobotData.preparedCacheCompletion;
       if (!isLoadGenerationActive(loadGeneration)) {
         return;
@@ -2729,16 +2655,16 @@ function handleSetInteractionState(
   interactionToolMode = message.toolMode;
   hoverSelectionEnabled = message.hoverSelectionEnabled;
   interactionLayerPriority = [...message.interactionLayerPriority];
-  selectionState = cloneSelectionState(message.selection);
-  hoveredSelectionState = cloneSelectionState(message.hoveredSelection);
-  lastEmittedHoverState = cloneSelectionState(message.hoveredSelection);
+  interactionState.setSelection(message.selection);
+  interactionState.setHoveredSelection(message.hoveredSelection);
+  interactionState.setLastEmittedHover(message.hoveredSelection);
 
   if (!hoverSelectionEnabled || !getCurrentInteractionPolicy().enableContinuousHover) {
-    if (lastEmittedHoverState) {
+    if (interactionState.lastEmittedHover) {
       emitHoverChange(null);
     } else {
-      lastEmittedHoverState = null;
-      hoveredSelectionState = null;
+      interactionState.setLastEmittedHover(null);
+      interactionState.setHoveredSelection(null);
     }
   }
 
@@ -2821,6 +2747,9 @@ function disposeWorkerStage(): void {
   }
   offscreenGroundShadowPlane = null;
 
+  offscreenSemanticOutline?.dispose();
+  offscreenSemanticOutline = null;
+
   disposeWebGLRenderer(renderer, { forceContextLoss: true });
   renderer = null;
   scene = null;
@@ -2835,14 +2764,13 @@ function disposeWorkerStage(): void {
   runtimeWindow.usdRoot = undefined;
   runtimeWindow._controls = undefined;
   currentSourceFileName = '';
-  selectionState = null;
-  hoveredSelectionState = null;
-  lastEmittedHoverState = null;
+  interactionState.resetAll();
 }
 
 function disposeWorker(): void {
   disposed = true;
   disposeWorkerStage();
+  deferredSceneSnapshotLifecycle.dispose();
   clearPreparedUsdStageOpenCache();
   preparedStageOpenCacheKeys.clear();
   preparedStageOpenCacheKeyOrder.length = 0;

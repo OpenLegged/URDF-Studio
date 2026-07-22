@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import * as THREE from 'three';
 import {
   GROUND_SHADOW_STYLE,
+  LIGHTING_CONFIG,
   resolveCameraFollowLightingStyle,
 } from '@/shared/components/3d/scene/constants.ts';
 
@@ -115,6 +116,21 @@ test('createUsdOffscreenLightRig enables shadow casting on the shared main light
     rig.mainLight.intensity,
     resolveCameraFollowLightingStyle('light').mainLightIntensity,
   );
+});
+
+test('createUsdOffscreenLightRig uses the shared warm-key and cool-fill palette', () => {
+  const scene = new THREE.Scene();
+  const rig = createUsdOffscreenLightRig(scene);
+
+  assert.equal(rig.mainLight.color.getHexString(), new THREE.Color(
+    LIGHTING_CONFIG.mainLightColor,
+  ).getHexString());
+  assert.equal(rig.fillLightLeft.color.getHexString(), new THREE.Color(
+    LIGHTING_CONFIG.fillLightColor,
+  ).getHexString());
+  assert.equal(rig.rimLight.color.getHexString(), new THREE.Color(
+    LIGHTING_CONFIG.rimLightColor,
+  ).getHexString());
 });
 
 test('ground shadow plane follows the worker ground offset', () => {

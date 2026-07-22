@@ -1,13 +1,9 @@
 import type { Language } from '@/store';
-import {
-  JointType,
-  type BridgeJoint,
-  type UrdfJoint,
-  type UrdfOrigin,
-} from '@/types';
+import { JointType, type BridgeJoint, type UrdfJoint, type UrdfOrigin } from '@/types';
 
 export type BridgeRotationDisplayMode = 'euler_deg' | 'euler_rad' | 'quaternion';
 export type BridgeEulerAxisKey = 'r' | 'p' | 'y';
+export type BridgeEndpointInputMode = 'geometry' | 'link';
 
 export type BridgeCreateParams = {
   name: string;
@@ -19,7 +15,7 @@ export type BridgeCreateParams = {
     type: JointType;
     origin: UrdfOrigin;
     axis: { x: number; y: number; z: number };
-    limit?: { lower: number; upper: number; effort: number; velocity: number };
+    limit?: NonNullable<UrdfJoint['limit']>;
     hardware?: UrdfJoint['hardware'];
   };
 };

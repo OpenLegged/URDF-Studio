@@ -754,6 +754,30 @@ test('solveLinkIkPositionTarget converges on a reachable prismatic target', () =
   assert.ok(Math.hypot(dx, dy, dz) <= 1e-3);
 });
 
+test('solveLinkIkPositionTarget treats missing position bounds as unbounded', () => {
+  const robot = createPrismaticIkRobot();
+  robot.joints.slide.limit = { effort: 100, velocity: 10 };
+  const descriptor = resolveLinkIkHandleDescriptor(robot, 'tool');
+
+  assert.ok(descriptor);
+
+  const result = solveLinkIkPositionTarget(robot, {
+    linkId: 'tool',
+    targetWorldPosition: {
+      x: 0.8,
+      y: descriptor.anchorLocal.y,
+      z: descriptor.anchorLocal.z,
+    },
+    maxIterations: 64,
+    positionTolerance: 1e-4,
+    stallTolerance: 1e-8,
+  });
+
+  assert.equal(result.converged, true);
+  assert.ok(Number.isFinite(result.angles.slide));
+  assert.ok(Math.abs(result.effectorWorldPosition.x - 0.8) <= 1e-3);
+});
+
 test('solveLinkIkPositionTarget can rotate an axial chain once the direct-manipulation anchor is moved off-axis', () => {
   const robot = createAxialZChainRobot();
   const descriptor = resolveDirectManipulableLinkIkDescriptor(robot, 'link2');

@@ -1,24 +1,16 @@
 /** Main application layout driven exclusively by canonical AssemblyState. */
-import {
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  useSyncExternalStore,
-} from 'react';
-import type { RootState } from '@react-three/fiber';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { AppLayoutView } from './components/AppLayoutView';
-import type { SnapshotPreviewSession } from './components/snapshot-preview/types';
 import { setOptionsPanelVisibility } from './components/header/viewMenuState.js';
 import type { AppLayoutProps, ProModeRoundtripSession } from './appLayoutTypes';
 import { buildAssemblyComponentPreparationOverlayState } from './hooks/assemblyComponentPreparation';
 import { useAppLayoutEffects } from './hooks/useAppLayoutEffects';
 import { useAppLayoutStoreSlices } from './hooks/useAppLayoutStoreSlices';
-import { useBatchThumbnailDebugApi } from './hooks/useBatchThumbnailDebugApi';
+import { useAppLayoutSnapshotWorkflow } from './hooks/useAppLayoutSnapshotWorkflow';
 import { useCollisionOptimizationWorkflow } from './hooks/useCollisionOptimizationWorkflow';
 import { useEditableSourceCodeApply } from './hooks/useEditableSourceCodeApply';
+import { useFlattenedGroupSourceApply } from './hooks/useFlattenedGroupSourceApply';
 import { useEditableSourcePatches } from './hooks/useEditableSourcePatches';
 import { useIkToolController } from './hooks/useIkToolController';
 import { useIkDragPanelActions } from './hooks/use_ik_drag_panel_actions';
@@ -27,8 +19,7 @@ import { useLibraryRobotLoadRequest } from './hooks/useLibraryRobotLoadRequest';
 import { usePreparedUsdViewerAssets } from './hooks/usePreparedUsdViewerAssets';
 import { usePreviewFileWithFeedback } from './hooks/usePreviewFileWithFeedback';
 import { useResponsiveSidebarCollapse } from './hooks/useResponsiveSidebarCollapse';
-import { useSnapshotDialogController } from './hooks/useSnapshotDialogController';
-import { useSnapshotCaptureRequest } from './hooks/use_snapshot_capture_request';
+import { useSelectionActiveComponentSync } from './hooks/useSelectionActiveComponentSync';
 import { useSourceCodeEditorDocuments } from './hooks/useSourceCodeEditorDocuments';
 import { useSourceCodeEditorWarmup } from './hooks/useSourceCodeEditorWarmup';
 import { useToolItems } from './hooks/useToolItems';
@@ -39,21 +30,13 @@ import { useWorkspaceLayoutDerivations } from './hooks/useWorkspaceLayoutDerivat
 import { useWorkspaceModeTransitions } from './hooks/useWorkspaceModeTransitions';
 import { useWorkspaceMutations } from './hooks/useWorkspaceMutations';
 import { useWorkspaceOverlayActions } from './hooks/useWorkspaceOverlayActions';
-import {
-  readStoredWorkspaceViewerShowVisualPreference,
-  resolveWorkspaceViewerShowVisual,
-  subscribeToShowVisualPreference,
-} from './hooks/workspaceViewerDetailPreferences';
+import { useWorkspaceViewerDerivations } from './hooks/useWorkspaceViewerDerivations';
+import { preloadSnapshotDialog } from './utils/overlayLoaders';
 import { preloadSourceCodeEditorRuntime } from './utils/sourceCodeEditorLoader';
-import { buildCanonicalWorkspaceSourceDocuments } from './utils/sourceCodeDocuments';
-import { resolveCanonicalWorkspaceViewerDocument } from './utils/canonicalWorkspaceViewerDocument';
+import type { SourceCodeDocumentChangeTarget } from './utils/sourceCodeDocuments';
 import { normalizeMergedAppMode } from '@/shared/utils/appMode';
 import { logRegressionError } from '@/shared/debug/consoleDiagnostics';
 import { translations } from '@/shared/i18n';
-import {
-  createAssemblyScenePlacement,
-  createAssemblySceneProjection,
-} from '@/core/robot';
 import type {
   BridgeJoint,
   InteractionSelection,
@@ -61,13 +44,8 @@ import type {
   LinkEntityRef,
   RobotFile,
 } from '@/types';
-import type {
-  SnapshotCaptureAction,
-  SnapshotPreviewAction,
-  SnapshotCaptureProgress,
-} from '@/shared/components/3d/scene/snapshotConfig';
-import { projectWorkspaceJointMotionToRenderer, type ToolMode } from '@/features/editor';
-import { buildBridgePreviewWorkspace } from '@/features/assembly';
+import type { ToolMode } from '@/features/editor';
+import type { SourceCodeEditorApplyRequest } from '@/features/code-editor';
 import type { ImportPreparationOverlayState } from './hooks/useFileImport';
 
 export function AppLayout({
@@ -75,15 +53,19 @@ export function AppLayout({
   importFolderInputRef,
   onFileDrop,
   onOpenExport,
+  onPrefetchExport,
   onOpenLibraryExport,
   onExportProject,
   isExportingProject = false,
   showToast,
   onOpenAIInspection,
+  onPrefetchAIInspection,
   onOpenAIConversation,
+  onPrefetchAIConversation,
   isCodeViewerOpen,
   setIsCodeViewerOpen,
   onOpenSettings,
+  onPrefetchSettings,
   headerQuickAction,
   headerSecondaryAction,
   surfaceModeSelector,
@@ -135,107 +117,49 @@ export function AppLayout({
       usdPreparedExportCaches,
       setDocumentLoadState,
     },
-    workspaceStore: {
-      workspace,
-      semanticWorkspace,
-      activeComponentId,
-      addBridge,
-    },
+    workspaceStore: { workspace, semanticWorkspace, activeComponentId, addBridge },
     collisionTransformStore: { setPendingCollisionTransform, clearPendingCollisionTransform },
   } = useAppLayoutStoreSlices();
 
+  useSelectionActiveComponentSync();
   useResponsiveSidebarCollapse({ sidebar, setSidebar });
   const mergedAppMode = normalizeMergedAppMode(appMode);
   const t = translations[lang];
-  const activeComponent = workspace.components[activeComponentId]
-    ?? Object.values(workspace.components)[0]!;
-
-  const snapshotActionRef = useRef<SnapshotCaptureAction | null>(null);
-  const viewerCanvasStateRef = useRef<RootState | null>(null);
-  // previewActionRef feeds SnapshotManager's preview pipeline (off-screen render
-  // target, supersampling, background fill) and is exposed to automation via the
-  // regression debug API as `captureSnapshot`. Unlike snapshotAction (which
-  // downloads), preview returns a blob for programmatic use.
-  const previewActionRef = useRef<SnapshotPreviewAction | null>(null);
-
-  useBatchThumbnailDebugApi({ previewActionRef, viewerCanvasStateRef });
+  const activeComponent =
+    workspace.components[activeComponentId] ?? Object.values(workspace.components)[0]!;
 
   const transformPendingRef = useRef(false);
   const proModeRoundtripSessionRef = useRef<ProModeRoundtripSession | null>(null);
-  const snapshotPreviewCaptureActionRef = useRef<SnapshotCaptureAction | null>(null);
   const [pendingViewerToolMode, setPendingViewerToolMode] = useState<ToolMode | null>(null);
   const [isBridgeModalOpen, setIsBridgeModalOpen] = useState(false);
   const [shouldRenderBridgeModal, setShouldRenderBridgeModal] = useState(false);
   const [bridgePreview, setBridgePreview] = useState<BridgeJoint | null>(null);
   const [isCollisionOptimizerOpen, setIsCollisionOptimizerOpen] = useState(false);
-  const [isSnapshotDialogOpen, setIsSnapshotDialogOpen] = useState(false);
-  const [isSnapshotCapturing, setIsSnapshotCapturing] = useState(false);
-  const [snapshotCaptureProgress, setSnapshotCaptureProgress] =
-    useState<SnapshotCaptureProgress | null>(null);
-  const [snapshotPreviewSession, setSnapshotPreviewSession] =
-    useState<SnapshotPreviewSession | null>(null);
   const [assemblyComponentPreparationOverlay, setAssemblyComponentPreparationOverlay] =
     useState<ImportPreparationOverlayState | null>(null);
 
-  const sceneWorkspace = useMemo(
-    () => buildBridgePreviewWorkspace(semanticWorkspace, bridgePreview),
-    [bridgePreview, semanticWorkspace],
-  );
-  const sceneProjection = useMemo(
-    () => createAssemblySceneProjection(sceneWorkspace),
-    [sceneWorkspace],
-  );
-  const scenePlacement = useMemo(
-    () => createAssemblyScenePlacement(sceneWorkspace, sceneProjection),
-    [sceneProjection, sceneWorkspace],
-  );
-  const viewerRobot = scenePlacement.robotData;
-  const viewerDocument = useMemo(
-    () => resolveCanonicalWorkspaceViewerDocument({
-      workspace: sceneWorkspace,
-      projection: sceneProjection,
-      availableFiles,
-      componentSourceDrafts,
-    }),
-    [availableFiles, componentSourceDrafts, sceneProjection, sceneWorkspace],
-  );
-  const canonicalSource = useMemo(
-    () => buildCanonicalWorkspaceSourceDocuments({
-      workspace: semanticWorkspace,
-      activeComponentId,
-      componentSourceDrafts,
-      availableFiles,
-      allFileContents,
-    }),
-    [
-      activeComponentId,
-      allFileContents,
-      availableFiles,
-      componentSourceDrafts,
-      semanticWorkspace,
-    ],
-  );
-  const projectedJointMotion = useMemo(
-    () => projectWorkspaceJointMotionToRenderer(workspace, sceneProjection),
-    [sceneProjection, workspace],
-  );
-  const jointAngleState = projectedJointMotion.jointAngles;
-  const jointMotionState = projectedJointMotion.jointMotion;
-  const storedShowVisualPreference = useSyncExternalStore(
-    subscribeToShowVisualPreference,
-    readStoredWorkspaceViewerShowVisualPreference,
-    () => null,
-  );
-  const showVisual = useMemo(
-    () => resolveWorkspaceViewerShowVisual({
-      robotLinks: sceneProjection.robotData.links,
-      storedPreference: storedShowVisualPreference,
-    }),
-    [sceneProjection.robotData.links, storedShowVisualPreference],
-  );
+  const {
+    sceneWorkspace,
+    sceneProjection,
+    scenePlacement,
+    viewerRobot,
+    viewerDocument,
+    canonicalSource,
+    jointAngleState,
+    jointMotionState,
+    showVisual,
+  } = useWorkspaceViewerDerivations({
+    workspace,
+    semanticWorkspace,
+    bridgePreview,
+    activeComponentId,
+    availableFiles,
+    componentSourceDrafts,
+    allFileContents,
+  });
   const isUsdHydrationPending =
-    documentLoadLifecycleState.status === 'hydrating'
-    && documentLoadLifecycleState.format === 'usd';
+    documentLoadLifecycleState.status === 'hydrating' &&
+    documentLoadLifecycleState.format === 'usd';
 
   const showAssemblyComponentPreparationOverlay = useCallback(
     (file: RobotFile, stage: 'prepare' | 'add' | 'ground') => {
@@ -249,18 +173,13 @@ export function AppLayout({
     setAssemblyComponentPreparationOverlay(null);
   }, []);
 
-  const {
-    filePreview,
-    previewRobot,
-    handlePreviewFile,
-    handleClosePreview,
-    activePreviewFile,
-  } = useWorkspaceFilePreview({
-    availableFiles,
-    assets,
-    allFileContents,
-    getUsdPreparedExportCache,
-  });
+  const { filePreview, previewRobot, handlePreviewFile, handleClosePreview, activePreviewFile } =
+    useWorkspaceFilePreview({
+      availableFiles,
+      assets,
+      allFileContents,
+      getUsdPreparedExportCache,
+    });
   const additionalPreparedViewerSourceFiles = useMemo(
     () => (activePreviewFile ? [activePreviewFile] : []),
     [activePreviewFile],
@@ -274,9 +193,7 @@ export function AppLayout({
     getUsdPreparedExportCache,
   });
 
-  const {
-    updateProModeRoundtripBaseline,
-  } = useWorkspaceModeTransitions({
+  const { updateProModeRoundtripBaseline } = useWorkspaceModeTransitions({
     previewFile: activePreviewFile,
     selectedFile,
     availableFiles,
@@ -322,11 +239,8 @@ export function AppLayout({
     selection,
     setSelection,
   });
-  const {
-    workspaceLayoutClassNames,
-    workspaceOverlaySafeAreaStyle,
-    workspaceOverlayGizmoMargin,
-  } = useWorkspaceLayoutDerivations({ panelLayout, sidebar });
+  const { workspaceLayoutClassNames, workspaceOverlaySafeAreaStyle, workspaceOverlayGizmoMargin } =
+    useWorkspaceLayoutDerivations({ panelLayout, sidebar });
   const {
     handleSelect,
     handleSelectGeometry,
@@ -420,10 +334,12 @@ export function AppLayout({
   const {
     handleAddComponent,
     handleCreateBridge,
+    handlePrefetchBridgeCreateModal,
     handleCloseBridgeModal,
     handleBridgePreviewChange,
     handleCreateBridgeCommit,
     handleOpenCollisionOptimizer,
+    handlePrefetchCollisionOptimizer,
   } = useWorkspaceOverlayActions({
     onLoadRobot,
     showAssemblyComponentPreparationOverlay,
@@ -449,55 +365,94 @@ export function AppLayout({
     t,
   });
 
-  const { handleCodeChange } = useEditableSourceCodeApply({
+  const { handleCodeChange: handleComponentCodeChange } = useEditableSourceCodeApply({
     allFileContents,
     availableFiles,
   });
+  const { handleCodeChange: handleGroupCodeChange } = useFlattenedGroupSourceApply();
+  const handleCodeChange = useCallback((
+    newCode: string,
+    target?: SourceCodeDocumentChangeTarget,
+    applyRequest?: SourceCodeEditorApplyRequest,
+  ): Promise<boolean> => {
+    if (target?.kind === 'component') {
+      return handleComponentCodeChange(newCode, target, applyRequest);
+    }
+    if (target?.kind === 'group') {
+      return handleGroupCodeChange(newCode, target, applyRequest);
+    }
+    return Promise.resolve(false);
+  }, [handleComponentCodeChange, handleGroupCodeChange]);
   const sourceCodeEditorDocuments = useSourceCodeEditorDocuments(
     canonicalSource.documents,
     handleCodeChange,
   );
-  const viewerDocumentLifecycleCallbacks = useMemo(() => ({
-    onDocumentLoadEvent: handleViewerDocumentLoadEvent,
-    onRuntimeRobotLoaded: handleViewerRuntimeRobotLoaded,
-    onRuntimeSceneReadyForDisplay: handleViewerRuntimeSceneReadyForDisplay,
-  }), [
-    handleViewerDocumentLoadEvent,
-    handleViewerRuntimeRobotLoaded,
-    handleViewerRuntimeSceneReadyForDisplay,
-  ]);
+  const viewerDocumentLifecycleCallbacks = useMemo(
+    () => ({
+      onDocumentLoadEvent: handleViewerDocumentLoadEvent,
+      onRuntimeRobotLoaded: handleViewerRuntimeRobotLoaded,
+      onRuntimeSceneReadyForDisplay: handleViewerRuntimeSceneReadyForDisplay,
+    }),
+    [
+      handleViewerDocumentLoadEvent,
+      handleViewerRuntimeRobotLoaded,
+      handleViewerRuntimeSceneReadyForDisplay,
+    ],
+  );
 
-  const { handleCloseSnapshotDialog, handleSnapshotPreviewCaptureActionChange, handleSnapshot } =
-    useSnapshotDialogController({
-      availableFiles,
-      groundPlaneOffset,
-      jointAngleState,
-      jointMotionState,
-      selectedFileFormat: selectedFile?.format ?? null,
-      theme,
-      urdfContentForViewer: viewerDocument.urdfContent,
-      viewerAssets,
-      viewerCanvasStateRef,
-      viewerDocumentReady:
-        documentLoadLifecycleState.status === 'ready'
-        && documentLoadLifecycleState.fileName === selectedFile?.name,
-      viewerReloadKey,
-      viewerRobot,
-      viewerShowVisual: showVisual,
-      viewerSourceFile: viewerDocument.sourceFile,
-      viewerSourceFilePath: viewerDocument.sourceFilePath,
-      viewerSourceFormat: viewerDocument.sourceFormat,
-      snapshotPreviewCaptureActionRef,
-      setIsSnapshotDialogOpen,
-      setSnapshotPreviewSession,
+  const {
+    snapshotActionRef,
+    previewActionRef,
+    viewerCanvasStateRef,
+    isDialogOpen: isSnapshotDialogOpen,
+    isCapturing: isSnapshotCapturing,
+    captureProgress: snapshotCaptureProgress,
+    previewSession: snapshotPreviewSession,
+    handleCloseSnapshotDialog,
+    handleSnapshotPreviewCaptureActionChange,
+    handleSnapshot,
+    handleCaptureSnapshot,
+    handleCancelSnapshotCapture,
+  } = useAppLayoutSnapshotWorkflow({
+    availableFiles,
+    groundPlaneOffset,
+    jointAngleState,
+    jointMotionState,
+    selectedFileFormat: selectedFile?.format ?? null,
+    theme,
+    urdfContentForViewer: viewerDocument.urdfContent,
+    viewerAssets,
+    viewerDocumentReady:
+      documentLoadLifecycleState.status === 'ready' &&
+      documentLoadLifecycleState.fileName === selectedFile?.name,
+    viewerReloadKey,
+    viewerRobot,
+    viewerShowVisual: showVisual,
+    viewerSourceFile: viewerDocument.sourceFile,
+    viewerSourceFilePath: viewerDocument.sourceFilePath,
+    viewerSourceFormat: viewerDocument.sourceFormat,
+    showToast,
+    snapshotFailedMessage: t.snapshotFailed,
+  });
+  const handlePrefetchSnapshot = useCallback(() => {
+    void preloadSnapshotDialog().catch((error: unknown) => {
+      logRegressionError('[AppLayout] Failed to preload snapshot dialog:', error);
     });
+  }, []);
+  const handleOpenSnapshotDialog = useCallback(() => {
+    handlePrefetchSnapshot();
+    handleSnapshot();
+  }, [handlePrefetchSnapshot, handleSnapshot]);
   const { items: toolboxItems, openTool } = useToolItems({
     t,
     openAIInspection: onOpenAIInspection,
+    prefetchAIInspection: onPrefetchAIInspection,
     openAIConversation: onOpenAIConversation,
+    prefetchAIConversation: onPrefetchAIConversation,
     openIkTool: handleOpenIkTool,
     openCollisionOptimizer: handleOpenCollisionOptimizer,
     extensionItems: extensionToolboxItems,
+    prefetchCollisionOptimizer: handlePrefetchCollisionOptimizer,
   });
   useEffect(() => {
     onExposeLayoutActions?.({
@@ -511,22 +466,12 @@ export function AppLayout({
     (show: boolean) => setViewConfig((current) => setOptionsPanelVisibility(current, show)),
     [setViewConfig],
   );
-  const { handleCaptureSnapshot, handleCancelSnapshotCapture } = useSnapshotCaptureRequest({
-    liveCaptureActionRef: snapshotActionRef,
-    frozenPreviewCaptureActionRef: snapshotPreviewCaptureActionRef,
-    snapshotPreviewSession,
-    setIsSnapshotCapturing,
-    setSnapshotCaptureProgress,
-    showToast,
-    snapshotFailedMessage: t.snapshotFailed,
-  });
   const {
     isFileDragActive,
     handleDragEnter,
     handleDragOver,
     handleDragLeave,
     handleDrop,
-    prefetchSourceCodeEditor,
   } = useAppLayoutEffects({
     workspace,
     selection,
@@ -543,16 +488,16 @@ export function AppLayout({
     showToast,
     usdLoadInProgressMessage: t.usdLoadInProgress,
     preloadRuntime: preloadSourceCodeEditorRuntime,
-    prefetchSourceCodeEditor,
     onPreloadError: handleSourceCodeEditorPreloadError,
   });
 
   const assemblyComponentFileNames = useMemo(
-    () => new Set(
-      Object.values(workspace.components).flatMap((component) =>
-        component.sourceFile ? [component.sourceFile] : [],
+    () =>
+      new Set(
+        Object.values(workspace.components).flatMap((component) =>
+          component.sourceFile ? [component.sourceFile] : [],
+        ),
       ),
-    ),
     [workspace.components],
   );
   const { handlePreviewFileWithFeedback } = usePreviewFileWithFeedback({
@@ -612,9 +557,11 @@ export function AppLayout({
       importInputs={{ importInputRef, importFolderInputRef }}
       header={{
         onOpenExport,
+        onPrefetchExport,
         onExportProject,
         isExportingProject,
         onOpenSettings,
+        onPrefetchSettings,
         headerQuickAction,
         headerSecondaryAction,
         surfaceModeSelector,
@@ -623,7 +570,8 @@ export function AppLayout({
         toolboxItems,
         handleOpenCodeViewer,
         handlePrefetchCodeViewer,
-        handleSnapshot,
+        handleSnapshot: handleOpenSnapshotDialog,
+        handlePrefetchSnapshot,
       }}
       ikPanel={{
         isOpen: isIkToolPanelOpen,
@@ -717,6 +665,7 @@ export function AppLayout({
         handleDeleteAllLibraryFiles,
         handleExportLibraryFile,
         handleCreateBridge,
+        handlePrefetchCreateBridge: handlePrefetchBridgeCreateModal,
         isPreviewingWorkspaceSource: false,
         viewConfig,
         setViewConfig,
@@ -755,7 +704,7 @@ export function AppLayout({
         theme,
         lang,
         labels: {
-          loadingEditor: t.loadingEditor,
+          loadingSourceCodeEditor: t.loadingPanel,
           loadingOptimizer: t.loadingOptimizer,
           loadingBridgeDialog: t.loadingBridgeDialog,
         },

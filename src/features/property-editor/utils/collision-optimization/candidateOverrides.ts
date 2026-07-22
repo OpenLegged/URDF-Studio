@@ -6,6 +6,7 @@ import type {
 } from '../collisionOptimization';
 import { convertGeometryType, type MeshAnalysis } from '../geometryConversion';
 import type { CollisionTargetRef } from './collisionTargets';
+import { buildApproximateMeshCapsuleGeometries } from './meshCapsuleGeometries';
 
 type MeshAnalysisByTargetId = Record<string, MeshAnalysis | null>;
 
@@ -48,29 +49,27 @@ export function getCandidateOverrideOptions(
 
   if (candidate.currentType === GeometryType.MESH) {
     return [
-      GeometryType.MESH,
       GeometryType.CAPSULE,
       GeometryType.CYLINDER,
       GeometryType.BOX,
       GeometryType.SPHERE,
+      GeometryType.MESH,
     ];
   }
 
   if (candidate.currentType === GeometryType.CYLINDER) {
-    return [GeometryType.CYLINDER, GeometryType.CAPSULE];
+    return [GeometryType.CAPSULE, GeometryType.CYLINDER];
   }
 
   if (candidate.currentType === GeometryType.BOX) {
-    return [GeometryType.BOX, GeometryType.CAPSULE, GeometryType.CYLINDER];
+    return [GeometryType.CAPSULE, GeometryType.CYLINDER, GeometryType.BOX];
   }
 
   return candidate.suggestedType ? [candidate.suggestedType] : [];
 }
 
 function getMergeOverrideReason(type: GeometryType): CollisionOptimizationReason {
-  return type === GeometryType.CAPSULE
-    ? 'coaxial-merge-to-capsule'
-    : 'coaxial-merge-to-cylinder';
+  return type === GeometryType.CAPSULE ? 'coaxial-merge-to-capsule' : 'coaxial-merge-to-cylinder';
 }
 
 export function applyCandidateTypeOverride(
@@ -139,13 +138,27 @@ export function applyCandidateTypeOverride(
       return candidate;
     }
 
+    const nextGeometries =
+      overrideType === GeometryType.CAPSULE
+        ? buildApproximateMeshCapsuleGeometries(candidate.target.geometry, meshAnalysis)
+        : [buildSuggestedGeometry(candidate.target.geometry, overrideType, meshAnalysis)];
+
     return {
       ...candidate,
       eligible: true,
       suggestedType: overrideType,
       status: 'ready',
       reason: 'mesh-manual-fit',
-      nextGeometry: buildSuggestedGeometry(candidate.target.geometry, overrideType, meshAnalysis),
+      nextGeometry: nextGeometries[0],
+      mutations: [
+        {
+          componentId: candidate.target.componentId,
+          linkId: candidate.target.linkId,
+          objectIndex: candidate.target.objectIndex,
+          type: 'replace-many',
+          nextGeometries,
+        },
+      ],
     };
   }
 

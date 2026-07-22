@@ -26,6 +26,7 @@ import { getSourceFileDirectory } from '@/core/parsers/meshPathUtils';
 import {
   getJointActualAngleFromMotionAngle,
   getJointMotionAngleFromActualAngle,
+  hasFiniteJointLimitBounds,
   resolveJointKey,
 } from '@/core/robot';
 import type { RobotData, RobotFile, UrdfJoint, UrdfLink } from '@/types';
@@ -434,13 +435,40 @@ export class ThreeJsBackend implements RobotRendererBackend {
           const runtimeJoints = getRuntimeJoints(robotModel);
           if (sourceRobotJoints && runtimeJoints) {
             Object.entries(runtimeJoints).forEach(([name, joint]) => {
-              const parsedJoint = sourceRobotJoints[name];
-              if (parsedJoint && parsedJoint.limit) {
-                joint.limit.effort = parsedJoint.limit.effort;
-                joint.limit.velocity = parsedJoint.limit.velocity;
-                if (joint.limit.lower === undefined) joint.limit.lower = parsedJoint.limit.lower;
-                if (joint.limit.upper === undefined) joint.limit.upper = parsedJoint.limit.upper;
-              }
+                    const parsedJoint = sourceRobotJoints[name];
+                    if (parsedJoint && parsedJoint.limit) {
+                      if (
+                        typeof parsedJoint.limit.effort === 'number' &&
+                        Number.isFinite(parsedJoint.limit.effort)
+                      ) {
+                        joint.limit.effort = parsedJoint.limit.effort;
+                      }
+                      if (
+                        typeof parsedJoint.limit.velocity === 'number' &&
+                        Number.isFinite(parsedJoint.limit.velocity)
+                      ) {
+                        joint.limit.velocity = parsedJoint.limit.velocity;
+                      }
+                      if (hasFiniteJointLimitBounds(parsedJoint.limit)) {
+                        if (joint.limit.lower === undefined) {
+                          joint.limit.lower = parsedJoint.limit.lower;
+                        }
+                        if (joint.limit.upper === undefined) {
+                          joint.limit.upper = parsedJoint.limit.upper;
+                        }
+                        joint.ignoreLimits = false;
+                      } else if (
+                        parsedJoint.type === 'revolute' ||
+                        parsedJoint.type === 'prismatic'
+                      ) {
+                        joint.ignoreLimits = true;
+                      }
+                    } else if (
+                      parsedJoint &&
+                      (parsedJoint.type === 'revolute' || parsedJoint.type === 'prismatic')
+                    ) {
+                      joint.ignoreLimits = true;
+                    }
             });
           }
         }

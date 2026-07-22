@@ -54,9 +54,7 @@ interface UnifiedViewerSceneRootsProps {
     objectType: 'visual' | 'collision',
   ) => void;
   onUpdate?: (type: 'link' | 'joint', id: string, data: unknown) => void;
-  onJointMotionCommit?: (
-    context: import('@/features/editor').ViewerJointChangeContext,
-  ) => void;
+  onJointMotionCommit?: (context: import('@/features/editor').ViewerJointChangeContext) => void;
   robot: RobotData;
   focusTarget?: string | null;
   onCollisionTransformPreview?: (
@@ -94,6 +92,8 @@ interface UnifiedViewerSceneRootsProps {
     origin: UrdfOrigin,
     options?: import('@/types/viewer').UpdateCommitOptions,
   ) => void;
+  pendingAutoGroundComponentIds?: readonly string[];
+  onAssemblyComponentAutoGroundResolved?: import('@/features/editor').ViewerProps['onAssemblyComponentAutoGroundResolved'];
   t: typeof import('@/shared/i18n').translations.en;
   ikDragActive: boolean;
 }
@@ -134,6 +134,8 @@ export function UnifiedViewerSceneRoots({
   onAssemblyTransform,
   onComponentTransform,
   onBridgeTransform,
+  pendingAutoGroundComponentIds,
+  onAssemblyComponentAutoGroundResolved,
   t,
   ikDragActive,
 }: UnifiedViewerSceneRootsProps) {
@@ -175,6 +177,8 @@ export function UnifiedViewerSceneRoots({
           onAssemblyTransform={onAssemblyTransform}
           onComponentTransform={onComponentTransform}
           onBridgeTransform={onBridgeTransform}
+          pendingAutoGroundComponentIds={pendingAutoGroundComponentIds}
+          onAssemblyComponentAutoGroundResolved={onAssemblyComponentAutoGroundResolved}
           t={t}
         />
       </React.Suspense>

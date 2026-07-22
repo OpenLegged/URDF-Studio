@@ -1,4 +1,5 @@
 import type { InspectionReport, RobotState } from '@/types'
+import { hasFiniteJointLimitBounds } from '@/core/robot'
 import {
   createProfileScoreMetrics,
   type SelectedInspectionProfileMap,
@@ -184,7 +185,10 @@ export function buildInspectionEvidence(robot: RobotState): InspectionEvidence[]
   )
 
   const reversedLimitJoints = Object.values(joints)
-    .filter((joint) => joint.limit && joint.limit.lower >= joint.limit.upper)
+    .filter(
+      (joint) =>
+        hasFiniteJointLimitBounds(joint.limit) && joint.limit.lower >= joint.limit.upper,
+    )
     .map((joint) => joint.id)
 
   entries.push(

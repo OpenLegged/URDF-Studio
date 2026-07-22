@@ -615,16 +615,16 @@ function generateJointXml(
     if (LIMIT_EXPORT_TYPES.has(joint.type) && joint.limit) {
       const limitLines: string[] = [];
       if (Number.isFinite(joint.limit.lower)) {
-        limitLines.push(`          <lower>${formatScalar(joint.limit.lower)}</lower>`);
+        limitLines.push(`          <lower>${formatScalar(Number(joint.limit.lower))}</lower>`);
       }
       if (Number.isFinite(joint.limit.upper)) {
-        limitLines.push(`          <upper>${formatScalar(joint.limit.upper)}</upper>`);
+        limitLines.push(`          <upper>${formatScalar(Number(joint.limit.upper))}</upper>`);
       }
       if (Number.isFinite(joint.limit.effort)) {
-        limitLines.push(`          <effort>${formatScalar(joint.limit.effort)}</effort>`);
+        limitLines.push(`          <effort>${formatScalar(Number(joint.limit.effort))}</effort>`);
       }
       if (Number.isFinite(joint.limit.velocity)) {
-        limitLines.push(`          <velocity>${formatScalar(joint.limit.velocity)}</velocity>`);
+        limitLines.push(`          <velocity>${formatScalar(Number(joint.limit.velocity))}</velocity>`);
       }
       if (limitLines.length > 0) {
         lines.push('        <limit>');

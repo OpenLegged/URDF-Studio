@@ -65,7 +65,10 @@ export async function resolveUploadedRobotFileName(page, expectedName, timeoutMs
           const resolver = new Function(`return (${resolverSource})`)();
           return Boolean(resolver(fn).name);
         },
-        { timeout: Math.min(timeoutMs, 5_000) },
+        // Large fixture archives can take more than five seconds to register
+        // after upload. Preserve the caller's end-to-end timeout; navigation
+        // context resets still reject early and are retried by retryPageAction.
+        { timeout: timeoutMs },
         expectedName,
         resolveSelection.toString(),
       ),

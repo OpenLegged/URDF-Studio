@@ -24,6 +24,36 @@ const SITE = 'https://urdf.enkeebot.com';
 const LOGO = `${SITE}/logos/logo.png`;
 const GITHUB = 'https://github.com/enkeebot/URDF-Studio';
 
+export const ENKEEBOT_RELATED_PRODUCTS = [
+  {
+    name: 'BotWorld',
+    url: 'https://botworld.enkeebot.com/',
+    image: `${SITE}/logos/botworld-logo.webp`,
+    description: {
+      en: 'Discover and download robot models.',
+      zh: '发现并下载机器人模型。',
+    },
+  },
+  {
+    name: 'Motion Studio',
+    url: 'https://motion.enkeebot.com/',
+    image: `${SITE}/logos/motion-studio-logo.webp`,
+    description: {
+      en: 'Retarget and edit robot motion.',
+      zh: '重定向并编辑机器人动作。',
+    },
+  },
+  {
+    name: 'BotLab',
+    url: 'https://botlab.enkeebot.com/',
+    image: `${SITE}/logos/botlab-logo.webp`,
+    description: {
+      en: 'Simulate and validate robots in the browser.',
+      zh: '在浏览器中仿真并验证机器人。',
+    },
+  },
+];
+
 const seoContent = {
   en: {
     ogLocale: 'en_US',
@@ -47,6 +77,7 @@ const seoContent = {
         'Import, edit, visualize and convert URDF, MJCF, USD, SDF and Xacro robots — ' +
         'collision optimization, modular assembly and AI review, all in your browser.',
       formatsLabel: 'Supported formats',
+      relatedProductsLabel: 'Related EnkeeBot products',
       noscript: 'URDF Studio needs JavaScript enabled to run the interactive editor.',
     },
   },
@@ -72,6 +103,7 @@ const seoContent = {
         '在浏览器中导入、编辑、可视化与转换 URDF、MJCF、USD、SDF、Xacro 机器人模型，' +
         '支持碰撞优化、模块组装与 AI 审阅。',
       formatsLabel: '支持的格式',
+      relatedProductsLabel: 'EnkeeBot 相关产品',
       noscript: '运行 URDF Studio 交互式编辑器需要启用 JavaScript。',
     },
   },
@@ -85,7 +117,7 @@ function escAttr(value) {
   return escHtml(value).replace(/"/g, '&quot;');
 }
 
-function renderHead(lang) {
+export function renderHead(lang) {
   const c = seoContent[lang];
   const earlyTitleSync = [
     `    <script>`,
@@ -127,6 +159,13 @@ function renderHead(lang) {
     offers: { '@type': 'Offer', price: '0', priceCurrency: 'USD' },
     featureList: c.featureList,
     author: { '@type': 'Organization', name: 'enkeebot', url: GITHUB },
+    mentions: ENKEEBOT_RELATED_PRODUCTS.map((product) => ({
+      '@type': 'SoftwareApplication',
+      name: product.name,
+      url: product.url,
+      image: product.image,
+      description: product.description[lang],
+    })),
   };
 
   return [
@@ -146,8 +185,13 @@ function renderHead(lang) {
   ].join('\n');
 }
 
-function renderContent(lang) {
+export function renderContent(lang) {
   const c = seoContent[lang];
+  const relatedProductLinks = ENKEEBOT_RELATED_PRODUCTS.map(
+    (product) =>
+      `          <a href="${escAttr(product.url)}" rel="related" tabindex="-1">${escHtml(product.name)} — ${escHtml(product.description[lang])}</a>`,
+  );
+
   return [
     `      <div class="boot-seo" aria-hidden="true">`,
     `        <img class="boot-logo" src="/logos/logo.png" alt="URDF Studio logo" width="72" height="72">`,
@@ -161,6 +205,9 @@ function renderContent(lang) {
     `          <li>SDF</li>`,
     `          <li>Xacro</li>`,
     `        </ul>`,
+    `        <nav aria-label="${escAttr(c.hero.relatedProductsLabel)}">`,
+    ...relatedProductLinks,
+    `        </nav>`,
     `      </div>`,
     `      <noscript class="boot-noscript">`,
     `        ${escHtml(c.hero.noscript)}`,
@@ -169,9 +216,13 @@ function renderContent(lang) {
 }
 
 function replaceRegion(html, name, inner) {
-  const region = new RegExp(`(<!--\\s*${name}:START[\\s\\S]*?-->)[\\s\\S]*?(<!--\\s*${name}:END\\s*-->)`);
+  const region = new RegExp(
+    `(<!--\\s*${name}:START[\\s\\S]*?-->)[\\s\\S]*?(<!--\\s*${name}:END\\s*-->)`,
+  );
   if (!region.test(html)) {
-    throw new Error(`[seo_prerender] marker ${name} not found in built HTML — did the index.html layout change?`);
+    throw new Error(
+      `[seo_prerender] marker ${name} not found in built HTML — did the index.html layout change?`,
+    );
   }
   return html.replace(region, `$1\n${inner}\n    $2`);
 }
@@ -211,7 +262,10 @@ function renderSitemap(lastmod) {
 
 function resolveLastmod(repoRoot) {
   try {
-    const committed = execSync('git log -1 --format=%cs', { cwd: repoRoot, encoding: 'utf8' }).trim();
+    const committed = execSync('git log -1 --format=%cs', {
+      cwd: repoRoot,
+      encoding: 'utf8',
+    }).trim();
     if (/^\d{4}-\d{2}-\d{2}$/.test(committed)) {
       return committed;
     }
@@ -236,9 +290,14 @@ function main() {
   enHtml = replaceRegion(enHtml, 'SEO:CONTENT', renderContent('en'));
   writeFileSync(indexPath, enHtml);
 
-  let zhHtml = enHtml.replace('<html lang="en" translate="no">', '<html lang="zh-CN" translate="no">');
+  let zhHtml = enHtml.replace(
+    '<html lang="en" translate="no">',
+    '<html lang="zh-CN" translate="no">',
+  );
   if (!zhHtml.includes('lang="zh-CN"')) {
-    throw new Error('[seo_prerender] failed to set zh-CN lang attribute — did the <html> tag change?');
+    throw new Error(
+      '[seo_prerender] failed to set zh-CN lang attribute — did the <html> tag change?',
+    );
   }
   zhHtml = replaceRegion(zhHtml, 'SEO:HEAD', renderHead('zh'));
   zhHtml = replaceRegion(zhHtml, 'SEO:CONTENT', renderContent('zh'));
@@ -253,4 +312,7 @@ function main() {
   );
 }
 
-main();
+const entryPath = process.argv[1] ? path.resolve(process.argv[1]) : null;
+if (entryPath === fileURLToPath(import.meta.url)) {
+  main();
+}

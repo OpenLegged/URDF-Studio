@@ -1,7 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { existsSync } from 'node:fs';
+import { mkdtemp, rm } from 'node:fs/promises';
 import http from 'node:http';
 import net from 'node:net';
+import os from 'node:os';
 import path from 'node:path';
 
 import { createServer, loadConfigFromFile, type UserConfig } from 'vite';
@@ -9,6 +12,7 @@ import { createServer, loadConfigFromFile, type UserConfig } from 'vite';
 const CONFIG_ENV_KEYS = [
   'URDF_STUDIO_DEV_HOST',
   'URDF_STUDIO_DEV_ALLOWED_HOSTS',
+  'URDF_STUDIO_VITE_CACHE_DIR',
   'API_KEY',
   'OPENAI_API_KEY',
   'GEMINI_API_KEY',
@@ -134,9 +138,11 @@ test('dev server listens on IPv4 loopback by default and supports host overrides
   const defaultConfig = await loadViteConfigWithDevServerEnv({
     URDF_STUDIO_DEV_HOST: undefined,
     URDF_STUDIO_DEV_ALLOWED_HOSTS: undefined,
+    URDF_STUDIO_VITE_CACHE_DIR: undefined,
   });
 
   assert.equal(defaultConfig.server?.host, '127.0.0.1');
+  assert.equal(defaultConfig.cacheDir, path.resolve('node_modules/.vite/urdf-studio-app'));
 
   const overriddenConfig = await loadViteConfigWithDevServerEnv({
     URDF_STUDIO_DEV_HOST: '127.0.0.1',
@@ -151,6 +157,18 @@ test('dev server listens on IPv4 loopback by default and supports host overrides
   });
 
   assert.equal(remoteDevConfig.server?.host, '0.0.0.0');
+});
+
+test('vite config resolves Three from the active dependency graph', async () => {
+  const config = await loadViteConfigWithDevServerEnv({});
+  const aliases = config.resolve?.alias;
+
+  assert.ok(Array.isArray(aliases));
+  const threeAlias = aliases.find(
+    (alias) => typeof alias === 'object' && String(alias.find) === String(/^three$/),
+  );
+  assert.ok(threeAlias && typeof threeAlias === 'object');
+  assert.equal(existsSync(String(threeAlias.replacement)), true);
 });
 
 test('dev server accepts a comma-separated preview host allow-list', async () => {
@@ -178,7 +196,7 @@ test('vite config injects AI runtime env into browser process env defines', asyn
   assert.equal(readDefinedString(config, 'process.env.OPENAI_MODEL'), 'test-model');
 });
 
-test('dev server ignores root virtualenv files during watch', async () => {
+test('dev server ignores non-runtime and test-only files during watch', async () => {
   const config = await loadViteConfigWithDevServerEnv({
     URDF_STUDIO_DEV_HOST: undefined,
     URDF_STUDIO_DEV_ALLOWED_HOSTS: undefined,
@@ -190,7 +208,23 @@ test('dev server ignores root virtualenv files during watch', async () => {
     ignored(path.resolve('.venv/genesis-truth/lib/python3.11/site-packages/pkg/module.py')),
     true,
   );
+  assert.equal(
+    ignored(path.resolve('scripts/test/browser/test_urdf_source_editor.mjs')),
+    true,
+  );
+  assert.equal(ignored(path.resolve('src/app/App.test.tsx')), true);
+  assert.equal(ignored(path.resolve('vite.config.test.ts')), true);
   assert.equal(ignored(path.resolve('src/app/App.tsx')), false);
+});
+
+test('dev server revalidates optimized deps and accepts an isolated cache directory', async () => {
+  const configuredCacheDir = path.resolve('tmp/vite-cache/config-contract');
+  const config = await loadViteConfigWithDevServerEnv({
+    URDF_STUDIO_VITE_CACHE_DIR: configuredCacheDir,
+  });
+
+  assert.equal(config.cacheDir, configuredCacheDir);
+  assert.equal(config.server?.headers?.['Cache-Control'], 'no-cache');
 });
 
 test('dev server only sends isolation headers to trustworthy local origins', async () => {
@@ -204,12 +238,15 @@ test('dev server only sends isolation headers to trustworthy local origins', asy
     path.resolve('vite.config.ts'),
   );
   let viteServer: Awaited<ReturnType<typeof createServer>> | null = null;
+  let cacheDir: string | null = null;
 
   assert.ok(loaded?.config);
 
   try {
+    cacheDir = await mkdtemp(path.join(os.tmpdir(), 'urdf-studio-vite-config-'));
     viteServer = await createServer({
       ...(loaded.config as UserConfig),
+      cacheDir,
       clearScreen: false,
       configFile: false,
       logLevel: 'silent',
@@ -237,6 +274,9 @@ test('dev server only sends isolation headers to trustworthy local origins', asy
     if (viteServer) {
       await viteServer.close();
     }
+    if (cacheDir) {
+      await rm(cacheDir, { recursive: true, force: true });
+    }
   }
 });
 
@@ -244,10 +284,12 @@ test('dev server falls back to another port when the requested port is occupied'
   const occupiedPort = await reserveFreePort();
   const blocker = net.createServer();
   let viteServer: Awaited<ReturnType<typeof createServer>> | null = null;
+  let cacheDir: string | null = null;
 
   await listen(blocker, occupiedPort);
 
   try {
+    cacheDir = await mkdtemp(path.join(os.tmpdir(), 'urdf-studio-vite-config-'));
     const loaded = await loadConfigFromFile(
       {
         command: 'serve',
@@ -262,6 +304,7 @@ test('dev server falls back to another port when the requested port is occupied'
 
     viteServer = await createServer({
       ...(loaded.config as UserConfig),
+      cacheDir,
       clearScreen: false,
       configFile: false,
       logLevel: 'silent',
@@ -280,6 +323,9 @@ test('dev server falls back to another port when the requested port is occupied'
   } finally {
     if (viteServer) {
       await viteServer.close();
+    }
+    if (cacheDir) {
+      await rm(cacheDir, { recursive: true, force: true });
     }
 
     await close(blocker);

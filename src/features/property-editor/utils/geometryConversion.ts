@@ -53,6 +53,7 @@ export {
   type MeshClearanceObstacle,
   type MeshClearanceObstaclePoint,
 } from './geometry-conversion/meshAnalysis';
+export type { ApproximateCapsuleDecomposition } from './geometry-conversion/approximateCapsuleFit';
 
 // Reusable THREE objects - avoid allocation in render/compute paths
 const _tempVec3A = new THREE.Vector3();

@@ -1,4 +1,5 @@
 import type { UrdfVisual, UrdfVisualMaterial, UrdfVisualMeshMaterialGroup } from '@/types';
+import { normalizeAuthoredMaterialEntry } from './visualMaterials';
 
 function normalizeMaterialValue(value?: string | null): string | undefined {
   const trimmed = String(value || '').trim();
@@ -12,44 +13,6 @@ function normalizeMeshKey(candidate: unknown): string | null {
 
   const trimmed = candidate.trim();
   return trimmed.length > 0 ? trimmed : null;
-}
-
-function normalizeAuthoredMaterialEntry(
-  material: UrdfVisualMaterial | null | undefined,
-): UrdfVisualMaterial | null {
-  if (!material) {
-    return null;
-  }
-
-  const name = normalizeMaterialValue(material.name);
-  const color = normalizeMaterialValue(material.color);
-  const colorRgba =
-    Array.isArray(material.colorRgba) &&
-    material.colorRgba.length === 4 &&
-    material.colorRgba.every((value) => Number.isFinite(value))
-      ? ([
-          Number(material.colorRgba[0]),
-          Number(material.colorRgba[1]),
-          Number(material.colorRgba[2]),
-          Number(material.colorRgba[3]),
-        ] as [number, number, number, number])
-      : undefined;
-  const texture = normalizeMaterialValue(material.texture);
-  const opacity = Number.isFinite(material.opacity)
-    ? Math.min(1, Math.max(0, Number(material.opacity)))
-    : undefined;
-
-  if (!name && !color && !colorRgba && !texture && opacity === undefined) {
-    return null;
-  }
-
-  return {
-    ...(name ? { name } : {}),
-    ...(color ? { color } : {}),
-    ...(colorRgba ? { colorRgba } : {}),
-    ...(texture ? { texture } : {}),
-    ...(opacity !== undefined ? { opacity } : {}),
-  };
 }
 
 function normalizeMeshMaterialGroup(
@@ -297,6 +260,11 @@ export interface ApplyMeshMaterialPaintEditOptions {
   materialNamePrefix?: string;
 }
 
+export interface MeshMaterialPaintEditResult
+  extends Pick<UrdfVisual, 'authoredMaterials' | 'meshMaterialGroups'> {
+  changed: boolean;
+}
+
 export function applyMeshMaterialPaintEdit({
   geometry,
   meshKey,
@@ -306,23 +274,28 @@ export function applyMeshMaterialPaintEdit({
   erase = false,
   baseMaterial,
   materialNamePrefix = 'paint_slot',
-}: ApplyMeshMaterialPaintEditOptions): Pick<
-  UrdfVisual,
-  'authoredMaterials' | 'meshMaterialGroups'
-> {
+}: ApplyMeshMaterialPaintEditOptions): MeshMaterialPaintEditResult {
   const normalizedMeshKey = normalizeMeshKey(meshKey);
   if (!normalizedMeshKey || triangleCount <= 0) {
     return {
       authoredMaterials: normalizeGeometryAuthoredMaterials(geometry),
       meshMaterialGroups: getGeometryMeshMaterialGroups(geometry),
+      changed: false,
     };
   }
 
   const existingGroups = getGeometryMeshMaterialGroups(geometry);
   const authoredMaterials = normalizeGeometryAuthoredMaterials(geometry);
+  const normalizedBaseMaterial = normalizeAuthoredMaterialEntry(baseMaterial);
+  const authoredBaseMaterial = normalizeAuthoredMaterialEntry(authoredMaterials[0]);
+  const firstPaintBaseMaterial = normalizeAuthoredMaterialEntry({
+    ...(authoredBaseMaterial ?? {}),
+    ...(normalizedBaseMaterial ?? {}),
+  });
   const baseMaterialEntry =
-    normalizeAuthoredMaterialEntry(authoredMaterials[0]) ??
-    normalizeAuthoredMaterialEntry(baseMaterial) ??
+    (existingGroups.length > 0
+      ? authoredBaseMaterial ?? normalizedBaseMaterial
+      : firstPaintBaseMaterial ?? normalizedBaseMaterial ?? authoredBaseMaterial) ??
     normalizeAuthoredMaterialEntry({ color: geometry.color });
   const nextAuthoredMaterials = [
     baseMaterialEntry ?? {},
@@ -340,6 +313,7 @@ export function applyMeshMaterialPaintEdit({
     triangleCount,
     getGeometryMeshMaterialGroupsForMesh(geometry, normalizedMeshKey),
   );
+  const previousAssignments = currentAssignments.slice();
   let targetMaterialIndex = 0;
 
   if (!erase) {
@@ -388,5 +362,8 @@ export function applyMeshMaterialPaintEdit({
           ? [compactedMaterials[0]]
           : undefined,
     meshMaterialGroups: compactedGroups.length > 0 ? compactedGroups : undefined,
+    changed: currentAssignments.some(
+      (materialIndex, faceIndex) => materialIndex !== previousAssignments[faceIndex],
+    ),
   };
 }

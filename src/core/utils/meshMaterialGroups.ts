@@ -2,7 +2,10 @@ import * as THREE from 'three';
 
 import type { UrdfVisual, UrdfVisualMaterial, UrdfVisualMeshMaterialGroup } from '@/types';
 import { getGeometryMeshMaterialGroupsForMesh } from '@/core/robot/visualMeshMaterialGroups';
-import { getGeometryAuthoredMaterials } from '@/core/robot/visualMaterials';
+import {
+  getGeometryAuthoredMaterials,
+  normalizeAuthoredMaterialEntry,
+} from '@/core/robot/visualMaterials';
 import { createMatteMaterial } from './materialFactory';
 import { isProtectedMaterial } from './three/materialProtection';
 import { colorRgbaTupleToOpacity, parseThreeColorWithOpacity } from './color.ts';
@@ -39,6 +42,236 @@ function normalizeNonNegativeValue(value: number | undefined): number | undefine
   }
 
   return Math.max(0, Number(value));
+}
+
+function getMaterialColorHex(material: THREE.Material | null | undefined): string | undefined {
+  if (!material) {
+    return undefined;
+  }
+
+  const runtimeMaterial = material as THREE.Material & {
+    color?: THREE.Color;
+    userData: THREE.Material['userData'] & { originalColor?: THREE.Color };
+  };
+  const color = runtimeMaterial.userData?.originalColor?.isColor
+    ? runtimeMaterial.userData.originalColor
+    : runtimeMaterial.color;
+  return color?.isColor ? `#${color.getHexString()}` : undefined;
+}
+
+function getMaterialColorValue(
+  material: THREE.Material | null | undefined,
+  key: 'emissive',
+): string | undefined {
+  if (!material) {
+    return undefined;
+  }
+
+  const runtimeMaterial = material as THREE.Material & {
+    emissive?: THREE.Color;
+    userData: THREE.Material['userData'] & { originalEmissive?: THREE.Color };
+  };
+  const color = runtimeMaterial.userData?.originalEmissive?.isColor
+    ? runtimeMaterial.userData.originalEmissive
+    : runtimeMaterial[key];
+  return color?.isColor ? `#${color.getHexString()}` : undefined;
+}
+
+function resolveRuntimeMaterialScalar(
+  material: THREE.Material | null | undefined,
+  property: 'roughness' | 'metalness' | 'emissiveIntensity',
+  originalProperty: 'originalRoughness' | 'originalMetalness' | 'originalEmissiveIntensity',
+  normalizer: (value: number | undefined) => number | undefined,
+): number | undefined {
+  if (!material) {
+    return undefined;
+  }
+
+  const originalValue = normalizer(material.userData?.[originalProperty]);
+  if (originalValue !== undefined) {
+    return originalValue;
+  }
+
+  return normalizer((material as THREE.Material & Record<typeof property, number>)[property]);
+}
+
+export function resolveRuntimePaintBaseMaterial(mesh: THREE.Mesh): THREE.Material | null {
+  const highlightSnapshot = mesh.userData?.__urdfHighlightSnapshot as
+    | { material?: THREE.Material | THREE.Material[] }
+    | undefined;
+  const sourceMaterial = highlightSnapshot?.material ?? mesh.material;
+  return (Array.isArray(sourceMaterial) ? sourceMaterial[0] : sourceMaterial) ?? null;
+}
+
+function cloneVisualMaterialDescriptor(
+  material: UrdfVisualMaterial | null | undefined,
+): UrdfVisualMaterial {
+  if (!material) {
+    return {};
+  }
+
+  return {
+    ...material,
+    ...(material.passes
+      ? { passes: material.passes.map((pass) => ({ ...pass })) }
+      : {}),
+  };
+}
+
+function resolveDescriptorOpacity(
+  authoredMaterial: UrdfVisualMaterial | null | undefined,
+  fallbackMaterial: UrdfVisualMaterial | null | undefined,
+  runtimeMaterial: THREE.Material | null,
+): number | undefined {
+  return (
+    normalizeUnitIntervalValue(authoredMaterial?.opacity) ??
+    colorRgbaTupleToOpacity(authoredMaterial?.colorRgba) ??
+    normalizeUnitIntervalValue(fallbackMaterial?.opacity) ??
+    colorRgbaTupleToOpacity(fallbackMaterial?.colorRgba) ??
+    normalizeUnitIntervalValue(runtimeMaterial?.opacity)
+  );
+}
+
+function resolveRuntimeMaterialName(
+  runtimeMaterial: THREE.Material | null,
+  authoredMaterial: UrdfVisualMaterial | null | undefined,
+): string | undefined {
+  if (authoredMaterial?.name) {
+    return undefined;
+  }
+
+  return normalizeMaterialValue(runtimeMaterial?.name);
+}
+
+function resolveRuntimeTexturePath(
+  runtimeMaterial: THREE.Material | null,
+  authoredMaterial: UrdfVisualMaterial | null | undefined,
+  fallbackMaterial: UrdfVisualMaterial | null | undefined,
+): string | undefined {
+  if (authoredMaterial?.texture || fallbackMaterial?.texture) {
+    return undefined;
+  }
+
+  return normalizeMaterialValue(runtimeMaterial?.userData?.urdfTexturePath);
+}
+
+function resolveRuntimeTextureRotation(
+  runtimeMaterial: THREE.Material | null,
+): number | undefined {
+  const materialWithMap = runtimeMaterial as
+    | (THREE.Material & { map?: THREE.Texture | null })
+    | null;
+  const rotation = materialWithMap?.map?.rotation;
+  return Number.isFinite(rotation) ? Number(rotation) : undefined;
+}
+
+export function captureRuntimeVisualMaterialDescriptor(
+  mesh: THREE.Mesh,
+  authoredMaterial?: UrdfVisualMaterial | null,
+  fallbackMaterial?: UrdfVisualMaterial | null,
+): UrdfVisualMaterial {
+  const runtimeMaterial = resolveRuntimePaintBaseMaterial(mesh);
+  // The visualization opacity slider mutates runtime material.opacity. Prefer
+  // an authored/base descriptor when available, and only fall back to the
+  // runtime value for loader-owned materials that have no canonical opacity.
+  const runtimeDescriptor = normalizeAuthoredMaterialEntry({
+    name: resolveRuntimeMaterialName(runtimeMaterial, authoredMaterial),
+    color: getMaterialColorHex(runtimeMaterial),
+    texture: resolveRuntimeTexturePath(runtimeMaterial, authoredMaterial, fallbackMaterial),
+    opacity: resolveDescriptorOpacity(authoredMaterial, fallbackMaterial, runtimeMaterial),
+    roughness: resolveRuntimeMaterialScalar(
+      runtimeMaterial,
+      'roughness',
+      'originalRoughness',
+      normalizeUnitIntervalValue,
+    ),
+    metalness: resolveRuntimeMaterialScalar(
+      runtimeMaterial,
+      'metalness',
+      'originalMetalness',
+      normalizeUnitIntervalValue,
+    ),
+    emissive: getMaterialColorValue(runtimeMaterial, 'emissive'),
+    emissiveIntensity: resolveRuntimeMaterialScalar(
+      runtimeMaterial,
+      'emissiveIntensity',
+      'originalEmissiveIntensity',
+      normalizeNonNegativeValue,
+    ),
+    alphaTest: normalizeUnitIntervalValue(runtimeMaterial?.alphaTest),
+    textureRotation: resolveRuntimeTextureRotation(runtimeMaterial),
+  });
+
+  return {
+    ...cloneVisualMaterialDescriptor(fallbackMaterial),
+    ...cloneVisualMaterialDescriptor(authoredMaterial),
+    ...(runtimeDescriptor ?? {}),
+  };
+}
+
+export function hasDistinctRuntimeBaseMaterialsWithinVisual(mesh: THREE.Mesh): boolean {
+  let visualRoot: THREE.Object3D = mesh;
+  while (visualRoot.parent && !(visualRoot as RuntimeVisualObject).isURDFVisual) {
+    visualRoot = visualRoot.parent;
+  }
+
+  if (!(visualRoot as RuntimeVisualObject).isURDFVisual) {
+    return false;
+  }
+
+  const signatures = new Set<string>();
+  visualRoot.traverse((child) => {
+    const childMesh = child as THREE.Mesh;
+    if (!childMesh.isMesh || !childMesh.material) {
+      return;
+    }
+
+    const material = resolveRuntimePaintBaseMaterial(childMesh);
+    if (!material) {
+      return;
+    }
+
+    const map = (material as THREE.Material & { map?: THREE.Texture | null }).map;
+    const mapSource = map?.source?.data as
+      | { currentSrc?: string; src?: string }
+      | string
+      | undefined;
+    const mapKey =
+      typeof mapSource === 'string'
+        ? mapSource
+        : (mapSource?.currentSrc ?? mapSource?.src ?? map?.name ?? (map ? map.uuid : ''));
+    signatures.add(
+      JSON.stringify({
+        name: material.name || '',
+        color: getMaterialColorHex(material) ?? '',
+        opacity: normalizeUnitIntervalValue(material.opacity) ?? null,
+        roughness: resolveRuntimeMaterialScalar(
+          material,
+          'roughness',
+          'originalRoughness',
+          normalizeUnitIntervalValue,
+        ),
+        metalness: resolveRuntimeMaterialScalar(
+          material,
+          'metalness',
+          'originalMetalness',
+          normalizeUnitIntervalValue,
+        ),
+        emissive: getMaterialColorValue(material, 'emissive') ?? '',
+        emissiveIntensity: resolveRuntimeMaterialScalar(
+          material,
+          'emissiveIntensity',
+          'originalEmissiveIntensity',
+          normalizeNonNegativeValue,
+        ),
+        alphaTest: normalizeUnitIntervalValue(material.alphaTest) ?? null,
+        map: mapKey,
+        textureRotation: map && Number.isFinite(map.rotation) ? Number(map.rotation) : null,
+      }),
+    );
+  });
+
+  return signatures.size > 1;
 }
 
 function getGeometryTriangleCount(geometry: THREE.BufferGeometry): number {
@@ -221,6 +454,10 @@ function createPaletteMaterial({
   const roughnessOverride = normalizeUnitIntervalValue(descriptor?.roughness);
   const metalnessOverride = normalizeUnitIntervalValue(descriptor?.metalness);
   const emissiveIntensityOverride = normalizeNonNegativeValue(descriptor?.emissiveIntensity);
+  const alphaTestOverride = normalizeUnitIntervalValue(descriptor?.alphaTest);
+  const textureRotation = Number.isFinite(descriptor?.textureRotation)
+    ? Number(descriptor?.textureRotation)
+    : 0;
   const effectiveOpacity = opacityOverride ?? parsedColor?.opacity;
 
   if (descriptor?.name?.trim()) {
@@ -230,9 +467,12 @@ function createPaletteMaterial({
   }
 
   if (parsedColor && (nextMaterial as THREE.MeshStandardMaterial).color?.isColor) {
-    (nextMaterial as THREE.MeshStandardMaterial).color.copy(parsedColor.color);
+    const colorMaterial = nextMaterial as THREE.MeshStandardMaterial;
+    colorMaterial.color.copy(parsedColor.color);
+    colorMaterial.toneMapped = false;
+    colorMaterial.userData.originalColor = parsedColor.color.clone();
     if (slotIndex > 0) {
-      (nextMaterial as THREE.MeshStandardMaterial).map = null;
+      colorMaterial.map = null;
     }
   }
 
@@ -257,24 +497,51 @@ function createPaletteMaterial({
     (nextMaterial as THREE.MeshStandardMaterial).emissiveIntensity = emissiveIntensityOverride;
   }
 
+  if (alphaTestOverride !== undefined) {
+    nextMaterial.alphaTest = alphaTestOverride;
+  }
+
   if (texturePath && 'map' in nextMaterial && textureLoader) {
-    const cachedTexture = textureCache.get(texturePath);
+    const textureCacheKey = `${texturePath}|rotation=${textureRotation}`;
+    const cachedTexture = textureCache.get(textureCacheKey);
     if (cachedTexture) {
       (nextMaterial as THREE.MeshStandardMaterial).map = cachedTexture;
+      if (!parsedColor && (nextMaterial as THREE.MeshStandardMaterial).color?.isColor) {
+        (nextMaterial as THREE.MeshStandardMaterial).color.set('#ffffff');
+      }
     } else {
+      const assignmentToken = {};
+      nextMaterial.userData.__meshMaterialPaletteTextureAssignment = assignmentToken;
+      nextMaterial.addEventListener('dispose', () => {
+        if (nextMaterial.userData.__meshMaterialPaletteTextureAssignment === assignmentToken) {
+          delete nextMaterial.userData.__meshMaterialPaletteTextureAssignment;
+        }
+      });
       textureLoader.load(
         texturePath,
         (texture) => {
+          if (nextMaterial.userData.__meshMaterialPaletteTextureAssignment !== assignmentToken) {
+            texture.dispose();
+            return;
+          }
           texture.colorSpace = THREE.SRGBColorSpace;
-          textureCache.set(texturePath, texture);
+          if (textureRotation !== 0) {
+            texture.rotation = textureRotation;
+            texture.center.set(0.5, 0.5);
+          }
+          textureCache.set(textureCacheKey, texture);
           (nextMaterial as THREE.MeshStandardMaterial).map = texture;
           if (!parsedColor && (nextMaterial as THREE.MeshStandardMaterial).color?.isColor) {
             (nextMaterial as THREE.MeshStandardMaterial).color.set('#ffffff');
           }
+          delete nextMaterial.userData.__meshMaterialPaletteTextureAssignment;
           nextMaterial.needsUpdate = true;
         },
         undefined,
         (error) => {
+          if (nextMaterial.userData.__meshMaterialPaletteTextureAssignment === assignmentToken) {
+            delete nextMaterial.userData.__meshMaterialPaletteTextureAssignment;
+          }
           console.error('[MeshMaterialGroups] Failed to load palette texture.', {
             texturePath,
             error,

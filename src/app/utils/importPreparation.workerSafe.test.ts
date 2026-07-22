@@ -4,13 +4,22 @@ import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 
 test('import preparation stays on worker-safe file-io utility imports', async () => {
-  const sourcePath = path.resolve('src/app/utils/importPreparation.ts');
-  const source = await readFile(sourcePath, 'utf8');
+  const sourcePaths = [
+    'src/app/utils/importPreparation.ts',
+    'src/app/utils/import-preparation/archiveCollector.ts',
+    'src/app/utils/import-preparation/looseFileCollector.ts',
+    'src/app/utils/import-preparation/sidecarReferences.ts',
+  ];
 
-  assert.doesNotMatch(
-    source,
-    /from ['"]@\/features\/file-io['"]/,
-    'worker-facing import preparation must not depend on the feature barrel',
+  await Promise.all(
+    sourcePaths.map(async (sourcePath) => {
+      const source = await readFile(path.resolve(sourcePath), 'utf8');
+      assert.doesNotMatch(
+        source,
+        /from ['"]@\/features\/file-io['"]/,
+        `${sourcePath} must not depend on the worker-unsafe feature barrel`,
+      );
+    }),
   );
 });
 

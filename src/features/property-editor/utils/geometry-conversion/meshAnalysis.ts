@@ -4,6 +4,10 @@ import { createLoadingManager, createMeshLoader } from '@/core/loaders/meshLoade
 import { getSourceFileDirectory } from '@/core/parsers/meshPathUtils';
 import { disposeObject3D } from '@/shared/utils/three/dispose';
 
+import {
+  computeApproximateCapsuleDecomposition,
+  type ApproximateCapsuleDecomposition,
+} from './approximateCapsuleFit';
 import { computeBestPrimitiveFits, type Point3, type PrimitiveFitSet } from './primitiveFit';
 
 const MAX_MESH_ANALYSIS_POINTS = 4096;
@@ -37,6 +41,7 @@ export interface MeshClearanceObstacle {
 
 export interface MeshAnalysis {
   bounds: MeshBounds;
+  approximateCapsules?: ApproximateCapsuleDecomposition;
   representativeColor?: string;
   surfacePoints?: MeshClearanceObstaclePoint[];
   primitiveFits?: PrimitiveFitSet;
@@ -311,6 +316,9 @@ export async function computeMeshAnalysisFromAssets(
         ? sampleMeshPoints(points, surfacePointLimit)
         : undefined;
       const primitiveFits = includePrimitiveFits ? computeBestPrimitiveFits(points) : undefined;
+      const approximateCapsules = includePrimitiveFits
+        ? computeApproximateCapsuleDecomposition(points)
+        : undefined;
       disposeObject3D(obj, true);
       resolve({
         bounds: {
@@ -321,6 +329,7 @@ export async function computeMeshAnalysisFromAssets(
           cy: center.y,
           cz: center.z,
         },
+        approximateCapsules,
         representativeColor,
         surfacePoints,
         primitiveFits,

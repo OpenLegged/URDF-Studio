@@ -26,7 +26,9 @@ function getCollisionOriginSource(parentLink: UrdfLink): UrdfLink['collision'] {
 
 function getCollisionBodyCount(link: UrdfLink): number {
   const primary = link.collision.type !== GeometryType.NONE ? 1 : 0;
-  const extras = (link.collisionBodies || []).filter((body) => body.type !== GeometryType.NONE).length;
+  const extras = (link.collisionBodies || []).filter(
+    (body) => body.type !== GeometryType.NONE,
+  ).length;
   return primary + extras;
 }
 
@@ -65,7 +67,7 @@ export function getCollisionGeometryByObjectIndex(
 ): CollisionGeometryEntry | null {
   const entries = getCollisionGeometryEntries(link);
   if (entries.length === 0) return null;
-  return entries.find((entry) => entry.objectIndex === objectIndex) || entries[0];
+  return entries.find((entry) => entry.objectIndex === objectIndex) ?? null;
 }
 
 export function updateCollisionGeometryByObjectIndex(
@@ -75,7 +77,11 @@ export function updateCollisionGeometryByObjectIndex(
 ): UrdfLink {
   const target = getCollisionGeometryByObjectIndex(link, objectIndex);
 
-  if (!target || target.bodyIndex === null) {
+  if (!target) {
+    return link;
+  }
+
+  if (target.bodyIndex === null) {
     return {
       ...link,
       collision: {
@@ -94,6 +100,39 @@ export function updateCollisionGeometryByObjectIndex(
   return {
     ...link,
     collisionBodies: nextCollisionBodies,
+  };
+}
+
+export function replaceCollisionGeometriesByObjectIndex(
+  link: UrdfLink,
+  objectIndex: number,
+  geometries: UrdfLink['collision'][],
+): { link: UrdfLink; replaced: boolean } {
+  const target = getCollisionGeometryByObjectIndex(link, objectIndex);
+  if (!target || geometries.length === 0) {
+    return { link, replaced: false };
+  }
+
+  if (target.bodyIndex === null) {
+    const [primaryGeometry, ...additionalGeometries] = geometries;
+    return {
+      link: {
+        ...link,
+        collision: primaryGeometry!,
+        collisionBodies:
+          additionalGeometries.length > 0
+            ? [...additionalGeometries, ...(link.collisionBodies || [])]
+            : link.collisionBodies,
+      },
+      replaced: true,
+    };
+  }
+
+  const collisionBodies = [...(link.collisionBodies || [])];
+  collisionBodies.splice(target.bodyIndex, 1, ...geometries);
+  return {
+    link: { ...link, collisionBodies },
+    replaced: true,
   };
 }
 
@@ -190,7 +229,10 @@ export function appendCollisionBody(link: UrdfLink): UrdfLink {
   };
 }
 
-export function optimizeCylinderCollisionsToCapsules(link: UrdfLink): { link: UrdfLink; optimizedCount: number } {
+export function optimizeCylinderCollisionsToCapsules(link: UrdfLink): {
+  link: UrdfLink;
+  optimizedCount: number;
+} {
   let optimizedCount = 0;
   let nextCollision = link.collision;
   let nextCollisionBodies = link.collisionBodies;

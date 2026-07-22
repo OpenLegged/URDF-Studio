@@ -3,6 +3,9 @@ import {
   applyDeletionPlan,
   buildDeletionPlan,
   createAttachedChildLink,
+  hasComponentEditorLocks,
+  isEntityEditorLocked,
+  resolveRobotLinkEditorLock,
   resolveDefaultChildJointOrigin,
 } from '@/core/robot';
 import { syncRobotMaterialsForLinkUpdate } from '@/core/robot/materials';
@@ -25,6 +28,7 @@ type TopologyActions = Pick<
   | 'updateLink'
   | 'deleteLink'
   | 'setLinkVisibility'
+  | 'setLinkEditorLocked'
   | 'setAllLinksVisibility'
   | 'setAllWorkspaceLinksVisibility'
   | 'addJoint'
@@ -85,8 +89,9 @@ export function createTopologyActions(
   runtime: WorkspaceRuntime,
 ): TopologyActions {
   return {
-    addLink: (componentId, link, options) =>
-      runtime.applyMutation(
+    addLink: (componentId, link, options) => {
+      if (get().workspace.components[componentId]?.editorLocked === true) return false;
+      return runtime.applyMutation(
         'Add link',
         (draft) => {
           const robot = draft.components[componentId]?.robot;
@@ -99,10 +104,17 @@ export function createTopologyActions(
           robot.links[link.id] = structuredClone(link);
         },
         options,
-      ),
+      );
+    },
 
     updateLink: (ref, patch, options) => {
       requireStableEntityId(patch.id, ref.entityId, 'link');
+      if (
+        patch.editorLocked !== undefined
+        || isEntityEditorLocked(get().workspace, ref)
+      ) {
+        return false;
+      }
       return runtime.applyMutation(
         'Update link',
         (draft) => {
@@ -123,8 +135,23 @@ export function createTopologyActions(
       );
     },
 
-    deleteLink: (ref, options) =>
-      runtime.applyMutation(
+    deleteLink: (ref, options) => {
+      const component = get().workspace.components[ref.componentId];
+      const connectedLinkIds = new Set([ref.entityId]);
+      Object.values(component?.robot.joints ?? {}).forEach((joint) => {
+        if (joint.parentLinkId === ref.entityId) connectedLinkIds.add(joint.childLinkId);
+        if (joint.childLinkId === ref.entityId) connectedLinkIds.add(joint.parentLinkId);
+      });
+      if (
+        !component
+        || [...connectedLinkIds].some((entityId) => isEntityEditorLocked(
+          get().workspace,
+          { type: 'link', componentId: ref.componentId, entityId },
+        ))
+      ) {
+        return false;
+      }
+      return runtime.applyMutation(
         'Delete link',
         (draft) => {
           const robot = draft.components[ref.componentId]?.robot;
@@ -157,7 +184,8 @@ export function createTopologyActions(
           removeInvalidBridges(draft);
         },
         options,
-      ),
+      );
+    },
 
     setLinkVisibility: (ref, visible, options) =>
       runtime.applyMutation(
@@ -170,6 +198,30 @@ export function createTopologyActions(
         },
         options,
       ),
+
+    setLinkEditorLocked: (ref, locked, options) => {
+      const component = get().workspace.components[ref.componentId];
+      const lockState = component
+        ? resolveRobotLinkEditorLock(component.robot, ref.entityId)
+        : null;
+      if (
+        !component
+        || component.editorLocked === true
+        || lockState?.source === 'ancestor'
+      ) {
+        return false;
+      }
+      return runtime.applyMutation(
+        locked ? 'Lock link editing' : 'Unlock link editing',
+        (draft) => {
+          const link = draft.components[ref.componentId]?.robot.links[ref.entityId];
+          if (!link) return;
+          if (locked) link.editorLocked = true;
+          else delete link.editorLocked;
+        },
+        options,
+      );
+    },
 
     setAllLinksVisibility: (componentId, visible, options) =>
       runtime.applyMutation(
@@ -199,8 +251,20 @@ export function createTopologyActions(
         options,
       ),
 
-    addJoint: (componentId, joint, options) =>
-      runtime.applyMutation(
+    addJoint: (componentId, joint, options) => {
+      const workspace = get().workspace;
+      if (
+        workspace.components[componentId]?.editorLocked === true
+        || isEntityEditorLocked(workspace, {
+          type: 'link', componentId, entityId: joint.parentLinkId,
+        })
+        || isEntityEditorLocked(workspace, {
+          type: 'link', componentId, entityId: joint.childLinkId,
+        })
+      ) {
+        return false;
+      }
+      return runtime.applyMutation(
         'Add joint',
         (draft) => {
           const robot = draft.components[componentId]?.robot;
@@ -213,10 +277,12 @@ export function createTopologyActions(
           robot.joints[joint.id] = structuredClone(joint);
         },
         options,
-      ),
+      );
+    },
 
     updateJoint: (ref, patch, options) => {
       requireStableEntityId(patch.id, ref.entityId, 'joint');
+      if (isEntityEditorLocked(get().workspace, ref)) return false;
       return runtime.applyMutation(
         'Update joint',
         (draft) => {
@@ -230,8 +296,9 @@ export function createTopologyActions(
       );
     },
 
-    deleteJoint: (ref, options) =>
-      runtime.applyMutation(
+    deleteJoint: (ref, options) => {
+      if (isEntityEditorLocked(get().workspace, ref)) return false;
+      return runtime.applyMutation(
         'Delete joint',
         (draft) => {
           const joints = draft.components[ref.componentId]?.robot.joints;
@@ -249,10 +316,13 @@ export function createTopologyActions(
           }
         },
         options,
-      ),
+      );
+    },
 
-    updateTendon: (ref, patch, options) =>
-      runtime.applyMutation(
+    updateTendon: (ref, patch, options) => {
+      const component = get().workspace.components[ref.componentId];
+      if (!component || hasComponentEditorLocks(component)) return false;
+      return runtime.applyMutation(
         'Update tendon',
         (draft) => {
           const tendon = draft.components[
@@ -271,12 +341,21 @@ export function createTopologyActions(
           }
         },
         options,
-      ),
+      );
+    },
 
     addChild: (target, options) => {
       const robot = get().workspace.components[target.componentId]?.robot;
       const parentLink = robot?.links[target.parentLinkId];
-      if (!robot || !parentLink) {
+      if (
+        !robot
+        || !parentLink
+        || isEntityEditorLocked(get().workspace, {
+          type: 'link',
+          componentId: target.componentId,
+          entityId: target.parentLinkId,
+        })
+      ) {
         return null;
       }
 
@@ -326,6 +405,12 @@ export function createTopologyActions(
         robot.rootLinkId,
       );
       if (!plan || !robot.links[ref.entityId]) {
+        return false;
+      }
+      if ([...plan.toDeleteLinks].some((entityId) => isEntityEditorLocked(
+        get().workspace,
+        { type: 'link', componentId: ref.componentId, entityId },
+      ))) {
         return false;
       }
 

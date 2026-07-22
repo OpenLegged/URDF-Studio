@@ -268,6 +268,22 @@ test('usd package layers serialize articulation, joint paths, and mesh collision
   assert.match(physicsLayer, /uniform token physics:approximation = "convexHull"/);
 });
 
+test('usd package layers omit incomplete optional position bounds', () => {
+  const robot = createLayeredRobot();
+  robot.joints.child_joint.limit = { effort: 10, velocity: 3 };
+  const pathMaps = buildUsdLinkPathMaps(robot, 'demo_robot_description');
+  const physicsLayer = buildUsdPhysicsLayerContent(
+    robot,
+    pathMaps,
+    'demo_robot_description',
+    'demo_robot_description',
+  );
+
+  assert.doesNotMatch(physicsLayer, /physics:(?:lower|upper)Limit/);
+  assert.doesNotMatch(physicsLayer, /(?:undefined|NaN|Infinity)/);
+  assert.match(physicsLayer, /float drive:angular:physics:maxForce = 10/);
+});
+
 test('usd package layers preserve authored generic UsdPhysics D6 joints without fixed-joint fallback', () => {
   const robot = createLayeredRobot();
   robot.joints.child_joint = {

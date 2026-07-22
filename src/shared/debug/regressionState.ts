@@ -115,6 +115,31 @@ export interface RegressionTransformGizmoSummary {
   worldRadius: number;
 }
 
+export interface RegressionJointPickOverlaySummary {
+  connectorVisible: boolean | null;
+  liveLinkPosition: [number, number, number] | null;
+  position: [number, number, number];
+  quaternion: [number, number, number, number];
+  side: 'parent' | 'child';
+  tracksLiveLink: boolean;
+}
+
+export interface RegressionJointPickHoverSummary {
+  boundaryLoopCount: number;
+  candidateCount: number;
+  candidateKinds: string[];
+  chosenKind: string;
+  componentId: string;
+  confidence: number;
+  featureKind: 'surface' | 'planar' | 'cylindrical';
+  linkId: string;
+  recommendedKind: string;
+  side: 'parent' | 'child' | null;
+  triangleCount: number;
+  truncated: boolean;
+  valid: boolean;
+}
+
 export interface RegressionEditableSourceApplyResult {
   mode: 'incremental-patch' | 'full-parse';
   dirtyRangeCount: number;
@@ -134,6 +159,8 @@ export const regressionDebugState: {
   primaryRuntimeRobot: RuntimeRobotObject | null;
   primaryRuntimeRevision: number;
   projectedInteractionTargetsProvider: (() => RegressionProjectedInteractionTarget[]) | null;
+  jointPickOverlaySummaryProviders: Set<() => RegressionJointPickOverlaySummary[]>;
+  jointPickHoverSummaryProviders: Set<() => RegressionJointPickHoverSummary[]>;
   transformGizmoSummaryProviders: Set<() => RegressionTransformGizmoSummary[]>;
 } = {
   appHandlers: null,
@@ -145,6 +172,8 @@ export const regressionDebugState: {
   primaryRuntimeRobot: null,
   primaryRuntimeRevision: 0,
   projectedInteractionTargetsProvider: null,
+  jointPickOverlaySummaryProviders: new Set(),
+  jointPickHoverSummaryProviders: new Set(),
   transformGizmoSummaryProviders: new Set(),
 };
 
@@ -190,6 +219,36 @@ export function setRegressionProjectedInteractionTargetsProvider(
   provider: (() => RegressionProjectedInteractionTarget[]) | null,
 ): void {
   regressionDebugState.projectedInteractionTargetsProvider = provider;
+}
+
+export function registerRegressionJointPickOverlaySummaryProvider(
+  provider: () => RegressionJointPickOverlaySummary[],
+): () => void {
+  regressionDebugState.jointPickOverlaySummaryProviders.add(provider);
+  return () => {
+    regressionDebugState.jointPickOverlaySummaryProviders.delete(provider);
+  };
+}
+
+export function getRegressionJointPickOverlaySummaries(): RegressionJointPickOverlaySummary[] {
+  return Array.from(regressionDebugState.jointPickOverlaySummaryProviders).flatMap((provider) =>
+    provider(),
+  );
+}
+
+export function registerRegressionJointPickHoverSummaryProvider(
+  provider: () => RegressionJointPickHoverSummary[],
+): () => void {
+  regressionDebugState.jointPickHoverSummaryProviders.add(provider);
+  return () => {
+    regressionDebugState.jointPickHoverSummaryProviders.delete(provider);
+  };
+}
+
+export function getRegressionJointPickHoverSummaries(): RegressionJointPickHoverSummary[] {
+  return Array.from(regressionDebugState.jointPickHoverSummaryProviders).flatMap((provider) =>
+    provider(),
+  );
 }
 
 export function registerRegressionTransformGizmoSummaryProvider(

@@ -1,8 +1,8 @@
 import { normalizeMergedAppMode } from '@/shared/utils/appMode';
-import type { AppMode } from '@/types';
 import { resolveUnifiedViewerSceneMode } from './unifiedViewerSceneMode';
+import type { UnifiedViewerMode } from './unifiedViewerContract';
 
-export type UnifiedViewerMode = AppMode;
+export type { UnifiedViewerMode } from './unifiedViewerContract';
 
 export interface UnifiedViewerMountState {
   viewerMounted: boolean;

@@ -53,6 +53,7 @@ export {
   getCollisionGeometryEntries,
   optimizeCylinderCollisionsToCapsules,
   removeCollisionGeometryByObjectIndex,
+  replaceCollisionGeometriesByObjectIndex,
   updateCollisionGeometryByObjectIndex,
 } from './collisionBodies';
 
@@ -103,6 +104,7 @@ export {
 
 export {
   getOrderedJointLimitBounds,
+  hasFiniteJointLimitBounds,
   normalizeJointLimitOrder,
 } from './jointLimits';
 
@@ -263,3 +265,9 @@ export {
   stripTransientJointMotionFromJoints,
   stripTransientJointMotionFromRobotData,
 } from './semanticSnapshot';
+export {
+  hasComponentEditorLocks,
+  isEntityEditorLocked,
+  isWorkspaceSelectionEditorLocked,
+  resolveRobotLinkEditorLock,
+} from './editorLock';

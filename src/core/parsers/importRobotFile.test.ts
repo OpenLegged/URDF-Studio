@@ -1026,7 +1026,7 @@ test('resolveRobotFileData validates MJCF scene wrapper assets through included 
   }
 });
 
-test('resolveRobotFileData still flags missing MJCF assets in auto mode once related assets are present', () => {
+test('resolveRobotFileData keeps MJCF ready with placeholders for missing render assets', () => {
   const file: RobotFile = {
     name: 'robots/demo/paddle.xml',
     content: `<mujoco model="paddle">
@@ -1051,12 +1051,15 @@ test('resolveRobotFileData still flags missing MJCF assets in auto mode once rel
     },
   });
 
-  assert.equal(result.status, 'error');
-  if (result.status !== 'error') {
-    assert.fail('Expected auto MJCF validation to catch the remaining missing texture');
+  assert.equal(result.status, 'ready');
+  if (result.status !== 'ready') {
+    assert.fail('Expected missing MJCF texture to use a placeholder in auto mode');
   }
-  assert.equal(result.reason, 'parse_failed');
-  assert.match(result.message ?? '', /robots\/demo\/textures\/paddle\.png/);
+  assert.equal(result.robotData.inspectionContext?.recovery?.recoveredItemCount, 1);
+  assert.match(
+    result.robotData.inspectionContext?.recovery?.diagnostics[0]?.message ?? '',
+    /robots\/demo\/textures\/paddle\.png/,
+  );
 });
 
 test('resolveRobotFileData can enforce MJCF external asset validation before parse-ready import', () => {

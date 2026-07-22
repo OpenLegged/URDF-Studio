@@ -1,10 +1,7 @@
 import type { Object3D as ThreeObject3D } from 'three';
 import type { ViewerDocumentLoadEvent, ViewerProps } from '@/features/editor';
 import type { ViewerController } from '@/features/editor';
-import {
-  buildViewerSceneProps,
-  type ViewerSceneBaseProps,
-} from '@/features/editor';
+import { buildViewerSceneProps, type ViewerSceneBaseProps } from '@/features/editor';
 import type { ViewerResourceScope } from '@/features/editor';
 import type { AssemblyState, RobotData, RobotFile, WorkspaceSelection } from '@/types';
 import type { AssemblyScenePlacement, AssemblySceneProjection } from '@/core/robot';
@@ -56,6 +53,8 @@ export interface UnifiedViewerSceneWorkspaceInput {
   onAssemblyTransform?: ViewerProps['onAssemblyTransform'];
   onComponentTransform?: ViewerProps['onComponentTransform'];
   onBridgeTransform?: ViewerProps['onBridgeTransform'];
+  pendingAutoGroundComponentIds?: ViewerProps['pendingAutoGroundComponentIds'];
+  onAssemblyComponentAutoGroundResolved?: ViewerProps['onAssemblyComponentAutoGroundResolved'];
 }
 
 interface BuildUnifiedViewerScenePropsArgs {
@@ -111,6 +110,8 @@ export function buildUnifiedViewerSceneProps({
     onAssemblyTransform,
     onComponentTransform,
     onBridgeTransform,
+    pendingAutoGroundComponentIds,
+    onAssemblyComponentAutoGroundResolved,
   } = workspaceInput;
   const blocksReadOnlyModelInteraction = hasActivePreview || !modelInteractionEnabled;
   const previewBlocksInteraction = blocksReadOnlyModelInteraction || !active;
@@ -159,5 +160,11 @@ export function buildUnifiedViewerSceneProps({
     onAssemblyTransform: blocksReadOnlyModelInteraction ? undefined : onAssemblyTransform,
     onComponentTransform: blocksReadOnlyModelInteraction ? undefined : onComponentTransform,
     onBridgeTransform: blocksReadOnlyModelInteraction ? undefined : onBridgeTransform,
+    pendingAutoGroundComponentIds: blocksReadOnlyModelInteraction
+      ? []
+      : pendingAutoGroundComponentIds,
+    onAssemblyComponentAutoGroundResolved: blocksReadOnlyModelInteraction
+      ? undefined
+      : onAssemblyComponentAutoGroundResolved,
   });
 }

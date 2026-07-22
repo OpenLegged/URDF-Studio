@@ -148,6 +148,42 @@ test('patchUrdfJointLimitInSource preserves URDF 1.2 extended joint limit attrib
   );
 });
 
+test('patchUrdfJointLimitInSource writes only finite optional limit fields', () => {
+  const source = `<robot name="continuous_limits">
+  <joint name="wheel_joint" type="continuous">
+    <limit lower="-3.14" upper="3.14" effort="10" velocity="2" />
+  </joint>
+</robot>
+`;
+
+  const patched = patchUrdfJointLimitInSource({
+    sourceContent: source,
+    jointName: 'wheel_joint',
+    jointType: JointType.CONTINUOUS,
+    limit: { effort: 12 },
+  });
+
+  assert.match(patched, /<limit effort="12" \/>/);
+  assert.doesNotMatch(patched, /\b(?:lower|upper|velocity)=/);
+  assert.doesNotMatch(patched, /(?:undefined|NaN|Infinity)/);
+});
+
+test('patchUrdfJointLimitInSource does not add an empty limit element', () => {
+  const source = `<robot name="continuous_limits">
+  <joint name="wheel_joint" type="continuous" />
+</robot>
+`;
+
+  const patched = patchUrdfJointLimitInSource({
+    sourceContent: source,
+    jointName: 'wheel_joint',
+    jointType: JointType.CONTINUOUS,
+    limit: {},
+  });
+
+  assert.equal(patched, source);
+});
+
 test('patchUrdfJointLimitInSource ignores commented limit elements', () => {
   const source = `<robot name="commented_limits">
   <joint name="arm_joint" type="revolute">
@@ -361,6 +397,35 @@ test('patchSdfJointLimitInSource removes continuous position limits while preser
   assert.match(patched, /<velocity>12<\/velocity>/);
   assert.match(patched, /<stiffness>999<\/stiffness>/);
   assert.match(patched, /<dissipation>8<\/dissipation>/);
+});
+
+test('patchSdfJointLimitInSource removes non-finite optional fields from an existing block', () => {
+  const source = `<sdf version="1.7">
+  <model name="demo">
+    <joint name="yaw_joint" type="continuous">
+      <axis>
+        <limit>
+          <lower>-3.14</lower>
+          <upper>3.14</upper>
+          <effort>10</effort>
+          <velocity>1</velocity>
+        </limit>
+      </axis>
+    </joint>
+  </model>
+</sdf>
+`;
+
+  const patched = patchSdfJointLimitInSource({
+    sourceContent: source,
+    jointName: 'yaw_joint',
+    jointType: JointType.CONTINUOUS,
+    limit: { effort: 20 },
+  });
+
+  assert.match(patched, /<effort>20<\/effort>/);
+  assert.doesNotMatch(patched, /<(?:lower|upper|velocity)>/);
+  assert.doesNotMatch(patched, /(?:undefined|NaN|Infinity)/);
 });
 
 test('patchSdfJointLimitInSource inserts a missing axis limit block', () => {

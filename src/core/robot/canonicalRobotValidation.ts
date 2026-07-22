@@ -30,7 +30,7 @@ const SDF_TEXTURE_KEYS = new Set(['diffuse', 'normal', 'size']);
 const SDF_BLEND_KEYS = new Set(['minHeight', 'fadeDist']);
 const ROBOT_MATERIAL_KEYS = new Set(['color', 'colorRgba', 'texture', 'usdMaterial']);
 const USD_STRING_KEYS = [
-  'materialId', 'name', 'shaderPath', 'shaderName', 'shaderInfoId', 'colorSpace',
+  'materialId', 'stageSourcePath', 'name', 'shaderPath', 'shaderName', 'shaderInfoId', 'colorSpace',
   'colorSource', 'authoredColorSpace', 'emissiveColorSpace', 'specularColorSpace',
   'attenuationColorSpace', 'sheenColorSpace', 'mapPath', 'emissiveMapPath',
   'roughnessMapPath', 'metalnessMapPath', 'normalMapPath', 'aoMapPath', 'alphaMapPath',

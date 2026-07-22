@@ -145,7 +145,9 @@ export function buildResolveRobotImportWorkerDispatch(
       const sourceContextSnapshot = buildMissingUrdfSourceContextSnapshot(file, options);
       const contextSnapshot: RobotImportWorkerContextSnapshot = {
         ...(sourceContextSnapshot ?? {}),
-        ...(options.assets && Object.keys(options.assets).length > 0 ? { assets: options.assets } : {}),
+        ...(options.assets && Object.keys(options.assets).length > 0
+          ? { assets: options.assets }
+          : {}),
         ...(options.allFileContents && Object.keys(options.allFileContents).length > 0
           ? { allFileContents: options.allFileContents }
           : {}),
@@ -197,13 +199,24 @@ export function buildResolveRobotImportWorkerDispatch(
       };
     }
     case 'sdf': {
+      // Composite Gazebo SDF models pull in sibling packages via
+      // `<include><uri>model://child</uri></include>`. Those nested `.sdf`
+      // files are robot files in `availableFiles` (not text files in
+      // `allFileContents`), so the worker must receive them for the SDF
+      // include resolver to find them. See sdfIncludeResolution.ts.
       const contextSnapshot = {
+        availableFiles: filterAvailableFiles(
+          options.availableFiles,
+          new Set<RobotFile['format']>(['sdf']),
+          file,
+        ),
         allFileContents: options.allFileContents ?? {},
       };
       return {
         options: {},
         contextCacheKey: hasContextSnapshotContent(contextSnapshot)
           ? buildContextCacheKey('resolve', file, {
+              availableFiles: options.availableFiles,
               allFileContents: options.allFileContents,
             })
           : null,

@@ -52,6 +52,7 @@ import {
   SUPPORTED_MESH_EXTENSIONS,
   type AssetIndex,
 } from './assetPathIndex';
+import { markSharedThreeResource } from '@/core/utils/threeResourceOwnership';
 
 // Re-exported so existing deep imports from './meshLoader' keep resolving after
 // the asset path-index engine moved to ./assetPathIndex.
@@ -67,11 +68,13 @@ const DEFAULT_MESH_MATERIAL = new THREE.MeshStandardMaterial({
   metalness: MATERIAL_CONFIG.metalness,
   envMapIntensity: MATERIAL_CONFIG.envMapIntensity,
 });
-const PLACEHOLDER_MATERIAL = new THREE.MeshPhongMaterial({
-  color: 0xff6b6b,
-  transparent: true,
-  opacity: 0.7,
-});
+const PLACEHOLDER_MATERIAL = markSharedThreeResource(
+  new THREE.MeshPhongMaterial({
+    color: 0xff6b6b,
+    transparent: true,
+    opacity: 0.7,
+  }),
+);
 
 // Reusable Vector3 for size calculations (object pooling)
 const _tempSize = new THREE.Vector3();
@@ -228,7 +231,9 @@ export const createLoadingManager = (assets: Record<string, string>, urdfDir: st
 };
 
 // Shared placeholder geometry (created once)
-const PLACEHOLDER_GEOMETRY = new THREE.BoxGeometry(0.05, 0.05, 0.05);
+const PLACEHOLDER_GEOMETRY = markSharedThreeResource(
+  new THREE.BoxGeometry(0.05, 0.05, 0.05),
+);
 
 interface MeshLoadIssue {
   message: string;

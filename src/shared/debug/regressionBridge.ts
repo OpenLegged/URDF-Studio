@@ -1,4 +1,5 @@
 import {
+  Box3,
   Color,
   Matrix4,
   Quaternion,
@@ -29,8 +30,12 @@ import { DEFAULT_ORIGIN_AXES_SIZE } from '@/shared/components/3d/helpers/coordin
 import type { SnapshotCaptureOptions } from '@/shared/components/3d/scene/snapshotConfig';
 import { getLatestUsdStageLoadDebugEntry } from './usdStageLoadDebug';
 import {
+  getRegressionJointPickHoverSummaries,
+  getRegressionJointPickOverlaySummaries,
   getRegressionTransformGizmoSummaries,
   regressionDebugState,
+  type RegressionJointPickOverlaySummary,
+  type RegressionJointPickHoverSummary,
   type RegressionTransformGizmoSummary,
 } from './regressionState';
 import { setRegressionBeforeUnloadPromptSuppressed } from './regressionPromptSuppression';
@@ -428,6 +433,8 @@ export interface RegressionDebugApi {
   getRegressionSnapshot: () => RegressionSnapshot;
   getDocumentLoadState: () => RegressionDocumentLoadState | null;
   getProjectedInteractionTargets: () => RegressionProjectedInteractionTarget[];
+  getJointPickOverlaySummary: () => RegressionJointPickOverlaySummary[];
+  getJointPickHoverSummary: () => RegressionJointPickHoverSummary[];
   getTransformGizmoSummary: () => RegressionTransformGizmoSummary[];
   getAssetDebugState: () => RegressionAssetDebugState;
   getSelectedUsdSceneSummary: () => RegressionSelectedUsdSceneSummary | null;
@@ -2165,13 +2172,14 @@ function summarizeRuntimeSceneTransforms(robot: RegressionRuntimeRobot | null) {
     mjcfHardPassiveSpringJoint?: boolean;
   }> = [];
   const visualMeshes: Array<{
+    boundsMax: [number, number, number] | null;
+    boundsMin: [number, number, number] | null;
     link: string;
     name: string;
     position: [number, number, number] | null;
     quaternion: [number, number, number, number] | null;
     scale: [number, number, number] | null;
   }> = [];
-
   if (hasRuntimeTraverse(robot)) {
     robot.updateMatrixWorld?.(true);
 
@@ -2242,7 +2250,19 @@ function summarizeRuntimeSceneTransforms(robot: RegressionRuntimeRobot | null) {
           return;
         }
 
+        const bounds = new Box3().setFromObject(runtimeChild);
+        const hasFiniteBounds =
+          !bounds.isEmpty()
+          && Number.isFinite(bounds.min.x)
+          && Number.isFinite(bounds.min.y)
+          && Number.isFinite(bounds.min.z)
+          && Number.isFinite(bounds.max.x)
+          && Number.isFinite(bounds.max.y)
+          && Number.isFinite(bounds.max.z);
+
         visualMeshes.push({
+          boundsMax: hasFiniteBounds ? toFixedArray(bounds.max) : null,
+          boundsMin: hasFiniteBounds ? toFixedArray(bounds.min) : null,
           link: linkName,
           name: typeof runtimeChild.name === 'string' ? runtimeChild.name : '',
           position: toFixedArray(runtimeChild.getWorldPosition?.(new Vector3())),
@@ -2457,6 +2477,8 @@ export function installRegressionDebugApi(targetWindow: Window): void {
     },
     getProjectedInteractionTargets: () =>
       regressionDebugState.projectedInteractionTargetsProvider?.() ?? [],
+    getJointPickOverlaySummary: () => getRegressionJointPickOverlaySummaries(),
+    getJointPickHoverSummary: () => getRegressionJointPickHoverSummaries(),
     getTransformGizmoSummary: () => getRegressionTransformGizmoSummaries(),
     getAssetDebugState: () => {
       const appAssetDebugState = regressionDebugState.appHandlers?.getAssetDebugState?.() ?? {

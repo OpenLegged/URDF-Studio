@@ -8,7 +8,7 @@ import type {
   CollisionOptimizationCandidate,
   CollisionOptimizationManualMergeStrategy,
   CollisionOptimizationSettings,
-} from '../collisionOptimization';
+} from './contracts';
 import type { MeshAnalysis } from '../geometryConversion';
 import {
   normalizeCollisionGeometry,
