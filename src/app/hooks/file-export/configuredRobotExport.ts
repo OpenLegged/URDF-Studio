@@ -257,6 +257,7 @@ export async function executeConfiguredRobotExport({
       assets,
       extraMeshFiles,
       preferSharedMeshReuse,
+      meshFormat: config.mjcf.meshFormat,
     });
 
     reportProgress(3, t.exportProgressGeneratingFiles, t.exportProgressGeneratingMjcfDetail, {

@@ -1,6 +1,13 @@
-import type { ExportDialogConfig, MeshExportFormat } from './types';
+import type { ExportDialogConfig, ExportMeshFormat, MeshExportFormat } from './types';
 
 export const EXPORT_FORMATS: MeshExportFormat[] = ['mjcf', 'urdf', 'xacro', 'sdf', 'usd'];
+
+export const MESH_FORMAT_OPTIONS: { value: ExportMeshFormat; labelKey: string }[] = [
+  { value: 'auto', labelKey: 'exportMeshFormatAuto' },
+  { value: 'obj', labelKey: 'exportMeshFormatObj' },
+  { value: 'stl', labelKey: 'exportMeshFormatStl' },
+  { value: 'ply', labelKey: 'exportMeshFormatPly' },
+];
 
 export const MJCF_SUPPORTS = ['MuJoCo', 'Motphys', 'Genesis'];
 export const URDF_SUPPORTS = ['Isaac Sim', 'Isaac Gym', 'Genesis', 'PyBullet', 'ManiSkill', 'Motphys'];
@@ -18,6 +25,7 @@ export const DEFAULT_CONFIG: ExportDialogConfig = {
     includeActuators: true,
     actuatorType: 'position',
     includeMeshes: true,
+    meshFormat: 'auto',
     compressSTL: false,
     stlQuality: 50,
   },
@@ -27,6 +35,7 @@ export const DEFAULT_CONFIG: ExportDialogConfig = {
     useRelativePaths: true,
     preferSourceVisualMeshes: true,
     includeMeshes: true,
+    meshFormat: 'auto',
     compressSTL: false,
     stlQuality: 50,
   },
@@ -37,11 +46,13 @@ export const DEFAULT_CONFIG: ExportDialogConfig = {
     rosHardwareInterface: 'effort',
     useRelativePaths: true,
     includeMeshes: true,
+    meshFormat: 'auto',
     compressSTL: false,
     stlQuality: 50,
   },
   sdf: {
     includeMeshes: true,
+    meshFormat: 'auto',
     compressSTL: false,
     stlQuality: 50,
   },

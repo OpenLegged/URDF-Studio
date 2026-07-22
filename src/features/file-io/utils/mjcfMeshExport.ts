@@ -1,5 +1,7 @@
 import * as THREE from 'three';
 import { OBJExporter } from 'three/addons/exporters/OBJExporter.js';
+import { STLExporter } from 'three/addons/exporters/STLExporter.js';
+import { PLYExporter } from 'three/addons/exporters/PLYExporter.js';
 
 import {
   createLoadingManager,
@@ -25,6 +27,7 @@ export interface PrepareMjcfMeshExportAssetsOptions {
   assets: Record<string, string>;
   extraMeshFiles?: Map<string, Blob>;
   preferSharedMeshReuse?: boolean;
+  meshFormat?: 'auto' | 'obj' | 'stl' | 'ply';
 }
 
 export interface PreparedMjcfMeshExportAssets {
@@ -55,17 +58,21 @@ function buildConvertedMeshBasePath(normalizedPath: string): string {
   return `${directory}${withoutExtension.replace(/\./g, '_')}`;
 }
 
-function buildConvertedMeshExportPath(meshPath: string, usedPaths: Set<string>): string {
+function buildConvertedMeshExportPath(
+  meshPath: string,
+  usedPaths: Set<string>,
+  extension: '.obj' | '.stl' | '.ply',
+): string {
   const normalizedPath = normalizeMeshPathForExport(meshPath);
   if (!normalizedPath) {
     return '';
   }
 
   const basePath = buildConvertedMeshBasePath(normalizedPath);
-  let candidate = `${basePath}.obj`;
+  let candidate = `${basePath}${extension}`;
   let counter = 2;
   while (usedPaths.has(candidate)) {
-    candidate = `${basePath}_${counter}.obj`;
+    candidate = `${basePath}_${counter}${extension}`;
     counter += 1;
   }
 
@@ -105,6 +112,7 @@ function buildConvertedVisualVariantPath(
   materialName: string | undefined,
   variantIndex: number,
   usedPaths: Set<string>,
+  extension: '.obj' | '.stl' | '.ply',
 ): string {
   const normalizedPath = normalizeMeshPathForExport(meshPath);
   if (!normalizedPath) {
@@ -114,10 +122,10 @@ function buildConvertedVisualVariantPath(
   const basePath = buildConvertedMeshBasePath(normalizedPath);
   const materialSuffix = sanitizeVariantSegment(materialName) || `part_${variantIndex + 1}`;
 
-  let candidate = `${basePath}_${materialSuffix}.obj`;
+  let candidate = `${basePath}_${materialSuffix}${extension}`;
   let counter = 2;
   while (usedPaths.has(candidate)) {
-    candidate = `${basePath}_${materialSuffix}_${counter}.obj`;
+    candidate = `${basePath}_${materialSuffix}_${counter}${extension}`;
     counter += 1;
   }
 
@@ -146,6 +154,65 @@ function exportObjBlob(objExporter: OBJExporter, object: THREE.Object3D): Blob |
   }
 
   return new Blob([exportedObj], { type: 'text/plain' });
+}
+
+type MeshFormatKind = 'auto' | 'obj' | 'stl' | 'ply';
+type MeshExtension = '.obj' | '.stl' | '.ply';
+
+interface MeshExporters {
+  obj: OBJExporter;
+  stl: STLExporter;
+  ply: PLYExporter;
+}
+
+function exportStlBlob(stlExporter: STLExporter, object: THREE.Object3D): Blob | null {
+  const result = stlExporter.parse(object, { binary: true });
+  if (!result || (result.byteLength ?? 0) === 0) {
+    return null;
+  }
+  return new Blob([result as unknown as ArrayBuffer], { type: 'model/stl' });
+}
+
+function exportPlyBlob(plyExporter: PLYExporter, object: THREE.Object3D): Blob | null {
+  const result = plyExporter.parse(object, () => {}, { binary: true });
+  if (!result || (result.byteLength ?? 0) === 0) {
+    return null;
+  }
+  return new Blob([result as unknown as ArrayBuffer], { type: 'model/ply' });
+}
+
+// Resolve effective mesh format: 'auto' picks STL (binary, smallest) for
+// meshes without UVs, and OBJ (preserves UVs) for textured meshes.
+function resolveMeshFormat(
+  requested: MeshFormatKind,
+  object: THREE.Object3D,
+): MeshExtension {
+  if (requested === 'stl') return '.stl';
+  if (requested === 'ply') return '.ply';
+  if (requested === 'obj') return '.obj';
+  let hasUv = false;
+  object.traverse((child) => {
+    const mesh = child as THREE.Mesh;
+    if (mesh.isMesh && mesh.geometry?.getAttribute('uv')) {
+      hasUv = true;
+    }
+  });
+  return hasUv ? '.obj' : '.stl';
+}
+
+function exportMeshBlob(
+  exporters: MeshExporters,
+  extension: MeshExtension,
+  object: THREE.Object3D,
+): Blob | null {
+  switch (extension) {
+    case '.stl':
+      return exportStlBlob(exporters.stl, object);
+    case '.ply':
+      return exportPlyBlob(exporters.ply, object);
+    default:
+      return exportObjBlob(exporters.obj, object);
+  }
 }
 
 function isColorLike(color: unknown): color is THREE.Color {
@@ -791,6 +858,8 @@ function extractVisualMeshVariants(
   sourceMeshPath: string,
   usedArchivePaths: Set<string>,
   objExporter: OBJExporter,
+  exporters: MeshExporters,
+  meshFormat: MeshFormatKind,
 ): ExtractedVisualMeshVariant[] {
   const variantFiles: ExtractedVisualMeshVariant[] = [];
   const pendingVariants: PendingVisualMeshVariant[] = [];
@@ -845,20 +914,23 @@ function extractVisualMeshVariants(
         return;
       }
 
+      const exportMesh = new THREE.Mesh(filteredGeometry, variant.material);
+      exportMesh.name = variant.meshName;
+      exportMesh.updateMatrixWorld(true);
+      const extension = resolveMeshFormat(meshFormat, exportMesh);
       const exportPath = buildConvertedVisualVariantPath(
         sourceMeshPath,
         variant.material.name,
         variantIndex,
         usedArchivePaths,
+        extension,
       );
       if (!exportPath) {
+        disposeObject3D(exportMesh, true);
         return;
       }
 
-      const exportMesh = new THREE.Mesh(filteredGeometry, variant.material);
-      exportMesh.name = variant.meshName;
-      exportMesh.updateMatrixWorld(true);
-      const blob = exportObjBlob(objExporter, exportMesh);
+      const blob = exportMeshBlob(exporters, extension, exportMesh);
       disposeObject3D(exportMesh, true);
       if (!blob) {
         return;
@@ -1231,6 +1303,12 @@ export async function prepareMjcfMeshExportAssets(
     explicitScaleMeshPaths,
   });
   const objExporter = new OBJExporter();
+  const exporters: MeshExporters = {
+    obj: objExporter,
+    stl: new STLExporter(),
+    ply: new PLYExporter(),
+  };
+  const meshFormat: MeshFormatKind = options.meshFormat ?? 'auto';
 
   try {
     if (preferSharedMeshReuse) {
@@ -1293,6 +1371,8 @@ export async function prepareMjcfMeshExportAssets(
           meshPath,
           usedArchivePaths,
           objExporter,
+          exporters,
+          meshFormat,
         );
         const hasSplitVisualVariants = extractedVariantFiles.length > 1;
         const shouldPreferVisualVariants =
@@ -1302,18 +1382,19 @@ export async function prepareMjcfMeshExportAssets(
         const needsFullMeshExport = !shouldPreferVisualVariants;
 
         if (needsFullMeshExport) {
-          const exportPath = buildConvertedMeshExportPath(meshPath, usedArchivePaths);
+          const fullExtension = resolveMeshFormat(meshFormat, meshObject);
+          const exportPath = buildConvertedMeshExportPath(meshPath, usedArchivePaths, fullExtension);
           if (!exportPath) {
             disposeObject3D(meshObject, true);
-            throw new Error(`[MJCF export] Could not derive an OBJ export path for "${meshPath}".`);
+            throw new Error(`[MJCF export] Could not derive a mesh export path for "${meshPath}".`);
           }
 
-          const objBlob = exportObjBlob(objExporter, meshObject);
-          if (!objBlob) {
+          const meshBlob = exportMeshBlob(exporters, fullExtension, meshObject);
+          if (!meshBlob) {
             disposeObject3D(meshObject, true);
-            throw new Error(`[MJCF export] OBJ export for "${meshPath}" produced no mesh data.`);
+            throw new Error(`[MJCF export] Mesh export for "${meshPath}" produced no mesh data.`);
           }
-          archiveFiles.set(exportPath, objBlob);
+          archiveFiles.set(exportPath, meshBlob);
           meshPathOverrides.set(meshPath, exportPath);
           convertedSourceMeshPaths.add(meshPath);
 

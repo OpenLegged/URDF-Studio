@@ -16,6 +16,7 @@ import { ExportProgressView } from '../ExportProgressView';
 import {
   DEFAULT_CONFIG,
   EXPORT_FORMATS,
+  MESH_FORMAT_OPTIONS,
   getExportFormatSupports,
 } from './config';
 import {
@@ -31,6 +32,7 @@ import type {
   ExportDialogConfig,
   ExportDialogProps,
   ExportFormat,
+  ExportMeshFormat,
   GazeboBackend,
   MeshExportFormat,
   RosHwInterface,
@@ -46,6 +48,7 @@ export type {
   ExportDialogConfig,
   ExportDialogProps,
   ExportFormat,
+  ExportMeshFormat,
   GazeboBackend,
   MeshExportFormat,
   MjcfExportConfig,
@@ -431,26 +434,39 @@ export const ExportDialog: React.FC<ExportDialogProps> = ({
                   >
                     <Toggle value={config.includeSkeleton} onChange={updateIncludeSkeleton} />
                   </Row>
-                  <Row label={t.exportIncludeMeshes} stacked={isStackedLayout}>
-                    <Toggle
-                      value={config.mjcf.includeMeshes}
-                      onChange={(v) => updateMjcf('includeMeshes', v)}
-                    />
-                  </Row>
+                 <Row label={t.exportIncludeMeshes} stacked={isStackedLayout}>
+                   <Toggle
+                     value={config.mjcf.includeMeshes}
+                     onChange={(v) => updateMjcf('includeMeshes', v)}
+                   />
+                 </Row>
                   {config.mjcf.includeMeshes && (
-                    <STLQualitySelector
-                      compressSTL={config.mjcf.compressSTL}
-                      stlQuality={config.mjcf.stlQuality}
-                      mode={qualityModes.mjcf}
-                      t={t}
-                      onCompressChange={(v) => updateMjcf('compressSTL', v)}
-                      onQualityChange={(v) => updateMjcf('stlQuality', v)}
-                      onModeChange={(mode) => updateQualityMode('mjcf', mode)}
-                    />
+                    <Row label={t.exportMeshFormat} hint={t.exportMeshFormatDesc} stacked={isStackedLayout}>
+                      <SelectField
+                        value={config.mjcf.meshFormat}
+                        options={MESH_FORMAT_OPTIONS.map((opt) => ({
+                          value: opt.value,
+                          label: t[opt.labelKey as keyof typeof t] as string,
+                        }))}
+                        onChange={(v) => updateMjcf('meshFormat', v as ExportMeshFormat)}
+                        fullWidth={isStackedLayout}
+                      />
+                    </Row>
                   )}
-                </div>
-              </>
-            )}
+                 {config.mjcf.includeMeshes && (
+                   <STLQualitySelector
+                     compressSTL={config.mjcf.compressSTL}
+                     stlQuality={config.mjcf.stlQuality}
+                     mode={qualityModes.mjcf}
+                     t={t}
+                     onCompressChange={(v) => updateMjcf('compressSTL', v)}
+                     onQualityChange={(v) => updateMjcf('stlQuality', v)}
+                     onModeChange={(mode) => updateQualityMode('mjcf', mode)}
+                   />
+                 )}
+               </div>
+             </>
+           )}
 
             {/* URDF Options */}
             {config.format === 'urdf' && (

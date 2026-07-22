@@ -18,6 +18,12 @@ export interface TranslationExportDialogKeys {
   simulatorPreset: string;
   presetCustom: string;
   exportMeshdir: string;
+  exportMeshFormat: string;
+  exportMeshFormatAuto: string;
+  exportMeshFormatObj: string;
+  exportMeshFormatStl: string;
+  exportMeshFormatPly: string;
+  exportMeshFormatDesc: string;
   exportFloatBase: string;
   exportFloatBaseDesc: string;
   exportIncludeActuators: string;

@@ -4,6 +4,10 @@ import type { MjcfActuatorType } from '@/core/parsers/mjcf/mjcfGenerator';
 export type ExportFormat = 'project' | 'mjcf' | 'urdf' | 'xacro' | 'sdf' | 'usd';
 export type MeshExportFormat = Exclude<ExportFormat, 'project'>;
 
+// Mesh format for converted meshes in MJCF/USD export.
+// 'auto' picks the smallest suitable format (STL for untextured, OBJ for textured).
+export type ExportMeshFormat = 'auto' | 'obj' | 'stl' | 'ply';
+
 export interface MjcfExportConfig {
   meshdir: string;
   addFloatBase: boolean;
@@ -11,6 +15,7 @@ export interface MjcfExportConfig {
   includeActuators: boolean;
   actuatorType: MjcfActuatorType;
   includeMeshes: boolean;
+  meshFormat: ExportMeshFormat;
   compressSTL: boolean;
   stlQuality: number;
 }
@@ -21,6 +26,7 @@ export interface UrdfExportConfig {
   useRelativePaths: boolean;
   preferSourceVisualMeshes: boolean;
   includeMeshes: boolean;
+  meshFormat: ExportMeshFormat;
   compressSTL: boolean;
   stlQuality: number;
 }
@@ -36,12 +42,14 @@ export interface XacroExportConfig {
   rosHardwareInterface: RosHwInterface;
   useRelativePaths: boolean;
   includeMeshes: boolean;
+  meshFormat: ExportMeshFormat;
   compressSTL: boolean;
   stlQuality: number;
 }
 
 export interface SdfExportConfig {
   includeMeshes: boolean;
+  meshFormat: ExportMeshFormat;
   compressSTL: boolean;
   stlQuality: number;
 }
