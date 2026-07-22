@@ -22,6 +22,14 @@ export { Providers } from './Providers';
 
 // Sub-components
 export { Header } from './components/Header';
+export type { HeaderProps, HeaderSurfaceModeSelectorConfig } from './components/Header';
+export { SurfaceModeSelector } from './components/header/SurfaceModeSelector';
+export type { SurfaceModeSelectorProps } from './components/header/SurfaceModeSelector';
+export type {
+  HeaderSurfaceMode,
+  HeaderSurfaceModeOptionCopy,
+  HeaderSurfaceModeSelectorCopy,
+} from './components/header/types';
 export { SettingsModal } from './components/SettingsModal';
 
 // Hooks

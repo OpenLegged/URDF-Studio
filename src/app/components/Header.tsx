@@ -10,16 +10,20 @@ import { attachContextMenuBlocker } from '@/shared/utils';
 import { useActiveHistory } from '../hooks/useActiveHistory';
 import { HeaderActions } from './header/HeaderActions';
 import { HeaderMenus } from './header/HeaderMenus';
+import { SurfaceModeSelector } from './header/SurfaceModeSelector';
 import { useHeaderResponsiveLayout } from './header/useHeaderResponsiveLayout';
 import type {
   HeaderAction,
   HeaderMenuKey,
+  HeaderSurfaceModeSelectorConfig,
   HeaderViewAvailability,
   HeaderViewConfig,
   ToolboxItem,
 } from './header/types';
 
-interface HeaderProps {
+export type { HeaderSurfaceModeSelectorConfig } from './header/types';
+
+export interface HeaderProps {
   // Import actions
   onImportFile: () => void;
   onImportFolder: () => void;
@@ -34,6 +38,7 @@ interface HeaderProps {
   onOpenSettings: () => void;
   quickAction?: HeaderAction;
   secondaryAction?: HeaderAction;
+  surfaceModeSelector?: HeaderSurfaceModeSelectorConfig;
   // Snapshot
   onSnapshot: () => void;
   // View config
@@ -58,6 +63,7 @@ export function Header({
   onOpenSettings,
   quickAction,
   secondaryAction,
+  surfaceModeSelector,
   onSnapshot,
   viewConfig,
   viewAvailability = { jointPanel: true },
@@ -87,6 +93,24 @@ export function Header({
     [quickAction, secondaryAction],
   );
   const responsive = useHeaderResponsiveLayout(headerRef, responsiveOptions);
+  const isSceneSurface = surfaceModeSelector?.current === 'scene';
+  const actionResponsive = React.useMemo(
+    () => isSceneSurface
+      ? {
+          ...responsive,
+          showQuickActionInline: false,
+          showQuickActionLabel: false,
+          showSnapshotInline: false,
+          showDesktopOverflow: false,
+          showLanguageInline: true,
+          showThemeInline: true,
+          showSettingsInline: true,
+          showSecondaryActionInline: true,
+          showSecondaryActionLabel: false,
+        }
+      : responsive,
+    [isSceneSurface, responsive],
+  );
   const t = translations[lang];
   React.useEffect(() => {
     if (activeMenu === null) {
@@ -121,7 +145,17 @@ export function Header({
           />
         </div>
 
-        <HeaderMenus
+        {surfaceModeSelector ? (
+          <SurfaceModeSelector
+            config={surfaceModeSelector}
+            copy={surfaceModeSelector.translations[lang]}
+            closeLabel={t.close}
+            isOpen={activeMenu === 'surface'}
+            onOpenChange={(isOpen) => setActiveMenu(isOpen ? 'surface' : null)}
+          />
+        ) : null}
+
+        {!isSceneSurface ? <HeaderMenus
           activeMenu={activeMenu}
           setActiveMenu={setActiveMenu}
           showMenuLabels={responsive.showMenuLabels}
@@ -144,16 +178,16 @@ export function Header({
           redo={redo}
           canUndo={canUndo}
           canRedo={canRedo}
-        />
+        /> : null}
       </div>
 
       <div
         id="viewer-toolbar-dock-slot"
-        className="pointer-events-none hidden h-full min-w-0 items-center justify-center justify-self-center px-2 sm:flex sm:px-3"
+        className={`pointer-events-none hidden h-full min-w-0 items-center justify-center justify-self-center px-2 sm:px-3 ${isSceneSurface ? '' : 'sm:flex'}`}
       />
 
       <HeaderActions
-        responsive={responsive}
+        responsive={actionResponsive}
         lang={lang}
         theme={theme}
         canUndo={canUndo}
@@ -164,7 +198,7 @@ export function Header({
         setTheme={setTheme}
         undo={undo}
         redo={redo}
-        quickAction={quickAction}
+        quickAction={isSceneSurface ? undefined : quickAction}
         secondaryAction={secondaryAction}
         onOpenCodeViewer={onOpenCodeViewer}
         onPrefetchCodeViewer={onPrefetchCodeViewer}

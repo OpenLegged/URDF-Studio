@@ -9,7 +9,24 @@ import { Header } from './Header.tsx';
 
 const noopToolboxItems: import('./header/types').ToolboxItem[] = [];
 
-function renderHeader() {
+const surfaceModeSelector: import('./header/types').HeaderSurfaceModeSelectorConfig = {
+  current: 'model',
+  onChange: () => {},
+  translations: {
+    en: {
+      ariaLabel: 'Workspace mode',
+      model: { label: 'Model', description: 'Edit individual assets' },
+      scene: { label: 'Scene', description: 'Arrange environment assets' },
+    },
+    zh: {
+      ariaLabel: '工作模式',
+      model: { label: '模型', description: '编辑独立资产' },
+      scene: { label: '场景', description: '布置环境资产' },
+    },
+  },
+};
+
+function renderHeader(withSurfaceModeSelector = false) {
   return renderToStaticMarkup(
     React.createElement(Header, {
       onImportFile: () => {},
@@ -31,6 +48,7 @@ function renderHeader() {
         icon: Box,
         onClick: () => {},
       },
+      surfaceModeSelector: withSurfaceModeSelector ? surfaceModeSelector : undefined,
       viewConfig: {
         showOptionsPanel: true,
         showJointPanel: true,
@@ -89,4 +107,15 @@ test('Header uses a slimmer top bar height', () => {
   assert.match(markup, /h-10/, 'header should keep a compact top bar height');
   assert.doesNotMatch(markup, /h-11/, 'header should no longer use the taller top bar height');
   assert.doesNotMatch(markup, /h-12/, 'header should no longer use the tallest top bar height');
+});
+
+test('Header places the optional surface mode selector after the logo and before File', () => {
+  const markup = renderHeader(true);
+  const logoIndex = markup.indexOf('src="/logos/logo.png"');
+  const selectorIndex = markup.indexOf('aria-label="Workspace mode"');
+  const fileIndex = markup.indexOf('aria-label="File"');
+
+  assert.ok(logoIndex >= 0, 'expected the header logo');
+  assert.ok(selectorIndex > logoIndex, 'surface mode selector should follow the logo');
+  assert.ok(fileIndex > selectorIndex, 'File should follow the surface mode selector');
 });

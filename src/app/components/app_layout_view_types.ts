@@ -63,6 +63,7 @@ export interface AppLayoutHeaderSectionProps {
   onOpenSettings: AppLayoutProps['onOpenSettings'];
   headerQuickAction: AppLayoutProps['headerQuickAction'];
   headerSecondaryAction: AppLayoutProps['headerSecondaryAction'];
+  surfaceModeSelector: AppLayoutProps['surfaceModeSelector'];
   viewConfig: AppLayoutProps['viewConfig'];
   setViewConfig: AppLayoutProps['setViewConfig'];
   toolboxItems: HeaderProps['toolboxItems'];

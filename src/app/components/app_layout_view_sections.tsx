@@ -108,6 +108,7 @@ function AppLayoutHeaderSection({
       onOpenSettings={header.onOpenSettings}
       quickAction={header.headerQuickAction}
       secondaryAction={header.headerSecondaryAction}
+      surfaceModeSelector={header.surfaceModeSelector}
       onSnapshot={header.handleSnapshot}
       viewConfig={header.viewConfig}
       viewAvailability={{ jointPanel: true }}

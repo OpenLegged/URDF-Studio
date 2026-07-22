@@ -1,5 +1,9 @@
 import type { ReactNode } from 'react';
-import type { HeaderAction, ToolboxItem } from './components/header/types';
+import type {
+  HeaderAction,
+  HeaderSurfaceModeSelectorConfig,
+  ToolboxItem,
+} from './components/header/types';
 import type { RobotFile } from '@/types';
 
 /** Stable, brand-neutral toolbox contribution exposed to host applications. */
@@ -22,6 +26,7 @@ export interface AppExtensionSlots {
 export interface AppExtensionConfig {
   headerQuickAction?: HeaderAction;
   headerSecondaryAction?: HeaderAction;
+  surfaceModeSelector?: HeaderSurfaceModeSelectorConfig;
   /** Additional host-owned tools appended after the built-in toolbox entries. */
   toolboxItems?: readonly AppToolboxItem[];
 }

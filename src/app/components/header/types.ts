@@ -16,7 +16,26 @@ export interface ToolboxItem {
   external?: boolean;
   tone?: ToolboxItemTone;
 }
-export type HeaderMenuKey = 'file' | 'ai' | 'toolbox' | 'view' | 'more' | null;
+export type HeaderMenuKey = 'surface' | 'file' | 'ai' | 'toolbox' | 'view' | 'more' | null;
+
+export type HeaderSurfaceMode = 'model' | 'scene';
+
+export interface HeaderSurfaceModeOptionCopy {
+  label: string;
+  description: string;
+}
+
+export interface HeaderSurfaceModeSelectorCopy {
+  ariaLabel: string;
+  model: HeaderSurfaceModeOptionCopy;
+  scene: HeaderSurfaceModeOptionCopy;
+}
+
+export interface HeaderSurfaceModeSelectorConfig {
+  current: HeaderSurfaceMode;
+  onChange: (mode: HeaderSurfaceMode) => void;
+  translations: Record<'en' | 'zh', HeaderSurfaceModeSelectorCopy>;
+}
 
 export interface HeaderViewConfig {
   showOptionsPanel: boolean;

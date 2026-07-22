@@ -11,9 +11,9 @@ export const zh: TranslationKeys = {
   // Header
   appName: 'URDF Studio',
   editor: '编辑器',
-  aiAssistant: 'AI审阅',
+  aiAssistant: 'AI 审阅',
   aiMenu: 'AI',
-  aiInspection: 'AI审阅',
+  aiInspection: 'AI 审阅',
   aiConversation: 'AI 对话',
   file: '文件',
   import: '导入',
@@ -324,7 +324,7 @@ export const zh: TranslationKeys = {
   apply: '应用',
 
   // AI Modal
-  aiTitle: 'AI审阅',
+  aiTitle: 'AI 审阅',
   aiIntro: '我可以帮你生成新机器人，修改当前设计，或提供硬件建议。',
   aiExamples: '示例：\n- "创建一个四足机器人"\n- "在 base_link 添加激光雷达"\n- "为髋关节推荐电机"',
   aiPlaceholder: '今天我能帮你做什么？',
@@ -879,7 +879,7 @@ export const zh: TranslationKeys = {
 
   // About Modal
   aboutDescription:
-    '专业的机器人 URDF 设计与可视化工作站，支持快速编辑，碰撞优化，参数配置，AI审阅和实用工具。',
+    '专业的机器人 URDF 设计与可视化工作站，支持快速编辑，碰撞优化，参数配置，AI 审阅和实用工具。',
   aboutCopyright: '© 2025-2026 enkeebot.',
   aboutOpenSource: '基于 Apache License 2.0 协议开源。',
   aboutMotphysTagline: '超越物理，进化不止',
