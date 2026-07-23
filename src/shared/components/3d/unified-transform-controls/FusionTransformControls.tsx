@@ -808,9 +808,9 @@ function RotateAxisHandle({
       ),
     [axis, visualThicknessScale],
   );
-  const frontArcPickerGeometry = useDisposableGeometry(
+  const fullRingPickerGeometry = useDisposableGeometry(
     () =>
-      createFusionRotateFrontArcGeometry(
+      createFusionRotateFullRingGeometry(
         axis,
         THICK_ROTATE_ARC_RADIUS * Math.max(2.65, pickerThicknessScale * 2.1),
       ),
@@ -861,8 +861,8 @@ function RotateAxisHandle({
         <mesh
           {...frontArcHandleProps}
           frustumCulled={false}
-          geometry={frontArcPickerGeometry}
-          name={`rotate-front-arc-picker-${axis.toLowerCase()}`}
+          geometry={fullRingPickerGeometry}
+          name={`rotate-full-ring-picker-${axis.toLowerCase()}`}
           renderOrder={GIZMO_ARC_RENDER_ORDER + 8}
         >
           <PlainGizmoMaterial color={AXIS_COLORS[axis]} opacity={0} />
@@ -2552,12 +2552,18 @@ export const FusionTransformControls = forwardRef<unknown, FusionTransformContro
       clearActiveHandle();
     }, [clearActiveHandle, enabled, finishDrag]);
 
+    const finishDragOnUnmountRef = useRef(finishDrag);
+    const restoreDefaultControlsOnUnmountRef = useRef(restoreDefaultControls);
+
     useEffect(() => {
-      return () => {
-        finishDrag();
-        restoreDefaultControls();
-      };
+      finishDragOnUnmountRef.current = finishDrag;
+      restoreDefaultControlsOnUnmountRef.current = restoreDefaultControls;
     }, [finishDrag, restoreDefaultControls]);
+
+    useEffect(() => () => {
+      finishDragOnUnmountRef.current();
+      restoreDefaultControlsOnUnmountRef.current();
+    }, []);
 
     const applyControlLayout = useCallback(() => {
       const root = rootRef.current as FusionRootGroup | null;
