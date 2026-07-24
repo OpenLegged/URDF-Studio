@@ -1,7 +1,6 @@
 import * as THREE from 'three';
 import { OBJExporter } from 'three/addons/exporters/OBJExporter.js';
 import { STLExporter } from 'three/addons/exporters/STLExporter.js';
-import { PLYExporter } from 'three/addons/exporters/PLYExporter.js';
 
 import {
   createLoadingManager,
@@ -27,7 +26,7 @@ export interface PrepareMjcfMeshExportAssetsOptions {
   assets: Record<string, string>;
   extraMeshFiles?: Map<string, Blob>;
   preferSharedMeshReuse?: boolean;
-  meshFormat?: 'auto' | 'obj' | 'stl' | 'ply';
+  meshFormat?: 'auto' | 'obj' | 'stl';
 }
 
 export interface PreparedMjcfMeshExportAssets {
@@ -61,7 +60,7 @@ function buildConvertedMeshBasePath(normalizedPath: string): string {
 function buildConvertedMeshExportPath(
   meshPath: string,
   usedPaths: Set<string>,
-  extension: '.obj' | '.stl' | '.ply',
+  extension: '.obj' | '.stl',
 ): string {
   const normalizedPath = normalizeMeshPathForExport(meshPath);
   if (!normalizedPath) {
@@ -112,7 +111,7 @@ function buildConvertedVisualVariantPath(
   materialName: string | undefined,
   variantIndex: number,
   usedPaths: Set<string>,
-  extension: '.obj' | '.stl' | '.ply',
+  extension: '.obj' | '.stl',
 ): string {
   const normalizedPath = normalizeMeshPathForExport(meshPath);
   if (!normalizedPath) {
@@ -156,13 +155,12 @@ function exportObjBlob(objExporter: OBJExporter, object: THREE.Object3D): Blob |
   return new Blob([exportedObj], { type: 'text/plain' });
 }
 
-type MeshFormatKind = 'auto' | 'obj' | 'stl' | 'ply';
-type MeshExtension = '.obj' | '.stl' | '.ply';
+type MeshFormatKind = 'auto' | 'obj' | 'stl';
+type MeshExtension = '.obj' | '.stl';
 
 interface MeshExporters {
   obj: OBJExporter;
   stl: STLExporter;
-  ply: PLYExporter;
 }
 
 function exportStlBlob(stlExporter: STLExporter, object: THREE.Object3D): Blob | null {
@@ -173,14 +171,6 @@ function exportStlBlob(stlExporter: STLExporter, object: THREE.Object3D): Blob |
   return new Blob([result as unknown as ArrayBuffer], { type: 'model/stl' });
 }
 
-function exportPlyBlob(plyExporter: PLYExporter, object: THREE.Object3D): Blob | null {
-  const result = plyExporter.parse(object, () => {}, { binary: true });
-  if (!result || (result.byteLength ?? 0) === 0) {
-    return null;
-  }
-  return new Blob([result as unknown as ArrayBuffer], { type: 'model/ply' });
-}
-
 // Resolve effective mesh format: 'auto' picks STL (binary, smallest) for
 // meshes without UVs, and OBJ (preserves UVs) for textured meshes.
 function resolveMeshFormat(
@@ -188,7 +178,6 @@ function resolveMeshFormat(
   object: THREE.Object3D,
 ): MeshExtension {
   if (requested === 'stl') return '.stl';
-  if (requested === 'ply') return '.ply';
   if (requested === 'obj') return '.obj';
   let hasUv = false;
   object.traverse((child) => {
@@ -208,8 +197,6 @@ function exportMeshBlob(
   switch (extension) {
     case '.stl':
       return exportStlBlob(exporters.stl, object);
-    case '.ply':
-      return exportPlyBlob(exporters.ply, object);
     default:
       return exportObjBlob(exporters.obj, object);
   }
@@ -857,7 +844,6 @@ function extractVisualMeshVariants(
   meshObject: THREE.Object3D,
   sourceMeshPath: string,
   usedArchivePaths: Set<string>,
-  objExporter: OBJExporter,
   exporters: MeshExporters,
   meshFormat: MeshFormatKind,
 ): ExtractedVisualMeshVariant[] {
@@ -1306,7 +1292,6 @@ export async function prepareMjcfMeshExportAssets(
   const exporters: MeshExporters = {
     obj: objExporter,
     stl: new STLExporter(),
-    ply: new PLYExporter(),
   };
   const meshFormat: MeshFormatKind = options.meshFormat ?? 'auto';
 
@@ -1370,7 +1355,6 @@ export async function prepareMjcfMeshExportAssets(
           meshObject,
           meshPath,
           usedArchivePaths,
-          objExporter,
           exporters,
           meshFormat,
         );

@@ -22,7 +22,6 @@ export interface TranslationExportDialogKeys {
   exportMeshFormatAuto: string;
   exportMeshFormatObj: string;
   exportMeshFormatStl: string;
-  exportMeshFormatPly: string;
   exportMeshFormatDesc: string;
   exportFloatBase: string;
   exportFloatBaseDesc: string;

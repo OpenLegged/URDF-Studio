@@ -25,7 +25,6 @@ export const zhWorkflow: TranslationWorkflowKeys = {
   exportMeshFormatAuto: '自动',
   exportMeshFormatObj: 'OBJ (.obj)',
   exportMeshFormatStl: 'STL (.stl)',
-  exportMeshFormatPly: 'PLY (.ply)',
   exportMeshFormatDesc: '转换后的网格文件格式（仅非原生网格）',
   exportFloatBase: '浮动基座',
   exportFloatBaseDesc: '在根 body 加 <freejoint/>（四足/人形机器人训练用）',

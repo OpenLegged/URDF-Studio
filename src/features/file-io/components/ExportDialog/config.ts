@@ -6,7 +6,6 @@ export const MESH_FORMAT_OPTIONS: { value: ExportMeshFormat; labelKey: string }[
   { value: 'auto', labelKey: 'exportMeshFormatAuto' },
   { value: 'obj', labelKey: 'exportMeshFormatObj' },
   { value: 'stl', labelKey: 'exportMeshFormatStl' },
-  { value: 'ply', labelKey: 'exportMeshFormatPly' },
 ];
 
 export const MJCF_SUPPORTS = ['MuJoCo', 'Motphys', 'Genesis'];
