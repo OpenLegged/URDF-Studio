@@ -120,24 +120,23 @@ export const TransformFields: React.FC<TransformFieldsProps> = ({
   };
 
   const handlePastePosition = async () => {
-    if (positionClipboardCache) {
-      onPositionChange({ ...positionClipboardCache });
-      showPositionClipboardState('pasted');
-      return;
-    }
+    let nextPosition: Vec3Value | null = null;
 
     try {
       const clipboardText = await navigator.clipboard?.readText();
-      const nextPosition = clipboardText ? parsePositionClipboardValue(clipboardText) : null;
-      if (!nextPosition) {
-        showPositionClipboardState('error');
-        return;
-      }
-      onPositionChange(nextPosition);
-      showPositionClipboardState('pasted');
+      nextPosition = clipboardText ? parsePositionClipboardValue(clipboardText) : null;
     } catch {
-      showPositionClipboardState('error');
+      // Clipboard access can be denied; the in-app cache remains available below.
     }
+
+    nextPosition ??= positionClipboardCache;
+    if (!nextPosition) {
+      showPositionClipboardState('error');
+      return;
+    }
+
+    onPositionChange({ ...nextPosition });
+    showPositionClipboardState('pasted');
   };
 
   const copyPositionTitle =
