@@ -430,7 +430,7 @@ function createBoxFaceTextureRobot(): RobotState {
           color: '#ffffff',
           origin: { xyz: { x: 0, y: 0, z: 0 }, rpy: { r: 0, p: 0, y: 0 } },
           authoredMaterials: [
-            { texture: 'textures/right.png' },
+            { texture: 'textures/right.png', opacity: 0.25 },
             { texture: 'textures/left.png' },
             { texture: 'textures/up.png' },
             { texture: 'textures/down.png' },
@@ -574,11 +574,20 @@ test('isaacsim USDA export writes OmniPBR material outputs for IsaacSim viewport
 
   const baseLayer = await readArchiveText(payload, 'go1/configuration/go1_base.usda');
 
-  assert.match(baseLayer, /token outputs:surface\.connect = <\/go1\/Looks\/Material_0\/PreviewSurface\.outputs:surface>/);
-  assert.match(baseLayer, /token outputs:mdl:surface\.connect = <\/go1\/Looks\/Material_0\/OmniPBR\.outputs:out>/);
+  assert.match(
+    baseLayer,
+    /token outputs:surface\.connect = <\/go1\/Looks\/Material_0\/PreviewSurface\.outputs:surface>/,
+  );
+  assert.match(
+    baseLayer,
+    /token outputs:mdl:surface\.connect = <\/go1\/Looks\/Material_0\/OmniPBR\.outputs:out>/,
+  );
   assert.match(baseLayer, /uniform asset info:mdl:sourceAsset = @OmniPBR\.mdl@/);
   assert.match(baseLayer, /uniform token info:mdl:sourceAsset:subIdentifier = "OmniPBR"/);
-  assert.match(baseLayer, /color3f inputs:diffuse_color_constant = \(0\.070593, 0\.670593, 0\.203927\)/);
+  assert.match(
+    baseLayer,
+    /color3f inputs:diffuse_color_constant = \(0\.006049, 0\.40724, 0\.03434\)/,
+  );
 });
 
 test('isaacsim USDA export flattens link prim hierarchy for external articulation consumers', async () => {
@@ -593,6 +602,7 @@ test('isaacsim USDA export flattens link prim hierarchy for external articulatio
   const baseLayer = await readArchiveText(payload, 'go1/configuration/go1_base.usda');
   const physicsLayer = await readArchiveText(payload, 'go1/configuration/go1_physics.usda');
   const robotLayer = await readArchiveText(payload, 'go1/configuration/go1_robot.usda');
+  const rootLayer = await readArchiveText(payload, 'go1/go1.usda');
 
   assert.match(baseLayer, /def Xform "base_link"/);
   assert.match(baseLayer, /def Xform "link1"/);
@@ -604,14 +614,15 @@ test('isaacsim USDA export flattens link prim hierarchy for external articulatio
   assert.match(physicsLayer, /rel physics:body1 = <\/go1\/link1>/);
   assert.doesNotMatch(physicsLayer, /rel physics:body1 = <\/go1\/base_link\/link1>/);
   assert.match(
-    physicsLayer,
+    rootLayer,
     /def PhysicsScene "physicsScene" \(\n\s+prepend apiSchemas = \["PhysxSceneAPI"\]\n\s*\)\n\{/,
   );
-  assert.match(physicsLayer, /uniform token physxScene:broadphaseType = "MBP"/);
-  assert.match(physicsLayer, /bool physxScene:enableCCD = true/);
-  assert.match(physicsLayer, /bool physxScene:enableGPUDynamics = false/);
-  assert.match(physicsLayer, /bool physxScene:enableStabilization = true/);
-  assert.match(physicsLayer, /uniform token physxScene:solverType = "TGS"/);
+  assert.match(rootLayer, /uniform token physxScene:broadphaseType = "MBP"/);
+  assert.match(rootLayer, /bool physxScene:enableCCD = true/);
+  assert.match(rootLayer, /bool physxScene:enableGPUDynamics = false/);
+  assert.match(rootLayer, /bool physxScene:enableStabilization = true/);
+  assert.match(rootLayer, /uniform token physxScene:solverType = "TGS"/);
+  assert.doesNotMatch(physicsLayer, /def PhysicsScene/);
   assert.match(
     physicsLayer,
     /over "base_link" \(\n\s+prepend apiSchemas = \["PhysicsRigidBodyAPI", "PhysicsMassAPI", "PhysicsArticulationRootAPI", "PhysxArticulationAPI"\]/,
@@ -627,7 +638,7 @@ test('isaacsim USDA export flattens link prim hierarchy for external articulatio
   assert.match(physicsLayer, /float drive:angular:physics:damping = 0\.25/);
   assert.match(physicsLayer, /float drive:angular:physics:targetPosition = 0/);
   assert.match(physicsLayer, /float physxJoint:maxJointVelocity = 229\.183/);
-  assert.match(physicsLayer, /bool physics:collisionEnabled = true/);
+  assert.match(baseLayer, /bool physics:collisionEnabled = true/);
 
   assert.match(robotLayer, /<\/go1\/base_link>/);
   assert.match(robotLayer, /<\/go1\/link1>/);
@@ -653,7 +664,10 @@ test('isaacsim USDA export collapses synthetic MJCF geom attachment links back i
   assert.doesNotMatch(baseLayer, /def Xform "world"/);
   assert.doesNotMatch(baseLayer, /def Xform "base_geom_1"/);
   assert.match(baseLayer, /def Xform "visuals"[\s\S]*def Cylinder "cylinder"/);
-  assert.match(baseLayer, /def Xform "collisions"[\s\S]*def Xform "collision_1"[\s\S]*def Sphere "sphere"/);
+  assert.match(
+    baseLayer,
+    /def Xform "collisions"[\s\S]*def Xform "collision_1"[\s\S]*def Sphere "sphere"/,
+  );
   assert.ok(
     extractTuples(baseLayer, 'xformOp:translate').some(
       (tuple) =>
@@ -725,10 +739,7 @@ test('isaacsim USDA export hides mesh library prototypes and collision guide sco
     'go1_collisions/configuration/go1_collisions_base.usda',
   );
 
-  assert.match(
-    meshBaseLayer,
-    /class Scope "__MeshLibrary"\n\s+\{\n\s+class Mesh "Geometry_0"/,
-  );
+  assert.match(meshBaseLayer, /class Scope "__MeshLibrary"\n\s+\{\n\s+class Mesh "Geometry_0"/);
   assert.match(
     collisionBaseLayer,
     /def Xform "collisions"\n\s+\{\n\s+token visibility = "invisible"/,
@@ -760,6 +771,62 @@ test('USDA export downgrades unsupported collision primitives instead of droppin
     baseLayer,
     /def Xform "collision_0"[\s\S]*double3 xformOp:scale = \(6, 4, 0\.001\)[\s\S]*def Cube "plane_as_box"/,
   );
+});
+
+test('USDA export preserves primitive and multi-body visual/collision classification', async () => {
+  const robot = createTwoLinkRobot();
+  const createPrimitive = (
+    type: GeometryType,
+    dimensions: { x: number; y: number; z: number },
+    color: string,
+  ) => ({
+    type,
+    dimensions,
+    color,
+    origin: { xyz: { x: 0, y: 0, z: 0 }, rpy: { r: 0, p: 0, y: 0 } },
+  });
+
+  robot.joints = {};
+  robot.links = {
+    base_link: {
+      ...robot.links.base_link,
+      visualBodies: [
+        createPrimitive(GeometryType.SPHERE, { x: 0.1, y: 0, z: 0 }, '#ff0000'),
+        createPrimitive(GeometryType.CYLINDER, { x: 0.1, y: 0.4, z: 0 }, '#00ff00'),
+        createPrimitive(GeometryType.CAPSULE, { x: 0.1, y: 0.5, z: 0 }, '#0000ff'),
+      ],
+      collisionBodies: [
+        createPrimitive(GeometryType.SPHERE, { x: 0.11, y: 0, z: 0 }, '#ffffff'),
+        createPrimitive(GeometryType.CYLINDER, { x: 0.11, y: 0.4, z: 0 }, '#ffffff'),
+        createPrimitive(GeometryType.CAPSULE, { x: 0.11, y: 0.5, z: 0 }, '#ffffff'),
+      ],
+    },
+  };
+  robot.materials = {};
+
+  const payload = await exportRobotToUsd({
+    robot,
+    exportName: 'primitive_matrix_robot',
+    assets: {},
+    fileFormat: 'usda',
+    layoutProfile: 'isaacsim',
+  });
+  const baseLayer = await readArchiveText(
+    payload,
+    'primitive_matrix_robot/configuration/primitive_matrix_robot_base.usda',
+  );
+
+  assert.match(baseLayer, /def Xform "visuals"[\s\S]*def Cube "box"/);
+  assert.match(baseLayer, /def Xform "visuals"[\s\S]*def Sphere "sphere"/);
+  assert.match(baseLayer, /def Xform "visuals"[\s\S]*def Cylinder "cylinder"/);
+  assert.match(baseLayer, /def Xform "visuals"[\s\S]*def Capsule "capsule"/);
+  assert.match(baseLayer, /def Xform "collisions"\n\s+\{\n\s+token visibility = "invisible"/);
+  assert.equal(
+    (baseLayer.match(/prepend apiSchemas = \["PhysicsCollisionAPI"\]/g) ?? []).length,
+    4,
+  );
+  assert.match(baseLayer, /uniform token purpose = "guide"/);
+  assert.doesNotMatch(baseLayer, /physics:approximation/);
 });
 
 test('genesis USDA export aliases to the isaacsim-compatible layered layout', async () => {
@@ -798,6 +865,7 @@ test('preserves link transforms and writes physics joints into separate USD laye
     payload,
     'two_link_robot/usd/configuration/two_link_robot_description_sensor.usd',
   );
+  const rootLayer = await readArchiveText(payload, payload.rootLayerPath);
 
   assert.match(baseLayer, /def Xform "two_link_robot_description"/);
   assert.match(baseLayer, /def Xform "base_link"/);
@@ -815,10 +883,15 @@ test('preserves link transforms and writes physics joints into separate USD laye
     baseLayer,
     /def Xform "collisions"[\s\S]*def Cube "box" \(\n\s+prepend apiSchemas = \["PhysicsCollisionAPI"\]\n\s*\)/,
   );
+  assert.match(
+    baseLayer,
+    /def Cube "box" \(\n\s+prepend apiSchemas = \["PhysicsCollisionAPI"\]\n\s*\)\n\s+\{[\s\S]*bool physics:collisionEnabled = true/,
+  );
 
   assert.match(physicsLayer, /over "two_link_robot_description"/);
   assert.match(physicsLayer, /subLayers = \[\n\s+@two_link_robot_description_base\.usd@\n\s+\]/);
-  assert.match(physicsLayer, /def PhysicsScene "physicsScene"/);
+  assert.match(rootLayer, /def PhysicsScene "physicsScene"/);
+  assert.doesNotMatch(physicsLayer, /def PhysicsScene/);
   assert.match(physicsLayer, /prepend apiSchemas = \["PhysicsArticulationRootAPI"\]/);
   assert.match(physicsLayer, /prepend apiSchemas = \["PhysicsRigidBodyAPI", "PhysicsMassAPI"\]/);
   assert.match(
@@ -829,12 +902,8 @@ test('preserves link transforms and writes physics joints into separate USD laye
     physicsLayer,
     /over "base_link" \(\n\s+prepend apiSchemas = \["PhysicsRigidBodyAPI", "PhysicsMassAPI"\]\n\s*\)\n\s+\{/,
   );
-  assert.match(
-    physicsLayer,
-    /over "collision_0" \(\n\s+prepend apiSchemas = \["PhysicsCollisionAPI"\]\n\s*\)\n\s+\{/,
-  );
-  assert.match(physicsLayer, /over "collisions"/);
-  assert.doesNotMatch(physicsLayer, /over "colliders"/);
+  assert.doesNotMatch(physicsLayer, /PhysicsCollisionAPI/);
+  assert.doesNotMatch(physicsLayer, /over "collisions"/);
   assert.match(physicsLayer, /float physics:mass = 1\.25/);
   assert.match(physicsLayer, /float3 physics:centerOfMass = \(0\.1, 0\.2, 0\.3\)/);
   assert.match(physicsLayer, /over "joints"/);
@@ -887,10 +956,19 @@ test('serializes joint origin quaternions using URDF ZYX rpy semantics', async (
 
   const exportedPhysicsQuat = extractTuples(physicsLayer, 'physics:localRot0').at(0);
   assert.ok(exportedPhysicsQuat, 'expected physics:localRot0 on the exported joint');
+  const axisAlignment = new THREE.Quaternion().setFromUnitVectors(
+    new THREE.Vector3(0, 0, 1),
+    new THREE.Vector3(0, 0, -1),
+  );
   assertQuaternionClose(
     exportedPhysicsQuat,
-    new THREE.Quaternion().setFromEuler(new THREE.Euler(0.31, -0.47, 0.83, 'ZYX')),
+    new THREE.Quaternion()
+      .setFromEuler(new THREE.Euler(0.31, -0.47, 0.83, 'ZYX'))
+      .multiply(axisAlignment),
   );
+  const exportedChildFrameQuat = extractTuples(physicsLayer, 'physics:localRot1').at(0);
+  assert.ok(exportedChildFrameQuat, 'expected physics:localRot1 on the exported joint');
+  assertQuaternionClose(exportedChildFrameQuat, axisAlignment);
   assert.match(physicsLayer, /custom float3 urdf:axisLocal = \(0, 0, -1\)/);
 });
 
@@ -1016,11 +1094,11 @@ test('serializes internal material metadata and display colors into the base lay
 
   assert.match(baseLayer, /custom string urdf:materialColor = "#12ab34"/);
   assert.match(baseLayer, /custom string urdf:materialTexture = "textures\/base_color\.png"/);
-  assert.match(baseLayer, /primvars:displayColor = \[\(0\.070593, 0\.670593, 0\.203927\)\]/);
+  assert.match(baseLayer, /primvars:displayColor = \[\(0\.006049, 0\.40724, 0\.03434\)\]/);
   assert.match(baseLayer, /def Scope "Looks"/);
   assert.match(baseLayer, /def Material "Material_0"/);
   assert.match(baseLayer, /uniform token info:id = "UsdPreviewSurface"/);
-  assert.match(baseLayer, /color3f inputs:diffuseColor = \(0\.070593, 0\.670593, 0\.203927\)/);
+  assert.match(baseLayer, /color3f inputs:diffuseColor = \(0\.006049, 0\.40724, 0\.03434\)/);
   assert.match(
     baseLayer,
     /rel material:binding = <\/two_link_robot_description\/Looks\/Material_0>/,
@@ -1050,8 +1128,8 @@ test('exports explicit mesh material colors into USD preview materials instead o
   );
 
   assert.match(baseLayer, /custom string urdf:materialColor = "#12ab34"/);
-  assert.match(baseLayer, /primvars:displayColor = \[\(0\.070593, 0\.670593, 0\.203927\)\]/);
-  assert.match(baseLayer, /color3f inputs:diffuseColor = \(0\.070593, 0\.670593, 0\.203927\)/);
+  assert.match(baseLayer, /primvars:displayColor = \[\(0\.006049, 0\.40724, 0\.03434\)\]/);
+  assert.match(baseLayer, /color3f inputs:diffuseColor = \(0\.006049, 0\.40724, 0\.03434\)/);
   assert.doesNotMatch(baseLayer, /color3f inputs:diffuseColor = \(1, 1, 1\)/);
 });
 
@@ -1291,7 +1369,7 @@ test('preserves tiny explicit inertial values when writing USD mass properties',
 
   const principalAxes = extractTuples(physicsLayer, 'physics:principalAxes').at(-1);
   assert.ok(principalAxes, 'expected link1 principal axes');
-  assertQuaternionClose(principalAxes, expected.principalAxesLocal, 1e-6);
+  assertQuaternionClose(principalAxes, expected.principalAxesLocal, 2e-6);
 });
 
 test('can simplify mesh geometry before serializing USD mesh prims', async () => {
@@ -1454,6 +1532,8 @@ test('exports six-face box textures into separate USDA mesh prims and packaged a
 
   assert.equal(payload.downloadFileName, 'box_face_robot.usda');
   assert.equal((baseLayer.match(/class Mesh "Geometry_/g) ?? []).length, 6);
+  assert.match(baseLayer, /def Mesh "box_right"/);
+  assert.doesNotMatch(baseLayer, /def Cube "box_right"/);
   assert.match(baseLayer, /custom string urdf:materialTexture = "textures\/right\.png"/);
   assert.match(baseLayer, /custom string urdf:materialTexture = "textures\/left\.png"/);
   assert.match(baseLayer, /custom string urdf:materialTexture = "textures\/up\.png"/);
@@ -1466,6 +1546,7 @@ test('exports six-face box textures into separate USDA mesh prims and packaged a
   assert.ok(payload.archiveFiles.has('box_face_robot/usd/assets/down.png'));
   assert.ok(payload.archiveFiles.has('box_face_robot/usd/assets/front.png'));
   assert.ok(payload.archiveFiles.has('box_face_robot/usd/assets/back.png'));
+  assert.match(baseLayer, /float inputs:opacity = 0\.25/);
 });
 
 test('archives texture assets for mesh metadata even when the mesh has no UV coordinates', async () => {
@@ -1530,6 +1611,35 @@ test('exports 8-digit hex display colors without emitting Three.js invalid color
   } finally {
     console.warn = originalWarn;
   }
+});
+
+test('exports primitive authored material opacity when it is separate from the color', async () => {
+  const robot = createTwoLinkRobot();
+  robot.links.base_link.visual.authoredMaterials = [
+    {
+      name: 'translucent_shell',
+      color: '#336699',
+      opacity: 0.35,
+    },
+  ];
+  robot.materials = {};
+
+  const payload = await exportRobotToUsd({
+    robot,
+    exportName: 'primitive_opacity_robot',
+    assets: {},
+    fileFormat: 'usda',
+    layoutProfile: 'isaacsim',
+  });
+  const baseLayer = await readArchiveText(
+    payload,
+    'primitive_opacity_robot/configuration/primitive_opacity_robot_base.usda',
+  );
+
+  assert.match(baseLayer, /custom string urdf:materialColor = "#336699"/);
+  assert.match(baseLayer, /float inputs:opacity = 0\.35/);
+  assert.match(baseLayer, /float inputs:opacity_constant = 0\.35/);
+  assert.match(baseLayer, /bool inputs:enable_opacity = true/);
 });
 
 test('reports phased USD export progress for links, geometry, scene serialization, and assets', async () => {

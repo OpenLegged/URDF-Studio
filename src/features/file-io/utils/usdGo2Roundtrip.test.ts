@@ -261,11 +261,6 @@ function createColoredMeshRobot(meshPath: string, color: string): RobotState {
   };
 }
 
-function hexToLinearRgba(color: string, opacity = 1): [number, number, number, number] {
-  const linearColor = new THREE.Color(color);
-  return [linearColor.r, linearColor.g, linearColor.b, opacity];
-}
-
 async function withSuppressedColladaLogs<T>(run: () => Promise<T>): Promise<T> {
   const originalLog = console.log;
   const originalInfo = console.info;
@@ -924,6 +919,17 @@ test('mesh USD roundtrip preserves explicit MJCF/URDF material colors after relo
 
   const materialBindingMatch = baseLayer.match(/rel material:binding = <([^>]+)>/);
   assert.ok(materialBindingMatch, 'expected exported colored mesh to bind a preview material');
+  const serializedColorMatch = baseLayer.match(/color3f inputs:diffuseColor = \(([^)]+)\)/);
+  assert.ok(serializedColorMatch, 'expected exported preview material to author a color');
+  const serializedColor = serializedColorMatch[1]!.split(',').map((value) => Number(value.trim()));
+  const expectedLinearColor = new THREE.Color('#12ab34').toArray();
+  assert.equal(serializedColor.length, 3);
+  serializedColor.forEach((value, index) => {
+    assert.ok(
+      Math.abs(value - expectedLinearColor[index]!) <= 1e-6,
+      `expected serialized channel ${index} to be linear`,
+    );
+  });
 
   const metadata = createRoundtripMetadataSnapshot(robot, {
     rootLayer,
@@ -961,7 +967,8 @@ test('mesh USD roundtrip preserves explicit MJCF/URDF material colors after relo
       materials: [
         {
           materialId: materialBindingMatch[1],
-          color: hexToLinearRgba('#12ab34'),
+          color: [...serializedColor, 1],
+          colorSource: 'authored',
           mapPath: null,
         },
       ],

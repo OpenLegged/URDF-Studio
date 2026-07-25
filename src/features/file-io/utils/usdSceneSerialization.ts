@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 
 import { isUsdMeshObject } from './usdMaterialNormalization.ts';
+import { toUsdAuthoredColorFromSrgbTuple } from './usdColorSpace.ts';
 import {
   extractUsdMeshGeometryData,
   getUsdNumericAttributeSource,
@@ -315,14 +316,19 @@ export const applyUsdMaterialMetadata = (
   node: THREE.Object3D,
   materialState: UsdMaterialMetadata,
 ): void => {
+  const explicitOpacity = Number.isFinite(materialState.opacity)
+    ? Math.max(0, Math.min(1, Number(materialState.opacity)))
+    : undefined;
   node.userData.usdMaterial = materialState;
   if (materialState.colorRgba) {
-    node.userData.usdAuthoredColor = [
+    node.userData.usdAuthoredColor = toUsdAuthoredColorFromSrgbTuple([
       materialState.colorRgba[0],
       materialState.colorRgba[1],
       materialState.colorRgba[2],
-    ] as [number, number, number];
-    node.userData.usdOpacity = materialState.colorRgba[3];
+    ]);
+    node.userData.usdOpacity = explicitOpacity ?? materialState.colorRgba[3];
+  } else if (explicitOpacity !== undefined) {
+    node.userData.usdOpacity = explicitOpacity;
   }
 
   node.traverse((child) => {
@@ -336,12 +342,14 @@ export const applyUsdMaterialMetadata = (
 
     child.userData.usdMaterial = materialState;
     if (materialState.colorRgba) {
-      child.userData.usdAuthoredColor = [
+      child.userData.usdAuthoredColor = toUsdAuthoredColorFromSrgbTuple([
         materialState.colorRgba[0],
         materialState.colorRgba[1],
         materialState.colorRgba[2],
-      ] as [number, number, number];
-      child.userData.usdOpacity = materialState.colorRgba[3];
+      ]);
+      child.userData.usdOpacity = explicitOpacity ?? materialState.colorRgba[3];
+    } else if (explicitOpacity !== undefined) {
+      child.userData.usdOpacity = explicitOpacity;
     }
   });
 };
@@ -612,6 +620,12 @@ const serializeSceneNode = async (
 
   if (object.userData?.usdPurpose === 'guide') {
     lines.push(`${childIndent}uniform token purpose = "guide"`);
+  }
+  if (object.userData?.usdCollision === true && (primitiveType || isUsdMeshObject(object))) {
+    lines.push(`${childIndent}bool physics:collisionEnabled = true`);
+    if (isUsdMeshObject(object)) {
+      lines.push(`${childIndent}uniform token physics:approximation = "convexHull"`);
+    }
   }
 
   if (primitiveType) {

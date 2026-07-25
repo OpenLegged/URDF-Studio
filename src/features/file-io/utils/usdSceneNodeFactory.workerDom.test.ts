@@ -4,8 +4,10 @@ import * as THREE from 'three';
 
 import { GeometryType, type UrdfVisual } from '@/types';
 
+import { collectUsdExportAssetFiles } from './usdAssetCollection.ts';
 import { createUsdAssetRegistry } from './usdAssetRegistry.ts';
 import { buildUsdVisualSceneNode } from './usdSceneNodeFactory.ts';
+import { collectUsdSerializationContext } from './usdSerializationContext.ts';
 
 if (typeof globalThis.ProgressEvent === 'undefined') {
   class ProgressEventPolyfill extends Event {
@@ -202,8 +204,9 @@ test('buildUsdVisualSceneNode loads textured GLTF meshes in worker-like environm
       role: 'visual',
       registry,
     });
+    assert.ok(node);
 
-    const mesh = node?.getObjectByProperty('isMesh', true);
+    const mesh = node.getObjectByProperty('isMesh', true);
     assert.ok(mesh instanceof THREE.Mesh);
 
     const material = Array.isArray(mesh.material) ? mesh.material[0] : mesh.material;
@@ -215,6 +218,26 @@ test('buildUsdVisualSceneNode loads textured GLTF meshes in worker-like environm
       'expected textured GLTF worker load to install an image polyfill source',
     );
     assert.match(String(material.map.source.data.src), /^data:image\/png;base64,/);
+    assert.match(String(material.map.userData.usdSourcePath), /^data:image\/png;base64,/);
+
+    material.map.source.data = { width: 1, height: 1 };
+
+    const context = await collectUsdSerializationContext(node);
+    const textureRecord = context.materialByObject.get(mesh)?.appearance.texture;
+    assert.match(textureRecord?.sourcePath ?? '', /^data:image\/png;base64,/);
+    assert.match(textureRecord?.exportPath ?? '', /^external_[a-f0-9]{8}\.png$/);
+
+    const archiveFiles = await collectUsdExportAssetFiles({
+      sceneRoot: node,
+      context,
+      registry,
+    });
+    assert.deepEqual(
+      Array.from(archiveFiles.keys()).map((assetPath) =>
+        assetPath.replace(/[a-f0-9]{8}/, '<hash>'),
+      ),
+      ['assets/external_<hash>.png'],
+    );
   } finally {
     restoreWorkerImageGlobals(snapshot);
     tempObjectUrls.forEach((url) => URL.revokeObjectURL(url));

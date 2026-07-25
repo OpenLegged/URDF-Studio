@@ -204,3 +204,85 @@ test('collectUsdExportAssetFiles rejects when a required texture asset is missin
     /Texture asset not found for: textures\/missing\.png/,
   );
 });
+
+test('collectUsdExportAssetFiles preserves distinct same-basename textures', async () => {
+  const firstMesh = new THREE.Mesh(
+    createTexturedTriangleGeometry(),
+    createUsdBaseMaterial('#ffffff'),
+  );
+  applyUsdMaterialMetadata(firstMesh, { texture: 'pkg_a/textures/coat.png' });
+  const secondMesh = new THREE.Mesh(
+    createTexturedTriangleGeometry(),
+    createUsdBaseMaterial('#ffffff'),
+  );
+  applyUsdMaterialMetadata(secondMesh, { texture: 'pkg_b/textures/coat.png' });
+
+  const root = new THREE.Group();
+  root.name = 'demo_robot';
+  root.add(firstMesh, secondMesh);
+
+  const context = await collectUsdSerializationContext(root);
+  const { registry } = createUsdAssetRegistry({
+    'pkg_a/textures/coat.png': 'data:image/png;base64,QQ==',
+    'pkg_b/textures/coat.png': 'data:image/png;base64,Qg==',
+  });
+  const assets = await collectUsdExportAssetFiles({
+    sceneRoot: root,
+    context,
+    registry,
+  });
+
+  assert.deepEqual(Array.from(assets.keys()).sort(), [
+    'assets/pkg_a/coat.png',
+    'assets/pkg_b/coat.png',
+  ]);
+  assert.equal(await assets.get('assets/pkg_a/coat.png')?.text(), 'A');
+  assert.equal(await assets.get('assets/pkg_b/coat.png')?.text(), 'B');
+});
+
+test('collectUsdExportAssetFiles preserves KTX2 texture payloads and extensions', async () => {
+  const mesh = new THREE.Mesh(createTexturedTriangleGeometry(), createUsdBaseMaterial('#ffffff'));
+  applyUsdMaterialMetadata(mesh, { texture: 'textures/shell.ktx2' });
+
+  const root = new THREE.Group();
+  root.name = 'demo_robot';
+  root.add(mesh);
+
+  const context = await collectUsdSerializationContext(root);
+  const { registry } = createUsdAssetRegistry({
+    'textures/shell.ktx2': 'data:image/ktx2;base64,S1RYMg==',
+  });
+  const assets = await collectUsdExportAssetFiles({
+    sceneRoot: root,
+    context,
+    registry,
+  });
+
+  assert.deepEqual(Array.from(assets.keys()), ['assets/shell.ktx2']);
+  assert.equal(await assets.get('assets/shell.ktx2')?.text(), 'KTX2');
+});
+
+test('collectUsdExportAssetFiles packages anonymous embedded texture data URLs', async () => {
+  const texture = new THREE.Texture();
+  texture.image = { src: TEXTURE_DATA_URL };
+  const material = new THREE.MeshStandardMaterial({
+    color: '#ffffff',
+    map: texture,
+  });
+  const mesh = new THREE.Mesh(createTexturedTriangleGeometry(), material);
+  const root = new THREE.Group();
+  root.name = 'demo_robot';
+  root.add(mesh);
+
+  const context = await collectUsdSerializationContext(root);
+  const { registry } = createUsdAssetRegistry({});
+  const assets = await collectUsdExportAssetFiles({
+    sceneRoot: root,
+    context,
+    registry,
+  });
+  const [assetPath] = Array.from(assets.keys());
+
+  assert.match(assetPath ?? '', /^assets\/external_[a-f0-9]{8}\.png$/);
+  assert.equal(assets.get(assetPath)?.type, 'image/png');
+});
