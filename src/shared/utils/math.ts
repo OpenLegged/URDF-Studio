@@ -13,10 +13,26 @@ export class MathUtils {
     static computeEigenDecomposition3x3(matrix: THREE.Matrix3) {
         const m = matrix.elements;
 
+        // Normalize by the tensor scale so the Jacobi convergence threshold is
+        // relative instead of silently treating very small tensors as diagonal.
+        const matrixScale = Math.max(
+            Math.abs(m[0]),
+            Math.abs(m[1]),
+            Math.abs(m[2]),
+            Math.abs(m[4]),
+            Math.abs(m[5]),
+            Math.abs(m[8]),
+        );
+        const normalizationScale =
+            Number.isFinite(matrixScale) && matrixScale > 0 ? matrixScale : 1;
+
         // Copy matrix elements (assume symmetric matrix)
-        let a00 = m[0], a01 = m[1], a02 = m[2];
-        let a11 = m[4], a12 = m[5];
-        let a22 = m[8];
+        let a00 = m[0] / normalizationScale;
+        let a01 = m[1] / normalizationScale;
+        let a02 = m[2] / normalizationScale;
+        let a11 = m[4] / normalizationScale;
+        let a12 = m[5] / normalizationScale;
+        let a22 = m[8] / normalizationScale;
 
         // Initialize eigenvector matrix as identity matrix
         let v00 = 1, v01 = 0, v02 = 0;
@@ -55,7 +71,10 @@ export class MathUtils {
             }
 
             const tau = (aqq - app) / (2 * apq);
-            const t = Math.sign(tau) / (Math.abs(tau) + Math.sqrt(1 + tau * tau));
+            const t =
+                tau >= 0
+                    ? 1 / (tau + Math.sqrt(1 + tau * tau))
+                    : -1 / (-tau + Math.sqrt(1 + tau * tau));
             const c = 1 / Math.sqrt(1 + t * t);
             const s = t * c;
 
@@ -123,7 +142,11 @@ export class MathUtils {
         }
 
         return {
-            eigenvalues: [a00, a11, a22],
+            eigenvalues: [
+                a00 * normalizationScale,
+                a11 * normalizationScale,
+                a22 * normalizationScale,
+            ],
             eigenvectors: [
                 [v00, v01, v02],
                 [v10, v11, v12],
