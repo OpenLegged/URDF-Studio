@@ -4,10 +4,22 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 from collections import Counter
 from pathlib import Path
 
 from isaaclab.app import AppLauncher
+
+
+def _sanitize_json_value(value: object) -> object:
+    """Replace non-finite USD schema fallbacks with JSON-safe null values."""
+    if isinstance(value, float) and not math.isfinite(value):
+        return None
+    if isinstance(value, dict):
+        return {key: _sanitize_json_value(entry) for key, entry in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_sanitize_json_value(entry) for entry in value]
+    return value
 
 
 def parse_args() -> argparse.Namespace:
@@ -286,7 +298,7 @@ def main() -> None:
             summary[path] = summarize_stage(path, dump_dir)
 
         with open(args.output, "w", encoding="utf-8") as output_file:
-            json.dump(summary, output_file, indent=2)
+            json.dump(_sanitize_json_value(summary), output_file, indent=2, allow_nan=False)
     finally:
         simulation_app.close()
 
