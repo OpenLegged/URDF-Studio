@@ -55,12 +55,12 @@ samp {
 
   /* Surfaces (light) */
   --ui-bg: #f8f9fa;
-  --ui-panel-bg: #ffffff;
+  --ui-panel-bg: #fbfcfe;
   --ui-surface: #f8f9fa;
-  --ui-surface-elevated: #ffffff;
+  --ui-surface-elevated: #fdfdff;
   --ui-element-hover: #f1f5f9;
   --ui-element-active: #e2e8f0;
-  --ui-input-bg: #ffffff;
+  --ui-input-bg: #f9fbfd;
 
   /* Borders (light) */
   --ui-border: #e2e8f0;
@@ -145,13 +145,13 @@ html[data-lang='zh'] {
 
 .dark {
   /* Surfaces (dark) */
-  --ui-bg: #000000;
-  --ui-panel-bg: #1c1c1e;
-  --ui-surface: #2c2c2e;
-  --ui-surface-elevated: #3a3a3c;
-  --ui-element-hover: #3a3a3c;
-  --ui-element-active: #48484a;
-  --ui-input-bg: #1c1c1e;
+  --ui-bg: #111214;
+  --ui-panel-bg: #1b1d21;
+  --ui-surface: #272a30;
+  --ui-surface-elevated: #32363d;
+  --ui-element-hover: #343942;
+  --ui-element-active: #414750;
+  --ui-input-bg: #1b1d21;
 
   /* Borders (dark) */
   --ui-border: #3a3a3c;

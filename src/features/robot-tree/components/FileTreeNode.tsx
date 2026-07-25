@@ -205,7 +205,7 @@ const FileTreeNodeComponentBase: React.FC<FileTreeNodeComponentProps> = ({
             className={`ml-auto sticky right-0 z-[1] flex shrink-0 items-center gap-1 pl-2 ${
               isSelectedFile
                 ? 'bg-element-bg dark:bg-element-hover'
-                : 'bg-white group-hover:bg-element-hover dark:bg-panel-bg dark:group-hover:bg-element-hover'
+                : 'bg-panel-bg group-hover:bg-element-hover'
             }`}
           >
             {(showAddButton || showDeleteButton) && (
@@ -268,7 +268,7 @@ const FileTreeNodeComponentBase: React.FC<FileTreeNodeComponentProps> = ({
                               ? 'bg-pink-100 dark:bg-pink-900/30 text-pink-700 dark:text-pink-300'
                               : fileKind === 'mesh'
                                 ? 'bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400'
-                                : 'bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300'
+                                : 'bg-element-bg text-text-secondary'
                 }`}
               >
                 <span className="min-w-0 truncate">{fileTypeLabel}</span>

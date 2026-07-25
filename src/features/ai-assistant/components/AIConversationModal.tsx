@@ -586,7 +586,7 @@ export function AIConversationModal({
           <div className="flex flex-1 flex-col overflow-hidden">
             <div
               data-ai-conversation-scroll-viewport
-              className={`min-h-0 flex-1 overflow-y-auto bg-white dark:bg-panel-bg custom-scrollbar ${
+              className={`min-h-0 flex-1 overflow-y-auto bg-panel-bg custom-scrollbar ${
                 isCompactLayout ? 'px-3 pt-3' : 'px-6 pt-6'
               } ${messages.length === 0 ? 'pb-2' : isCompactLayout ? 'pb-3' : 'pb-6'}
               }`}

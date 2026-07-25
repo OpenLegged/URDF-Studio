@@ -123,7 +123,14 @@ export function resolveResponsivePanelLayout({
         right: 'auto',
         transform: 'none',
       }
-    : shouldEdgeDockOptionsPanel
+    : metrics.containerWidth > 0 && metrics.containerWidth < 520
+      ? {
+          top: `${TOP_PANEL_OFFSET}px`,
+          left: `${EDGE_GAP}px`,
+          right: 'auto',
+          transform: 'none',
+        }
+      : shouldEdgeDockOptionsPanel
       ? hasRightOverlayInset
         ? {
             top: `${TOP_PANEL_OFFSET}px`,
@@ -137,14 +144,7 @@ export function resolveResponsivePanelLayout({
             left: 'auto',
             transform: 'none',
           }
-      : metrics.containerWidth > 0 && metrics.containerWidth < 520
-        ? {
-            top: `${TOP_PANEL_OFFSET}px`,
-            right: WORKSPACE_OVERLAY_RIGHT_EDGE_GAP,
-            left: 'auto',
-            transform: 'none',
-          }
-        : { top: '16px', right: WORKSPACE_OVERLAY_RIGHT_EDGE_GAP };
+      : { top: '16px', right: WORKSPACE_OVERLAY_RIGHT_EDGE_GAP };
 
   if (shouldStackPanels) {
     const stackedTop = TOP_PANEL_OFFSET + metrics.optionsHeight + PANEL_GAP;

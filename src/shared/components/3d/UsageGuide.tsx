@@ -66,7 +66,7 @@ export const UsageGuide: React.FC<UsageGuideProps> = ({ lang }) => {
 
   return (
     <div className="pointer-events-none absolute bottom-[calc(4.25rem+env(safe-area-inset-bottom))] left-1/2 z-20 -translate-x-1/2 select-none sm:bottom-4">
-      <div className="pointer-events-auto flex items-center gap-1.5 rounded-full border border-border-black bg-panel-bg px-2.5 py-1 text-[10px] font-medium leading-none text-text-secondary shadow-sm sm:text-[11px]">
+      <div className="pointer-events-auto flex items-center gap-1.5 rounded-full border border-border-black/60 bg-panel-bg/75 px-2.5 py-1 text-[10px] font-medium leading-none text-text-secondary shadow-sm backdrop-blur sm:text-[11px]">
         <span className="max-w-[70vw] truncate sm:max-w-none">{instructionText}</span>
         <button
           type="button"

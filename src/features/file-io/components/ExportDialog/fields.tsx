@@ -119,7 +119,7 @@ export function SegmentedChoiceField<T extends string>({
             onClick={() => onChange(option.value)}
             className={`inline-flex min-h-8 items-center justify-center rounded-lg px-3 py-1.5 text-center text-xs font-medium leading-none transition-all ${
               isActive
-                ? 'bg-white text-text-primary shadow-sm dark:bg-segmented-active'
+                ? 'bg-segmented-active text-text-primary shadow-sm'
                 : 'text-text-secondary hover:bg-element-hover hover:text-text-primary'
             }`}
           >
