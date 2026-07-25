@@ -328,8 +328,8 @@ export const Slider: React.FC<SliderProps> = ({
     ? `0 0 0 2px var(--ui-panel-bg), ${thumbBoxShadow}`
     : thumbBoxShadow;
   const valueInputClassName = compactThumb
-    ? 'ml-2 h-5 w-12 shrink-0 rounded-md border border-transparent bg-transparent px-1 text-right text-[9px] font-mono tabular-nums text-text-secondary transition-colors focus:bg-input-bg focus:text-text-primary focus:outline-none focus:ring-2 focus:ring-system-blue/30 focus:border-border-black disabled:cursor-not-allowed disabled:opacity-50'
-    : 'ml-3 h-6 w-16 shrink-0 rounded-md border border-border-black bg-input-bg px-1.5 text-right text-[10px] font-mono tabular-nums text-text-tertiary transition-colors focus:outline-none focus:ring-2 focus:ring-system-blue/30 focus:border-system-blue disabled:cursor-not-allowed disabled:opacity-50';
+    ? 'ml-2 h-5 w-12 shrink-0 rounded-md border border-transparent bg-transparent px-1 text-right text-ui-micro font-mono tabular-nums text-text-secondary transition-colors focus:bg-input-bg focus:text-text-primary focus:outline-none focus:ring-2 focus:ring-system-blue/30 focus:border-border-black disabled:cursor-not-allowed disabled:opacity-50'
+    : 'ml-3 h-6 w-16 shrink-0 rounded-md border border-border-black bg-input-bg px-1.5 text-right text-ui-caption font-mono tabular-nums text-text-tertiary transition-colors focus:outline-none focus:ring-2 focus:ring-system-blue/30 focus:border-system-blue disabled:cursor-not-allowed disabled:opacity-50';
   return (
     <div className={`w-full ${className} touch-none`}>
       {(label || showValue) && (
@@ -468,7 +468,7 @@ export const Slider: React.FC<SliderProps> = ({
                 >
                   <div className="mx-auto h-1.5 w-px rounded-full bg-border-black/70" />
                   <div
-                    className={`mt-1 whitespace-nowrap text-[9px] font-medium ${
+                    className={`mt-1 whitespace-nowrap text-ui-micro font-medium ${
                       disabled ? 'text-text-tertiary/60' : 'text-text-tertiary'
                     }`}
                   >

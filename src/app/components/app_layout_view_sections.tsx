@@ -23,7 +23,7 @@ export function AppLayoutViewContent(props: AppLayoutViewContentProps) {
 
   return (
     <div
-      className="flex flex-col h-screen font-sans bg-app-bg text-text-primary"
+      className="flex flex-col h-screen bg-app-bg text-text-primary"
       onDragEnter={drag.handlers.onDragEnter}
       onDragOver={drag.handlers.onDragOver}
       onDragLeave={drag.handlers.onDragLeave}
