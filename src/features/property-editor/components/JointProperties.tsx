@@ -25,8 +25,10 @@ import {
   Vec3InlineInput,
   PROPERTY_EDITOR_INPUT_CLASS,
   PROPERTY_EDITOR_LINK_CLASS,
+  PROPERTY_EDITOR_FIELD_LABEL_CLASS,
   type Vec3Value,
 } from './FormControls';
+import { Vec3ClipboardActions } from './Vec3ClipboardActions';
 import { useMotorConfig } from '../hooks/useMotorConfig';
 import { TransformFields } from './TransformFields';
 import type { WorkspaceJointPropertyPatch } from '@/store/workspace/types';
@@ -249,7 +251,20 @@ export const JointProperties: React.FC<JointPropertiesProps> = ({
         </InputGroup>
 
         {supportsAxis && (
-          <InputGroup label={t.axisRotation}>
+          <div className="mb-1">
+            <div className="mb-0.5 flex items-center justify-between gap-2">
+              <label className={PROPERTY_EDITOR_FIELD_LABEL_CLASS}>{t.axisRotation}</label>
+              <Vec3ClipboardActions
+                cacheKey="joint-axis"
+                value={data.axis || DEFAULT_AXIS}
+                onChange={(axis) => updateJoint({ axis: toXYZ(axis, data.axis || DEFAULT_AXIS) })}
+                copyTitle={t.copyAxis}
+                pasteTitle={t.pasteAxis}
+                copiedTitle={t.axisCopied}
+                pastedTitle={t.axisPasted}
+                errorTitle={t.axisClipboardError}
+              />
+            </div>
             <Vec3InlineInput
               value={data.axis || DEFAULT_AXIS}
               onChange={(v) => updateJoint({ axis: toXYZ(v, data.axis || DEFAULT_AXIS) })}
@@ -259,7 +274,7 @@ export const JointProperties: React.FC<JointPropertiesProps> = ({
               precision={MAX_TRANSFORM_DECIMALS}
               commitPrecision={MAX_TRANSFORM_DECIMALS}
             />
-          </InputGroup>
+          </div>
         )}
       </CollapsibleSection>
 

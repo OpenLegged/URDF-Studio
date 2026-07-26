@@ -572,6 +572,11 @@ export interface TranslationKeys extends TranslationWorkflowKeys {
   positionCopied: string;
   positionPasted: string;
   positionClipboardError: string;
+  copyAxis: string;
+  pasteAxis: string;
+  axisCopied: string;
+  axisPasted: string;
+  axisClipboardError: string;
   fileBrowser: string;
   dropOrImport: string;
   dropFilesToImport: string;
