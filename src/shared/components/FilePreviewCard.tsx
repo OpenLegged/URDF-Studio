@@ -82,21 +82,21 @@ export const FilePreviewCard: React.FC<FilePreviewCardProps> = ({
   const shortName = file?.name.split('/').pop() ?? '';
 
   return (
-    <div className="rounded-lg border border-slate-200 dark:border-google-dark-border bg-slate-50 dark:bg-[#111113] overflow-hidden">
-      <div className="px-3 py-2 border-b border-slate-200 dark:border-google-dark-border bg-white dark:bg-[#1A1A1D]">
-        <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400">
+    <div className="rounded-lg border border-border-black bg-element-bg overflow-hidden">
+      <div className="px-3 py-2 border-b border-border-black bg-panel-bg">
+        <span className="text-[10px] font-bold uppercase tracking-wider text-text-tertiary">
           {title}
         </span>
       </div>
 
       <div className="p-3">
-        <div className="w-full aspect-[16/10] rounded-md border border-slate-200 dark:border-[#2F2F34] bg-white dark:bg-[#0B0B0D] overflow-hidden flex items-center justify-center">
+        <div className="w-full aspect-[16/10] rounded-md border border-border-black bg-panel-bg overflow-hidden flex items-center justify-center">
           {previewUrl ? (
             <img src={previewUrl} alt={`${shortName} preview`} className="w-full h-full object-contain" />
           ) : (
             <div className="flex flex-col items-center justify-center gap-2 px-3 text-center">
-              <Box className="w-6 h-6 text-slate-400" />
-              <span className="text-[11px] text-slate-500 dark:text-slate-400">
+              <Box className="w-6 h-6 text-text-tertiary" />
+              <span className="text-[11px] text-text-tertiary">
                 {file ? noPreviewText : emptyText}
               </span>
             </div>
@@ -105,10 +105,10 @@ export const FilePreviewCard: React.FC<FilePreviewCardProps> = ({
 
         {file && (
           <div className="mt-2 flex items-center justify-between gap-2">
-            <span className="text-xs text-slate-700 dark:text-slate-300 truncate" title={file.name}>
+            <span className="text-xs text-text-secondary truncate" title={file.name}>
               {shortName}
             </span>
-            <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-200 dark:bg-[#2E2E33] text-slate-600 dark:text-slate-300 font-semibold">
+            <span className="text-[10px] px-1.5 py-0.5 rounded bg-element-hover text-text-secondary font-semibold">
               {file.format.toUpperCase()}
             </span>
           </div>

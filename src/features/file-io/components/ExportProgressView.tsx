@@ -58,10 +58,10 @@ export function ExportProgressView({
           </div>
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <div className="text-[9px] font-semibold uppercase tracking-[0.14em] text-text-tertiary">
+              <div className="text-ui-caption font-semibold uppercase tracking-[0.14em] text-text-tertiary">
                 {t.exportProgressTitle}
               </div>
-              <div className="rounded-full border border-border-black bg-panel-bg px-1.5 py-0.5 text-[9px] font-medium text-text-secondary">
+              <div className="rounded-full border border-border-black bg-panel-bg px-1.5 py-0.5 text-ui-caption font-medium text-text-secondary">
                 {currentStepLabel}
               </div>
             </div>
@@ -69,12 +69,12 @@ export function ExportProgressView({
               {progress.stepLabel}
             </h3>
             {summary && (
-              <p className="mt-1.5 text-[11px] leading-5 text-text-secondary">
+              <p className="mt-1.5 text-ui-label leading-5 text-text-secondary">
                 {summary}
               </p>
             )}
             {artifact && (
-              <div className="mt-2.5 rounded-xl border border-border-black bg-panel-bg px-2.5 py-1.5 font-mono text-[11px] leading-4 text-text-primary break-all">
+              <div className="mt-2.5 rounded-xl border border-border-black bg-panel-bg px-2.5 py-1.5 font-mono text-ui-label leading-4 text-text-primary break-all">
                 {artifact}
               </div>
             )}
@@ -83,7 +83,7 @@ export function ExportProgressView({
       </section>
 
       <section className="rounded-2xl border border-border-black bg-element-bg/55 p-3.5">
-        <div className="flex items-center justify-between gap-3 text-[10px] font-medium text-text-secondary">
+        <div className="flex items-center justify-between gap-3 text-ui-caption font-medium text-text-secondary">
           <span>{t.exporting}</span>
           <span>{percentageLabel}</span>
         </div>
@@ -123,7 +123,7 @@ export function ExportProgressView({
         </div>
       </section>
 
-      <section className="rounded-2xl border border-border-black bg-element-bg/45 px-3 py-2.5 text-[10px] leading-5 text-text-secondary">
+      <section className="rounded-2xl border border-border-black bg-element-bg/45 px-3 py-2.5 text-ui-caption leading-5 text-text-secondary">
         {t.exportProgressKeepWindowOpen}
       </section>
     </div>

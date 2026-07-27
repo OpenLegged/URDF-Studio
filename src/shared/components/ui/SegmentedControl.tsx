@@ -48,7 +48,7 @@ export function SegmentedControl<T extends string | number>({
         : stretch
           ? 'py-1.5'
           : 'px-4 py-1.5';
-  const textSize = size === 'xs' ? 'text-[11px]' : size === 'sm' ? 'text-[13px]' : 'text-sm';
+  const textSize = size === 'xs' ? 'text-ui-label' : size === 'sm' ? 'text-ui-control' : 'text-sm';
   const iconSize = size === 'xs' ? 'w-3 h-3' : size === 'sm' ? 'w-3.5 h-3.5' : 'w-4 h-4';
   const enabledOptions = options.filter((option) => !option.disabled);
   const enabledValues = enabledOptions.map((option) => option.value);

@@ -102,7 +102,7 @@ export const CheckboxOption: React.FC<CheckboxOptionProps> = ({
   const content = (
     <div className={`flex ${contentHeightClassName} items-center gap-2`}>
       {icon}
-      <span className={`text-[11px] ${textLineHeightClassName} ${labelClassName}`}>
+      <span className={`text-ui-label ${textLineHeightClassName} ${labelClassName}`}>
         {label}
       </span>
     </div>
@@ -114,7 +114,7 @@ export const CheckboxOption: React.FC<CheckboxOptionProps> = ({
         checked={checked}
         onChange={onChange}
         label={content as any}
-        className="text-[11px]" // Ensure checkbox text is small
+        className="text-ui-label" // Keep panel labels readable while preserving the compact layout.
       />
     </div>
   );
@@ -197,7 +197,7 @@ export const SliderOption: React.FC<SliderOptionProps> = ({
         showValue={true}
         formatValue={formatSliderValue}
         parseValue={parseSliderValue}
-        labelClassName={`text-[10px] text-text-tertiary mb-1 ${labelClassName}`}
+        labelClassName={`text-ui-caption text-text-tertiary mb-1 ${labelClassName}`}
         compactThumb={compact}
         disabled={disabled}
       />
@@ -346,7 +346,7 @@ export const CollapsibleSection: React.FC<CollapsibleSectionProps> = ({
       <button
         type="button"
         onClick={handleToggle}
-        className={`flex w-full items-center justify-between px-2 py-2 text-left text-[10px] font-semibold tracking-[0.02em] text-text-tertiary transition-colors hover:bg-element-hover focus:outline-none focus-visible:ring-2 focus-visible:ring-system-blue/30 ${triggerClassName}`}
+        className={`flex w-full items-center justify-between px-2 py-2 text-left text-ui-label font-semibold tracking-[0.02em] text-text-tertiary transition-colors hover:bg-element-hover focus:outline-none focus-visible:ring-2 focus-visible:ring-system-blue/30 ${triggerClassName}`}
       >
         <span className={titleClassName}>{title}</span>
         <span
@@ -415,7 +415,7 @@ export const GroundPlaneControls: React.FC<GroundPlaneControlsProps> = ({
             type="button"
             onClick={onAutoFit}
             disabled={disabled}
-            className="flex flex-1 items-center justify-center gap-1 rounded-md border border-system-blue/20 bg-system-blue/10 px-2 py-1 text-[10px] font-medium text-system-blue transition-colors hover:bg-system-blue/15 focus:outline-none focus-visible:ring-2 focus-visible:ring-system-blue/30 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-system-blue/10 dark:border-system-blue/30 dark:bg-system-blue/20 dark:hover:bg-system-blue/25 dark:disabled:hover:bg-system-blue/20"
+          className="flex flex-1 items-center justify-center gap-1 rounded-md border border-system-blue/20 bg-system-blue/10 px-2 py-1 text-ui-label font-medium text-system-blue transition-colors hover:bg-system-blue/15 focus:outline-none focus-visible:ring-2 focus-visible:ring-system-blue/30 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-system-blue/10 dark:border-system-blue/30 dark:bg-system-blue/20 dark:hover:bg-system-blue/25 dark:disabled:hover:bg-system-blue/20"
           >
             {autoFitIcon}
             {autoFitLabel}
@@ -425,7 +425,7 @@ export const GroundPlaneControls: React.FC<GroundPlaneControlsProps> = ({
           type="button"
           onClick={onReset}
           disabled={disabled}
-          className="flex items-center justify-center gap-1 rounded-md bg-element-bg px-2 py-1 text-[10px] font-medium text-text-secondary transition-colors hover:bg-element-hover focus:outline-none focus-visible:ring-2 focus-visible:ring-system-blue/30 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-element-bg"
+          className="flex items-center justify-center gap-1 rounded-md bg-element-bg px-2 py-1 text-ui-label font-medium text-text-secondary transition-colors hover:bg-element-hover focus:outline-none focus-visible:ring-2 focus-visible:ring-system-blue/30 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-element-bg"
         >
           {resetLabel}
         </button>
@@ -468,7 +468,7 @@ export const OptionsPanelHeader: React.FC<OptionsPanelHeaderProps> = ({
 }) => {
   return (
     <div
-      className={`group flex min-w-0 ${FLOATING_WINDOW_HEADER_HEIGHT_CLASS} shrink-0 select-none touch-none items-center justify-between gap-1.5 border-b border-border-black/60 bg-element-bg px-2 text-[10px] transition-colors hover:bg-element-hover ${className}`}
+      className={`group flex min-w-0 ${FLOATING_WINDOW_HEADER_HEIGHT_CLASS} shrink-0 select-none touch-none items-center justify-between gap-1.5 border-b border-border-black/60 bg-element-bg px-2 text-ui-label transition-colors hover:bg-element-hover ${className}`}
       onMouseDown={onMouseDown}
       onKeyDown={(e) => e.stopPropagation()}
       role="toolbar"

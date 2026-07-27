@@ -1,16 +1,19 @@
 import * as THREE from 'three';
 
-import { normalizeTexturePathForExport } from '@/core/parsers/meshPathUtils.ts';
-import { createThreeColorFromSRGB, parseThreeColorWithOpacity } from '@/core/utils/color.ts';
+import { buildTextureExportPathOverrides } from '@/core/parsers/meshPathUtils.ts';
+import { parseThreeColorWithOpacity } from '@/core/utils/color.ts';
 
 import { type UsdMaterialMetadata } from './usdSceneNodeFactory.ts';
 import { isUsdMeshObject } from './usdMaterialNormalization.ts';
 import { normalizeUsdProgressLabel, yieldPeriodically } from './usdProgress.ts';
-
-export type UsdTextureRecord = {
-  sourcePath: string;
-  exportPath: string;
-};
+import { createUsdTextureRecord, type UsdTextureRecord } from './usdTextureRecord.ts';
+import {
+  clampUsdColorChannel,
+  createThreeColorFromUsdAuthoredColor,
+  normalizeUsdAuthoredColorTuple,
+  toUsdAuthoredColor,
+  toUsdAuthoredColorFromSrgbTuple,
+} from './usdColorSpace.ts';
 
 export type UsdRenderableAppearance = {
   color: THREE.Color;
@@ -63,6 +66,7 @@ export type UsdSerializationContext = {
   materialRecords: UsdPreviewMaterialRecord[];
   geometryByObject: WeakMap<THREE.Object3D, UsdMeshGeometryRecord>;
   geometryRecords: UsdMeshGeometryRecord[];
+  textureExportPathOverrides: ReadonlyMap<string, string>;
 };
 
 export type UsdSerializationContextProgress = {
@@ -81,53 +85,6 @@ type CollectUsdSerializationContextOptions = {
 
 const DEFAULT_OBJECT_YIELD_INTERVAL = 32;
 const DEFAULT_VERTEX_YIELD_INTERVAL = 32768;
-const USD_BRIGHT_NEUTRAL_SNAP_MIN = 0.8;
-const USD_BRIGHT_NEUTRAL_SNAP_DELTA = 0.01;
-
-const clampUsdColorChannel = (value: number): number => {
-  if (!Number.isFinite(value)) {
-    return 0;
-  }
-
-  if (Math.abs(value) <= 1e-6) {
-    return 0;
-  }
-
-  if (Math.abs(value - 1) <= 1e-6) {
-    return 1;
-  }
-
-  return Math.max(0, Math.min(1, value));
-};
-
-const normalizeUsdAuthoredColorTuple = (
-  color: readonly [number, number, number],
-): [number, number, number] => {
-  const normalizedColor: [number, number, number] = [
-    clampUsdColorChannel(color[0]),
-    clampUsdColorChannel(color[1]),
-    clampUsdColorChannel(color[2]),
-  ];
-
-  const minChannel = Math.min(...normalizedColor);
-  const maxChannel = Math.max(...normalizedColor);
-  if (
-    minChannel >= USD_BRIGHT_NEUTRAL_SNAP_MIN &&
-    maxChannel - minChannel <= USD_BRIGHT_NEUTRAL_SNAP_DELTA
-  ) {
-    const snappedChannel = clampUsdColorChannel(
-      Number(((normalizedColor[0] + normalizedColor[1] + normalizedColor[2]) / 3).toFixed(2)),
-    );
-    return [snappedChannel, snappedChannel, snappedChannel];
-  }
-
-  return normalizedColor;
-};
-
-const toUsdAuthoredColor = (color: THREE.Color): [number, number, number] => {
-  const authoredColor = color.clone().convertLinearToSRGB();
-  return normalizeUsdAuthoredColorTuple([authoredColor.r, authoredColor.g, authoredColor.b]);
-};
 
 const isDirectReadableUsdNumericArray = (
   value: ArrayLike<number>,
@@ -164,62 +121,10 @@ export const getUsdNumericAttributeSource = (
   return null;
 };
 
-const isExternalAssetPath = (path: string): boolean => {
-  return /^(?:blob:|https?:\/\/|data:)/i.test(path);
-};
-
-const hashString = (value: string): string => {
-  let hash = 2166136261;
-  for (let index = 0; index < value.length; index += 1) {
-    hash ^= value.charCodeAt(index);
-    hash = Math.imul(hash, 16777619);
-  }
-  return (hash >>> 0).toString(16).padStart(8, '0');
-};
-
 const hashGeometryNumber = (hash: number, value: number): number => {
   const normalized = Number.isFinite(value) ? Math.round(value * 1_000_000) : 0;
   hash ^= normalized >>> 0;
   return Math.imul(hash, 16777619) >>> 0;
-};
-
-const inferTextureExtension = (texturePath: string): string => {
-  const dataUrlMatch = texturePath.match(/^data:image\/([a-z0-9.+-]+);/i);
-  if (dataUrlMatch?.[1]) {
-    const mimeSubtype = dataUrlMatch[1].toLowerCase();
-    if (mimeSubtype === 'jpeg') return 'jpg';
-    if (mimeSubtype.includes('svg')) return 'svg';
-    if (mimeSubtype.includes('png')) return 'png';
-    if (mimeSubtype.includes('webp')) return 'webp';
-    if (mimeSubtype.includes('gif')) return 'gif';
-    return mimeSubtype.replace(/[^a-z0-9]/g, '') || 'png';
-  }
-
-  const pathname = texturePath.split('?')[0]?.split('#')[0] ?? texturePath;
-  const extension = pathname.split('.').pop()?.toLowerCase();
-  return extension && /^[a-z0-9]+$/.test(extension) ? extension : 'png';
-};
-
-export const createUsdTextureRecord = (
-  texturePath: string | null | undefined,
-): UsdTextureRecord | null => {
-  const sourcePath = String(texturePath || '').trim();
-  if (!sourcePath) return null;
-
-  if (!isExternalAssetPath(sourcePath)) {
-    const exportPath = normalizeTexturePathForExport(sourcePath);
-    return exportPath
-      ? {
-          sourcePath,
-          exportPath,
-        }
-      : null;
-  }
-
-  return {
-    sourcePath,
-    exportPath: `external_${hashString(sourcePath)}.${inferTextureExtension(sourcePath)}`,
-  };
 };
 
 const parseDisplayColor = (
@@ -253,7 +158,7 @@ const parseExplicitUsdAuthoredAppearance = (
       : Array.isArray(materialMetadata?.colorRgba) &&
           materialMetadata.colorRgba.length === 4 &&
           materialMetadata.colorRgba.every((value) => Number.isFinite(value))
-        ? normalizeUsdAuthoredColorTuple([
+        ? toUsdAuthoredColorFromSrgbTuple([
             Number(materialMetadata.colorRgba[0]),
             Number(materialMetadata.colorRgba[1]),
             Number(materialMetadata.colorRgba[2]),
@@ -267,12 +172,14 @@ const parseExplicitUsdAuthoredAppearance = (
   const explicitOpacity =
     Number.isFinite(object.userData?.usdOpacity) && object.userData.usdOpacity !== null
       ? clampUsdColorChannel(Number(object.userData.usdOpacity))
-      : Number.isFinite(materialMetadata?.colorRgba?.[3])
-        ? clampUsdColorChannel(Number(materialMetadata?.colorRgba?.[3]))
-        : 1;
+      : Number.isFinite(materialMetadata?.opacity)
+        ? clampUsdColorChannel(Number(materialMetadata?.opacity))
+        : Number.isFinite(materialMetadata?.colorRgba?.[3])
+          ? clampUsdColorChannel(Number(materialMetadata?.colorRgba?.[3]))
+          : 1;
 
   return {
-    color: createThreeColorFromSRGB(authoredColor[0], authoredColor[1], authoredColor[2]),
+    color: createThreeColorFromUsdAuthoredColor(authoredColor),
     authoredColor,
     opacity: explicitOpacity,
   };
@@ -301,6 +208,30 @@ const getUsdPaletteEntry = (
   return palette.find((entry) => entry?.materialIndex === materialIndex) || null;
 };
 
+const getExplicitUsdOpacity = (
+  object: THREE.Object3D,
+  materialIndex: number,
+  fallbackOpacity: number,
+): number => {
+  const paletteOpacity = getUsdPaletteEntry(object, materialIndex)?.usdOpacity;
+  if (Number.isFinite(paletteOpacity)) {
+    return clampUsdColorChannel(Number(paletteOpacity));
+  }
+
+  if (materialIndex === 0 && Number.isFinite(object.userData?.usdOpacity)) {
+    return clampUsdColorChannel(Number(object.userData.usdOpacity));
+  }
+
+  const materialMetadata = (materialIndex === 0 ? object.userData?.usdMaterial : null) as
+    | UsdMaterialMetadata
+    | undefined;
+  if (Number.isFinite(materialMetadata?.opacity)) {
+    return clampUsdColorChannel(Number(materialMetadata?.opacity));
+  }
+
+  return fallbackOpacity;
+};
+
 const parseExplicitUsdAuthoredAppearanceForMaterial = (
   object: THREE.Object3D,
   materialIndex = 0,
@@ -313,7 +244,7 @@ const parseExplicitUsdAuthoredAppearanceForMaterial = (
       Number(paletteEntry.usdAuthoredColor[2]),
     ]);
     return {
-      color: createThreeColorFromSRGB(authoredColor[0], authoredColor[1], authoredColor[2]),
+      color: createThreeColorFromUsdAuthoredColor(authoredColor),
       authoredColor,
       opacity:
         paletteEntry.usdOpacity !== undefined
@@ -329,12 +260,19 @@ const parseExplicitUsdAuthoredAppearanceForMaterial = (
   return null;
 };
 
-const getRenderableTextureRecord = (
-  object: THREE.Object3D,
-  materialIndex = 0,
-): UsdTextureRecord | null => {
+const getTextureSourceDataPath = (texture: THREE.Texture): string => {
+  const sourceData: unknown = texture.source?.data;
+  if (!sourceData || typeof sourceData !== 'object' || !('src' in sourceData)) {
+    return '';
+  }
+
+  const sourcePath = (sourceData as { src?: unknown }).src;
+  return typeof sourcePath === 'string' ? sourcePath.trim() : '';
+};
+
+const getRenderableTextureSourcePath = (object: THREE.Object3D, materialIndex = 0): string => {
   if (!isUsdMeshObject(object) || !object.geometry.getAttribute('uv')) {
-    return null;
+    return '';
   }
 
   const paletteEntry = getUsdPaletteEntry(object, materialIndex);
@@ -344,31 +282,43 @@ const getRenderableTextureRecord = (
       | UsdMaterialMetadata
       | undefined);
   if (materialMetadata?.texture) {
-    return createUsdTextureRecord(materialMetadata.texture);
+    return String(materialMetadata.texture).trim();
   }
 
   const material = Array.isArray(object.material)
     ? object.material[materialIndex] || object.material[0]
     : object.material;
   if (!material || !('map' in material)) {
-    return null;
+    return '';
   }
 
   const texture = (material as THREE.Material & { map?: THREE.Texture | null }).map;
   if (!texture) {
-    return null;
+    return '';
   }
 
-  const candidatePath = String(texture.userData?.usdSourcePath || texture.name || '').trim();
+  return String(
+    texture.userData?.usdSourcePath || texture.name || getTextureSourceDataPath(texture),
+  ).trim();
+};
 
-  return createUsdTextureRecord(candidatePath);
+const getRenderableTextureRecord = (
+  object: THREE.Object3D,
+  materialIndex = 0,
+  exportPathOverrides?: ReadonlyMap<string, string> | null,
+): UsdTextureRecord | null => {
+  return createUsdTextureRecord(
+    getRenderableTextureSourcePath(object, materialIndex),
+    exportPathOverrides,
+  );
 };
 
 export const getUsdRenderableAppearance = (
   object: THREE.Object3D,
   materialIndex = 0,
+  textureExportPathOverrides?: ReadonlyMap<string, string> | null,
 ): UsdRenderableAppearance | null => {
-  const texture = getRenderableTextureRecord(object, materialIndex);
+  const texture = getRenderableTextureRecord(object, materialIndex, textureExportPathOverrides);
   const explicitAuthoredAppearance = parseExplicitUsdAuthoredAppearanceForMaterial(
     object,
     materialIndex,
@@ -392,7 +342,7 @@ export const getUsdRenderableAppearance = (
     return {
       color: explicitColor.color,
       authoredColor: explicitColor.authoredColor,
-      opacity: explicitColor.opacity,
+      opacity: getExplicitUsdOpacity(object, materialIndex, explicitColor.opacity),
       texture,
     };
   }
@@ -422,7 +372,10 @@ type UsdMeshSubsetAppearance = {
   faceIndices: number[];
 };
 
-const getUsdMeshSubsetAppearances = (object: THREE.Object3D): UsdMeshSubsetAppearance[] => {
+const getUsdMeshSubsetAppearances = (
+  object: THREE.Object3D,
+  textureExportPathOverrides?: ReadonlyMap<string, string> | null,
+): UsdMeshSubsetAppearance[] => {
   if (!isUsdMeshObject(object) || !Array.isArray(object.material) || object.material.length <= 1) {
     return [];
   }
@@ -454,7 +407,11 @@ const getUsdMeshSubsetAppearances = (object: THREE.Object3D): UsdMeshSubsetAppea
 
   return Array.from(faceIndicesByMaterial.entries())
     .map(([materialIndex, faceIndices]) => {
-      const appearance = getUsdRenderableAppearance(object, materialIndex);
+      const appearance = getUsdRenderableAppearance(
+        object,
+        materialIndex,
+        textureExportPathOverrides,
+      );
       if (!appearance || faceIndices.length === 0) {
         return null;
       }
@@ -687,6 +644,40 @@ const createUsdGeometrySignature = (data: UsdMeshGeometryData): string => {
   return data.signature;
 };
 
+const collectUsdTextureSourcePaths = (sceneRoot: THREE.Object3D): Set<string> => {
+  const textureSourcePaths = new Set<string>();
+  const addTextureSourcePath = (value: unknown) => {
+    const sourcePath = typeof value === 'string' ? value.trim() : '';
+    if (sourcePath) {
+      textureSourcePaths.add(sourcePath);
+    }
+  };
+
+  sceneRoot.traverse((object) => {
+    const materialMetadata = object.userData?.usdMaterial as UsdMaterialMetadata | undefined;
+    addTextureSourcePath(materialMetadata?.texture);
+
+    const palette = Array.isArray(object.userData?.usdMaterialPalette)
+      ? (object.userData.usdMaterialPalette as UsdPaletteEntry[])
+      : [];
+    palette.forEach((entry) => {
+      const paletteMaterial = entry?.usdMaterial as UsdMaterialMetadata | undefined;
+      addTextureSourcePath(paletteMaterial?.texture);
+    });
+
+    if (!isUsdMeshObject(object)) {
+      return;
+    }
+
+    const materialCount = Array.isArray(object.material) ? object.material.length : 1;
+    for (let materialIndex = 0; materialIndex < materialCount; materialIndex += 1) {
+      addTextureSourcePath(getRenderableTextureSourcePath(object, materialIndex));
+    }
+  });
+
+  return textureSourcePaths;
+};
+
 export const collectUsdSerializationContext = async (
   sceneRoot: THREE.Object3D,
   {
@@ -706,6 +697,9 @@ export const collectUsdSerializationContext = async (
   const geometryByBuffer = new WeakMap<THREE.BufferGeometry, UsdMeshGeometryRecord>();
   const geometryRecords: UsdMeshGeometryRecord[] = [];
   const objects: THREE.Object3D[] = [];
+  const textureExportPathOverrides = buildTextureExportPathOverrides(
+    collectUsdTextureSourcePaths(sceneRoot),
+  );
 
   sceneRoot.traverse((object) => {
     if (object.userData.usdGeomType || isUsdMeshObject(object)) {
@@ -727,7 +721,9 @@ export const collectUsdSerializationContext = async (
     const label = normalizeUsdProgressLabel(object.name || object.userData.usdGeomType, 'object');
 
     const materialSubsets =
-      object.userData?.usdPurpose === 'guide' ? [] : getUsdMeshSubsetAppearances(object);
+      object.userData?.usdPurpose === 'guide'
+        ? []
+        : getUsdMeshSubsetAppearances(object, textureExportPathOverrides);
     if (materialSubsets.length > 0) {
       const subsetRecords: UsdMaterialSubsetRecord[] = [];
       materialSubsets.forEach((subset, subsetIndex) => {
@@ -775,7 +771,9 @@ export const collectUsdSerializationContext = async (
       materialSubsetsByObject.set(object, subsetRecords);
     } else {
       const appearance =
-        object.userData?.usdPurpose === 'guide' ? null : getUsdRenderableAppearance(object);
+        object.userData?.usdPurpose === 'guide'
+          ? null
+          : getUsdRenderableAppearance(object, 0, textureExportPathOverrides);
       if (appearance) {
         const signature = createUsdMaterialSignature(appearance);
         let record = materialBySignature.get(signature);
@@ -846,5 +844,6 @@ export const collectUsdSerializationContext = async (
     materialRecords,
     geometryByObject,
     geometryRecords,
+    textureExportPathOverrides,
   };
 };

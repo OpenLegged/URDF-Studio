@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { GLTFLoader, type GLTF } from 'three/addons/loaders/GLTFLoader.js';
 import { clone as cloneSkeleton } from 'three/examples/jsm/utils/SkeletonUtils.js';
 
 import type { UrdfVisual } from '@/types';
@@ -64,6 +64,7 @@ export type UsdVisualRole = 'visual' | 'collision';
 export type UsdMaterialMetadata = {
   color?: string;
   colorRgba?: [number, number, number, number];
+  opacity?: number;
   texture?: string;
   forceUniformOverride?: boolean;
   preserveEmbeddedMaterials?: boolean;
@@ -178,6 +179,72 @@ const objectHasSkinnedMeshes = (root: THREE.Object3D): boolean => {
   return hasSkinnedMeshes;
 };
 
+type UsdGltfTextureDefinition = {
+  source?: unknown;
+  extensions?: {
+    KHR_texture_basisu?: {
+      source?: unknown;
+    };
+  };
+};
+
+type UsdGltfImageDefinition = {
+  uri?: unknown;
+};
+
+const getUsdGltfTextureSourceIndex = (
+  textureDefinition: UsdGltfTextureDefinition,
+): number | null => {
+  const sourceIndex =
+    textureDefinition.extensions?.KHR_texture_basisu?.source ?? textureDefinition.source;
+  return Number.isInteger(sourceIndex) && Number(sourceIndex) >= 0 ? Number(sourceIndex) : null;
+};
+
+const applyUsdGltfTextureSourcePaths = (gltf: GLTF): void => {
+  const json = gltf.parser.json as unknown;
+  if (!json || typeof json !== 'object') {
+    return;
+  }
+
+  const textureDefinitions = (json as { textures?: unknown }).textures;
+  const imageDefinitions = (json as { images?: unknown }).images;
+  if (!Array.isArray(textureDefinitions) || !Array.isArray(imageDefinitions)) {
+    return;
+  }
+
+  gltf.parser.associations.forEach((association, associatedObject) => {
+    if (!(associatedObject instanceof THREE.Texture) || !Number.isInteger(association.textures)) {
+      return;
+    }
+
+    const textureDefinition = textureDefinitions[Number(association.textures)] as
+      | UsdGltfTextureDefinition
+      | undefined;
+    if (!textureDefinition || typeof textureDefinition !== 'object') {
+      return;
+    }
+
+    const sourceIndex = getUsdGltfTextureSourceIndex(textureDefinition);
+    if (sourceIndex === null) {
+      return;
+    }
+
+    const imageDefinition = imageDefinitions[sourceIndex] as UsdGltfImageDefinition | undefined;
+    const sourcePath =
+      imageDefinition && typeof imageDefinition === 'object'
+        ? String(imageDefinition.uri ?? '').trim()
+        : '';
+    if (!sourcePath) {
+      return;
+    }
+
+    associatedObject.userData = {
+      ...associatedObject.userData,
+      usdSourcePath: sourcePath,
+    };
+  });
+};
+
 const cloneUsdGltfSceneAsset = (asset: CachedUsdGltfSceneAsset): THREE.Object3D => {
   const clonedRoot = asset.preserveSkeletons ? cloneSkeleton(asset.scene) : asset.scene.clone(true);
 
@@ -219,6 +286,7 @@ const loadUsdGltfSceneAsset = async (
   const pendingLoad = (async (): Promise<CachedUsdGltfSceneAsset> => {
     const loader = new GLTFLoader(getUsdTextureLoadingManager(registry));
     const gltf = await loader.loadAsync(assetUrl);
+    applyUsdGltfTextureSourcePaths(gltf);
     return {
       scene: gltf.scene,
       preserveSkeletons: objectHasSkinnedMeshes(gltf.scene),
@@ -345,12 +413,21 @@ const createUsdPrimitiveSceneNode = (
         '#ffffff';
       const mesh = new THREE.Mesh(geometry, createUsdBaseMaterial(color));
       mesh.name = `box_${entry.face}`;
-      mesh.userData.usdGeomType = 'Cube';
       mesh.userData.usdDisplayColor = color;
       mesh.userData.usdMaterial = {
         color,
+        ...(entry.material.colorRgba ? { colorRgba: [...entry.material.colorRgba] } : {}),
+        ...(Number.isFinite(entry.material.opacity)
+          ? { opacity: Math.max(0, Math.min(1, Number(entry.material.opacity))) }
+          : {}),
         ...(entry.material.texture ? { texture: entry.material.texture } : {}),
       };
+      const opacity = Number.isFinite(entry.material.opacity)
+        ? Number(entry.material.opacity)
+        : entry.material.colorRgba?.[3];
+      if (Number.isFinite(opacity)) {
+        mesh.userData.usdOpacity = Math.max(0, Math.min(1, Number(opacity)));
+      }
       mesh.userData.usdSerializeFilteredGroups = true;
       anchor.add(mesh);
     });

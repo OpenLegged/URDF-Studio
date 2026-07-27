@@ -43,6 +43,47 @@ function buildQuaternionFromEigenvectors(eigenvectors: number[][]): THREE.Quater
     .normalize();
 }
 
+function reconstructInertiaTensor(
+  diagonalInertia: [number, number, number],
+  principalAxes: THREE.Quaternion,
+): THREE.Matrix3 {
+  const principalRotation = new THREE.Matrix3().setFromMatrix4(
+    new THREE.Matrix4().makeRotationFromQuaternion(principalAxes),
+  );
+  return principalRotation
+    .clone()
+    .multiply(
+      new THREE.Matrix3().set(
+        diagonalInertia[0],
+        0,
+        0,
+        0,
+        diagonalInertia[1],
+        0,
+        0,
+        0,
+        diagonalInertia[2],
+      ),
+    )
+    .multiply(principalRotation.clone().transpose());
+}
+
+function assertMatrixClose(
+  actual: THREE.Matrix3,
+  expected: THREE.Matrix3,
+  relativeTolerance = 1e-8,
+): void {
+  const tolerance =
+    Math.max(...expected.elements.map((value) => Math.abs(value))) * relativeTolerance;
+  expected.elements.forEach((expectedValue, index) => {
+    const actualValue = actual.elements[index] ?? 0;
+    assert.ok(
+      Math.abs(actualValue - expectedValue) <= tolerance,
+      `expected matrix[${index}] ${actualValue} to match ${expectedValue}`,
+    );
+  });
+}
+
 test('preserves raw eigenvalue order and composes inertial-origin rotation using Isaac principal axes', () => {
   const originQuaternion = new THREE.Quaternion().setFromEuler(
     new THREE.Euler(0.2, -0.3, 0.4, 'ZYX'),
@@ -144,5 +185,63 @@ test('matches Isaac Sim principal axes for the Unitree B2 FL_hip inertia tensor'
       -2.2948382422327995e-2,
       0.9997366070747375,
     ),
+  );
+});
+
+test('decomposes extremely small off-diagonal inertia without losing its orientation', () => {
+  const inertiaMatrix = new THREE.Matrix3().set(
+    1.117622e-28,
+    -3.109439e-29,
+    1.576247e-29,
+    -3.109439e-29,
+    1.34293e-28,
+    -2.819458e-29,
+    1.576247e-29,
+    -2.819458e-29,
+    8.068191e-29,
+  );
+  const actual = computeUsdInertiaProperties({
+    origin: {
+      xyz: { x: 0, y: 0, z: 0 },
+      rpy: { r: 0, p: 0, y: 0 },
+    },
+    inertia: {
+      ixx: inertiaMatrix.elements[0] ?? 0,
+      ixy: inertiaMatrix.elements[3] ?? 0,
+      ixz: inertiaMatrix.elements[6] ?? 0,
+      iyy: inertiaMatrix.elements[4] ?? 0,
+      iyz: inertiaMatrix.elements[7] ?? 0,
+      izz: inertiaMatrix.elements[8] ?? 0,
+    },
+  });
+
+  assert.ok(actual, 'expected USD inertia properties');
+  assertMatrixClose(
+    reconstructInertiaTensor(actual.diagonalInertia, actual.principalAxesLocal),
+    inertiaMatrix,
+  );
+});
+
+test('decomposes equal diagonal terms with a nonzero cross term', () => {
+  const inertiaMatrix = new THREE.Matrix3().set(2, 1, 0, 1, 2, 0, 0, 0, 4);
+  const actual = computeUsdInertiaProperties({
+    origin: {
+      xyz: { x: 0, y: 0, z: 0 },
+      rpy: { r: 0, p: 0, y: 0 },
+    },
+    inertia: {
+      ixx: 2,
+      ixy: 1,
+      ixz: 0,
+      iyy: 2,
+      iyz: 0,
+      izz: 4,
+    },
+  });
+
+  assert.ok(actual, 'expected USD inertia properties');
+  assertMatrixClose(
+    reconstructInertiaTensor(actual.diagonalInertia, actual.principalAxesLocal),
+    inertiaMatrix,
   );
 });

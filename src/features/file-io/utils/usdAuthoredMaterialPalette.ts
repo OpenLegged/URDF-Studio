@@ -2,6 +2,7 @@ import * as THREE from 'three';
 
 import type { UrdfVisualMaterial } from '@/types';
 import { createThreeColorFromSRGB, parseThreeColorWithOpacity } from '@/core/utils/color.ts';
+import { toUsdAuthoredColorFromSrgbTuple } from './usdColorSpace.ts';
 
 type UsdPaletteMesh = THREE.Mesh & {
   userData: {
@@ -158,7 +159,11 @@ const applyAuthoredMaterialToMaterial = (
 
   let usdAuthoredColor: [number, number, number] | undefined;
   if (exactColorRgba) {
-    usdAuthoredColor = [exactColorRgba[0], exactColorRgba[1], exactColorRgba[2]];
+    usdAuthoredColor = toUsdAuthoredColorFromSrgbTuple([
+      exactColorRgba[0],
+      exactColorRgba[1],
+      exactColorRgba[2],
+    ]);
     nextUsdMaterial.colorRgba = exactColorRgba;
   }
 

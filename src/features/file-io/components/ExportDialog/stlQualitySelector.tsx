@@ -95,7 +95,7 @@ export function STLQualitySelector({
             onClick={() => handlePresetSelect(preset.key)}
             className={`flex-1 py-1 px-2.5 text-xs rounded-lg transition-all font-medium ${
               mode === preset.key
-                ? 'bg-white dark:bg-segmented-active text-text-primary shadow-sm'
+                ? 'bg-segmented-active text-text-primary shadow-sm'
                 : 'text-text-secondary hover:text-text-primary hover:bg-element-hover'
             }`}
           >

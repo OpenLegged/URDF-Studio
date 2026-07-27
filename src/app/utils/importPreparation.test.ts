@@ -11,6 +11,10 @@ import {
   type ImportPreparationFileDescriptor,
   type PrepareImportProgress,
 } from './importPreparation.ts';
+import {
+  buildUsdRootLayerContent,
+  createUsdArchivePackage,
+} from '@/features/file-io/utils/usdPackageLayers';
 import { ensureWorkerXmlDomApis } from '@/core/utils/ensureWorkerXmlDomApis';
 import { buildPreResolvedImportContentSignature } from './preResolvedImportSignature.ts';
 
@@ -1082,6 +1086,110 @@ def Xform "robot"
   assert.equal(result.robotFiles[0].content, usdText);
   assert.equal(result.usdSourceFiles.length, 1);
   assert.equal(await result.usdSourceFiles[0].blob.text(), usdText);
+});
+
+test('prepareImportPayload reopens a current five-layer IsaacSim USD export package', async () => {
+  const rootLayerContent = buildUsdRootLayerContent('demo', 'demo', {
+    fileFormat: 'usd',
+    layoutProfile: 'isaacsim',
+  });
+  const archive = createUsdArchivePackage(
+    'demo',
+    {
+      rootLayerContent,
+      baseLayerContent: `#usda 1.0
+(
+    defaultPrim = "demo"
+    metersPerUnit = 1
+    upAxis = "Z"
+)
+
+def Xform "demo"
+{
+    asset urdfStudio:sourceAsset = @../assets/body.png@
+}
+`,
+      physicsLayerContent: `#usda 1.0
+(
+    defaultPrim = "demo"
+    metersPerUnit = 1
+    subLayers = [@demo_base.usd@]
+    upAxis = "Z"
+)
+
+over "demo"
+{
+}
+`,
+      sensorLayerContent: `#usda 1.0
+(
+    defaultPrim = "demo"
+    metersPerUnit = 1
+    upAxis = "Z"
+)
+
+def Xform "demo"
+{
+}
+`,
+      robotLayerContent: `#usda 1.0
+(
+    defaultPrim = "demo"
+    metersPerUnit = 1
+    upAxis = "Z"
+)
+
+def Xform "demo"
+{
+    rel isaac:physics:robotJoints = []
+    rel isaac:physics:robotLinks = []
+}
+`,
+    },
+    new Map([
+      [
+        'assets/body.png',
+        new Blob([new Uint8Array([137, 80, 78, 71])], { type: 'image/png' }),
+      ],
+    ]),
+    {
+      fileFormat: 'usd',
+      layoutProfile: 'isaacsim',
+    },
+  );
+  const zip = new JSZip();
+  for (const [filePath, blob] of archive.archiveFiles) {
+    zip.file(filePath, new Uint8Array(await blob.arrayBuffer()));
+  }
+  const zipBytes = await zip.generateAsync({ type: 'uint8array' });
+
+  const result = await prepareImportPayload({
+    files: [
+      new File([zipBytes], archive.archiveFileName, {
+        type: 'application/zip',
+      }),
+    ],
+    existingPaths: [],
+  });
+
+  assert.equal(result.preferredFileName, 'demo/demo.usd');
+  assert.deepEqual(
+    result.usdSourceFiles.map((file) => file.name).sort(),
+    [
+      'demo/configuration/demo_base.usd',
+      'demo/configuration/demo_physics.usd',
+      'demo/configuration/demo_robot.usd',
+      'demo/configuration/demo_sensor.usd',
+      'demo/demo.usd',
+    ],
+  );
+  assert.equal(result.preResolvedImports[0]?.fileName, 'demo/demo.usd');
+  assert.equal(result.preResolvedImports[0]?.result.status, 'needs_hydration');
+  assert.ok(
+    result.assetFiles.some((file) => file.name === 'demo/assets/body.png'),
+    'expected the exported USD texture asset to be hydrated with the package',
+  );
+  assert.equal(result.deferredAssetFiles.length, 0);
 });
 
 test('prepareImportPayload keeps large USDA sidecars blob-backed instead of eagerly decoding them', async () => {

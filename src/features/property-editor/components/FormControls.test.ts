@@ -582,10 +582,15 @@ test('TransformFields copies and pastes the complete position XYZ value', async 
     });
     assert.equal(clipboardText, '{"x":1,"y":2,"z":3}');
 
+    clipboardText = '7, 8, 9';
     await act(async () => {
       (pasteButton as HTMLButtonElement).click();
     });
-    assert.deepEqual(pastedPosition, { x: 1, y: 2, z: 3 });
+    assert.deepEqual(
+      pastedPosition,
+      { x: 7, y: 8, z: 9 },
+      'the current system clipboard should take precedence over the in-app cache',
+    );
   } finally {
     await destroyComponentRoot(dom, root);
   }

@@ -104,6 +104,7 @@
     "test:browser:xacro-import": "node scripts/test/browser/test_xacro_import.mjs",
     "test:browser:multi-format": "node scripts/test/browser/test_multi_format_import.mjs",
     "test:browser:urdf-export": "node scripts/test/browser/test_urdf_export.mjs",
+    "test:browser:g1-usd-property-roundtrip": "node scripts/test/browser/test_g1_usd_property_roundtrip.mjs",
     "test:browser:mjcf-export": "node scripts/test/browser/test_mjcf_export.mjs",
     "test:browser:sdf-usd-export": "node scripts/test/browser/test_sdf_usd_export.mjs",
     "test:browser:urdf-assembly": "node scripts/test/browser/test_urdf_assembly.mjs",

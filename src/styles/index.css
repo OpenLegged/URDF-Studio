@@ -40,9 +40,7 @@ code,
 pre,
 kbd,
 samp {
-  font-family:
-    'JetBrains Mono', 'Fira Code', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
-    'Liberation Mono', 'Courier New', monospace !important;
+  font-family: var(--font-code) !important;
 }
 
 @custom-variant dark (&:where(.dark, .dark *));
@@ -52,15 +50,29 @@ samp {
   --font-scale: 1;
   --font-language-scale: 1;
   --font-effective-scale: calc(var(--font-scale) * var(--font-language-scale));
+  --font-ui:
+    system-ui, -apple-system, blinkmacsystemfont, 'Segoe UI', roboto, 'Helvetica Neue', arial,
+    'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+  --font-code:
+    'JetBrains Mono', 'Fira Code', ui-monospace, sfmono-regular, menlo, monaco, consolas,
+    'Liberation Mono', 'Courier New', monospace;
+
+  /* Semantic UI type scale. Keep micro text for technical metadata only. */
+  --text-ui-micro: 10px;
+  --text-ui-caption: 11px;
+  --text-ui-label: 12px;
+  --text-ui-control: 13px;
+  --text-ui-body: 14px;
+  --text-ui-title: 16px;
 
   /* Surfaces (light) */
   --ui-bg: #f8f9fa;
-  --ui-panel-bg: #ffffff;
+  --ui-panel-bg: #fbfcfe;
   --ui-surface: #f8f9fa;
-  --ui-surface-elevated: #ffffff;
+  --ui-surface-elevated: #fdfdff;
   --ui-element-hover: #f1f5f9;
   --ui-element-active: #e2e8f0;
-  --ui-input-bg: #ffffff;
+  --ui-input-bg: #f9fbfd;
 
   /* Borders (light) */
   --ui-border: #e2e8f0;
@@ -145,13 +157,13 @@ html[data-lang='zh'] {
 
 .dark {
   /* Surfaces (dark) */
-  --ui-bg: #000000;
-  --ui-panel-bg: #1c1c1e;
-  --ui-surface: #2c2c2e;
-  --ui-surface-elevated: #3a3a3c;
-  --ui-element-hover: #3a3a3c;
-  --ui-element-active: #48484a;
-  --ui-input-bg: #1c1c1e;
+  --ui-bg: #111214;
+  --ui-panel-bg: #1b1d21;
+  --ui-surface: #272a30;
+  --ui-surface-elevated: #32363d;
+  --ui-element-hover: #343942;
+  --ui-element-active: #414750;
+  --ui-input-bg: #1b1d21;
 
   /* Borders (dark) */
   --ui-border: #3a3a3c;
@@ -519,18 +531,7 @@ html[data-lang='zh'] {
 }
 
 body {
-  font-family:
-    system-ui,
-    -apple-system,
-    BlinkMacSystemFont,
-    'Segoe UI',
-    Roboto,
-    'Helvetica Neue',
-    Arial,
-    'PingFang SC',
-    'Hiragino Sans GB',
-    'Microsoft YaHei',
-    sans-serif;
+  font-family: var(--font-ui);
   @apply bg-google-light-bg text-text-primary;
   overflow: hidden;
 }
@@ -633,6 +634,36 @@ body {
 }
 
 /* Override arbitrary pixel font sizes commonly used in the app */
+.text-ui-micro {
+  font-size: calc(var(--text-ui-micro) * var(--font-effective-scale)) !important;
+  line-height: 1.35;
+}
+
+.text-ui-caption {
+  font-size: calc(var(--text-ui-caption) * var(--font-effective-scale)) !important;
+  line-height: 1.4;
+}
+
+.text-ui-label {
+  font-size: calc(var(--text-ui-label) * var(--font-effective-scale)) !important;
+  line-height: 1.4;
+}
+
+.text-ui-control {
+  font-size: calc(var(--text-ui-control) * var(--font-effective-scale)) !important;
+  line-height: 1.4;
+}
+
+.text-ui-body {
+  font-size: calc(var(--text-ui-body) * var(--font-effective-scale)) !important;
+  line-height: 1.5;
+}
+
+.text-ui-title {
+  font-size: calc(var(--text-ui-title) * var(--font-effective-scale)) !important;
+  line-height: 1.4;
+}
+
 .text-\[8px\] {
   font-size: calc(8px * var(--font-effective-scale)) !important;
 }

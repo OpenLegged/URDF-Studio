@@ -25,7 +25,6 @@ export const enWorkflow: TranslationWorkflowKeys = {
   exportMeshFormatAuto: 'Auto',
   exportMeshFormatObj: 'OBJ (.obj)',
   exportMeshFormatStl: 'STL (.stl)',
-  exportMeshFormatPly: 'PLY (.ply)',
   exportMeshFormatDesc: 'Format for converted mesh files (non-native meshes only)',
   exportFloatBase: 'Floating Base',
   exportFloatBaseDesc: 'Add <freejoint/> to root body (for legged/humanoid robots)',

@@ -339,7 +339,7 @@ export function TreeEditorJointSection({
           isCollapsed ? 'max-h-0 opacity-0' : 'flex min-h-0 flex-1 flex-col opacity-100'
         }`}
       >
-        <div className="flex min-h-0 min-w-0 flex-1 overflow-y-auto overflow-x-hidden border-t border-border-black/40 bg-white py-1 dark:bg-panel-bg custom-scrollbar">
+        <div className="flex min-h-0 min-w-0 flex-1 overflow-y-auto overflow-x-hidden border-t border-border-black/40 bg-panel-bg py-1 custom-scrollbar">
           {hasJointEntries ? (
             <JointPanelList
               robot={localRobot}

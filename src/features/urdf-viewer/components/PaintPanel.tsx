@@ -139,10 +139,10 @@ export const PaintPanel: React.FC<PaintPanelProps> = ({
       onMouseDown={onMouseDown}
     >
       <div className="space-y-3 p-[10px]">
-        <p className="text-[10px] leading-4 text-text-secondary">{t.paintToolHint}</p>
+        <p className="text-ui-caption leading-4 text-text-secondary">{t.paintToolHint}</p>
 
         <div className="space-y-1.5">
-          <label className="block text-[10px] font-semibold uppercase tracking-[0.04em] text-text-tertiary">
+          <label className="block text-ui-caption font-semibold uppercase tracking-[0.04em] text-text-tertiary">
             {t.paintColor}
           </label>
           <div className="flex items-center gap-2">
@@ -171,7 +171,7 @@ export const PaintPanel: React.FC<PaintPanelProps> = ({
                   onPaintColorChange(normalized);
                 }
               }}
-              className="min-w-0 flex-1 rounded border border-border-black/60 bg-element-bg px-2 py-1.5 font-mono text-[11px] text-text-primary disabled:cursor-not-allowed disabled:opacity-50"
+              className="min-w-0 flex-1 rounded border border-border-black/60 bg-element-bg px-2 py-1.5 font-mono text-ui-label text-text-primary disabled:cursor-not-allowed disabled:opacity-50"
               spellCheck={false}
               placeholder="#ff6c0a80"
             />
@@ -179,7 +179,7 @@ export const PaintPanel: React.FC<PaintPanelProps> = ({
         </div>
 
         <div className="space-y-1.5">
-          <label className="block text-[10px] font-semibold uppercase tracking-[0.04em] text-text-tertiary">
+          <label className="block text-ui-caption font-semibold uppercase tracking-[0.04em] text-text-tertiary">
             {t.opacity}
           </label>
           <div className="flex items-center gap-2">
@@ -212,13 +212,13 @@ export const PaintPanel: React.FC<PaintPanelProps> = ({
                 setHexInputValue(nextColor);
                 onPaintColorChange(nextColor);
               }}
-              className="h-8 w-14 rounded border border-border-black/60 bg-element-bg px-1.5 text-right font-mono text-[11px] tabular-nums text-text-primary disabled:cursor-not-allowed disabled:opacity-50"
+              className="h-8 w-14 rounded border border-border-black/60 bg-element-bg px-1.5 text-right font-mono text-ui-label tabular-nums text-text-primary disabled:cursor-not-allowed disabled:opacity-50"
             />
           </div>
         </div>
 
         <div className="space-y-1.5">
-          <label className="block text-[10px] font-semibold uppercase tracking-[0.04em] text-text-tertiary">
+          <label className="block text-ui-caption font-semibold uppercase tracking-[0.04em] text-text-tertiary">
             {t.paintSelectionScope}
           </label>
           <div className="grid grid-cols-2 gap-1">
@@ -236,7 +236,7 @@ export const PaintPanel: React.FC<PaintPanelProps> = ({
                   disabled={!supported}
                   aria-pressed={active}
                   onClick={() => onPaintSelectionScopeChange(option.id)}
-                  className={`rounded border px-2 py-1 text-[10px] font-medium transition ${
+                  className={`rounded border px-2 py-1 text-ui-caption font-medium transition ${
                     active
                       ? 'border-system-blue bg-system-blue/15 text-text-primary'
                       : 'border-border-black/60 bg-element-bg text-text-secondary'
@@ -250,7 +250,7 @@ export const PaintPanel: React.FC<PaintPanelProps> = ({
         </div>
 
         <div className="space-y-1.5">
-          <label className="block text-[10px] font-semibold uppercase tracking-[0.04em] text-text-tertiary">
+          <label className="block text-ui-caption font-semibold uppercase tracking-[0.04em] text-text-tertiary">
             {t.paintOperation}
           </label>
           <div className="grid grid-cols-2 gap-1">
@@ -270,7 +270,7 @@ export const PaintPanel: React.FC<PaintPanelProps> = ({
                   aria-pressed={active}
                   onClick={() => onPaintOperationChange(option.id)}
                   title={option.id === 'erase' ? t.paintEraseHint : undefined}
-                  className={`rounded border px-2 py-1 text-[10px] font-medium transition ${
+                  className={`rounded border px-2 py-1 text-ui-caption font-medium transition ${
                     active
                       ? option.id === 'erase'
                         ? 'border-danger-border bg-danger-soft text-danger-hover'
@@ -287,7 +287,7 @@ export const PaintPanel: React.FC<PaintPanelProps> = ({
 
         {visibleStatus && (
           <div
-            className={`rounded-md border px-2 py-1.5 text-[10px] leading-4 ${
+            className={`rounded-md border px-2 py-1.5 text-ui-caption leading-4 ${
               visibleStatus.tone === 'error'
                 ? 'border-danger-border bg-danger-soft text-danger-hover'
                 : 'border-system-blue/20 bg-system-blue/10 text-text-primary'

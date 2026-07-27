@@ -50,6 +50,27 @@ test('resolveResponsivePanelLayout edge-docks the options panel in narrow unifie
   });
 });
 
+test('resolveResponsivePanelLayout keeps options visible in phone-width viewers', () => {
+  const layout = resolveResponsivePanelLayout({
+    metrics: {
+      containerWidth: 375,
+      containerHeight: 720,
+      optionsWidth: 152,
+      optionsHeight: 208,
+      jointsWidth: 208,
+    },
+    showOptionsPanel: true,
+    showJointPanel: false,
+  });
+
+  assert.deepEqual(layout.optionsDefaultPosition, {
+    top: '16px',
+    left: '16px',
+    right: 'auto',
+    transform: 'none',
+  });
+});
+
 test('resolveResponsivePanelLayout edge-docks the joint panel in narrow unified viewer layouts', () => {
   const layout = resolveResponsivePanelLayout({
     metrics: {

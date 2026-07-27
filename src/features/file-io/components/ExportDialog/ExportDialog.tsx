@@ -336,7 +336,7 @@ export const ExportDialog: React.FC<ExportDialogProps> = ({
                       isDisabled
                         ? 'opacity-40 cursor-not-allowed text-text-tertiary'
                         : isActive
-                          ? 'bg-white dark:bg-segmented-active text-text-primary shadow-sm'
+                          ? 'bg-segmented-active text-text-primary shadow-sm'
                           : 'text-text-secondary hover:text-text-primary hover:bg-element-hover'
                     }`}
                   >

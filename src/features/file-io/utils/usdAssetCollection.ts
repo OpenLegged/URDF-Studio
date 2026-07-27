@@ -1,7 +1,8 @@
 import * as THREE from 'three';
 
 import { resolveUsdAssetUrl, type UsdAssetRegistry } from './usdAssetRegistry.ts';
-import { createUsdTextureRecord, type UsdSerializationContext } from './usdSerializationContext.ts';
+import { type UsdSerializationContext } from './usdSerializationContext.ts';
+import { createUsdTextureRecord } from './usdTextureRecord.ts';
 import {
   advanceUsdProgress,
   createUsdProgressTracker,
@@ -42,11 +43,31 @@ export const collectUsdExportAssetFiles = async ({
   fetchConcurrency = DEFAULT_TEXTURE_FETCH_CONCURRENCY,
 }: CollectUsdExportAssetFilesOptions): Promise<Map<string, Blob>> => {
   const textureFiles = new Map<string, string>();
+  const registerTextureFile = (exportPath: string, sourcePath: string) => {
+    const existingSourcePath = textureFiles.get(exportPath);
+    if (!existingSourcePath) {
+      textureFiles.set(exportPath, sourcePath);
+      return;
+    }
+    if (existingSourcePath === sourcePath) {
+      return;
+    }
+
+    const existingUrl = resolveUsdAssetUrl(existingSourcePath, registry);
+    const nextUrl = resolveUsdAssetUrl(sourcePath, registry);
+    if (existingUrl && nextUrl && existingUrl === nextUrl) {
+      return;
+    }
+
+    throw new Error(
+      `Texture export path collision for ${exportPath}: ${existingSourcePath} and ${sourcePath}`,
+    );
+  };
 
   context.materialRecords.forEach((record) => {
     const texture = record.appearance.texture;
     if (!texture) return;
-    textureFiles.set(texture.exportPath, texture.sourcePath);
+    registerTextureFile(texture.exportPath, texture.sourcePath);
   });
 
   sceneRoot.traverse((object) => {
@@ -55,12 +76,15 @@ export const collectUsdExportAssetFiles = async ({
       return;
     }
 
-    const texture = createUsdTextureRecord(materialMetadata.texture);
+    const texture = createUsdTextureRecord(
+      materialMetadata.texture,
+      context.textureExportPathOverrides,
+    );
     if (!texture) {
       return;
     }
 
-    textureFiles.set(texture.exportPath, texture.sourcePath);
+    registerTextureFile(texture.exportPath, texture.sourcePath);
   });
 
   const textureEntries = Array.from(textureFiles.entries());

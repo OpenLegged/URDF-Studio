@@ -114,7 +114,7 @@ export function Tooltip({
         ? createPortal(
             <span
               ref={refs.setFloating}
-              className={`pointer-events-none z-[500] w-max max-w-[18rem] rounded-md border border-border-black bg-element-active px-2 py-1.5 text-[9px] font-medium leading-4 whitespace-pre-line text-text-primary shadow-md ${className}`.trim()}
+              className={`pointer-events-none z-[500] w-max max-w-[18rem] rounded-md border border-border-black bg-element-active px-2 py-1.5 text-ui-micro font-medium leading-4 whitespace-pre-line text-text-primary shadow-md ${className}`.trim()}
               style={floatingStyles}
               {...getFloatingProps()}
             >

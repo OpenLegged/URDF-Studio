@@ -120,6 +120,16 @@ test('viewer toolbar uses a horizontal touch lane for narrow-screen tools', asyn
     /\bw-max\b/,
     'bottom slider track should stay close to the tool content width',
   );
+  assert.match(
+    bottomDockSlot.querySelector('.urdf-toolbar-track')?.className ?? '',
+    /\bbg-panel-bg\/25\b/,
+    'bottom slider track should keep the viewer visibly transparent through the surface',
+  );
+  assert.match(
+    bottomDockSlot.querySelector('.urdf-toolbar-track')?.className ?? '',
+    /backdrop-blur-\[2px\]/,
+    'bottom slider track should use only a light blur so the canvas remains legible',
+  );
 
   const buttons = bottomDockSlot.querySelectorAll('[data-viewer-tool]');
   assert.equal(buttons.length, 6);

@@ -16,6 +16,10 @@ import { parseStlGeometryData } from '../../../src/core/loaders/stlGeometryData.
 import { resolveRobotFileData } from '../../../src/core/parsers/importRobotFile.ts';
 import { resolveVisualMaterialOverride } from '../../../src/core/robot/visualMaterials.ts';
 import { parseThreeColorWithOpacity } from '../../../src/core/utils/color.ts';
+import {
+  toUsdAuthoredColor,
+  toUsdAuthoredColorFromSrgbTuple,
+} from '../../../src/features/file-io/utils/usdColorSpace.ts';
 import { exportRobotToUsd } from '../../../src/features/file-io/utils/usdExport.ts';
 import type { RobotData, RobotFile } from '../../../src/types';
 
@@ -1037,6 +1041,19 @@ function normalizeMaterialSignatures(summary: JsonRecord): MaterialSignature[] {
     }));
 }
 
+function convertSrgbMaterialSignatureToUsd(
+  signature: MaterialSignature,
+): MaterialSignature {
+  return {
+    ...signature,
+    color: signature.color
+      ? (toUsdAuthoredColorFromSrgbTuple(signature.color).map((entry) =>
+          Number(entry.toFixed(6)),
+        ) as [number, number, number])
+      : null,
+  };
+}
+
 function materialSignatureDistance(left: MaterialSignature, right: MaterialSignature): number {
   if (left.textured !== right.textured) {
     return Number.POSITIVE_INFINITY;
@@ -1105,11 +1122,11 @@ function normalizeSourceMaterialColor(material: {
     material.colorRgba.length >= 3 &&
     material.colorRgba.slice(0, 3).every((entry) => Number.isFinite(entry))
   ) {
-    return [
-      Number(Number(material.colorRgba[0]).toFixed(6)),
-      Number(Number(material.colorRgba[1]).toFixed(6)),
-      Number(Number(material.colorRgba[2]).toFixed(6)),
-    ];
+    return toUsdAuthoredColorFromSrgbTuple([
+      Number(material.colorRgba[0]),
+      Number(material.colorRgba[1]),
+      Number(material.colorRgba[2]),
+    ]).map((entry) => Number(entry.toFixed(6))) as [number, number, number];
   }
 
   const parsedColor = parseThreeColorWithOpacity(
@@ -1119,12 +1136,9 @@ function normalizeSourceMaterialColor(material: {
     return null;
   }
 
-  const srgbColor = parsedColor.color.clone().convertLinearToSRGB();
-  return [
-    Number(srgbColor.r.toFixed(6)),
-    Number(srgbColor.g.toFixed(6)),
-    Number(srgbColor.b.toFixed(6)),
-  ];
+  return toUsdAuthoredColor(parsedColor.color).map((entry) =>
+    Number(entry.toFixed(6)),
+  ) as [number, number, number];
 }
 
 function createSourceMaterialSignature(material: {
@@ -1597,11 +1611,19 @@ function evaluateCurrentExportAgainstTruth(params: {
     : []
   )
     .map((entry) => normalizeColorTuple(entry))
-    .filter((entry): entry is [number, number, number] => Boolean(entry));
+    .filter((entry): entry is [number, number, number] => Boolean(entry))
+    .map(
+      (entry) =>
+        toUsdAuthoredColorFromSrgbTuple(entry).map((channel) =>
+          Number(channel.toFixed(6)),
+        ) as [number, number, number],
+    );
   const colorComparison = compareColorSets(currentMaterialColors, truthMaterialColors);
 
   const currentMaterialSignatures = normalizeMaterialSignatures(currentMaterials);
-  const truthMaterialSignatures = normalizeMaterialSignatures(truthMaterials);
+  const truthMaterialSignatures = normalizeMaterialSignatures(truthMaterials).map(
+    convertSrgbMaterialSignatureToUsd,
+  );
   const sourceMaterialSignatures = params.sourceMaterialSignatures;
   const currentTexturedMaterialSignatureCount = currentMaterialSignatures.filter(
     (signature) => signature.textured,

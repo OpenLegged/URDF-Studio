@@ -269,7 +269,7 @@ export const UnifiedVisualizerOptionsPanel = forwardRef<
               <ToggleSliderOption
                 checked={showInertia}
                 onChange={setShowInertia}
-                icon={<div className="h-3 w-3 border border-dashed border-slate-500" />}
+                icon={<div className="h-3 w-3 border border-dashed border-text-tertiary" />}
                 label={t.showInertia}
                 className="mt-1"
                 labelClassName={englishCheckboxLabelClassName}
@@ -285,8 +285,8 @@ export const UnifiedVisualizerOptionsPanel = forwardRef<
                 checked={showCenterOfMass}
                 onChange={setShowCenterOfMass}
                 icon={
-                  <div className="flex h-3 w-3 items-center justify-center rounded-full border border-slate-500">
-                    <div className="h-1 w-1 rounded-full bg-slate-500" />
+                  <div className="flex h-3 w-3 items-center justify-center rounded-full border border-text-tertiary">
+                    <div className="h-1 w-1 rounded-full bg-text-tertiary" />
                   </div>
                 }
                 label={t.showCenterOfMass}

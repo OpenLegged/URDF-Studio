@@ -138,7 +138,7 @@ export const ViewerToolbar: React.FC<ViewerToolbarProps> = ({
             paddingRight: 'env(safe-area-inset-right)',
           }}
         >
-          <div className="urdf-toolbar-track my-1.5 w-max max-w-[calc(100vw-1rem)] overflow-hidden rounded-full border border-border-black/60 bg-panel-bg/90 p-1 shadow-lg backdrop-blur dark:bg-panel-bg/90">
+          <div className="urdf-toolbar-track my-1.5 w-max max-w-[calc(100vw-1rem)] overflow-hidden rounded-full border border-border-black/35 bg-panel-bg/25 p-1 shadow-lg backdrop-blur-[2px] dark:bg-panel-bg/25">
             <div
               ref={bottomToolbarRef}
               className="urdf-toolbar-scroll flex min-w-0 items-center gap-0.5 overflow-x-auto overscroll-x-contain [touch-action:pan-x]"

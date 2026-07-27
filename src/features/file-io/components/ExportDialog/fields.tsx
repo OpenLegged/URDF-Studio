@@ -4,7 +4,7 @@ import { CompactSwitch, PanelSelect, Tooltip } from '@/shared/components/ui';
 
 export function SectionLabel({ children }: { children: ReactNode }) {
   return (
-    <div className="text-[9px] font-semibold tracking-[0.02em] text-text-tertiary mb-1.5 mt-3 first:mt-0">
+    <div className="text-ui-caption font-semibold tracking-[0.02em] text-text-tertiary mb-1.5 mt-3 first:mt-0">
       {children}
     </div>
   );
@@ -37,7 +37,7 @@ export function Row({
     >
       <div className={`min-w-0 flex flex-col gap-0.5 ${isCenteredRow ? 'justify-center' : ''}`}>
         <div className={`flex min-w-0 gap-1.5 ${isCenteredRow ? 'items-center' : 'items-start'}`}>
-          <span className="text-[11px] text-text-primary leading-tight">{label}</span>
+          <span className="text-ui-label text-text-primary leading-tight">{label}</span>
           {hint && (
             <Tooltip content={hint} side="top" align="start" className="max-w-[20rem]">
               <button
@@ -50,7 +50,7 @@ export function Row({
             </Tooltip>
           )}
         </div>
-        {desc && <span className="text-[9px] text-text-tertiary leading-tight">{desc}</span>}
+        {desc && <span className="text-ui-caption text-text-tertiary leading-tight">{desc}</span>}
       </div>
       <div
         className={stacked ? 'w-full min-w-0' : isCenteredRow ? 'shrink-0 self-center' : 'shrink-0'}
@@ -119,7 +119,7 @@ export function SegmentedChoiceField<T extends string>({
             onClick={() => onChange(option.value)}
             className={`inline-flex min-h-8 items-center justify-center rounded-lg px-3 py-1.5 text-center text-xs font-medium leading-none transition-all ${
               isActive
-                ? 'bg-white text-text-primary shadow-sm dark:bg-segmented-active'
+                ? 'bg-segmented-active text-text-primary shadow-sm'
                 : 'text-text-secondary hover:bg-element-hover hover:text-text-primary'
             }`}
           >
