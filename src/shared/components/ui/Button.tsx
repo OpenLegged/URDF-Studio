@@ -18,7 +18,7 @@ export const Button: React.FC<ButtonProps> = ({
   ...props
 }) => {
   const baseStyles =
-    'inline-flex items-center justify-center font-medium transition-all duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-system-blue/30 disabled:cursor-not-allowed disabled:opacity-50 select-none';
+    'inline-flex items-center justify-center font-medium transition-[background-color,border-color,color,opacity,transform] duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-system-blue/30 disabled:cursor-not-allowed disabled:opacity-50 select-none';
 
   const variants = {
     primary:
@@ -32,12 +32,12 @@ export const Button: React.FC<ButtonProps> = ({
   };
 
   const sizes = {
-    xs: 'gap-1 rounded-md px-2 py-0.5 text-[11px]',
+    xs: 'gap-1 rounded-md px-2 py-0.5 text-ui-label',
     sm: 'gap-1.5 rounded-md px-2.5 py-1 text-xs',
     md: 'gap-2 rounded-lg px-4 py-1.5 text-sm',
     lg: 'gap-2.5 rounded-lg px-5 py-2.5 text-base',
     icon: 'rounded-md p-1.5',
-    dense: 'h-[22px] gap-1 rounded-md px-1.5 text-[10px]',
+    dense: 'h-[22px] gap-1 rounded-md px-1.5 text-ui-caption',
   };
 
   return (

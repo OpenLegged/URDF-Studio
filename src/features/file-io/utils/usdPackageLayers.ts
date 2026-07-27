@@ -100,7 +100,9 @@ const ISAACSIM_DEFAULT_PHYSX_SCENE_ENABLE_GPU_DYNAMICS = false;
 const ISAACSIM_DEFAULT_PHYSX_SCENE_ENABLE_STABILIZATION = true;
 const ISAACSIM_DEFAULT_PHYSX_SCENE_SOLVER_TYPE = 'TGS';
 
-const hasExportableGeometry = (geometry: UrdfLink['visual'] | UrdfLink['collision'] | undefined): boolean => {
+const hasExportableGeometry = (
+  geometry: UrdfLink['visual'] | UrdfLink['collision'] | undefined,
+): boolean => {
   return geometry !== undefined && getGeometryType(geometry.type) !== GEOMETRY_TYPES.NONE;
 };
 
@@ -113,7 +115,9 @@ const linkHasExportablePayload = (link: UrdfLink | undefined): boolean => {
     hasExportableGeometry(link.visual) ||
     hasExportableGeometry(link.collision) ||
     (link.visualBodies || []).some((body) => getGeometryType(body.type) !== GEOMETRY_TYPES.NONE) ||
-    (link.collisionBodies || []).some((body) => getGeometryType(body.type) !== GEOMETRY_TYPES.NONE) ||
+    (link.collisionBodies || []).some(
+      (body) => getGeometryType(body.type) !== GEOMETRY_TYPES.NONE,
+    ) ||
     (link.mjcfSites?.length ?? 0) > 0
   );
 };
@@ -164,7 +168,10 @@ const resolveOmittedIsaacRootAnchor = (
 
   const childJoint = childJoints[0];
   const childJointType = String(childJoint?.type || '').toLowerCase();
-  if ((childJointType !== 'fixed' && childJointType !== 'floating') || !robot.links[childJoint.childLinkId]) {
+  if (
+    (childJointType !== 'fixed' && childJointType !== 'floating') ||
+    !robot.links[childJoint.childLinkId]
+  ) {
     return null;
   }
 
@@ -175,12 +182,25 @@ const resolveOmittedIsaacRootAnchor = (
   };
 };
 
-const getAxisToken = (axis: THREE.Vector3 | UrdfJoint['axis'] | undefined): 'X' | 'Y' | 'Z' => {
-  const vector = axis
+type UsdJointAxisToken = 'X' | 'Y' | 'Z';
+
+const normalizeUsdJointAxisToken = (value: unknown): UsdJointAxisToken | null => {
+  const normalized = String(value || '')
+    .trim()
+    .toUpperCase();
+  return normalized === 'X' || normalized === 'Y' || normalized === 'Z' ? normalized : null;
+};
+
+const getAxisVector = (axis: THREE.Vector3 | UrdfJoint['axis'] | undefined): THREE.Vector3 => {
+  return axis
     ? new THREE.Vector3(axis.x ?? 0, axis.y ?? 0, axis.z ?? 0)
     : new THREE.Vector3(1, 0, 0);
+};
 
-  if (vector.lengthSq() <= 1e-12) {
+const getAxisToken = (axis: THREE.Vector3 | UrdfJoint['axis'] | undefined): UsdJointAxisToken => {
+  const vector = getAxisVector(axis);
+
+  if (!Number.isFinite(vector.lengthSq()) || vector.lengthSq() <= 1e-12) {
     return 'X';
   }
 
@@ -195,6 +215,31 @@ const getAxisToken = (axis: THREE.Vector3 | UrdfJoint['axis'] | undefined): 'X' 
   return 'X';
 };
 
+const getAxisTokenVector = (axisToken: UsdJointAxisToken): THREE.Vector3 => {
+  if (axisToken === 'Y') {
+    return new THREE.Vector3(0, 1, 0);
+  }
+  if (axisToken === 'Z') {
+    return new THREE.Vector3(0, 0, 1);
+  }
+  return new THREE.Vector3(1, 0, 0);
+};
+
+const createJointAxisAlignmentQuaternion = (
+  axis: THREE.Vector3 | UrdfJoint['axis'] | undefined,
+  axisToken: UsdJointAxisToken,
+): THREE.Quaternion => {
+  const canonicalAxis = getAxisTokenVector(axisToken);
+  const targetAxis = getAxisVector(axis);
+  if (!Number.isFinite(targetAxis.lengthSq()) || targetAxis.lengthSq() <= 1e-12) {
+    targetAxis.copy(canonicalAxis);
+  } else {
+    targetAxis.normalize();
+  }
+
+  return new THREE.Quaternion().setFromUnitVectors(canonicalAxis, targetAxis).normalize();
+};
+
 const jointTypeToUsdType = (
   joint: UrdfJoint,
 ):
@@ -205,7 +250,10 @@ const jointTypeToUsdType = (
   | 'PhysicsSphericalJoint'
   | 'PhysicsDistanceJoint' => {
   const authoredUsdTypeName = String(joint.usdPhysics?.jointTypeName || '').trim();
-  if (/^PhysicsJoint$/i.test(authoredUsdTypeName) || /(?:^|Physics)D6Joint$/i.test(authoredUsdTypeName)) {
+  if (
+    /^PhysicsJoint$/i.test(authoredUsdTypeName) ||
+    /(?:^|Physics)D6Joint$/i.test(authoredUsdTypeName)
+  ) {
     return 'PhysicsJoint';
   }
   if (/^PhysicsFixedJoint$/i.test(authoredUsdTypeName)) {
@@ -235,6 +283,9 @@ const jointTypeToUsdType = (
     return 'PhysicsSphericalJoint';
   }
   if (type === 'floating') {
+    return 'PhysicsJoint';
+  }
+  if (type === 'planar') {
     return 'PhysicsJoint';
   }
   return 'PhysicsFixedJoint';
@@ -325,8 +376,10 @@ function sortUsdPhysicsAxisInstances(left: string, right: string): number {
   const leftIndex = USD_PHYSICS_AXIS_INSTANCE_ORDER.indexOf(left);
   const rightIndex = USD_PHYSICS_AXIS_INSTANCE_ORDER.indexOf(right);
   if (leftIndex >= 0 || rightIndex >= 0) {
-    return (leftIndex >= 0 ? leftIndex : Number.MAX_SAFE_INTEGER) -
-      (rightIndex >= 0 ? rightIndex : Number.MAX_SAFE_INTEGER);
+    return (
+      (leftIndex >= 0 ? leftIndex : Number.MAX_SAFE_INTEGER) -
+      (rightIndex >= 0 ? rightIndex : Number.MAX_SAFE_INTEGER)
+    );
   }
   return left.localeCompare(right);
 }
@@ -344,6 +397,259 @@ function formatOptionalUsdNumber(value: number | null | undefined): string | nul
   return Number.isFinite(Number(value)) ? formatUsdFloat(Number(value)) : null;
 }
 
+function getPlanarJointLimitAxes(
+  axisToken: UsdJointAxisToken,
+): Record<string, { low: number; high: number }> {
+  const lockedAxesByNormal: Record<
+    UsdJointAxisToken,
+    readonly ['transX' | 'transY' | 'transZ', 'rotX' | 'rotY' | 'rotZ', 'rotX' | 'rotY' | 'rotZ']
+  > = {
+    X: ['transX', 'rotY', 'rotZ'],
+    Y: ['transY', 'rotX', 'rotZ'],
+    Z: ['transZ', 'rotX', 'rotY'],
+  };
+
+  return Object.fromEntries(
+    lockedAxesByNormal[axisToken].map((axis) => [axis, { low: 1, high: -1 }]),
+  );
+}
+
+function supportsPhysxMimicJoint(joint: UrdfJoint): boolean {
+  const jointType = String(joint.type || '').toLowerCase();
+  return jointType === 'revolute' || jointType === 'prismatic';
+}
+
+function appendUsdJointLimitAttributes({
+  joint,
+  typeName,
+  usdLimitAxes,
+  usdLimitAxisKeys,
+  lines,
+  childIndent,
+}: {
+  joint: UrdfJoint;
+  typeName: ReturnType<typeof jointTypeToUsdType>;
+  usdLimitAxes: Record<string, { low?: number | null; high?: number | null }>;
+  usdLimitAxisKeys: string[];
+  lines: string[];
+  childIndent: string;
+}): void {
+  const finiteJointLower = formatOptionalUsdNumber(joint.limit?.lower);
+  const finiteJointUpper = formatOptionalUsdNumber(joint.limit?.upper);
+  const hasFiniteJointBounds = finiteJointLower !== null && finiteJointUpper !== null;
+
+  if (
+    typeName === 'PhysicsRevoluteJoint' &&
+    String(joint.type || '').toLowerCase() !== 'continuous' &&
+    hasFiniteJointBounds
+  ) {
+    lines.push(
+      `${childIndent}float physics:lowerLimit = ${formatUsdFloat(
+        radiansToDegrees(Number(joint.limit?.lower)),
+      )}`,
+    );
+    lines.push(
+      `${childIndent}float physics:upperLimit = ${formatUsdFloat(
+        radiansToDegrees(Number(joint.limit?.upper)),
+      )}`,
+    );
+  } else if (typeName === 'PhysicsPrismaticJoint' && hasFiniteJointBounds) {
+    lines.push(`${childIndent}float physics:lowerLimit = ${finiteJointLower}`);
+    lines.push(`${childIndent}float physics:upperLimit = ${finiteJointUpper}`);
+  }
+
+  usdLimitAxisKeys.forEach((axis) => {
+    const limit = usdLimitAxes[axis];
+    const low = formatOptionalUsdNumber(limit?.low);
+    const high = formatOptionalUsdNumber(limit?.high);
+    if (low !== null) {
+      lines.push(`${childIndent}float limit:${axis}:physics:low = ${low}`);
+    }
+    if (high !== null) {
+      lines.push(`${childIndent}float limit:${axis}:physics:high = ${high}`);
+    }
+  });
+}
+
+function appendUsdJointDriveAttributes({
+  joint,
+  driveInstanceName,
+  driveStiffness,
+  driveDamping,
+  driveMaxForce,
+  shouldEmitDrive,
+  usdDriveAxisKeys,
+  lines,
+  childIndent,
+  isIsaacSim,
+}: {
+  joint: UrdfJoint;
+  driveInstanceName: 'angular' | 'linear' | null;
+  driveStiffness: number | null;
+  driveDamping: number | null;
+  driveMaxForce: number | null;
+  shouldEmitDrive: boolean;
+  usdDriveAxisKeys: string[];
+  lines: string[];
+  childIndent: string;
+  isIsaacSim: boolean;
+}): void {
+  if (shouldEmitDrive && driveInstanceName) {
+    lines.push(`${childIndent}uniform token drive:${driveInstanceName}:physics:type = "force"`);
+    if (driveStiffness !== null) {
+      lines.push(
+        `${childIndent}float drive:${driveInstanceName}:physics:stiffness = ${formatUsdFloat(
+          driveStiffness,
+        )}`,
+      );
+    }
+    if (driveDamping !== null) {
+      lines.push(
+        `${childIndent}float drive:${driveInstanceName}:physics:damping = ${formatUsdFloat(
+          driveDamping,
+        )}`,
+      );
+    }
+    if (driveMaxForce !== null) {
+      lines.push(
+        `${childIndent}float drive:${driveInstanceName}:physics:maxForce = ${formatUsdFloat(
+          driveMaxForce,
+        )}`,
+      );
+    }
+    if (isIsaacSim) {
+      lines.push(`${childIndent}float drive:${driveInstanceName}:physics:targetPosition = 0`);
+    }
+  }
+
+  usdDriveAxisKeys.forEach((axis) => {
+    const drive = joint.usdPhysics?.driveAxes?.[axis];
+    const driveType = String(drive?.type || '').trim();
+    if (driveType) {
+      lines.push(
+        `${childIndent}uniform token drive:${axis}:physics:type = "${escapeUsdString(driveType)}"`,
+      );
+    }
+    (['stiffness', 'damping', 'maxForce', 'targetPosition', 'targetVelocity'] as const).forEach(
+      (propertyName) => {
+        const formatted = formatOptionalUsdNumber(drive?.[propertyName]);
+        if (formatted !== null) {
+          lines.push(`${childIndent}float drive:${axis}:physics:${propertyName} = ${formatted}`);
+        }
+      },
+    );
+  });
+}
+
+function appendUsdJointPhysxAttributes({
+  joint,
+  driveInstanceName,
+  maxJointVelocity,
+  jointFriction,
+  jointArmature,
+  shouldEmitPhysxMimic,
+  mimicAxisInstance,
+  mimicReferenceJointPath,
+  lines,
+  childIndent,
+}: {
+  joint: UrdfJoint;
+  driveInstanceName: 'angular' | 'linear' | null;
+  maxJointVelocity: number | null;
+  jointFriction: number | null;
+  jointArmature: number | null;
+  shouldEmitPhysxMimic: boolean;
+  mimicAxisInstance: string;
+  mimicReferenceJointPath?: string;
+  lines: string[];
+  childIndent: string;
+}): void {
+  if (maxJointVelocity !== null) {
+    lines.push(
+      `${childIndent}float physxJoint:maxJointVelocity = ${formatUsdFloat(maxJointVelocity)}`,
+    );
+  }
+  if (jointFriction !== null) {
+    lines.push(`${childIndent}float physxJoint:jointFriction = ${formatUsdFloat(jointFriction)}`);
+  }
+  if (jointArmature !== null) {
+    lines.push(`${childIndent}float physxJoint:armature = ${formatUsdFloat(jointArmature)}`);
+  }
+  if (!shouldEmitPhysxMimic || !mimicReferenceJointPath) {
+    return;
+  }
+
+  const multiplier = Number.isFinite(joint.mimic?.multiplier) ? Number(joint.mimic?.multiplier) : 1;
+  const sourceOffset = Number.isFinite(joint.mimic?.offset) ? Number(joint.mimic?.offset) : 0;
+  const offset = driveInstanceName === 'angular' ? -radiansToDegrees(sourceOffset) : -sourceOffset;
+  lines.push(
+    `${childIndent}float physxMimicJoint:${mimicAxisInstance}:gearing = ${formatUsdFloat(
+      -multiplier,
+    )}`,
+  );
+  lines.push(
+    `${childIndent}float physxMimicJoint:${mimicAxisInstance}:offset = ${formatUsdFloat(offset)}`,
+  );
+  lines.push(
+    `${childIndent}prepend rel physxMimicJoint:${mimicAxisInstance}:referenceJoint = <${mimicReferenceJointPath}>`,
+  );
+}
+
+function appendUsdJointFrameAttributes({
+  joint,
+  supportsAxisFrame,
+  axisToken,
+  lines,
+  childIndent,
+}: {
+  joint: UrdfJoint;
+  supportsAxisFrame: boolean;
+  axisToken: UsdJointAxisToken;
+  lines: string[];
+  childIndent: string;
+}): void {
+  const originQuaternion = rpyToQuaternion(
+    joint.origin?.rpy?.r ?? 0,
+    joint.origin?.rpy?.p ?? 0,
+    joint.origin?.rpy?.y ?? 0,
+  );
+  const localRot1Quaternion =
+    normalizeUsdPhysicsQuaternionWxyz(joint.usdPhysics?.localRot1Wxyz) ??
+    (supportsAxisFrame
+      ? createJointAxisAlignmentQuaternion(joint.axis, axisToken)
+      : new THREE.Quaternion());
+  const localRot0Quaternion = originQuaternion.clone().multiply(localRot1Quaternion);
+  const localPos1 = resolveUsdPhysicsLocalPos1(joint);
+  const localPos0 = new THREE.Vector3(localPos1[0], localPos1[1], localPos1[2])
+    .applyQuaternion(originQuaternion)
+    .add(
+      new THREE.Vector3(
+        joint.origin?.xyz?.x ?? 0,
+        joint.origin?.xyz?.y ?? 0,
+        joint.origin?.xyz?.z ?? 0,
+      ),
+    );
+
+  lines.push(`${childIndent}point3f physics:localPos0 = ${formatUsdTuple(localPos0.toArray())}`);
+  lines.push(
+    `${childIndent}custom point3f urdf:originXyz = ${formatUsdTuple([
+      joint.origin?.xyz?.x ?? 0,
+      joint.origin?.xyz?.y ?? 0,
+      joint.origin?.xyz?.z ?? 0,
+    ])}`,
+  );
+  lines.push(
+    `${childIndent}custom quatf urdf:originQuatWxyz = ${quaternionToUsdTuple(originQuaternion)}`,
+  );
+  lines.push(
+    `${childIndent}quatf physics:localRot0 = ${quaternionToUsdTuple(localRot0Quaternion)}`,
+  );
+  lines.push(`${childIndent}point3f physics:localPos1 = ${formatUsdTuple(localPos1)}`);
+  lines.push(
+    `${childIndent}quatf physics:localRot1 = ${quaternionToUsdTuple(localRot1Quaternion)}`,
+  );
+}
+
 const serializeJointDefinition = (
   joint: UrdfJoint,
   linkPaths: Map<string, string>,
@@ -351,6 +657,7 @@ const serializeJointDefinition = (
   depth: number,
   options: {
     layoutProfile?: ResolvedUsdPackageLayoutProfile;
+    mimicReferenceJointPath?: string;
   } = {},
 ): void => {
   const indent = makeUsdIndent(depth);
@@ -363,11 +670,23 @@ const serializeJointDefinition = (
     return;
   }
 
-  const supportsAxis = typeName === 'PhysicsRevoluteJoint' || typeName === 'PhysicsPrismaticJoint';
-  const axisToken = getAxisToken(joint.axis);
+  const supportsAxisAttribute =
+    typeName === 'PhysicsRevoluteJoint' || typeName === 'PhysicsPrismaticJoint';
+  const supportsAxisFrame =
+    supportsAxisAttribute || String(joint.type || '').toLowerCase() === 'planar';
+  const axisToken =
+    normalizeUsdJointAxisToken(joint.usdPhysics?.axisToken) ?? getAxisToken(joint.axis);
   const driveInstanceName = getUsdDriveInstanceName(typeName);
-  const usdLimitAxisKeys =
-    typeName === 'PhysicsJoint' ? getUsdPhysicsAxisKeys(joint.usdPhysics?.limitAxes) : [];
+  const usdLimitAxes =
+    typeName === 'PhysicsJoint'
+      ? {
+          ...(String(joint.type || '').toLowerCase() === 'planar'
+            ? getPlanarJointLimitAxes(axisToken)
+            : {}),
+          ...(joint.usdPhysics?.limitAxes || {}),
+        }
+      : {};
+  const usdLimitAxisKeys = getUsdPhysicsAxisKeys(usdLimitAxes);
   const usdDriveAxisKeys =
     typeName === 'PhysicsJoint' ? getUsdPhysicsAxisKeys(joint.usdPhysics?.driveAxes) : [];
   const shouldUseIsaacDefaults = options.layoutProfile === 'isaacsim' && driveInstanceName !== null;
@@ -393,12 +712,8 @@ const serializeJointDefinition = (
     defaultDriveDamping,
     shouldConvertAngularDriveGains,
   );
-  const jointLimit = joint.limit;
-  const finiteJointLower = formatOptionalUsdNumber(jointLimit?.lower);
-  const finiteJointUpper = formatOptionalUsdNumber(jointLimit?.upper);
-  const hasFiniteJointBounds = finiteJointLower !== null && finiteJointUpper !== null;
-  const jointEffort = jointLimit?.effort;
-  const jointVelocity = jointLimit?.velocity;
+  const jointEffort = joint.limit?.effort;
+  const jointVelocity = joint.limit?.velocity;
   const driveMaxForce =
     typeof jointEffort === 'number' && Number.isFinite(jointEffort) && Math.abs(jointEffort) > 1e-9
       ? jointEffort
@@ -413,9 +728,30 @@ const serializeJointDefinition = (
         ? angularVelocityToUsdUnits(jointVelocity)
         : jointVelocity
       : null;
+  const shouldEmitPhysxMimic =
+    options.layoutProfile === 'isaacsim' &&
+    supportsPhysxMimicJoint(joint) &&
+    driveInstanceName !== null &&
+    Boolean(options.mimicReferenceJointPath);
+  const mimicAxisInstance = `rot${axisToken}`;
   const shouldEmitDrive =
     driveInstanceName !== null &&
+    !shouldEmitPhysxMimic &&
     (driveStiffness !== null || driveDamping !== null || driveMaxForce !== null);
+  const jointFriction =
+    options.layoutProfile === 'isaacsim' &&
+    driveInstanceName !== null &&
+    Number.isFinite(joint.dynamics?.friction) &&
+    Number(joint.dynamics?.friction) > ZERO_EPSILON
+      ? Number(joint.dynamics?.friction)
+      : null;
+  const jointArmature =
+    options.layoutProfile === 'isaacsim' &&
+    driveInstanceName !== null &&
+    Number.isFinite(joint.hardware?.armature) &&
+    Number(joint.hardware?.armature) > ZERO_EPSILON
+      ? Number(joint.hardware?.armature)
+      : null;
   const jointApiSchemas: string[] = [];
   if (options.layoutProfile === 'isaacsim' && driveInstanceName !== null) {
     jointApiSchemas.push(`"PhysicsJointStateAPI:${driveInstanceName}"`, '"PhysxJointAPI"');
@@ -429,7 +765,10 @@ const serializeJointDefinition = (
   if (shouldEmitDrive) {
     jointApiSchemas.push(`"PhysicsDriveAPI:${driveInstanceName}"`);
   }
-  if (options.layoutProfile === 'isaacsim' && driveInstanceName !== null) {
+  if (shouldEmitPhysxMimic) {
+    jointApiSchemas.push(`"PhysxMimicJointAPI:${mimicAxisInstance}"`);
+  }
+  if (options.layoutProfile === 'isaacsim' && driveInstanceName !== null && !shouldEmitPhysxMimic) {
     jointApiSchemas.push('"IsaacJointAPI"');
   }
 
@@ -443,7 +782,7 @@ const serializeJointDefinition = (
   lines.push(`${childIndent}rel physics:body0 = <${parentPath}>`);
   lines.push(`${childIndent}rel physics:body1 = <${childPath}>`);
 
-  if (supportsAxis) {
+  if (supportsAxisAttribute) {
     lines.push(`${childIndent}uniform token physics:axis = "${axisToken}"`);
   }
   lines.push(
@@ -457,112 +796,45 @@ const serializeJointDefinition = (
     ])}`,
   );
 
-  if (
-    typeName === 'PhysicsRevoluteJoint' &&
-    String(joint.type || '').toLowerCase() !== 'continuous' &&
-    hasFiniteJointBounds
-  ) {
-    lines.push(
-      `${childIndent}float physics:lowerLimit = ${formatUsdFloat(radiansToDegrees(Number(jointLimit?.lower)))}`,
-    );
-    lines.push(
-      `${childIndent}float physics:upperLimit = ${formatUsdFloat(radiansToDegrees(Number(jointLimit?.upper)))}`,
-    );
-  } else if (typeName === 'PhysicsPrismaticJoint' && hasFiniteJointBounds) {
-    lines.push(`${childIndent}float physics:lowerLimit = ${finiteJointLower}`);
-    lines.push(`${childIndent}float physics:upperLimit = ${finiteJointUpper}`);
-  }
-  usdLimitAxisKeys.forEach((axis) => {
-    const limit = joint.usdPhysics?.limitAxes?.[axis];
-    const low = formatOptionalUsdNumber(limit?.low);
-    const high = formatOptionalUsdNumber(limit?.high);
-    if (low !== null) {
-      lines.push(`${childIndent}float limit:${axis}:physics:low = ${low}`);
-    }
-    if (high !== null) {
-      lines.push(`${childIndent}float limit:${axis}:physics:high = ${high}`);
-    }
+  appendUsdJointLimitAttributes({
+    joint,
+    typeName,
+    usdLimitAxes,
+    usdLimitAxisKeys,
+    lines,
+    childIndent,
   });
-
-  if (shouldEmitDrive) {
-    lines.push(`${childIndent}uniform token drive:${driveInstanceName}:physics:type = "force"`);
-    if (driveStiffness !== null) {
-      lines.push(
-        `${childIndent}float drive:${driveInstanceName}:physics:stiffness = ${formatUsdFloat(driveStiffness)}`,
-      );
-    }
-    if (driveDamping !== null) {
-      lines.push(
-        `${childIndent}float drive:${driveInstanceName}:physics:damping = ${formatUsdFloat(driveDamping)}`,
-      );
-    }
-    if (driveMaxForce !== null) {
-      lines.push(
-        `${childIndent}float drive:${driveInstanceName}:physics:maxForce = ${formatUsdFloat(driveMaxForce)}`,
-      );
-    }
-    if (options.layoutProfile === 'isaacsim') {
-      lines.push(`${childIndent}float drive:${driveInstanceName}:physics:targetPosition = 0`);
-    }
-  }
-  usdDriveAxisKeys.forEach((axis) => {
-    const drive = joint.usdPhysics?.driveAxes?.[axis];
-    const driveType = String(drive?.type || '').trim();
-    if (driveType) {
-      lines.push(
-        `${childIndent}uniform token drive:${axis}:physics:type = "${escapeUsdString(driveType)}"`,
-      );
-    }
-    (['stiffness', 'damping', 'maxForce', 'targetPosition', 'targetVelocity'] as const).forEach(
-      (propertyName) => {
-        const formatted = formatOptionalUsdNumber(drive?.[propertyName]);
-        if (formatted !== null) {
-          lines.push(`${childIndent}float drive:${axis}:physics:${propertyName} = ${formatted}`);
-        }
-      },
-    );
+  appendUsdJointDriveAttributes({
+    joint,
+    driveInstanceName,
+    driveStiffness,
+    driveDamping,
+    driveMaxForce,
+    shouldEmitDrive,
+    usdDriveAxisKeys,
+    lines,
+    childIndent,
+    isIsaacSim: options.layoutProfile === 'isaacsim',
   });
-
-  if (maxJointVelocity !== null) {
-    lines.push(
-      `${childIndent}float physxJoint:maxJointVelocity = ${formatUsdFloat(maxJointVelocity)}`,
-    );
-  }
-
-  lines.push(
-    `${childIndent}point3f physics:localPos0 = ${formatUsdTuple([
-      joint.origin?.xyz?.x ?? 0,
-      joint.origin?.xyz?.y ?? 0,
-      joint.origin?.xyz?.z ?? 0,
-    ])}`,
-  );
-  const originQuaternion = rpyToQuaternion(
-    joint.origin?.rpy?.r ?? 0,
-    joint.origin?.rpy?.p ?? 0,
-    joint.origin?.rpy?.y ?? 0,
-  );
-  const localRot1Quaternion =
-    normalizeUsdPhysicsQuaternionWxyz(joint.usdPhysics?.localRot1Wxyz) ??
-    new THREE.Quaternion();
-  const localRot0Quaternion = originQuaternion.clone().multiply(localRot1Quaternion);
-  const localPos1 = resolveUsdPhysicsLocalPos1(joint);
-  lines.push(
-    `${childIndent}custom point3f urdf:originXyz = ${formatUsdTuple([
-      joint.origin?.xyz?.x ?? 0,
-      joint.origin?.xyz?.y ?? 0,
-      joint.origin?.xyz?.z ?? 0,
-    ])}`,
-  );
-  lines.push(
-    `${childIndent}custom quatf urdf:originQuatWxyz = ${quaternionToUsdTuple(originQuaternion)}`,
-  );
-  lines.push(
-    `${childIndent}quatf physics:localRot0 = ${quaternionToUsdTuple(localRot0Quaternion)}`,
-  );
-  lines.push(`${childIndent}point3f physics:localPos1 = ${formatUsdTuple(localPos1)}`);
-  lines.push(
-    `${childIndent}quatf physics:localRot1 = ${quaternionToUsdTuple(localRot1Quaternion)}`,
-  );
+  appendUsdJointPhysxAttributes({
+    joint,
+    driveInstanceName,
+    maxJointVelocity,
+    jointFriction,
+    jointArmature,
+    shouldEmitPhysxMimic,
+    mimicAxisInstance,
+    mimicReferenceJointPath: options.mimicReferenceJointPath,
+    lines,
+    childIndent,
+  });
+  appendUsdJointFrameAttributes({
+    joint,
+    supportsAxisFrame,
+    axisToken,
+    lines,
+    childIndent,
+  });
   lines.push(`${indent}}`);
 };
 
@@ -624,43 +896,6 @@ const serializeClosedLoopConstraintDefinition = (
   );
   lines.push(`${childIndent}quatf physics:localRot0 = (1, 0, 0, 0)`);
   lines.push(`${childIndent}quatf physics:localRot1 = (1, 0, 0, 0)`);
-  lines.push(`${indent}}`);
-};
-
-const serializeCollisionOverrides = (link: UrdfLink, lines: string[], depth: number): void => {
-  const collisionVisuals = [
-    ...(getGeometryType(link.collision?.type) !== GEOMETRY_TYPES.NONE ? [link.collision] : []),
-    ...(link.collisionBodies || []).filter(
-      (body) => getGeometryType(body.type) !== GEOMETRY_TYPES.NONE,
-    ),
-  ];
-
-  if (collisionVisuals.length === 0) {
-    return;
-  }
-
-  const indent = makeUsdIndent(depth);
-  lines.push(`${indent}over "collisions"`);
-  lines.push(`${indent}{`);
-
-  collisionVisuals.forEach((visual, index) => {
-    const childIndent = makeUsdIndent(depth + 1);
-    const apiSchemas =
-      getGeometryType(visual.type) === GEOMETRY_TYPES.MESH
-        ? '"PhysicsCollisionAPI", "PhysicsMeshCollisionAPI"'
-        : '"PhysicsCollisionAPI"';
-
-    serializeUsdPrimSpecWithMetadata(lines, depth + 1, `over "collision_${index}"`, [
-      `prepend apiSchemas = [${apiSchemas}]`,
-    ]);
-    lines.push(`${childIndent}{`);
-    lines.push(`${makeUsdIndent(depth + 2)}bool physics:collisionEnabled = true`);
-    if (getGeometryType(visual.type) === GEOMETRY_TYPES.MESH) {
-      lines.push(`${makeUsdIndent(depth + 2)}uniform token physics:approximation = "convexHull"`);
-    }
-    lines.push(`${childIndent}}`);
-  });
-
   lines.push(`${indent}}`);
 };
 
@@ -732,8 +967,6 @@ const serializeLinkPhysicsOverride = (
     );
   }
 
-  serializeCollisionOverrides(link, lines, depth + 1);
-
   lines.push(`${indent}}`);
 };
 
@@ -802,37 +1035,10 @@ export const buildUsdPhysicsLayerContent = (
     '',
   ];
 
-  serializeUsdPrimSpecWithMetadata(
-    lines,
-    0,
-    'def PhysicsScene "physicsScene"',
-    layoutProfile === 'isaacsim' ? ['prepend apiSchemas = ["PhysxSceneAPI"]'] : [],
-  );
-  lines.push('{');
-  lines.push('    vector3f physics:gravityDirection = (0, 0, -1)');
-  lines.push('    float physics:gravityMagnitude = 9.81');
-  if (layoutProfile === 'isaacsim') {
-    lines.push(
-      `    uniform token physxScene:broadphaseType = "${ISAACSIM_DEFAULT_PHYSX_SCENE_BROADPHASE_TYPE}"`,
-    );
-    lines.push(
-      `    bool physxScene:enableCCD = ${ISAACSIM_DEFAULT_PHYSX_SCENE_ENABLE_CCD ? 'true' : 'false'}`,
-    );
-    lines.push(
-      `    bool physxScene:enableGPUDynamics = ${ISAACSIM_DEFAULT_PHYSX_SCENE_ENABLE_GPU_DYNAMICS ? 'true' : 'false'}`,
-    );
-    lines.push(
-      `    bool physxScene:enableStabilization = ${ISAACSIM_DEFAULT_PHYSX_SCENE_ENABLE_STABILIZATION ? 'true' : 'false'}`,
-    );
-    lines.push(
-      `    uniform token physxScene:solverType = "${ISAACSIM_DEFAULT_PHYSX_SCENE_SOLVER_TYPE}"`,
-    );
-  }
-  lines.push('}');
-  lines.push('');
-
   serializeUsdPrimSpecWithMetadata(lines, 0, `over "${rootPrimName}"`, [
-    ...(layoutProfile === 'isaacsim' ? [] : ['prepend apiSchemas = ["PhysicsArticulationRootAPI"]']),
+    ...(layoutProfile === 'isaacsim'
+      ? []
+      : ['prepend apiSchemas = ["PhysicsArticulationRootAPI"]']),
   ]);
   lines.push('{');
 
@@ -861,11 +1067,37 @@ export const buildUsdPhysicsLayerContent = (
   lines.push('    over "joints"');
   lines.push('    {');
 
+  const mimicReferenceJointPaths = new Map<string, string>();
+  Object.entries(robot.joints).forEach(([jointKey, joint]) => {
+    if (omittedRootAnchor?.omittedJointIds.has(joint.id) || !supportsPhysxMimicJoint(joint)) {
+      return;
+    }
+
+    const jointPath = `/${rootPrimName}/joints/${sanitizeUsdIdentifier(
+      joint.id || joint.name || 'joint',
+    )}`;
+    [jointKey, joint.id, joint.name].forEach((reference) => {
+      const normalizedReference = String(reference || '').trim();
+      if (normalizedReference) {
+        mimicReferenceJointPaths.set(normalizedReference, jointPath);
+      }
+    });
+  });
+
   Object.values(robot.joints).forEach((joint) => {
     if (omittedRootAnchor?.omittedJointIds.has(joint.id)) {
       return;
     }
-    serializeJointDefinition(joint, pathMaps.linkPaths, lines, 2, { layoutProfile });
+    const mimicReference = String(joint.mimic?.joint || '').trim();
+    const jointPath = `/${rootPrimName}/joints/${sanitizeUsdIdentifier(
+      joint.id || joint.name || 'joint',
+    )}`;
+    const mimicReferenceJointPath = mimicReferenceJointPaths.get(mimicReference);
+    serializeJointDefinition(joint, pathMaps.linkPaths, lines, 2, {
+      layoutProfile,
+      mimicReferenceJointPath:
+        mimicReferenceJointPath !== jointPath ? mimicReferenceJointPath : undefined,
+    });
   });
   (robot.closedLoopConstraints || []).forEach((constraint) => {
     serializeClosedLoopConstraintDefinition(constraint, pathMaps.linkPaths, lines, 2);
@@ -893,6 +1125,45 @@ export const buildUsdSensorLayerContent = (rootPrimName: string): string => {
   ].join('\n');
 };
 
+const buildUsdPhysicsSceneLines = (
+  rootPrimName: string,
+  layoutProfile: ResolvedUsdPackageLayoutProfile,
+): string[] => {
+  const physicsScenePrimName = rootPrimName === 'physicsScene' ? '__physicsScene' : 'physicsScene';
+  const lines: string[] = [];
+
+  serializeUsdPrimSpecWithMetadata(
+    lines,
+    0,
+    `def PhysicsScene "${physicsScenePrimName}"`,
+    layoutProfile === 'isaacsim' ? ['prepend apiSchemas = ["PhysxSceneAPI"]'] : [],
+  );
+  lines.push('{');
+  lines.push('    vector3f physics:gravityDirection = (0, 0, -1)');
+  lines.push('    float physics:gravityMagnitude = 9.81');
+  if (layoutProfile === 'isaacsim') {
+    lines.push(
+      `    uniform token physxScene:broadphaseType = "${ISAACSIM_DEFAULT_PHYSX_SCENE_BROADPHASE_TYPE}"`,
+    );
+    lines.push(
+      `    bool physxScene:enableCCD = ${ISAACSIM_DEFAULT_PHYSX_SCENE_ENABLE_CCD ? 'true' : 'false'}`,
+    );
+    lines.push(
+      `    bool physxScene:enableGPUDynamics = ${ISAACSIM_DEFAULT_PHYSX_SCENE_ENABLE_GPU_DYNAMICS ? 'true' : 'false'}`,
+    );
+    lines.push(
+      `    bool physxScene:enableStabilization = ${ISAACSIM_DEFAULT_PHYSX_SCENE_ENABLE_STABILIZATION ? 'true' : 'false'}`,
+    );
+    lines.push(
+      `    uniform token physxScene:solverType = "${ISAACSIM_DEFAULT_PHYSX_SCENE_SOLVER_TYPE}"`,
+    );
+  }
+  lines.push('}');
+  lines.push('');
+
+  return lines;
+};
+
 export const buildUsdRootLayerContent = (
   rootPrimName: string,
   configStem: string,
@@ -913,6 +1184,7 @@ export const buildUsdRootLayerContent = (
       '    upAxis = "Z"',
       ')',
       '',
+      ...buildUsdPhysicsSceneLines(rootPrimName, layoutProfile),
       `def Xform "${rootPrimName}" (`,
       '    variants = {',
       '        string Physics = "PhysX"',
@@ -975,6 +1247,7 @@ export const buildUsdRootLayerContent = (
     '    metersPerUnit = 1',
     ')',
     '',
+    ...buildUsdPhysicsSceneLines(rootPrimName, layoutProfile),
     `def Xform "${rootPrimName}" (`,
     '    variants = {',
     '        string Physics = "PhysX"',
@@ -1090,10 +1363,10 @@ export const buildUsdRobotLayerContent = (
   lines.push('{');
   lines.push('    string isaac:description');
   lines.push('    string isaac:namespace');
-  lines.push('    prepend rel isaac:physics:robotJoints = [');
+  lines.push(`    ${jointPaths.length > 0 ? 'prepend ' : ''}rel isaac:physics:robotJoints = [`);
   jointPaths.forEach((jointPath) => lines.push(jointPath));
   lines.push('    ]');
-  lines.push('    prepend rel isaac:physics:robotLinks = [');
+  lines.push(`    ${rootLinkPaths.length > 0 ? 'prepend ' : ''}rel isaac:physics:robotLinks = [`);
   rootLinkPaths.forEach((linkPath) => lines.push(linkPath));
   lines.push('    ]');
   lines.push('');
@@ -1118,19 +1391,19 @@ export const buildUsdRobotLayerContent = (
       const jointName = sanitizeUsdIdentifier(joint.id || joint.name || 'joint');
       serializeUsdPrimSpecWithMetadata(lines, 2, `over "${jointName}"`, [
         'prepend apiSchemas = ["IsaacJointAPI"]',
-    ]);
-    lines.push('        {');
-    lines.push('            string isaac:nameOverride');
-    lines.push('            float[] isaac:physics:AccelerationLimit');
-    lines.push(`            int isaac:physics:index = ${index}`);
-    lines.push('            float[] isaac:physics:JerkLimit');
-    lines.push('            int isaac:physics:Rot_X:DofOffset');
-    lines.push('            int isaac:physics:Rot_Y:DofOffset');
-    lines.push('            int isaac:physics:Rot_Z:DofOffset');
-    lines.push('            int isaac:physics:Tr_X:DofOffset');
-    lines.push('            int isaac:physics:Tr_Y:DofOffset');
-    lines.push('            int isaac:physics:Tr_Z:DofOffset');
-    lines.push('        }');
+      ]);
+      lines.push('        {');
+      lines.push('            string isaac:nameOverride');
+      lines.push('            float[] isaac:physics:AccelerationLimit');
+      lines.push(`            int isaac:physics:index = ${index}`);
+      lines.push('            float[] isaac:physics:JerkLimit');
+      lines.push('            int isaac:physics:Rot_X:DofOffset');
+      lines.push('            int isaac:physics:Rot_Y:DofOffset');
+      lines.push('            int isaac:physics:Rot_Z:DofOffset');
+      lines.push('            int isaac:physics:Tr_X:DofOffset');
+      lines.push('            int isaac:physics:Tr_Y:DofOffset');
+      lines.push('            int isaac:physics:Tr_Z:DofOffset');
+      lines.push('        }');
       lines.push('');
     });
 
@@ -1153,6 +1426,22 @@ export const createUsdArchivePackage = (
   const usdRoot = layoutProfile === 'isaacsim' ? packageRoot : `${packageRoot}/usd`;
   const configurationRoot = `${usdRoot}/configuration`;
   const rootLayerPath = `${usdRoot}/${packageRoot}.${layerExtension}`;
+
+  const requiredLayers = [
+    ['root', layerContents.rootLayerContent],
+    ['base', layerContents.baseLayerContent],
+    ['physics', layerContents.physicsLayerContent],
+    ['sensor', layerContents.sensorLayerContent],
+  ] as const;
+  requiredLayers.forEach(([layerName, content]) => {
+    if (!content.trim()) {
+      throw new Error(`USD archives require non-empty ${layerName} layer content.`);
+    }
+  });
+
+  if (layoutProfile === 'isaacsim' && !layerContents.robotLayerContent?.trim()) {
+    throw new Error('IsaacSim USD archives require a robot metadata layer.');
+  }
 
   const layerFiles: Array<[string, Blob]> = [
     [rootLayerPath, createIdentityBlob(layerContents.rootLayerContent)],
@@ -1177,14 +1466,31 @@ export const createUsdArchivePackage = (
     ]);
   }
 
+  const reservedArchivePaths = new Set(layerFiles.map(([filePath]) => filePath));
+  const packagedAssetPaths = new Set<string>();
+  const packagedAssetFiles = Array.from(assetFiles.entries()).map(([relativePath, blob]) => {
+    const normalizedRelativePath = relativePath.trim().replace(/\\/g, '/');
+    const pathSegments = normalizedRelativePath.split('/');
+    if (
+      !normalizedRelativePath ||
+      normalizedRelativePath.startsWith('/') ||
+      /^[a-z]:\//i.test(normalizedRelativePath) ||
+      pathSegments.some((segment) => !segment || segment === '.' || segment === '..')
+    ) {
+      throw new Error(`Invalid USD archive asset path: ${relativePath}`);
+    }
+
+    const archivePath = `${usdRoot}/${normalizedRelativePath}`;
+    if (reservedArchivePaths.has(archivePath) || packagedAssetPaths.has(archivePath)) {
+      throw new Error(`USD archive entry path collision: ${archivePath}`);
+    }
+    packagedAssetPaths.add(archivePath);
+    return [archivePath, blob] as const;
+  });
+
   return {
     archiveFileName: `${packageRoot}_${layerExtension}.zip`,
     rootLayerPath,
-    archiveFiles: new Map<string, Blob>([
-      ...layerFiles,
-      ...Array.from(assetFiles.entries()).map(
-        ([relativePath, blob]) => [`${usdRoot}/${relativePath}`, blob] as const,
-      ),
-    ]),
+    archiveFiles: new Map<string, Blob>([...layerFiles, ...packagedAssetFiles]),
   };
 };

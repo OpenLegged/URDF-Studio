@@ -1,7 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { convertUsdArchiveFilesToBinary } from './usdBinaryArchive.ts';
+import {
+  convertUsdArchiveFilesToBinary,
+  type BinaryReadyUsdRuntime,
+} from './usdBinaryArchive.ts';
 
 type FakeFsData = Uint8Array;
 
@@ -124,13 +127,10 @@ test('convertUsdArchiveFilesToBinary exports each USD layer directly and leaves 
       stageExportCalls,
     } = createFakeUsdRuntime();
 
-    const converted = await (
-      convertUsdArchiveFilesToBinary as typeof convertUsdArchiveFilesToBinary &
-        ((...args: any[]) => Promise<Map<string, Blob>>)
-    )(archiveFiles, {
+    const converted = await convertUsdArchiveFilesToBinary(archiveFiles, {
       onProgress: ({ filePath }: { filePath: string }) => progress.push(filePath),
-      loadRuntime: async () => runtime,
-    } as any);
+      loadRuntime: async () => runtime as unknown as BinaryReadyUsdRuntime,
+    });
 
     assert.deepEqual(progress, ['robot/usd/robot.usd']);
     assert.equal(await converted.get('robot/usd/robot.usd')?.text(), 'PXR-USDCROOT#usda 1.0\n');
@@ -144,6 +144,80 @@ test('convertUsdArchiveFilesToBinary exports each USD layer directly and leaves 
     assert.equal(String(layerExportCalls[0]?.[0]).endsWith('/robot/usd/robot.usd'), true);
     assert.equal(layerExportCalls[0]?.[1], '');
     assert.deepEqual(layerExportCalls[0]?.[2], { format: 'usdc' });
+  } finally {
+    if (previousDocument === undefined) {
+      Reflect.deleteProperty(globalThis, 'document');
+    } else {
+      (globalThis as typeof globalThis & { document?: object }).document = previousDocument;
+    }
+  }
+});
+
+test('convertUsdArchiveFilesToBinary preserves a layered archive and emits USDC magic for every USD sidecar', async () => {
+  const previousDocument = globalThis.document;
+  (globalThis as typeof globalThis & { document?: Document & object }).document =
+    {} as unknown as Document & object;
+
+  try {
+    const layerPaths = [
+      'robot/robot.usd',
+      'robot/configuration/robot_base.usd',
+      'robot/configuration/robot_physics.usd',
+      'robot/configuration/robot_sensor.usd',
+      'robot/configuration/robot_robot.usd',
+    ];
+    const textureBlob = new Blob([new Uint8Array([137, 80, 78, 71])], {
+      type: 'image/png',
+    });
+    const archiveFiles = new Map<string, Blob>([
+      ...layerPaths.map(
+        (filePath, index) =>
+          [filePath, new Blob([`#usda 1.0\n# layer ${index}\n`])] as const,
+      ),
+      ['robot/assets/body.png', textureBlob],
+    ]);
+    const { runtime, layerExportCalls } = createFakeUsdRuntime();
+
+    const converted = await convertUsdArchiveFilesToBinary(archiveFiles, {
+      loadRuntime: async () => runtime as unknown as BinaryReadyUsdRuntime,
+    });
+
+    assert.deepEqual(
+      Array.from(converted.keys()).sort(),
+      Array.from(archiveFiles.keys()).sort(),
+    );
+    assert.equal(layerExportCalls.length, layerPaths.length);
+    for (const filePath of layerPaths) {
+      const bytes = new Uint8Array(await converted.get(filePath)!.arrayBuffer());
+      assert.equal(new TextDecoder('latin1').decode(bytes.slice(0, 8)), 'PXR-USDC');
+    }
+    assert.equal(converted.get('robot/assets/body.png'), textureBlob);
+  } finally {
+    if (previousDocument === undefined) {
+      Reflect.deleteProperty(globalThis, 'document');
+    } else {
+      (globalThis as typeof globalThis & { document?: object }).document = previousDocument;
+    }
+  }
+});
+
+test('convertUsdArchiveFilesToBinary leaves explicitly authored USDA paths unchanged', async () => {
+  const previousDocument = globalThis.document;
+  (globalThis as typeof globalThis & { document?: Document & object }).document =
+    {} as unknown as Document & object;
+
+  try {
+    const usdaLayer = new Blob(['#usda 1.0\n'], { type: 'text/plain;charset=utf-8' });
+    const { runtime, layerExportCalls } = createFakeUsdRuntime();
+    const converted = await convertUsdArchiveFilesToBinary(
+      new Map([['robot/robot.usda', usdaLayer]]),
+      {
+        loadRuntime: async () => runtime as unknown as BinaryReadyUsdRuntime,
+      },
+    );
+
+    assert.equal(converted.get('robot/robot.usda'), usdaLayer);
+    assert.equal(layerExportCalls.length, 0);
   } finally {
     if (previousDocument === undefined) {
       Reflect.deleteProperty(globalThis, 'document');
@@ -167,12 +241,9 @@ test('convertUsdArchiveFilesToBinary preserves failed SdfLayer export causes', a
 
     await assert.rejects(
       () =>
-        (
-          convertUsdArchiveFilesToBinary as typeof convertUsdArchiveFilesToBinary &
-            ((...args: any[]) => Promise<Map<string, Blob>>)
-        )(archiveFiles, {
-          loadRuntime: async () => runtime,
-        } as any),
+        convertUsdArchiveFilesToBinary(archiveFiles, {
+          loadRuntime: async () => runtime as unknown as BinaryReadyUsdRuntime,
+        }),
       (error: unknown) => {
         assert.match(String(error), /layer export rejected/);
         return true;
@@ -206,12 +277,9 @@ test('convertUsdArchiveFilesToBinary does not fall back to composed stage export
 
     await assert.rejects(
       () =>
-        (
-          convertUsdArchiveFilesToBinary as typeof convertUsdArchiveFilesToBinary &
-            ((...args: any[]) => Promise<Map<string, Blob>>)
-        )(archiveFiles, {
-          loadRuntime: async () => runtime,
-        } as any),
+        convertUsdArchiveFilesToBinary(archiveFiles, {
+          loadRuntime: async () => runtime as unknown as BinaryReadyUsdRuntime,
+        }),
       /SdfLayer\.FindOrOpen\/Export/i,
     );
 

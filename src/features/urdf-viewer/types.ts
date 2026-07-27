@@ -344,10 +344,11 @@ export interface AssemblyComponentAutoGroundResolution {
   runtimeRobotLocalPositionDelta: { x: number; y: number; z: number } | null;
 }
 
-export interface CollisionTransformControlsProps {
+export interface GeometryTransformControlsProps {
   robot: THREE.Object3D | null;
   robotVersion?: number;
   selection: ViewerProps['selection'];
+  geometrySubType: 'visual' | 'collision';
   transformMode: 'select' | 'translate' | 'rotate' | 'universal';
   setIsDragging: (dragging: boolean) => void;
   onTransformChange?: (

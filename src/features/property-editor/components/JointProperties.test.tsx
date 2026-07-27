@@ -73,6 +73,8 @@ test('joint properties render collision-style transform controls with 90 degree 
   assert.match(markup, new RegExp(escapeForRegExp(translations.en.originRelativeParent)));
   assert.match(markup, new RegExp(escapeForRegExp(translations.en.position)));
   assert.match(markup, new RegExp(escapeForRegExp(translations.en.rotation)));
+  assert.match(markup, /aria-label="Copy rotation\/motion axis XYZ"/);
+  assert.match(markup, /aria-label="Paste rotation\/motion axis XYZ"/);
   assert.match(markup, /-90/);
   assert.match(markup, /\+90/);
 });

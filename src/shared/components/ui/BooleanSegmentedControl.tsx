@@ -42,7 +42,7 @@ export function BooleanSegmentedControl({
               onChange(option.nextValue);
             }
           }}
-          className={`inline-flex h-6 min-w-[3.25rem] items-center justify-center rounded-[6px] px-2.5 text-[11px] font-medium transition-all duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-system-blue/30 disabled:cursor-not-allowed disabled:opacity-50 ${
+          className={`inline-flex h-6 min-w-[3.25rem] items-center justify-center rounded-[6px] px-2.5 text-ui-label font-medium transition-all duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-system-blue/30 disabled:cursor-not-allowed disabled:opacity-50 ${
             option.selected
               ? 'bg-segmented-active text-text-primary shadow-sm ring-1 ring-border-black/60'
               : 'text-text-secondary hover:bg-segmented-active/70 hover:text-text-primary'

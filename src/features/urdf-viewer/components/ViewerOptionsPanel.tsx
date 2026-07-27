@@ -187,7 +187,7 @@ export const ViewerOptionsPanel: React.FC<ViewerOptionsPanelProps> = ({
   onActivate,
 }) => {
   const { activateHoverBlock, deactivateHoverBlock } = useOverlayHoverBlock();
-  const detailOptionIconClassName = 'w-3 h-3 text-slate-500';
+  const detailOptionIconClassName = 'w-3 h-3 text-text-tertiary';
 
   if (!showOptionsPanel) return null;
 
@@ -248,6 +248,7 @@ export const ViewerOptionsPanel: React.FC<ViewerOptionsPanelProps> = ({
         width="9.5rem"
         minWidth={148}
         resizable={true}
+        className="max-w-[calc(100vw-1rem)]"
         isCollapsed={isOptionsCollapsed}
         resizeTitle={t.resize}
       >
@@ -259,7 +260,7 @@ export const ViewerOptionsPanel: React.FC<ViewerOptionsPanelProps> = ({
           showDragGrip={false}
           onMouseDown={onMouseDown}
           className="!h-auto !gap-1.5 !px-1.5 !py-1"
-          titleClassName="!text-[11px] !text-text-secondary"
+          titleClassName="!text-[11px] font-semibold tracking-[0.02em] !text-text-tertiary"
           expandText={t.expand}
           collapseText={t.collapse}
           closeText={t.close}
@@ -338,8 +339,8 @@ export const ViewerOptionsPanel: React.FC<ViewerOptionsPanelProps> = ({
             <OverlayToggleOption
               checked={showCenterOfMass}
               icon={
-                <div className="flex h-3 w-3 items-center justify-center rounded-full border border-slate-500">
-                  <div className="h-1 w-1 rounded-full bg-slate-500"></div>
+                <div className="flex h-3 w-3 items-center justify-center rounded-full border border-text-tertiary">
+                  <div className="h-1 w-1 rounded-full bg-text-tertiary"></div>
                 </div>
               }
               label={t.showCenterOfMass}
@@ -361,7 +362,7 @@ export const ViewerOptionsPanel: React.FC<ViewerOptionsPanelProps> = ({
             <OverlayToggleOption
               checked={showInertia}
               className="mt-1"
-              icon={<div className="h-3 w-3 border border-dashed border-slate-500"></div>}
+              icon={<div className="h-3 w-3 border border-dashed border-text-tertiary"></div>}
               label={t.showInertia}
               onChange={setShowInertia}
               onToggleOverlay={() => setShowInertiaOverlay(!showInertiaOverlay)}

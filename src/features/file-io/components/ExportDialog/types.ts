@@ -6,7 +6,7 @@ export type MeshExportFormat = Exclude<ExportFormat, 'project'>;
 
 // Mesh format for converted meshes in MJCF/USD export.
 // 'auto' picks the smallest suitable format (STL for untextured, OBJ for textured).
-export type ExportMeshFormat = 'auto' | 'obj' | 'stl' | 'ply';
+export type ExportMeshFormat = 'auto' | 'obj' | 'stl';
 
 export interface MjcfExportConfig {
   meshdir: string;

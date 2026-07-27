@@ -1,6 +1,6 @@
 # 导入导出与 Workspace 链路
 
-> 最后更新：2026-07-09 | 覆盖源码：`src/app/hooks/`、`src/app/hooks/file-export/`、`src/app/hooks/workspace-source-sync/`、`src/app/hooks/workspace-mutations/`、`src/app/utils/`、`src/app/workers/`、`src/core/parsers/format_detection.ts`、`src/core/robot/assemblySceneProjection.ts`、`src/features/file-io/`、`src/features/robot-tree/`、`src/features/assembly/`、`src/features/property-editor/`
+> 最后更新：2026-07-17 | 覆盖源码：`src/app/hooks/`、`src/app/hooks/file-export/`、`src/app/hooks/workspace-source-sync/`、`src/app/hooks/workspace-mutations/`、`src/app/utils/`、`src/app/workers/`、`src/app/components/BotWorldImportOverlay.tsx`、`src/core/parsers/format_detection.ts`、`src/core/robot/assemblySceneProjection.ts`、`src/features/file-io/`、`src/features/robot-tree/`、`src/features/assembly/`、`src/features/property-editor/`、`src/shared/utils/popupHandoffProtocol.ts`、`src/shared/hostIntegrationState.ts`
 > 交叉引用：[viewer.md](viewer.md)、[architecture.md](architecture.md)
 
 ## 1. 职责拆分
@@ -102,61 +102,91 @@
 
 ## 6. 跨域 Handoff 接收端
 
-BOT World Gallery → URDF Studio 的资产传递接收端，不可删除。
+上游资产图库 → URDF Studio 的跨域资产传递接收端，不可删除。开源 Core 只实现通用接收
+infra（URL 参数解析、BroadcastChannel 已有-tab 认领、并发下载与上限校验、导入编排）；
+上游专属的鉴权凭据与下载端点通过注入 facade 由宿主壳（pro）提供，Core 不读
+`import.meta.env` 的服务凭据。下方 `BOT-World` / `BotWorld*` 等命名仅沿用代码中的
+常量/组件名，不绑定具体产品。
 
 ### 路径 A — assetId 直传（主路径）
 
 ```text
-BOT-World 构造 URL ?import=<assetId>&from=<botworld_origin> → window.open 新标签页
-  → useAssetImportFromUrl 检测 URL 参数
+上游图库构造 URL ?import=<assetId>&from=<gallery_origin> → window.open 新标签页
+  → useAssetImportFromUrl 检测 URL 参数，立即消费（从 URL 移除）
   → BroadcastChannel 广播 import-request（等待 1s）
     → 已有 Studio tab 回复 import-accepted → 新 tab 关闭 → 已有 tab 执行导入
     → 无已有 tab 回复 → 当前 tab 执行导入
-  → Studio 解析资产下载端点并 POST /api/download-asset → 获取文件列表 → 下载 → handleImport
+  → Studio 验证 from origin 白名单 → 解析资产下载端点
+  → POST 资产下载接口（携带宿主注入的 Bearer 服务令牌）→ 获取文件列表（含预签名下载 URL）
+  → worker pool 并行下载预签名 URL → 设置 webkitRelativePath 保持文件夹结构
+  → handleImport(files) 导入到编辑器
 ```
 
-- BOT-World 通过 `resolveHandoffEditorForCategory(asset.category)` 确定目标 Studio
+- 发送端图库按资产分类确定目标 Studio（发送端逻辑不在本仓）
 - Studio 验证 `from` origin 白名单后获取文件列表（含预签名下载 URL）；Core 默认请求该
   handoff origin，宿主可通过 `setAssetDownloadEndpointResolver` 显式改为自己的同源代理
-- 逐个下载文件，设置 `webkitRelativePath` 保持文件夹结构
-- 调用 `handleImport(files)` 导入到编辑器
+- 资产下载请求的 `Authorization: Bearer <token>` 由宿主通过 `setAssetDownloadAuthTokenProvider`
+  在调用时注入服务令牌（上游服务的静态 service token）；未注册 provider 时不带 `Authorization`
+  （BYOK / 本地未鉴权开发）。token 在调用时读取，开源 Core 不读 `import.meta.env`，不把
+  `VITE_*` 服务凭据编进浏览器资产
+- 并行下载由 `REMOTE_IMPORT_DOWNLOAD_CONCURRENCY`（8）限流的 worker pool 调度，不用
+  `Promise.all(files.map(...))` 一次性发起全部请求（资产最多含 2000 文件，避免压垮浏览器与
+  对象存储）；按原始 index 写回 `downloadedFiles`，保证 `webkitRelativePath` 顺序与文件列表一致
+- 大小上限三道校验：`MAX_REMOTE_IMPORT_FILE_COUNT` = 2000（文件数）、
+  `MAX_REMOTE_IMPORT_TOTAL_BYTES` = 512MB（累计）、`MAX_REMOTE_IMPORT_SINGLE_FILE_BYTES`
+  = 512MB（单文件）；并行下载下累计字节检查为 best-effort，循环外对总量再做一次确定性兜底
 - 进度展示通过 `BotWorldImportOverlay` 独立组件（居中遮罩，不依赖 LoadingHud）
 
 **关键文件：**
 
 | 文件 | 用途 |
 |------|------|
-| `src/app/hooks/useAssetImportFromUrl.ts` | 核心 hook：URL 参数解析、BroadcastChannel 已有 tab 检测、可注入资产下载端点、assetId 下载导入 |
+| `src/app/hooks/useAssetImportFromUrl.ts` | 核心 hook：URL 参数解析、BroadcastChannel 已有 tab 检测、可注入资产下载端点 + 服务令牌、worker pool 并发下载与上限校验、assetId 导入 |
+| `src/app/hooks/assetDownloadEndpoint.ts` | 资产下载端点 resolver 与服务令牌 provider 的 app 层 re-export（实现位于 `src/shared/hostIntegrationState.ts`） |
 | `src/app/components/BotWorldImportOverlay.tsx` | 导入进度遮罩 UI（waiting / fetching / downloading / importing） |
-| `src/shared/utils/popupHandoffProtocol.ts` | 协议常量、origin 白名单、URL 参数 helper |
+| `src/app/hooks/usePluginLaunch.ts` | 插件激活 hook：BroadcastChannel 已有 tab 认领 + `openTool(key)`（见路径 C） |
+| `src/shared/utils/popupHandoffProtocol.ts` | 协议常量、origin 白名单（env 驱动 + 通配）、URL 参数 helper、BroadcastChannel 消息类型 |
+| `src/shared/hostIntegrationState.ts` | 宿主注入态：资产下载端点 resolver、AI 后端 / 资产下载服务令牌 provider；`src/hostIntegrations.ts` 为其窄 facade |
 
 ### 路径 C — 插件激活
 
 ```text
-BOT-World 构造 URL ?plugin=<key> → window.open 新标签页
-  → usePluginLaunch hook 读取 ?plugin=<key> → openTool(key)
-  → 参数消费后从 URL 移除
+上游图库构造 URL ?plugin=<key> → window.open 新标签页
+  → usePluginLaunch 检测 URL 参数，立即消费（从 URL 移除）
+  → BroadcastChannel 广播 plugin-launch-request（等待 1s）
+    → 已有 Studio tab 回复 plugin-launch-accepted → 新 tab 关闭 → 已有 tab 调用 openTool
+    → 无已有 tab 回复 → 当前 tab 调用 openTool
 ```
 
-- `usePluginLaunch`（`src/app/hooks/usePluginLaunch.ts`）：读取 `?plugin=<key>` URL 参数，通过 `requestAnimationFrame` 双帧等待后调用 `openTool(key)`，参数消费后从 URL 移除
+- `usePluginLaunch`（`src/app/hooks/usePluginLaunch.ts`）：读取 `?plugin=<key>` URL 参数，参数
+  消费后从 URL 移除；通过 BroadcastChannel 复用与资产导入相同的「已有 tab 认领」机制
+  （`plugin-launch-request` / `plugin-launch-accepted`），无已有 tab 回复时由当前 tab 激活
+- 已不再使用 `requestAnimationFrame` 双帧等待；已有 tab 认领成功后 title blink 提示用户切回
 
 ### 协议与安全
 
 | 项目 | 值 |
 |------|-----|
-| BroadcastChannel 名称 | `botworld-handoff`（三端共享） |
+| BroadcastChannel 名称 | `botworld-handoff`（各端共享，承载 import 与 plugin-launch 两类消息） |
+| 消息类型 | `import-request` / `import-accepted` / `plugin-launch-request` / `plugin-launch-accepted` |
 | 超时时间 | `HANDOFF_BROADCAST_TIMEOUT_MS = 1000` |
-| Origin 校验 | `ALLOWED_HANDOFF_ORIGINS` 白名单 |
-| 认证 | 浏览器不携带静态服务凭据；需要服务认证的宿主必须注入同源 server proxy endpoint |
+| Origin 校验 | `ALLOWED_HANDOFF_ORIGINS`，由 `VITE_HANDOFF_ORIGINS`（逗号分隔、支持 `*` 通配多级子域）注入，缺省回退到内置生产域名清单；`normalizeHandoffOrigin` 剥离 userinfo/path/port-default，`isAllowedHandoffOrigin` 做通配匹配 |
+| 资产下载认证 | 浏览器不携带静态服务凭据；宿主经 `setAssetDownloadAuthTokenProvider` 注入上游服务令牌（Bearer），无 provider 时不带 `Authorization`（避免 `Bearer undefined` 泄漏） |
+| 资产下载端点 | Core 默认 `<handoff origin>/api/download-asset`；宿主可经 `setAssetDownloadEndpointResolver` 改为同源 server proxy |
 
-宿主注入入口由窄的 `src/hostIntegrations.ts` facade 导出。resolver 接收已经通过白名单验证并
-标准化的 handoff origin，返回资产列表请求的 `URL`；传入 `null` 恢复 Core 默认行为。文件列表
-中的预签名 URL 仍由浏览器直接下载，不经过该 resolver。
+宿主注入入口由窄的 `src/hostIntegrations.ts` facade 导出（实现位于 import-free 的
+`src/shared/hostIntegrationState.ts`，使 Pro bootstrap 不加载 app/feature chunk）。resolver
+接收已经通过白名单验证并标准化的 handoff origin，返回资产列表请求的 `URL`；传入 `null` 恢复
+Core 默认行为。文件列表中的预签名 URL 仍由浏览器直接下载，不经过该 resolver；后端返回的下载
+URL 自带凭证且来自已鉴权受信接口，其域名与 API 不同源属预期，**不要**对预签名 URL 加 origin
+白名单或严格相等校验（曾因该错误假设导致线上导入报错）。
 
 `VITE_*` 会被编译进公开浏览器资产，因此不得用来承载后端服务令牌。Core 默认 endpoint 只适用于
-公开下载接口；后端要求服务认证时，部署方必须在 server/nginx 层注入凭据。
+公开下载接口；后端要求服务认证时，部署方必须通过 `setAssetDownloadAuthTokenProvider` 在宿主层
+注入凭据，或在 server/nginx 层注入。
 
-约束：三端（BOT World、URDF Studio、Motion Studio）的 `popupHandoffProtocol.ts` 必须保持 origin 白名单和 BroadcastChannel 常量一致。
+约束：各端（发送端图库与各接收端 Studio）的 `popupHandoffProtocol.ts`
+必须保持 origin 白名单、BroadcastChannel 常量与消息类型一致。
 
 ## 7. 明确热点文件（新增逻辑优先抽离）
 

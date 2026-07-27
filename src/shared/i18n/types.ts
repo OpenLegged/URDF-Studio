@@ -507,6 +507,7 @@ export interface TranslationKeys extends TranslationWorkflowKeys {
   trajectoryEditing: string;
   featureInDevelopment: string;
   transformMode: string;
+  visualTransformDisabledWithCollisions: string;
   translateMode: string;
   rotateMode: string;
   universalMode: string;
@@ -566,6 +567,16 @@ export interface TranslationKeys extends TranslationWorkflowKeys {
   copyToClipboard: string;
   copy: string;
   copied: string;
+  copyPosition: string;
+  pastePosition: string;
+  positionCopied: string;
+  positionPasted: string;
+  positionClipboardError: string;
+  copyAxis: string;
+  pasteAxis: string;
+  axisCopied: string;
+  axisPasted: string;
+  axisClipboardError: string;
   fileBrowser: string;
   dropOrImport: string;
   dropFilesToImport: string;

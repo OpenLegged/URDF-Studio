@@ -139,6 +139,7 @@ export interface AppLayoutViewerSectionProps {
   lang: Language;
   theme: ViewerProps['theme'];
   viewConfig: AppLayoutProps['viewConfig'];
+  onNotify: ViewerProps['onNotify'];
 }
 
 export interface AppLayoutSidebarsProps {

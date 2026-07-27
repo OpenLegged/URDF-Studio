@@ -32,7 +32,7 @@ import {
   resolveRuntimeMeshMaterialGroupKey,
   resolveRuntimeMeshRootWithinVisual,
 } from '@/core/utils/meshMaterialGroups';
-import { CollisionTransformControls } from './CollisionTransformControls';
+import { GeometryTransformControls } from './CollisionTransformControls';
 import { JointInteraction } from './JointInteraction';
 import { OriginTransformControls } from './OriginTransformControls';
 import { AssemblyTransformControls } from './AssemblyTransformControls';
@@ -61,6 +61,7 @@ import { resolveSelectedIkDragLinkId } from '../utils/selectedIkDragLink';
 import { resolveViewerRobotSourceFormat } from '@/features/urdf-viewer/renderers/sourceFormat';
 import { shouldEnableViewerSceneCompileWarmup } from '../utils/sceneCompileWarmupPolicy';
 import { isWorkspaceTransformSelection } from '../utils/workspaceSceneProjection';
+import { canTransformGeometry } from '../utils/geometryTransformPolicy';
 import { isRegressionDebugEnabled } from '@/shared/debug/regressionDebugEnabled';
 import {
   setRegressionPrimaryRuntimeRobot,
@@ -879,6 +880,31 @@ export const RobotModel: React.FC<RobotModelProps> = memo(
       [invalidate, needsRaycastRef, justSelectedRef],
     );
 
+    const handleVisualTransformEnd = useCallback(
+      (
+        linkId: string,
+        position: { x: number; y: number; z: number },
+        rotation: { r: number; p: number; y: number },
+        objectIndex = 0,
+      ) => {
+        const links = effectiveRobotLinks ?? {};
+        const resolvedLinkId = resolveLinkKey(links, linkId) ?? linkId;
+        const link = links[resolvedLinkId];
+        if (!link || !onUpdate) {
+          return;
+        }
+
+        onUpdate(
+          'link',
+          link.id,
+          updateVisualGeometryByObjectIndex(link, objectIndex, {
+            origin: { xyz: position, rpy: rotation },
+          }),
+        );
+      },
+      [effectiveRobotLinks, onUpdate],
+    );
+
     // ============================================================
     // HOOK: Hover Detection
     // ============================================================
@@ -1059,6 +1085,12 @@ export const RobotModel: React.FC<RobotModelProps> = memo(
       scenePlacement?.directComponentTransform,
     );
     const shouldShowLoadingHud = isLoading && !robot && !hasRenderedRobotRef.current;
+    const transformGeometrySubType = canTransformGeometry(selection?.subType, {
+      showVisual,
+      showCollision,
+    })
+      ? selection?.subType ?? null
+      : null;
     const handleAssemblyRootRef = useCallback((node: Group | null) => {
       setAssemblyRoot((current) => (current === node ? current : node));
     }, []);
@@ -1195,15 +1227,22 @@ export const RobotModel: React.FC<RobotModelProps> = memo(
         ) : !snapshotRenderActive &&
           !workspaceSelectionEditorLocked &&
           transformMode !== 'select' &&
-          selection?.subType === 'collision' ? (
-          <CollisionTransformControls
+          transformGeometrySubType ? (
+          <GeometryTransformControls
             robot={robot}
             robotVersion={robotVersion}
             selection={selection}
+            geometrySubType={transformGeometrySubType}
             transformMode={transformMode}
             setIsDragging={handleCollisionTransformDragging}
-            onTransformChange={onCollisionTransformPreview}
-            onTransformEnd={onCollisionTransformEnd}
+            onTransformChange={
+              transformGeometrySubType === 'collision' ? onCollisionTransformPreview : undefined
+            }
+            onTransformEnd={
+              transformGeometrySubType === 'collision'
+                ? onCollisionTransformEnd
+                : handleVisualTransformEnd
+            }
             robotLinks={runtimeRobotLinks}
             onTransformPending={onTransformPending}
           />

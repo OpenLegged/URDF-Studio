@@ -150,7 +150,7 @@ export function TreeEditorStructureSection({
           ) : null}
           {showStructureFilePath ? (
             <div
-              className="flex min-w-0 max-w-full flex-1 items-center gap-1 overflow-hidden rounded-md border border-border-black bg-white px-1.5 py-0.5 dark:bg-panel-bg"
+              className="flex min-w-0 max-w-full flex-1 items-center gap-1 overflow-hidden rounded-md border border-border-black bg-panel-bg px-1.5 py-0.5"
               title={currentFileName}
               onClick={(event) => event.stopPropagation()}
               onMouseDown={(event) => event.stopPropagation()}
@@ -245,7 +245,7 @@ export function TreeEditorStructureSection({
       {isOpen ? (
         <div
           ref={scrollContainerRef}
-          className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden bg-white py-2 dark:bg-panel-bg custom-scrollbar"
+          className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden bg-panel-bg py-2 custom-scrollbar"
         >
           <AssemblyTreeView
             workspace={workspace}

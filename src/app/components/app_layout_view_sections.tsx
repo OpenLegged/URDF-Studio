@@ -23,7 +23,7 @@ export function AppLayoutViewContent(props: AppLayoutViewContentProps) {
 
   return (
     <div
-      className="flex flex-col h-screen font-sans bg-google-light-bg dark:bg-app-bg text-slate-800 dark:text-slate-200"
+      className="flex flex-col h-screen bg-app-bg text-text-primary"
       onDragEnter={drag.handlers.onDragEnter}
       onDragOver={drag.handlers.onDragOver}
       onDragLeave={drag.handlers.onDragLeave}
@@ -196,6 +196,7 @@ function WorkspaceViewerSection({
         viewerReloadKey: viewer.viewerReloadKey,
         documentLoadState: viewer.documentLoadLifecycleState,
         gizmoMargin: workspaceChrome.overlayGizmoMargin,
+        onNotify: viewer.onNotify,
       }}
       documentLoadingOverlayLang={viewer.lang}
       documentLoadingOverlayTargetFileName={resolveDocumentLoadingOverlayTargetFileName({

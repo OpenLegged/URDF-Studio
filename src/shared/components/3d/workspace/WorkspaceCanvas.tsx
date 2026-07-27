@@ -637,6 +637,7 @@ export const WorkspaceCanvas = ({
                     key={`gizmo-${controlLayerKey}`}
                     alignment="bottom-right"
                     margin={gizmoMargin}
+                    renderPriority={2}
                   >
                     <GizmoViewport
                       axisColors={['#ef4444', '#22c55e', '#3b82f6']}

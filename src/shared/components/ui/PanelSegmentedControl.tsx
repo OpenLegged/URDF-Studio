@@ -19,7 +19,7 @@ interface PanelSegmentedControlProps<T extends string | number> {
 const PANEL_SEGMENTED_CONTROL_CLASSNAME =
   'inline-flex min-h-7 max-w-full flex-wrap items-center rounded-[8px] border border-border-black bg-settings-muted p-0.5';
 const PANEL_SEGMENTED_CONTROL_ITEM_CLASSNAME =
-  'h-6 px-2.5 text-[11px] focus-visible:ring-2 focus-visible:ring-settings-accent-soft';
+  'h-6 px-2.5 text-ui-label focus-visible:ring-2 focus-visible:ring-settings-accent-soft';
 const PANEL_SEGMENTED_CONTROL_SELECTED_ITEM_CLASSNAME = 'ring-1 ring-border-black/60';
 const PANEL_SEGMENTED_CONTROL_UNSELECTED_ITEM_CLASSNAME =
   'text-text-secondary hover:bg-segmented-active/70';

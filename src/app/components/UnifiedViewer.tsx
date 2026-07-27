@@ -45,6 +45,7 @@ import {
   type ViewerJointMotionStateValue,
   type ViewerRobotSourceFormat,
   useViewerController,
+  shouldNotifyVisualTransformLock,
 } from '@/features/editor';
 import { resolveViewerJointScopeKey } from '@/app/utils/viewerJointScopeKey';
 import { resolveUnifiedViewerForcedSessionState } from '@/app/utils/unifiedViewerForcedSessionState';
@@ -149,6 +150,7 @@ interface UnifiedViewerProps {
   viewerReloadKey?: number;
   documentLoadState: DocumentLoadLifecycleState;
   gizmoMargin?: WorkspaceOverlayGizmoMargin;
+  onNotify?: (message: string, type?: 'info' | 'success' | 'error') => void;
 }
 
 export const UnifiedViewer = React.memo(
@@ -203,6 +205,7 @@ export const UnifiedViewer = React.memo(
     viewerReloadKey = 0,
     documentLoadState,
     gizmoMargin,
+    onNotify,
   }: UnifiedViewerProps) => {
     const t = translations[lang];
     const workspaceInteractionEnabled = modelInteractionEnabled && !filePreview;
@@ -471,6 +474,15 @@ export const UnifiedViewer = React.memo(
       closedLoopRobotState: robot,
       projectJointInteractionPreview,
     });
+    const previousShowCollisionRef = React.useRef(viewerController.showCollision);
+
+    useEffect(() => {
+      const wasShowingCollision = previousShowCollisionRef.current;
+      previousShowCollisionRef.current = viewerController.showCollision;
+      if (shouldNotifyVisualTransformLock(wasShowingCollision, viewerController.showCollision)) {
+        onNotify?.(t.visualTransformDisabledWithCollisions, 'info');
+      }
+    }, [onNotify, t.visualTransformDisabledWithCollisions, viewerController.showCollision]);
     const nextForcedViewerSession = resolveUnifiedViewerForcedSessionState({
       forcedViewerSession,
       pendingViewerToolMode,

@@ -513,7 +513,7 @@ export function InspectionReportView({
               return (
                 <div
                   key={`top-blocker-${issue.profileId}-${issue.itemId}-${index}`}
-                  className={`rounded-xl border bg-white dark:bg-panel-bg ${meta.rowClass}`}
+                  className={`rounded-xl border bg-panel-bg ${meta.rowClass}`}
                 >
                   <div className={`h-0.5 ${meta.stripeClass}`} />
                   <div className="space-y-3 p-4">

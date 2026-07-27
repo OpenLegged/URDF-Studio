@@ -16,6 +16,8 @@ interface ToolbarToggleGroupProps<Value extends string>
   ariaLabel: string;
   compact?: boolean;
   className?: string;
+  itemClassName?: string;
+  iconClassName?: string;
 }
 
 export function ToolbarToggleGroup<Value extends string>({
@@ -25,10 +27,14 @@ export function ToolbarToggleGroup<Value extends string>({
   ariaLabel,
   compact = true,
   className = '',
+  itemClassName = '',
+  iconClassName: iconClassNameOverride,
   ...props
 }: ToolbarToggleGroupProps<Value>) {
-  const buttonClassName = compact ? 'h-7 w-7 rounded-md' : 'h-9 w-9 rounded-lg';
-  const iconClassName = compact ? 'h-4 w-4' : 'h-5 w-5';
+  const buttonClassName = `${
+    compact ? 'h-7 w-7 rounded-md' : 'h-9 w-9 rounded-lg'
+  } ${itemClassName}`.trim();
+  const iconClassName = iconClassNameOverride ?? (compact ? 'h-4 w-4' : 'h-5 w-5');
 
   return (
     <div
@@ -49,6 +55,7 @@ export function ToolbarToggleGroup<Value extends string>({
             isActive={value === item.value}
             aria-label={item.label}
             title={item.label}
+            data-toolbar-value={item.value}
             className={buttonClassName}
           >
             <Icon className={iconClassName} />

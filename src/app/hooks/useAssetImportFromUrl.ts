@@ -112,6 +112,18 @@ const MAX_REMOTE_IMPORT_SINGLE_FILE_BYTES = 512 * 1024 * 1024;
 // 并行下载文件时的最大并发请求数。用 worker pool 限流，避免一次性发起全部请求
 // （资产最多含 MAX_REMOTE_IMPORT_FILE_COUNT 个文件）压垮浏览器与对象存储。
 const REMOTE_IMPORT_DOWNLOAD_CONCURRENCY = 8;
+const COLLECTION_PREFIX = 'collection:';
+
+/** Parse an import target from the URL `import` param value.
+ *  `collection:<slug>` → collection batch; anything else → single asset id. */
+function parseImportTarget(
+  raw: string,
+): { type: 'asset'; id: string } | { type: 'collection'; slug: string } {
+  if (raw.startsWith(COLLECTION_PREFIX)) {
+    return { type: 'collection', slug: raw.slice(COLLECTION_PREFIX.length) };
+  }
+  return { type: 'asset', id: raw };
+}
 
 export interface ImportFromUrlProgress {
   /** Current file index (1-based) */
@@ -363,6 +375,97 @@ export function useAssetImportFromUrl(options: UseAssetImportFromUrlOptions) {
     }
   }, []);
 
+  // --- Collection batch import ---
+
+  const importCollectionFromBotWorld = useCallback(
+    async (slug: string, fromOrigin: string) => {
+      const remoteImportOrigin = resolveAllowedRemoteImportOrigin(fromOrigin);
+      if (!remoteImportOrigin) {
+        setState({
+          isImporting: false,
+          error: `Unauthorized origin: ${fromOrigin}`,
+          phase: null,
+          progress: null,
+        });
+        console.error('[CollectionImport] Unauthorized origin:', fromOrigin);
+        return { success: false };
+      }
+
+      setState({ isImporting: true, error: null, phase: 'fetching', progress: null });
+
+      try {
+        const collUrl = new URL(`/api/collections/${encodeURIComponent(slug)}`, remoteImportOrigin);
+        const collRes = await fetch(collUrl.toString(), {
+          headers: buildAssetDownloadRequestHeaders(),
+        });
+        if (!collRes.ok) throw new Error(`Collection fetch failed: ${collRes.status}`);
+        const collJson = await collRes.json();
+        const assetIds: string[] = collJson?.data?.assetIds ?? [];
+
+        if (assetIds.length === 0) {
+          setState({
+            isImporting: false,
+            error: 'Collection has no assets',
+            phase: null,
+            progress: null,
+          });
+          return { success: false };
+        }
+
+        let successCount = 0;
+        for (let i = 0; i < assetIds.length; i++) {
+          setState((prev) => ({
+            ...prev,
+            phase: 'downloading',
+            progress: {
+              current: i,
+              total: assetIds.length,
+              currentFileName: `Asset ${i + 1}/${assetIds.length}`,
+            },
+          }));
+          try {
+            const result = await importAssetFromBotWorld(assetIds[i], fromOrigin);
+            if (result.success) successCount++;
+          } catch (err) {
+            console.error(
+              `[CollectionImport] Asset ${i + 1}/${assetIds.length} (${assetIds[i]}) failed:`,
+              err,
+            );
+          }
+          setState((prev) => ({
+            ...prev,
+            progress: {
+              current: i + 1,
+              total: assetIds.length,
+              currentFileName: `Asset ${i + 1}/${assetIds.length}`,
+            },
+          }));
+        }
+
+        onImportCompleteRef.current?.(successCount > 0);
+        return { success: successCount > 0 };
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        console.error('[CollectionImport] Failed:', message);
+        setState({ isImporting: false, error: message, phase: null, progress: null });
+        return { success: false };
+      }
+    },
+    [importAssetFromBotWorld],
+  );
+
+  /** Unified import entry — routes single-asset vs collection by the import param value. */
+  const importFromBotWorld = useCallback(
+    async (rawImportId: string, fromOrigin: string) => {
+      const target = parseImportTarget(rawImportId);
+      if (target.type === 'collection') {
+        return importCollectionFromBotWorld(target.slug, fromOrigin);
+      }
+      return importAssetFromBotWorld(target.id, fromOrigin);
+    },
+    [importAssetFromBotWorld, importCollectionFromBotWorld],
+  );
+
   // -----------------------------------------------------------------------
   //  BroadcastChannel: listen for import requests from new tabs.
   //  When this (existing) tab receives an import-request, it claims it
@@ -383,7 +486,7 @@ export function useAssetImportFromUrl(options: UseAssetImportFromUrlOptions) {
         } satisfies HandoffBroadcastMessage);
 
         // Perform the import in this existing tab
-        void importAssetFromBotWorld(msg.assetId, msg.fromOrigin).then((result) => {
+        void importFromBotWorld(msg.assetId, msg.fromOrigin).then((result) => {
           onImportCompleteRef.current?.(result.success);
         });
 
@@ -393,7 +496,7 @@ export function useAssetImportFromUrl(options: UseAssetImportFromUrlOptions) {
     };
 
     return () => channel.close();
-  }, [importAssetFromBotWorld]);
+  }, [importFromBotWorld]);
 
   // -----------------------------------------------------------------------
   //  On mount: if URL has import params, show waiting overlay, try
@@ -448,7 +551,7 @@ export function useAssetImportFromUrl(options: UseAssetImportFromUrlOptions) {
       if (!settled) {
         cleanup();
         isDelegating = false;
-        void importAssetFromBotWorld(params.assetId, params.fromOrigin).then((result) => {
+        void importFromBotWorld(params.assetId, params.fromOrigin).then((result) => {
           onImportCompleteRef.current?.(result.success);
         });
       }
@@ -457,10 +560,11 @@ export function useAssetImportFromUrl(options: UseAssetImportFromUrlOptions) {
     // No cleanup — the channel is closed by either the import-accepted
     // handler or the timeout. Closing it in cleanup would break Strict
     // Mode (channel dies before import-accepted arrives → double import).
-  }, [importAssetFromBotWorld]);
+  }, [importFromBotWorld]);
 
   return {
     ...state,
     importAssetFromBotWorld,
+    importCollectionFromBotWorld,
   };
 }
