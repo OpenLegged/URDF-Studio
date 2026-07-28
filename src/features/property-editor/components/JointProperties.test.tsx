@@ -79,25 +79,18 @@ test('joint properties render collision-style transform controls with 90 degree 
   assert.match(markup, /\+90/);
 });
 
-test('joint properties render hardware, limit, and dynamics fields with inline labels', () => {
+test('joint properties render hardware, limit, and dynamics fields with compact responsive grids', () => {
   const markup = renderJointProperties('editor');
   const limitUnit = getJointValueUnitLabel(JointType.REVOLUTE, 'rad');
   const velocityUnit = getJointVelocityUnitLabel(JointType.REVOLUTE);
   const effortUnit = getJointEffortUnitLabel(JointType.REVOLUTE);
 
   assert.match(markup, createInlineFieldPattern(translations.en.motorSource, 'w-24'));
-  assert.match(markup, createInlineFieldPattern(`${translations.en.lower} (${limitUnit})`, 'w-24'));
-  assert.match(markup, createInlineFieldPattern(`${translations.en.upper} (${limitUnit})`, 'w-24'));
-  assert.match(
-    markup,
-    createInlineFieldPattern(`${translations.en.velocity} (${velocityUnit})`, 'w-24'),
-  );
-  assert.match(
-    markup,
-    createInlineFieldPattern(`${translations.en.effort} (${effortUnit})`, 'w-24'),
-  );
+  assert.match(markup, new RegExp(`<label[^>]*>${escapeForRegExp(`${translations.en.lower} (${limitUnit})`)}<\/label>`));
+  assert.match(markup, new RegExp(`<label[^>]*>${escapeForRegExp(`${translations.en.upper} (${limitUnit})`)}<\/label>`));
+  assert.match(markup, new RegExp(`<label[^>]*>${escapeForRegExp(`${translations.en.velocity} (${velocityUnit})`)}<\/label>`));
+  assert.match(markup, new RegExp(`<label[^>]*>${escapeForRegExp(`${translations.en.effort} (${effortUnit})`)}<\/label>`));
   assert.match(markup, /grid grid-cols-1 gap-2 @\[300px\]:grid-cols-2/);
-  assert.match(markup, /w-24 min-w-24 max-w-24 shrink-0 whitespace-nowrap/);
   assert.match(markup, createInlineFieldPattern(translations.en.friction, 'w-16'));
   assert.match(markup, createInlineFieldPattern(translations.en.damping, 'w-16'));
   assert.ok(
