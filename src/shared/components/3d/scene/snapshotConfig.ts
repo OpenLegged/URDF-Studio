@@ -315,6 +315,25 @@ export function getSnapshotFileExtension(format: SnapshotImageFormat) {
   return format === 'jpeg' ? 'jpg' : format;
 }
 
+export function buildSnapshotFileName(
+  robotName: string,
+  format: SnapshotImageFormat,
+  now = new Date(),
+) {
+  const safeRobotName = (robotName || 'robot').replace(/[\\/:*?"<>|]/g, '_');
+  const timestamp = [
+    now.getFullYear(),
+    String(now.getMonth() + 1).padStart(2, '0'),
+    String(now.getDate()).padStart(2, '0'),
+    '_',
+    String(now.getHours()).padStart(2, '0'),
+    String(now.getMinutes()).padStart(2, '0'),
+    String(now.getSeconds()).padStart(2, '0'),
+  ].join('');
+
+  return `URDF_Studio_${safeRobotName}_${timestamp}.${getSnapshotFileExtension(format)}`;
+}
+
 export function getSnapshotMimeType(format: SnapshotImageFormat) {
   switch (format) {
     case 'jpeg':
