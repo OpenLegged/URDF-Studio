@@ -128,9 +128,14 @@ test('inspection report renders profile items as row groups instead of nested ca
 
     const itemRow = container.querySelector<HTMLElement>('[data-inspection-report-item-row]')
     const issueRow = container.querySelector<HTMLElement>('[data-inspection-report-issue-row]')
+    const issueIcon = container.querySelector<HTMLElement>('[data-inspection-report-issue-icon]')
 
     assert.ok(itemRow, 'expected the expanded profile to render item groups as list rows')
     assert.ok(issueRow, 'expected issue details to render as compact rows inside the item group')
+    assert.ok(issueIcon, 'expected issue details to render a status icon')
+    assert.match(issueIcon.className, /\bh-9\b/)
+    assert.match(issueIcon.className, /\bw-9\b/)
+    assert.match(issueIcon.className, /\bself-start\b/)
     assert.equal(
       itemRow.classList.contains('shadow-sm'),
       false,

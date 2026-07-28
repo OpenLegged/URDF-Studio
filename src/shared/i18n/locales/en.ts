@@ -462,9 +462,9 @@ export const en: TranslationKeys = {
   inspectionSkipped: 'Skipped',
   inspectionNoChecksSelected: 'Select at least one inspection item to start the run.',
   inspectionNormalizedModel: 'Normalized Model',
-  inspectionRegenerateConfirmTitle: 'Save the current report before regenerating?',
+  inspectionRegenerateConfirmTitle: 'Regenerate this report?',
   inspectionRegenerateConfirmMessage:
-    'Regenerating will close the current report and return you to the Normal/Professional mode setup page. Save this report first if you need to keep it; after saving you will stay on the current result view, or you can regenerate now and go back to setup before running again.',
+    'Regenerating will close the current report and return you to the Normal/Professional mode setup page, where you can adjust the checks and run the inspection again.',
   inspectionRecommendedPlan: 'Recommended Plan',
   inspectionRecommendedPlanDescription:
     'The inspector recommends this profile set from the current model shape and source format.',

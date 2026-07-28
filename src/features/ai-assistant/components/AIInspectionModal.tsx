@@ -240,7 +240,7 @@ export function AIInspectionModal({
     null,
   );
   const [isRegenerateConfirmOpen, setIsRegenerateConfirmOpen] = useState(false);
-  const [isSavingReportBeforeRegenerate, setIsSavingReportBeforeRegenerate] = useState(false);
+  const [isSavingReport, setIsSavingReport] = useState(false);
   const [retestingItem, setRetestingItem] = useState<RetestingItemState | null>(null);
   const [expandedProfiles, setExpandedProfiles] = useState<Set<string>>(() => new Set());
   const [selectedProfiles, setSelectedProfiles] = useState<SelectedInspectionProfiles>(() =>
@@ -314,7 +314,7 @@ export function AIInspectionModal({
 
   const handleClose = useCallback(() => {
     setIsRegenerateConfirmOpen(false);
-    setIsSavingReportBeforeRegenerate(false);
+    setIsSavingReport(false);
     onClose();
   }, [onClose]);
 
@@ -334,7 +334,7 @@ export function AIInspectionModal({
     setIsInspecting(true);
     setInspectionCancellationNotice(null);
     setIsRegenerateConfirmOpen(false);
-    setIsSavingReportBeforeRegenerate(false);
+    setIsSavingReport(false);
     setInspectionReport(null);
     setInspectionRobotSnapshot(null);
     setPendingReportScrollTarget(null);
@@ -420,7 +420,7 @@ export function AIInspectionModal({
     setPendingReportScrollTarget(null);
     setRetestingItem(null);
     setIsRegenerateConfirmOpen(false);
-    setIsSavingReportBeforeRegenerate(false);
+    setIsSavingReport(false);
     setIsInspecting(false);
     setInspectionCancellationNotice(t.inspectionCancelledNoReport);
   }, [clearInspectionTimer, t.inspectionCancelledNoReport]);
@@ -563,22 +563,16 @@ export function AIInspectionModal({
     });
   };
 
-  const handleSaveReportFromConfirmDialog = async () => {
-    setIsSavingReportBeforeRegenerate(true);
+  const handleSaveReport = async () => {
+    setIsSavingReport(true);
 
     try {
       await handleDownloadPDF();
     } finally {
       if (isMountedRef.current) {
-        setIsSavingReportBeforeRegenerate(false);
+        setIsSavingReport(false);
       }
     }
-
-    if (!isMountedRef.current) {
-      return;
-    }
-
-    setIsRegenerateConfirmOpen(false);
   };
 
   const handleReturnToSetupFromRegenerate = useCallback(() => {
@@ -587,7 +581,7 @@ export function AIInspectionModal({
     inspectionRunIdRef.current += 1;
     clearInspectionTimer();
     setIsRegenerateConfirmOpen(false);
-    setIsSavingReportBeforeRegenerate(false);
+    setIsSavingReport(false);
     setInspectionProgress(null);
     setInspectionRunContext(null);
     setInspectionElapsedSeconds(0);
@@ -938,8 +932,18 @@ export function AIInspectionModal({
               <div className="flex items-center gap-2">
                 <button
                   type="button"
+                  onClick={() => {
+                    void handleSaveReport();
+                  }}
+                  disabled={isSavingReport}
+                  className="h-8 rounded-lg border border-border-black bg-panel-bg px-4 text-xs font-medium text-text-secondary shadow-sm transition-colors hover:bg-element-hover hover:text-text-primary disabled:opacity-30 dark:bg-element-bg"
+                >
+                  {t.saveReport}
+                </button>
+                <button
+                  type="button"
                   onClick={() => setIsRegenerateConfirmOpen(true)}
-                  disabled={isSavingReportBeforeRegenerate}
+                  disabled={isSavingReport}
                   className="h-8 rounded-lg bg-system-blue-solid px-5 text-xs font-semibold text-white transition-colors hover:bg-system-blue-hover disabled:opacity-30"
                 >
                   {t.retryLastResponse}
@@ -1018,11 +1022,7 @@ export function AIInspectionModal({
 
       <Dialog
         isOpen={isRegenerateConfirmOpen}
-        onClose={() => {
-          if (!isSavingReportBeforeRegenerate) {
-            setIsRegenerateConfirmOpen(false);
-          }
-        }}
+        onClose={() => setIsRegenerateConfirmOpen(false)}
         title={t.inspectionRegenerateConfirmTitle}
         width="w-[460px]"
         closeLabel={t.close}
@@ -1033,26 +1033,14 @@ export function AIInspectionModal({
               type="button"
               variant="secondary"
               onClick={() => setIsRegenerateConfirmOpen(false)}
-              disabled={isSavingReportBeforeRegenerate}
             >
               {t.back}
-            </Button>
-            <Button
-              type="button"
-              variant="secondary"
-              onClick={() => {
-                void handleSaveReportFromConfirmDialog();
-              }}
-              isLoading={isSavingReportBeforeRegenerate}
-            >
-              {t.saveReport}
             </Button>
             <Button
               type="button"
               onClick={() => {
                 handleReturnToSetupFromRegenerate();
               }}
-              disabled={isSavingReportBeforeRegenerate}
             >
               {t.retryLastResponse}
             </Button>
