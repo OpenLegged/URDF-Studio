@@ -2508,7 +2508,7 @@ test('inspection setup header uses the toolbox AI inspection logo', async () => 
     assert.match(header.className, /\bh-10\b/);
     const title = header.querySelector('h1');
     assert.ok(title, 'expected the inspection title to render');
-    assert.equal(title.className.includes('text-[13px]'), true);
+    assert.equal(title.className.includes('text-ui-control'), true);
   } finally {
     await act(async () => {
       root.unmount();
