@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
+  buildSnapshotFileName,
   normalizeSnapshotCaptureOptions,
   normalizeSnapshotAspectRatioPreset,
   normalizeSnapshotPngOptimizeLevel,
@@ -9,6 +10,13 @@ import {
   resolveSnapshotLongEdgeDimensions,
 } from './snapshotConfig.ts';
 import type { WorkspaceCameraSnapshot } from '../workspace/workspaceCameraSnapshot';
+
+test('buildSnapshotFileName puts the product name first and sanitizes the robot name', () => {
+  assert.equal(
+    buildSnapshotFileName('arm:demo', 'jpeg', new Date(2026, 6, 28, 14, 5, 9)),
+    'URDF_Studio_arm_demo_20260728_140509.jpg',
+  );
+});
 
 test('normalizeSnapshotCaptureOptions defaults the export background to studio', () => {
   const options = normalizeSnapshotCaptureOptions();

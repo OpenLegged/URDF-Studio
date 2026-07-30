@@ -137,8 +137,6 @@ export const JointProperties: React.FC<JointPropertiesProps> = ({
   const sectionInlineLabelWidthClassName = 'w-16 whitespace-nowrap';
   const sectionCompactInlineLabelWidthClassName = 'w-auto min-w-[2.5rem] whitespace-nowrap';
   const sectionWideInlineLabelWidthClassName = 'w-24 whitespace-nowrap';
-  const sectionUnitInlineLabelWidthClassName =
-    'w-24 min-w-24 max-w-24 shrink-0 whitespace-nowrap';
   const jointType = (data.type as JointType | undefined) || JointType.REVOLUTE;
   const origin = data.origin ?? DEFAULT_ORIGIN;
   const supportsAxis = AXIS_BASED_TYPES.has(jointType);
@@ -284,50 +282,46 @@ export const JointProperties: React.FC<JointPropertiesProps> = ({
             <div className="grid grid-cols-1 gap-2 @[300px]:grid-cols-2">
               {supportsFullLimit && (
                 <>
-                  <InlineInputGroup
+                  <InputGroup
                     label={withUnitLabel(t.lower, limitUnit)}
                     className="min-w-0 mb-0"
-                    labelWidthClassName={sectionUnitInlineLabelWidthClassName}
                   >
                     <NumberInput
                       value={displayLimit.lower}
                       onChange={(v: number) => updateLimitValue('lower', v)}
                     />
-                  </InlineInputGroup>
-                  <InlineInputGroup
+                  </InputGroup>
+                  <InputGroup
                     label={withUnitLabel(t.upper, limitUnit)}
                     className="min-w-0 mb-0"
-                    labelWidthClassName={sectionUnitInlineLabelWidthClassName}
                   >
                     <NumberInput
                       value={displayLimit.upper}
                       onChange={(v: number) => updateLimitValue('upper', v)}
                     />
-                  </InlineInputGroup>
+                  </InputGroup>
                 </>
               )}
-              <InlineInputGroup
+              <InputGroup
                 label={withUnitLabel(t.effort, effortUnit)}
                 className="min-w-0 mb-0"
-                labelWidthClassName={sectionUnitInlineLabelWidthClassName}
               >
                 <NumberInput
                   value={displayLimit.effort}
                   min={0}
                   onChange={(v: number) => updateLimitValue('effort', v)}
                 />
-              </InlineInputGroup>
-              <InlineInputGroup
+              </InputGroup>
+              <InputGroup
                 label={withUnitLabel(t.velocity, velocityUnit)}
                 className="min-w-0 mb-0"
-                labelWidthClassName={sectionUnitInlineLabelWidthClassName}
               >
                 <NumberInput
                   value={displayLimit.velocity}
                   min={0}
                   onChange={(v: number) => updateLimitValue('velocity', v)}
                 />
-              </InlineInputGroup>
+              </InputGroup>
             </div>
           </CollapsibleSection>
         )}
