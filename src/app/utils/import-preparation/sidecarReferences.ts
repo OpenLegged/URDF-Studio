@@ -14,7 +14,7 @@ import {
   peekPreResolvedRobotImport,
   primePreResolvedRobotImports,
 } from '../preResolvedRobotImportCache.ts';
-import { normalizeLibraryPathKey } from '@/shared/utils/pathKeys';
+import { normalizeLibraryPathKey } from '@/core/utils/pathKeys';
 import { isVisibleLibraryEntry } from '@/shared/utils/robotFileSupport';
 import { collectRobotAssetPaths } from './criticalDeferredAssets.ts';
 import { processWithConcurrency, resolveImportPreparationConcurrency } from './concurrency.ts';

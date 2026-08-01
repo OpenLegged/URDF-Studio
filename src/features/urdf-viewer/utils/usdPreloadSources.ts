@@ -2,7 +2,7 @@ import type { RobotFile } from '@/types';
 import {
   normalizeLibraryPathKey,
   normalizeVirtualUsdPath,
-} from '@/shared/utils/pathKeys';
+} from '@/core/utils/pathKeys';
 import {
   inferUsdBundleVirtualDirectory,
   isUsdPathWithinBundleDirectory,

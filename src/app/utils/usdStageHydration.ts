@@ -1,5 +1,5 @@
 import type { InteractionSelection, RobotInspectionContext } from '@/types';
-import { normalizeLibraryPathKey } from '@/shared/utils/pathKeys';
+import { normalizeLibraryPathKey } from '@/core/utils/pathKeys';
 
 function normalizeUsdStagePath(path: string | null | undefined): string {
   return normalizeLibraryPathKey(path);

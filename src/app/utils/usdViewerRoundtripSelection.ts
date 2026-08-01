@@ -1,5 +1,5 @@
 import { isViewerRoundtripUsdRootPath } from '@/core/parsers/usd/usdFormatUtils';
-import { normalizeLibraryPathKey } from '@/shared/utils/pathKeys';
+import { normalizeLibraryPathKey } from '@/core/utils/pathKeys';
 import type { RobotFile } from '@/types';
 
 function normalizeUsdPath(path: string): string {

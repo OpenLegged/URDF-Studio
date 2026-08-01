@@ -9,7 +9,6 @@ export * from './threeBounds';
 export * from './jointTypes';
 export * from './jointUnits';
 export * from './domEvents';
-export * from './pathKeys';
 export * from './robotFileSupport';
 export * from './three/collisionOverlayMaterial';
 export * from './three/dispose';

@@ -7,7 +7,7 @@ import {
   isUsdPathWithinBundleDirectory,
   isUsdRuntimeTexturePath,
 } from '@/core/parsers/usd';
-import { normalizeLibraryPathKey } from '@/shared/utils/pathKeys';
+import { normalizeLibraryPathKey } from '@/core/utils/pathKeys';
 import { GeometryType, type RobotData, type RobotFile, type UrdfLink } from '@/types';
 
 import { extractStandaloneImportAssetReferences } from '../importPackageAssetReferences.ts';
