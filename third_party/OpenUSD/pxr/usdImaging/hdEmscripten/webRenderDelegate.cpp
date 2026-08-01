@@ -27,6 +27,7 @@
 #include "pxr/imaging/hd/material.h"
 #include "pxr/imaging/hd/mesh.h"
 #include "pxr/imaging/hd/points.h"
+#include "pxr/imaging/hd/basisCurves.h"
 #include "pxr/imaging/hd/bprim.h"
 #include "pxr/imaging/hd/tokens.h"
 #include "pxr/imaging/hd/repr.h"
@@ -41,6 +42,7 @@
 #include <cctype>
 #include <cmath>
 #include <iostream>
+#include <type_traits>
 #include <utility>
 
 using namespace emscripten;
@@ -1322,6 +1324,202 @@ private:
     Emscripten_Rprim &operator =(const Emscripten_Rprim &) = delete;
 };
 
+template <typename RprimT>
+class Emscripten_PointBasedRprim final : public RprimT {
+public:
+    Emscripten_PointBasedRprim(TfToken const& typeId,
+                               SdfPath const& id,
+                               emscripten::val renderDelegateInterface,
+                               WebRenderDelegate* ownerDelegate)
+        : RprimT(id)
+        , _typeId(typeId)
+        , _ownerDelegate(ownerDelegate)
+        , _rPrim(val::undefined())
+        , _transform(1.0f)
+    {
+        _rPrim = renderDelegateInterface.call<val>(
+            "createRPrim", std::string(typeId.GetText()), id.GetAsString());
+        if (_ownerDelegate) {
+            _ownerDelegate->RegisterLiveRprimPath(id.GetAsString());
+        }
+    }
+
+    ~Emscripten_PointBasedRprim() override
+    {
+        if (!_ownerDelegate) return;
+        const std::string rprimPath = this->GetId().GetAsString();
+        _ownerDelegate->ClearRprimDelta(rprimPath);
+        _ownerDelegate->UnregisterLiveRprimPath(rprimPath);
+    }
+
+    void Sync(HdSceneDelegate *delegate,
+              HdRenderParam *renderParam,
+              HdDirtyBits *dirtyBits,
+              TfToken const& reprToken) override
+    {
+        const SdfPath& id = this->GetId();
+        const std::string idPath = id.GetAsString();
+
+        if (*dirtyBits & HdChangeTracker::DirtyMaterialId) {
+            const SdfPath materialId = delegate->GetMaterialId(id);
+            if (!materialId.IsEmpty()) {
+                _ownerDelegate->QueueRprimMaterial(idPath, materialId.GetAsString());
+            }
+        }
+
+        if (HdChangeTracker::IsPrimvarDirty(*dirtyBits, id, HdTokens->points)) {
+            const VtValue value = delegate->Get(id, HdTokens->points);
+            if (value.CanCast<VtVec3fArray>()) {
+                _points = value.Get<VtVec3fArray>();
+                if (!_points.empty()) {
+                    _ownerDelegate->QueueRprimPoints(
+                        idPath,
+                        reinterpret_cast<float const*>(_points.cdata()),
+                        static_cast<int>(_points.size() * 3));
+                }
+            }
+        }
+
+        if constexpr (std::is_same_v<RprimT, HdBasisCurves>) {
+            if (HdChangeTracker::IsTopologyDirty(*dirtyBits, id)) {
+                _curveTopology = delegate->GetBasisCurvesTopology(id);
+                _ownerDelegate->QueueRprimCurveTopology(
+                    idPath,
+                    _curveTopology.GetCurveVertexCounts(),
+                    _curveTopology.GetCurveIndices(),
+                    _curveTopology.GetCurveType(),
+                    _curveTopology.GetCurveBasis(),
+                    _curveTopology.GetCurveWrap());
+            }
+        }
+
+        if (HdChangeTracker::IsAnyPrimvarDirty(*dirtyBits, id)) {
+            _SyncPrimvars(delegate, *dirtyBits, idPath);
+        }
+
+        if (HdChangeTracker::IsTransformDirty(*dirtyBits, id)) {
+            _transform = GfMatrix4f(delegate->GetTransform(id));
+            _ownerDelegate->QueueRprimTransform(
+                idPath,
+                reinterpret_cast<float const*>(_transform.data()),
+                16);
+        }
+
+        *dirtyBits &= ~HdChangeTracker::AllSceneDirtyBits;
+    }
+
+    HdDirtyBits GetInitialDirtyBitsMask() const override
+    {
+        return HdChangeTracker::AllSceneDirtyBits & ~HdChangeTracker::Varying;
+    }
+
+    HdDirtyBits _PropagateDirtyBits(HdDirtyBits bits) const override
+    {
+        return bits;
+    }
+
+protected:
+    void _InitRepr(TfToken const& reprToken, HdDirtyBits *dirtyBits) override
+    {
+        const auto it = std::find_if(
+            this->_reprs.begin(),
+            this->_reprs.end(),
+            [&reprToken](auto const& entry) { return entry.first == reprToken; });
+        if (it == this->_reprs.end()) {
+            this->_reprs.emplace_back(reprToken, HdReprSharedPtr());
+        }
+    }
+
+private:
+    struct PrimvarPayload {
+        std::string name;
+        std::string interpolation;
+        int dimension = 0;
+        std::vector<float> values;
+    };
+
+    static std::string _NormalizePrimvarName(std::string value)
+    {
+        std::transform(
+            value.begin(), value.end(), value.begin(),
+            [](unsigned char ch) { return static_cast<char>(std::tolower(ch)); });
+        if (value.rfind("primvars:", 0) == 0) {
+            value = value.substr(9);
+        }
+        return value;
+    }
+
+    void _QueuePrimvar(VtValue const& value,
+                       HdPrimvarDescriptor const& descriptor,
+                       HdInterpolation interpolation,
+                       std::string const& idPath)
+    {
+        const std::string normalizedName = _NormalizePrimvarName(descriptor.name.GetString());
+        if (normalizedName != "displaycolor" && normalizedName != "widths") return;
+
+        PrimvarPayload payload;
+        payload.name = descriptor.name.GetString();
+        payload.interpolation = InterpolationStrings.at(interpolation);
+        if (value.CanCast<VtVec3fArray>()) {
+            const VtVec3fArray values = value.Get<VtVec3fArray>();
+            payload.dimension = 3;
+            const float* rawValues = reinterpret_cast<float const*>(values.cdata());
+            payload.values.assign(rawValues, rawValues + values.size() * 3);
+        } else if (value.CanCast<VtFloatArray>()) {
+            const VtFloatArray values = value.Get<VtFloatArray>();
+            payload.dimension = 1;
+            payload.values.assign(values.begin(), values.end());
+        }
+        if (payload.values.empty() || payload.dimension <= 0) return;
+
+        const std::string key = payload.name + "|" + payload.interpolation;
+        _primvarPayloadByKey[key] = std::move(payload);
+        PrimvarPayload const& stored = _primvarPayloadByKey.at(key);
+        _ownerDelegate->QueueRprimPrimvar(
+            idPath,
+            stored.name,
+            stored.interpolation,
+            stored.dimension,
+            stored.values.data(),
+            static_cast<int>(stored.values.size()));
+    }
+
+    void _SyncPrimvars(HdSceneDelegate *delegate,
+                       HdDirtyBits dirtyBits,
+                       std::string const& idPath)
+    {
+        const SdfPath& id = this->GetId();
+        for (size_t interpolation = HdInterpolationConstant;
+             interpolation < HdInterpolationCount;
+             ++interpolation) {
+            const HdInterpolation interpolationToken =
+                static_cast<HdInterpolation>(interpolation);
+            const HdPrimvarDescriptorVector descriptors =
+                this->GetPrimvarDescriptors(delegate, interpolationToken);
+            for (HdPrimvarDescriptor const& descriptor : descriptors) {
+                if (!HdChangeTracker::IsPrimvarDirty(dirtyBits, id, descriptor.name)) continue;
+                _QueuePrimvar(
+                    this->GetPrimvar(delegate, descriptor.name),
+                    descriptor,
+                    interpolationToken,
+                    idPath);
+            }
+        }
+    }
+
+    TfToken _typeId;
+    WebRenderDelegate* _ownerDelegate;
+    emscripten::val _rPrim;
+    GfMatrix4f _transform;
+    VtVec3fArray _points;
+    HdBasisCurvesTopology _curveTopology;
+    std::unordered_map<std::string, PrimvarPayload> _primvarPayloadByKey;
+
+    Emscripten_PointBasedRprim() = delete;
+    Emscripten_PointBasedRprim(Emscripten_PointBasedRprim const&) = delete;
+    Emscripten_PointBasedRprim& operator=(Emscripten_PointBasedRprim const&) = delete;
+};
+
 class Emscripten_Material final : public HdMaterial {
 public:
     Emscripten_Material(SdfPath const& id, emscripten::val renderDelegateInterface) :
@@ -1396,7 +1594,8 @@ private:
 const TfTokenVector WebRenderDelegate::SUPPORTED_RPRIM_TYPES =
 {
     HdPrimTypeTokens->mesh,
-    HdPrimTypeTokens->points
+    HdPrimTypeTokens->points,
+    HdPrimTypeTokens->basisCurves
 };
 
 const TfTokenVector WebRenderDelegate::SUPPORTED_SPRIM_TYPES =
@@ -1465,7 +1664,19 @@ HdRprim *
 WebRenderDelegate::CreateRprim(TfToken const& typeId,
                                     SdfPath const& rprimId)
 {
-    return new Emscripten_Rprim(typeId, rprimId, _renderDelegateInterface, this);
+    if (typeId == HdPrimTypeTokens->mesh) {
+        return new Emscripten_Rprim(typeId, rprimId, _renderDelegateInterface, this);
+    }
+    if (typeId == HdPrimTypeTokens->points) {
+        return new Emscripten_PointBasedRprim<HdPoints>(
+            typeId, rprimId, _renderDelegateInterface, this);
+    }
+    if (typeId == HdPrimTypeTokens->basisCurves) {
+        return new Emscripten_PointBasedRprim<HdBasisCurves>(
+            typeId, rprimId, _renderDelegateInterface, this);
+    }
+    TF_CODING_ERROR("Unknown Rprim Type %s", typeId.GetText());
+    return nullptr;
 }
 
 void
@@ -1767,6 +1978,31 @@ WebRenderDelegate::QueueRprimPrimvar(std::string const& rprimPath,
 }
 
 void
+WebRenderDelegate::QueueRprimCurveTopology(
+    std::string const& rprimPath,
+    VtIntArray const& curveVertexCounts,
+    VtIntArray const& curveIndices,
+    TfToken const& curveType,
+    TfToken const& curveBasis,
+    TfToken const& curveWrap)
+{
+    if (rprimPath.empty()) return;
+    std::lock_guard<std::mutex> lock(_rprimDeltaMutex);
+    auto found = _rprimDeltaByPath.find(rprimPath);
+    if (found == _rprimDeltaByPath.end()) {
+        _rprimDeltaOrder.push_back(rprimPath);
+        found = _rprimDeltaByPath.emplace(rprimPath, RprimDeltaRecord()).first;
+    }
+    RprimDeltaRecord &record = found->second;
+    record.curveVertexCounts.assign(curveVertexCounts.begin(), curveVertexCounts.end());
+    record.curveIndices.assign(curveIndices.begin(), curveIndices.end());
+    record.curveType = curveType.GetString();
+    record.curveBasis = curveBasis.GetString();
+    record.curveWrap = curveWrap.GetString();
+    record.dirtyMask |= kRprimDeltaDirtyCurveTopology;
+}
+
+void
 WebRenderDelegate::ClearRprimDelta(std::string const& rprimPath)
 {
     if (rprimPath.empty()) return;
@@ -1846,6 +2082,24 @@ WebRenderDelegate::TakeRprimDeltaBatch()
             if (primvarIndex > 0) {
                 delta.set("primvars", primvarArray);
             }
+        }
+
+        if (!record.curveVertexCounts.empty()) {
+            emscripten::val topology = emscripten::val::object();
+            emscripten::val curveVertexCounts = emscripten::val::array();
+            for (size_t index = 0; index < record.curveVertexCounts.size(); ++index) {
+                curveVertexCounts.set(index, record.curveVertexCounts[index]);
+            }
+            emscripten::val curveIndices = emscripten::val::array();
+            for (size_t index = 0; index < record.curveIndices.size(); ++index) {
+                curveIndices.set(index, record.curveIndices[index]);
+            }
+            topology.set("curveVertexCounts", curveVertexCounts);
+            topology.set("curveIndices", curveIndices);
+            topology.set("type", record.curveType);
+            topology.set("basis", record.curveBasis);
+            topology.set("wrap", record.curveWrap);
+            delta.set("curveTopology", topology);
         }
 
         entries.set(rprimPath, delta);

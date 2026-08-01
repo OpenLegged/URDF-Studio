@@ -35,6 +35,7 @@ import { toVirtualUsdPath } from '../utils/usdPreloadSources.ts';
 import { resolveUsdGroundAlignmentSettleDelaysMs } from '../utils/usdGroundAlignmentDelays.ts';
 import { alignUsdSceneRootToGround } from '../utils/usdGroundAlignment.ts';
 import { shouldSettleUsdGroundAlignmentAfterInitialLoad } from '../utils/usdGroundAlignmentPolicy.ts';
+import { shouldAutoFrameUsdGenericSceneSnapshot } from '../utils/usdGenericScenePolicy.ts';
 import {
   disposeUsdDriver,
   ensureUsdWasmRuntime,
@@ -2379,7 +2380,13 @@ async function loadUsdStageIntoWorker(message: UsdOffscreenViewerInitRequest): P
         ...(getRuntimeWarmupDebugDetail(runtimeWindow.renderInterface) ?? {}),
       }),
     });
-    if (!robotSceneSnapshotOnlyLoad && useCollisionVisualProxyMode) {
+    const shouldAutoFrameGenericScene =
+      robotSceneSnapshotOnlyLoad
+      && shouldAutoFrameUsdGenericSceneSnapshot(workerResolvedRobotData.fullSceneSnapshot);
+    if (
+      (!robotSceneSnapshotOnlyLoad && useCollisionVisualProxyMode)
+      || shouldAutoFrameGenericScene
+    ) {
       applyRuntimeVisibility();
       applyGroundAlignment();
       scheduleWorkerAutoFrameSettlePasses(loadGeneration);

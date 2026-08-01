@@ -73,6 +73,47 @@ test('createRendererBackendLoadScopeKey ignores transient joint motion changes',
   assert.equal(secondKey, firstKey);
 });
 
+test('createMemoizedRendererBackendLoadScopeKey reloads when primitive detail changes', () => {
+  const memo: RendererBackendLoadScopeKeyMemo = {};
+  const robotData = createRobotData(0);
+  const highKey = createMemoizedRendererBackendLoadScopeKey(
+    {
+      sourceFile,
+      assets: {},
+      robotData,
+      primitiveGeometryDetail: {
+        cylinderRadialSegments: 96,
+        sphereWidthSegments: 48,
+        sphereHeightSegments: 32,
+        capsuleCapSegments: 12,
+        capsuleRadialSegments: 24,
+      },
+      textureAnisotropy: 8,
+      materialDithering: true,
+    },
+    memo,
+  );
+  const ultraKey = createMemoizedRendererBackendLoadScopeKey(
+    {
+      sourceFile,
+      assets: {},
+      robotData,
+      primitiveGeometryDetail: {
+        cylinderRadialSegments: 128,
+        sphereWidthSegments: 64,
+        sphereHeightSegments: 48,
+        capsuleCapSegments: 16,
+        capsuleRadialSegments: 32,
+      },
+      textureAnisotropy: 16,
+      materialDithering: true,
+    },
+    memo,
+  );
+
+  assert.notEqual(ultraKey, highKey);
+});
+
 test('createRendererBackendLoadScopeKey ignores transient joint motion changes for draggable formats', () => {
   const formats: DraggableFormat[] = ['urdf', 'sdf', 'mjcf', 'usd', 'usda'];
 

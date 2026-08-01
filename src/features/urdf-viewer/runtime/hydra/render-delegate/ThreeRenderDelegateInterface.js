@@ -5,11 +5,51 @@ import { ThreeRenderDelegateMaterialOps } from './ThreeRenderDelegateMaterialOps
 import { HydraInstancer } from './HydraInstancer.js';
 import { HydraMaterial } from './HydraMaterial.js';
 import { HydraMesh } from './HydraMesh.js';
+import { HydraPointBased } from './HydraPointBased.js';
+import { collectLivePointBasedSnapshotEntries } from './point-based-snapshot.js';
 import { getDefaultMaterial } from './default-material-state.js';
 import { createHydraColorFromTuple, HYDRA_UNIFIED_MATERIAL_DEFAULTS } from './material-defaults.js';
 const { buildProtoPrimPathCandidates, clamp01, createMatrixFromXformOp, debugInstancer, debugMaterials, debugMeshes, debugPrims, debugTextures, defaultGrayComponent, disableMaterials, disableTextures, extractPrimPathFromMaterialBindingWarning, extractReferencePrimTargets, extractScopeBodyText, extractUsdAssetReferencesFromLayerText, getActiveMaterialBindingWarningOwner, getAngleInRadians, getCollisionGeometryTypeFromUrdfElement, getExpectedPrimTypesForCollisionProto, getExpectedPrimTypesForProtoType, getMatrixMaxElementDelta, getPathBasename, getPathWithoutRoot, getRawConsoleMethod, getRootPathFromPrimPath, getSafePrimTypeName, hasNonZeroTranslation, hydraCallbackErrorCounts, installMaterialBindingApiWarningInterceptor, isIdentityQuaternion, isLikelyDefaultGrayMaterial, isLikelyInverseTransform, isMaterialBindingApiWarningMessage, isMatrixApproximatelyIdentity, isNonZero, isPotentiallyLargeBaseAssetPath, logHydraCallbackError, materialBindingRepairMaxLayerTextLength, materialBindingWarningHandlers, maxHydraCallbackErrorLogsPerMethod, nearlyEqual, normalizeHydraPath, normalizeUsdPathToken, parseGuideCollisionReferencesFromLayerText, parseProtoMeshIdentifier, parseUrdfMaterialMetadataFromLayerText, parseUrdfTruthFromText, parseUsdMaterialBindingsFromLayerText, parseUsdReferenceTargetsByPrimPathFromLayerText, parseVector3Text, parseXformOpFallbacksFromLayerText, rawConsoleError, rawConsoleWarn, registerMaterialBindingApiWarningHandler, remapRootPathIfNeeded, resolveUrdfTruthFileNameForStagePath, resolveUsdAssetPath, setActiveMaterialBindingWarningOwner, shouldAllowLargeBaseAssetScan, stringifyConsoleArgs, toArrayLike, toColorArray, toFiniteNumber, toFiniteQuaternionWxyzTuple, toFiniteVector2Tuple, toFiniteVector3Tuple, toMatrixFromUrdfOrigin, toQuaternionWxyzFromRpy, transformEpsilon, wrapHydraCallbackObject } = Shared;
 const { parseColliderEntriesFromLayerText } = Shared;
 const COLLISION_SEGMENT_PATTERN = /(?:^|\/)coll(?:isions?|iders?)(?:$|[/.])/i;
+const STAGE_BASE_COLOR_TEXTURE_INPUTS = [
+    'inputs:diffuse_texture',
+    'inputs:diffuseColor_texture',
+    'inputs:diffuse_color_texture',
+    'inputs:baseColor_texture',
+    'inputs:base_color_texture',
+    'inputs:albedo_texture',
+];
+const STAGE_EMISSIVE_TEXTURE_INPUTS = [
+    'inputs:emissiveColor_texture',
+    'inputs:emissive_color_texture',
+    'inputs:emissive_texture',
+    'inputs:emissive_mask_texture',
+];
+const STAGE_ROUGHNESS_TEXTURE_INPUTS = [
+    'inputs:roughness_texture',
+    'inputs:reflectionroughness_texture',
+    'inputs:reflection_roughness_texture',
+    'inputs:specular_roughness_texture',
+    'inputs:ORM_texture',
+];
+const STAGE_METALNESS_TEXTURE_INPUTS = [
+    'inputs:metallic_texture',
+    'inputs:metalness_texture',
+    'inputs:ORM_texture',
+];
+const STAGE_NORMAL_TEXTURE_INPUTS = [
+    'inputs:normal_texture',
+    'inputs:normalmap_texture',
+    'inputs:normal_map_texture',
+    'inputs:detail_normalmap_texture',
+];
+const STAGE_AO_TEXTURE_INPUTS = [
+    'inputs:occlusion_texture',
+    'inputs:occlusion_map',
+    'inputs:ao_texture',
+    'inputs:ORM_texture',
+];
 function normalizeDescriptorSectionName(sectionName) {
     const normalized = String(sectionName || '').trim().toLowerCase();
     if (normalized === 'visual') {
@@ -778,57 +818,32 @@ export class ThreeRenderDelegateInterface extends ThreeRenderDelegateMaterialOps
         if (clearcoatNormalScaleTuple) {
             material.clearcoatNormalScale = new Vector2(clearcoatNormalScaleTuple[0], clearcoatNormalScaleTuple[1]);
         }
-        this.applyStageFallbackTextureInput(material, shaderPrim, [
-            'inputs:diffuseColor_texture',
-            'inputs:diffuse_color_texture',
-            'inputs:baseColor_texture',
-            'inputs:base_color_texture',
-            'inputs:albedo_texture',
-        ], 'map', {
+        this.applyStageFallbackTextureInput(material, shaderPrim, STAGE_BASE_COLOR_TEXTURE_INPUTS, 'map', {
             colorSpace: SRGBColorSpace,
             onAssigned: () => {
                 material.color = new Color(0xffffff);
             },
         });
         if (effectiveEmissiveEnabled) {
-            this.applyStageFallbackTextureInput(material, shaderPrim, [
-                'inputs:emissiveColor_texture',
-                'inputs:emissive_color_texture',
-                'inputs:emissive_texture',
-            ], 'emissiveMap', {
+            this.applyStageFallbackTextureInput(material, shaderPrim, STAGE_EMISSIVE_TEXTURE_INPUTS, 'emissiveMap', {
                 colorSpace: SRGBColorSpace,
                 onAssigned: () => {
                     material.emissive = new Color(0xffffff);
                 },
             });
         }
-        this.applyStageFallbackTextureInput(material, shaderPrim, [
-            'inputs:roughness_texture',
-            'inputs:reflection_roughness_texture',
-            'inputs:specular_roughness_texture',
-        ], 'roughnessMap', {
+        this.applyStageFallbackTextureInput(material, shaderPrim, STAGE_ROUGHNESS_TEXTURE_INPUTS, 'roughnessMap', {
             onAssigned: () => {
                 material.roughness = 1;
             },
         });
-        this.applyStageFallbackTextureInput(material, shaderPrim, [
-            'inputs:metallic_texture',
-            'inputs:metalness_texture',
-        ], 'metalnessMap', {
+        this.applyStageFallbackTextureInput(material, shaderPrim, STAGE_METALNESS_TEXTURE_INPUTS, 'metalnessMap', {
             onAssigned: () => {
                 material.metalness = 1;
             },
         });
-        this.applyStageFallbackTextureInput(material, shaderPrim, [
-            'inputs:normal_texture',
-            'inputs:normalmap_texture',
-            'inputs:normal_map_texture',
-        ], 'normalMap');
-        this.applyStageFallbackTextureInput(material, shaderPrim, [
-            'inputs:occlusion_texture',
-            'inputs:occlusion_map',
-            'inputs:ao_texture',
-        ], 'aoMap');
+        this.applyStageFallbackTextureInput(material, shaderPrim, STAGE_NORMAL_TEXTURE_INPUTS, 'normalMap');
+        this.applyStageFallbackTextureInput(material, shaderPrim, STAGE_AO_TEXTURE_INPUTS, 'aoMap');
         if (opacityEnabled !== false && opacityTextureEnabled !== false) {
             this.applyStageFallbackTextureInput(material, shaderPrim, [
                 'inputs:opacity_texture',
@@ -1193,13 +1208,12 @@ export class ThreeRenderDelegateInterface extends ThreeRenderDelegateMaterialOps
     resolveMaterialTexturePath(shaderPrim, attributeNames = null) {
         const candidateAttributeNames = Array.isArray(attributeNames) && attributeNames.length > 0
             ? attributeNames
-            : [
-                'inputs:diffuseColor_texture',
-                'inputs:diffuse_color_texture',
-                'inputs:albedo_texture',
-                'inputs:base_color_texture',
-            ];
-        const texturePathValue = this.readPrimAttribute(shaderPrim, candidateAttributeNames);
+            : STAGE_BASE_COLOR_TEXTURE_INPUTS;
+        const ormTextureEnabled = this.readPrimBooleanAttribute(shaderPrim, ['inputs:enable_ORM_texture']);
+        const enabledCandidateAttributeNames = candidateAttributeNames.filter((attributeName) => (
+            attributeName !== 'inputs:ORM_texture' || ormTextureEnabled !== false
+        ));
+        const texturePathValue = this.readPrimAttribute(shaderPrim, enabledCandidateAttributeNames);
         if (!texturePathValue)
             return null;
         return this.extractMaterialTexturePath(texturePathValue);
@@ -2239,6 +2253,23 @@ export class ThreeRenderDelegateInterface extends ThreeRenderDelegateMaterialOps
                 }
                 if (normalizedSections.length > 0) {
                     updates.geomSubsetSections = normalizedSections;
+                    hasUpdates = true;
+                }
+            }
+            const rawCurveTopology = rawDelta.curveTopology;
+            if (rawCurveTopology && typeof rawCurveTopology === 'object') {
+                const curveVertexCounts = toObjectArray(rawCurveTopology.curveVertexCounts)
+                    .map((value) => Math.max(0, Math.floor(Number(value) || 0)))
+                    .filter((value) => value > 0);
+                if (curveVertexCounts.length > 0) {
+                    updates.curveTopology = {
+                        curveVertexCounts,
+                        curveIndices: toObjectArray(rawCurveTopology.curveIndices)
+                            .map((value) => Math.max(0, Math.floor(Number(value) || 0))),
+                        type: String(rawCurveTopology.type || 'linear'),
+                        basis: String(rawCurveTopology.basis || 'bezier'),
+                        wrap: String(rawCurveTopology.wrap || 'nonperiodic'),
+                    };
                     hasUpdates = true;
                 }
             }
@@ -3653,6 +3684,52 @@ export class ThreeRenderDelegateInterface extends ThreeRenderDelegateMaterialOps
             });
         }
         attachReferencedMeshLibraryPayloads();
+        const existingPointBasedDescriptorIds = new Set(normalizedMeshDescriptors
+            .map((descriptor) => normalizeHydraPath(descriptor?.meshId || ''))
+            .filter(Boolean));
+        for (const entry of collectLivePointBasedSnapshotEntries(this.meshes)) {
+            if (existingPointBasedDescriptorIds.has(entry.meshId))
+                continue;
+            const positionsAppend = appendFloatPayloadToPool(positionPool, entry.positions);
+            positionPool = positionsAppend.pool;
+            const transformsAppend = appendFloatPayloadToPool(transformPool, entry.transform);
+            transformPool = transformsAppend.pool;
+            const ranges = normalizeMeshRanges({
+                positions: positionsAppend.range
+                    ? { ...positionsAppend.range, stride: 3 }
+                    : null,
+                transform: transformsAppend.range
+                    ? { ...transformsAppend.range, stride: 16 }
+                    : null,
+            });
+            if (!ranges)
+                continue;
+            bufferRangesByMeshId[entry.meshId] = ranges;
+            normalizedMeshDescriptors.push({
+                meshId: entry.meshId,
+                sectionName: 'visuals',
+                resolvedPrimPath: entry.resolvedPrimPath || entry.meshId,
+                primType: entry.primType,
+                applyGeometry: false,
+                dirtyMask: 0,
+                ranges,
+                renderReady: true,
+                topologyMode: 'nonIndexed',
+                geometry: {
+                    numVertices: Math.floor(entry.positions.length / 3),
+                    numIndices: 0,
+                    numNormals: 0,
+                    numUVs: 0,
+                    uvDimension: 0,
+                    normalsDimension: 0,
+                    renderReady: true,
+                    topologyMode: 'nonIndexed',
+                    materialId: entry.materialId || null,
+                    geomSubsetSections: [],
+                },
+            });
+            existingPointBasedDescriptorIds.add(entry.meshId);
+        }
         if (hasPackedMeshBuffers) {
             this._protoDataBlobBatchCache?.clear?.();
             this._protoDataBlobMissCache?.clear?.();
@@ -5317,7 +5394,10 @@ export class ThreeRenderDelegateInterface extends ThreeRenderDelegateMaterialOps
                 return this.createNoopRPrim();
             }
         }
-        let mesh = new HydraMesh(typeId, normalizedId, this, normalizedInstancerId);
+        const normalizedTypeId = String(typeId || '').trim().toLowerCase();
+        let mesh = (normalizedTypeId === 'points' || normalizedTypeId === 'basiscurves')
+            ? new HydraPointBased(typeId, normalizedId, this, normalizedInstancerId)
+            : new HydraMesh(typeId, normalizedId, this, normalizedInstancerId);
         if (normalizedInstancerId) {
             // This is a prototype for an instancer. Hide it by default.
             // The instancer will manage the display of instances.

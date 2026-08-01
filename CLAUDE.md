@@ -125,8 +125,8 @@ scripts/
 - 单元测试邻近源码放置（`src/**/*.test.*`）
 - **跨域 Handoff 接收端**：`src/app/hooks/useAssetImportFromUrl.ts`、`src/app/components/BotWorldImportOverlay.tsx` 为 BOT-World 资产导入核心文件；插件激活详见 [docs/file-io.md](docs/file-io.md) §6
 - **调试接口默认关闭**：`window.__URDF_STUDIO_DEBUG__`、`window.__usdStageLoadDebug*`、`window.__visualizerCollisionLoadDebug*` 等回归调试接口只能在 URL 显式带 `?regressionDebug=1` 时启用；不要仅因 `DEV`、本地开发或普通预览环境暴露。Codex / Claude / 回归脚本需要调试时由脚本加该参数。
-- **修复用户上报的 bug 必须用浏览器实测**：拿到用户反馈的 bug 后，不能凭推理或读代码就判定已修好。必须通过 `npm run dev` 启动应用，并使用浏览器自动化工具（chrome-devtools / playwright MCP）走一遍用户复现路径，确认现象消失后才能回复"已修复"。typecheck / 单元测试通过 ≠ bug 修好
-- **浏览器自动化必须清理进程**：使用 chrome-devtools / Playwright / Puppeteer / MCP 或运行浏览器回归脚本后，必须关闭 page、context、browser、DevTools 会话和由 agent 启动的 dev server；结束前运行 `node test/usd-viewer/scripts/cleanup-headless.cjs`。如仍有残留，只清理由本次自动化产生的 chrome-devtools/playwright/puppeteer 临时进程，禁止杀掉用户日常浏览器。
+- **修复用户上报的 bug 必须用浏览器实测**：拿到用户反馈的 bug 后，不能凭推理或读代码就判定已修好。必须通过 `npm run dev` 启动应用，并使用 Playwright（`playwright-cli` / `playwright-interactive` skill）走一遍用户复现路径，确认现象消失后才能回复"已修复"。typecheck / 单元测试通过 ≠ bug 修好
+- **浏览器自动化必须清理进程**：使用 Playwright / Puppeteer 或运行浏览器回归脚本后，必须关闭 page、context、browser 和由 agent 启动的 dev server；结束前运行 `node test/usd-viewer/scripts/cleanup-headless.cjs`。如仍有残留，只清理由本次自动化产生的 playwright/puppeteer 临时进程，禁止杀掉用户日常浏览器。
 - **文件规模门禁，禁止为凑行数硬拆内聚逻辑**：单文件/函数长度、复杂度由 `google-style:check` 的 exact-count baseline ratchet 检查；存量 grandfather、禁止净新增，债务下降必须同步收紧 baseline。`file-name-snake-case` 是 retired 信息项，不再阻断当前项目约定。多数超长解析器/数值求解器是**真实领域内聚**，硬拆成互传 ref 的碎片只损害 debuggability；只对存在"可干净抽离附带膨胀"的文件定向重构。手写 C-ABI emscripten 源（`src/core/loaders/wasm/*.cpp`，单 TU 设计）、`public/wasm/**` 生成产物、`**/*.generated.*`、`third_party/**`、`urdf-viewer/runtime/**` 有意豁免，详见 [docs/architecture.md](docs/architecture.md) §13
 
 存量例外与设计哲学（debuggability first、Linux 哲学：简单数据流优于抽象层、规模门禁与豁免）详见 [docs/architecture.md](docs/architecture.md) §3、§9-10、§13。

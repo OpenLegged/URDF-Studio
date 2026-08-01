@@ -318,6 +318,11 @@ export interface TranslationKeys extends TranslationWorkflowKeys {
   cameraProjectionPerspective: string;
   cameraProjectionOrthographic: string;
   cameraProjectionHint: string;
+  renderQuality: string;
+  renderQualityPerformance: string;
+  renderQualityBalanced: string;
+  renderQualityHigh: string;
+  renderQualityUltra: string;
   viewerNavigation: string;
   zoomSensitivity: string;
   rotateSensitivity: string;

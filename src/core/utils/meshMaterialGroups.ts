@@ -1,7 +1,10 @@
 import * as THREE from 'three';
 
 import type { UrdfVisual, UrdfVisualMaterial, UrdfVisualMeshMaterialGroup } from '@/types';
-import { getGeometryMeshMaterialGroupsForMesh } from '@/core/robot/visualMeshMaterialGroups';
+import {
+  getGeometryMeshMaterialGroups,
+  getGeometryMeshMaterialGroupsForMesh,
+} from '@/core/robot/visualMeshMaterialGroups';
 import {
   getGeometryAuthoredMaterials,
   normalizeAuthoredMaterialEntry,
@@ -601,6 +604,14 @@ export function applyVisualMeshMaterialGroupsToObject(
   const textureLoader = resolveTextureLoader(options.manager);
   const textureCache = new Map<string, THREE.Texture>();
   const replacedMaterials = new Set<THREE.Material>();
+  const allMeshGroups = getGeometryMeshMaterialGroups(geometry);
+  let renderableMeshCount = 0;
+  object.traverse((child) => {
+    const mesh = child as THREE.Mesh;
+    if (mesh.isMesh && mesh.geometry instanceof THREE.BufferGeometry && mesh.material) {
+      renderableMeshCount += 1;
+    }
+  });
 
   object.traverse((child) => {
     const mesh = child as THREE.Mesh;
@@ -609,7 +620,12 @@ export function applyVisualMeshMaterialGroupsToObject(
     }
 
     const meshKey = resolveRuntimeMeshMaterialGroupKey(mesh, object);
-    const meshGroups = getGeometryMeshMaterialGroupsForMesh(geometry, meshKey);
+    const exactMeshGroups = getGeometryMeshMaterialGroupsForMesh(geometry, meshKey);
+    const meshGroups = exactMeshGroups.length > 0
+      ? exactMeshGroups
+      : renderableMeshCount === 1 && allMeshGroups.every((group) => group.meshKey === '0')
+        ? allMeshGroups
+        : [];
     const currentMaterial = Array.isArray(mesh.material) ? mesh.material[0] : mesh.material;
     const templateMaterial =
       currentMaterial ??

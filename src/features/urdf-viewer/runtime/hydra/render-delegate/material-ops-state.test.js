@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
-import { Color, MeshPhysicalMaterial, SRGBColorSpace } from 'three';
+import { Color, MeshPhysicalMaterial, SRGBColorSpace, Texture } from 'three';
 
 import { ThreeRenderDelegateMaterialOps } from './ThreeRenderDelegateMaterialOps.js';
 import { ThreeRenderDelegateInterface } from './ThreeRenderDelegateInterface.js';
@@ -79,6 +79,18 @@ function createStageFallbackContext() {
         },
     };
     delegate.config = {};
+    return delegate;
+}
+
+function createStageFallbackTextureContext() {
+    const delegate = createStageFallbackContext();
+    delegate.registry = {
+        getTexture(texturePath) {
+            const texture = new Texture();
+            texture.name = texturePath;
+            return Promise.resolve(texture);
+        },
+    };
     return delegate;
 }
 
@@ -218,6 +230,69 @@ test('applyStageFallbackMaterialParameters trusts authored white over numeric ma
     applyStageFallbackMaterialParameters.call(context, material, shaderPrim);
 
     assert.equal(material.color.getHexString(), 'ffffff');
+});
+
+test('applyStageFallbackMaterialParameters resolves Isaac Sim texture aliases and packed ORM channels', async () => {
+    const material = new MeshPhysicalMaterial();
+    const context = createStageFallbackTextureContext();
+    const shaderPrim = createShaderPrim(
+        new Map([
+            ['inputs:diffuse_texture', 'textures/base.png'],
+            ['inputs:reflectionroughness_texture', 'textures/roughness.png'],
+            ['inputs:emissive_mask_texture', 'textures/emissive.png'],
+            ['inputs:detail_normalmap_texture', 'textures/detail-normal.png'],
+            ['inputs:ORM_texture', 'textures/orm.png'],
+        ]),
+    );
+
+    applyStageFallbackMaterialParameters.call(context, material, shaderPrim);
+    await new Promise((resolve) => setImmediate(resolve));
+
+    assert.equal(material.map?.name, 'textures/base.png');
+    assert.equal(material.roughnessMap?.name, 'textures/roughness.png');
+    assert.equal(material.metalnessMap?.name, 'textures/orm.png');
+    assert.equal(material.aoMap?.name, 'textures/orm.png');
+    assert.equal(material.emissiveMap?.name, 'textures/emissive.png');
+    assert.equal(material.normalMap?.name, 'textures/detail-normal.png');
+});
+
+test('applyStageFallbackMaterialParameters keeps dedicated maps ahead of enabled ORM fallback', async () => {
+    const material = new MeshPhysicalMaterial();
+    const context = createStageFallbackTextureContext();
+    const shaderPrim = createShaderPrim(
+        new Map([
+            ['inputs:roughness_texture', 'textures/roughness.png'],
+            ['inputs:metallic_texture', 'textures/metallic.png'],
+            ['inputs:ao_texture', 'textures/ao.png'],
+            ['inputs:ORM_texture', 'textures/orm.png'],
+            ['inputs:enable_ORM_texture', true],
+        ]),
+    );
+
+    applyStageFallbackMaterialParameters.call(context, material, shaderPrim);
+    await new Promise((resolve) => setImmediate(resolve));
+
+    assert.equal(material.roughnessMap?.name, 'textures/roughness.png');
+    assert.equal(material.metalnessMap?.name, 'textures/metallic.png');
+    assert.equal(material.aoMap?.name, 'textures/ao.png');
+});
+
+test('applyStageFallbackMaterialParameters ignores disabled ORM texture input', async () => {
+    const material = new MeshPhysicalMaterial();
+    const context = createStageFallbackTextureContext();
+    const shaderPrim = createShaderPrim(
+        new Map([
+            ['inputs:ORM_texture', 'textures/orm.png'],
+            ['inputs:enable_ORM_texture', false],
+        ]),
+    );
+
+    applyStageFallbackMaterialParameters.call(context, material, shaderPrim);
+    await new Promise((resolve) => setImmediate(resolve));
+
+    assert.equal(material.roughnessMap, null);
+    assert.equal(material.metalnessMap, null);
+    assert.equal(material.aoMap, null);
 });
 
 test('applySnapshotMaterialRecord ignores OmniPBR default white emission unless enabled', () => {

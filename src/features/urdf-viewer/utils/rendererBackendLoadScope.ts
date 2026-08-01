@@ -1,8 +1,7 @@
 import type { RobotData, RobotFile, UrdfJoint, UrdfLink } from '@/types';
+import type { RobotPrimitiveGeometryDetail } from '@/core/parsers/urdf/loader/primitiveGeometry';
 import { isUsdLikeFormat } from '@/core/parsers/usd';
-import {
-  createStableJsonSnapshot,
-} from '@/shared/utils/robot/semanticSnapshot';
+import { createStableJsonSnapshot } from '@/shared/utils/robot/semanticSnapshot';
 import {
   createViewerRobotLoadInputSignature,
   stripPatchableRuntimeStateFromJoints,
@@ -22,6 +21,9 @@ interface CreateRendererBackendLoadScopeKeyOptions {
   robotLinks?: Record<string, UrdfLink>;
   robotJoints?: Record<string, UrdfJoint>;
   robotData?: RobotData | null;
+  primitiveGeometryDetail?: RobotPrimitiveGeometryDetail;
+  textureAnisotropy?: number;
+  materialDithering?: boolean;
 }
 
 export interface RendererBackendLoadScopeKeyMemo {
@@ -31,6 +33,7 @@ export interface RendererBackendLoadScopeKeyMemo {
   lastAssets?: Record<string, string>;
   lastReloadToken?: number;
   lastAllowUrdfXmlFallback?: boolean;
+  lastRenderQualitySignature?: string;
   lastResolvedRobotLinks?: Record<string, UrdfLink>;
   lastResolvedRobotJoints?: Record<string, UrdfJoint>;
   lastResolvedRobotJointsSignature?: string;
@@ -50,6 +53,14 @@ function hashStringFNV1a(value: string): string {
 
 function hashStableValue(value: unknown): string {
   return hashStringFNV1a(createStableJsonSnapshot(value));
+}
+
+function createRenderQualitySignature(options: CreateRendererBackendLoadScopeKeyOptions): string {
+  return hashStableValue({
+    primitiveGeometryDetail: options.primitiveGeometryDetail ?? null,
+    textureAnisotropy: options.textureAnisotropy ?? null,
+    materialDithering: options.materialDithering ?? null,
+  });
 }
 
 function cloneMemoSnapshot<T>(value: T): T {
@@ -273,6 +284,10 @@ function hasCompatibleRuntimePatchReuseScope(
     return false;
   }
 
+  if (memo.lastRenderQualitySignature !== createRenderQualitySignature(options)) {
+    return false;
+  }
+
   if (createAssetSignature(memo.lastAssets ?? {}) !== createAssetSignature(options.assets)) {
     return false;
   }
@@ -325,6 +340,7 @@ function updateMemoSnapshot(
   memo.lastAssets = cloneMemoSnapshot(options.assets);
   memo.lastReloadToken = options.reloadToken ?? 0;
   memo.lastAllowUrdfXmlFallback = options.allowUrdfXmlFallback ?? false;
+  memo.lastRenderQualitySignature = createRenderQualitySignature(options);
   memo.lastResolvedRobotLinks = cloneMemoSnapshot(resolvedRobotLinks);
   memo.lastResolvedRobotJoints = cloneMemoSnapshot(resolvedRobotJoints);
   memo.lastResolvedRobotJointsSignature = nextJointStructureSignature;
@@ -521,6 +537,9 @@ export function createRendererBackendLoadScopeKey({
   robotLinks,
   robotJoints,
   robotData,
+  primitiveGeometryDetail,
+  textureAnisotropy,
+  materialDithering,
 }: CreateRendererBackendLoadScopeKeyOptions): string {
   const sourceContentHash = hashStringFNV1a(sourceFile.content ?? '');
   const format = sourceFile.format;
@@ -558,6 +577,9 @@ export function createRendererBackendLoadScopeKey({
     input: robotInputSignature,
     assets: createAssetSignature(assets),
     availableFiles: createAvailableFilesSignature(availableFiles),
+    primitiveGeometryDetail: primitiveGeometryDetail ?? null,
+    textureAnisotropy: textureAnisotropy ?? null,
+    materialDithering: materialDithering ?? null,
   });
 }
 

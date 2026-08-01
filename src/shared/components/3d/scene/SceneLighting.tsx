@@ -14,6 +14,11 @@ interface SceneLightingProps {
   shadowMapSize?: number;
 }
 
+// The main light spans a 20-unit shadow frustum. Keep the receiver offset
+// proportional to the selected shadow-map resolution so quality changes do not
+// reintroduce self-shadow contours or create an oversized detached shadow.
+const MAIN_LIGHT_SHADOW_NORMAL_BIAS_AT_1024 = 0.03;
+
 export function SceneLighting({
   theme = 'system',
   cameraFollowPrimary = false,
@@ -45,6 +50,10 @@ export function SceneLighting({
   const shouldUseShadows =
     snapshotRenderActive || (enableShadows && (cameraFollowPrimary || effectiveTheme !== 'light'));
   const resolvedShadowMapSize = shadowMapSize ?? (cameraFollowPrimary ? 1024 : 768);
+  const mainLightShadowNormalBias = Math.min(
+    0.04,
+    (MAIN_LIGHT_SHADOW_NORMAL_BIAS_AT_1024 * 1024) / resolvedShadowMapSize,
+  );
   const staticDirectionalScale = cameraFollowPrimary ? cameraFollowStyle.staticDirectionalScale : 1;
   const rimDirectionalScale = cameraFollowPrimary
     ? cameraFollowStyle.rimDirectionalScale
@@ -214,6 +223,7 @@ export function SceneLighting({
       />
 
       <directionalLight
+        key={`main-light-${resolvedShadowMapSize}`}
         name="MainLight"
         position={LIGHTING_CONFIG.mainLightPosition}
         intensity={
@@ -231,7 +241,7 @@ export function SceneLighting({
         shadow-camera-top={10}
         shadow-camera-bottom={-10}
         shadow-bias={-0.0001}
-        shadow-normalBias={0.005}
+        shadow-normalBias={mainLightShadowNormalBias}
       />
 
       <directionalLight

@@ -12,6 +12,11 @@ import { disposeMaterial } from '@/shared/utils/three/dispose';
 export interface URDFMaterialInfo {
   name?: string;
   rgba?: [number, number, number, number];
+  // Named palettes are the only way a multi-material mesh can express per-slot
+  // appearance, so they must carry textures too — otherwise a USD/OBJ palette whose
+  // entries are textured renders as flat color.
+  texture?: string;
+  textureRotation?: number;
 }
 
 function toMaterialRgba(
@@ -69,7 +74,15 @@ export function collectURDFMaterialsFromVisualGeometry(
       continue;
     }
 
-    namedMaterials.set(name, { name, rgba });
+    const texture = material.texture?.trim() || undefined;
+    namedMaterials.set(name, {
+      name,
+      rgba,
+      ...(texture ? { texture } : {}),
+      ...(material.textureRotation !== undefined
+        ? { textureRotation: material.textureRotation }
+        : {}),
+    });
   }
 
   return namedMaterials;
@@ -307,11 +320,21 @@ export function resolveURDFMaterialsForScene(
  * Apply URDF materials to robot model by matching material NAMES
  * This works with DAE files where materials have specific names like "深色橡胶_005-effect"
  */
+/**
+ * Apply a named material palette onto an object, matching by material name.
+ *
+ * Returns whether any material was actually replaced. Callers use that to detect a
+ * palette that matched nothing — e.g. a mesh whose loader generated its own unnamed
+ * material — so they can fall back to a single-material override instead of leaving
+ * the mesh on its untextured loader default.
+ */
 export function applyURDFMaterials(
   robot: THREE.Object3D,
   materials: Map<string, URDFMaterialInfo>,
-) {
-  if (materials.size === 0) return;
+): boolean {
+  if (materials.size === 0) return false;
+
+  let appliedAnyMaterial = false;
 
   robot.traverse((child: any) => {
     if (!child.isMesh) return;
@@ -332,11 +355,81 @@ export function applyURDFMaterials(
       return;
     }
 
+    appliedAnyMaterial = true;
     child.material = Array.isArray(previousMaterial) ? nextMaterials : nextMaterials[0];
     previousMaterials.forEach((material, index) => {
       if (nextMaterials[index] !== material) {
         disposeTransientViewerMaterial(material);
       }
     });
+  });
+
+  return appliedAnyMaterial;
+}
+
+/**
+ * Load and assign the textures authored on a named material palette.
+ *
+ * `applyURDFMaterials` only resolves color, because it is synchronous. Textures need a
+ * loader, so they are a separate pass — run it after any material normalization, since
+ * that step clones materials and would otherwise drop a texture assigned before it.
+ *
+ * Materials are matched by the `urdfMaterialName` marker that `applyURDFMaterials`
+ * writes, and re-resolved from the object when each load finishes so a material swapped
+ * in mid-load still receives its texture.
+ */
+export function applyURDFMaterialTextures(
+  robot: THREE.Object3D,
+  materials: Map<string, URDFMaterialInfo>,
+  manager?: THREE.LoadingManager,
+): void {
+  const texturedEntries = Array.from(materials.values()).filter((material) =>
+    Boolean(material.texture),
+  );
+  if (texturedEntries.length === 0) {
+    return;
+  }
+
+  texturedEntries.forEach((paletteMaterial) => {
+    const texturePath = paletteMaterial.texture!;
+    const loader = new THREE.TextureLoader(manager);
+    loader.load(
+      texturePath,
+      (texture) => {
+        texture.colorSpace = THREE.SRGBColorSpace;
+        if (paletteMaterial.textureRotation) {
+          texture.rotation = paletteMaterial.textureRotation;
+          texture.center.set(0.5, 0.5);
+        }
+
+        robot.traverse((child) => {
+          const mesh = child as THREE.Mesh;
+          if (!mesh.isMesh) return;
+          const meshMaterials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+          meshMaterials.forEach((material: THREE.Material | undefined) => {
+            const standardMaterial = material as THREE.MeshStandardMaterial | undefined;
+            if (!standardMaterial) {
+              return;
+            }
+            if (standardMaterial.userData?.urdfMaterialName !== paletteMaterial.name) {
+              return;
+            }
+            standardMaterial.map = texture;
+            // Photogrammetry meshes often carry both baked vertex colors and a texture.
+            // The texture is the higher-fidelity source, so stop modulating by vertex
+            // color once it lands, otherwise the two multiply into a darkened surface.
+            standardMaterial.vertexColors = false;
+            standardMaterial.color.set('#ffffff');
+            standardMaterial.userData.urdfTextureApplied = true;
+            standardMaterial.userData.urdfTexturePath = texturePath;
+            standardMaterial.needsUpdate = true;
+          });
+        });
+      },
+      undefined,
+      (error) => {
+        console.error('[EditorViewer] Failed to apply URDF palette texture:', texturePath, error);
+      },
+    );
   });
 }

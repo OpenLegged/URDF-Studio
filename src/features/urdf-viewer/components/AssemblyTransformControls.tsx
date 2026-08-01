@@ -1,17 +1,25 @@
-import { memo, useCallback, useEffect, useMemo, useRef } from 'react';
+import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef } from 'react';
 import { Html } from '@react-three/drei';
 import * as THREE from 'three';
 
 import { UnifiedTransformControls, VISUALIZER_UNIFIED_GIZMO_SIZE } from '@/shared/components/3d';
-import type {
-  AssemblyScenePlacement,
-  AssemblySceneProjection,
-} from '@/core/robot';
-import { entityRefKey, type AssemblyTransform, type UrdfOrigin, type WorkspaceSelection } from '@/types';
+import type { AssemblyScenePlacement, AssemblySceneProjection } from '@/core/robot';
+import {
+  entityRefKey,
+  type AssemblyTransform,
+  type UrdfOrigin,
+  type WorkspaceSelection,
+} from '@/types';
 import type { UpdateCommitOptions } from '@/types/viewer';
 import { useSelectionStore, type HoverFreezeOwner } from '@/store/selectionStore';
 
-import { decomposeJointPivotMatrixToOrigin } from '../utils/assemblyTransformControlsShared';
+import {
+  alignTransformPivotToBoundsCenter,
+  applyTransformPivotDrag,
+  captureTransformPivotDrag,
+  decomposeJointPivotMatrixToOrigin,
+  type TransformPivotDragSnapshot,
+} from '../utils/assemblyTransformControlsShared';
 import { AssemblySelectionBounds } from './AssemblySelectionBounds';
 
 interface AssemblyTransformControlsProps {
@@ -28,11 +36,7 @@ interface AssemblyTransformControlsProps {
     transform: AssemblyTransform,
     options?: UpdateCommitOptions,
   ) => void;
-  onBridgeTransform?: (
-    bridgeId: string,
-    origin: UrdfOrigin,
-    options?: UpdateCommitOptions,
-  ) => void;
+  onBridgeTransform?: (bridgeId: string, origin: UrdfOrigin, options?: UpdateCommitOptions) => void;
   onTransformPendingChange?: (pending: boolean) => void;
 }
 
@@ -60,8 +64,9 @@ function resolveRuntimeJoints(
   runtimeRobot: THREE.Object3D | null,
 ): Record<string, THREE.Object3D | undefined> {
   return (
-    runtimeRobot as (THREE.Object3D & { joints?: Record<string, THREE.Object3D> }) | null
-  )?.joints ?? {};
+    (runtimeRobot as (THREE.Object3D & { joints?: Record<string, THREE.Object3D> }) | null)
+      ?.joints ?? {}
+  );
 }
 
 export const AssemblyTransformControls = memo(function AssemblyTransformControls({
@@ -78,10 +83,18 @@ export const AssemblyTransformControls = memo(function AssemblyTransformControls
   onTransformPendingChange,
 }: AssemblyTransformControlsProps) {
   const setHoverFrozen = useSelectionStore((state) => state.setHoverFrozen);
-  const hoverFreezeOwner = useRef<HoverFreezeOwner>(
-    Symbol('assembly-transform-controls'),
-  ).current;
+  const hoverFreezeOwner = useRef<HoverFreezeOwner>(Symbol('assembly-transform-controls')).current;
   const dragTargetRef = useRef<ActiveTransformTarget | null>(null);
+  const dragSnapshotRef = useRef<TransformPivotDragSnapshot | null>(null);
+  const isDraggingRef = useRef(false);
+  const selectionBoundsInvalidatedRef = useRef(true);
+  const transformPivot = useMemo(() => {
+    const pivot = new THREE.Group();
+    pivot.name = 'AssemblyTransformPivot';
+    pivot.userData.isHelper = true;
+    pivot.userData.excludeFromSceneBounds = true;
+    return pivot;
+  }, []);
   const runtimeJoints = useMemo(() => resolveRuntimeJoints(runtimeRobot), [runtimeRobot]);
 
   const activeTarget = useMemo<ActiveTransformTarget | null>(() => {
@@ -148,34 +161,89 @@ export const AssemblyTransformControls = memo(function AssemblyTransformControls
       );
       return;
     }
-    onComponentTransform?.(
-      target.componentId,
-      decomposeTransformMatrix(target.object.matrix),
-      { commitMode: 'immediate' },
-    );
+    onComponentTransform?.(target.componentId, decomposeTransformMatrix(target.object.matrix), {
+      commitMode: 'immediate',
+    });
   }, [onAssemblyTransform, onBridgeTransform, onComponentTransform]);
 
   const handleDraggingChanged = useCallback(
     (event?: { value?: boolean }) => {
       const dragging = Boolean(event?.value);
+      isDraggingRef.current = dragging;
       setHoverFrozen(hoverFreezeOwner, dragging);
       onTransformPendingChange?.(dragging);
 
       if (dragging) {
         dragTargetRef.current = activeTarget;
+        dragSnapshotRef.current = activeTarget
+          ? captureTransformPivotDrag(transformPivot, activeTarget.object)
+          : null;
         return;
       }
       commitTransform();
       dragTargetRef.current = null;
+      dragSnapshotRef.current = null;
+      selectionBoundsInvalidatedRef.current = true;
     },
-    [activeTarget, commitTransform, hoverFreezeOwner, onTransformPendingChange, setHoverFrozen],
+    [
+      activeTarget,
+      commitTransform,
+      hoverFreezeOwner,
+      onTransformPendingChange,
+      setHoverFrozen,
+      transformPivot,
+    ],
   );
+
+  const handleObjectChange = useCallback(() => {
+    const dragTarget = dragTargetRef.current;
+    const dragSnapshot = dragSnapshotRef.current;
+    if (dragTarget && dragSnapshot) {
+      applyTransformPivotDrag(transformPivot, dragTarget.object, dragSnapshot);
+    }
+
+    // TransformControls can emit many object-change events during one drag.
+    // The bounds helper consumes this lightweight flag in its frame callback,
+    // avoiding a React render and avoiding an O(scene) bounds walk while the
+    // user is only orbiting the camera.
+    selectionBoundsInvalidatedRef.current = true;
+  }, [transformPivot]);
+
+  const handleBoundsChange = useCallback(
+    (bounds: THREE.Box3) => {
+      if (!activeTarget || isDraggingRef.current) {
+        return;
+      }
+      alignTransformPivotToBoundsCenter(transformPivot, activeTarget.object, bounds);
+    },
+    [activeTarget, transformPivot],
+  );
+
+  useLayoutEffect(() => {
+    isDraggingRef.current = false;
+    dragTargetRef.current = null;
+    dragSnapshotRef.current = null;
+    selectionBoundsInvalidatedRef.current = true;
+    if (!activeTarget) {
+      return;
+    }
+
+    activeTarget.object.updateWorldMatrix(true, true);
+    const targetOrigin = activeTarget.object.getWorldPosition(new THREE.Vector3());
+    alignTransformPivotToBoundsCenter(
+      transformPivot,
+      activeTarget.object,
+      new THREE.Box3(targetOrigin, targetOrigin),
+    );
+  }, [activeTarget, transformPivot]);
 
   useEffect(
     () => () => {
       setHoverFrozen(hoverFreezeOwner, false);
       onTransformPendingChange?.(false);
+      isDraggingRef.current = false;
       dragTargetRef.current = null;
+      dragSnapshotRef.current = null;
     },
     [hoverFreezeOwner, onTransformPendingChange, setHoverFrozen],
   );
@@ -192,15 +260,21 @@ export const AssemblyTransformControls = memo(function AssemblyTransformControls
 
   return (
     <>
-      <AssemblySelectionBounds object={activeTarget.object} />
-      <UnifiedTransformControls
+      <primitive object={transformPivot} />
+      <AssemblySelectionBounds
         object={activeTarget.object}
+        boundsInvalidatedRef={selectionBoundsInvalidatedRef}
+        onBoundsChange={handleBoundsChange}
+      />
+      <UnifiedTransformControls
+        object={transformPivot}
         mode={transformMode}
         size={VISUALIZER_UNIFIED_GIZMO_SIZE}
         translateSpace="world"
         rotateSpace="local"
         hoverStyle="single-axis"
         displayStyle="thick-primary"
+        onObjectChange={handleObjectChange}
         onDraggingChanged={handleDraggingChanged}
       />
     </>

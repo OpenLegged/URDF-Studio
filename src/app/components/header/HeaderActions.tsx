@@ -223,11 +223,12 @@ function FeedbackButton({ label }: { label: string }) {
       href={FEEDBACK_FORM_URL}
       target="_blank"
       rel="noopener noreferrer"
-      className="inline-flex h-7 w-7 shrink-0 items-center justify-center rounded-md border border-transparent text-text-secondary transition-all duration-200 hover:bg-element-hover hover:text-text-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-system-blue/30"
+      className="inline-flex h-7 shrink-0 items-center gap-1 rounded-md border border-transparent px-2 text-xs font-medium text-text-secondary transition-all duration-200 hover:bg-element-hover hover:text-text-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-system-blue/30"
       title={label}
       aria-label={label}
     >
       <MessageCircleQuestionMark className="h-4 w-4" />
+      <span>{label}</span>
     </a>
   );
 }

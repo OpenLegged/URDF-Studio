@@ -30,6 +30,18 @@ interface SemanticOutlineRegistry {
 
 const SemanticOutlineContext = createContext<SemanticOutlineRegistry | null>(null);
 
+export function shouldRenderSemanticOutlineOverlay({
+  hasTargets,
+  isInteracting,
+  snapshotRenderActive,
+}: {
+  hasTargets: boolean;
+  isInteracting: boolean;
+  snapshotRenderActive: boolean;
+}): boolean {
+  return hasTargets && !isInteracting && !snapshotRenderActive;
+}
+
 function setAmbientOcclusionDiagnostics(
   canvas: HTMLCanvasElement,
   status: 'active' | 'unavailable',
@@ -65,6 +77,7 @@ function SemanticOutlineRenderer({
   const scene = useThree((state) => state.scene);
   const camera = useThree((state) => state.camera);
   const size = useThree((state) => state.size);
+  const dpr = useThree((state) => state.viewport.dpr);
   const invalidate = useThree((state) => state.invalidate);
   const snapshotRenderActive = useSnapshotRenderActive();
   const isInteracting = useWorkspaceCanvasInteractionState();
@@ -72,12 +85,12 @@ function SemanticOutlineRenderer({
   const latestSizeRef = useRef({
     width: size.width,
     height: size.height,
-    rendererPixelRatio: gl.getPixelRatio(),
+    rendererPixelRatio: dpr,
   });
   latestSizeRef.current = {
     width: size.width,
     height: size.height,
-    rendererPixelRatio: gl.getPixelRatio(),
+    rendererPixelRatio: dpr,
   };
   const outline = useMemo(
     () =>
@@ -141,17 +154,17 @@ function SemanticOutlineRenderer({
   }, [camera, enableAmbientOcclusion, gl, invalidate, scene]);
 
   useEffect(() => {
-    outline.setSize(size.width, size.height, gl.getPixelRatio());
+    outline.setSize(size.width, size.height, dpr);
     const realtimeComposer = realtimeComposerRef.current;
     if (realtimeComposer) {
-      realtimeComposer.setSize(size.width, size.height, gl.getPixelRatio());
+      realtimeComposer.setSize(size.width, size.height, dpr);
       setAmbientOcclusionDiagnostics(
         gl.domElement,
         'active',
         realtimeComposer.getDiagnostics(),
       );
     }
-  }, [gl, outline, size.height, size.width]);
+  }, [dpr, gl, outline, size.height, size.width]);
 
   useEffect(() => () => outline.dispose(), [outline]);
 
@@ -181,7 +194,21 @@ function SemanticOutlineRenderer({
     })
       ? realtimeComposerRef.current
       : null;
-    if (targets.length === 0 && !realtimeComposer) {
+    const shouldRenderOutlineOverlay = shouldRenderSemanticOutlineOverlay({
+      hasTargets: targets.length > 0,
+      isInteracting,
+      snapshotRenderActive,
+    });
+
+    // Diagnostics mirror of the overlay decision, so browser regressions can
+    // assert that hover/selection outlines stay on screen (e.g. while a mouse
+    // button is held down without moving).
+    const outlineOverlayState = shouldRenderOutlineOverlay ? intent : 'off';
+    if (gl.domElement.dataset.semanticOutlineOverlay !== outlineOverlayState) {
+      gl.domElement.dataset.semanticOutlineOverlay = outlineOverlayState;
+    }
+
+    if (!shouldRenderOutlineOverlay && !realtimeComposer) {
       gl.render(scene, camera);
       return;
     }
@@ -200,7 +227,7 @@ function SemanticOutlineRenderer({
       gl.render(scene, camera);
     }
 
-    if (targets.length === 0) return;
+    if (!shouldRenderOutlineOverlay) return;
 
     outline.setCamera(camera);
     outline.setIntent(intent);

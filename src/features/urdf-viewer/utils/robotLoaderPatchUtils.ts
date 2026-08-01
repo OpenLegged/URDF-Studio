@@ -337,6 +337,30 @@ export function updateVisualMaterial(
 
   if (highlightedSnapshot?.activeRole) {
     const previousVisibleMaterial = mesh.material as THREE.Material | THREE.Material[] | undefined;
+    const visibleMaterials = Array.isArray(previousVisibleMaterial)
+      ? previousVisibleMaterial
+      : previousVisibleMaterial
+        ? [previousVisibleMaterial]
+        : [];
+    const isHighlightOverride = visibleMaterials.some(
+      (m) => m?.userData?.isHighlightOverrideMaterial === true,
+    );
+
+    if (!isHighlightOverride) {
+      if (Array.isArray(mesh.material)) {
+        mesh.material = mesh.material.map((mat) => update(mat));
+      } else if (mesh.material) {
+        mesh.material = update(mesh.material);
+      }
+      highlightedSnapshot.material = mesh.material;
+      highlightedSnapshot.materialStates = (Array.isArray(mesh.material)
+        ? mesh.material
+        : [mesh.material]
+      ).map((mat) => captureHighlightedMaterialState(mat));
+      disposeReplacedMaterials(previousVisibleMaterial, disposedMaterials, false);
+      return;
+    }
+
     const previousSnapshotMaterial = highlightedSnapshot.material;
     const snapshotMaterials = Array.isArray(previousSnapshotMaterial)
       ? previousSnapshotMaterial
@@ -387,6 +411,39 @@ export function updateVisualMaterialPalette(
 
   if (highlightedSnapshot?.activeRole) {
     const previousVisibleMaterial = mesh.material as THREE.Material | THREE.Material[] | undefined;
+    const visibleMaterials = Array.isArray(previousVisibleMaterial)
+      ? previousVisibleMaterial
+      : previousVisibleMaterial
+        ? [previousVisibleMaterial]
+        : [];
+    const isHighlightOverride = visibleMaterials.some(
+      (m) => m?.userData?.isHighlightOverrideMaterial === true,
+    );
+
+    if (!isHighlightOverride) {
+      const previousMaterial = mesh.material as THREE.Material | THREE.Material[] | undefined;
+      const previousMaterials = Array.isArray(previousMaterial)
+        ? previousMaterial
+        : previousMaterial
+          ? [previousMaterial]
+          : [];
+      const nextMaterials = previousMaterials.map(applyPalette);
+      const changed = nextMaterials.some(
+        (material, index) => material !== previousMaterials[index],
+      );
+      if (!changed) {
+        return;
+      }
+      mesh.material = Array.isArray(previousMaterial) ? nextMaterials : nextMaterials[0];
+      highlightedSnapshot.material = mesh.material;
+      highlightedSnapshot.materialStates = (Array.isArray(mesh.material)
+        ? mesh.material
+        : [mesh.material]
+      ).map((mat) => captureHighlightedMaterialState(mat));
+      disposeReplacedMaterials(previousMaterial, disposedMaterials, false);
+      return;
+    }
+
     const previousSnapshotMaterial = highlightedSnapshot.material;
     const snapshotMaterials = Array.isArray(previousSnapshotMaterial)
       ? previousSnapshotMaterial

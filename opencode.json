@@ -1,0 +1,21 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "provider": {
+    "digua": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "地瓜网关",
+      "options": {
+        "baseURL": "https://ai-api.d-robotics.cc/v1",
+        "apiKey": "{env:DIGUA_API_KEY}"
+      },
+      "models": {
+        "glm-5.2": {},
+        "deepseek-v4-pro": {},
+        "deepseek-v4-flash": {},
+        "kimi-k2.6": {},
+        "kimi-k3": {},
+        "minimax-m3": {}
+      }
+    }
+  }
+}

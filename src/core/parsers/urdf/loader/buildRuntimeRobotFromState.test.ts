@@ -115,6 +115,13 @@ test('buildRuntimeRobotFromState preserves link and joint hierarchy from parsed 
     joints: robotState.joints,
     manager: new THREE.LoadingManager(),
     loadMeshCb: (_path, _manager, done) => done(null),
+    primitiveGeometryDetail: {
+      cylinderRadialSegments: 128,
+      sphereWidthSegments: 64,
+      sphereHeightSegments: 48,
+      capsuleCapSegments: 16,
+      capsuleRadialSegments: 32,
+    },
   });
 
   assert.equal(robot.robotName, 'state_robot');
@@ -122,6 +129,15 @@ test('buildRuntimeRobotFromState preserves link and joint hierarchy from parsed 
   assert.deepEqual(Object.keys(robot.joints), ['base_to_arm']);
   assert.equal(robot.children.length, 1);
   assert.equal(robot.children[0], robot.links.base_link);
+
+  const armCylinders: THREE.CylinderGeometry[] = [];
+  robot.links.arm_link.traverse((child) => {
+    if (child instanceof THREE.Mesh && child.geometry instanceof THREE.CylinderGeometry) {
+      armCylinders.push(child.geometry);
+    }
+  });
+  assert.equal(armCylinders.length, 1, 'expected the arm link cylinder primitive');
+  assert.equal(armCylinders[0]?.parameters.radialSegments, 128);
 
   const joint = robot.joints.base_to_arm as THREE.Object3D & {
     axis: THREE.Vector3;

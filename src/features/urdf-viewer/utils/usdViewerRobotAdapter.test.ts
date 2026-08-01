@@ -836,6 +836,70 @@ test('adapts generic mesh-only CAD USD assemblies into a browseable hierarchy ro
   );
 });
 
+test('keeps generic scene fallback meshes grouped at the synthetic default-prim link', () => {
+  const result = adaptUsdViewerSnapshotToRobotData(
+    {
+      stageSourcePath: '/lab/scene.usd',
+      stage: {
+        defaultPrimPath: '/World',
+      },
+      robotTree: {
+        linkParentPairs: [
+          ['/World/Environment/Mesh0/Visuals/id1', '/World'],
+          ['/World/Environment/Mesh1/Visuals/id2', '/World'],
+        ],
+        jointCatalogEntries: [],
+        rootLinkPaths: ['/World'],
+      },
+      robotMetadataSnapshot: {
+        stageSourcePath: '/lab/scene.usd',
+        source: 'mesh-only',
+        linkParentPairs: [
+          ['/World/Environment/Mesh0/Visuals/id1', '/World'],
+          ['/World/Environment/Mesh1/Visuals/id2', '/World'],
+        ],
+        jointCatalogEntries: [],
+        linkDynamicsEntries: [],
+        meshCountsByLinkPath: {
+          '/World/Environment/Mesh0/Visuals/id1': {
+            visualMeshCount: 1,
+            collisionMeshCount: 0,
+          },
+          '/World/Environment/Mesh1/Visuals/id2': {
+            visualMeshCount: 1,
+            collisionMeshCount: 0,
+          },
+        },
+      },
+      render: {
+        meshDescriptors: [
+          {
+            meshId: '/World/visuals.proto_mesh_id0',
+            sectionName: 'visuals',
+            resolvedPrimPath: '/World/Environment/Mesh0/Visuals/id1',
+            primType: 'mesh',
+          },
+          {
+            meshId: '/World/visuals.proto_mesh_id1',
+            sectionName: 'visuals',
+            resolvedPrimPath: '/World/Environment/Mesh1/Visuals/id2',
+            primType: 'mesh',
+          },
+        ],
+      },
+    },
+    {
+      fileName: 'scene.usd',
+    },
+  );
+
+  assert.ok(result);
+  assert.equal(result.robotData.rootLinkId, 'World');
+  assert.deepEqual(Object.keys(result.robotData.links), ['World']);
+  assert.deepEqual(Object.keys(result.robotData.joints), []);
+  assert.equal(result.robotData.links.World.visual.usdMeshDescriptors?.length, 2);
+});
+
 test('keeps authored visual and collision slots grouped when a single USD visual scope expands into multiple mesh descriptors', () => {
   const result = adaptUsdViewerSnapshotToRobotData(
     {

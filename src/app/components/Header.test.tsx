@@ -112,6 +112,10 @@ test('Header links to the feedback form in a new tab', () => {
   const feedbackLinkContent = markup.match(
     /<a[^>]*aria-label="Feedback"[^>]*>(.*?)<\/a>/,
   )?.[1];
-  assert.ok(feedbackLinkContent, 'feedback link should render an icon');
-  assert.doesNotMatch(feedbackLinkContent, />Feedback</, 'feedback button should remain icon-only');
+  assert.ok(feedbackLinkContent, 'feedback link should render an icon and label');
+  assert.match(
+    feedbackLinkContent,
+    />Feedback</,
+    'feedback button should include a visible text label so its purpose is clear',
+  );
 });

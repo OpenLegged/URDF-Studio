@@ -209,6 +209,7 @@ function VisualizationEffectsProbe({
     revert: boolean,
     subType?: 'visual' | 'collision',
     meshToHighlight?: THREE.Object3D | null | number,
+    intent?: 'hover' | 'selection',
   ) => void;
 }) {
   const highlightedMeshesRef = useRef(new Map());
@@ -401,6 +402,56 @@ test('helper hover keeps helper interaction active without re-highlighting link 
   });
 
   assert.deepEqual(highlightCalls, []);
+
+  await act(async () => {
+    root.unmount();
+  });
+  dom.window.close();
+});
+
+test('clearing a geometry selection removes the selection outline owner', async () => {
+  const { dom, root } = createComponentRoot();
+  const { robot, robotLinks } = createRobotWithCenterOfMassHelper();
+  const highlightCalls: Array<{
+    linkName: string | null;
+    revert: boolean;
+    intent?: 'hover' | 'selection';
+  }> = [];
+  const onHighlightGeometry = (
+    linkName: string | null,
+    revert: boolean,
+    _subType?: 'visual' | 'collision',
+    _meshToHighlight?: THREE.Object3D | null | number,
+    intent?: 'hover' | 'selection',
+  ) => {
+    highlightCalls.push({ linkName, revert, intent });
+  };
+
+  await renderHarness(root, robot, {
+    robotLinks,
+    selection: {
+      type: 'link',
+      id: 'base_link',
+      subType: 'visual',
+      objectIndex: 0,
+    },
+    onHighlightGeometry,
+  });
+
+  highlightCalls.length = 0;
+  await renderHarness(root, robot, {
+    robotLinks,
+    onHighlightGeometry,
+  });
+
+  assert.deepEqual(
+    highlightCalls.find((call) => call.revert),
+    {
+      linkName: 'base_link',
+      revert: true,
+      intent: 'selection',
+    },
+  );
 
   await act(async () => {
     root.unmount();

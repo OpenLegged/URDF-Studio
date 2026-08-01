@@ -16,9 +16,8 @@ import { computeVisibleMeshBounds } from '@/shared/utils/threeBounds';
  * - Invalidation triggers:
  *     * initial mount (effect-driven first compute)
  *     * scene 'childadded' / 'childremoved' events (robot load/unload)
- *     * explicit caller-driven `invalidate()` (e.g. OrbitControls 'start'
- *       fires before a user interaction so any drift since the last
- *       compute is rebuilt before the user sees the result of orbit/pan)
+ *     * explicit caller-driven `invalidate()` for in-place workspace
+ *       transforms that do not add or remove scene children
  */
 
 interface BoundsCache {

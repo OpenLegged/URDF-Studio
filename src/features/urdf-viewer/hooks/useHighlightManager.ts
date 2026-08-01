@@ -89,6 +89,11 @@ export function useHighlightManager({
   const highlightedMeshesRef = useRef<Map<THREE.Mesh, HighlightedMeshSnapshot>>(new Map());
   const semanticOutline = useSemanticOutline();
   const semanticOutlineOwnerRef = useRef(Symbol('urdf-semantic-outline'));
+  const semanticOutlineHoverOwnerRef = useRef(Symbol('urdf-semantic-outline-hover'));
+  const semanticOutlineTargetsRef = useRef<Record<SemanticOutlineIntent, Set<THREE.Object3D>>>({
+    hover: new Set(),
+    selection: new Set(),
+  });
 
   // Refs for visibility state
   const showVisualRef = useRef(showVisual);
@@ -375,9 +380,13 @@ export function useHighlightManager({
 
   const syncSemanticOutline = useCallback(
     (intent: SemanticOutlineIntent = 'hover') => {
+      const owner =
+        intent === 'hover'
+          ? semanticOutlineHoverOwnerRef.current
+          : semanticOutlineOwnerRef.current;
       semanticOutline?.setTargets(
-        semanticOutlineOwnerRef.current,
-        [...highlightedMeshesRef.current.keys()],
+        owner,
+        [...semanticOutlineTargetsRef.current[intent]],
         intent,
       );
     },
@@ -400,6 +409,7 @@ export function useHighlightManager({
         if (targetSubType === 'collision') {
           mesh.renderOrder = 1000;
         }
+        semanticOutlineTargetsRef.current[intent].add(mesh);
         syncSemanticOutline(intent);
         return;
       } else {
@@ -428,6 +438,7 @@ export function useHighlightManager({
         mesh.renderOrder = 1000;
       }
       snapshot.activeRole = targetSubType;
+      semanticOutlineTargetsRef.current[intent].add(mesh);
       syncSemanticOutline(intent);
     },
     [captureHighlightedMeshSnapshot, restoreHighlightedMeshSnapshot, syncSemanticOutline],
@@ -446,7 +457,10 @@ export function useHighlightManager({
       }
     });
     highlightedMeshesRef.current.clear();
+    semanticOutlineTargetsRef.current.hover.clear();
+    semanticOutlineTargetsRef.current.selection.clear();
     semanticOutline?.clearTargets(semanticOutlineOwnerRef.current);
+    semanticOutline?.clearTargets(semanticOutlineHoverOwnerRef.current);
   }, [getMeshVisibility, restoreHighlightedMeshSnapshot, semanticOutline]);
 
   useEffect(() => {
@@ -454,7 +468,12 @@ export function useHighlightManager({
   }, [revertAllHighlights, robot, robotVersion]);
 
   useEffect(
-    () => () => semanticOutline?.clearTargets(semanticOutlineOwnerRef.current),
+    () => () => {
+      semanticOutlineTargetsRef.current.hover.clear();
+      semanticOutlineTargetsRef.current.selection.clear();
+      semanticOutline?.clearTargets(semanticOutlineOwnerRef.current);
+      semanticOutline?.clearTargets(semanticOutlineHoverOwnerRef.current);
+    },
     [semanticOutline],
   );
 
@@ -514,9 +533,45 @@ export function useHighlightManager({
           }
         }
 
-        // OPTIMIZED: Use Map-based revert instead of traversing
+        // OPTIMIZED: Use Map-based revert instead of traversing.
+        // When a link name is provided, only revert meshes belonging to that
+        // link so the selection highlight (and highlights on other links) are
+        // preserved.  Falling back to revertAllHighlights keeps the legacy
+        // safety net for callers that pass neither linkName nor targetSubType.
         if (revert) {
-          revertAllHighlights();
+          if (linkName && targetSubType) {
+            const mapKey = `${linkName}:${targetSubType}`;
+            const meshes = linkMeshMapRef.current.get(mapKey);
+            let outlineTargetsChanged = false;
+            if (meshes && meshes.length > 0) {
+              for (let i = 0; i < meshes.length; i++) {
+                const mesh = meshes[i];
+                if (mesh.userData?.isGizmo) continue;
+                outlineTargetsChanged =
+                  semanticOutlineTargetsRef.current[intent].delete(mesh) ||
+                  outlineTargetsChanged;
+                const snapshot = highlightedMeshesRef.current.get(mesh);
+                if (!snapshot) continue;
+                const otherIntent: SemanticOutlineIntent =
+                  intent === 'hover' ? 'selection' : 'hover';
+                if (semanticOutlineTargetsRef.current[otherIntent].has(mesh)) {
+                  continue;
+                }
+                const shouldBeVisible = getMeshVisibility(mesh);
+                restoreHighlightedMeshSnapshot(mesh, snapshot, shouldBeVisible);
+                if (mesh.userData?.isCollisionMesh) {
+                  if (mesh.parent && (mesh.parent as any).isURDFCollider)
+                    mesh.parent.visible = shouldBeVisible;
+                }
+                highlightedMeshesRef.current.delete(mesh);
+              }
+            }
+            if (outlineTargetsChanged) {
+              syncSemanticOutline(intent);
+            }
+          } else {
+            revertAllHighlights();
+          }
           return;
         }
 
@@ -612,6 +667,8 @@ export function useHighlightManager({
       getCollisionGeometryByIndex,
       getMeshVisibility,
       applyHighlightToMesh,
+      restoreHighlightedMeshSnapshot,
+      syncSemanticOutline,
     ],
   );
 
