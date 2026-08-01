@@ -4,6 +4,7 @@ import * as THREE from 'three';
 
 import {
   DEFAULT_WORKSPACE_ORBIT_CLIPPING,
+  syncWorkspaceClipPlanes,
   syncWorkspacePerspectiveClipPlanes,
 } from './workspaceOrbitClipping.ts';
 
@@ -58,6 +59,25 @@ test('syncWorkspacePerspectiveClipPlanes keeps shallow zoom depth ranges tight',
   );
 });
 
+test('syncWorkspacePerspectiveClipPlanes keeps close-inspection targets beyond the near plane', () => {
+  const camera = new THREE.PerspectiveCamera(60, 1, 5, 50);
+  camera.position.set(DEFAULT_WORKSPACE_ORBIT_CLIPPING.minDistance, 0, 0);
+
+  const controls = {
+    target: new THREE.Vector3(0, 0, 0),
+  };
+
+  syncWorkspacePerspectiveClipPlanes(camera, controls);
+
+  const targetDistance = camera.position.distanceTo(controls.target);
+  assert.ok(camera.near < targetDistance);
+  assert.equal(
+    camera.near,
+    DEFAULT_WORKSPACE_ORBIT_CLIPPING.minDistance * 0.1,
+  );
+  assert.equal(camera.far, DEFAULT_WORKSPACE_ORBIT_CLIPPING.minFar);
+});
+
 test('syncWorkspacePerspectiveClipPlanes keeps zoomed-out depth precision usable', () => {
   const camera = new THREE.PerspectiveCamera(60, 1, 5, 50);
   camera.position.set(2, -2, 2);
@@ -88,6 +108,26 @@ test('syncWorkspacePerspectiveClipPlanes leaves orthographic cameras untouched',
   assert.equal(changed, false);
   assert.equal(camera.near, 0.5);
   assert.equal(camera.far, 500);
+});
+
+test('syncWorkspaceClipPlanes keeps orthographic close-inspection targets beyond the near plane', () => {
+  const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 5, 50);
+  camera.position.set(DEFAULT_WORKSPACE_ORBIT_CLIPPING.minDistance, 0, 0);
+
+  const controls = {
+    target: new THREE.Vector3(0, 0, 0),
+  };
+
+  const changed = syncWorkspaceClipPlanes(camera, controls);
+
+  const targetDistance = camera.position.distanceTo(controls.target);
+  assert.equal(changed, true);
+  assert.ok(camera.near < targetDistance);
+  assert.equal(
+    camera.near,
+    DEFAULT_WORKSPACE_ORBIT_CLIPPING.minDistance * 0.1,
+  );
+  assert.equal(camera.far, DEFAULT_WORKSPACE_ORBIT_CLIPPING.minFar);
 });
 
 test('syncWorkspacePerspectiveClipPlanes limits the far plane to the visible scene bounds', () => {

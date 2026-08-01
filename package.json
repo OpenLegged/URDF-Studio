@@ -48,6 +48,7 @@
     "mjcf:compare": "npx tsx scripts/test/truth/validate_mujoco_all_exports.ts --format mjcf",
     "sdf:compare": "esbuild scripts/test/truth/validate_sdf_cli_truth.ts --bundle --platform=node --format=cjs --alias:@=./src --external:jsdom --outfile=tmp/sdf-cli-audit/run.cjs && node tmp/sdf-cli-audit/run.cjs",
     "regression:shadow-hand-hover": "node scripts/test/browser/run_shadow_hand_hover_regression.mjs",
+    "test:browser:hover-press": "node scripts/test/browser/test_hover_press.mjs",
     "generate": "npm run ai-prompts:generate",
     "generate:check": "node scripts/generate/generate_ai_prompt_templates.mjs --check",
     "build:with-generate": "npm run generate && npm run build",

@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { JSDOM } from 'jsdom';
 
 type UIStoreModule = typeof import('./uiStore.ts');
-const UI_STORE_PERSIST_VERSION = 21;
+const UI_STORE_PERSIST_VERSION = 22;
 
 function installDom() {
   const dom = new JSDOM('<!doctype html><html><body></body></html>', {
@@ -79,6 +79,7 @@ test('view options restore persisted world-origin axes and usage-guide preferenc
       showCollision: false,
       showUsageGuide: false,
       modelOpacity: 0.42,
+      renderQuality: 'balanced',
     },
   });
 
@@ -87,6 +88,7 @@ test('view options restore persisted world-origin axes and usage-guide preferenc
   assert.equal(state.viewOptions.showMjcfWorldLink, true);
   assert.equal(state.viewOptions.showUsageGuide, false);
   assert.equal(state.viewOptions.modelOpacity, 0.42);
+  assert.equal(state.viewOptions.renderQuality, 'balanced');
 
   dom.window.close();
 });
@@ -97,6 +99,7 @@ test('MJCF world visibility defaults to visible for fresh sessions', async () =>
   const state = useUIStore.getState();
   assert.equal(state.viewOptions.showMjcfWorldLink, true);
   assert.equal(state.viewOptions.showIkHandles, false);
+  assert.equal(state.viewOptions.renderQuality, 'high');
   assert.equal(state.panelLayout.treePanelHeightMode, 'balanced');
 
   dom.window.close();
@@ -276,6 +279,7 @@ test('setViewOption persists world-origin axes and usage-guide preferences', asy
   state.setViewOption('showMjcfWorldLink', true);
   state.setViewOption('showUsageGuide', false);
   state.setViewOption('modelOpacity', 0.42);
+  state.setViewOption('renderQuality', 'ultra');
 
   const raw = dom.window.localStorage.getItem('urdf-studio-ui');
   assert.ok(raw, 'persisted ui store payload should be written');
@@ -287,6 +291,7 @@ test('setViewOption persists world-origin axes and usage-guide preferences', asy
         showMjcfWorldLink?: boolean;
         showUsageGuide?: boolean;
         modelOpacity?: number;
+        renderQuality?: string;
       };
     };
   };
@@ -295,6 +300,31 @@ test('setViewOption persists world-origin axes and usage-guide preferences', asy
   assert.equal(persisted.state?.viewOptions?.showMjcfWorldLink, true);
   assert.equal(persisted.state?.viewOptions?.showUsageGuide, false);
   assert.equal(persisted.state?.viewOptions?.modelOpacity, 0.42);
+  assert.equal(persisted.state?.viewOptions?.renderQuality, 'ultra');
+
+  dom.window.close();
+});
+
+test('legacy and malformed render quality preferences migrate to the high default', async () => {
+  const { dom, useUIStore } = await loadUIStore(
+    {
+      viewOptions: {
+        renderQuality: 'unsupported',
+      },
+    },
+    21,
+  );
+
+  assert.equal(useUIStore.getState().viewOptions.renderQuality, 'high');
+
+  const raw = dom.window.localStorage.getItem('urdf-studio-ui');
+  assert.ok(raw, 'migrated ui store payload should be written');
+  const persisted = JSON.parse(raw) as {
+    state?: { viewOptions?: { renderQuality?: string } };
+    version?: number;
+  };
+  assert.equal(persisted.version, UI_STORE_PERSIST_VERSION);
+  assert.equal(persisted.state?.viewOptions?.renderQuality, 'high');
 
   dom.window.close();
 });

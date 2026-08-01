@@ -59,7 +59,10 @@ export function InspectionReportTemplate({
     <div id="inspection-report-pdf" style={styles.container}>
       {/* Header */}
       <div style={styles.header}>
-        <h1 style={styles.title}>{t.inspectionReportTitle}</h1>
+        <div style={styles.headerBrand}>
+          <img src="/logos/logo.png" alt="URDF Studio" style={styles.logo} />
+          <h1 style={styles.title}>{t.inspectionReportTitle}</h1>
+        </div>
         <div style={styles.headerInfo}>
           <div style={styles.infoRow}>
             <span style={styles.infoLabel}>{t.robotName}:</span>
@@ -73,7 +76,7 @@ export function InspectionReportTemplate({
       </div>
 
       {/* Score Section */}
-      <div style={styles.scoreSection}>
+      <div data-pdf-keep-together style={styles.scoreSection}>
         <div style={styles.scoreRow}>
           <span style={styles.scoreLabel}>{t.overallScore}:</span>
           <span style={styles.scoreValue}>
@@ -95,7 +98,7 @@ export function InspectionReportTemplate({
       </div>
 
       {/* Summary */}
-      <div style={styles.section}>
+      <div data-pdf-keep-together style={styles.section}>
         <h2 style={styles.sectionTitle}>{t.inspectionSummary}</h2>
         <p style={styles.summaryText}>{inspectionReport.summary}</p>
 
@@ -120,7 +123,7 @@ export function InspectionReportTemplate({
         const profileName = profileLabels[profileId] || profileId;
 
         return (
-          <div key={profileId} style={styles.section}>
+          <div key={profileId} data-pdf-keep-together style={styles.section}>
             <h2 style={styles.sectionTitle}>
               {profileName} ({profileScore.toFixed(1)}/10)
             </h2>
@@ -133,7 +136,7 @@ export function InspectionReportTemplate({
                 const icon = issue.type === 'error' ? '✗' : issue.type === 'warning' ? '⚠' : 'ℹ';
 
                 return (
-                  <div key={idx} style={styles.issueCard}>
+                  <div key={idx} data-pdf-keep-together style={styles.issueCard}>
                     <div style={styles.issueHeader}>
                       <span style={{ ...styles.issueIcon, color: getScoreColor(issueScore, 10) }}>
                         {icon}
@@ -170,13 +173,11 @@ const PDF_COLORS = {
   borderLight: '#e5e7eb',
   borderMedium: '#d1d5db',
   bgLight: '#f9fafb',
-  bgMuted: '#eef2f7',
   success: '#22c55e',
   successSoft: '#f0fdf4',
   successBorder: '#bbf7d0',
   warning: '#eab308',
   danger: '#ef4444',
-  white: '#ffffff',
 };
 
 // Styles for PDF template - inline styles for proper print rendering
@@ -201,9 +202,24 @@ const styles: Record<string, React.CSSProperties> = {
   title: {
     fontSize: '24px',
     fontWeight: '700',
+    lineHeight: 1,
     color: PDF_COLORS.textPrimary,
-    margin: '0 0 15px 0',
-    textAlign: 'center' as const,
+    margin: 0,
+  },
+
+  headerBrand: {
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: '12px',
+    marginBottom: '18px',
+  },
+
+  logo: {
+    width: '36px',
+    height: '36px',
+    objectFit: 'contain' as const,
+    transform: 'translateY(4px)',
   },
 
   headerInfo: {
@@ -323,24 +339,21 @@ const styles: Record<string, React.CSSProperties> = {
 
   evidenceMetrics: {
     display: 'flex',
-    flexWrap: 'wrap' as const,
-    gap: '8px',
+    flexDirection: 'column' as const,
+    gap: '4px',
   },
 
   evidenceMetric: {
     display: 'flex',
-    alignItems: 'center',
-    gap: '6px',
-    padding: '6px 10px',
-    borderRadius: '999px',
-    border: `1px solid ${PDF_COLORS.borderMedium}`,
-    backgroundColor: PDF_COLORS.white,
+    gap: '8px',
+    lineHeight: 1.6,
   },
 
   evidenceMetricLabel: {
     fontSize: '11px',
     fontWeight: '600',
     color: PDF_COLORS.textMuted,
+    minWidth: '110px',
   },
 
   evidenceMetricValue: {
@@ -415,15 +428,10 @@ const styles: Record<string, React.CSSProperties> = {
   },
 
   issueProfile: {
-    display: 'inline-block',
     margin: '0 0 8px 0',
-    padding: '2px 6px',
-    borderRadius: '5px',
-    border: `1px solid ${PDF_COLORS.borderMedium}`,
-    backgroundColor: PDF_COLORS.bgMuted,
     fontSize: '11px',
-    fontWeight: '600',
-    color: PDF_COLORS.textSecondary,
+    color: PDF_COLORS.textMuted,
+    overflowWrap: 'anywhere' as const,
   },
 
   footer: {

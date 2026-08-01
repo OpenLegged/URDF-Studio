@@ -45,6 +45,7 @@ import {
   MAX_CODE_EDITOR_OPACITY,
   type CodeEditorFontFamily,
   type NavigationSensitivity,
+  type ViewerRenderQuality,
 } from '@/store';
 import { SettingsAboutPane } from './settings/SettingsAboutPane';
 
@@ -392,6 +393,7 @@ export function SettingsModal() {
     showMjcfWorldGeometry,
     showUsageGuide,
     cameraProjection,
+    renderQuality,
     setViewOption,
     fontSize,
     setFontSize,
@@ -421,6 +423,7 @@ export function SettingsModal() {
       showMjcfWorldGeometry: state.viewOptions.showMjcfWorldLink,
       showUsageGuide: state.viewOptions.showUsageGuide,
       cameraProjection: state.viewOptions.cameraProjection,
+      renderQuality: state.viewOptions.renderQuality,
       setViewOption: state.setViewOption,
       fontSize: state.fontSize,
       setFontSize: state.setFontSize,
@@ -707,6 +710,26 @@ export function SettingsModal() {
               icon={<Monitor className="h-4 w-4" strokeWidth={SETTINGS_ICON_STROKE_WIDTH} />}
               title={t.view}
             >
+              <SettingsRow stacked label={t.renderQuality}>
+                <div data-testid="settings-render-quality">
+                  <PanelSegmentedControl
+                    options={[
+                      { value: 'performance', label: t.renderQualityPerformance },
+                      { value: 'balanced', label: t.renderQualityBalanced },
+                      { value: 'high', label: t.renderQualityHigh },
+                      { value: 'ultra', label: t.renderQualityUltra },
+                    ]}
+                    value={renderQuality}
+                    onChange={(value) =>
+                      setViewOption('renderQuality', value as ViewerRenderQuality)
+                    }
+                    size="xs"
+                    stretch
+                    className="w-full"
+                    ariaLabel={t.renderQuality}
+                  />
+                </div>
+              </SettingsRow>
               <ToggleRow
                 label={t.showWorldOriginAxes}
                 checked={showWorldOriginAxes}

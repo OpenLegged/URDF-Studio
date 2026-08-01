@@ -91,7 +91,7 @@ function getTransformScaleFromMatrixValues(values: number[] | null): PrimitiveSc
   return dimensions;
 }
 
-function getDescriptorTransformScale(
+export function getUsdDescriptorTransformScale(
   descriptor: UsdSceneMeshDescriptor,
   snapshot: UsdSceneSnapshot | null | undefined,
 ): PrimitiveScale | null {
@@ -189,7 +189,7 @@ export function resolveUsdPrimitiveGeometryFromDescriptor(
   const radius = normalizeFinitePositiveNumber(descriptor.radius);
   const height = normalizeFinitePositiveNumber(descriptor.height);
   const axis = getUsdDescriptorAxis(descriptor);
-  const transformScale = getDescriptorTransformScale(descriptor, snapshot);
+  const transformScale = getUsdDescriptorTransformScale(descriptor, snapshot);
   const nonIdentityTransformScale = hasNonIdentityScale(transformScale) ? transformScale : null;
   const scaledExtentDimensions = extentDimensions && nonIdentityTransformScale
     ? [

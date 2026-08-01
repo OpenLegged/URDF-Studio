@@ -465,7 +465,7 @@ test('inspection report stays available after closing and reopening the modal', 
   }
 });
 
-test('inspection report footer uses regenerate confirmation instead of a back button', async () => {
+test('inspection report footer renders save and regenerate actions', async () => {
   const dom = installDom();
   const container = dom.window.document.getElementById('root');
   assert.ok(container, 'root container should exist');
@@ -514,6 +514,7 @@ test('inspection report footer uses regenerate confirmation instead of a back bu
 
     const regenerateButton = getButtonByText(t.retryLastResponse);
     assert.ok(regenerateButton, 'expected the regenerate button to render in the report footer');
+    assert.ok(getButtonByText(t.saveReport), 'expected the save report button in the report footer');
 
     await act(async () => {
       regenerateButton!.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
@@ -545,8 +546,8 @@ test('inspection report footer uses regenerate confirmation instead of a back bu
     );
     assert.equal(
       dialogButtons.some((button) => button.textContent?.trim() === t.saveReport),
-      true,
-      'expected confirmation dialog to render the save report action',
+      false,
+      'expected the save report action to stay in the report footer',
     );
     assert.equal(
       dialogButtons.some((button) => button.textContent?.trim() === t.retryLastResponse),
@@ -566,7 +567,7 @@ test('inspection report footer uses regenerate confirmation instead of a back bu
   }
 });
 
-test('saving the report from regenerate confirmation returns to the inspection result view', async () => {
+test('saving the report from the report footer keeps the inspection result visible', async () => {
   const dom = installDom();
   const container = dom.window.document.getElementById('root');
   assert.ok(container, 'root container should exist');
@@ -609,23 +610,11 @@ test('saving the report from regenerate confirmation returns to the inspection r
       });
     });
 
-    const regenerateButton = getButtonByText(t.retryLastResponse);
-    assert.ok(regenerateButton, 'expected the regenerate button to render in the report footer');
+    const saveReportButton = getButtonByText(t.saveReport);
+    assert.ok(saveReportButton, 'expected the report footer to render the save report action');
 
     await act(async () => {
-      regenerateButton!.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
-    });
-
-    const confirmDialog = dom.window.document.querySelector('[role="dialog"][aria-modal="true"]');
-    assert.ok(confirmDialog, 'expected regenerate confirmation dialog to open');
-
-    const saveReportButton = Array.from(confirmDialog.querySelectorAll('button')).find(
-      (button) => button.textContent?.trim() === t.saveReport,
-    );
-    assert.ok(saveReportButton, 'expected confirmation dialog to render the save report action');
-
-    await act(async () => {
-      saveReportButton!.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
+      saveReportButton.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
       await new Promise((resolve) => {
         setTimeout(resolve, 80);
       });
@@ -635,7 +624,7 @@ test('saving the report from regenerate confirmation returns to the inspection r
     assert.equal(
       dom.window.document.querySelector('[role="dialog"][aria-modal="true"]'),
       null,
-      'expected the confirmation dialog to close after saving the report',
+      'expected saving from the footer not to open the regenerate confirmation',
     );
     assert.ok(
       getButtonByText(t.discussReportWithAI),

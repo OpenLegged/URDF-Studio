@@ -7,6 +7,7 @@ import {
   shouldUseIndeterminateStreamingMeshProgress,
 } from '@/shared/components/3d';
 import { requestShadowMapRefresh } from '@/shared/components/3d/scene/shadowMapRefresh';
+import { VIEWER_RENDER_QUALITY_PROFILES } from '@/shared/utils/viewerRenderQuality';
 import {
   resolveViewerJointAngleValue,
   resolveViewerJointKey,
@@ -256,6 +257,8 @@ export const RobotModel: React.FC<RobotModelProps> = memo(
     const snapshotRenderActive = useSnapshotRenderActive();
     const showMjcfWorldLink = useUIStore((state) => state.viewOptions.showMjcfWorldLink);
     const cameraProjection = useUIStore((state) => state.viewOptions.cameraProjection);
+    const renderQuality = useUIStore((state) => state.viewOptions.renderQuality);
+    const renderQualityProfile = VIEWER_RENDER_QUALITY_PROFILES[renderQuality];
     const setHoverFrozen = useSelectionStore((state) => state.setHoverFrozen);
     const hoverFreezeOwner = useRef<HoverFreezeOwner>(Symbol('robot-model')).current;
     const setOwnedHoverFrozen = useCallback(
@@ -401,6 +404,9 @@ export const RobotModel: React.FC<RobotModelProps> = memo(
       robotLinks,
       robotJoints,
       robotData: backendRobotData,
+      primitiveGeometryDetail: renderQualityProfile.primitiveGeometryDetail,
+      textureAnisotropy: renderQualityProfile.textureAnisotropy,
+      materialDithering: renderQualityProfile.materialDithering,
       initialJointAngles,
       onRobotLoaded,
       onDocumentLoadEvent,

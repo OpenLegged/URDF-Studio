@@ -139,8 +139,25 @@ export function projectWorkspaceSelectionToRenderer(
   }
 
   const { entity } = selection;
-  if (entity.type === 'assembly' || entity.type === 'component') {
+  if (entity.type === 'assembly') {
     return EMPTY_RENDERER_SELECTION;
+  }
+
+  if (entity.type === 'component') {
+    const rootTarget = projection.componentRootTargets.get(entity.componentId);
+    if (!rootTarget) {
+      return EMPTY_RENDERER_SELECTION;
+    }
+    const linkRef: EntityRef = {
+      type: 'link',
+      componentId: entity.componentId,
+      entityId: rootTarget.rootLinkId,
+    };
+    const linkId = projection.entityRefKeyToGlobal.get(entityRefKey(linkRef));
+    if (!linkId) {
+      return EMPTY_RENDERER_SELECTION;
+    }
+    return { type: 'link', id: linkId };
   }
 
   const id = projection.entityRefKeyToGlobal.get(entityRefKey(entity));

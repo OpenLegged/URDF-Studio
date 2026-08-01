@@ -11,6 +11,7 @@ import {
 import type { ViewerRobotDataResolution } from './viewerRobotData';
 import { resolveUsdDescriptorTargetLinkPath } from './usdDescriptorLinkResolution';
 import { shouldUseUsdCollisionVisualProxy } from './usdCollisionVisualProxy';
+import { isUsdGenericSceneSnapshot } from './usdGenericScenePolicy';
 import { resolveUsdPrimitiveGeometryFromDescriptor } from './usdPrimitiveGeometry';
 import {
   createPlaceholderVisual,
@@ -94,6 +95,7 @@ export function adaptUsdViewerSnapshotToRobotData(
   let meshCountsByLinkPath = deriveMeshCountsByLinkPath(snapshot, linkPaths);
   Object.keys(meshCountsByLinkPath).forEach((path) => addLinkPath(path));
   const normalizedDefaultPrimPath = normalizeUsdPath(snapshot.stage?.defaultPrimPath);
+  const isGenericScene = isUsdGenericSceneSnapshot(snapshot);
   const hasInternalMeshLibraryPath = Array.from(linkPaths).some((path) =>
     isUsdInternalMeshLibraryPath(path),
   );
@@ -102,9 +104,12 @@ export function adaptUsdViewerSnapshotToRobotData(
     (hasInternalMeshLibraryPath &&
       Boolean(normalizedDefaultPrimPath) &&
       !isUsdInternalMeshLibraryPath(normalizedDefaultPrimPath));
-  const effectiveSourceLinkPaths = shouldOmitInternalMeshLibraryPaths
-    ? new Set(Array.from(linkPaths).filter((path) => !isUsdInternalMeshLibraryPath(path)))
-    : new Set(linkPaths);
+  const effectiveSourceLinkPaths =
+    isGenericScene && normalizedDefaultPrimPath
+      ? new Set([normalizedDefaultPrimPath])
+      : shouldOmitInternalMeshLibraryPaths
+        ? new Set(Array.from(linkPaths).filter((path) => !isUsdInternalMeshLibraryPath(path)))
+        : new Set(linkPaths);
   if (
     shouldOmitInternalMeshLibraryPaths &&
     effectiveSourceLinkPaths.size === 0 &&
@@ -112,23 +117,30 @@ export function adaptUsdViewerSnapshotToRobotData(
   ) {
     effectiveSourceLinkPaths.add(normalizedDefaultPrimPath);
   }
-  const effectiveSourceLinkParentPairs = shouldOmitInternalMeshLibraryPaths
-    ? linkParentPairs.filter(
-        ([childPath, parentPath]) =>
-          !isUsdInternalMeshLibraryPath(childPath) && !isUsdInternalMeshLibraryPath(parentPath),
-      )
-    : linkParentPairs;
-  const effectiveJointCatalogEntries = shouldOmitInternalMeshLibraryPaths
-    ? jointCatalogEntries.filter(
-        (entry) =>
-          !isUsdInternalMeshLibraryPath(entry.linkPath) &&
-          !isUsdInternalMeshLibraryPath(entry.childLinkPath) &&
-          !isUsdInternalMeshLibraryPath(entry.parentLinkPath),
-      )
-    : jointCatalogEntries;
-  const effectiveSourceRootLinkPaths = shouldOmitInternalMeshLibraryPaths
-    ? rootLinkPaths.filter((path) => !isUsdInternalMeshLibraryPath(path))
-    : rootLinkPaths;
+  const effectiveSourceLinkParentPairs = isGenericScene
+    ? []
+    : shouldOmitInternalMeshLibraryPaths
+      ? linkParentPairs.filter(
+          ([childPath, parentPath]) =>
+            !isUsdInternalMeshLibraryPath(childPath) && !isUsdInternalMeshLibraryPath(parentPath),
+        )
+      : linkParentPairs;
+  const effectiveJointCatalogEntries = isGenericScene
+    ? []
+    : shouldOmitInternalMeshLibraryPaths
+      ? jointCatalogEntries.filter(
+          (entry) =>
+            !isUsdInternalMeshLibraryPath(entry.linkPath) &&
+            !isUsdInternalMeshLibraryPath(entry.childLinkPath) &&
+            !isUsdInternalMeshLibraryPath(entry.parentLinkPath),
+        )
+      : jointCatalogEntries;
+  const effectiveSourceRootLinkPaths =
+    isGenericScene && normalizedDefaultPrimPath
+      ? [normalizedDefaultPrimPath]
+      : shouldOmitInternalMeshLibraryPaths
+        ? rootLinkPaths.filter((path) => !isUsdInternalMeshLibraryPath(path))
+        : rootLinkPaths;
   if (
     shouldOmitInternalMeshLibraryPaths &&
     effectiveSourceRootLinkPaths.length === 0 &&
@@ -143,6 +155,11 @@ export function adaptUsdViewerSnapshotToRobotData(
         ([linkPath]) => !isUsdInternalMeshLibraryPath(linkPath),
       ),
     );
+  }
+  if (isGenericScene && normalizedDefaultPrimPath) {
+    meshCountsByLinkPath = {
+      [normalizedDefaultPrimPath]: meshCountsByLinkPath[normalizedDefaultPrimPath] || {},
+    };
   }
 
   const hierarchyFallback = buildMeshOnlyHierarchyFallback({

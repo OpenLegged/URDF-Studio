@@ -784,7 +784,8 @@ export function InspectionReportView({
                                   <div className="min-w-0 flex-1 p-4">
                                     <div className="flex gap-3">
                                       <div
-                                        className={`shrink-0 rounded-lg border p-2 ${meta.iconClass}`}
+                                        data-inspection-report-issue-icon
+                                        className={`flex h-9 w-9 shrink-0 self-start items-center justify-center rounded-lg border ${meta.iconClass}`}
                                       >
                                         <Icon className="h-4 w-4" />
                                       </div>

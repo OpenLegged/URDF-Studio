@@ -1,6 +1,13 @@
 import type { RefObject } from 'react';
 import * as THREE from 'three';
-import { URDFCollider, URDFVisual } from '@/core/parsers/urdf/loader';
+import {
+  createRobotCapsuleGeometry,
+  createRobotCylinderGeometry,
+  createRobotSphereGeometry,
+  type RobotPrimitiveGeometryDetail,
+  URDFCollider,
+  URDFVisual,
+} from '@/core/parsers/urdf/loader';
 import {
   createLoadingManager,
   createMeshLoader,
@@ -50,8 +57,27 @@ import {
   updateVisualMaterialPalette,
   updateVisualMaterial,
 } from './robotLoaderPatchUtils';
-import { applyURDFMaterials, collectURDFMaterialsFromVisualGeometry } from './urdfMaterials';
+import {
+  applyURDFMaterials,
+  applyURDFMaterialTextures,
+  collectURDFMaterialsFromVisualGeometry,
+} from './urdfMaterials';
 import { getSyntheticGeomParentName, resolveRuntimeGeometryRoot } from './runtimeGeometrySelection';
+
+/**
+ * Narrow a geometry to just its first authored material so the single-override resolver
+ * accepts it. That resolver bails out on multi-material palettes by design; this is the
+ * explicit opt-in for the case where the palette turned out not to be applicable.
+ */
+function toPrimaryAuthoredMaterialGeometry(
+  geometry: Pick<LinkGeometry, 'color' | 'authoredMaterials'>,
+): Pick<LinkGeometry, 'color' | 'authoredMaterials'> {
+  const primaryAuthoredMaterial = geometry.authoredMaterials?.[0];
+  return {
+    color: geometry.color,
+    authoredMaterials: primaryAuthoredMaterial ? [primaryAuthoredMaterial] : [],
+  };
+}
 
 const PATCHABLE_VISUAL_MATERIAL_GROUP_GEOMETRY_TYPES = new Set<GeometryType>([
   GeometryType.MESH,
@@ -78,6 +104,7 @@ interface PatchCategoryOptions {
   invalidate: () => void;
   isPatchTargetValid?: () => boolean;
   targetGroup?: THREE.Object3D;
+  primitiveGeometryDetail?: RobotPrimitiveGeometryDetail;
 }
 
 function applyMeshScaleToGroup(group: THREE.Object3D, geometry: LinkGeometry): void {
@@ -114,6 +141,7 @@ function patchGeometryCategory({
   invalidate,
   isPatchTargetValid,
   targetGroup: explicitTargetGroup,
+  primitiveGeometryDetail,
 }: PatchCategoryOptions): void {
   const isCollision = category === 'collision';
 
@@ -141,6 +169,19 @@ function patchGeometryCategory({
 
   const patchToken = ((targetGroup.userData.__patchToken as number) || 0) + 1;
   targetGroup.userData.__patchToken = patchToken;
+  const createPatchLoadingManager = (workingDir = sourceFileDir ?? '') => {
+    const manager = createLoadingManager(assets, workingDir);
+    manager.onLoad = () => {
+      if (
+        targetGroup!.userData.__patchToken !== patchToken ||
+        (isPatchTargetValid && !isPatchTargetValid())
+      ) {
+        return;
+      }
+      invalidate();
+    };
+    return manager;
+  };
 
   const dims = geometry.dimensions || DEFAULT_VEC3;
   const visualColor = geometry.color || '#808080';
@@ -160,7 +201,7 @@ function patchGeometryCategory({
       : null;
   const textureManager =
     !isCollision && visualMaterialOverride?.texture
-      ? createLoadingManager(assets, sourceFileDir ?? '')
+      ? createPatchLoadingManager()
       : null;
   const applyPrimitiveVisualOverride = (mesh: THREE.Mesh) => {
     if (!isCollision && visualMaterialOverride) {
@@ -197,7 +238,7 @@ function patchGeometryCategory({
               boxFacePalette.map((entry) => entry.material),
               {
                 fallbackColor: geometry.color,
-                manager: createLoadingManager(assets, sourceFileDir ?? ''),
+                manager: createPatchLoadingManager(),
                 label: 'EditorViewer:patch-box-face-material',
               },
             )
@@ -245,9 +286,7 @@ function patchGeometryCategory({
         overlayMesh.renderOrder = 1;
         addPrimitive(overlayMesh);
 
-        const overlayLoader = new THREE.TextureLoader(
-          createLoadingManager(assets, sourceFileDir ?? ''),
-        );
+        const overlayLoader = new THREE.TextureLoader(createPatchLoadingManager());
         overlayLoader.load(
           overlayPass.texture,
           (texture) => {
@@ -268,7 +307,7 @@ function patchGeometryCategory({
     }
   } else if (geometry.type === GeometryType.SPHERE || geometry.type === GeometryType.ELLIPSOID) {
     const mesh = new THREE.Mesh(
-      new THREE.SphereGeometry(1, 30, 30),
+      createRobotSphereGeometry(primitiveGeometryDetail),
       isCollision ? collisionBaseMaterial : createVisualMaterial(),
     );
     const sx = dims.x || 0.1;
@@ -279,7 +318,7 @@ function patchGeometryCategory({
     applyPrimitiveVisualOverride(mesh);
   } else if (geometry.type === GeometryType.CYLINDER) {
     const mesh = new THREE.Mesh(
-      new THREE.CylinderGeometry(1, 1, 1, 30),
+      createRobotCylinderGeometry(primitiveGeometryDetail),
       isCollision ? collisionBaseMaterial : createVisualMaterial(),
     );
     mesh.scale.set(dims.x || 0.05, dims.y || 0.5, dims.z || dims.x || 0.05);
@@ -291,7 +330,7 @@ function patchGeometryCategory({
     const totalLength = Math.max(dims.y || 0.5, radius * 2);
     const bodyLength = Math.max(totalLength - 2 * radius, 0);
     const mesh = new THREE.Mesh(
-      new THREE.CapsuleGeometry(radius, bodyLength, 8, 16),
+      createRobotCapsuleGeometry(radius, bodyLength, primitiveGeometryDetail),
       isCollision ? collisionBaseMaterial : createVisualMaterial(),
     );
     mesh.rotation.set(Math.PI / 2, 0, 0);
@@ -306,7 +345,7 @@ function patchGeometryCategory({
     }
 
     const urdfDir = sourceFileDir ?? '';
-    const manager = textureManager ?? createLoadingManager(assets, urdfDir);
+    const manager = textureManager ?? createPatchLoadingManager(urdfDir);
     const meshLoader = createMeshLoader(assets, manager, urdfDir, {
       colladaRootNormalizationHints,
     });
@@ -331,8 +370,25 @@ function patchGeometryCategory({
       } else {
         markVisualObject(obj, linkName, geometry.color, showVisual);
         if (authoredMaterialPalette && authoredMaterialPalette.size > 1) {
-          applyURDFMaterials(obj, authoredMaterialPalette);
+          const paletteApplied = applyURDFMaterials(obj, authoredMaterialPalette);
           enhanceMaterials(obj);
+          if (paletteApplied) {
+            // Runs after enhanceMaterials because that pass clones materials and would
+            // drop a texture assigned before it.
+            applyURDFMaterialTextures(obj, authoredMaterialPalette, manager);
+          } else {
+            // The palette matches by material name, so it applies nothing when the mesh
+            // carries a loader-generated material instead of the authored slots. Falling
+            // back to the first authored material keeps that mesh textured instead of
+            // leaving it on the loader's untextured default.
+            const primaryMaterialOverride =
+              resolveVisualMaterialOverrideFromGeometry(
+                toPrimaryAuthoredMaterialGeometry(geometry),
+              );
+            if (primaryMaterialOverride) {
+              applyVisualMaterialOverrideToObject(obj, primaryMaterialOverride, manager);
+            }
+          }
         } else if (visualMaterialOverride) {
           applyVisualMaterialOverrideToObject(obj, visualMaterialOverride, manager);
         }
@@ -384,6 +440,7 @@ function patchVisualEntriesInPlace({
   linkMeshMapRef,
   invalidate,
   isPatchTargetValid,
+  primitiveGeometryDetail,
 }: {
   robotModel: THREE.Object3D;
   linkObject: THREE.Object3D;
@@ -398,6 +455,7 @@ function patchVisualEntriesInPlace({
   linkMeshMapRef: RefObject<Map<string, THREE.Mesh[]>>;
   invalidate: () => void;
   isPatchTargetValid?: () => boolean;
+  primitiveGeometryDetail?: RobotPrimitiveGeometryDetail;
 }): boolean {
   const previousEntries = getVisualGeometryEntries(previousLinkData);
   const nextEntries = getVisualGeometryEntries(nextLinkData);
@@ -437,6 +495,7 @@ function patchVisualEntriesInPlace({
         showCollision,
         invalidate,
         targetGroup: group,
+        primitiveGeometryDetail,
       })
     ) {
       continue;
@@ -457,6 +516,7 @@ function patchVisualEntriesInPlace({
       invalidate,
       isPatchTargetValid,
       targetGroup: group,
+      primitiveGeometryDetail,
     });
   }
 
@@ -487,6 +547,7 @@ function patchVisualEntriesInPlace({
         invalidate,
         isPatchTargetValid,
         targetGroup,
+        primitiveGeometryDetail,
       });
     });
     applied = true;
@@ -516,6 +577,7 @@ function patchCollisionEntriesInPlace({
   linkMeshMapRef,
   invalidate,
   isPatchTargetValid,
+  primitiveGeometryDetail,
 }: {
   robotModel: THREE.Object3D;
   linkObject: THREE.Object3D;
@@ -530,6 +592,7 @@ function patchCollisionEntriesInPlace({
   linkMeshMapRef: RefObject<Map<string, THREE.Mesh[]>>;
   invalidate: () => void;
   isPatchTargetValid?: () => boolean;
+  primitiveGeometryDetail?: RobotPrimitiveGeometryDetail;
 }): boolean {
   const previousEntries = getCollisionGeometryEntries(previousLinkData);
   const nextEntries = getCollisionGeometryEntries(nextLinkData);
@@ -552,7 +615,13 @@ function patchCollisionEntriesInPlace({
     }
 
     if (sameGeometry(previousEntry.geometry, nextEntry.geometry)) {
-      if (patchPrimitiveDimensionsInPlace(group, nextEntry.geometry)) {
+      if (
+        patchPrimitiveDimensionsInPlace(
+          group,
+          nextEntry.geometry,
+          primitiveGeometryDetail,
+        )
+      ) {
         applied = true;
       }
       continue;
@@ -572,6 +641,7 @@ function patchCollisionEntriesInPlace({
         showCollision,
         invalidate,
         targetGroup: group,
+        primitiveGeometryDetail,
       })
     ) {
       continue;
@@ -592,6 +662,7 @@ function patchCollisionEntriesInPlace({
       invalidate,
       isPatchTargetValid,
       targetGroup: group,
+      primitiveGeometryDetail,
     });
   }
 
@@ -622,6 +693,7 @@ function patchCollisionEntriesInPlace({
         invalidate,
         isPatchTargetValid,
         targetGroup,
+        primitiveGeometryDetail,
       });
     });
     applied = true;
@@ -742,6 +814,7 @@ function findFirstMeshInObject(object: THREE.Object3D): THREE.Mesh | null {
 function patchPrimitiveDimensionsInPlace(
   targetGroup: THREE.Object3D,
   geometry: LinkGeometry,
+  primitiveGeometryDetail?: RobotPrimitiveGeometryDetail,
 ): boolean {
   const mesh = findFirstMeshInObject(targetGroup);
   if (!mesh) return false;
@@ -785,7 +858,7 @@ function patchPrimitiveDimensionsInPlace(
         mesh.geometry.type !== 'CylinderGeometry'
       ) {
         const previousMeshGeometry = mesh.geometry;
-        mesh.geometry = new THREE.CylinderGeometry(1, 1, 1, 30);
+        mesh.geometry = createRobotCylinderGeometry(primitiveGeometryDetail);
         previousMeshGeometry?.dispose?.();
       }
       mesh.scale.set(dims.x || 0.05, dims.y || 0.5, dims.z || dims.x || 0.05);
@@ -796,7 +869,7 @@ function patchPrimitiveDimensionsInPlace(
       const totalLength = Math.max(dims.y || 0.5, radius * 2);
       const bodyLength = Math.max(totalLength - 2 * radius, 0);
       const previousMeshGeometry = mesh.geometry;
-      mesh.geometry = new THREE.CapsuleGeometry(radius, bodyLength, 8, 16);
+      mesh.geometry = createRobotCapsuleGeometry(radius, bodyLength, primitiveGeometryDetail);
       previousMeshGeometry?.dispose?.();
       mesh.scale.set(1, 1, 1);
       mesh.rotation.set(Math.PI / 2, 0, 0);
@@ -818,6 +891,7 @@ function patchGeometryGroupInPlace({
   showCollision,
   invalidate,
   targetGroup: explicitTargetGroup,
+  primitiveGeometryDetail,
 }: {
   robotModel: THREE.Object3D;
   linkObject: THREE.Object3D;
@@ -829,6 +903,7 @@ function patchGeometryGroupInPlace({
   showCollision: boolean;
   invalidate: () => void;
   targetGroup?: THREE.Object3D;
+  primitiveGeometryDetail?: RobotPrimitiveGeometryDetail;
 }): boolean {
   if (!previousGeometry || !geometry) return false;
   if (!canPatchGeometryInPlace(previousGeometry, geometry, category)) return false;
@@ -870,7 +945,10 @@ function patchGeometryGroupInPlace({
     });
   }
 
-  if (dimensionsChanged && !patchPrimitiveDimensionsInPlace(targetGroup, geometry)) {
+  if (
+    dimensionsChanged &&
+    !patchPrimitiveDimensionsInPlace(targetGroup, geometry, primitiveGeometryDetail)
+  ) {
     return false;
   }
 
@@ -986,6 +1064,7 @@ interface ApplyGeometryPatchOptions {
   linkMeshMapRef: RefObject<Map<string, THREE.Mesh[]>>;
   invalidate: () => void;
   isPatchTargetValid?: () => boolean;
+  primitiveGeometryDetail?: RobotPrimitiveGeometryDetail;
 }
 
 interface ApplyGeometryPatchesOptions extends Omit<ApplyGeometryPatchOptions, 'patch'> {
@@ -1096,6 +1175,14 @@ function getPatchRuntimeLinkName(patch: GeometryPatchCandidate): string {
   return patch.linkData.id || patch.previousLinkData.id || patch.linkName;
 }
 
+function getPatchRuntimeNames(patch: GeometryPatchCandidate) {
+  const linkRuntimeName = getPatchRuntimeLinkName(patch);
+  return {
+    linkRuntimeName,
+    linkDisplayName: patch.linkDisplayName || patch.linkData.name || linkRuntimeName,
+  };
+}
+
 export function applyGeometryPatchInPlace({
   robotModel,
   patch,
@@ -1107,9 +1194,9 @@ export function applyGeometryPatchInPlace({
   linkMeshMapRef,
   invalidate,
   isPatchTargetValid,
+  primitiveGeometryDetail,
 }: ApplyGeometryPatchOptions): boolean {
-  const linkRuntimeName = getPatchRuntimeLinkName(patch);
-  const linkDisplayName = patch.linkDisplayName || patch.linkData.name || linkRuntimeName;
+  const { linkRuntimeName, linkDisplayName } = getPatchRuntimeNames(patch);
   const resolvedPatchTarget = resolvePatchTarget(robotModel, linkRuntimeName);
   if (!resolvedPatchTarget) return false;
 
@@ -1149,6 +1236,7 @@ export function applyGeometryPatchInPlace({
         linkMeshMapRef,
         invalidate,
         isPatchTargetValid,
+        primitiveGeometryDetail,
       });
     }
 
@@ -1164,6 +1252,7 @@ export function applyGeometryPatchInPlace({
         showCollision,
         invalidate,
         targetGroup: visualTargetGroup,
+        primitiveGeometryDetail,
       });
 
       if (!visualPatched) {
@@ -1182,6 +1271,7 @@ export function applyGeometryPatchInPlace({
           invalidate,
           isPatchTargetValid,
           targetGroup: visualTargetGroup,
+          primitiveGeometryDetail,
         });
         visualPatched = true;
       }
@@ -1199,6 +1289,7 @@ export function applyGeometryPatchInPlace({
           showVisual,
           showCollision,
           invalidate,
+          primitiveGeometryDetail,
         })
       ) {
         patchGeometryCategory({
@@ -1215,6 +1306,7 @@ export function applyGeometryPatchInPlace({
           linkMeshMapRef,
           invalidate,
           isPatchTargetValid,
+          primitiveGeometryDetail,
         });
       }
     }
@@ -1238,6 +1330,7 @@ export function applyGeometryPatchInPlace({
         linkMeshMapRef,
         invalidate,
         isPatchTargetValid,
+        primitiveGeometryDetail,
       });
     }
 
@@ -1253,6 +1346,7 @@ export function applyGeometryPatchInPlace({
         showCollision,
         invalidate,
         targetGroup: collisionTargetGroup,
+        primitiveGeometryDetail,
       });
 
       if (!collisionPatched) {
@@ -1271,6 +1365,7 @@ export function applyGeometryPatchInPlace({
           invalidate,
           isPatchTargetValid,
           targetGroup: collisionTargetGroup,
+          primitiveGeometryDetail,
         });
         collisionPatched = true;
       }
@@ -1288,6 +1383,7 @@ export function applyGeometryPatchInPlace({
           showVisual,
           showCollision,
           invalidate,
+          primitiveGeometryDetail,
         })
       ) {
         patchGeometryCategory({
@@ -1304,6 +1400,7 @@ export function applyGeometryPatchInPlace({
           linkMeshMapRef,
           invalidate,
           isPatchTargetValid,
+          primitiveGeometryDetail,
         });
       }
     }

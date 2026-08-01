@@ -24,6 +24,7 @@ type ViewerSettingsTestViewOptions = {
   showCollision: boolean;
   modelOpacity: number;
   cameraProjection: 'perspective' | 'orthographic';
+  renderQuality: 'performance' | 'balanced' | 'high' | 'ultra';
 };
 
 const DEFAULT_VIEW_OPTIONS: ViewerSettingsTestViewOptions = {
@@ -38,6 +39,7 @@ const DEFAULT_VIEW_OPTIONS: ViewerSettingsTestViewOptions = {
   showCollision: false,
   modelOpacity: 1,
   cameraProjection: 'perspective',
+  renderQuality: 'high',
 };
 
 function installDom() {

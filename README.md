@@ -257,6 +257,7 @@ npm run sdf:compare                          # Compare SDF parsing against refer
 
 # Regression & Fixture Tests
 npm run regression:shadow-hand-hover         # Run shadow hand hover regression
+npm run test:browser:hover-press              # Run hover outline press-and-hold regression
 npm run test:fixtures:imports                # Validate import fixture matrix
 npm run test:fixtures:unitree-ros-urdfs      # Validate Unitree ROS URDFs
 npm run test:fixtures:unitree-usd            # Validate Unitree USD exports

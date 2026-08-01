@@ -18,12 +18,20 @@ export function shouldStartCanvasResizeFrameloop(isResizeFrameloopActive: boolea
   return !isResizeFrameloopActive;
 }
 
-export const CanvasResizeSync = ({ transitionMs = 260 }: { transitionMs?: number }) => {
+export const CanvasResizeSync = ({
+  transitionMs = 260,
+  targetFrameloop = 'demand',
+}: {
+  transitionMs?: number;
+  targetFrameloop?: 'always' | 'demand';
+}) => {
   const { gl, size, invalidate, setFrameloop } = useThree();
   const loopFrameRef = useRef<number | null>(null);
   const resizeWatchUntilRef = useRef(0);
   const restoreFrameLoopTimerRef = useRef<number | null>(null);
   const resizeFrameloopActiveRef = useRef(false);
+  const targetFrameloopRef = useRef(targetFrameloop);
+  targetFrameloopRef.current = targetFrameloop;
 
   const beginSmoothResize = useCallback(() => {
     if (shouldStartCanvasResizeFrameloop(resizeFrameloopActiveRef.current)) {
@@ -36,32 +44,42 @@ export const CanvasResizeSync = ({ transitionMs = 260 }: { transitionMs?: number
     }
     restoreFrameLoopTimerRef.current = window.setTimeout(() => {
       resizeFrameloopActiveRef.current = false;
-      setFrameloop('demand');
+      setFrameloop(targetFrameloopRef.current);
       invalidate();
       restoreFrameLoopTimerRef.current = null;
     }, transitionMs + 120);
     invalidate();
   }, [invalidate, setFrameloop, transitionMs]);
 
-  const ensureResizeWatch = useCallback((durationMs = transitionMs + 120) => {
-    const now = performance.now();
-    resizeWatchUntilRef.current = Math.max(resizeWatchUntilRef.current, now + durationMs);
-    if (loopFrameRef.current !== null) return;
+  const ensureResizeWatch = useCallback(
+    (durationMs = transitionMs + 120) => {
+      const now = performance.now();
+      resizeWatchUntilRef.current = Math.max(resizeWatchUntilRef.current, now + durationMs);
+      if (loopFrameRef.current !== null) return;
 
-    const loop = () => {
-      loopFrameRef.current = null;
-      invalidate();
-      if (performance.now() < resizeWatchUntilRef.current) {
-        loopFrameRef.current = requestAnimationFrame(loop);
-      }
-    };
+      const loop = () => {
+        loopFrameRef.current = null;
+        invalidate();
+        if (performance.now() < resizeWatchUntilRef.current) {
+          loopFrameRef.current = requestAnimationFrame(loop);
+        }
+      };
 
-    loopFrameRef.current = requestAnimationFrame(loop);
-  }, [invalidate, transitionMs]);
+      loopFrameRef.current = requestAnimationFrame(loop);
+    },
+    [invalidate, transitionMs],
+  );
 
   useEffect(() => {
     invalidate();
   }, [invalidate, size.height, size.width]);
+
+  useEffect(() => {
+    if (!resizeFrameloopActiveRef.current) {
+      setFrameloop(targetFrameloop);
+      invalidate();
+    }
+  }, [invalidate, setFrameloop, targetFrameloop]);
 
   useLayoutEffect(() => {
     const parent = gl.domElement.parentElement;
@@ -99,7 +117,7 @@ export const CanvasResizeSync = ({ transitionMs = 260 }: { transitionMs?: number
         restoreFrameLoopTimerRef.current = null;
       }
       resizeFrameloopActiveRef.current = false;
-      setFrameloop('demand');
+      setFrameloop(targetFrameloopRef.current);
     };
   }, [beginSmoothResize, ensureResizeWatch, gl, setFrameloop]);
 

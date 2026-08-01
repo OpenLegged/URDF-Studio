@@ -4,9 +4,9 @@ export const DEFAULT_WORKSPACE_ORBIT_CLIPPING = {
   minDistance: 0.002,
   // Keep the perspective depth range tighter so dense shells do not start
   // z-fighting and leaking bright internals at medium/far zoom levels.
-  // Paired with renderer-level logarithmicDepthBuffer, a 0.01 minimum near
-  // caps the near/far ratio at ~2000 so closely-stacked MJCF inner geoms
-  // (e.g. apptronik_apollo battery_mount inside torso_link shell) stay stable.
+  // Paired with renderer-level logarithmicDepthBuffer, the ordinary 0.01 near
+  // floor keeps enough precision for closely-stacked MJCF inner geoms. Close
+  // inspection relaxes this floor only before it would clip the orbit target.
   nearFactor: 0.01,
   minNear: 0.01,
   maxNear: 0.25,
@@ -63,6 +63,30 @@ function getMaxDistanceFromTargetToBounds(
 
 const _corner = new THREE.Vector3();
 
+type WorkspaceNearPlaneConfig = Required<
+  Omit<WorkspaceOrbitClippingOptions, 'sceneBounds'>
+>;
+
+function resolveWorkspaceNearPlane(
+  distance: number,
+  config: WorkspaceNearPlaneConfig,
+): number {
+  // Preserve the tighter depth range used at ordinary viewing distances, but
+  // keep the orbit target safely beyond the near plane during close inspection.
+  // Otherwise a small minDistance lets the camera move closer while the fixed
+  // 1 cm near floor clips the detail the user is trying to inspect.
+  const closeInspectionNearFloor = Math.max(
+    config.minDistance * 0.1,
+    distance * 0.1,
+  );
+  const adaptiveMinNear = Math.min(config.minNear, closeInspectionNearFloor);
+  return THREE.MathUtils.clamp(
+    distance * config.nearFactor,
+    adaptiveMinNear,
+    config.maxNear,
+  );
+}
+
 export function syncWorkspacePerspectiveClipPlanes(
   camera: THREE.Camera,
   controls: OrbitTargetLike,
@@ -81,11 +105,7 @@ export function syncWorkspacePerspectiveClipPlanes(
     camera.position.distanceTo(controls.target),
     config.minDistance,
   );
-  const nextNear = THREE.MathUtils.clamp(
-    distance * config.nearFactor,
-    config.minNear,
-    config.maxNear,
-  );
+  const nextNear = resolveWorkspaceNearPlane(distance, config);
   const distanceBasedFar = Math.max(
     nextNear + 10,
     THREE.MathUtils.clamp(
@@ -150,11 +170,7 @@ export function syncWorkspaceOrthographicClipPlanes(
     camera.position.distanceTo(controls.target),
     config.minDistance,
   );
-  const nextNear = THREE.MathUtils.clamp(
-    distance * config.nearFactor,
-    config.minNear,
-    config.maxNear,
-  );
+  const nextNear = resolveWorkspaceNearPlane(distance, config);
   const distanceBasedFar = Math.max(
     nextNear + 10,
     THREE.MathUtils.clamp(

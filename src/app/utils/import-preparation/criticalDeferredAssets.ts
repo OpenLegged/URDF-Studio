@@ -2,6 +2,11 @@ import type { RobotImportResult } from '@/core/parsers/importRobotFile';
 import { resolveImportedAssetPath, resolveMeshAssetUrl } from '@/core/parsers/meshPathUtils';
 import { validateMJCFImportExternalAssets } from '@/core/parsers/mjcf/mjcfImportValidation';
 import { resolveMJCFSource } from '@/core/parsers/mjcf/mjcfSourceResolver';
+import {
+  inferUsdBundleVirtualDirectory,
+  isUsdPathWithinBundleDirectory,
+  isUsdRuntimeTexturePath,
+} from '@/core/parsers/usd';
 import { normalizeLibraryPathKey } from '@/shared/utils/pathKeys';
 import { GeometryType, type RobotData, type RobotFile, type UrdfLink } from '@/types';
 
@@ -172,6 +177,19 @@ export function determineCriticalDeferredAssetNames(
   );
 
   if (criticalAssetNames.size > 0) {
+    return criticalAssetNames;
+  }
+
+  if (preferredFile?.format === 'usd') {
+    const bundleDirectory = inferUsdBundleVirtualDirectory(preferredFile.name);
+    deferredAssetFiles.forEach((file) => {
+      if (
+        isUsdRuntimeTexturePath(file.name)
+        && isUsdPathWithinBundleDirectory(file.name, bundleDirectory)
+      ) {
+        criticalAssetNames.add(file.name);
+      }
+    });
     return criticalAssetNames;
   }
 

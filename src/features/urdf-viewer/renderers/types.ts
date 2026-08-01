@@ -8,6 +8,7 @@
 
 import type * as THREE from 'three';
 import type { InteractionSelection, RobotData, RobotFile, UrdfJoint, UrdfLink } from '@/types';
+import type { RobotPrimitiveGeometryDetail } from '@/core/parsers/urdf/loader/primitiveGeometry';
 import type {
   ToolMode,
   ViewerHelperKind,
@@ -135,6 +136,12 @@ export interface RendererSceneProps {
   robotJoints?: Record<string, UrdfJoint>;
   /** Existing complete robot data (for formats with pre-resolved state) */
   robotData?: RobotData | null;
+  /** Tessellation used when constructing editable curved primitives */
+  primitiveGeometryDetail?: RobotPrimitiveGeometryDetail;
+  /** Texture sampling quality after clamping to renderer capabilities */
+  textureAnisotropy?: number;
+  /** Enables material dithering to reduce smooth-gradient banding */
+  materialDithering?: boolean;
   /** Initial joint angles */
   initialJointAngles?: Record<string, number>;
   /** Callback for document load events */

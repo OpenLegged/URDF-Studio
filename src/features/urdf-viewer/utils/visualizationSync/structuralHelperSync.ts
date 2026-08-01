@@ -582,6 +582,7 @@ export function syncLinkVisualColors({
     visualRoot.traverse((child: any) => {
       if (!child.isMesh || !child.userData.isVisualMesh) return;
       if (child.userData.hasVertexColors) return;
+      if (child.userData.__urdfHighlightSnapshot) return;
 
       const mat = child.material as THREE.MeshStandardMaterial | undefined;
       if (!mat?.color) return;

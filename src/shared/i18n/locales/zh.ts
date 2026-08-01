@@ -330,6 +330,11 @@ export const zh: TranslationKeys = {
   cameraProjectionPerspective: '透视',
   cameraProjectionOrthographic: '正交',
   cameraProjectionHint: '正交模式下点击坐标轴可获得标准三视图',
+  renderQuality: '3D 渲染画质',
+  renderQualityPerformance: '性能',
+  renderQualityBalanced: '均衡',
+  renderQualityHigh: '高',
+  renderQualityUltra: '超高',
   viewerNavigation: '视角导航',
   zoomSensitivity: '缩放灵敏度',
   rotateSensitivity: '旋转灵敏度',
@@ -440,9 +445,9 @@ export const zh: TranslationKeys = {
   inspectionSkipped: '未纳入',
   inspectionNoChecksSelected: '请至少选择 1 项检查后再运行。',
   inspectionNormalizedModel: '当前模型',
-  inspectionRegenerateConfirmTitle: '重新生成前先保存当前报告？',
+  inspectionRegenerateConfirmTitle: '确定重新生成？',
   inspectionRegenerateConfirmMessage:
-    '重新生成会关闭当前报告并返回常规模式/专业模式选择页。若需要保留这份报告，请先保存；保存后会留在当前结果页，你也可以直接选择重新生成并返回设置页重新运行审阅。',
+    '重新生成会关闭当前报告并返回常规模式/专业模式选择页，之后可重新设置检查项并运行审阅。',
   inspectionRecommendedPlan: '推荐方案',
   inspectionRecommendedPlanDescription:
     '系统会根据当前模型形态和源格式推荐本次审阅的 profile 范围。',

@@ -767,6 +767,7 @@ export function useHoverDetection({
         'all',
         false,
         interactionLayerPriority,
+        false,
       );
       const activeInteractionSubType = resolveTopLayerInteractionSubTypeFromHits({
         showVisual,
@@ -850,6 +851,7 @@ export function useHoverDetection({
       'all',
       false,
       interactionLayerPriority,
+      false,
     );
     const resolvedCandidates = (() => {
       const candidates: ResolvedHoverInteractionCandidate[] = [];
@@ -940,7 +942,19 @@ export function useHoverDetection({
       (newHoveredObjectIndex ?? null) !== previousHoveredObjectIndex ||
       nextHoveredSubType !== previousHoveredSubType
     ) {
-      if (hoveredLinkRef.current && hoveredLinkRef.current !== selection?.id) {
+      const sameLink = newHoveredLink === hoveredLinkRef.current;
+      const sameSubType = nextHoveredSubType === previousHoveredSubType;
+
+      // When the link and subType stay the same only the mesh within the link
+      // changed. Skip the clear so the selection highlight is never touched
+      // and the old mesh stays highlighted (the link is still hovered). For
+      // different links or subTypes, clear the previous hover so outlines
+      // do not leak.
+      if (
+        hoveredLinkRef.current &&
+        hoveredLinkRef.current !== selection?.id &&
+        (!sameLink || !sameSubType)
+      ) {
         clearHoverHighlight();
       }
 

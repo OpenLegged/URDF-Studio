@@ -1192,6 +1192,36 @@ def Xform "demo"
   assert.equal(result.deferredAssetFiles.length, 0);
 });
 
+test('prepareImportPayload keeps unrelated opaque USD package assets deferred', async () => {
+  const zip = new JSZip();
+  zip.file('lab/scene.usd', new Uint8Array([
+    80, 88, 82, 45, 85, 83, 68, 67, 0, 0, 0, 0,
+  ]));
+  zip.file('lab/textures/albedo.jpg', new Uint8Array([255, 216, 255, 217]));
+  zip.file('lab/point_cloud.ply', new Uint8Array([112, 108, 121, 10]));
+  zip.file('other/textures/unrelated.png', new Uint8Array([137, 80, 78, 71]));
+  const zipBytes = await zip.generateAsync({ type: 'uint8array' });
+
+  const result = await prepareImportPayload({
+    files: [
+      new File([zipBytes], 'opaque-usd-package.zip', {
+        type: 'application/zip',
+      }),
+    ],
+    existingPaths: [],
+  });
+
+  assert.equal(result.preferredFileName, 'lab/scene.usd');
+  assert.deepEqual(
+    result.assetFiles.map((file) => file.name),
+    ['lab/textures/albedo.jpg'],
+  );
+  assert.deepEqual(
+    result.deferredAssetFiles.map((file) => file.name).sort(),
+    ['lab/point_cloud.ply', 'other/textures/unrelated.png'],
+  );
+});
+
 test('prepareImportPayload keeps large USDA sidecars blob-backed instead of eagerly decoding them', async () => {
   const rootUsdText = `#usda 1.0
 (

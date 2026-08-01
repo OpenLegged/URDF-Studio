@@ -4,6 +4,7 @@ import { collectCameraFitSelection, fitCameraToSelection, scheduleCameraRefit } 
 import { getUsdConfigurationMirrorPlan, getUsdDependencyExtension, getUsdDependencySuffixesForStage, inferDependencyStemForUsdPath } from "./usd-dependency-preload.js";
 import { getDirectoryFromVirtualPath, isLikelyNonRenderableUsdConfig, normalizeUsdPath, parseBooleanFlag } from "./path-utils.js";
 import { applyStageAxisAlignmentToRoot } from "./stage-up-axis.js";
+import { applyStageMetersPerUnitToRoot } from "./stage-meters-per-unit.js";
 import { getTextureLoadProgress, waitForTextureLoadReady } from "./usd-loader-progress.js";
 const COLLISION_SEGMENT_PATTERN = /(?:^|\/)coll(?:isions?|iders?)(?:$|[/.])/i;
 function sleep(ms) {
@@ -717,6 +718,7 @@ export async function loadUsdStage(args) {
     });
     setMessage("Initializing USD driver...");
     window.usdStage = null;
+    applyStageMetersPerUnitToRoot(window.usdRoot);
     const renderInterface = (window.renderInterface = new ThreeRenderDelegateInterface({
         usdRoot: window.usdRoot,
         paths: [],
@@ -1044,18 +1046,25 @@ export async function loadUsdStage(args) {
     const syncStageAxisAlignment = () => {
         const cachedSceneStageSnapshot = getRobotSceneStageSnapshot();
         const previousRotationX = Number(window.usdRoot?.rotation?.x || 0);
+        const previousScale = Number(window.usdRoot?.scale?.x || 1);
         const nextRotationX = applyStageAxisAlignmentToRoot(window.usdRoot, {
             reportedUpAxis: cachedSceneStageSnapshot?.upAxis || null,
             stage: window.usdStage,
             targetUpAxis: "z",
         });
+        const nextScale = applyStageMetersPerUnitToRoot(window.usdRoot, {
+            reportedMetersPerUnit: cachedSceneStageSnapshot?.metersPerUnit || null,
+            stage: window.usdStage,
+        });
         const axisChanged = Math.abs(previousRotationX - nextRotationX) > 1e-6;
-        if (axisChanged) {
+        const scaleChanged = Math.abs(previousScale - nextScale) > 1e-9;
+        if (axisChanged || scaleChanged) {
             window.usdRoot?.updateMatrixWorld?.(true);
         }
         return {
             cachedSceneStageSnapshot,
             axisChanged,
+            scaleChanged,
         };
     };
     const getRobotMetadataSnapshotStats = () => {
@@ -1603,7 +1612,7 @@ export async function loadUsdStage(args) {
             return;
         }
         const alignment = syncStageAxisAlignment();
-        if (alignment.axisChanged) {
+        if (alignment.axisChanged || alignment.scaleChanged) {
             refitCameraToUsdRoot();
         }
         const hasResolvedUpAxis = typeof alignment.cachedSceneStageSnapshot?.upAxis === "string"

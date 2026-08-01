@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { isSharedThreeResource } from '@/core/utils/threeResourceOwnership';
+import { collectMaterialTextures } from '@/core/utils/three/objectRenderQuality';
 
 type DisposableObject3D = THREE.Object3D & {
   geometry?: THREE.BufferGeometry;
@@ -148,43 +149,10 @@ export function disposeMaterial(
 }
 
 export function disposeTexturesFromMaterial(material: THREE.Material): void {
-  const textureProperties = [
-    'map',
-    'lightMap',
-    'bumpMap',
-    'normalMap',
-    'specularMap',
-    'envMap',
-    'alphaMap',
-    'aoMap',
-    'displacementMap',
-    'emissiveMap',
-    'gradientMap',
-    'metalnessMap',
-    'roughnessMap',
-    'clearcoatMap',
-    'clearcoatNormalMap',
-    'clearcoatRoughnessMap',
-    'sheenColorMap',
-    'sheenRoughnessMap',
-    'transmissionMap',
-    'thicknessMap',
-    'anisotropyMap',
-    'iridescenceMap',
-    'iridescenceThicknessMap',
-    'specularColorMap',
-    'specularIntensityMap',
-  ];
-  const visitedTextures = new Set<THREE.Texture>();
-
-  for (const prop of textureProperties) {
-    const texture = (material as unknown as Record<string, unknown>)[prop];
-    if (texture && texture instanceof THREE.Texture && !visitedTextures.has(texture)) {
-      visitedTextures.add(texture);
-      closeTextureImageIfNeeded(texture);
-      texture.dispose();
-    }
-  }
+  collectMaterialTextures(material).forEach((texture) => {
+    closeTextureImageIfNeeded(texture);
+    texture.dispose();
+  });
 }
 
 export function cleanupScene(scene: THREE.Scene, excludeMaterials?: Set<THREE.Material>): void {

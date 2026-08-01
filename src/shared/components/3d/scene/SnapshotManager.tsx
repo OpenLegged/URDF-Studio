@@ -5,8 +5,8 @@ import * as THREE from 'three';
 import type { RefObject } from 'react';
 import type { Theme } from '@/types';
 import {
+  buildSnapshotFileName,
   createSnapshotCaptureAbortError,
-  getSnapshotFileExtension,
   getSnapshotMimeType,
   isSnapshotCaptureAbortError,
   normalizeSnapshotCaptureOptions,
@@ -387,18 +387,7 @@ export const SnapshotManager = ({
       controls: SnapshotCaptureRunControls,
     ) => {
       const { onProgress, signal } = controls;
-      const safeRobotName = (robotName || 'robot').replace(/[\\/:*?"<>|]/g, '_');
-      const now = new Date();
-      const timestamp = [
-        now.getFullYear(),
-        String(now.getMonth() + 1).padStart(2, '0'),
-        String(now.getDate()).padStart(2, '0'),
-        '_',
-        String(now.getHours()).padStart(2, '0'),
-        String(now.getMinutes()).padStart(2, '0'),
-        String(now.getSeconds()).padStart(2, '0'),
-      ].join('');
-      const filename = `${safeRobotName}_snapshot_${timestamp}.${getSnapshotFileExtension(options.imageFormat)}`;
+      const filename = buildSnapshotFileName(robotName, options.imageFormat);
 
       const triggerDownload = (href: string) => {
         const link = document.createElement('a');

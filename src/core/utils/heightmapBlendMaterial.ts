@@ -82,6 +82,7 @@ export function createTerrainBlendMaterial(
     metalness: 0.0,
     map: dummyMap,
   });
+  material.userData.__urdfStudioTextureUniforms = uniforms;
 
   material.onBeforeCompile = (shader) => {
     // Merge our uniforms into the shader

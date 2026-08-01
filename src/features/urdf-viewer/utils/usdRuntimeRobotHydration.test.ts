@@ -1452,3 +1452,37 @@ test('hydrated USD RobotState joint angles drive the next runtime initialization
 
   assert.deepEqual(appliedAngles, [{ linkPath: '/Robot/leg_link', angleDeg: 45 }]);
 });
+
+test('hydrates raw USD runtime translations with the source metersPerUnit', () => {
+  const resolution: ViewerRobotDataResolution = {
+    stageSourcePath: '/scenes/millimeter.usda',
+    linkIdByPath: { '/World': 'World' },
+    linkPathById: { World: '/World' },
+    jointPathById: {},
+    childLinkPathByJointId: {},
+    parentLinkPathByJointId: {},
+    robotData: {
+      name: 'millimeter_scene',
+      rootLinkId: 'World',
+      links: {
+        World: {
+          ...DEFAULT_LINK,
+          id: 'World',
+          name: 'World',
+        },
+      },
+      joints: {},
+    },
+  };
+
+  const hydrated = hydrateUsdViewerRobotResolutionFromRuntime(
+    resolution,
+    { stage: { metersPerUnit: 1, sourceMetersPerUnit: 0.001 } },
+    {
+      getPreferredLinkWorldTransform: () => composeMatrix({ x: 1000, y: 2000, z: 3000 }),
+    },
+  );
+
+  assert.equal(hydrated.robotData.rootLinkId, 'world');
+  assert.deepEqual(hydrated.robotData.joints.world_to_World?.origin.xyz, { x: 1, y: 2, z: 3 });
+});

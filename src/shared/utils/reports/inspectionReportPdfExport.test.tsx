@@ -133,14 +133,37 @@ function installDomEnvironment() {
 test('exportInspectionReportPdf renders and cleans up the shared report container', async () => {
   const dom = installDomEnvironment();
   const savedFiles: string[] = [];
+  const pageSlices: Array<{ startY: number; height: number }> = [];
   let capturedText = '';
+  let capturedLogoSrc = '';
+  let capturedLogoTransform = '';
+  let capsuleCount = -1;
+  let issueMetaStyle: CSSStyleDeclaration | null = null;
 
   __setPdfGenerationDepsLoaderForTests(async () => ({
     html2canvas: (async (element: HTMLElement) => {
       capturedText = element.textContent || '';
+      const logo = element.querySelector<HTMLImageElement>('img[alt="URDF Studio"]');
+      capturedLogoSrc = logo?.src ?? '';
+      capturedLogoTransform = logo?.style.transform ?? '';
+      capsuleCount = element.querySelectorAll('[style*="border-radius: 999px"]').length;
+      Object.defineProperties(element, {
+        scrollWidth: { configurable: true, value: 800 },
+        scrollHeight: { configurable: true, value: 1800 },
+      });
+      element.getBoundingClientRect = () =>
+        ({ top: 0, bottom: 1800, width: 800, height: 1800 }) as DOMRect;
+      const issueCard = element.querySelector<HTMLElement>('[data-pdf-keep-together]');
+      assert.ok(issueCard);
+      issueCard.getBoundingClientRect = () =>
+        ({ top: 850, bottom: 1150, width: 700, height: 300 }) as DOMRect;
+      issueMetaStyle =
+        Array.from(element.querySelectorAll<HTMLElement>('div')).find(
+          (node) => node.textContent === 'profile_a.item_a',
+        )?.style ?? null;
       return {
         width: 800,
-        height: 1200,
+        height: 1800,
         getContext: () => ({
           fillStyle: '#ffffff',
           fillRect: () => {},
@@ -171,7 +194,15 @@ test('exportInspectionReportPdf renders and cleans up the shared report containe
     getContext: () => ({
       fillStyle: '#ffffff',
       fillRect: () => {},
-      drawImage: () => {},
+      drawImage: (
+        _source: CanvasImageSource,
+        _sourceX: number,
+        sourceY: number,
+        _sourceWidth: number,
+        sourceHeight: number,
+      ) => {
+        pageSlices.push({ startY: sourceY, height: sourceHeight });
+      },
     }),
     toDataURL: () => 'data:image/png;base64,slice',
   }));
@@ -181,16 +212,34 @@ test('exportInspectionReportPdf renders and cleans up the shared report containe
       await exportInspectionReportPdf({
         inspectionReport: {
           summary: 'shared pdf export summary',
-          issues: [],
+          issues: [
+            {
+              type: 'warning',
+              title: 'Plain text metadata',
+              description: 'Report metadata should not render as a capsule.',
+              profileId: 'profile_a',
+              itemId: 'item_a',
+            },
+          ],
           overallScore: 95,
           maxScore: 100,
         },
         robotName: 'robot_a',
         lang: 'en',
+        inspectionContext: { sourceFormat: 'urdf' },
       });
     });
 
     assert.match(capturedText, /shared pdf export summary/);
+    assert.match(capturedLogoSrc, /\/logos\/logo\.png$/);
+    assert.equal(capturedLogoTransform, 'translateY(4px)');
+    assert.equal(capsuleCount, 0);
+    assert.equal(issueMetaStyle?.borderRadius, '');
+    assert.equal(issueMetaStyle?.backgroundColor, '');
+    assert.deepEqual(pageSlices, [
+      { startY: 0, height: 850 },
+      { startY: 850, height: 950 },
+    ]);
     assert.equal(savedFiles.length, 1);
     assert.match(savedFiles[0], /^robot_a_inspection_report_.*\.pdf$/);
     assert.equal(document.getElementById('inspection-report-pdf-export-container'), null);

@@ -16,6 +16,7 @@ import {
   resolveUsdDescriptorTargetLinkPath,
 } from './usdDescriptorLinkResolution';
 import { resolveUsdPrimitiveGeometryFromDescriptor } from './usdPrimitiveGeometry';
+import { getUsdSourceMetersPerUnit } from './usdStageUnits';
 
 interface UsdRuntimeTransformInterface {
   getPreferredLinkWorldTransform?: (linkPath: string) => unknown;
@@ -41,13 +42,17 @@ interface DescriptorGroup {
 const IDENTITY_MATRIX = new THREE.Matrix4();
 const ROOT_TRANSFORM_EPSILON = 1e-6;
 
-function toMatrix4(value: unknown): THREE.Matrix4 | null {
+function toMatrix4(value: unknown, translationScale = 1): THREE.Matrix4 | null {
   if (!value) {
     return null;
   }
 
   if (value instanceof THREE.Matrix4) {
-    return value.clone();
+    const matrix = value.clone();
+    matrix.elements[12] *= translationScale;
+    matrix.elements[13] *= translationScale;
+    matrix.elements[14] *= translationScale;
+    return matrix;
   }
 
   if (
@@ -56,7 +61,11 @@ function toMatrix4(value: unknown): THREE.Matrix4 | null {
   ) {
     const numeric = Array.from(value as ArrayLike<number>).map((entry) => Number(entry));
     if (numeric.length >= 16 && numeric.every((entry) => Number.isFinite(entry))) {
-      return new THREE.Matrix4().fromArray(numeric.slice(0, 16));
+      const matrix = new THREE.Matrix4().fromArray(numeric.slice(0, 16));
+      matrix.elements[12] *= translationScale;
+      matrix.elements[13] *= translationScale;
+      matrix.elements[14] *= translationScale;
+      return matrix;
     }
   }
 
@@ -160,9 +169,13 @@ function backfillUsdPhysicsParentFrameFromOrigin(joint: {
 function resolveLinkWorldMatrix(
   runtime: UsdRuntimeTransformInterface,
   resolution: ViewerRobotDataResolution,
-  computedLinkWorldMatrices: Record<string, THREE.Matrix4>,
-  linkPath: string | null | undefined,
+  options: {
+    computedLinkWorldMatrices: Record<string, THREE.Matrix4>;
+    linkPath: string | null | undefined;
+    translationScale: number;
+  },
 ): THREE.Matrix4 | null {
+  const { computedLinkWorldMatrices, linkPath, translationScale } = options;
   const normalizedPath = normalizeUsdPath(linkPath);
   if (!normalizedPath) {
     return null;
@@ -170,12 +183,16 @@ function resolveLinkWorldMatrix(
 
   const preferredLinkWorldMatrix = toMatrix4(
     runtime.getPreferredLinkWorldTransform?.(normalizedPath),
+    translationScale,
   );
   if (preferredLinkWorldMatrix) {
     return preferredLinkWorldMatrix;
   }
 
-  const primLinkWorldMatrix = toMatrix4(runtime.getWorldTransformForPrimPath?.(normalizedPath));
+  const primLinkWorldMatrix = toMatrix4(
+    runtime.getWorldTransformForPrimPath?.(normalizedPath),
+    translationScale,
+  );
   if (primLinkWorldMatrix) {
     return primLinkWorldMatrix;
   }
@@ -188,6 +205,7 @@ function resolveLinkWorldMatrix(
 function resolvePrimWorldMatrix(
   runtime: UsdRuntimeTransformInterface,
   descriptor: UsdSceneMeshDescriptor,
+  translationScale: number,
 ): THREE.Matrix4 | null {
   const candidates = [
     normalizeUsdPath(descriptor.resolvedPrimPath || ''),
@@ -195,7 +213,10 @@ function resolvePrimWorldMatrix(
   ].filter(Boolean);
 
   for (const candidate of candidates) {
-    const resolved = toMatrix4(runtime.getWorldTransformForPrimPath?.(candidate));
+    const resolved = toMatrix4(
+      runtime.getWorldTransformForPrimPath?.(candidate),
+      translationScale,
+    );
     if (resolved) {
       return resolved;
     }
@@ -522,6 +543,7 @@ export function hydrateUsdViewerRobotResolutionFromRuntime(
     parentLinkPathByJointId: { ...resolution.parentLinkPathByJointId },
     robotData: structuredClone(resolution.robotData),
   };
+  const sourceMetersPerUnit = getUsdSourceMetersPerUnit(snapshot);
   Object.values(nextResolution.robotData.joints).forEach((joint) => {
     const childLinkPath =
       resolution.childLinkPathByJointId[joint.id] || resolution.linkPathById[joint.childLinkId];
@@ -552,14 +574,12 @@ export function hydrateUsdViewerRobotResolutionFromRuntime(
     const childWorldMatrix = resolveLinkWorldMatrix(
       runtime,
       nextResolution,
-      computedLinkWorldMatrices,
-      childLinkPath,
+      { computedLinkWorldMatrices, linkPath: childLinkPath, translationScale: sourceMetersPerUnit },
     );
     const parentWorldMatrix = resolveLinkWorldMatrix(
       runtime,
       nextResolution,
-      computedLinkWorldMatrices,
-      parentLinkPath,
+      { computedLinkWorldMatrices, linkPath: parentLinkPath, translationScale: sourceMetersPerUnit },
     );
     if (!childWorldMatrix || !parentWorldMatrix) {
       return;
@@ -575,8 +595,11 @@ export function hydrateUsdViewerRobotResolutionFromRuntime(
     resolveLinkWorldMatrix(
       runtime,
       nextResolution,
-      computedLinkWorldMatrices,
-      resolution.linkPathById[nextResolution.robotData.rootLinkId],
+      {
+        computedLinkWorldMatrices,
+        linkPath: resolution.linkPathById[nextResolution.robotData.rootLinkId],
+        translationScale: sourceMetersPerUnit,
+      },
     ),
   );
 
@@ -587,8 +610,7 @@ export function hydrateUsdViewerRobotResolutionFromRuntime(
     const ownerLinkWorldMatrix = resolveLinkWorldMatrix(
       runtime,
       nextResolution,
-      computedLinkWorldMatrices,
-      linkPath,
+      { computedLinkWorldMatrices, linkPath, translationScale: sourceMetersPerUnit },
     );
     if (!ownerLinkWorldMatrix) {
       return;
@@ -632,7 +654,11 @@ export function hydrateUsdViewerRobotResolutionFromRuntime(
         return;
       }
 
-      const primWorldMatrix = resolvePrimWorldMatrix(runtime, representativeEntry.descriptor);
+      const primWorldMatrix = resolvePrimWorldMatrix(
+        runtime,
+        representativeEntry.descriptor,
+        sourceMetersPerUnit,
+      );
       if (!primWorldMatrix) {
         return;
       }
@@ -662,7 +688,11 @@ export function hydrateUsdViewerRobotResolutionFromRuntime(
         ensureCollisionBodySlot(nextResolution, linkId, index);
       }
 
-      const primWorldMatrix = resolvePrimWorldMatrix(runtime, representativeEntry.descriptor);
+      const primWorldMatrix = resolvePrimWorldMatrix(
+        runtime,
+        representativeEntry.descriptor,
+        sourceMetersPerUnit,
+      );
       if (!primWorldMatrix) {
         return;
       }

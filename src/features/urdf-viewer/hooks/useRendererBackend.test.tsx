@@ -269,6 +269,14 @@ const useR3fStore = create(() => ({
       getParameter: () => '',
     }),
     compile: () => {},
+    capabilities: {
+      getMaxAnisotropy: () => 16,
+    },
+    shadowMap: {
+      enabled: true,
+      autoUpdate: false,
+      needsUpdate: false,
+    },
   },
   invalidate: () => {},
   camera: new THREE.PerspectiveCamera(),
@@ -444,6 +452,42 @@ async function waitForCondition(condition: () => boolean, message: string) {
 
   assert.fail(message);
 }
+
+test('useRendererBackend refreshes shadows after an imported robot commits', async () => {
+  const { dom, root } = createComponentRoot();
+  const renderer = useR3fStore.getState().gl;
+  let committedRobot: THREE.Object3D | null = null;
+
+  renderer.shadowMap.needsUpdate = false;
+
+  try {
+    await act(async () => {
+      renderStateProbe(
+        root,
+        createRobotData('#808080'),
+        () => {
+          // Simulate an earlier render consuming any refresh requested before
+          // React commits the runtime robot into the visible R3F scene.
+          renderer.shadowMap.needsUpdate = false;
+        },
+        (state) => {
+          committedRobot = state.robot;
+        },
+      );
+    });
+    await waitForCondition(
+      () => committedRobot !== null,
+      'expected imported runtime robot to commit',
+    );
+
+    assert.equal(renderer.shadowMap.needsUpdate, true);
+  } finally {
+    await act(async () => {
+      root.unmount();
+    });
+    dom.window.close();
+  }
+});
 
 test('useRendererBackend patches a link color edit without reloading the backend scene', async () => {
   const { dom, root } = createComponentRoot();
