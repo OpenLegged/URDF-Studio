@@ -1,4 +1,4 @@
-import { normalizeLibraryPathKey, normalizeVirtualUsdPath } from '@/shared/utils/pathKeys';
+import { normalizeLibraryPathKey, normalizeVirtualUsdPath } from '@/core/utils/pathKeys';
 import { inferUsdDependencyStemForPath } from './usdDependencyPathRules.js';
 
 function normalizeUsdAssetPath(path: string): string {

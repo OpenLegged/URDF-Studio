@@ -1,4 +1,4 @@
-import { normalizeLibraryPathKey } from '@/shared/utils/pathKeys';
+import { normalizeLibraryPathKey } from '@/core/utils/pathKeys';
 
 const DUPLICATE_SUFFIX_PATTERN = /^(.*?)(?: \((\d+)\))?$/;
 

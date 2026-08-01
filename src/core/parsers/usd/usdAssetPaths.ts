@@ -3,7 +3,7 @@ import {
   normalizeLibraryPathKey,
   normalizeVirtualDirectoryPath,
   normalizeVirtualUsdPath,
-} from '@/shared/utils/pathKeys';
+} from '@/core/utils/pathKeys';
 
 const USD_RUNTIME_TEXTURE_EXTENSIONS = new Set(['png', 'jpg', 'jpeg', 'exr', 'tga']);
 
