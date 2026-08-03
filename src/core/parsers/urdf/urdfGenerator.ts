@@ -246,7 +246,7 @@ function generateUrdfMaterialXml(
 
 const generateLimitTag = (joint: UrdfJoint, formatScalar: (n: number) => string): string | null => {
   const jointType = String(joint.type).toLowerCase();
-  if (!joint.limit) {
+  if (!joint.limit || joint.mimic) {
     return null;
   }
   const finiteAttribute = (name: string, value: number | undefined): string[] =>
@@ -782,7 +782,7 @@ export const generateRos1Transmissions = (
   let xml = '';
   Object.values(joints).forEach((j) => {
     const jType = String(j.type).toLowerCase();
-    if (jType === 'fixed') return;
+    if (jType === 'fixed' || j.mimic) return;
     xml += `  <transmission name="${j.name}_trans">\n`;
     xml += `    <type>transmission_interface/SimpleTransmission</type>\n`;
     xml += `    <joint name="${j.name}">\n`;
@@ -840,7 +840,7 @@ export const generateRos2Control = (
 
   Object.values(joints).forEach((j) => {
     const jType = String(j.type).toLowerCase();
-    if (jType === 'fixed') return;
+    if (jType === 'fixed' || j.mimic) return;
     xml += `    <joint name="${j.name}">\n`;
     xml += `      <command_interface name="${cmdIf}"/>\n`;
     xml += `      <state_interface name="position"/>\n`;
@@ -883,7 +883,7 @@ export const generateRos2GzControl = (
 
   Object.values(joints).forEach((j) => {
     const jType = String(j.type).toLowerCase();
-    if (jType === 'fixed') return;
+    if (jType === 'fixed' || j.mimic) return;
     xml += `    <joint name="${j.name}">\n`;
     xml += `      <command_interface name="${cmdIf}"/>\n`;
     xml += `      <state_interface name="position"/>\n`;

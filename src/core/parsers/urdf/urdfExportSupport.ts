@@ -1,6 +1,6 @@
 import type { RobotState } from '@/types';
 
-const UNSUPPORTED_URDF_JOINT_TYPES = new Set(['ball']);
+const UNSUPPORTED_URDF_JOINT_TYPES: Set<string> = new Set();
 
 export function findUnsupportedUrdfJoint(robot: Pick<RobotState, 'joints'>): {
   jointId: string;

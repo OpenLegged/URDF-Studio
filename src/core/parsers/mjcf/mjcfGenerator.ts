@@ -373,7 +373,48 @@ export const generateMujocoXML = (robot: RobotState, options: MujocoExportOption
     refquat: MeshRefQuatTuple | null;
   }
 
-  const normalizeMeshScale = (dimensions?: { x: number; y: number; z: number }): MeshScaleTuple => {
+  /**
+   * Compute a compensating quaternion for a negative mesh scale.
+   * A single negative scale component is a reflection, which cannot be
+   * represented by a rotation alone.  We approximate it with a 180° rotation
+   * around a perpendicular axis, which gives a visually acceptable result for
+   * the common case of symmetric meshes (e.g. left/right finger pairs).
+   *
+   * Returns null when no compensation is needed (all components positive).
+   */
+  const negativeScaleCompensationQuat = (
+    dimensions?: { x: number; y: number; z: number },
+  ): MeshRefQuatTuple | null => {
+    if (!dimensions) return null;
+
+    const negX = Number.isFinite(dimensions.x) && dimensions.x < -1e-9;
+    const negY = Number.isFinite(dimensions.y) && dimensions.y < -1e-9;
+    const negZ = Number.isFinite(dimensions.z) && dimensions.z < -1e-9;
+    const count = (negX ? 1 : 0) + (negY ? 1 : 0) + (negZ ? 1 : 0);
+
+    // Zero or three negative components cannot be compensated by rotation.
+    if (count === 0 || count === 3) return null;
+
+    // One negative: rotate 180° around a perpendicular axis.
+    if (count === 1) {
+      if (negX) return [0, 0, 1, 0]; // 180° around Y
+      if (negY) return [0, 1, 0, 0]; // 180° around X
+      return [0, 1, 0, 0]; // negZ: 180° around X
+    }
+
+    // Two negatives: rotate 180° around the positive axis.
+    if (count === 2) {
+      if (!negX) return [0, 1, 0, 0]; // Y,Z negative → 180° around X
+      if (!negY) return [0, 0, 1, 0]; // X,Z negative → 180° around Y
+      return [0, 0, 0, 1]; // X,Y negative → 180° around Z
+    }
+
+    return null;
+  };
+
+  const normalizeMeshScale = (
+    dimensions?: { x: number; y: number; z: number },
+  ): { scale: MeshScaleTuple; compensationQuat: MeshRefQuatTuple | null } => {
     const normalize = (value: number | undefined) => {
       if (Number.isFinite(value) && Math.abs(value as number) > 1e-9) {
         return Math.abs(value as number);
@@ -381,7 +422,10 @@ export const generateMujocoXML = (robot: RobotState, options: MujocoExportOption
       return 1;
     };
 
-    return [normalize(dimensions?.x), normalize(dimensions?.y), normalize(dimensions?.z)];
+    return {
+      scale: [normalize(dimensions?.x), normalize(dimensions?.y), normalize(dimensions?.z)],
+      compensationQuat: negativeScaleCompensationQuat(dimensions),
+    };
   };
 
   const meshScaleKey = (scale: MeshScaleTuple) =>
@@ -411,13 +455,20 @@ export const generateMujocoXML = (robot: RobotState, options: MujocoExportOption
   const normalizeMjcfMeshScale = (
     mjcfMesh?: UrdfLink['visual']['mjcfMesh'],
     dimensions?: { x: number; y: number; z: number },
-  ): MeshScaleTuple => {
+  ): { scale: MeshScaleTuple; compensationQuat: MeshRefQuatTuple | null } => {
     if (mjcfMesh?.scale && mjcfMesh.scale.length >= 3) {
-      return [
-        Number(mjcfMesh.scale[0] ?? 1) || 1,
-        Number(mjcfMesh.scale[1] ?? 1) || 1,
-        Number(mjcfMesh.scale[2] ?? 1) || 1,
-      ];
+      return {
+        scale: [
+          Number(mjcfMesh.scale[0] ?? 1) || 1,
+          Number(mjcfMesh.scale[1] ?? 1) || 1,
+          Number(mjcfMesh.scale[2] ?? 1) || 1,
+        ],
+        compensationQuat: negativeScaleCompensationQuat({
+          x: Number(mjcfMesh.scale[0] ?? 1),
+          y: Number(mjcfMesh.scale[1] ?? 1),
+          z: Number(mjcfMesh.scale[2] ?? 1),
+        }),
+      };
     }
 
     return normalizeMeshScale(dimensions);
@@ -470,6 +521,20 @@ export const generateMujocoXML = (robot: RobotState, options: MujocoExportOption
   };
 
   const meshAssets = new Map<string, MeshAssetEntry>();
+  const mergeRefquat = (
+    existing: MeshRefQuatTuple | null,
+    compensation: MeshRefQuatTuple | null,
+  ): MeshRefQuatTuple | null => {
+    if (!compensation && !existing) return null;
+    if (!compensation) return existing;
+    if (!existing) return compensation;
+
+    const eq = new THREE.Quaternion(existing[1], existing[2], existing[3], existing[0]);
+    const cq = new THREE.Quaternion(compensation[1], compensation[2], compensation[3], compensation[0]);
+    const merged = cq.multiply(eq);
+    return [merged.w, merged.x, merged.y, merged.z];
+  };
+
   const registerMeshAsset = (geometry: UrdfLink['visual']) => {
     const mjcfMesh = geometry.mjcfMesh;
     const normalizedPath = resolveExportMeshPath(mjcfMesh?.file || geometry.meshPath);
@@ -479,13 +544,14 @@ export const generateMujocoXML = (robot: RobotState, options: MujocoExportOption
       return;
     }
 
+    const { scale, compensationQuat } = normalizeMjcfMeshScale(mjcfMesh, geometry.dimensions);
     const entryWithoutKey: Omit<MeshAssetEntry, 'key'> = {
       path: normalizedPath || null,
       sourceAssetName: mjcfMesh?.name || geometry.assetRef || null,
       vertices: inlineVertices,
-      scale: normalizeMjcfMeshScale(mjcfMesh, geometry.dimensions),
+      scale,
       refpos: normalizeMeshRefpos(mjcfMesh?.refpos),
-      refquat: normalizeMeshRefquat(mjcfMesh?.refquat),
+      refquat: mergeRefquat(normalizeMeshRefquat(mjcfMesh?.refquat), compensationQuat),
     };
     const key = buildMeshAssetKey(entryWithoutKey);
     if (!meshAssets.has(key)) {
@@ -570,13 +636,14 @@ export const generateMujocoXML = (robot: RobotState, options: MujocoExportOption
       return null;
     }
 
+    const { scale, compensationQuat } = normalizeMjcfMeshScale(mjcfMesh, dimensions);
     const key = buildMeshAssetKey({
       path: normalizedPath || null,
       sourceAssetName: mjcfMesh?.name || assetRef || null,
       vertices: inlineVertices,
-      scale: normalizeMjcfMeshScale(mjcfMesh, dimensions),
+      scale,
       refpos: normalizeMeshRefpos(mjcfMesh?.refpos),
-      refquat: normalizeMeshRefquat(mjcfMesh?.refquat),
+      refquat: mergeRefquat(normalizeMeshRefquat(mjcfMesh?.refquat), compensationQuat),
     });
     return meshAssetNameMap.get(key) || null;
   };
@@ -1529,12 +1596,12 @@ export const generateMujocoXML = (robot: RobotState, options: MujocoExportOption
     if (parentJoint && parentJoint.type !== JointType.FIXED) {
       if (parentJoint.type === JointType.FLOATING) {
         bodyXml += `${indent}  <freejoint name="${parentJoint.name}"/>\n`;
+      } else if (parentJoint.type === JointType.PLANAR) {
+        console.warn(
+          `[MJCF export] Joint "${parentJoint.name}" uses unsupported planar type, degrading to freejoint.`,
+        );
+        bodyXml += `${indent}  <freejoint name="${parentJoint.name}"/>\n`;
       } else {
-        if (parentJoint.type === JointType.PLANAR) {
-          throw new Error(
-            `[MJCF export] Joint "${parentJoint.name}" uses unsupported planar type.`,
-          );
-        }
 
         let jType = 'hinge';
         if (parentJoint.type === JointType.PRISMATIC) {
@@ -1544,7 +1611,9 @@ export const generateMujocoXML = (robot: RobotState, options: MujocoExportOption
         }
 
         const jointRange =
-          parentJoint.type !== JointType.CONTINUOUS && parentJoint.type !== JointType.BALL
+          !parentJoint.mimic &&
+          parentJoint.type !== JointType.CONTINUOUS &&
+          parentJoint.type !== JointType.BALL
             ? getMujocoJointRange(parentJoint)
             : null;
         const shouldEmitRange = Boolean(jointRange);
@@ -1573,7 +1642,7 @@ export const generateMujocoXML = (robot: RobotState, options: MujocoExportOption
             ? ` armature="${formatScalar(armature as number)}"`
             : '';
 
-        bodyXml += `${indent}  <joint name="${parentJoint.name}" type="${jType}"${axisStr}${limitedStr}${limitStr}${referencePositionStr}${armatureStr} damping="${formatScalar(parentJoint.dynamics.damping)}" frictionloss="${formatScalar(parentJoint.dynamics.friction)}"/>\n`;
+        bodyXml += `${indent}  <joint name="${parentJoint.name}" type="${jType}"${axisStr}${limitedStr}${limitStr}${referencePositionStr}${armatureStr} damping="${formatScalar(parentJoint.dynamics.damping)}" frictionloss="${formatScalar(parentJoint.dynamics.friction)}"${Number.isFinite(parentJoint.dynamics.stiffness) && (parentJoint.dynamics.stiffness ?? 0) !== 0 ? ` stiffness="${formatScalar(parentJoint.dynamics.stiffness!)}"` : ''}/>\n`;
       }
     }
 
@@ -1859,6 +1928,7 @@ export const generateMujocoXML = (robot: RobotState, options: MujocoExportOption
     xml += `  <actuator>\n`;
     Object.values(joints).forEach((j) => {
       if (
+        !j.mimic &&
         j.type !== JointType.FIXED &&
         j.type !== JointType.FLOATING &&
         j.type !== JointType.BALL
@@ -1884,6 +1954,7 @@ export const generateMujocoXML = (robot: RobotState, options: MujocoExportOption
     xml += `  <actuator>\n`;
     Object.values(joints).forEach((j) => {
       if (
+        !j.mimic &&
         j.type !== JointType.FIXED &&
         j.type !== JointType.FLOATING &&
         j.type !== JointType.BALL
@@ -1893,7 +1964,7 @@ export const generateMujocoXML = (robot: RobotState, options: MujocoExportOption
           effortLimit > 1e-12
             ? ` ctrllimited="true" ctrlrange="${formatScalar(-effortLimit)} ${formatScalar(effortLimit)}"`
             : '';
-        xml += `    <motor name="${j.name}_motor" joint="${j.name}" gear="1"${controlRangeStr} />\n`;
+        xml += `    <motor name="${j.name}_motor" joint="${j.name}" gear="${j.hardware?.motorDirection === -1 ? '-1' : '1'}"${controlRangeStr} />\n`;
       }
     });
     xml += `  </actuator>\n`;

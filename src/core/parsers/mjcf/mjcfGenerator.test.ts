@@ -2439,7 +2439,7 @@ test('generated MJCF widens zero-span revolute joint limits into a MuJoCo-safe l
   assert.equal(exportedLimit?.upper, 5e-7);
 });
 
-test('generated MJCF fails fast for unsupported planar joints instead of degrading them', () => {
+test('generated MJCF degrades unsupported planar joints to freejoint instead of throwing', () => {
   installDomParser();
 
   const robot: RobotState = {
@@ -2518,9 +2518,11 @@ test('generated MJCF fails fast for unsupported planar joints instead of degradi
     materials: {},
   };
 
-  assert.throws(
-    () => generateMujocoXML(robot, { includeSceneHelpers: false }),
-    /\[MJCF export\] Joint "planar_joint" uses unsupported planar type\./,
+  // Planar joints should now degrade to freejoint instead of throwing
+  const generated = generateMujocoXML(robot, { includeSceneHelpers: false });
+  assert.ok(
+    generated.includes('<freejoint name="planar_joint"'),
+    'expected planar joint to degrade to freejoint',
   );
 });
 
@@ -2692,5 +2694,125 @@ test('generated MJCF fails fast on malformed closed-loop constraints', () => {
   assert.throws(
     () => generateMujocoXML(robotWithInvalidDistance, { includeSceneHelpers: false }),
     /\[MJCF export\] Distance closed-loop constraint "invalid_distance" has a non-finite rest distance\./,
+  );
+});
+
+test('mimic joints are excluded from actuator generation', () => {
+  installDomParser();
+
+  const robot = createClosedLoopExportRobot();
+  // Add a separate link for the mimic joint to drive
+  robot.links.mimic_finger = {
+    ...DEFAULT_LINK,
+    id: 'mimic_finger',
+    name: 'mimic_finger',
+    visual: {
+      ...DEFAULT_LINK.visual,
+      type: GeometryType.BOX,
+      dimensions: { x: 0.05, y: 0.05, z: 0.05 },
+      origin: { xyz: { x: 0, y: 0, z: 0 }, rpy: { r: 0, p: 0, y: 0 } },
+    },
+    collision: {
+      ...DEFAULT_LINK.collision,
+      type: GeometryType.BOX,
+      dimensions: { x: 0.05, y: 0.05, z: 0.05 },
+      origin: { xyz: { x: 0, y: 0, z: 0 }, rpy: { r: 0, p: 0, y: 0 } },
+    },
+  };
+  // Add a prismatic mimic joint that mimics left_joint
+  robot.joints.mimic_slide = {
+    ...DEFAULT_JOINT,
+    id: 'mimic_slide',
+    name: 'mimic_slide',
+    type: JointType.PRISMATIC,
+    parentLinkId: 'base_link',
+    childLinkId: 'mimic_finger',
+    origin: { xyz: { x: 0, y: 1, z: 0 }, rpy: { r: 0, p: 0, y: 0 } },
+    axis: { x: 0, y: 1, z: 0 },
+    limit: { lower: 0, upper: 0.05, effort: 100, velocity: 1 },
+    mimic: { joint: 'left_joint', multiplier: 1, offset: 0 },
+  };
+
+  const generated = generateMujocoXML(robot, { includeSceneHelpers: false, includeActuators: true, actuatorType: 'position' });
+
+  // Verify no actuator was generated for the mimic joint
+  assert.ok(
+    !generated.includes('mimic_slide_servo'),
+    'expected mimic joint to not have a position actuator',
+  );
+  assert.ok(
+    !generated.includes('mimic_slide_motor'),
+    'expected mimic joint to not have a motor actuator',
+  );
+
+  // Verify the driver joint (left_joint) still has an actuator
+  assert.ok(
+    generated.includes('left_joint_servo'),
+    'expected driver joint to still have an actuator',
+  );
+});
+
+test('mimic joints do not export joint limits', () => {
+  installDomParser();
+
+  const robot = createClosedLoopExportRobot();
+  // Add a separate link for the mimic joint to drive
+  robot.links.mimic_finger = {
+    ...DEFAULT_LINK,
+    id: 'mimic_finger',
+    name: 'mimic_finger',
+    visual: {
+      ...DEFAULT_LINK.visual,
+      type: GeometryType.BOX,
+      dimensions: { x: 0.05, y: 0.05, z: 0.05 },
+      origin: { xyz: { x: 0, y: 0, z: 0 }, rpy: { r: 0, p: 0, y: 0 } },
+    },
+    collision: {
+      ...DEFAULT_LINK.collision,
+      type: GeometryType.BOX,
+      dimensions: { x: 0.05, y: 0.05, z: 0.05 },
+      origin: { xyz: { x: 0, y: 0, z: 0 }, rpy: { r: 0, p: 0, y: 0 } },
+    },
+  };
+  // Add a prismatic mimic joint with a limit
+  robot.joints.mimic_joint = {
+    ...DEFAULT_JOINT,
+    id: 'mimic_joint',
+    name: 'mimic_joint',
+    type: JointType.PRISMATIC,
+    parentLinkId: 'base_link',
+    childLinkId: 'mimic_finger',
+    origin: { xyz: { x: 0, y: 1, z: 0 }, rpy: { r: 0, p: 0, y: 0 } },
+    axis: { x: 0, y: 1, z: 0 },
+    limit: { lower: 0, upper: 0.044, effort: 333, velocity: 10 },
+    mimic: { joint: 'left_joint' },
+  };
+
+  const generated = generateMujocoXML(robot, { includeSceneHelpers: false });
+
+  // The mimic joint should appear in the generated XML (as a joint element)
+  assert.ok(
+    generated.includes('mimic_joint'),
+    'expected mimic joint to appear in the generated MJCF',
+  );
+
+  // The mimic joint should NOT have limited="true" or a range attribute
+  const mimicJointLine = generated
+    .split('\n')
+    .find((line) => line.includes('name="mimic_joint"'));
+  assert.ok(mimicJointLine, 'expected to find mimic joint element in generated MJCF');
+  assert.ok(
+    !mimicJointLine.includes('limited'),
+    'expected mimic joint to not have limited attribute',
+  );
+  assert.ok(
+    !mimicJointLine.includes('range'),
+    'expected mimic joint to not have range attribute',
+  );
+
+  // The equality constraint should still be present
+  assert.ok(
+    generated.includes('mimic_joint_mimic'),
+    'expected mimic equality constraint to be present',
   );
 });

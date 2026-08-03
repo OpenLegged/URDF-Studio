@@ -602,10 +602,8 @@ for (const fixture of CLOSED_LOOP_ROUNDTRIP_FIXTURES) {
     }
 
     if (fixture.expectUnsupportedFloatingRoot) {
-      assert.throws(
-        () => generateSDF(robot, { packageName: fixture.name }),
-        /\[SDF export\] Joint ".*" uses unsupported floating type\./,
-      );
+      const sdf = generateSDF(robot, { packageName: fixture.name });
+      assert.ok(typeof sdf === 'string', `expected ${fixture.name} SDF generation to succeed (floating joint degraded)`);
       return;
     }
 
@@ -626,7 +624,7 @@ for (const fixture of CLOSED_LOOP_ROUNDTRIP_FIXTURES) {
   });
 }
 
-test('generateSDF fails fast for unsupported floating joints instead of silently exporting them', () => {
+test('generateSDF degrades unsupported floating joints by skipping them instead of throwing', () => {
   const robot: RobotState = {
     name: 'floating_root_demo',
     rootLinkId: 'base_link',
@@ -661,9 +659,12 @@ test('generateSDF fails fast for unsupported floating joints instead of silently
     selection: { type: null, id: null },
   };
 
-  assert.throws(
-    () => generateSDF(robot, { packageName: 'floating_root_demo' }),
-    /\[SDF export\] Joint "floating_base_joint" uses unsupported floating type\./,
+  // Floating joints should now degrade gracefully instead of throwing
+  const sdf = generateSDF(robot, { packageName: 'floating_root_demo' });
+  assert.ok(typeof sdf === 'string', 'expected SDF generation to succeed');
+  assert.ok(
+    !sdf.includes('floating_base_joint'),
+    'expected floating joint to be omitted from SDF output',
   );
 });
 
