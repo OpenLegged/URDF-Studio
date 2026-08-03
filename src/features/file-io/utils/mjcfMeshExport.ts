@@ -106,13 +106,21 @@ function sanitizeVariantSegment(value: string | undefined): string {
     .replace(/^_+|_+$/g, '');
 }
 
-function buildConvertedVisualVariantPath(
-  meshPath: string,
-  materialName: string | undefined,
-  variantIndex: number,
-  usedPaths: Set<string>,
-  extension: '.obj' | '.stl',
-): string {
+interface ConvertedVisualVariantPathOptions {
+  meshPath: string;
+  materialName: string | undefined;
+  variantIndex: number;
+  usedPaths: Set<string>;
+  extension: '.obj' | '.stl';
+}
+
+function buildConvertedVisualVariantPath({
+  meshPath,
+  materialName,
+  variantIndex,
+  usedPaths,
+  extension,
+}: ConvertedVisualVariantPathOptions): string {
   const normalizedPath = normalizeMeshPathForExport(meshPath);
   if (!normalizedPath) {
     return '';
@@ -840,13 +848,21 @@ function createBakedVariantMesh(
   return bakedMesh;
 }
 
-function extractVisualMeshVariants(
-  meshObject: THREE.Object3D,
-  sourceMeshPath: string,
-  usedArchivePaths: Set<string>,
-  exporters: MeshExporters,
-  meshFormat: MeshFormatKind,
-): ExtractedVisualMeshVariant[] {
+interface ExtractVisualMeshVariantsOptions {
+  meshObject: THREE.Object3D;
+  sourceMeshPath: string;
+  usedArchivePaths: Set<string>;
+  exporters: MeshExporters;
+  meshFormat: MeshFormatKind;
+}
+
+function extractVisualMeshVariants({
+  meshObject,
+  sourceMeshPath,
+  usedArchivePaths,
+  exporters,
+  meshFormat,
+}: ExtractVisualMeshVariantsOptions): ExtractedVisualMeshVariant[] {
   const variantFiles: ExtractedVisualMeshVariant[] = [];
   const pendingVariants: PendingVisualMeshVariant[] = [];
   meshObject.updateMatrixWorld(true);
@@ -904,13 +920,13 @@ function extractVisualMeshVariants(
       exportMesh.name = variant.meshName;
       exportMesh.updateMatrixWorld(true);
       const extension = resolveMeshFormat(meshFormat, exportMesh);
-      const exportPath = buildConvertedVisualVariantPath(
-        sourceMeshPath,
-        variant.material.name,
+      const exportPath = buildConvertedVisualVariantPath({
+        meshPath: sourceMeshPath,
+        materialName: variant.material.name,
         variantIndex,
-        usedArchivePaths,
+        usedPaths: usedArchivePaths,
         extension,
-      );
+      });
       if (!exportPath) {
         disposeObject3D(exportMesh, true);
         return;
@@ -1351,13 +1367,13 @@ export async function prepareMjcfMeshExportAssets(
           });
         }
 
-        const extractedVariantFiles = extractVisualMeshVariants(
+        const extractedVariantFiles = extractVisualMeshVariants({
           meshObject,
-          meshPath,
+          sourceMeshPath: meshPath,
           usedArchivePaths,
           exporters,
           meshFormat,
-        );
+        });
         const hasSplitVisualVariants = extractedVariantFiles.length > 1;
         const shouldPreferVisualVariants =
           hasSplitVisualVariants &&

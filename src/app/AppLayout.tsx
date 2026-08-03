@@ -19,6 +19,7 @@ import { useLibraryRobotLoadRequest } from './hooks/useLibraryRobotLoadRequest';
 import { usePreparedUsdViewerAssets } from './hooks/usePreparedUsdViewerAssets';
 import { usePreviewFileWithFeedback } from './hooks/usePreviewFileWithFeedback';
 import { useResponsiveSidebarCollapse } from './hooks/useResponsiveSidebarCollapse';
+import { useIgnoreJointLimitsScopeReset } from './hooks/useIgnoreJointLimitsScopeReset';
 import { useSelectionActiveComponentSync } from './hooks/useSelectionActiveComponentSync';
 import { useSourceCodeEditorDocuments } from './hooks/useSourceCodeEditorDocuments';
 import { useSourceCodeEditorWarmup } from './hooks/useSourceCodeEditorWarmup';
@@ -120,6 +121,7 @@ export function AppLayout({
   } = useAppLayoutStoreSlices();
 
   useSelectionActiveComponentSync();
+  useIgnoreJointLimitsScopeReset();
   useResponsiveSidebarCollapse({ sidebar, setSidebar });
   const mergedAppMode = normalizeMergedAppMode(appMode);
   const t = translations[lang];
@@ -278,6 +280,7 @@ export function AppLayout({
     handleDelete,
     handleSetShowVisual,
     handleJointChange: handleCommittedJointChange,
+    handleResetJointAngles,
     flushJointMotion,
   } = useWorkspaceMutations({
     focusOn,
@@ -668,6 +671,7 @@ export function AppLayout({
         setViewConfig,
         handleJointPreview,
         handleJointChange,
+        handleResetJointAngles,
         previewFile: activePreviewFile,
         previewRobot,
         filePreview,

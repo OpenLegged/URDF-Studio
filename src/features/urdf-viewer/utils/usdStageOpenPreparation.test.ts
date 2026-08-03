@@ -181,6 +181,9 @@ test('prepareUsdStageOpenDataCore materializes preload blobs and keeps optional 
         hasError: !!entry.error,
       })),
       [
+        // Bundle textures are preloaded alongside layers because layer text
+        // never names them; this one 404s and must stay a soft failure.
+        { path: '/Go2/textures/body.png', hasBlob: false, hasError: true },
         { path: '/Go2/usd/configuration/go2_description_base.usd', hasBlob: true, hasError: false },
         {
           path: '/Go2/usd/configuration/go2_description_sensor.usd',
@@ -190,7 +193,11 @@ test('prepareUsdStageOpenDataCore materializes preload blobs and keeps optional 
         { path: '/Go2/usd/go2.usd', hasBlob: true, hasError: false },
       ],
     );
-    assert.deepEqual(fetchCalls.sort(), ['blob:go2-base', 'blob:missing-texture']);
+    assert.deepEqual(fetchCalls.sort(), [
+      'blob:go2-base',
+      'blob:go2-texture',
+      'blob:missing-texture',
+    ]);
   } finally {
     globalThis.fetch = originalFetch;
   }

@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useEffect, useMemo, useRef } from 'react';
 import { useFrame, useThree } from '@react-three/fiber';
-import type * as THREE from 'three';
+import * as THREE from 'three';
 
 import { useSnapshotRenderActive } from './SnapshotRenderContext';
 import { useWorkspaceCanvasInteractionState } from './interactionQuality';
@@ -30,16 +30,54 @@ interface SemanticOutlineRegistry {
 
 const SemanticOutlineContext = createContext<SemanticOutlineRegistry | null>(null);
 
+// The outline overlay carries semantics (what is hovered / selected), not
+// decoration, so it is dropped only while the whole frame is already in motion
+// from a camera move — never for object-level drags such as rotating a joint by
+// dragging its link, where the outline is the feedback the user is watching.
 export function shouldRenderSemanticOutlineOverlay({
   hasTargets,
-  isInteracting,
+  cameraMoving,
   snapshotRenderActive,
 }: {
   hasTargets: boolean;
-  isInteracting: boolean;
+  cameraMoving: boolean;
   snapshotRenderActive: boolean;
 }): boolean {
-  return hasTargets && !isInteracting && !snapshotRenderActive;
+  return hasTargets && !cameraMoving && !snapshotRenderActive;
+}
+
+// Controls rewrite the camera transform every frame, so an idle camera still
+// drifts by float rounding (~1e-15). Exact comparison would read that as motion
+// and keep the overlay off forever; these thresholds sit far below any camera
+// change a viewer can perceive but well above the rounding noise.
+const CAMERA_MOTION_POSITION_EPSILON_SQUARED = 1e-12;
+const CAMERA_MOTION_ROTATION_EPSILON = 1e-9;
+const CAMERA_MOTION_ZOOM_EPSILON = 1e-6;
+
+function readCameraZoom(camera: THREE.Camera): number {
+  return 'zoom' in camera && typeof camera.zoom === 'number' ? camera.zoom : 1;
+}
+
+export function isCameraPoseMoving({
+  position,
+  quaternion,
+  zoom,
+  previousPosition,
+  previousQuaternion,
+  previousZoom,
+}: {
+  position: THREE.Vector3;
+  quaternion: THREE.Quaternion;
+  zoom: number;
+  previousPosition: THREE.Vector3;
+  previousQuaternion: THREE.Quaternion;
+  previousZoom: number;
+}): boolean {
+  return (
+    position.distanceToSquared(previousPosition) > CAMERA_MOTION_POSITION_EPSILON_SQUARED ||
+    1 - Math.abs(quaternion.dot(previousQuaternion)) > CAMERA_MOTION_ROTATION_EPSILON ||
+    Math.abs(zoom - previousZoom) > CAMERA_MOTION_ZOOM_EPSILON
+  );
 }
 
 function setAmbientOcclusionDiagnostics(
@@ -82,6 +120,17 @@ function SemanticOutlineRenderer({
   const snapshotRenderActive = useSnapshotRenderActive();
   const isInteracting = useWorkspaceCanvasInteractionState();
   const realtimeComposerRef = useRef<RealtimeViewportComposer | null>(null);
+  const lastCameraPoseRef = useRef<{
+    sampled: boolean;
+    position: THREE.Vector3;
+    quaternion: THREE.Quaternion;
+    zoom: number;
+  }>({
+    sampled: false,
+    position: new THREE.Vector3(),
+    quaternion: new THREE.Quaternion(),
+    zoom: 1,
+  });
   const latestSizeRef = useRef({
     width: size.width,
     height: size.height,
@@ -187,6 +236,23 @@ function SemanticOutlineRenderer({
       });
     }
 
+    const lastCameraPose = lastCameraPoseRef.current;
+    const cameraZoom = readCameraZoom(camera);
+    const cameraMoving =
+      lastCameraPose.sampled &&
+      isCameraPoseMoving({
+        position: camera.position,
+        quaternion: camera.quaternion,
+        zoom: cameraZoom,
+        previousPosition: lastCameraPose.position,
+        previousQuaternion: lastCameraPose.quaternion,
+        previousZoom: lastCameraPose.zoom,
+      });
+    lastCameraPose.sampled = true;
+    lastCameraPose.position.copy(camera.position);
+    lastCameraPose.quaternion.copy(camera.quaternion);
+    lastCameraPose.zoom = cameraZoom;
+
     const realtimeComposer = shouldRenderRealtimeAmbientOcclusion({
       composerAvailable: realtimeComposerRef.current !== null,
       isInteracting,
@@ -196,9 +262,16 @@ function SemanticOutlineRenderer({
       : null;
     const shouldRenderOutlineOverlay = shouldRenderSemanticOutlineOverlay({
       hasTargets: targets.length > 0,
-      isInteracting,
+      cameraMoving,
       snapshotRenderActive,
     });
+
+    // On-demand frameloops stop rendering as soon as the camera settles, so the
+    // frame that skipped the overlay would otherwise be the last one drawn and
+    // the outline would stay missing until an unrelated invalidate.
+    if (cameraMoving && targets.length > 0 && !snapshotRenderActive) {
+      invalidate();
+    }
 
     // Diagnostics mirror of the overlay decision, so browser regressions can
     // assert that hover/selection outlines stay on screen (e.g. while a mouse

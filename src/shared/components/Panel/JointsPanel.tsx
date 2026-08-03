@@ -29,6 +29,8 @@ interface JointsPanelProps {
   onMouseDown: (e: React.MouseEvent) => void;
   t: JointPanelTranslations;
   handleResetJoints: () => void;
+  ignoreLimits?: boolean;
+  onToggleIgnoreLimits?: (ignore: boolean) => void;
   angleUnit: JointPanelAngleUnit;
   setAngleUnit: (unit: JointPanelAngleUnit) => void;
   isJointsCollapsed: boolean;
@@ -60,6 +62,8 @@ export const JointsPanel: React.FC<JointsPanelProps> = ({
   onMouseDown,
   t,
   handleResetJoints,
+  ignoreLimits,
+  onToggleIgnoreLimits,
   angleUnit,
   setAngleUnit,
   isJointsCollapsed,
@@ -116,6 +120,8 @@ export const JointsPanel: React.FC<JointsPanelProps> = ({
       isAdvanced={isAdvanced}
       setIsAdvanced={setIsAdvanced}
       onReset={handleResetJoints}
+      ignoreLimits={ignoreLimits}
+      onToggleIgnoreLimits={onToggleIgnoreLimits}
     />
   );
 
@@ -158,6 +164,7 @@ export const JointsPanel: React.FC<JointsPanelProps> = ({
         onSelect={onSelect}
         onHover={onHover}
         isAdvanced={isAdvanced}
+        ignoreLimits={ignoreLimits}
         onUpdate={onUpdate}
       />
     </OptionsPanel>

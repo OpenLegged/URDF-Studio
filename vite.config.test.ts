@@ -135,10 +135,14 @@ async function reserveFreePort(): Promise<number> {
 }
 
 test('dev server listens on IPv4 loopback by default and supports host overrides', async () => {
+  // Blank rather than deleted: the config reads its env through Vite's loadEnv,
+  // which also merges .env.local from disk, so an unset key here would inherit a
+  // developer's local URDF_STUDIO_DEV_HOST override instead of exercising the
+  // default. A blank value is what "not configured" means to the resolver.
   const defaultConfig = await loadViteConfigWithDevServerEnv({
-    URDF_STUDIO_DEV_HOST: undefined,
-    URDF_STUDIO_DEV_ALLOWED_HOSTS: undefined,
-    URDF_STUDIO_VITE_CACHE_DIR: undefined,
+    URDF_STUDIO_DEV_HOST: '',
+    URDF_STUDIO_DEV_ALLOWED_HOSTS: '',
+    URDF_STUDIO_VITE_CACHE_DIR: '',
   });
 
   assert.equal(defaultConfig.server?.host, '127.0.0.1');

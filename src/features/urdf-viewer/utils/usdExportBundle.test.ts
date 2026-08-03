@@ -361,7 +361,10 @@ test('buildUsdExportBundleFromSnapshot keeps descriptor transforms in origins in
   assert.ok(meshBlob);
 
   const meshText = await meshBlob!.text();
-  assert.match(meshText, /^v 0 0 0 1 1 1$/m);
+  // Vertex colors only appear when the descriptor authors one, and this mesh
+  // does not; what matters here is that the descriptor translation stayed out
+  // of the vertex data.
+  assert.match(meshText, /^v 0 0 0$/m);
   assert.doesNotMatch(meshText, /^v 5 6 7$/m);
 });
 

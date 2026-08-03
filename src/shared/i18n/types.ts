@@ -552,6 +552,9 @@ export interface TranslationKeys extends TranslationWorkflowKeys {
   resetJoints: string;
   reset: string;
   advanced: string;
+  ignoreJointLimits: string;
+  ignoreJointLimitsOn: string;
+  ignoreJointLimitsHint: string;
   expand: string;
   collapse: string;
   close: string;
@@ -767,6 +770,7 @@ export interface TranslationKeys extends TranslationWorkflowKeys {
   motorType: string;
   addedComponent: string;
   addedComponentRecovered: string;
+  importedRobotRecovered: string;
   noCollisionOptimizationApplied: string;
   collisionOptimizationApplied: string;
   renamedFolder: string;

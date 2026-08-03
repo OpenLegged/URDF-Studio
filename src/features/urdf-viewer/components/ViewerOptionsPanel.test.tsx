@@ -324,7 +324,7 @@ test('ViewerOptionsPanel keeps its compact header bar', async () => {
   const title = header.querySelector('span');
   assert.ok(title, 'viewer options panel title should render');
   assert.match(title.className, /!text-\[11px\]/);
-  assert.match(title.className, /!text-text-secondary/);
+  assert.match(title.className, /!text-text-tertiary/);
 
   await act(async () => {
     root.unmount();

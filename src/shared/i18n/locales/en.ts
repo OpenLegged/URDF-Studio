@@ -603,6 +603,9 @@ export const en: TranslationKeys = {
   resetJoints: 'Reset Joints',
   reset: 'Reset',
   advanced: 'Advanced',
+  ignoreJointLimits: 'Ignore Joint Limits',
+  ignoreJointLimitsOn: 'Joint limits ignored',
+  ignoreJointLimitsHint: 'Drive joints past their limits to fix a wrong limit. Turns off when you switch models.',
   expand: 'Expand',
   collapse: 'Collapse',
   close: 'Close',
@@ -836,6 +839,7 @@ export const en: TranslationKeys = {
   motorType: 'Motor Type',
   addedComponent: 'Added component: {name}',
   addedComponentRecovered: 'Added component: {name} ({count} source issue(s) ignored)',
+  importedRobotRecovered: 'Imported {name} with {count} source issue(s) skipped; the rest is shown.',
   noCollisionOptimizationApplied: 'No collision optimization was applied.',
   collisionOptimizationApplied:
     'Applied {count} collision optimizations (Mesh {meshCount}, Primitive {primitiveCount})',

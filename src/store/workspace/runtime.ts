@@ -529,6 +529,7 @@ export function createWorkspaceRuntime(
         component.robot,
         ref.entityId,
         angle,
+        { ignoreLimits: options?.ignoreLimits },
       );
       return applyJointSolution(
         ref.componentId,

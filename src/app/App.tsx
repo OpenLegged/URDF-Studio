@@ -119,6 +119,7 @@ export function AppContent({ extensions, onExposeActions }: AppContentProps = {}
     useRobotLoadWorkflow({
       labels: {
         failedToParseFormat: t.failedToParseFormat,
+        importedRobotRecovered: t.importedRobotRecovered,
         importPackageAssetBundleHint: t.importPackageAssetBundleHint,
         xacroSourceOnlyPreviewHint: t.xacroSourceOnlyPreviewHint,
       },

@@ -530,6 +530,39 @@ test('parseURDF preserves continuous joint effort and velocity without synthesiz
   assert.doesNotMatch(urdf, /<limit[^>]*upper=/);
 });
 
+test('parseURDF does not flag continuous joints that omit <limit> entirely', () => {
+  const robot = parseURDF(`<?xml version="1.0"?>
+<robot name="wheelbot">
+  <link name="base_link" />
+  <link name="left_wheel" />
+  <link name="elbow" />
+  <joint name="left_wheel_joint" type="continuous">
+    <parent link="base_link" />
+    <child link="left_wheel" />
+    <axis xyz="0 1 0" />
+  </joint>
+  <joint name="elbow_joint" type="revolute">
+    <parent link="base_link" />
+    <child link="elbow" />
+    <axis xyz="0 0 1" />
+  </joint>
+</robot>`);
+
+  assert.ok(robot);
+  assert.equal(robot.joints.left_wheel_joint?.limit, undefined);
+
+  const missingLimitDiagnostics = (robot.inspectionContext?.urdf?.diagnostics ?? []).filter(
+    (diagnostic) => diagnostic.code === 'movable_joint_missing_limit',
+  );
+  // URDF requires <limit> only for revolute and prismatic joints, so the wheel
+  // must stay clean while the revolute joint is still reported.
+  assert.deepEqual(
+    missingLimitDiagnostics.map((diagnostic) => diagnostic.source?.name),
+    ['elbow_joint'],
+  );
+  assert.equal(missingLimitDiagnostics[0]?.severity, 'error');
+});
+
 test('parseURDF omits malformed joint metadata and preserves invalid geometry for import recovery', () => {
   const robot = parseURDF(`<?xml version="1.0"?>
 <robot name="malformed_optional_numbers">

@@ -15,6 +15,24 @@ import {
   resolveRuntimeGeometryRoot,
 } from '../utils/runtimeGeometrySelection';
 
+/**
+ * URDFLoader tags its runtime nodes with plain boolean flags that are absent
+ * from the Three.js typings. Narrowing them here keeps the interop in one place
+ * instead of spreading `as any` across every call site.
+ */
+type UrdfLinkNode = THREE.Object3D & { isURDFLink: true };
+type UrdfColliderNode = THREE.Object3D & { isURDFCollider: true };
+
+function isUrdfLinkNode(object: THREE.Object3D | null | undefined): object is UrdfLinkNode {
+  return (object as { isURDFLink?: boolean } | null | undefined)?.isURDFLink === true;
+}
+
+function isUrdfColliderNode(
+  object: THREE.Object3D | null | undefined,
+): object is UrdfColliderNode {
+  return (object as { isURDFCollider?: boolean } | null | undefined)?.isURDFCollider === true;
+}
+
 export interface UseHighlightManagerOptions {
   robot: THREE.Object3D | null;
   robotVersion: number;
@@ -140,10 +158,12 @@ export function useHighlightManager({
 
   const getColliderIndex = useCallback((collider: THREE.Object3D): number => {
     const linkObject =
-      collider.parent && (collider.parent as any).isURDFLink ? collider.parent : null;
+      collider.parent && isUrdfLinkNode(collider.parent) ? collider.parent : null;
     if (!linkObject) return 0;
 
-    const colliders = linkObject.children.filter((child: any) => child.isURDFCollider);
+    // Annotated as boolean so TS does not infer a type predicate here; the
+    // narrowed element type would break the Object3D lookup below.
+    const colliders = linkObject.children.filter((child): boolean => isUrdfColliderNode(child));
     const colliderIndex = colliders.indexOf(collider);
     return colliderIndex >= 0 ? colliderIndex : 0;
   }, []);
@@ -156,9 +176,8 @@ export function useHighlightManager({
           : undefined;
       const linkData = linkName ? robotLinksRef.current?.[linkName] : undefined;
 
-      if (mesh.userData?.isCollisionMesh || (mesh.parent && (mesh.parent as any).isURDFCollider)) {
-        const colliderRoot =
-          mesh.parent && (mesh.parent as any).isURDFCollider ? mesh.parent : null;
+      if (mesh.userData?.isCollisionMesh || isUrdfColliderNode(mesh.parent)) {
+        const colliderRoot = isUrdfColliderNode(mesh.parent) ? mesh.parent : null;
         const colliderIndex = colliderRoot ? getColliderIndex(colliderRoot) : 0;
         const geometry = getCollisionGeometryByIndex(linkData, colliderIndex);
         return showCollisionRef.current && geometry?.visible !== false;
@@ -447,12 +466,12 @@ export function useHighlightManager({
   // Revert all highlighted meshes using the tracked Map (O(n) where n = highlighted, not total)
   const revertAllHighlights = useCallback(() => {
     highlightedMeshesRef.current.forEach((snapshot, mesh) => {
-      const isCollider = (mesh as any).isURDFCollider || mesh.userData.isCollisionMesh;
+      const isCollider = isUrdfColliderNode(mesh) || mesh.userData.isCollisionMesh;
       const shouldBeVisible = getMeshVisibility(mesh);
       restoreHighlightedMeshSnapshot(mesh, snapshot, shouldBeVisible);
 
       if (isCollider) {
-        if (mesh.parent && (mesh.parent as any).isURDFCollider)
+        if (isUrdfColliderNode(mesh.parent))
           mesh.parent.visible = shouldBeVisible;
       }
     });
@@ -560,7 +579,7 @@ export function useHighlightManager({
                 const shouldBeVisible = getMeshVisibility(mesh);
                 restoreHighlightedMeshSnapshot(mesh, snapshot, shouldBeVisible);
                 if (mesh.userData?.isCollisionMesh) {
-                  if (mesh.parent && (mesh.parent as any).isURDFCollider)
+                  if (isUrdfColliderNode(mesh.parent))
                     mesh.parent.visible = shouldBeVisible;
                 }
                 highlightedMeshesRef.current.delete(mesh);

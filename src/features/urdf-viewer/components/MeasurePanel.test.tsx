@@ -144,7 +144,7 @@ test('MeasurePanel keeps the snap selector compact and drops the verbose helper 
   );
   assert.match(
     anchorCombobox.className,
-    /text-\[10px\]/,
+    /\btext-ui-caption\b/,
     'anchor selector should inherit the shared dense panel select typography',
   );
 
@@ -176,7 +176,7 @@ test('MeasurePanel renders relative transform representation options for complet
   assert.ok(poseCombobox, 'relative transform section should use the shared panel select trigger');
   assert.match(
     poseCombobox.className,
-    /text-\[10px\]/,
+    /\btext-ui-caption\b/,
     'relative transform selector should inherit the shared dense panel select typography',
   );
   assert.equal(container.textContent?.includes('相对平移'), true);

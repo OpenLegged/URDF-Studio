@@ -1,5 +1,5 @@
 import React, { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Canvas, type RootState, useFrame, useThree } from '@react-three/fiber';
+import { Canvas, type RootState, useThree } from '@react-three/fiber';
 import { Environment, GizmoHelper, GizmoViewport, OrthographicCamera } from '@react-three/drei';
 import * as THREE from 'three';
 
@@ -25,7 +25,7 @@ import {
   type SnapshotCaptureAction,
   type SnapshotPreviewAction,
   type WorkspaceOverlayGizmoMargin,
-  useAdaptiveInteractionQuality,
+  useViewportInteractionQuality,
   WorkspaceCanvasInteractionStateProvider,
   WorkspaceOrbitControls,
   resolveCameraFollowLightingStyle,
@@ -153,13 +153,6 @@ function CanvasRenderKeyInvalidator({ renderKey, dpr }: { renderKey: string; dpr
   return null;
 }
 
-function CanvasInteractionFrameSampler({ onFrame }: { onFrame: (frameTimeMs: number) => void }) {
-  useFrame((_state, delta) => {
-    onFrame(delta * 1000);
-  });
-  return null;
-}
-
 export const WorkspaceCanvas = ({
   theme,
   lang,
@@ -223,17 +216,11 @@ export const WorkspaceCanvas = ({
     startX: number;
     startY: number;
   } | null>(null);
-  const {
-    dpr,
-    isInteracting,
-    beginInteraction,
-    endInteraction,
-    pulseInteraction,
-    reportInteractionFrame,
-  } = useAdaptiveInteractionQuality({
-    restingCap: maxDpr,
-    minRenderDpr: minDpr,
-  });
+  const { dpr, isInteracting, beginInteraction, endInteraction, pulseInteraction } =
+    useViewportInteractionQuality({
+      restingCap: maxDpr,
+      minRenderDpr: minDpr,
+    });
 
   // Render content changes should only invalidate the current frame. Only a real WebGL context
   // loss should force a full canvas/renderer rebuild. A change in camera projection also
@@ -619,7 +606,6 @@ export const WorkspaceCanvas = ({
             translate="no"
           >
             <WorkspaceCanvasInteractionStateProvider isInteracting={isInteracting}>
-              <CanvasInteractionFrameSampler onFrame={reportInteractionFrame} />
               <SnapshotRenderStateProvider
                 value={{
                   snapshotRenderActive,

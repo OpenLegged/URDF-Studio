@@ -85,6 +85,15 @@ export interface ClosedLoopMotionSolveOptions extends JointKinematicOverrideMap 
   maxVariableStep?: number;
 }
 
+export interface ClosedLoopDrivenJointMotionOptions
+  extends Omit<ClosedLoopMotionSolveOptions, 'lockedJointIds'> {
+  /**
+   * Drive the selected joint past its authored limit. Only the driven joint is
+   * released: passive joints keep their limits so the loop solver stays bounded.
+   */
+  ignoreLimits?: boolean;
+}
+
 export interface ClosedLoopMotionSolveResult extends ClosedLoopMotionCompensation {
   constraintErrors: Record<string, number>;
   residual: number;
@@ -1369,7 +1378,7 @@ export function resolveClosedLoopDrivenJointMotion(
   robot: Pick<RobotData, 'links' | 'joints' | 'rootLinkId' | 'closedLoopConstraints'>,
   selectedJointId: string,
   selectedAngle: number,
-  options: Omit<ClosedLoopMotionSolveOptions, 'angles' | 'quaternions' | 'lockedJointIds'> = {},
+  options: Omit<ClosedLoopDrivenJointMotionOptions, 'angles' | 'quaternions'> = {},
 ): ClosedLoopDrivenJointMotionResult {
   const selectedJoint = robot.joints[selectedJointId];
   if (!selectedJoint || !isSolvableJointType(selectedJoint)) {
@@ -1388,7 +1397,9 @@ export function resolveClosedLoopDrivenJointMotion(
   }
 
   const tolerance = options.tolerance ?? ANGLE_SOLVER_TOLERANCE;
-  const normalizedSelectedAngle = clampSolvedAngle(selectedJoint, selectedAngle, selectedAngle);
+  const normalizedSelectedAngle = options.ignoreLimits
+    ? selectedAngle
+    : clampSolvedAngle(selectedJoint, selectedAngle, selectedAngle);
   const preferredLockedPassiveSpringJointIds = collectPreferredLockedPassiveSpringJointIds(
     robot,
     selectedJointId,

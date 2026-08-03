@@ -62,8 +62,8 @@
       "max": 0
     },
     "css-important": {
-      "max": 32,
-      "note": "Historical Tailwind utility font-size overrides and scrollbar styling."
+      "max": 44,
+      "note": "Historical Tailwind utility font-size overrides and scrollbar styling, plus the six semantic typography tokens (.text-ui-micro/caption/label/control/body/title) added on 2026-07-25 and mirrored in src/styles/index.css and src/lib/styles.css. SCOPE: only the --font-effective-scale override block in those two files. REASON: components stack a semantic token on top of a Tailwind size on the same element (e.g. Select.tsx ships text-sm and PanelSelect appends text-ui-caption); without !important the Tailwind rule wins and the control renders at the wrong size. OWNER: design-token layer (docs/style-guide.md). EXIT: generate the scale from the Tailwind 4 @theme layer so the override block disappears entirely, then tighten this count toward 0. Do NOT raise this further for ad-hoc !important outside that block."
     },
     "css-declaration-order": {
       "max": 0,

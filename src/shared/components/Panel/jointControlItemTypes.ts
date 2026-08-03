@@ -30,6 +30,8 @@ export interface JointControlItemProps {
   setIsDragging?: (dragging: boolean) => void;
   onSelect?: (type: 'link' | 'joint', id: string) => void;
   isAdvanced?: boolean;
+  /** Let the slider travel past the authored limit (temporary limit override). */
+  ignoreLimits?: boolean;
   onUpdate?: (type: 'link' | 'joint', id: string, data: unknown) => void;
   compact?: boolean;
   dragSyncIntervalMs?: number;

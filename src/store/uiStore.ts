@@ -256,6 +256,15 @@ interface UIState {
   // Structure tree geometry detail disclosure
   structureTreeShowGeometryDetails: boolean;
   setStructureTreeShowGeometryDetails: (show: boolean) => void;
+
+  /**
+   * Temporarily drive joints past their authored limits, so a wrong limit can be
+   * corrected by posing the joint first. Deliberately excluded from `partialize`
+   * and cleared when the active model changes: leaving it on across sessions
+   * would silently disable limit checks for later edits.
+   */
+  ignoreJointLimits: boolean;
+  setIgnoreJointLimits: (ignore: boolean) => void;
 }
 
 // Default values
@@ -266,7 +275,7 @@ const defaultViewConfig: ViewConfig = {
 
 const defaultViewOptions: ViewOptions = {
   showGrid: true,
-  showAxes: true,
+  showAxes: false,
   showUsageGuide: true,
   showMjcfWorldLink: true,
   showIkHandles: false,
@@ -646,10 +655,14 @@ export const useUIStore = create<UIState>()(
       structureTreeShowGeometryDetails: false,
       setStructureTreeShowGeometryDetails: (structureTreeShowGeometryDetails) =>
         set({ structureTreeShowGeometryDetails }),
+
+      // Temporary joint-limit override (never persisted)
+      ignoreJointLimits: false,
+      setIgnoreJointLimits: (ignoreJointLimits) => set({ ignoreJointLimits }),
     }),
     {
       name: 'urdf-studio-ui',
-      version: 22,
+      version: 23,
       migrate: (persistedState: unknown, persistedVersion) => {
         if (!persistedState || typeof persistedState !== 'object') {
           return persistedState;
@@ -704,6 +717,13 @@ export const useUIStore = create<UIState>()(
         // imported MJCF scenes show their floor immediately.
         if ((persistedVersion ?? 0) < 16) {
           migratedViewOptions.showMjcfWorldLink = true;
+        }
+
+        // World origin axes are now opt-in. Sessions persisted before v23 carry
+        // the old enabled-by-default value, which keeps the origin gizmo on
+        // screen after upgrading; reset them once to the hidden default.
+        if ((persistedVersion ?? 0) < 23) {
+          migratedViewOptions.showAxes = false;
         }
 
         return {

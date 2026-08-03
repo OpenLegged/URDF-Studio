@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { JSDOM } from 'jsdom';
 
 type UIStoreModule = typeof import('./uiStore.ts');
-const UI_STORE_PERSIST_VERSION = 22;
+const UI_STORE_PERSIST_VERSION = 23;
 
 function installDom() {
   const dom = new JSDOM('<!doctype html><html><body></body></html>', {
@@ -413,6 +413,44 @@ test('migration resets legacy IK handle visibility to the hidden default', async
 
   assert.equal(persisted.version, UI_STORE_PERSIST_VERSION);
   assert.equal(persisted.state?.viewOptions?.showIkHandles, false);
+
+  dom.window.close();
+});
+
+test('migration resets legacy world origin axes to the hidden default', async () => {
+  const { dom, useUIStore } = await loadUIStore(
+    {
+      viewOptions: {
+        showGrid: true,
+        showAxes: true,
+        showUsageGuide: true,
+        showMjcfWorldLink: true,
+        showJointAxes: false,
+        showInertia: false,
+        showCenterOfMass: false,
+        showCollision: false,
+        modelOpacity: 1,
+      },
+    },
+    22,
+  );
+
+  const state = useUIStore.getState();
+  assert.equal(state.viewOptions.showAxes, false);
+
+  const raw = dom.window.localStorage.getItem('urdf-studio-ui');
+  assert.ok(raw, 'persisted ui store payload should be written');
+  const persisted = JSON.parse(raw) as {
+    state?: {
+      viewOptions?: {
+        showAxes?: boolean;
+      };
+    };
+    version?: number;
+  };
+
+  assert.equal(persisted.version, UI_STORE_PERSIST_VERSION);
+  assert.equal(persisted.state?.viewOptions?.showAxes, false);
 
   dom.window.close();
 });

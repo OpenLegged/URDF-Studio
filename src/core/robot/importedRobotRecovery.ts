@@ -388,6 +388,137 @@ function sanitizeJointUsdPhysics(
   });
 }
 
+/**
+ * Drop the joints that would make the kinematic tree unrepresentable.
+ *
+ * Canonical validation rejects self-referential joints, a link owning more than
+ * one parent joint, and cyclic joint graphs. Failing the whole import for those
+ * hides every healthy link in the file, so the offending joints are omitted
+ * individually instead and reported as recovery diagnostics. Document order
+ * decides which joint survives a conflict, so the result is deterministic.
+ */
+function recoverJointTopology(robotData: RobotData, collector: RecoveryCollector): void {
+  let brokeCycle = false;
+  const parentJointByChild = new Map<string, string>();
+  for (const [jointId, joint] of Object.entries(robotData.joints)) {
+    if (joint.parentLinkId === joint.childLinkId) {
+      delete robotData.joints[jointId];
+      collector.add({
+        code: 'self_referential_joint_omitted',
+        severity: 'warning',
+        category: 'topology',
+        message: `Joint "${jointId}" connected link "${joint.childLinkId}" to itself and was omitted.`,
+        relatedIds: [jointId, joint.childLinkId],
+        action: 'omitted',
+      });
+      continue;
+    }
+
+    const existingParentJoint = parentJointByChild.get(joint.childLinkId);
+    if (existingParentJoint) {
+      delete robotData.joints[jointId];
+      collector.add({
+        code: 'duplicate_parent_joint_omitted',
+        severity: 'warning',
+        category: 'topology',
+        message: `Joint "${jointId}" gave link "${joint.childLinkId}" a second parent after "${existingParentJoint}" and was omitted.`,
+        relatedIds: [jointId, existingParentJoint, joint.childLinkId],
+        action: 'omitted',
+      });
+      continue;
+    }
+
+    parentJointByChild.set(joint.childLinkId, jointId);
+  }
+
+  // Each child now has at most one parent joint, so every remaining cycle is
+  // broken by removing exactly one edge; repeat until the graph is acyclic.
+  for (;;) {
+    const cyclicJointId = findCycleClosingJointId(robotData);
+    if (!cyclicJointId) {
+      break;
+    }
+
+    const joint = robotData.joints[cyclicJointId];
+    delete robotData.joints[cyclicJointId];
+    brokeCycle = true;
+    collector.add({
+      code: 'cyclic_joint_omitted',
+      severity: 'warning',
+      category: 'topology',
+      message: `Joint "${cyclicJointId}" closed a cycle through link "${joint.childLinkId}" and was omitted.`,
+      relatedIds: [cyclicJointId, joint.parentLinkId, joint.childLinkId],
+      action: 'omitted',
+    });
+  }
+
+  if (brokeCycle) {
+    reanchorRootLink(robotData, collector);
+  }
+}
+
+/**
+ * Re-anchor the tree after cycle breaking freed a link from its parent.
+ *
+ * Only runs once a cycle was actually removed: parsers that resolve a root
+ * themselves keep it, so this never second-guesses a healthy import. Leaves the
+ * root untouched when it is still parentless.
+ */
+function reanchorRootLink(robotData: RobotData, collector: RecoveryCollector): void {
+  const childLinkIds = new Set(Object.values(robotData.joints).map((joint) => joint.childLinkId));
+  if (robotData.links[robotData.rootLinkId] && !childLinkIds.has(robotData.rootLinkId)) {
+    return;
+  }
+
+  const nextRootLinkId = Object.keys(robotData.links).find((linkId) => !childLinkIds.has(linkId));
+  if (!nextRootLinkId || nextRootLinkId === robotData.rootLinkId) {
+    return;
+  }
+
+  const previousRootLinkId = robotData.rootLinkId;
+  robotData.rootLinkId = nextRootLinkId;
+  collector.add({
+    code: 'root_link_reanchored',
+    severity: 'warning',
+    category: 'topology',
+    message: `Root link "${previousRootLinkId}" still had a parent after cycle removal; the tree was re-anchored on "${nextRootLinkId}".`,
+    relatedIds: [previousRootLinkId, nextRootLinkId],
+    action: 'defaulted',
+  });
+}
+
+function findCycleClosingJointId(robotData: RobotData): string | null {
+  const outgoing = new Map<string, Array<{ childLinkId: string; jointId: string }>>();
+  Object.entries(robotData.joints).forEach(([jointId, joint]) => {
+    const edges = outgoing.get(joint.parentLinkId) ?? [];
+    edges.push({ childLinkId: joint.childLinkId, jointId });
+    outgoing.set(joint.parentLinkId, edges);
+  });
+
+  const visiting = new Set<string>();
+  const visited = new Set<string>();
+  const visit = (linkId: string): string | null => {
+    if (visited.has(linkId)) return null;
+    visiting.add(linkId);
+    for (const edge of outgoing.get(linkId) ?? []) {
+      if (visiting.has(edge.childLinkId)) {
+        return edge.jointId;
+      }
+      const found = visit(edge.childLinkId);
+      if (found) return found;
+    }
+    visiting.delete(linkId);
+    visited.add(linkId);
+    return null;
+  };
+
+  for (const linkId of Object.keys(robotData.links)) {
+    const found = visit(linkId);
+    if (found) return found;
+  }
+  return null;
+}
+
 function sanitizeMjcfSites(
   robotData: RobotData,
   collector: RecoveryCollector,
@@ -491,6 +622,8 @@ export function recoverImportedRobotData(
     sanitizeJointOptionalNumbers(joint, `joints.${jointId}`, collector);
     sanitizeJointUsdPhysics(joint, `joints.${jointId}`, collector);
   }
+
+  recoverJointTopology(recovered, collector);
 
   Object.entries(recovered.joints).forEach(([jointId, joint]) => {
     if (joint.mimic && !recovered.joints[joint.mimic.joint]) {

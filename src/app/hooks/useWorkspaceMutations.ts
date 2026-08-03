@@ -20,6 +20,7 @@ import type {
   WorkspacePropertyPatch,
 } from '@/store/workspaceStore';
 import { useAssetsStore } from '@/store/assetsStore';
+import { useUIStore } from '@/store/uiStore';
 import {
   repairWorkspaceSelection,
   useSelectionStore,
@@ -50,6 +51,7 @@ import {
   findUpdatedCollisionGeometryPatch,
 } from './workspace-mutations/collisionGeometryDiff';
 import { resolveViewerJointChangeContext } from './workspace-mutations/jointMotion';
+import { commitComponentJointMotionReset } from './workspace-mutations/jointMotionReset';
 import { hasLinkInertialChanged } from './workspace-mutations/linkInertialDiff';
 import { applyLinkPatch } from './workspace-mutations/linkPatch';
 import {
@@ -785,9 +787,27 @@ export function useWorkspaceMutations({
         );
         return;
       }
-      store.setJointMotion(ref, angle);
+      // The viewer already resolved its own motion above; only this direct path
+      // still runs the limit clamp, so the temporary override applies here.
+      store.setJointMotion(ref, angle, {
+        ignoreLimits: useUIStore.getState().ignoreJointLimits,
+      });
     },
     [],
+  );
+
+  const handleResetJointAngles = useCallback(
+    (componentId: string, jointAngles: Record<string, number>) => {
+      const store = useWorkspaceStore.getState();
+      return commitComponentJointMotionReset({
+        componentId,
+        jointAngles,
+        flushPendingHistory: commitPendingHistory,
+        store,
+        workspace: store.workspace,
+      });
+    },
+    [commitPendingHistory],
   );
 
   const flushJointMotion = useCallback(() => {
@@ -814,6 +834,7 @@ export function useWorkspaceMutations({
     handleSetComponentVisibility,
     handleSetShowVisual,
     handleJointChange,
+    handleResetJointAngles,
     flushJointMotion,
   };
 }

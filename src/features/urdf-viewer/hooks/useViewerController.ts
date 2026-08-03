@@ -8,6 +8,7 @@ import {
   type SetStateAction,
 } from 'react';
 import { useSelectionStore, type HoverFreezeOwner } from '@/store/selectionStore';
+import { useUIStore } from '@/store/uiStore';
 import { hasJointInteractionPreview, useJointInteractionPreviewStore } from '@/store';
 import type {
   JointInteractionPreviewSnapshot,
@@ -41,6 +42,7 @@ import {
   type RuntimeViewerRobot,
 } from '../utils/runtimeRobotMotion';
 import { beginInitialGroundAlignment } from '@/shared/components/3d/robotPositioning';
+import { useRuntimeJointLimitOverride } from './useRuntimeJointLimitOverride';
 import { useViewerSettings } from './useViewerSettings';
 import { usePanelLayoutController } from './viewer-controller/usePanelLayoutController';
 import { useRegressionBridge } from './viewer-controller/useRegressionBridge';
@@ -64,7 +66,11 @@ import {
   type ViewerJointInteractionEvent,
 } from './viewer-controller/closedLoopJointPreview';
 import { type InteractionSelection, type JointQuaternion, type RobotState } from '@/types';
-import { getJointMotionAngleFromActualAngle, resolveMimicJointAngleTargets } from '@/core/robot';
+import {
+  getJointMotionAngleFromActualAngle,
+  getJointReferencePosition,
+  resolveMimicJointAngleTargets,
+} from '@/core/robot';
 import { logRuntimeFailure, scheduleFailFastInDev } from '@/core/utils/runtimeDiagnostics';
 import type { RuntimeRobotObject } from '@/shared/components/3d/runtimeRobotTypes';
 
@@ -264,7 +270,6 @@ export const useViewerController = ({
   const jointAnglesRef = useRef<Record<string, number>>(
     jointPanelStoreRef.current.getSnapshot().jointAngles,
   );
-  const initialJointAnglesRef = useRef<Record<string, number>>({});
   const jointStateScopeRef = useRef<string | null>(null);
   const [angleUnit, setAngleUnit] = useState<'rad' | 'deg'>('rad');
   const activeJointRef = useRef<string | null>(
@@ -315,6 +320,7 @@ export const useViewerController = ({
   const transformPendingRef = useRef(false);
   const jointControlRobot = (jointPanelRobot || robot) as RuntimeViewerRobot | null;
   const jointControlJoints = jointControlRobot?.joints;
+  const ignoreJointLimits = useUIStore((state) => state.ignoreJointLimits);
   const effectiveClosedLoopRobotState = useMemo(
     () =>
       mergeClosedLoopRobotStateWithRuntimeJointPose(
@@ -336,8 +342,13 @@ export const useViewerController = ({
     },
     [effectiveClosedLoopRobotState],
   );
-  const resolveRuntimeMotionAngle = useCallback(
-    (jointNameOrId: string, actualAngle: number, runtimeJoint?: RuntimePoseJointLike | null) => {
+  /**
+   * The joint that owns the actual/motion angle offset. Canonical workspace state
+   * wins over the runtime object because only it is guaranteed to carry the
+   * authored `referencePosition`.
+   */
+  const resolveMotionReferenceJoint = useCallback(
+    (jointNameOrId: string, runtimeJoint?: RuntimePoseJointLike | null) => {
       const stateJointKey =
         resolveViewerJointKey(
           effectiveClosedLoopRobotState?.joints,
@@ -347,13 +358,31 @@ export const useViewerController = ({
       const stateJoint = stateJointKey
         ? effectiveClosedLoopRobotState?.joints?.[stateJointKey]
         : undefined;
-      const referenceJoint = stateJoint ?? runtimeJoint;
+
+      return stateJoint ?? runtimeJoint ?? null;
+    },
+    [effectiveClosedLoopRobotState?.joints],
+  );
+
+  const resolveRuntimeMotionAngle = useCallback(
+    (jointNameOrId: string, actualAngle: number, runtimeJoint?: RuntimePoseJointLike | null) => {
+      const referenceJoint = resolveMotionReferenceJoint(jointNameOrId, runtimeJoint);
 
       return referenceJoint
         ? getJointMotionAngleFromActualAngle(referenceJoint, actualAngle)
         : actualAngle;
     },
-    [effectiveClosedLoopRobotState?.joints],
+    [resolveMotionReferenceJoint],
+  );
+
+  /** Actual angle at which the joint sits when the model is at its authored rest pose. */
+  const resolveJointRestActualAngle = useCallback(
+    (jointNameOrId: string, runtimeJoint?: RuntimePoseJointLike | null) => {
+      const referenceJoint = resolveMotionReferenceJoint(jointNameOrId, runtimeJoint);
+
+      return referenceJoint ? getJointReferencePosition(referenceJoint) : 0;
+    },
+    [resolveMotionReferenceJoint],
   );
 
   const ensureJointInteractionPreviewSessionId = useCallback(() => {
@@ -494,6 +523,12 @@ export const useViewerController = ({
     // branch did not mutate scene graph state in the same commit.
     requestSceneRefresh();
   }, [active, requestSceneRefresh, showCollision, showCollisionAlwaysOnTop, showVisual]);
+
+  useRuntimeJointLimitOverride({
+    joints: jointControlJoints,
+    ignoreLimits: ignoreJointLimits,
+    requestSceneRefresh,
+  });
 
   const applyRuntimeJointMotionPreview = useCallback(
     (
@@ -1067,7 +1102,7 @@ export const useViewerController = ({
       const loadedJoints = (loadedRobot as RuntimeViewerRobot | null)?.joints;
       const preservePreviousAngles =
         jointStateScopeRef.current !== null && jointStateScopeRef.current === jointStateScopeKey;
-      const { currentAngles, defaultAngles } = resolveInitialJointControlState({
+      const { currentAngles } = resolveInitialJointControlState({
         joints: loadedJoints,
         previousAngles: jointAnglesRef.current,
         preservePreviousAngles,
@@ -1076,7 +1111,6 @@ export const useViewerController = ({
 
       replaceJointPanelAngles(currentAngles);
       storeAppliedJointMotionState(currentAngles);
-      initialJointAnglesRef.current = defaultAngles;
       setPanelActiveJoint(null);
       jointStateScopeRef.current = jointStateScopeKey;
     },
@@ -1875,24 +1909,77 @@ export const useViewerController = ({
     ],
   );
 
+  // Reset targets each joint's authored rest pose (`referencePosition`, 0 for the
+  // formats that have no such concept) rather than a pose captured when the robot
+  // was loaded. A captured pose drifts to "wherever the model happened to be" on
+  // any reload that re-seeds it, which silently turns Reset into a no-op.
   const handleResetJoints = useCallback(() => {
     if (!jointControlRobot?.joints) return;
     const runtimeJoints = jointControlRobot.joints;
-    Object.keys(jointAnglesRef.current).forEach((name) => {
-      const initialAngle = initialJointAnglesRef.current[name] || 0;
-      const joint = runtimeJoints[name];
-      if (joint) {
-        const originalIgnoreLimits = joint.ignoreLimits;
-        joint.ignoreLimits = true;
-        handleJointAngleChange(name, initialAngle);
-        joint.ignoreLimits = originalIgnoreLimits;
-      } else {
-        handleJointAngleChange(name, initialAngle);
-      }
 
-      handleJointChangeCommit(name, initialAngle);
+    const resetAngles: Record<string, number> = {};
+    Object.keys(jointAnglesRef.current).forEach((jointNameOrId) => {
+      const jointKey = resolveViewerJointKey(jointControlJoints, jointNameOrId) ?? jointNameOrId;
+      resetAngles[jointNameOrId] = resolveJointRestActualAngle(
+        jointNameOrId,
+        runtimeJoints[jointKey],
+      );
     });
-  }, [handleJointAngleChange, handleJointChangeCommit, jointControlRobot]);
+
+    const normalizedResetAngles = normalizeViewerJointAngleState(jointControlJoints, resetAngles);
+    if (Object.keys(normalizedResetAngles).length === 0) return;
+
+    clearJointInteractionPreview();
+    cancelClosedLoopPreviewScheduler();
+    resetClosedLoopPreviewState();
+
+    let shouldRefresh = false;
+    Object.entries(normalizedResetAngles).forEach(([jointKey, angle]) => {
+      const joint = runtimeJoints[jointKey];
+      if (!joint || !isSingleDofJoint(joint)) return;
+
+      const runtimeMotionAngle = resolveRuntimeMotionAngle(jointKey, angle, joint);
+      if (isSameJointAngle(Number(joint.angle ?? joint.jointValue), runtimeMotionAngle)) return;
+
+      // A rest pose can sit outside the joint's own authored limit when the source
+      // declares an inconsistent pair. The runtime clamp must not rewrite it, or
+      // reset lands in a pose the model never had.
+      const originalIgnoreLimits = joint.ignoreLimits;
+      joint.ignoreLimits = true;
+      joint.setJointValue?.(runtimeMotionAngle);
+      joint.ignoreLimits = originalIgnoreLimits;
+      (joint as { finalizeJointValue?: () => void }).finalizeJointValue?.();
+      shouldRefresh = true;
+    });
+
+    commitIkJointKinematics(normalizedResetAngles, {});
+
+    // Emit once with the full angle set so the app commits a single workspace
+    // transaction that writes the angles verbatim, instead of one clamped
+    // driven-motion solve (and one history entry) per joint.
+    const [firstResetEntry] = Object.entries(normalizedResetAngles);
+    if (firstResetEntry) {
+      const [jointKey, angle] = firstResetEntry;
+      emitJointChangeToApp(runtimeJoints[jointKey]?.name || jointKey, angle, {
+        jointAngles: normalizedResetAngles,
+      });
+    }
+
+    if (shouldRefresh) {
+      requestSceneRefresh();
+    }
+  }, [
+    cancelClosedLoopPreviewScheduler,
+    clearJointInteractionPreview,
+    commitIkJointKinematics,
+    emitJointChangeToApp,
+    jointControlJoints,
+    jointControlRobot,
+    requestSceneRefresh,
+    resetClosedLoopPreviewState,
+    resolveJointRestActualAngle,
+    resolveRuntimeMotionAngle,
+  ]);
 
   const handleSelectWrapper = useCallback(
     (

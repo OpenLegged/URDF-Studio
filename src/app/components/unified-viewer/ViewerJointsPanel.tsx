@@ -3,6 +3,7 @@ import React from 'react';
 import type { Language } from '@/shared/i18n';
 import { translations } from '@/shared/i18n';
 import { JointsPanel } from '@/shared/components/Panel/JointsPanel';
+import { useUIStore } from '@/store/uiStore';
 import type { ViewerController } from '@/features/editor';
 import { useResponsivePanelLayout } from '@/features/editor';
 
@@ -20,6 +21,8 @@ export function ViewerJointsPanel({
   onUpdate?: (type: 'link' | 'joint', id: string, data: unknown) => void;
 }) {
   const t = translations[lang];
+  const ignoreJointLimits = useUIStore((state) => state.ignoreJointLimits);
+  const setIgnoreJointLimits = useUIStore((state) => state.setIgnoreJointLimits);
   const { jointsDefaultPosition, jointsPanelMaxHeight } = useResponsivePanelLayout({
     containerRef: controller.containerRef,
     optionsPanelRef: controller.optionsPanelRef,
@@ -40,6 +43,8 @@ export function ViewerJointsPanel({
       onMouseDown={(event) => controller.handleMouseDown('joints', event)}
       t={t}
       handleResetJoints={controller.handleResetJoints}
+      ignoreLimits={ignoreJointLimits}
+      onToggleIgnoreLimits={setIgnoreJointLimits}
       angleUnit={controller.angleUnit}
       setAngleUnit={controller.setAngleUnit}
       isJointsCollapsed={controller.isJointsCollapsed}

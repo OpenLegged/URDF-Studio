@@ -38,6 +38,7 @@ const JointControlItemComponent: React.FC<JointControlItemProps> = ({
   setIsDragging,
   onSelect,
   isAdvanced = false,
+  ignoreLimits = false,
   onUpdate,
   compact = false,
   dragSyncIntervalMs = JOINT_PANEL_STORE_SYNC_INTERVAL_MS,
@@ -185,16 +186,31 @@ const JointControlItemComponent: React.FC<JointControlItemProps> = ({
   const sliderValue = isContinuousJoint
     ? toJointDisplayValue(sliderPreviewValue - continuousSliderAnchor, jointType, angleUnit)
     : displayValue;
+  // The limit override only frees the slider's travel; the authored bounds stay
+  // visible and editable so they can be corrected after posing the joint.
+  const sliderBoundedByLimits = hasFiniteLimits && !ignoreLimits;
+  // Anchor the override window to the authored limits rather than to the live
+  // value: a value-centred window would shift under the cursor on every input
+  // event, so one drag would run the angle away instead of tracking the mouse.
+  const limitOverrideMargin = usesAngularUnits
+    ? angleUnit === 'deg'
+      ? 360
+      : Math.PI * 2
+    : Math.max(Math.abs(displayMax - displayMin), 1);
   const sliderMin = isContinuousJoint
     ? -continuousSliderWindow
-    : hasFiniteLimits
+    : sliderBoundedByLimits
       ? Math.min(displayMin, displayValue)
-      : displayValue - (angleUnit === 'deg' && usesAngularUnits ? 180 : Math.PI);
+      : hasFiniteLimits
+        ? displayMin - limitOverrideMargin
+        : displayValue - (angleUnit === 'deg' && usesAngularUnits ? 180 : Math.PI);
   const sliderMax = isContinuousJoint
     ? continuousSliderWindow
-    : hasFiniteLimits
+    : sliderBoundedByLimits
       ? Math.max(displayMax, displayValue)
-      : displayValue + (angleUnit === 'deg' && usesAngularUnits ? 180 : Math.PI);
+      : hasFiniteLimits
+        ? displayMax + limitOverrideMargin
+        : displayValue + (angleUnit === 'deg' && usesAngularUnits ? 180 : Math.PI);
 
   const latestValuesRef = useRef({
     sliderMin,

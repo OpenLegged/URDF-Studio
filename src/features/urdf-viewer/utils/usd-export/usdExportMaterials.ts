@@ -899,11 +899,16 @@ export function buildGeomSubsetMaterialGroups(
   }
 
   const materialIndexById = new Map<string, number>();
-  return geomSubsetSections.map((section) => {
+  const lastMaterialIndex = authoredMaterials.length - 1;
+  return geomSubsetSections.map((section, index) => {
     const materialId = normalizeUsdPath(section.materialId || '');
     let materialIndex = materialId ? materialIndexById.get(materialId) : undefined;
     if (materialIndex === undefined) {
-      materialIndex = Math.min(materialIndexById.size, authoredMaterials.length - 1);
+      // Unbound subsets fall back to their own position, matching the order
+      // `buildGeomSubsetDisplayColors` assigns. Keying them off the dedup map
+      // size instead would leave the map empty and collapse every unbound
+      // subset onto the first authored material.
+      materialIndex = Math.min(materialId ? materialIndexById.size : index, lastMaterialIndex);
       if (materialId) {
         materialIndexById.set(materialId, materialIndex);
       }

@@ -118,7 +118,7 @@ test('OptionsPanel uses the shared floating window header dimensions', async () 
     assert.match(header.className, /\bh-10\b/);
     assert.match(header.className, /\bpx-2\b/);
     const titleClasses = titleNode?.className.split(/\s+/) ?? [];
-    assert.ok(titleClasses.includes('text-[13px]'));
+    assert.ok(titleClasses.includes('text-ui-control'));
     assert.ok(titleClasses.includes('leading-4'));
     assert.equal(titleClasses.includes('leading-none'), false);
   } finally {

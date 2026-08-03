@@ -579,6 +579,9 @@ export const zh: TranslationKeys = {
   resetJoints: '重置关节',
   reset: '重置',
   advanced: '高级',
+  ignoreJointLimits: '忽略关节限位',
+  ignoreJointLimitsOn: '已忽略关节限位',
+  ignoreJointLimitsHint: '可将关节转到限位之外，便于先摆位再修正限位。切换模型时自动关闭。',
   expand: '展开',
   collapse: '收起',
   close: '关闭',
@@ -808,6 +811,7 @@ export const zh: TranslationKeys = {
   motorType: '电机型号',
   addedComponent: '已添加组件: {name}',
   addedComponentRecovered: '已添加组件: {name}（已忽略 {count} 项源数据问题）',
+  importedRobotRecovered: '已导入 {name}，跳过 {count} 项源数据问题，其余内容已显示。',
   noCollisionOptimizationApplied: '未应用任何碰撞体优化。',
   collisionOptimizationApplied:
     '已应用 {count} 项碰撞体优化（Mesh {meshCount}，基础体 {primitiveCount}）',

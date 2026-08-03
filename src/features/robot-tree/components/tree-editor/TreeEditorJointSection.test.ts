@@ -2,10 +2,27 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import type { JointInteractionPreviewSnapshot } from '@/store/jointInteractionPreviewStore';
+import { JointType, type UrdfJoint } from '@/types';
 import {
   createTreeJointPanelScopeKey,
   resolveComponentViewerJointPreview,
+  resolveJointPanelResetAngles,
 } from './TreeEditorJointSection.tsx';
+
+function createJoint(id: string, overrides: Partial<UrdfJoint> = {}): UrdfJoint {
+  return {
+    id,
+    name: id,
+    type: JointType.REVOLUTE,
+    parentLinkId: 'parent',
+    childLinkId: id,
+    origin: { xyz: { x: 0, y: 0, z: 0 }, rpy: { r: 0, p: 0, y: 0 } },
+    axis: { x: 0, y: 0, z: 1 },
+    dynamics: { damping: 0, friction: 0 },
+    hardware: { armature: 0, motorType: '', motorId: '', motorDirection: 1 },
+    ...overrides,
+  };
+}
 
 test('viewer joint preview isolates duplicate source-local IDs by component', () => {
   const preview: JointInteractionPreviewSnapshot = {
@@ -77,4 +94,20 @@ test('joint panel scope isolates components sharing source and local topology na
   assert.notEqual(left, right);
   assert.equal(left, 'left:library/shared.xml');
   assert.equal(right, 'right:library/shared.xml');
+});
+
+test('reset targets the authored rest pose, not the pose the robot currently holds', () => {
+  const joints = {
+    posed_joint: createJoint('posed_joint', { angle: 1.25 }),
+    referenced_joint: createJoint('referenced_joint', {
+      angle: -0.75,
+      referencePosition: 0.5,
+    }),
+    fixed_joint: createJoint('fixed_joint', { type: JointType.FIXED, angle: 0.3 }),
+  };
+
+  assert.deepEqual(resolveJointPanelResetAngles(joints), {
+    posed_joint: 0,
+    referenced_joint: 0.5,
+  });
 });
