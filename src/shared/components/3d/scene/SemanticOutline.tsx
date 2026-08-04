@@ -34,16 +34,28 @@ const SemanticOutlineContext = createContext<SemanticOutlineRegistry | null>(nul
 // decoration, so it is dropped only while the whole frame is already in motion
 // from a camera move — never for object-level drags such as rotating a joint by
 // dragging its link, where the outline is the feedback the user is watching.
+//
+// Selection outlines are a persistent, committed state (like text selection in
+// a document editor) and MUST remain visible during all viewport navigation —
+// matching Blender, Fusion 360, and other professional 3D tools.  Only
+// transient hover outlines are suppressed during camera movement.
 export function shouldRenderSemanticOutlineOverlay({
   hasTargets,
   cameraMoving,
   snapshotRenderActive,
+  hasSelectionTargets = false,
 }: {
   hasTargets: boolean;
   cameraMoving: boolean;
   snapshotRenderActive: boolean;
+  hasSelectionTargets?: boolean;
 }): boolean {
-  return hasTargets && !cameraMoving && !snapshotRenderActive;
+  if (snapshotRenderActive) return false;
+  if (!hasTargets) return false;
+  // Suppress hover-only overlays during camera movement, but keep selection
+  // outlines visible so the user always knows what is selected.
+  if (cameraMoving && !hasSelectionTargets) return false;
+  return true;
 }
 
 // Controls rewrite the camera transform every frame, so an idle camera still
@@ -221,11 +233,15 @@ function SemanticOutlineRenderer({
     const targets: THREE.Object3D[] = [];
     const seenTargets = new Set<THREE.Object3D>();
     let intent: SemanticOutlineIntent = 'selection';
+    let hasSelectionTargets = false;
 
     if (!snapshotRenderActive) {
       entriesRef.current.forEach((entry) => {
         if (entry.intent === 'hover') {
           intent = 'hover';
+        }
+        if (entry.intent === 'selection' && entry.targets.length > 0) {
+          hasSelectionTargets = true;
         }
         entry.targets.forEach((target) => {
           if (!seenTargets.has(target)) {
@@ -260,10 +276,19 @@ function SemanticOutlineRenderer({
     })
       ? realtimeComposerRef.current
       : null;
+
+    // When the camera is moving, suppress transient hover outlines but keep
+    // persistent selection outlines visible.  Force the effective intent to
+    // 'selection' so that hover colours do not flicker on the selected object
+    // while the user navigates the viewport.
+    const effectiveIntent =
+      cameraMoving && hasSelectionTargets ? 'selection' : intent;
+
     const shouldRenderOutlineOverlay = shouldRenderSemanticOutlineOverlay({
       hasTargets: targets.length > 0,
       cameraMoving,
       snapshotRenderActive,
+      hasSelectionTargets,
     });
 
     // On-demand frameloops stop rendering as soon as the camera settles, so the
@@ -276,7 +301,7 @@ function SemanticOutlineRenderer({
     // Diagnostics mirror of the overlay decision, so browser regressions can
     // assert that hover/selection outlines stay on screen (e.g. while a mouse
     // button is held down without moving).
-    const outlineOverlayState = shouldRenderOutlineOverlay ? intent : 'off';
+    const outlineOverlayState = shouldRenderOutlineOverlay ? effectiveIntent : 'off';
     if (gl.domElement.dataset.semanticOutlineOverlay !== outlineOverlayState) {
       gl.domElement.dataset.semanticOutlineOverlay = outlineOverlayState;
     }
@@ -303,7 +328,7 @@ function SemanticOutlineRenderer({
     if (!shouldRenderOutlineOverlay) return;
 
     outline.setCamera(camera);
-    outline.setIntent(intent);
+    outline.setIntent(effectiveIntent);
     outline.setTargets(targets);
     outline.renderOverlay();
   }, 1);

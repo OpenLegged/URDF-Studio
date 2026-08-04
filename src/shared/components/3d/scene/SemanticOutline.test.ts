@@ -5,7 +5,9 @@ import * as THREE from 'three';
 
 import { isCameraPoseMoving, shouldRenderSemanticOutlineOverlay } from './SemanticOutline.tsx';
 
-test('keeps semantic outlines out of a moving-camera render path', () => {
+test('keeps semantic outlines out of a moving-camera render path when only hover targets exist', () => {
+  // Hover-only outlines are suppressed during camera movement for performance —
+  // the user is navigating, not picking.
   assert.equal(
     shouldRenderSemanticOutlineOverlay({
       hasTargets: true,
@@ -13,6 +15,21 @@ test('keeps semantic outlines out of a moving-camera render path', () => {
       snapshotRenderActive: false,
     }),
     false,
+  );
+});
+
+test('keeps selection outlines visible during camera movement', () => {
+  // Selection is a persistent committed state.  Like Blender and Fusion 360,
+  // the selection outline must remain visible even while the user orbits the
+  // viewport — only transient hover outlines are suppressed.
+  assert.equal(
+    shouldRenderSemanticOutlineOverlay({
+      hasTargets: true,
+      cameraMoving: true,
+      snapshotRenderActive: false,
+      hasSelectionTargets: true,
+    }),
+    true,
   );
 });
 
