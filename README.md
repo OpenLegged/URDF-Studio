@@ -342,4 +342,5 @@ This project is licensed under the **Apache License 2.0**. See [LICENSE](./LICEN
 
 Supported by [D-Robotics](https://developer.d-robotics.cc/).
 
-[![Star History Chart](https://api.star-history.com/svg?repos=OpenLegged/URDF-Studio&type=date&legend=top-left)](https://www.star-history.com/#OpenLegged/URDF-Studio&type=date&legend=top-left)
+[![Star History Chart](https://api.star-history.com/svg?repos=OpenLegged/URDF-Studio&type=date&legend=top-left)](https://www.star-history.com/?type=date&legend=top-left&repos=OpenLegged%2FURDF-Studio)
+

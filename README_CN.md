@@ -337,4 +337,4 @@ npm run pack:package:react-robot-canvas     # 打包预览
 
 感谢 [D-Robotics](https://developer.d-robotics.cc/) 提供支持。
 
-[![Star History Chart](https://api.star-history.com/svg?repos=OpenLegged/URDF-Studio&type=date&legend=top-left)](https://www.star-history.com/#OpenLegged/URDF-Studio&type=date&legend=top-left)
+[![Star History Chart](https://api.star-history.com/svg?repos=OpenLegged/URDF-Studio&type=date&legend=top-left)](https://www.star-history.com/?type=date&legend=top-left&repos=OpenLegged%2FURDF-Studio)
