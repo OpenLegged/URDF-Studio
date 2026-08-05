@@ -118,15 +118,15 @@ test('resolveCurrentAIRobotSnapshot follows the current selection, not a capture
   useWorkspaceStore.setState({
     workspace: {
       name: 'multi',
-      transform: { position: { x: 0, y: 0, z: 0 }, rotation: { x: 0, y: 0, z: 0 } },
+      transform: { position: { x: 0, y: 0, z: 0 }, rotation: { r: 0, p: 0, y: 0 } },
       components: {
-        arm: { id: 'arm', name: 'arm', sourceFile: null, robot: armData, transform: { position: { x: 0, y: 0, z: 0 }, rotation: { x: 0, y: 0, z: 0 } }, visible: true },
+        arm: { id: 'arm', name: 'arm', sourceFile: null, robot: armData, transform: { position: { x: 0, y: 0, z: 0 }, rotation: { r: 0, p: 0, y: 0 } }, visible: true },
         gripper: {
           id: 'gripper',
           name: 'gripper',
           sourceFile: null,
           robot: gripperData,
-          transform: { position: { x: 0, y: 0, z: 0 }, rotation: { x: 0, y: 0, z: 0 } },
+          transform: { position: { x: 0, y: 0, z: 0 }, rotation: { r: 0, p: 0, y: 0 } },
           visible: true,
         },
       },

@@ -180,6 +180,7 @@ test('AIConversationModal opens at the front and remains front when activated', 
           lang="en"
           launchContext={createLaunchContext()}
           onStartNewConversation={() => {}}
+          onApply={() => true}
         />,
       );
     });
@@ -234,6 +235,7 @@ test('compact conversation layout fits the viewport and keeps content scrollable
           lang="zh"
           launchContext={createLaunchContext()}
           onStartNewConversation={() => {}}
+          onApply={() => true}
         />,
       );
     });
@@ -293,6 +295,7 @@ test('new conversation requires confirmation, preserves history, and inserts a d
           onStartNewConversation={(context) => {
             onStartNewConversationCalls.push(context);
           }}
+          onApply={() => true}
         />,
       );
     });
@@ -363,6 +366,7 @@ test('clear history requires confirmation and removes prior messages after reset
           onStartNewConversation={() => {
             startNewConversationCount += 1;
           }}
+          onApply={() => true}
         />,
       );
     });
@@ -435,6 +439,7 @@ test('conversation errors render an explicit banner instead of a fake assistant 
           lang="zh"
           launchContext={createLaunchContext()}
           onStartNewConversation={() => {}}
+          onApply={() => true}
         />,
       );
     });
@@ -498,6 +503,7 @@ test('transparent AI conversation backdrop does not intercept pointer events', a
           lang="zh"
           launchContext={createLaunchContext()}
           onStartNewConversation={() => {}}
+          onApply={() => true}
         />,
       );
     });
@@ -535,6 +541,7 @@ test('suggested prompts expose hover and focus border highlight styles', async (
           lang="zh"
           launchContext={createLaunchContext()}
           onStartNewConversation={() => {}}
+          onApply={() => true}
         />,
       );
     });
@@ -675,6 +682,7 @@ test('AI conversation context reflects workspace edits made after the chat was o
           lang="en"
           launchContext={launchContext}
           onStartNewConversation={() => {}}
+          onApply={() => true}
         />,
       );
     });

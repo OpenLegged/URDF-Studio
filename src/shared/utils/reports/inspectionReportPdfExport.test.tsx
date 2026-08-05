@@ -194,13 +194,18 @@ test('exportInspectionReportPdf renders and cleans up the shared report containe
     getContext: () => ({
       fillStyle: '#ffffff',
       fillRect: () => {},
+      // drawImage is overloaded, so a fixed five-parameter stub does not satisfy
+      // the three-argument form the type also allows. Accept every shape and
+      // read the slice out of the nine-argument one, which is what
+      // printElementAsPdf actually calls.
       drawImage: (
-        _source: CanvasImageSource,
-        _sourceX: number,
-        sourceY: number,
-        _sourceWidth: number,
-        sourceHeight: number,
+        ...args:
+          | [CanvasImageSource, number, number]
+          | [CanvasImageSource, number, number, number, number]
+          | [CanvasImageSource, number, number, number, number, number, number, number, number]
       ) => {
+        if (args.length !== 9) return;
+        const [, , sourceY, , sourceHeight] = args;
         pageSlices.push({ startY: sourceY, height: sourceHeight });
       },
     }),
