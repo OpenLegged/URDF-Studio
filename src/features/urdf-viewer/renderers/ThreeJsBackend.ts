@@ -186,6 +186,7 @@ export class ThreeJsBackend implements RobotRendererBackend {
       robotLinks: providedRobotLinks,
       robotJoints: providedRobotJoints,
       robotData: providedRobotData,
+      primitiveGeometryDetail,
       initialJointAngles = {},
       onDocumentLoadEvent,
     } = props;
@@ -220,6 +221,7 @@ export class ThreeJsBackend implements RobotRendererBackend {
         parseCollisionMeshes,
         showCollisionAlwaysOnTop,
         allowUrdfXmlFallback,
+        primitiveGeometryDetail,
         onDocumentLoadEvent,
       });
 
@@ -300,6 +302,7 @@ export class ThreeJsBackend implements RobotRendererBackend {
     parseCollisionMeshes: boolean;
     showCollisionAlwaysOnTop: boolean;
     allowUrdfXmlFallback: boolean;
+    primitiveGeometryDetail?: RendererSceneProps['primitiveGeometryDetail'];
     onDocumentLoadEvent?: (event: ViewerDocumentLoadEvent) => void;
   }): Promise<THREE.Object3D> {
     const {
@@ -308,6 +311,7 @@ export class ThreeJsBackend implements RobotRendererBackend {
       parseCollisionMeshes,
       showCollisionAlwaysOnTop,
       allowUrdfXmlFallback,
+      primitiveGeometryDetail,
       onDocumentLoadEvent,
     } = options;
 
@@ -391,6 +395,7 @@ export class ThreeJsBackend implements RobotRendererBackend {
       };
 
       const loader = new URDFLoader(manager);
+      loader.primitiveGeometryDetail = primitiveGeometryDetail;
       const yieldIfNeeded = createMainThreadYieldController(VIEWER_LOAD_YIELD_BUDGET_MS);
       loader.parseCollision = shouldParseCollisionMeshes;
       loader.parseVisual = true;
@@ -416,6 +421,7 @@ export class ThreeJsBackend implements RobotRendererBackend {
             parseVisual: true,
             parseCollision: shouldParseCollisionMeshes,
             rootLinkId: this.robotData?.rootLinkId,
+            primitiveGeometryDetail,
             yieldIfNeeded,
           });
         } else {

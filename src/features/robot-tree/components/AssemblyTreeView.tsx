@@ -24,16 +24,20 @@ import { isAssemblyComponentIndividuallyTransformable } from '@/core/robot/assem
 import type { TranslationKeys } from '@/shared/i18n';
 import { useSelectionStore } from '@/store/selectionStore';
 import type { WorkspacePropertyPatch } from '@/store/workspace/types';
-import { areEntityRefsEqual } from '@/types';
 import type {
   AppMode,
   AssemblyComponent,
   AssemblyState,
   EntityRef,
-  UrdfJoint,
   WorkspaceSelection,
 } from '@/types';
 import { TreeNode } from './TreeNode';
+import {
+  buildChildJointsByParent,
+  runOnActivationKey,
+  selectionTargets,
+  selectionTargetsComponent,
+} from '../utils/treeSelectionHelpers';
 
 type LinkRef = Extract<EntityRef, { type: 'link' }>;
 type JointRef = Extract<EntityRef, { type: 'joint' }>;
@@ -82,41 +86,6 @@ interface ComponentContentsParams {
   mode: AppMode;
   t: TranslationKeys;
   readOnly: boolean;
-}
-
-function selectionTargets(selection: WorkspaceSelection, ref: EntityRef): boolean {
-  return selection !== null && areEntityRefsEqual(selection.entity, ref);
-}
-
-function runOnActivationKey(
-  event: React.KeyboardEvent<HTMLElement>,
-  action: () => void,
-) {
-  if (event.target !== event.currentTarget || (event.key !== 'Enter' && event.key !== ' ')) {
-    return;
-  }
-  event.preventDefault();
-  action();
-}
-
-function selectionTargetsComponent(
-  selection: WorkspaceSelection,
-  componentId: string,
-): boolean {
-  if (!selection) return false;
-  const ref = selection.entity;
-  return ref.type === 'component'
-    ? ref.componentId === componentId
-    : (ref.type === 'link' || ref.type === 'joint' || ref.type === 'tendon')
-      && ref.componentId === componentId;
-}
-
-function buildChildJointsByParent(joints: Record<string, UrdfJoint>) {
-  const result: Record<string, UrdfJoint[]> = {};
-  Object.values(joints).forEach((joint) => {
-    (result[joint.parentLinkId] ??= []).push(joint);
-  });
-  return result;
 }
 
 function getComponentTendons(component: AssemblyComponent) {

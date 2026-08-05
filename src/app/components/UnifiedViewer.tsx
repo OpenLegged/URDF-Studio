@@ -19,10 +19,7 @@ import type {
   WorkspaceSelection,
 } from '@/types';
 import type { AssemblyScenePlacement, AssemblySceneProjection } from '@/core/robot';
-import {
-  isEntityEditorLocked,
-  isWorkspaceSelectionEditorLocked,
-} from '@/core/robot';
+import { isEntityEditorLocked, isWorkspaceSelectionEditorLocked } from '@/core/robot';
 import type { Language } from '@/shared/i18n';
 import { translations } from '@/shared/i18n';
 import { WorkspaceCanvas } from '@/shared/components/3d';
@@ -55,6 +52,7 @@ import {
   shouldRestoreUnifiedViewerOptionsPanel,
 } from '@/app/utils/unifiedViewerOptionsRestore';
 import { useUIStore } from '@/store';
+import { VIEWER_RENDER_QUALITY_PROFILES } from '@/shared/utils/viewerRenderQuality';
 import { subscribeWorkspaceGroundPlaneInvalidation } from '@/store/robotGroundPlaneInvalidation';
 import type { DocumentLoadLifecycleState } from '@/store/assetsStore';
 import type { UpdateCommitOptions } from '@/types/viewer';
@@ -357,9 +355,7 @@ export const UnifiedViewer = React.memo(
           highlightObjectId,
         });
         onHover?.(
-          isWorkspaceSelectionEditorLocked(workspace, nextSelection)
-            ? null
-            : nextSelection,
+          isWorkspaceSelectionEditorLocked(workspace, nextSelection) ? null : nextSelection,
         );
       },
       [onHover, sceneProjection, workspace],
@@ -516,6 +512,8 @@ export const UnifiedViewer = React.memo(
     const showUsageGuidePreference = useUIStore((state) => state.viewOptions.showUsageGuide);
     const navigationSensitivity = useUIStore((state) => state.navigationSensitivity);
     const cameraProjection = useUIStore((state) => state.viewOptions.cameraProjection);
+    const renderQuality = useUIStore((state) => state.viewOptions.renderQuality);
+    const renderQualityProfile = VIEWER_RENDER_QUALITY_PROFILES[renderQuality];
     const showWorldOriginAxes = showWorldOriginAxesPreference && !viewerController.showOrigins;
     const effectiveShowUsageGuide = resolveUnifiedViewerUsageGuideVisibility(
       showUsageGuidePreference,
@@ -668,12 +666,17 @@ export const UnifiedViewer = React.memo(
         // GTAO composer applies its final OutputPass only after interaction ends,
         // which visibly darkens the robot and softens the grid at rest.
         enableAmbientOcclusion={false}
+        minDpr={renderQualityProfile.minDpr}
+        maxDpr={renderQualityProfile.maxDpr}
+        shadowMapSize={renderQualityProfile.shadowMapSize}
         controlLayerKey={controlLayerKey}
         gizmoMargin={gizmoMargin}
         showWorldOriginAxes={showWorldOriginAxes}
         cameraProjection={cameraProjection}
         orbitControlsProps={{
-          minDistance: 0.05,
+          // Keep the main editor's orbit pivot stable across rotate + zoom.
+          // Cursor zoom needs surface-depth picking to avoid target drift.
+          zoomToCursor: false,
           maxDistance: 2000,
           enabled: !viewerController.isDragging,
           zoomSensitivity: navigationSensitivity.zoom,

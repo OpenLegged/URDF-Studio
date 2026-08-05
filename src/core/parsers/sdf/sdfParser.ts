@@ -571,6 +571,19 @@ function parseSdfGeometry(
     };
   }
 
+  const ellipsoidEl = getFirstDirectChild(geometryEl, 'ellipsoid');
+  if (ellipsoidEl) {
+    const radii = parseVec3(getFirstDirectChild(ellipsoidEl, 'radii')?.textContent);
+    return {
+      type: GeometryType.ELLIPSOID,
+      dimensions: {
+        x: Number.isFinite(radii.x) && radii.x > 0 ? radii.x : 0.1,
+        y: Number.isFinite(radii.y) && radii.y > 0 ? radii.y : 0.1,
+        z: Number.isFinite(radii.z) && radii.z > 0 ? radii.z : 0.1,
+      },
+    };
+  }
+
   return {
     type: GeometryType.NONE,
     dimensions: { x: 0, y: 0, z: 0 },
@@ -642,7 +655,31 @@ function mapSdfJointType(rawType: string | null): JointType {
     case 'planar':
       return JointType.PLANAR;
     case 'fixed':
+      return JointType.FIXED;
+    case 'screw':
+      console.warn(
+        `[SDF import] Joint type "screw" is not natively supported; degrading to prismatic.`,
+      );
+      return JointType.PRISMATIC;
+    case 'universal':
+      console.warn(
+        `[SDF import] Joint type "universal" is not natively supported; degrading to ball.`,
+      );
+      return JointType.BALL;
+    case 'gearbox':
+      console.warn(
+        `[SDF import] Joint type "gearbox" is not natively supported; degrading to revolute.`,
+      );
+      return JointType.REVOLUTE;
+    case 'revolute2':
+      console.warn(
+        `[SDF import] Joint type "revolute2" is not natively supported; degrading to ball.`,
+      );
+      return JointType.BALL;
     default:
+      console.warn(
+        `[SDF import] Unrecognized joint type "${rawType}"; defaulting to fixed.`,
+      );
       return JointType.FIXED;
   }
 }

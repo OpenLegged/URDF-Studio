@@ -28,13 +28,27 @@ function createReadyResult(file: RobotFile): RobotImportResult {
   };
 }
 
-async function runReadyLoad(source: 'pre-resolved' | 'worker') {
+async function runReadyLoad(
+  source: 'pre-resolved' | 'worker',
+  recoveredItemCount = 0,
+) {
   const file: RobotFile = {
     name: 'robots/demo.urdf',
     format: 'urdf',
     content: '<robot name="demo"><link name="base" /></robot>',
   };
   const result = createReadyResult(file);
+  if (recoveredItemCount > 0 && result.status === 'ready') {
+    result.robotData.inspectionContext = {
+      sourceFormat: 'urdf',
+      recovery: {
+        diagnostics: [],
+        diagnosticCounts: { error: 0, warning: recoveredItemCount, info: 0 },
+        recoveredItemCount,
+      },
+    };
+  }
+  const toasts: string[] = [];
   let documentLoadState: DocumentLoadState = {
     status: 'idle',
     fileName: null,
@@ -49,6 +63,7 @@ async function runReadyLoad(source: 'pre-resolved' | 'worker') {
     requestedFile: file,
     labels: {
       failedToParseFormat: 'Failed to parse {format}',
+      importedRobotRecovered: 'Imported {name} with {count} issue(s) skipped',
       importPackageAssetBundleHint: 'Missing assets: {assets}',
       xacroSourceOnlyPreviewHint: 'Source-only preview unavailable',
     },
@@ -80,12 +95,14 @@ async function runReadyLoad(source: 'pre-resolved' | 'worker') {
       setDocumentLoadState: (state) => {
         documentLoadState = state;
       },
-      showToast: () => {},
+      showToast: (message) => {
+        toasts.push(message);
+      },
       waitForNextPaint: async () => {},
     },
   });
 
-  return { committedResults, documentLoadState, outcome, workerRequests };
+  return { committedResults, documentLoadState, outcome, toasts, workerRequests };
 }
 
 for (const source of ['pre-resolved', 'worker'] as const) {
@@ -110,3 +127,15 @@ for (const source of ['pre-resolved', 'worker'] as const) {
     });
   });
 }
+
+test('a fully recovered load stays silent about source issues', async () => {
+  const loaded = await runReadyLoad('worker');
+
+  assert.deepEqual(loaded.toasts, []);
+});
+
+test('a partially recovered load tells the user what was skipped', async () => {
+  const loaded = await runReadyLoad('worker', 3);
+
+  assert.deepEqual(loaded.toasts, ['Imported robots/demo.urdf with 3 issue(s) skipped']);
+});

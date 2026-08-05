@@ -95,6 +95,14 @@ export interface TreeEditorProps {
     ref: Extract<EntityRef, { type: 'joint' }>,
     angle: number,
   ) => void;
+  /**
+   * Restore a component's joint angles in one step. Returns the angles the
+   * workspace accepted, which may omit locked joints.
+   */
+  onResetJointAngles?: (
+    componentId: string,
+    jointAngles: Record<string, number>,
+  ) => Record<string, number>;
 }
 
 export function resolveTreeActiveComponent(
@@ -154,6 +162,7 @@ export const TreeEditor: React.FC<TreeEditorProps> = ({
   onCloseStructureGraph,
   onJointAnglePreview,
   onJointAngleChange,
+  onResetJointAngles,
 }) => {
   const t = translations[lang];
   const {
@@ -624,6 +633,7 @@ export const TreeEditor: React.FC<TreeEditorProps> = ({
               onUpdate={onUpdate}
               onJointAnglePreview={onJointAnglePreview}
               onJointAngleChange={onJointAngleChange}
+              onResetJointAngles={onResetJointAngles}
               show={showJointPanel}
               sourceFilePath={activeComponent.sourceFile ?? sourceFilePath ?? currentFileName}
               height={jointPanelHeight}

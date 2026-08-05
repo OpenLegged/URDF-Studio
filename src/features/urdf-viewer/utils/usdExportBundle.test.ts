@@ -362,6 +362,9 @@ test('buildUsdExportBundleFromSnapshot keeps descriptor transforms in origins in
 
   const meshText = await meshBlob!.text();
   assert.equal(bundle.robot.links.base_link.visual.color, '#ffffff');
+  // Vertex colors only appear when the descriptor authors one, and this mesh
+  // does not; what matters here is that the descriptor translation stayed out
+  // of the vertex data.
   assert.match(meshText, /^v 0 0 0$/m);
   assert.doesNotMatch(meshText, /^v 5 6 7$/m);
 });

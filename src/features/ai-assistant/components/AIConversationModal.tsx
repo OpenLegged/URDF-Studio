@@ -9,6 +9,7 @@ import {
   Send,
   Square,
   Trash2,
+  Wand2,
 } from 'lucide-react';
 import type { Language } from '@/shared/i18n';
 import { translations } from '@/shared/i18n';
@@ -28,6 +29,7 @@ import {
   type ConversationHistoryTurn,
 } from '../services/conversationService';
 import { ConversationMessageMarkdown } from './ConversationMessageMarkdown';
+import { resolveCurrentAIRobotSnapshot } from '../utils/aiConversationRobotSnapshot';
 import { buildConversationContext } from '../utils/buildConversationContext';
 import { shouldSubmitConversationInput } from '../utils/conversationInput';
 import { buildConversationPromptSuggestions } from '../utils/conversationPromptSuggestions';
@@ -39,7 +41,20 @@ import {
   replaceActiveConversationTimeline,
   startNewConversationTimeline,
 } from '../utils/conversationTimeline';
-import type { AIConversationLaunchContext, AIConversationMessage } from '../types';
+import type {
+  AIConversationLaunchContext,
+  AIConversationMessage,
+  AIConversationModificationCard,
+} from '../types';
+import type { RobotState } from '@/types';
+import { generateURDF } from '@/core/parsers';
+import { canGenerateUrdf } from '@/core/parsers/urdf/urdfExportSupport';
+import { generateRobotFromPrompt } from '../services/aiService';
+import { resolveAIWorkspaceRobotTarget } from '../utils/aiWorkspaceTarget';
+import { useAssetsStore } from '@/store/assetsStore';
+import { useSelectionStore } from '@/store/selectionStore';
+import { useWorkspaceStore } from '@/store/workspaceStore';
+import { ConversationModificationCard } from './ConversationModificationCard';
 
 interface AIConversationModalProps {
   isOpen: boolean;
@@ -47,6 +62,7 @@ interface AIConversationModalProps {
   lang: Language;
   launchContext: AIConversationLaunchContext | null;
   onStartNewConversation: (launchContext: AIConversationLaunchContext) => void;
+  onApply: (componentId: string, proposedUrdf: string) => boolean;
 }
 
 interface ConversationSubmissionState {
@@ -141,6 +157,7 @@ export function AIConversationModal({
   lang,
   launchContext,
   onStartNewConversation,
+  onApply,
 }: AIConversationModalProps) {
   const t = translations[lang];
   const conversationWindowLayer = useManagedWindowLayer('aiConversation');
@@ -208,7 +225,15 @@ export function AIConversationModal({
       return '';
     }
 
-    return isConversationChatMessage(lastMessage) ? lastMessage.content : lastMessage.marker;
+    if (isConversationChatMessage(lastMessage)) {
+      return lastMessage.content;
+    }
+
+    if (lastMessage.kind === 'divider') {
+      return lastMessage.marker;
+    }
+
+    return '';
   })();
   const showHeaderActionLabels = !isMinimized && !isCompactLayout;
   const suggestedPrompts = useMemo(
@@ -416,12 +441,14 @@ export function AIConversationModal({
     setIsSending(true);
 
     try {
+      // Re-snapshot the workspace so post-launch edits propagate to the AI.
+      const liveRobotSnapshot = resolveCurrentAIRobotSnapshot();
       const result = await sendConversationTurnStream({
         mode: launchContext.mode,
         lang,
         context: buildConversationContext({
           mode: launchContext.mode,
-          robot: launchContext.robotSnapshot,
+          robot: liveRobotSnapshot,
           inspectionReport: reportSnapshot,
           selectedEntity: launchContext.selectedEntity,
           focusedIssue,
@@ -501,6 +528,130 @@ export function AIConversationModal({
       replaceCurrentConversation: true,
     });
   };
+
+  const submitModificationTurn = async (userMessage: string) => {
+    if (!launchContext || !userMessage.trim() || isSending) {
+      return;
+    }
+
+    const trimmedMessage = userMessage.trim();
+    setInput('');
+    setMessages((prev) => [
+      ...removeTrailingAssistantPlaceholder(prev),
+      createConversationMessage('user', trimmedMessage),
+      createConversationMessage('assistant', ''),
+    ]);
+    setIsSending(true);
+
+    try {
+      const workspace = useWorkspaceStore.getState().workspace;
+      const selection = useSelectionStore.getState().selection;
+      const target = resolveAIWorkspaceRobotTarget(workspace, selection);
+      const componentId = target.componentId;
+      if (!componentId) {
+        setMessages((prev) => [
+          ...removeTrailingAssistantPlaceholder(prev),
+          createConversationMessage('assistant', t.aiModificationNoComponent),
+        ]);
+        return;
+      }
+
+      const currentRobot: RobotState = {
+        ...target.robotData,
+        selection: { type: null, id: null },
+      };
+      const motorLibrary = useAssetsStore.getState().motorLibrary;
+
+      const response = await generateRobotFromPrompt(
+        trimmedMessage,
+        currentRobot,
+        motorLibrary,
+        lang,
+      );
+
+      if (!response || !response.robotData) {
+        setMessages((prev) => [
+          ...removeTrailingAssistantPlaceholder(prev),
+          createConversationMessage(
+            'assistant',
+            response?.explanation || t.aiModificationNoChange,
+          ),
+        ]);
+        return;
+      }
+
+      const proposedRobotState: RobotState = {
+        name: response.robotData.name ?? currentRobot.name,
+        links: response.robotData.links ?? currentRobot.links,
+        joints: response.robotData.joints ?? currentRobot.joints,
+        rootLinkId: response.robotData.rootLinkId ?? currentRobot.rootLinkId,
+        selection: { type: null, id: null },
+      };
+
+      if (!canGenerateUrdf(proposedRobotState)) {
+        setMessages((prev) => [
+          ...removeTrailingAssistantPlaceholder(prev),
+          createConversationMessage('assistant', t.aiModificationUnsupportedJoint),
+        ]);
+        return;
+      }
+
+      const proposedUrdf = generateURDF(proposedRobotState, { preserveMeshPaths: true });
+      const currentDraft = useAssetsStore.getState().componentSourceDrafts[componentId];
+      const currentUrdf =
+        currentDraft?.format === 'urdf'
+          ? currentDraft.content
+          : generateURDF(currentRobot, { preserveMeshPaths: true });
+
+      const cardMessage: AIConversationModificationCard = {
+        kind: 'modification-card',
+        role: 'assistant',
+        explanation: response.explanation || '',
+        proposedUrdf,
+        currentUrdf,
+        componentId,
+        status: 'pending',
+      };
+      setMessages((prev) => [...removeTrailingAssistantPlaceholder(prev), cardMessage]);
+    } catch (error) {
+      console.error('AI modification turn failed', error);
+      setMessages((prev) => [
+        ...removeTrailingAssistantPlaceholder(prev),
+        createConversationMessage('assistant', t.aiModificationFailed),
+      ]);
+    } finally {
+      if (isMountedRef.current) {
+        setIsSending(false);
+      }
+    }
+  };
+
+  const handleApplyModification = useCallback(
+    (componentId: string, proposedUrdf: string): boolean => {
+      const ok = onApply(componentId, proposedUrdf);
+      if (ok) {
+        setMessages((prev) =>
+          prev.map((message) =>
+            message.kind === 'modification-card' && message.proposedUrdf === proposedUrdf
+              ? { ...message, status: 'applied' as const }
+              : message,
+          ),
+        );
+      }
+      return ok;
+    },
+    [onApply],
+  );
+
+  const handleDismissModification = useCallback((proposedUrdf: string) => {
+    setMessages((prev) =>
+      prev.map((message) =>
+        message.kind === 'modification-card' && message.proposedUrdf === proposedUrdf
+          ? { ...message, status: 'dismissed' as const }
+          : message,
+      ),
+    );
+  }, []);
 
   if (!isOpen || !launchContext) {
     return null;
@@ -647,6 +798,24 @@ export function AIConversationModal({
               ) : (
                 <div className="space-y-4">
                   {messages.map((message, index) => {
+                    if (message.kind === 'modification-card') {
+                      return (
+                        <div
+                          key={`modification-${index}`}
+                          className="flex justify-start py-1"
+                        >
+                          <div className="w-full max-w-[95%]">
+                            <ConversationModificationCard
+                              card={message}
+                              t={t}
+                              onApply={handleApplyModification}
+                              onDismiss={handleDismissModification}
+                            />
+                          </div>
+                        </div>
+                      );
+                    }
+
                     if (!isConversationChatMessage(message)) {
                       return (
                         <div key={`divider-${index}`} className="flex items-center gap-3 py-3">
@@ -804,6 +973,18 @@ export function AIConversationModal({
                         {t.stopGenerating}
                       </button>
                     )}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        void submitModificationTurn(input);
+                      }}
+                      disabled={isSending || !input.trim()}
+                      className="flex h-8 items-center gap-2 rounded-lg border border-system-blue/35 bg-system-blue/10 px-3 text-xs font-semibold text-system-blue transition-colors hover:bg-system-blue/20 disabled:opacity-30"
+                      title={t.aiModificationButton}
+                    >
+                      <Wand2 className="w-3.5 h-3.5" />
+                      {t.aiModificationButton}
+                    </button>
                     <button
                       type="button"
                       onClick={() => {

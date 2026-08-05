@@ -16,7 +16,6 @@ interface ResolveInitialJointControlStateOptions<TJoint extends JointControlStat
 
 export interface InitialJointControlState {
   currentAngles: Record<string, number>;
-  defaultAngles: Record<string, number>;
 }
 
 export function resolveInitialJointControlState<TJoint extends JointControlStateJoint>({
@@ -26,20 +25,16 @@ export function resolveInitialJointControlState<TJoint extends JointControlState
   isControllableJoint,
 }: ResolveInitialJointControlStateOptions<TJoint>): InitialJointControlState {
   const currentAngles: Record<string, number> = {};
-  const defaultAngles: Record<string, number> = {};
   const retainedAngles = preservePreviousAngles ? previousAngles : {};
 
   if (!joints) {
-    return { currentAngles, defaultAngles };
+    return { currentAngles };
   }
 
   Object.entries(joints).forEach(([jointKey, joint]) => {
     if (!isControllableJoint(joint)) {
       return;
     }
-
-    const defaultAngle = resolveViewerJointAngleValue({}, jointKey, joint, 0);
-    defaultAngles[jointKey] = defaultAngle;
 
     const retainedAngle = resolveViewerJointAngleValue(retainedAngles, jointKey, joint, Number.NaN);
     if (Number.isFinite(retainedAngle)) {
@@ -48,8 +43,8 @@ export function resolveInitialJointControlState<TJoint extends JointControlState
       return;
     }
 
-    currentAngles[jointKey] = defaultAngle;
+    currentAngles[jointKey] = resolveViewerJointAngleValue({}, jointKey, joint, 0);
   });
 
-  return { currentAngles, defaultAngles };
+  return { currentAngles };
 }

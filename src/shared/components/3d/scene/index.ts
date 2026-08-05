@@ -57,12 +57,11 @@ export {
   warmupSceneCompile,
 } from './SceneCompileWarmup';
 export {
-  INTERACTION_DPR_CAP,
   INTERACTION_RECOVERY_DELAY_MS,
   MIN_RENDER_DPR,
   RESTING_DPR_CAP,
   resolveCanvasDpr,
-  useAdaptiveInteractionQuality,
+  useViewportInteractionQuality,
   useWorkspaceCanvasInteractionState,
   WorkspaceCanvasInteractionStateProvider,
 } from './interactionQuality';

@@ -43,6 +43,12 @@ test('buildUsdStageOpenPreparationWorkerDispatch keeps USD layer candidates for 
         blobUrl: 'blob:notes',
         format: 'asset',
       },
+      {
+        name: 'robots/go2/textures/body.png',
+        content: '',
+        blobUrl: 'blob:texture',
+        format: 'asset',
+      },
     ],
     {
       'robots/go2/configuration/base.usda': 'blob:base',
@@ -56,10 +62,12 @@ test('buildUsdStageOpenPreparationWorkerDispatch keeps USD layer candidates for 
     [
       'robots/go2/configuration/base.usda',
       'shared/common_layers/materials.usda',
+      'robots/go2/textures/body.png',
     ],
   );
   assert.deepEqual(dispatch.contextSnapshot?.assets, {
     'robots/go2/configuration/base.usda': 'blob:base',
     'shared/common_layers/materials.usda': 'blob:shared-materials',
+    'robots/go2/textures/body.png': 'blob:texture',
   });
 });

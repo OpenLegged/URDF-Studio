@@ -8,6 +8,12 @@ import * as THREE from 'three';
 import type { UrdfJoint } from '@/types';
 import { JointType } from '@/types';
 import { ignoreRaycast } from '@/shared/utils/three/ignoreRaycast';
+import {
+  jointRotationArrowHeadPosition,
+  jointRotationArrowHeadQuaternion,
+} from '@/shared/utils/three/jointRotationIndicator';
+
+const RING_RADIUS = 0.15;
 
 interface JointAxisProps {
   joint: UrdfJoint;
@@ -27,6 +33,15 @@ export const JointAxesVisual = React.memo(
       const axisVec = new THREE.Vector3(axis.x, axis.y, axis.z).normalize();
       return new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 0, 1), axisVec);
     }, [axis.x, axis.y, axis.z]);
+
+    const rotationArc = type === JointType.REVOLUTE ? Math.PI * 1.5 : Math.PI * 2;
+    const rotationArrowHead = useMemo(
+      () => ({
+        position: jointRotationArrowHeadPosition(rotationArc, RING_RADIUS),
+        quaternion: jointRotationArrowHeadQuaternion(rotationArc),
+      }),
+      [rotationArc],
+    );
 
     useEffect(() => {
       const group = groupRef.current;
@@ -122,27 +137,11 @@ export const JointAxesVisual = React.memo(
         {(type === JointType.REVOLUTE || type === JointType.CONTINUOUS) && (
           <group>
             <mesh renderOrder={10020}>
-              <torusGeometry
-                args={[
-                  0.15,
-                  pickTorusThickness,
-                  8,
-                  32,
-                  type === JointType.REVOLUTE ? Math.PI * 1.5 : Math.PI * 2,
-                ]}
-              />
+              <torusGeometry args={[RING_RADIUS, pickTorusThickness, 8, 32, rotationArc]} />
               <meshBasicMaterial colorWrite={false} depthWrite={false} depthTest={false} />
             </mesh>
             <mesh renderOrder={10020}>
-              <torusGeometry
-                args={[
-                  0.15,
-                  torusThickness,
-                  8,
-                  32,
-                  type === JointType.REVOLUTE ? Math.PI * 1.5 : Math.PI * 2,
-                ]}
-              />
+              <torusGeometry args={[RING_RADIUS, torusThickness, 8, 32, rotationArc]} />
               <meshBasicMaterial
                 color={ringColor}
                 transparent
@@ -152,8 +151,8 @@ export const JointAxesVisual = React.memo(
               />
             </mesh>
             <mesh
-              position={[0.15, 0, 0]}
-              rotation={[Math.PI / 2, 0, -Math.PI / 2]}
+              position={rotationArrowHead.position}
+              quaternion={rotationArrowHead.quaternion}
               renderOrder={10020}
             >
               <coneGeometry args={[0.015, 0.04, 8]} />

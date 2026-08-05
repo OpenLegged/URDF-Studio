@@ -10,6 +10,12 @@ import {
 import { stackCoincidentVisualRoots } from '@/core/loaders/visualMeshStacking';
 import { setThreeColorFromSRGB } from '@/core/utils/color.ts';
 import { createMainThreadYieldController } from '@/core/utils/yieldToMainThread';
+import {
+  createRobotCapsuleGeometry,
+  createRobotCylinderGeometry,
+  createRobotSphereGeometry,
+  type RobotPrimitiveGeometryDetail,
+} from './primitiveGeometry';
 
 const tempQuaternion = new THREE.Quaternion();
 const tempEuler = new THREE.Euler();
@@ -190,6 +196,7 @@ export class URDFLoader {
   loadMeshCb: MeshLoadFunc;
   parseVisual = true;
   parseCollision = false;
+  primitiveGeometryDetail?: RobotPrimitiveGeometryDetail;
   packages: string | Record<string, string> | ((targetPkg: string) => string) = '';
   workingPath = '';
   fetchOptions: RequestInit = {};
@@ -398,7 +405,7 @@ export class URDFLoader {
             group.add(primitive);
           } else if (geoType === 'sphere') {
             const primitive = new THREE.Mesh();
-            primitive.geometry = new THREE.SphereGeometry(1, 30, 30);
+            primitive.geometry = createRobotSphereGeometry(this.primitiveGeometryDetail);
             primitive.material = material;
 
             const radius = parseFloat(n.children[0].getAttribute('radius') || '0');
@@ -406,7 +413,7 @@ export class URDFLoader {
             group.add(primitive);
           } else if (geoType === 'cylinder') {
             const primitive = new THREE.Mesh();
-            primitive.geometry = new THREE.CylinderGeometry(1, 1, 1, 30);
+            primitive.geometry = createRobotCylinderGeometry(this.primitiveGeometryDetail);
             primitive.material = material;
 
             const radius = parseFloat(n.children[0].getAttribute('radius') || '0');
@@ -420,7 +427,11 @@ export class URDFLoader {
             const length = parseFloat(n.children[0].getAttribute('length') || '0');
             const bodyLength = Math.max(length - 2 * radius, 0);
 
-            primitive.geometry = new THREE.CapsuleGeometry(radius, bodyLength, 8, 16);
+            primitive.geometry = createRobotCapsuleGeometry(
+              radius,
+              bodyLength,
+              this.primitiveGeometryDetail,
+            );
             primitive.material = material;
             primitive.rotation.set(Math.PI / 2, 0, 0);
             group.add(primitive);
@@ -803,7 +814,7 @@ export class URDFLoader {
             group.add(primitive);
           } else if (geoType === 'sphere') {
             const primitive = new THREE.Mesh();
-            primitive.geometry = new THREE.SphereGeometry(1, 30, 30);
+            primitive.geometry = createRobotSphereGeometry(this.primitiveGeometryDetail);
             primitive.material = material;
 
             const radius = parseFloat(n.children[0].getAttribute('radius') || '0');
@@ -811,7 +822,7 @@ export class URDFLoader {
             group.add(primitive);
           } else if (geoType === 'cylinder') {
             const primitive = new THREE.Mesh();
-            primitive.geometry = new THREE.CylinderGeometry(1, 1, 1, 30);
+            primitive.geometry = createRobotCylinderGeometry(this.primitiveGeometryDetail);
             primitive.material = material;
 
             const radius = parseFloat(n.children[0].getAttribute('radius') || '0');
@@ -825,7 +836,11 @@ export class URDFLoader {
             const length = parseFloat(n.children[0].getAttribute('length') || '0');
             const bodyLength = Math.max(length - 2 * radius, 0);
 
-            primitive.geometry = new THREE.CapsuleGeometry(radius, bodyLength, 8, 16);
+            primitive.geometry = createRobotCapsuleGeometry(
+              radius,
+              bodyLength,
+              this.primitiveGeometryDetail,
+            );
             primitive.material = material;
             primitive.rotation.set(Math.PI / 2, 0, 0);
             group.add(primitive);

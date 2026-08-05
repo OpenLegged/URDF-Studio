@@ -52,6 +52,11 @@ import {
   LinkEditorLockButton,
   type InheritedEditorLockSource,
 } from './tree_lock_controls';
+import {
+  buildChildJointsByParent,
+  runOnActivationKey,
+  selectionTargets,
+} from '../utils/treeSelectionHelpers';
 
 type LinkRef = Extract<EntityRef, { type: 'link' }>;
 type JointRef = Extract<EntityRef, { type: 'joint' }>;
@@ -91,29 +96,6 @@ export interface TreeNodeProps {
   ancestorLinkIds?: ReadonlySet<string>;
   componentDisplayNamePrefix?: string;
   inheritedEditorLockSource?: InheritedEditorLockSource;
-}
-
-function buildChildJointsByParent(robot: RobotData): Record<string, UrdfJoint[]> {
-  const result: Record<string, UrdfJoint[]> = {};
-  Object.values(robot.joints).forEach((joint) => {
-    (result[joint.parentLinkId] ??= []).push(joint);
-  });
-  return result;
-}
-
-function selectionTargets(selection: WorkspaceSelection, ref: EntityRef): boolean {
-  return selection !== null && areEntityRefsEqual(selection.entity, ref);
-}
-
-function runOnActivationKey(
-  event: React.KeyboardEvent<HTMLElement>,
-  action: () => void,
-) {
-  if (event.target !== event.currentTarget || (event.key !== 'Enter' && event.key !== ' ')) {
-    return;
-  }
-  event.preventDefault();
-  action();
 }
 
 function selectionTargetsGeometry(
@@ -176,7 +158,7 @@ export const TreeNode = memo(function TreeNode({
   const renameInputRef = useRef<HTMLInputElement>(null);
   const link = robot.links[linkId];
   const jointsByParent = useMemo(
-    () => childJointsByParent ?? buildChildJointsByParent(robot),
+    () => childJointsByParent ?? buildChildJointsByParent(robot.joints),
     [childJointsByParent, robot],
   );
   const childJoints = jointsByParent[linkId] ?? [];

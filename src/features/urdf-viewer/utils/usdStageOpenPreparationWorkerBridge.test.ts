@@ -191,7 +191,11 @@ test('USD stage open preparation worker client syncs pruned context once and reu
       },
     ],
   );
+  // Textures are siblings of the usd/ directory and cannot be discovered by
+  // tracing layer text, so the whole bundle's textures ride along; assets from
+  // another bundle must still be pruned.
   assert.deepEqual(syncContextRequest.context.assets, {
+    'robots/go2/textures/body.png': 'blob:go2-texture',
   });
   assert.equal(typeof firstPrepareRequest.contextId, 'string');
   assert.equal(firstPrepareRequest.availableFiles, undefined);

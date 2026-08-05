@@ -103,7 +103,11 @@ function resolveRootLinkId(
   const rootCandidates = Object.keys(links).filter((linkId) => !childLinkIds.has(linkId));
 
   if (rootCandidates.length === 0) {
-    return null;
+    // Every link is some joint's child, so the joint graph is entirely cyclic
+    // and no link can anchor it. Anchor on the first declared link anyway so the
+    // document still imports; import recovery breaks the cycle and re-resolves
+    // the root from what survives.
+    return Object.keys(links)[0] ?? null;
   }
 
   if (rootCandidates.length === 1) {

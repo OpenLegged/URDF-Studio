@@ -7,6 +7,7 @@ import {
   Vector3,
   type Material,
   type Mesh,
+  type Object3D,
 } from 'three';
 import {
   getMeshLoadPerformanceHistory,
@@ -71,6 +72,10 @@ interface RuntimeDebugMaterial extends Material {
 
 interface RuntimeDebugObject extends RuntimeObject3D {
   isMesh?: boolean;
+  isPoints?: boolean;
+  isLineSegments?: boolean;
+  isLight?: boolean;
+  isCamera?: boolean;
   material?: RuntimeDebugMaterial | RuntimeDebugMaterial[];
   axis?: DebugVectorInput;
   jointType?: string;
@@ -1915,6 +1920,11 @@ function summarizeRuntimeRobot(robot: RegressionRuntimeRobot | null) {
       visibleVisualPlaceholderMeshCount: 0,
       collisionPlaceholderMeshCount: 0,
       texturedVisualMeshCount: 0,
+      pointObjectCount: 0,
+      basisCurveObjectCount: 0,
+      lightObjectCount: 0,
+      cameraObjectCount: 0,
+      renderBounds: null,
       helpers: {
         centerOfMass: 0,
         inertiaBox: 0,
@@ -1943,6 +1953,14 @@ function summarizeRuntimeRobot(robot: RegressionRuntimeRobot | null) {
     originAxes: 0,
     jointAxis: 0,
   };
+  let pointObjectCount = 0;
+  let basisCurveObjectCount = 0;
+  let lightObjectCount = 0;
+  let cameraObjectCount = 0;
+  const renderBounds = new Box3();
+  let hasRenderBounds = false;
+
+  (robot as RuntimeRobotObject).updateMatrixWorld?.(true);
 
   const getOrCreateLinkSummary = (linkName: string): RuntimeLinkSummary => {
     const existing = linkMap.get(linkName);
@@ -1995,6 +2013,19 @@ function summarizeRuntimeRobot(robot: RegressionRuntimeRobot | null) {
       if (linkName) {
         const entry = getOrCreateLinkSummary(linkName);
         const isMesh = runtimeChild.isMesh === true;
+        const isPoints = runtimeChild.isPoints === true;
+        const isLineSegments = runtimeChild.isLineSegments === true;
+        if (isPoints) pointObjectCount += 1;
+        if (isLineSegments) basisCurveObjectCount += 1;
+        if (runtimeChild.isLight === true) lightObjectCount += 1;
+        if (runtimeChild.isCamera === true) cameraObjectCount += 1;
+        if (isMesh || isPoints || isLineSegments) {
+          const objectBounds = new Box3().setFromObject(runtimeChild as unknown as Object3D);
+          if (!objectBounds.isEmpty()) {
+            renderBounds.union(objectBounds);
+            hasRenderBounds = true;
+          }
+        }
         const isVisualMesh = isMesh && runtimeChild.userData?.isVisualMesh === true;
         const isCollisionMesh = isMesh && runtimeChild.userData?.isCollisionMesh === true;
         const isPlaceholder = isMesh && runtimeChild.userData?.isPlaceholder === true;
@@ -2115,6 +2146,17 @@ function summarizeRuntimeRobot(robot: RegressionRuntimeRobot | null) {
       (sum, entry) => sum + entry.texturedVisualMeshCount,
       0,
     ),
+    pointObjectCount,
+    basisCurveObjectCount,
+    lightObjectCount,
+    cameraObjectCount,
+    renderBounds: hasRenderBounds
+      ? {
+          min: renderBounds.min.toArray(),
+          max: renderBounds.max.toArray(),
+          size: renderBounds.getSize(new Vector3()).toArray(),
+        }
+      : null,
     helpers: helperCounts,
     links: Array.from(linkMap.values()).sort((a, b) => a.name.localeCompare(b.name)),
     placeholderMeshes: placeholderMeshes.sort((a, b) =>

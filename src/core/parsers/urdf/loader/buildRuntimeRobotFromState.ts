@@ -5,6 +5,7 @@ import { isImageAssetPath } from '@/core/utils/assetFileTypes';
 import {
   applyVisualMaterialOverrideToObject,
   hasExplicitGeometryMaterialOverride,
+  resolvePrimaryAuthoredVisualMaterialOverride,
   resolveVisualMaterialOverrideFromGeometry,
 } from '@/core/utils/visualMaterialOverrides';
 import {
@@ -44,6 +45,12 @@ import {
   URDFVisual,
 } from './URDFClasses';
 import type { MeshLoadFunc } from './URDFLoader';
+import {
+  createRobotCapsuleGeometry,
+  createRobotCylinderGeometry,
+  createRobotSphereGeometry,
+  type RobotPrimitiveGeometryDetail,
+} from './primitiveGeometry';
 import { createVisualRestackBatch } from './visualRestackBatch';
 import type { VisualMaterialOverride } from '@/core/utils/visualMaterialOverrides';
 
@@ -180,6 +187,27 @@ function loadedObjectShouldPreserveEmbeddedMaterials(object: THREE.Object3D): bo
   });
 
   return hasExternalAuthoredMaterial || hasMaterialTexture || hasMultiMaterialMesh || materialNames.size > 1;
+}
+
+/**
+ * Whether a loaded object exposes exactly one material slot across all of its meshes.
+ *
+ * A single slot means a name-keyed material palette has nothing to map onto, so the
+ * palette cannot describe this object and a single override is the only usable form.
+ */
+function loadedObjectHasSingleMaterialSlot(object: THREE.Object3D): boolean {
+  let materialSlotCount = 0;
+
+  object.traverse((child) => {
+    if (!(child as THREE.Mesh).isMesh) {
+      return;
+    }
+
+    const material = (child as THREE.Mesh).material;
+    materialSlotCount += Array.isArray(material) ? material.length : material ? 1 : 0;
+  });
+
+  return materialSlotCount === 1;
 }
 
 function shouldAttachLoadedMeshObject(object: THREE.Object3D, isCollisionNode: boolean): boolean {
@@ -638,6 +666,7 @@ function createPrimitiveMesh(
   geometry: RobotLink['visual'],
   isCollision: boolean,
   manager?: THREE.LoadingManager,
+  primitiveGeometryDetail?: RobotPrimitiveGeometryDetail,
 ): THREE.Mesh | null {
   const dimensions = geometry.dimensions;
   const material = createPrimitiveMaterial(isCollision ? undefined : geometry.color);
@@ -670,13 +699,16 @@ function createPrimitiveMesh(
 
   if (geometry.type === GeometryType.SPHERE || geometry.type === GeometryType.ELLIPSOID) {
     const radius = dimensions.x || 0.1;
-    const mesh = new THREE.Mesh(new THREE.SphereGeometry(1, 30, 30), material);
+    const mesh = new THREE.Mesh(createRobotSphereGeometry(primitiveGeometryDetail), material);
     mesh.scale.set(radius, dimensions.y || radius, dimensions.z || radius);
     return mesh;
   }
 
   if (geometry.type === GeometryType.CYLINDER) {
-    const mesh = new THREE.Mesh(new THREE.CylinderGeometry(1, 1, 1, 30), material);
+    const mesh = new THREE.Mesh(
+      createRobotCylinderGeometry(primitiveGeometryDetail),
+      material,
+    );
     mesh.scale.set(dimensions.x || 0.05, dimensions.y || 0.5, dimensions.z || dimensions.x || 0.05);
     mesh.rotation.set(Math.PI / 2, 0, 0);
     return mesh;
@@ -686,7 +718,10 @@ function createPrimitiveMesh(
     const radius = Math.max(dimensions.x || 0.05, 1e-5);
     const totalLength = Math.max(dimensions.y || 0.5, radius * 2);
     const bodyLength = Math.max(totalLength - 2 * radius, 0);
-    const mesh = new THREE.Mesh(new THREE.CapsuleGeometry(radius, bodyLength, 8, 16), material);
+    const mesh = new THREE.Mesh(
+      createRobotCapsuleGeometry(radius, bodyLength, primitiveGeometryDetail),
+      material,
+    );
     mesh.rotation.set(Math.PI / 2, 0, 0);
     return mesh;
   }
@@ -725,6 +760,7 @@ export interface BuildRuntimeRobotFromStateOptions {
   loadMeshCb: MeshLoadFunc;
   parseVisual?: boolean;
   parseCollision?: boolean;
+  primitiveGeometryDetail?: RobotPrimitiveGeometryDetail;
   rootLinkId?: string;
   yieldIfNeeded?: () => Promise<void>;
 }
@@ -739,6 +775,7 @@ export async function buildRuntimeRobotFromState({
   loadMeshCb,
   parseVisual = true,
   parseCollision = true,
+  primitiveGeometryDetail,
   rootLinkId,
   yieldIfNeeded = createMainThreadYieldController(),
 }: BuildRuntimeRobotFromStateOptions): Promise<URDFRobot> {
@@ -856,15 +893,24 @@ export async function buildRuntimeRobotFromState({
               }
             }
 
+            const effectiveVisualMaterialOverride =
+              visualMaterialOverride ??
+              (!isCollision && !hasBoxFacePalette && loadedObjectHasSingleMaterialSlot(meshObject)
+                ? // A multi-material palette left `visualMaterialOverride` null, but this
+                  // mesh has a single material slot, so no slot mapping can happen and the
+                  // mesh would otherwise render with the loader's own material.
+                  resolvePrimaryAuthoredVisualMaterialOverride(geometry)
+                : null);
+
             if (
               !isCollision &&
-              visualMaterialOverride &&
+              effectiveVisualMaterialOverride &&
               (hasExplicitMaterialOverride ||
                 !loadedObjectShouldPreserveEmbeddedMaterials(meshObject))
             ) {
               applyVisualMaterialOverrideToObject(
                 meshObject,
-                visualMaterialOverride,
+                effectiveVisualMaterialOverride,
                 manager,
                 visualMaterialOverrideCache,
               );
@@ -896,7 +942,12 @@ export async function buildRuntimeRobotFromState({
         group.add(polylineMesh);
       }
     } else {
-      const primitiveMesh = createPrimitiveMesh(geometry, isCollision, manager);
+      const primitiveMesh = createPrimitiveMesh(
+        geometry,
+        isCollision,
+        manager,
+        primitiveGeometryDetail,
+      );
       if (primitiveMesh) {
         if (!isCollision && visualMaterialOverride) {
           applyVisualMaterialOverrideToObject(

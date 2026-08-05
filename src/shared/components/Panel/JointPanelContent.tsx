@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { RotateCcw, Settings } from 'lucide-react';
+import { Lock, RotateCcw, Settings, Unlock } from 'lucide-react';
 import { JointControlItem } from './JointControlItem';
 import type { JointControlItemJoint } from './jointControlItemTypes';
 import { getSingleDofJointEntries } from '@/shared/utils/jointTypes';
@@ -21,6 +21,9 @@ export type JointPanelTranslations = Partial<
     | 'collapse'
     | 'close'
     | 'expand'
+    | 'ignoreJointLimits'
+    | 'ignoreJointLimitsHint'
+    | 'ignoreJointLimitsOn'
     | 'joints'
     | 'reset'
     | 'resetJoints'
@@ -71,6 +74,7 @@ interface JointPanelItemBindingProps {
   setIsDragging?: (dragging: boolean) => void;
   onSelect?: (type: 'link' | 'joint', id: string) => void;
   isAdvanced?: boolean;
+  ignoreLimits?: boolean;
   onUpdate?: (type: 'link' | 'joint', id: string, data: unknown) => void;
   compact?: boolean;
 }
@@ -88,6 +92,8 @@ export interface JointPanelControlsProps {
   isAdvanced: boolean;
   setIsAdvanced: React.Dispatch<React.SetStateAction<boolean>>;
   onReset?: () => void;
+  ignoreLimits?: boolean;
+  onToggleIgnoreLimits?: (ignore: boolean) => void;
   compact?: boolean;
 }
 
@@ -106,6 +112,7 @@ export interface JointPanelListProps {
     subType?: 'visual' | 'collision',
   ) => void;
   isAdvanced?: boolean;
+  ignoreLimits?: boolean;
   onUpdate?: (type: 'link' | 'joint', id: string, data: unknown) => void;
   className?: string;
   compact?: boolean;
@@ -263,6 +270,7 @@ const JointPanelItemBinding = React.memo(function JointPanelItemBinding({
   setIsDragging,
   onSelect,
   isAdvanced = false,
+  ignoreLimits = false,
   onUpdate,
   compact = true,
 }: JointPanelItemBindingProps) {
@@ -287,6 +295,7 @@ const JointPanelItemBinding = React.memo(function JointPanelItemBinding({
       setIsDragging={setIsDragging}
       onSelect={onSelect}
       isAdvanced={isAdvanced}
+      ignoreLimits={ignoreLimits}
       onUpdate={onUpdate}
       compact={compact}
       dragSyncMode="animationFrame"
@@ -301,6 +310,8 @@ export function JointPanelControls({
   isAdvanced,
   setIsAdvanced,
   onReset,
+  ignoreLimits = false,
+  onToggleIgnoreLimits,
   compact = false,
 }: JointPanelControlsProps) {
   const buttonHeightClass = compact ? 'h-5' : 'h-6';
@@ -322,6 +333,31 @@ export function JointPanelControls({
         >
           <RotateCcw className={iconClass} />
           <span className={textClass}>{t.reset || 'Reset'}</span>
+        </button>
+      ) : null}
+      {onToggleIgnoreLimits ? (
+        <button
+          onClick={(event) => {
+            event.stopPropagation();
+            onToggleIgnoreLimits(!ignoreLimits);
+          }}
+          className={`inline-flex ${buttonHeightClass} items-center justify-center gap-1 rounded border ${sidePaddingClass} transition-colors ${
+            ignoreLimits
+              ? 'border-warning-border bg-warning-soft text-warning hover:bg-warning/15'
+              : 'border-border-black/60 bg-panel-bg text-text-secondary hover:bg-system-blue/10 hover:text-system-blue'
+          }`}
+          title={`${ignoreLimits ? t.ignoreJointLimitsOn : t.ignoreJointLimits}\n${t.ignoreJointLimitsHint ?? ''}`.trim()}
+          aria-pressed={ignoreLimits}
+          data-testid="joint-panel-ignore-limits-toggle"
+        >
+          {/* The padlock mirrors the constraint, not the action: closed while the
+              authored limits still bound the joint, open once they are lifted. */}
+          {ignoreLimits ? (
+            <Unlock className={iconClass} />
+          ) : (
+            <Lock className={iconClass} />
+          )}
+          <span className={textClass}>{t.ignoreJointLimits}</span>
         </button>
       ) : null}
       <button
@@ -364,6 +400,7 @@ export function JointPanelList({
   onSelect,
   onHover,
   isAdvanced = false,
+  ignoreLimits = false,
   onUpdate,
   className = 'space-y-0.5 px-1 py-1',
   compact = true,
@@ -421,6 +458,7 @@ export function JointPanelList({
           setIsDragging={setIsDragging}
           onSelect={onSelect}
           isAdvanced={isAdvanced}
+          ignoreLimits={ignoreLimits}
           onUpdate={onUpdate}
           compact={compact}
         />

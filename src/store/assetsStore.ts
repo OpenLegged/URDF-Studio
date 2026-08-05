@@ -13,7 +13,7 @@ import type {
   UsdSceneSnapshot,
 } from '@/types';
 import { DEFAULT_MOTOR_LIBRARY, normalizeMotorLibrary } from '@/shared/data/motorLibrary';
-import { normalizeLibraryPathKey } from '@/shared/utils/pathKeys';
+import { normalizeLibraryPathKey } from '@/core/utils/pathKeys';
 
 export type DocumentLoadStatus = 'idle' | 'loading' | 'hydrating' | 'ready' | 'error';
 

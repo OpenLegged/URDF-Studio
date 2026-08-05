@@ -87,6 +87,7 @@ export interface RobotLoadWorkflowPorts {
 
 export interface RobotLoadWorkflowLabels {
   failedToParseFormat: string;
+  importedRobotRecovered: string;
   importPackageAssetBundleHint: string;
   xacroSourceOnlyPreviewHint: string;
 }
@@ -217,6 +218,8 @@ function finishResolvedRobotLoad({
     showToast: ports.showToast,
   });
 
+  reportImportRecovery(file, importResult, labels, ports);
+
   if (!reloadViewer && importResult.status === 'ready' && file.format === 'mjcf') {
     ports.setDocumentLoadState({
       status: 'ready',
@@ -232,6 +235,36 @@ function finishResolvedRobotLoad({
     });
   }
   return outcome;
+}
+
+/**
+ * Tell the user which parts of a partially broken source were skipped.
+ *
+ * Import recovers what it can instead of refusing the whole file, so a silent
+ * success would misrepresent an incomplete model as a faithful one.
+ */
+function reportImportRecovery(
+  file: RobotFile,
+  importResult: RobotImportResult,
+  labels: RobotLoadWorkflowLabels,
+  ports: Pick<RobotLoadWorkflowPorts, 'showToast'>,
+): void {
+  if (importResult.status !== 'ready') {
+    return;
+  }
+
+  const recoveredItemCount =
+    importResult.robotData.inspectionContext?.recovery?.recoveredItemCount ?? 0;
+  if (recoveredItemCount === 0) {
+    return;
+  }
+
+  ports.showToast(
+    labels.importedRobotRecovered
+      .replace('{name}', file.name)
+      .replace('{count}', String(recoveredItemCount)),
+    'info',
+  );
 }
 
 function reportImportProgress({

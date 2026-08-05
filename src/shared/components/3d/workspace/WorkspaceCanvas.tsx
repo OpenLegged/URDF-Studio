@@ -25,7 +25,7 @@ import {
   type SnapshotCaptureAction,
   type SnapshotPreviewAction,
   type WorkspaceOverlayGizmoMargin,
-  useAdaptiveInteractionQuality,
+  useViewportInteractionQuality,
   WorkspaceCanvasInteractionStateProvider,
   WorkspaceOrbitControls,
   resolveCameraFollowLightingStyle,
@@ -49,7 +49,10 @@ import {
   type WorkspaceCanvasWebglSupportState,
 } from './workspaceCanvasWebgl';
 import { cleanupWorkspaceCanvasRenderer } from './workspaceCanvasRendererCleanup';
-import { shouldSuppressWorkspacePointerMissAfterDrag } from './workspacePointerMissPolicy';
+import {
+  hasWorkspacePointerDragExceededThreshold,
+  shouldSuppressWorkspacePointerMissAfterDrag,
+} from './workspacePointerMissPolicy';
 
 interface WorkspaceCanvasProps {
   theme: Theme;
@@ -78,6 +81,7 @@ interface WorkspaceCanvasProps {
   enableAmbientOcclusion?: boolean;
   enableShadows?: boolean;
   shadowMapSize?: number;
+  minDpr?: number;
   maxDpr?: number;
   toneMapping?: THREE.ToneMapping;
   toneMappingExposure?: number;
@@ -139,12 +143,12 @@ export function scheduleWorkspaceCanvasResizeEvent(target: WorkspaceCanvasResize
   });
 }
 
-function CanvasRenderKeyInvalidator({ renderKey }: { renderKey: string }) {
+function CanvasRenderKeyInvalidator({ renderKey, dpr }: { renderKey: string; dpr: number }) {
   const invalidate = useThree((state) => state.invalidate);
 
   useEffect(() => {
     invalidate();
-  }, [invalidate, renderKey]);
+  }, [dpr, invalidate, renderKey]);
 
   return null;
 }
@@ -176,6 +180,7 @@ export const WorkspaceCanvas = ({
   enableAmbientOcclusion = false,
   enableShadows = true,
   shadowMapSize,
+  minDpr,
   maxDpr,
   toneMapping = THREE.ACESFilmicToneMapping,
   toneMappingExposure,
@@ -205,8 +210,16 @@ export const WorkspaceCanvas = ({
   const contextLossInFlightRef = useRef(false);
   const pointerMissGestureRef = useRef<PointerMissGesture | null>(null);
   const suppressNextPointerMissRef = useRef(false);
+  const pointerDragStartRef = useRef<{
+    pointerId: number;
+    startX: number;
+    startY: number;
+  } | null>(null);
   const { dpr, isInteracting, beginInteraction, endInteraction, pulseInteraction } =
-    useAdaptiveInteractionQuality();
+    useViewportInteractionQuality({
+      restingCap: maxDpr,
+      minRenderDpr: minDpr,
+    });
 
   // Render content changes should only invalidate the current frame. A change in camera
   // projection forces a remount because R3F's <Canvas> only reads the `camera` prop at init — switching
@@ -412,7 +425,15 @@ export const WorkspaceCanvas = ({
 
   const handlePointerDownCapture = useCallback<React.PointerEventHandler<HTMLDivElement>>(
     (event) => {
-      beginInteraction();
+      // A bare press is not an interaction. Only dragging beyond the click
+      // threshold engages the interaction render path (see
+      // handlePointerMoveCapture), so hover/selection outlines stay visible
+      // while the button is held without moving.
+      pointerDragStartRef.current = {
+        pointerId: event.pointerId,
+        startX: event.clientX,
+        startY: event.clientY,
+      };
       if (event.button === 0) {
         pointerMissGestureRef.current = {
           pointerId: event.pointerId,
@@ -425,7 +446,7 @@ export const WorkspaceCanvas = ({
       }
       onPointerDownCapture?.(event);
     },
-    [beginInteraction, onPointerDownCapture],
+    [onPointerDownCapture],
   );
 
   const updatePointerMissGesture = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
@@ -439,8 +460,23 @@ export const WorkspaceCanvas = ({
   const handlePointerMoveCapture = useCallback<React.PointerEventHandler<HTMLDivElement>>(
     (event) => {
       updatePointerMissGesture(event);
+
+      const dragStart = pointerDragStartRef.current;
+      if (
+        dragStart &&
+        dragStart.pointerId === event.pointerId &&
+        event.buttons !== 0 &&
+        hasWorkspacePointerDragExceededThreshold({
+          startX: dragStart.startX,
+          startY: dragStart.startY,
+          endX: event.clientX,
+          endY: event.clientY,
+        })
+      ) {
+        beginInteraction();
+      }
     },
-    [updatePointerMissGesture],
+    [beginInteraction, updatePointerMissGesture],
   );
 
   const handlePointerUpCapture = useCallback<React.PointerEventHandler<HTMLDivElement>>(
@@ -452,6 +488,9 @@ export const WorkspaceCanvas = ({
         suppressNextPointerMissRef.current = shouldSuppressWorkspacePointerMissAfterDrag(gesture);
         pointerMissGestureRef.current = null;
       }
+      if (pointerDragStartRef.current?.pointerId === event.pointerId) {
+        pointerDragStartRef.current = null;
+      }
 
       endInteraction();
     },
@@ -462,6 +501,7 @@ export const WorkspaceCanvas = ({
     (event) => {
       updatePointerMissGesture(event);
       pointerMissGestureRef.current = null;
+      pointerDragStartRef.current = null;
       endInteraction(0);
     },
     [endInteraction, updatePointerMissGesture],
@@ -478,12 +518,11 @@ export const WorkspaceCanvas = ({
 
   const handleMouseMove = useCallback<React.MouseEventHandler<HTMLDivElement>>(
     (event) => {
-      if (event.buttons !== 0) {
-        beginInteraction();
-      }
+      // Drag interactions are started by the threshold-aware pointermove
+      // capture handler; mousemove only forwards to consumers.
       onMouseMove?.(event);
     },
-    [beginInteraction, onMouseMove],
+    [onMouseMove],
   );
 
   const handleMouseUp = useCallback<React.MouseEventHandler<HTMLDivElement>>(
@@ -522,6 +561,7 @@ export const WorkspaceCanvas = ({
     <div
       ref={containerRef}
       className={rootClassName}
+      data-interacting={isInteracting ? 'true' : 'false'}
       style={{
         touchAction: 'none',
         userSelect: 'none',
@@ -552,7 +592,7 @@ export const WorkspaceCanvas = ({
             dpr={effectiveDpr}
             shadows={shouldEnableShadows}
             resize={resizeOptions}
-            frameloop="demand"
+            frameloop={isInteracting ? 'always' : 'demand'}
             camera={canvasCamera}
             gl={canvasGl}
             onCreated={handleCreated}
@@ -567,80 +607,80 @@ export const WorkspaceCanvas = ({
                 }}
               >
                 <SemanticOutlineProvider enableAmbientOcclusion={enableAmbientOcclusion}>
-                <CanvasRenderKeyInvalidator renderKey={renderKey} />
-                <CanvasResizeSync />
-                {cameraProjection === 'orthographic' && (
-                  <OrthographicCamera
-                    makeDefault
-                    position={WORKSPACE_DEFAULT_CAMERA_POSITION}
-                    up={WORKSPACE_DEFAULT_CAMERA_UP}
-                    zoom={WORKSPACE_DEFAULT_CAMERA_ORTHOGRAPHIC_ZOOM}
-                    near={0.1}
-                    far={1000}
-                  />
-                )}
-                {/* Keep the live stage transparent so tone mapping only grades
+                  <CanvasRenderKeyInvalidator renderKey={renderKey} dpr={effectiveDpr} />
+                  <CanvasResizeSync targetFrameloop={isInteracting ? 'always' : 'demand'} />
+                  {cameraProjection === 'orthographic' && (
+                    <OrthographicCamera
+                      makeDefault
+                      position={WORKSPACE_DEFAULT_CAMERA_POSITION}
+                      up={WORKSPACE_DEFAULT_CAMERA_UP}
+                      zoom={WORKSPACE_DEFAULT_CAMERA_ORTHOGRAPHIC_ZOOM}
+                      near={0.1}
+                      far={1000}
+                    />
+                  )}
+                  {/* Keep the live stage transparent so tone mapping only grades
                     rendered geometry. The container supplies the exact theme
                     background, avoiding a washed-grey flat color. */}
-                <Suspense fallback={null}>
-                  {environment === 'hdr' && (
-                    <Environment
-                      files="/potsdamer_platz_1k.hdr"
-                      environmentIntensity={effectiveTheme === 'light' ? 0.8 : 1.0}
-                    />
-                  )}
-                  {environment === 'studio' && (
-                    <NeutralStudioEnvironment intensity={resolvedEnvironmentIntensity} />
-                  )}
-                </Suspense>
-                <SceneLighting
-                  theme={effectiveTheme}
-                  cameraFollowPrimary={cameraFollowPrimary}
-                  // Keep shadows enabled and updating across interaction so
-                  // orbiting and dragging use the exact same lighting path.
-                  enableShadows={enableShadows}
-                  shadowMapSize={shadowMapSize}
-                />
-                <SnapshotManager
-                  actionRef={snapshotAction}
-                  onSnapshotActionChange={onSnapshotActionChange}
-                  previewActionRef={previewAction}
-                  onPreviewActionChange={onPreviewActionChange}
-                  robotName={robotName}
-                  theme={effectiveTheme}
-                  groundOffset={groundOffset}
-                />
-                <Suspense fallback={null}>{children}</Suspense>
-                {showGroundPlane ? (
-                  <AdaptiveGroundPlane
+                  <Suspense fallback={null}>
+                    {environment === 'hdr' && (
+                      <Environment
+                        files="/potsdamer_platz_1k.hdr"
+                        environmentIntensity={effectiveTheme === 'light' ? 0.8 : 1.0}
+                      />
+                    )}
+                    {environment === 'studio' && (
+                      <NeutralStudioEnvironment intensity={resolvedEnvironmentIntensity} />
+                    )}
+                  </Suspense>
+                  <SceneLighting
+                    theme={effectiveTheme}
+                    cameraFollowPrimary={cameraFollowPrimary}
+                    // Keep shadows enabled and updating across interaction so
+                    // orbiting and dragging use the exact same lighting path.
+                    enableShadows={enableShadows}
+                    shadowMapSize={shadowMapSize}
+                  />
+                  <SnapshotManager
+                    actionRef={snapshotAction}
+                    onSnapshotActionChange={onSnapshotActionChange}
+                    previewActionRef={previewAction}
+                    onPreviewActionChange={onPreviewActionChange}
+                    robotName={robotName}
                     theme={effectiveTheme}
                     groundOffset={groundOffset}
-                    showShadow={showGroundShadow && shouldEnableShadows}
-                    subscribeInvalidation={subscribeGroundPlaneInvalidation}
                   />
-                ) : null}
-                {showWorldOriginAxes && !snapshotRenderActive && <WorldOriginAxes />}
-                <WorkspaceOrbitControls
-                  key={`orbit-${controlLayerKey}`}
-                  initialCameraSnapshot={initialCameraSnapshot}
-                  {...finalOrbitControlsProps}
-                  eventSource={orbitControlsEventSource}
-                />
-                {showViewportGizmo && !snapshotRenderActive && (
-                  <GizmoHelper
-                    key={`gizmo-${controlLayerKey}`}
-                    alignment="bottom-right"
-                    margin={gizmoMargin}
-                    renderPriority={2}
-                  >
-                    <GizmoViewport
-                      axisColors={['#ef4444', '#22c55e', '#3b82f6']}
-                      labelColor={effectiveTheme === 'light' ? '#0f172a' : 'white'}
-                      axisHeadScale={0.9}
-                      scale={34}
+                  <Suspense fallback={null}>{children}</Suspense>
+                  {showGroundPlane ? (
+                    <AdaptiveGroundPlane
+                      theme={effectiveTheme}
+                      groundOffset={groundOffset}
+                      showShadow={showGroundShadow && shouldEnableShadows}
+                      subscribeInvalidation={subscribeGroundPlaneInvalidation}
                     />
-                  </GizmoHelper>
-                )}
+                  ) : null}
+                  {showWorldOriginAxes && !snapshotRenderActive && <WorldOriginAxes />}
+                  <WorkspaceOrbitControls
+                    key={`orbit-${controlLayerKey}`}
+                    initialCameraSnapshot={initialCameraSnapshot}
+                    {...finalOrbitControlsProps}
+                    eventSource={orbitControlsEventSource}
+                  />
+                  {showViewportGizmo && !snapshotRenderActive && (
+                    <GizmoHelper
+                      key={`gizmo-${controlLayerKey}`}
+                      alignment="bottom-right"
+                      margin={gizmoMargin}
+                      renderPriority={2}
+                    >
+                      <GizmoViewport
+                        axisColors={['#ef4444', '#22c55e', '#3b82f6']}
+                        labelColor={effectiveTheme === 'light' ? '#0f172a' : 'white'}
+                        axisHeadScale={0.9}
+                        scale={34}
+                      />
+                    </GizmoHelper>
+                  )}
                 </SemanticOutlineProvider>
               </SnapshotRenderStateProvider>
             </WorkspaceCanvasInteractionStateProvider>

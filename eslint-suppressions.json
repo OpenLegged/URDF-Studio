@@ -468,7 +468,7 @@
   },
   "src/features/urdf-viewer/hooks/useHighlightManager.ts": {
     "@typescript-eslint/no-explicit-any": {
-      "count": 24
+      "count": 18
     }
   },
   "src/features/urdf-viewer/hooks/useHoverDetection.ts": {

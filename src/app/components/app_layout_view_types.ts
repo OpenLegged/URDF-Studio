@@ -182,6 +182,7 @@ export interface AppLayoutSidebarsProps {
   setViewConfig: AppLayoutProps['setViewConfig'];
   handleJointPreview: TreeEditorProps['onJointAnglePreview'];
   handleJointChange: TreeEditorProps['onJointAngleChange'];
+  handleResetJointAngles: TreeEditorProps['onResetJointAngles'];
   previewFile: FilePreviewWindowProps['file'];
   previewRobot: FilePreviewWindowProps['previewRobot'];
   filePreview: FilePreviewWindowProps['previewState'];

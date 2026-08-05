@@ -589,9 +589,10 @@ function generateJointXml(
   childLinkNameOverride?: string,
 ): string {
   if (joint.type === JointType.FLOATING) {
-    throw new Error(
-      `[SDF export] Joint "${joint.name || joint.id}" uses unsupported floating type.`,
+    console.warn(
+      `[SDF export] Joint "${joint.name || joint.id}" uses unsupported floating type; skipping (link will be fixed to parent).`,
     );
+    return '';
   }
 
   const jointName = jointNameOverride || joint.name || joint.id;
@@ -612,7 +613,7 @@ function generateJointXml(
     // Explicitly mark this so SDF readers (any version) interpret it correctly.
     lines.push('        <use_parent_model_frame>false</use_parent_model_frame>');
 
-    if (LIMIT_EXPORT_TYPES.has(joint.type) && joint.limit) {
+    if (!joint.mimic && LIMIT_EXPORT_TYPES.has(joint.type) && joint.limit) {
       const limitLines: string[] = [];
       if (Number.isFinite(joint.limit.lower)) {
         limitLines.push(`          <lower>${formatScalar(Number(joint.limit.lower))}</lower>`);

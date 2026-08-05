@@ -131,7 +131,7 @@ export function inferUsdDescriptorOwningLinkPath(
 }
 
 export function getUsdDescriptorSemanticChildLinkName(
-  descriptor: Pick<UsdSceneMeshDescriptor, 'resolvedPrimPath' | 'sectionName'>,
+  descriptor: Pick<UsdSceneMeshDescriptor, 'meshId' | 'resolvedPrimPath' | 'sectionName'>,
 ): string {
   const candidateLinkName = getUsdDescriptorSectionChildToken(descriptor);
   if (
@@ -146,7 +146,7 @@ export function getUsdDescriptorSemanticChildLinkName(
 }
 
 export function getUsdDescriptorSectionChildToken(
-  descriptor: Pick<UsdSceneMeshDescriptor, 'resolvedPrimPath' | 'sectionName'>,
+  descriptor: Pick<UsdSceneMeshDescriptor, 'meshId' | 'resolvedPrimPath' | 'sectionName'>,
 ): string {
   const normalizedResolvedPrimPath = normalizeUsdPath(descriptor.resolvedPrimPath || '');
   const normalizedSectionName = normalizeSectionName(descriptor.sectionName);
@@ -167,6 +167,18 @@ export function getUsdDescriptorSectionChildToken(
   );
   if (sectionIndex < 0 || sectionIndex + 1 >= resolvedSegments.length) {
     return '';
+  }
+
+  const normalizedMeshId = normalizeUsdPath(descriptor.meshId || '');
+  if (normalizedMeshId) {
+    const descriptorOwningLinkPath = inferUsdDescriptorOwningLinkPath(descriptor);
+    const authoredSectionOwnerPath = `/${resolvedSegments.slice(0, sectionIndex).join('/')}`;
+    if (
+      descriptorOwningLinkPath
+      && normalizeUsdPath(descriptorOwningLinkPath) !== normalizeUsdPath(authoredSectionOwnerPath)
+    ) {
+      return '';
+    }
   }
 
   const candidateLinkName = String(resolvedSegments[sectionIndex + 1] || '').trim();

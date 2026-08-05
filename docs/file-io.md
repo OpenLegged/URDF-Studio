@@ -29,6 +29,10 @@
 - 机器人源格式检测 source of truth 在 `core/parsers/format_detection.ts`；`app/utils/import-preparation/formatDetection.ts` 与 `features/file-io/utils/formatDetection.ts` 只做 wrapper
 - 新增导出辅助逻辑时，优先补到 `app/hooks/file-export/*`，不要把 `useFileExport.ts` 堆成大而全单文件
 - component mutation 放到 `workspace-mutations/*` 并显式携带 `EntityRef`/`componentId`；`workspaceSourceSyncUtils.ts` 仅保留从 canonical workspace 生成 source/preview 的纯函数
+- 导入是**尽力而为**而不是全有或全无：`core/robot/importedRobotRecovery.ts` 负责把解析结果修成可表达的模型（丢弃自环 / 重复父关节 / 成环关节，必要时重挂 root），
+  `core/robot/canonicalRobotSalvage.ts` 在 canonical 校验仍失败时按 issue 归属丢弃 link/joint/material 后重试；只有连一个可显示的 link 都不剩才返回 `parse_failed`。
+  被丢弃的内容通过 `inspectionContext.recovery` 上报，`app/hooks/robotLoadWorkflow.ts` 在主加载路径弹出 `importedRobotRecovered` 提示，不允许静默地把残缺模型当成完整模型
+- URDF `<limit>` 只对 revolute / prismatic 必需；`continuous`（轮子、被动转动关节）缺 `<limit>` 不产生诊断，也不合成上下限位
 - `.usp 3.0` project import/export、USD prepared export cache、live USD roundtrip archive 已进入主工作流
 - `projectArchive.worker.ts`、`usdExport.worker.ts`、`usdBinaryArchive.worker.ts` 已进入主导出链路；大型归档或序列化任务优先走 worker/transfer
 - `projectImport.worker.ts` 已进入 project import 链路；问题优先在 worker/bridge 修

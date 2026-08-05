@@ -7,7 +7,29 @@ import {
   type UsdSceneMeshDescriptor,
   type UsdSceneSnapshot,
 } from '@/types';
-import { resolveUsdPrimitiveGeometryFromDescriptor } from './usdPrimitiveGeometry';
+import {
+  getUsdDescriptorTransformScale,
+  resolveUsdPrimitiveGeometryFromDescriptor,
+} from './usdPrimitiveGeometry';
+
+test('extracts mesh scale while leaving descriptor translation out of geometry dimensions', () => {
+  const descriptor: UsdSceneMeshDescriptor = {
+    primType: 'mesh',
+    ranges: { transform: { offset: 0, count: 16, stride: 16 } },
+  };
+  const snapshot: UsdSceneSnapshot = {
+    buffers: {
+      transforms: [
+        200, 0, 0, 0,
+        0, 15, 0, 0,
+        0, 0, 100, 0,
+        5, 6, 7, 1,
+      ],
+    },
+  };
+
+  assert.deepEqual(getUsdDescriptorTransformScale(descriptor, snapshot), [200, 15, 100]);
+});
 
 test('resolves USD primitive dimensions without baking descriptor world transforms into RobotState geometry', () => {
   const descriptor: UsdSceneMeshDescriptor = {

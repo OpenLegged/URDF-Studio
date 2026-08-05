@@ -5,6 +5,7 @@ import {
   type UsdViewerRobotSceneSnapshot,
 } from './usdViewerRobotAdapter';
 import type { ViewerRobotDataResolution } from './viewerRobotData';
+import { normalizeUsdSceneSnapshotToMeters } from './usdStageUnits';
 
 type UsdSceneSnapshotLike = UsdSceneSnapshot | null;
 
@@ -22,7 +23,7 @@ export interface ResolvedUsdSceneRobotResolution {
 
 function toUsdSceneSnapshot(snapshot: unknown): UsdSceneSnapshotLike {
   return snapshot && typeof snapshot === 'object'
-    ? snapshot as UsdSceneSnapshot
+    ? normalizeUsdSceneSnapshotToMeters(snapshot as UsdSceneSnapshot)
     : null;
 }
 

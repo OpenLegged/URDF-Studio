@@ -248,7 +248,10 @@ export interface WorkspaceActions {
   setJointMotion: (
     ref: JointEntityRef,
     angle: number,
-    options?: Pick<WorkspaceMutationOptions, 'operationId'>,
+    options?: Pick<WorkspaceMutationOptions, 'operationId'> & {
+      /** Drive the joint past its authored limit (temporary limit override). */
+      ignoreLimits?: boolean;
+    },
   ) => boolean;
   setComponentJointMotion: (
     componentId: string,

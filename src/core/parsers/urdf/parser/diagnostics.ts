@@ -317,9 +317,16 @@ function addJointLimitDiagnostics(
 
   const limitEl = jointEl.querySelector('limit');
   if (!limitEl) {
+    // URDF spec makes <limit> required only for revolute and prismatic joints.
+    // Wheels and passive continuous joints legitimately spin unbounded, so an
+    // absent <limit> is not a defect worth reporting for them.
+    if (jointType === JointType.CONTINUOUS) {
+      return;
+    }
+
     pushDiagnostic(diagnostics, {
       code: 'movable_joint_missing_limit',
-      severity: jointType === JointType.CONTINUOUS ? 'warning' : 'error',
+      severity: 'error',
       category: 'joint',
       message: `Movable joint "${jointName || '<unnamed>'}" has no <limit> element.`,
       relatedIds,

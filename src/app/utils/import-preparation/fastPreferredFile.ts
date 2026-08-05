@@ -2,7 +2,7 @@ import { isStandaloneXacroEntry } from '@/core/parsers/importRobotFile';
 import { pickPreferredUsdRootFile } from '@/core/parsers/usd/usdFormatUtils';
 import { isSourceOnlyMJCFDocument } from '@/core/parsers/mjcf/mjcfXml';
 import { isAssetLibraryOnlyFormat, isVisibleLibraryEntry } from '@/shared/utils/robotFileSupport';
-import { normalizeLibraryPathKey } from '@/shared/utils/pathKeys';
+import { normalizeLibraryPathKey } from '@/core/utils/pathKeys';
 import {
   isUrdfSelfContainedInImportBundle,
   pickPreferredImportFile,

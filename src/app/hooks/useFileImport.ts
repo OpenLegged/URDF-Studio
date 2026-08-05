@@ -47,7 +47,7 @@ import { primePreResolvedRobotImports } from '@/app/utils/preResolvedRobotImport
 import { prewarmUsdSelectionInBackground } from '@/app/utils/usdSelectionPrewarm';
 import { markUnsavedChangesBaselineSaved } from '@/app/utils/unsavedChangesBaseline';
 import { waitForAnimationFrame } from '@/app/utils/waitForAnimationFrame';
-import { normalizeLibraryPathKey } from '@/shared/utils/pathKeys';
+import { normalizeLibraryPathKey } from '@/core/utils/pathKeys';
 import { logRegressionInfo } from '@/shared/debug/consoleDiagnostics';
 import { clearPreparedUsdStageOpenCache } from '@/features/editor/usd_prewarm';
 import { isRobotDefinitionPath } from '@/core/parsers/format_detection';

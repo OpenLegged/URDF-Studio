@@ -31,6 +31,7 @@ export type {
   MassInertiaChangeBehavior,
   ManagedWindowId,
 } from './uiStore';
+export type { ViewerRenderQuality } from '@/shared/utils/viewerRenderQuality';
 
 // Selection Store - canonical workspace selection, hover, attention, and focus
 export {

@@ -199,6 +199,41 @@ test('findPickIntersections includes selectable helpers that are not in pickTarg
   assert.ok(hits.some((hit) => hit.object === linkMesh));
 });
 
+test('findPickIntersections can skip the recursive helper scan for cached-helper callers', () => {
+  const robot = new THREE.Group();
+
+  const linkMesh = createBoxMesh();
+  linkMesh.position.set(0, 0, -1.5);
+  linkMesh.userData.parentLinkName = 'base_link';
+  linkMesh.userData.isVisualMesh = true;
+  robot.add(linkMesh);
+
+  const helperGroup = new THREE.Group();
+  helperGroup.name = '__origin_axes__';
+  helperGroup.userData = { isGizmo: true, isSelectableHelper: true };
+  const helperMesh = createBoxMesh();
+  helperMesh.position.set(0, 0, -1);
+  helperMesh.userData = { isGizmo: true, isSelectableHelper: true };
+  helperGroup.add(helperMesh);
+  robot.add(helperGroup);
+
+  robot.updateMatrixWorld(true);
+
+  const raycaster = new THREE.Raycaster(new THREE.Vector3(0, 0, 0), new THREE.Vector3(0, 0, -1));
+  const hits = findPickIntersections(
+    robot,
+    raycaster,
+    [linkMesh],
+    'all',
+    false,
+    undefined,
+    false,
+  );
+
+  assert.ok(hits.length > 0);
+  assert.equal(hits.every((hit) => hit.object === linkMesh), true);
+});
+
 test('findPickIntersections prefers selectable helper overlays over nearer collision meshes', () => {
   const robot = new THREE.Group();
 

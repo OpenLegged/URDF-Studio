@@ -142,9 +142,9 @@ npm run build:package:react-robot-canvas
 - 禁止将截图直接写到仓库根目录
 - `output/` 仅用于用户可见导出结果和回归归档
 - 截图前关闭遮挡画面的侧栏、浮层和调试面板
-- 所有 chrome-devtools / Playwright / Puppeteer / MCP 验证都必须用 `try/finally` 或等价机制关闭 page、context、browser；由 agent 启动的 `npm run dev` / Vite 进程也必须在结束前停止
-- 验证完成后关闭残留浏览器标签页、DevTools、Playwright 会话和临时进程，并运行 `node test/usd-viewer/scripts/cleanup-headless.cjs`
-- 如清理后仍怀疑有残留，使用 `ps -eo pid=,command= | rg 'chrome-devtools-mcp|playwright|puppeteer_dev_chrome_profile|playwright_chromiumdev_profile|ms-playwright|chrome-profile'` 核对；只清理自动化临时进程
+- 所有 Playwright / Puppeteer 验证都必须用 `try/finally` 或等价机制关闭 page、context、browser；由 agent 启动的 `npm run dev` / Vite 进程也必须在结束前停止
+- 验证完成后关闭残留浏览器标签页、Playwright 会话和临时进程，并运行 `node test/usd-viewer/scripts/cleanup-headless.cjs`
+- 如清理后仍怀疑有残留，使用 `ps -eo pid=,command= | rg 'playwright|puppeteer_dev_chrome_profile|playwright_chromiumdev_profile|ms-playwright|chrome-profile'` 核对；只清理自动化临时进程
 - 禁止为了省事执行宽泛 `pkill chrome` / `killall chrome`，避免误杀用户日常浏览器
 
 ## 7. 文档更新映射

@@ -1,4 +1,7 @@
-import { resolveAIWorkspaceRobotTarget } from '@/features/ai-assistant';
+import {
+  cloneAISnapshot,
+  resolveAIWorkspaceRobotTarget,
+} from '@/features/ai-assistant';
 import type {
   AIConversationFocusedIssue,
   AIConversationLaunchContext,
@@ -7,17 +10,9 @@ import type {
 } from '@/features/ai-assistant';
 import { useSelectionStore } from '@/store/selectionStore';
 import { useWorkspaceStore } from '@/store/workspaceStore';
-import type { InspectionReport, InteractionSelection, RobotState } from '@/types';
+import type { InspectionReport, RobotState } from '@/types';
 
-const EMPTY_AI_SNAPSHOT_SELECTION: InteractionSelection = { type: null, id: null };
-
-export function cloneAISnapshot<T>(value: T): T {
-  if (typeof structuredClone === 'function') {
-    return structuredClone(value);
-  }
-
-  return JSON.parse(JSON.stringify(value)) as T;
-}
+export { cloneAISnapshot } from '@/features/ai-assistant';
 
 export function resolveCurrentAIConversationSelection(): AIConversationSelection | null {
   const workspace = useWorkspaceStore.getState().workspace;
@@ -58,17 +53,4 @@ export function createConversationLaunchContext({
       : null,
     focusedIssue: nextFocusedIssue,
   };
-}
-
-export function resolveCurrentAIRobotSnapshot(): RobotState {
-  const workspace = useWorkspaceStore.getState().workspace;
-  const selection = useSelectionStore.getState().selection;
-  const target = resolveAIWorkspaceRobotTarget(workspace, selection);
-
-  return cloneAISnapshot({
-    ...target.robotData,
-    // RobotState is an external AI snapshot shape. Canonical selection travels
-    // separately as AIConversationSelection and is never mirrored here.
-    selection: EMPTY_AI_SNAPSHOT_SELECTION,
-  });
 }

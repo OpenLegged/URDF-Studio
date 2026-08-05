@@ -132,5 +132,14 @@ export interface WorkspaceMutationHandlers {
     angle: number,
     context?: ViewerJointChangeContext,
   ) => void;
+  /**
+   * Restore a component's joint angles as one undoable step, bypassing the
+   * limit clamp that interactive dragging applies. Returns the angles the
+   * workspace accepted (locked joints are skipped).
+   */
+  handleResetJointAngles: (
+    componentId: string,
+    jointAngles: Record<string, number>,
+  ) => Record<string, number>;
   flushJointMotion: () => void;
 }

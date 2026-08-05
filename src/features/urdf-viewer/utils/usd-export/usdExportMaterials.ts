@@ -14,6 +14,7 @@ import {
   getDescriptorRole,
   normalizeUsdPath,
 } from './usdExportPaths.ts';
+import { resolveSnapshotAuthoredMaterial } from '../usdViewerRobotAdapter/usdAdapterConversions.ts';
 
 import type {
   ExportDescriptor,
@@ -904,12 +905,51 @@ export function buildGeomSubsetMaterialGroups(
     return undefined;
   }
 
-  return geomSubsetSections.map((section, index) => ({
-    meshKey: '0',
-    start: section.start,
-    count: section.length,
-    materialIndex: Math.min(index, authoredMaterials.length - 1),
-  }));
+  const materialIndexById = new Map<string, number>();
+  const lastMaterialIndex = authoredMaterials.length - 1;
+  return geomSubsetSections.map((section, index) => {
+    const materialId = normalizeUsdPath(section.materialId || '');
+    let materialIndex = materialId ? materialIndexById.get(materialId) : undefined;
+    if (materialIndex === undefined) {
+      // Unbound subsets fall back to their own position, matching the order
+      // `buildGeomSubsetDisplayColors` assigns. Keying them off the dedup map
+      // size instead would leave the map empty and collapse every unbound
+      // subset onto the first authored material.
+      materialIndex = Math.min(materialId ? materialIndexById.size : index, lastMaterialIndex);
+      if (materialId) {
+        materialIndexById.set(materialId, materialIndex);
+      }
+    }
+    return {
+      meshKey: '0',
+      start: section.start,
+      count: section.length,
+      materialIndex,
+    };
+  });
+}
+
+export function buildGeomSubsetAuthoredMaterials(
+  descriptor: SnapshotMeshDescriptor,
+  materialLookup: Map<string, SnapshotMaterialRecord>,
+): UrdfVisualMaterial[] | undefined {
+  const sections = getDescriptorGeomSubsetSections(descriptor);
+  if (sections.length <= 1) {
+    return undefined;
+  }
+
+  const seenMaterialIds = new Set<string>();
+  const authoredMaterials = sections.flatMap((section) => {
+    const materialId = normalizeUsdPath(section.materialId || '');
+    if (seenMaterialIds.has(materialId)) {
+      return [];
+    }
+    seenMaterialIds.add(materialId);
+    return [resolveSnapshotAuthoredMaterial(materialLookup.get(materialId), materialId) || {}];
+  });
+  return authoredMaterials.some((material) => Object.keys(material).length > 0)
+    ? authoredMaterials
+    : undefined;
 }
 
 export function buildGeomSubsetDisplayColors(

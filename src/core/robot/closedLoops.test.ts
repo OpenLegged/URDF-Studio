@@ -1034,3 +1034,63 @@ test(
     assert.deepEqual(solution.quaternions, {});
   },
 );
+
+function createSingleRevoluteRobot(limit: { lower: number; upper: number }): RobotState {
+  const createLink = (id: string) => ({
+    id,
+    name: id,
+    visible: true,
+    visual: createNoneVisual(),
+    collision: createNoneVisual(),
+    collisionBodies: [],
+    inertial: {
+      mass: 0,
+      origin: { xyz: { x: 0, y: 0, z: 0 }, rpy: { r: 0, p: 0, y: 0 } },
+      inertia: { ixx: 0, ixy: 0, ixz: 0, iyy: 0, iyz: 0, izz: 0 },
+    },
+  });
+
+  return {
+    name: 'single-revolute',
+    rootLinkId: 'base',
+    selection: { type: null, id: null },
+    links: { base: createLink('base'), arm: createLink('arm') },
+    joints: {
+      knee: {
+        id: 'knee',
+        name: 'knee',
+        type: JointType.REVOLUTE,
+        parentLinkId: 'base',
+        childLinkId: 'arm',
+        origin: { xyz: { x: 0, y: 0, z: 0 }, rpy: { r: 0, p: 0, y: 0 } },
+        axis: { x: 0, y: 1, z: 0 },
+        limit: { ...limit, effort: 1, velocity: 1 },
+        angle: 0,
+        dynamics: { damping: 0, friction: 0 },
+        hardware: { armature: 0, motorType: '', motorId: '', motorDirection: 1 },
+      } satisfies UrdfJoint,
+    },
+  };
+}
+
+test('resolveClosedLoopDrivenJointMotion clamps the driven joint into its limit by default', () => {
+  const robot = createSingleRevoluteRobot({ lower: -2.818, upper: -0.888 });
+
+  const solution = resolveClosedLoopDrivenJointMotion(robot, 'knee', 0);
+
+  assert.equal(solution.angles.knee, -0.888);
+});
+
+test('resolveClosedLoopDrivenJointMotion honours the temporary limit override', () => {
+  const robot = createSingleRevoluteRobot({ lower: -2.818, upper: -0.888 });
+
+  const solution = resolveClosedLoopDrivenJointMotion(robot, 'knee', 0, { ignoreLimits: true });
+
+  assert.equal(solution.angles.knee, 0);
+
+  const beyondLower = resolveClosedLoopDrivenJointMotion(robot, 'knee', -3.5, {
+    ignoreLimits: true,
+  });
+
+  assert.equal(beyondLower.angles.knee, -3.5);
+});

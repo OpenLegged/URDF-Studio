@@ -173,6 +173,42 @@ test('applyVisualMeshMaterialGroupsToObject restores geometry groups and materia
   );
 });
 
+test('applyVisualMeshMaterialGroupsToObject accepts the legacy key for one named OBJ mesh', () => {
+  const root = new THREE.Group();
+  const mesh = new THREE.Mesh(
+    new THREE.PlaneGeometry(1, 1, 1, 1),
+    new THREE.MeshStandardMaterial({ color: '#808080' }),
+  );
+  mesh.name = 'base_link_visual_0';
+  root.add(mesh);
+
+  assert.equal(resolveRuntimeMeshMaterialGroupKey(mesh, root), '0:base_link_visual_0');
+  applyVisualMeshMaterialGroupsToObject(root, {
+    authoredMaterials: [
+      { name: 'left', color: '#ff0000' },
+      { name: 'right', color: '#00ff00' },
+    ],
+    meshMaterialGroups: [
+      { meshKey: '0', start: 0, count: 3, materialIndex: 0 },
+      { meshKey: '0', start: 3, count: 3, materialIndex: 1 },
+    ],
+  });
+
+  assert.ok(Array.isArray(mesh.material));
+  assert.equal(mesh.material.length, 2);
+  assert.deepEqual(
+    mesh.geometry.groups.map(({ start, count, materialIndex }) => ({
+      start,
+      count,
+      materialIndex,
+    })),
+    [
+      { start: 0, count: 3, materialIndex: 0 },
+      { start: 3, count: 3, materialIndex: 1 },
+    ],
+  );
+});
+
 test('applyVisualMeshMaterialGroupsToObject applies alpha test and texture rotation', () => {
   const originalLoad = THREE.TextureLoader.prototype.load;
   THREE.TextureLoader.prototype.load = function load(

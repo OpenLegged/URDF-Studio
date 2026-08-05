@@ -12,6 +12,10 @@ import {
 } from '@/shared/components/3d/unified-transform-controls/gizmoCore';
 import { markMaterialAsShared } from '@/core/utils/three/materialProtection';
 import { ignoreRaycast } from '@/shared/utils/three/ignoreRaycast';
+import {
+  jointRotationArrowHeadPosition,
+  jointRotationArrowHeadQuaternion,
+} from '@/shared/utils/three/jointRotationIndicator';
 
 export interface MjcfSiteVisualizationData {
   name: string;
@@ -430,11 +434,15 @@ export function createJointAxisViz(
     torus.renderOrder = HELPER_RENDER_ORDER;
     jointAxisViz.add(torus);
 
-    // Small arrow on torus to indicate rotation direction
+    // Arrow head marking the positive rotation direction. The torus sweeps
+    // counter-clockwise from +X, which is the right-hand-rule positive direction
+    // about the +Z axis arrow, so the head belongs at the *end* of that sweep and
+    // must point along the tangent. Parking it at the sweep start (or pointing it
+    // radially) makes the ring read as clockwise, i.e. inverted.
     const miniConeGeom = new THREE.ConeGeometry(0.015 * scale, 0.04 * scale, 8);
     const miniCone = new THREE.Mesh(miniConeGeom, ringMat);
-    miniCone.position.set(torusRadius, 0, 0);
-    miniCone.rotation.set(Math.PI / 2, 0, -Math.PI / 2);
+    miniCone.position.copy(jointRotationArrowHeadPosition(torusArc, torusRadius));
+    miniCone.quaternion.copy(jointRotationArrowHeadQuaternion(torusArc));
     miniCone.userData = createSelectableHelperUserData();
     miniCone.renderOrder = HELPER_RENDER_ORDER;
     jointAxisViz.add(miniCone);

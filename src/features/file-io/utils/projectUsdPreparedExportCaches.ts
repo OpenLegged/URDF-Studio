@@ -11,7 +11,7 @@ import {
 } from './projectArchive';
 import type { ProjectArchiveEntryData } from './projectArchiveWorkerTransfer';
 import { appendProjectArchiveEntriesToZip } from './projectArchiveZip';
-import { normalizeLibraryPathKey } from '@/shared/utils/pathKeys';
+import { normalizeLibraryPathKey } from '@/core/utils/pathKeys';
 
 const PROJECT_USD_PREPARED_EXPORT_CACHE_PREFIX = 'workspace/usd-prepared-export-caches';
 

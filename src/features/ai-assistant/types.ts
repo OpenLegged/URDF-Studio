@@ -63,7 +63,26 @@ export interface AIConversationDivider {
   marker: 'new-conversation';
 }
 
-export type AIConversationMessage = AIConversationChatMessage | AIConversationDivider;
+/**
+ * A proposed URDF modification returned by the AI. The user previews the diff
+ * against `currentUrdf` and applies it; apply re-parses `proposedUrdf` and
+ * commits via `commitPreparedComponentSourceApply` so the robot and source
+ * draft update together (undoable via workspace history).
+ */
+export interface AIConversationModificationCard {
+  kind: 'modification-card';
+  role: 'assistant';
+  explanation: string;
+  proposedUrdf: string;
+  currentUrdf: string;
+  componentId: string;
+  status: 'pending' | 'applied' | 'dismissed';
+}
+
+export type AIConversationMessage =
+  | AIConversationChatMessage
+  | AIConversationDivider
+  | AIConversationModificationCard;
 
 /** Canonical entity identity plus its key in the immutable AI snapshot. */
 export type AIConversationSelection = (LinkEntityRef | JointEntityRef) & {

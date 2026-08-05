@@ -69,7 +69,7 @@ test('PanelSelect exposes the shared panel select surface and keeps Select chang
     assert.ok(trigger instanceof dom.window.HTMLButtonElement);
     assert.match(trigger.className, /\bbg-panel-bg\b/);
     assert.match(trigger.className, /\bborder-border-black\b/);
-    assert.match(trigger.className, /text-\[12px\]/);
+    assert.match(trigger.className, /\btext-ui-label\b/);
 
     await act(async () => {
       trigger.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
@@ -79,7 +79,7 @@ test('PanelSelect exposes the shared panel select surface and keeps Select chang
       dom.window.document.querySelectorAll('button[role="option"]'),
     ).find((node) => node.textContent?.includes('Beta'));
     assert.ok(betaOption instanceof dom.window.HTMLButtonElement);
-    assert.match(betaOption.className, /text-\[12px\]/);
+    assert.match(betaOption.className, /\btext-ui-label\b/);
 
     await act(async () => {
       betaOption.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
@@ -119,7 +119,7 @@ test('PanelSelect property variant keeps dropdown option typography aligned with
 
     const trigger = container.querySelector('button[role="combobox"]');
     assert.ok(trigger instanceof dom.window.HTMLButtonElement);
-    assert.match(trigger.className, /text-\[10px\]/);
+    assert.match(trigger.className, /\btext-ui-caption\b/);
 
     await act(async () => {
       trigger.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
@@ -141,7 +141,7 @@ test('PanelSelect property variant keeps dropdown option typography aligned with
       dom.window.document.querySelectorAll('button[role="option"]'),
     ).find((node) => node.textContent?.includes('Mesh'));
     assert.ok(meshOption instanceof dom.window.HTMLButtonElement);
-    assert.match(meshOption.className, /text-\[10px\]/);
+    assert.match(meshOption.className, /\btext-ui-caption\b/);
     assert.match(meshOption.className, /px-1\.5/);
   } finally {
     await act(async () => {
@@ -177,7 +177,7 @@ test('PanelSelect compact variant keeps dense dialog selectors aligned with drop
     const trigger = container.querySelector('button[role="combobox"]');
     assert.ok(trigger instanceof dom.window.HTMLButtonElement);
     assert.match(trigger.className, /h-\[25px\]/);
-    assert.match(trigger.className, /!text-\[11px\]/);
+    assert.match(trigger.className, /\btext-ui-label\b/);
 
     await act(async () => {
       trigger.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
@@ -187,7 +187,7 @@ test('PanelSelect compact variant keeps dense dialog selectors aligned with drop
       dom.window.document.querySelectorAll('button[role="option"]'),
     ).find((node) => node.textContent?.includes('JPEG'));
     assert.ok(jpegOption instanceof dom.window.HTMLButtonElement);
-    assert.match(jpegOption.className, /text-\[11px\]/);
+    assert.match(jpegOption.className, /\btext-ui-label\b/);
   } finally {
     await act(async () => {
       root.unmount();

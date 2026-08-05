@@ -41,11 +41,10 @@ import type {
   AIConversationMode,
   AIConversationSelection,
 } from '@/features/ai-assistant';
+import { resolveCurrentAIRobotSnapshot } from '@/features/ai-assistant';
 import type { ExportTarget } from './hooks/file-export/types';
-import {
-  createConversationLaunchContext,
-  resolveCurrentAIRobotSnapshot,
-} from './utils/aiConversationLaunch';
+import { createConversationLaunchContext } from './utils/aiConversationLaunch';
+import { applyAIUrdfModification } from './utils/applyAIUrdfModification';
 import { waitForNextPaint } from './utils/waitForNextPaint';
 import { waitForAnimationFrame } from './utils/waitForAnimationFrame';
 import { logRegressionError } from '@/shared/debug/consoleDiagnostics';
@@ -119,6 +118,7 @@ export function AppContent({ extensions, onExposeActions }: AppContentProps = {}
     useRobotLoadWorkflow({
       labels: {
         failedToParseFormat: t.failedToParseFormat,
+        importedRobotRecovered: t.importedRobotRecovered,
         importPackageAssetBundleHint: t.importPackageAssetBundleHint,
         xacroSourceOnlyPreviewHint: t.xacroSourceOnlyPreviewHint,
       },
@@ -329,7 +329,7 @@ export function AppContent({ extensions, onExposeActions }: AppContentProps = {}
     (currentLaunchContext: AIConversationLaunchContext) => {
       const nextLaunchContext = createConversationLaunchContextFromSnapshot(
         currentLaunchContext.mode,
-        currentLaunchContext.robotSnapshot,
+        resolveCurrentAIRobotSnapshot(),
         currentLaunchContext.inspectionReportSnapshot ?? null,
         {
           selectedEntity: currentLaunchContext.selectedEntity,
@@ -567,6 +567,7 @@ export function AppContent({ extensions, onExposeActions }: AppContentProps = {}
         handleOpenConversationWithReport={handleOpenConversationWithReport}
         handleStartNewAIConversation={handleStartNewAIConversation}
         isAIConversationOpen={isAIConversationOpen}
+        onApplyAIUrdfModification={applyAIUrdfModification}
         isAIInspectionOpen={isAIInspectionOpen}
         isDisconnectedWorkspaceUrdfExporting={isDisconnectedWorkspaceUrdfExporting}
         isExportDialogOpen={isExportDialogOpen}

@@ -39,7 +39,6 @@ test('resolveInitialJointControlState does not carry retained joint angles acros
   });
 
   assert.deepEqual(result.currentAngles, { shoulder_joint: 0.4 });
-  assert.deepEqual(result.defaultAngles, { shoulder_joint: 0.4 });
   assert.deepEqual(appliedAngles, [0.4]);
 });
 
@@ -62,6 +61,5 @@ test('resolveInitialJointControlState preserves retained joint angles when the v
   });
 
   assert.deepEqual(result.currentAngles, { shoulder_joint: 1.25 });
-  assert.deepEqual(result.defaultAngles, { shoulder_joint: 0 });
   assert.deepEqual(appliedAngles, [1.25]);
 });

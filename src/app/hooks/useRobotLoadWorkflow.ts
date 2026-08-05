@@ -48,12 +48,18 @@ export function useRobotLoadWorkflow({
   const setDocumentLoadState = useAssetsStore((state) => state.setDocumentLoadState);
   const requestEpochRef = useRef<RobotLoadRequestEpoch>({ current: 0 });
   const loadRobotFileRef = useRef<LoadRobotFile | null>(null);
-  const { failedToParseFormat, importPackageAssetBundleHint, xacroSourceOnlyPreviewHint } = labels;
+  const {
+    failedToParseFormat,
+    importedRobotRecovered,
+    importPackageAssetBundleHint,
+    xacroSourceOnlyPreviewHint,
+  } = labels;
   const loadRobotFile = useCallback<LoadRobotFile>(
     (requestedFile, options) =>
       runRobotLoadWorkflow({
         labels: {
           failedToParseFormat,
+          importedRobotRecovered,
           importPackageAssetBundleHint,
           xacroSourceOnlyPreviewHint,
         },
@@ -79,6 +85,7 @@ export function useRobotLoadWorkflow({
       }),
     [
       failedToParseFormat,
+      importedRobotRecovered,
       importPackageAssetBundleHint,
       onViewerReload,
       setAppMode,

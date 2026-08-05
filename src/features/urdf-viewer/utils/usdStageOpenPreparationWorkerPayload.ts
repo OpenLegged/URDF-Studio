@@ -1,4 +1,9 @@
 import type { RobotFile } from '@/types';
+import {
+  inferUsdBundleVirtualDirectory,
+  isUsdPathWithinBundleDirectory,
+  isUsdRuntimeTexturePath,
+} from '@/core/parsers/usd/usdAssetPaths';
 import { compactBlobBackedLargeTextUsdForWorker } from './usdStageOpenLargeText.ts';
 import { collectUsdStageOpenRelevantVirtualPaths, toVirtualUsdPath } from './usdPreloadSources.ts';
 
@@ -54,6 +59,10 @@ function buildContextCacheKey(
   ].join('|');
 }
 
+function isUsdStageOpenLayerPath(path: string): boolean {
+  return /\.usd(?:a|c|z)?$/i.test(String(path || '').trim().split('?')[0]);
+}
+
 function filterStageOpenAvailableFiles(
   sourceFile: StageOpenSourceFile,
   availableFiles: StageOpenAvailableFile[],
@@ -61,8 +70,15 @@ function filterStageOpenAvailableFiles(
   const relevantPathSet = new Set(
     collectUsdStageOpenRelevantVirtualPaths(sourceFile, availableFiles),
   );
+  const bundleDirectory = inferUsdBundleVirtualDirectory(sourceFile.name);
 
   return availableFiles.filter((file) => {
+    if (
+      isUsdRuntimeTexturePath(file.name)
+      && isUsdPathWithinBundleDirectory(file.name, bundleDirectory)
+    ) {
+      return file.name !== sourceFile.name;
+    }
     if (file.format === 'mesh') {
       return false;
     }
@@ -81,11 +97,16 @@ function filterStageOpenAssets(
   const relevantPathSet = new Set(
     collectUsdStageOpenRelevantVirtualPaths(sourceFile, availableFiles),
   );
+  const bundleDirectory = inferUsdBundleVirtualDirectory(sourceFile.name);
 
   return Object.fromEntries(
-    Object.entries(assets).filter(
-      ([path]) => relevantPathSet.has(toVirtualUsdPath(path)),
-    ),
+    Object.entries(assets).filter(([path]) => (
+      (isUsdStageOpenLayerPath(path) && relevantPathSet.has(toVirtualUsdPath(path)))
+      || (
+        isUsdRuntimeTexturePath(path)
+        && isUsdPathWithinBundleDirectory(path, bundleDirectory)
+      )
+    )),
   );
 }
 

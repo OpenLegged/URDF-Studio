@@ -25,6 +25,10 @@ export {
   getInspectionProfileName,
 } from './config/inspectionProfiles'
 export { resolveAIWorkspaceRobotTarget } from './utils/aiWorkspaceTarget'
+export {
+  cloneAISnapshot,
+  resolveCurrentAIRobotSnapshot,
+} from './utils/aiConversationRobotSnapshot'
 export type {
   AIInspectableEntityRef,
   AIWorkspaceRobotTarget,

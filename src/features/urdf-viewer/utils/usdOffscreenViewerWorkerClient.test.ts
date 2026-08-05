@@ -76,6 +76,7 @@ test('USD offscreen viewer worker client prepares stage-open context for init pa
   ];
   const assets = {
     'robots/go2/textures/body.png': 'blob:go2-texture',
+    'robots/alien/textures/alien.png': 'blob:alien-texture',
   };
 
   const firstDispatch = client.prepareStageOpenDispatch(sourceFile, availableFiles, assets);
@@ -93,7 +94,11 @@ test('USD offscreen viewer worker client prepares stage-open context for init pa
       },
     ],
   );
-  assert.deepEqual(firstDispatch.stageOpenContext?.assets, {});
+  // Bundle textures ride along because layer text never names them; assets
+  // outside the bundle directory are still pruned.
+  assert.deepEqual(firstDispatch.stageOpenContext?.assets, {
+    'robots/go2/textures/body.png': 'blob:go2-texture',
+  });
   assert.equal(firstDispatch.worker, fakeWorker);
   assert.equal(firstDispatch.sourceFile.name, sourceFile.name);
   assert.ok(firstDispatch.stageOpenContextKey);

@@ -1,6 +1,6 @@
 import React from 'react';
 import { ChevronDown, ChevronRight } from 'lucide-react';
-import { resolveJointKey } from '@/core/robot';
+import { getJointReferencePosition, resolveJointKey } from '@/core/robot';
 import { translations } from '@/shared/i18n';
 import { JointPanelControls, JointPanelList } from '@/shared/components/Panel/JointPanelContent';
 import { resolveActiveViewerJointKeyFromSelection } from '@/shared/utils/active_joint_selection';
@@ -31,6 +31,27 @@ export function resolveComponentViewerJointPreview(
   return preview.workspaceByComponent?.[componentId] ?? null;
 }
 
+/**
+ * Angles that put every controllable joint back at the pose the model is authored
+ * in: `referencePosition` where the source declares one (MJCF `ref`, URDF
+ * `<calibration reference_position>`), otherwise 0.
+ *
+ * Reset deliberately reads this from the joints themselves instead of a pose
+ * captured when the panel first saw the robot: the capture drifted to whatever
+ * pose the user had already applied whenever its scope was re-seeded, which made
+ * Reset a silent no-op.
+ */
+export function resolveJointPanelResetAngles(
+  joints: RobotData['joints'],
+): Record<string, number> {
+  return Object.fromEntries(
+    getSingleDofJointEntries(joints).map(([jointId, joint]) => [
+      jointId,
+      getJointReferencePosition(joint),
+    ]),
+  );
+}
+
 export function createTreeJointPanelScopeKey({
   componentId,
   sourceFilePath,
@@ -52,6 +73,10 @@ interface TreeEditorJointSectionProps {
   onUpdate: (ref: EntityRef, patch: WorkspacePropertyPatch) => void;
   onJointAnglePreview?: (ref: Extract<EntityRef, { type: 'joint' }>, angle: number) => void;
   onJointAngleChange?: (ref: Extract<EntityRef, { type: 'joint' }>, angle: number) => void;
+  onResetJointAngles?: (
+    componentId: string,
+    jointAngles: Record<string, number>,
+  ) => Record<string, number>;
   show: boolean;
   sourceFilePath?: string;
   height: number;
@@ -93,6 +118,7 @@ export function TreeEditorJointSection({
   onUpdate,
   onJointAnglePreview,
   onJointAngleChange,
+  onResetJointAngles,
   show,
   sourceFilePath,
   height,
@@ -118,11 +144,12 @@ export function TreeEditorJointSection({
   const hasJointEntries = jointEntries.length > 0;
   const panelSections = useUIStore((state) => state.panelSections);
   const setPanelSection = useUIStore((state) => state.setPanelSection);
+  const ignoreJointLimits = useUIStore((state) => state.ignoreJointLimits);
+  const setIgnoreJointLimits = useUIStore((state) => state.setIgnoreJointLimits);
   const isCollapsed = panelSections[TREE_EDITOR_JOINT_SECTION_KEY] ?? false;
   const [angleUnit, setAngleUnit] = React.useState<'rad' | 'deg'>('rad');
   const [isAdvanced, setIsAdvanced] = React.useState(false);
   const jointPanelStoreRef = React.useRef(createJointPanelStore());
-  const initialJointAnglesRef = React.useRef<Record<string, number>>({});
   const pendingCommittedJointAnglesRef = React.useRef<Record<string, number>>({});
   const pendingCommittedJointAnglesScopeRef = React.useRef<string | null>(null);
   const resetScopeRef = React.useRef<string | null>(null);
@@ -194,8 +221,7 @@ export function TreeEditorJointSection({
     resetScopeRef.current = resetScopeKey;
     pendingCommittedJointAnglesRef.current = {};
     pendingCommittedJointAnglesScopeRef.current = resetScopeKey;
-    initialJointAnglesRef.current = jointAngleSnapshot;
-  }, [jointAngleSnapshot, resetScopeKey]);
+  }, [resetScopeKey]);
 
   const patchLocalJointAngles = React.useCallback(
     (jointAngles: Record<string, number>) => {
@@ -273,23 +299,31 @@ export function TreeEditorJointSection({
   }, [localSelection, robot.joints]);
 
   const handleResetJoints = React.useCallback(() => {
-    const resetAngles: Record<string, number> = {};
+    const normalizedResetAngles = patchLocalJointAngles(resolveJointPanelResetAngles(robot.joints));
 
-    jointEntries.forEach(([jointId, joint]) => {
-      const initialAngle =
-        initialJointAnglesRef.current[jointId] ??
-        (typeof joint.name === 'string' ? initialJointAnglesRef.current[joint.name] : undefined);
-      resetAngles[jointId] = initialAngle ?? 0;
-    });
-
-    const normalizedResetAngles = patchLocalJointAngles(resetAngles);
-    pendingCommittedJointAnglesRef.current = normalizedResetAngles;
+    // Reset is an authoritative write: the workspace update lands synchronously,
+    // so any locally held commit must be dropped. Keeping it would let angles the
+    // workspace rejected (locked joints) or adjusted mask the real value forever,
+    // because pending entries only clear once the workspace matches them.
+    pendingCommittedJointAnglesRef.current = {};
     pendingCommittedJointAnglesScopeRef.current = resetScopeKey;
+
+    if (onResetJointAngles) {
+      onResetJointAngles(componentId, normalizedResetAngles);
+      return;
+    }
 
     Object.entries(normalizedResetAngles).forEach(([jointId, nextAngle]) => {
       onJointAngleChange?.({ type: 'joint', componentId, entityId: jointId }, nextAngle);
     });
-  }, [componentId, jointEntries, onJointAngleChange, patchLocalJointAngles, resetScopeKey]);
+  }, [
+    componentId,
+    onJointAngleChange,
+    onResetJointAngles,
+    patchLocalJointAngles,
+    resetScopeKey,
+    robot.joints,
+  ]);
 
   if (!shouldShow) {
     return null;
@@ -325,6 +359,8 @@ export function TreeEditorJointSection({
               isAdvanced={isAdvanced}
               setIsAdvanced={setIsAdvanced}
               onReset={handleResetJoints}
+              ignoreLimits={ignoreJointLimits}
+              onToggleIgnoreLimits={setIgnoreJointLimits}
               compact
             />
             <span aria-hidden="true" className="sr-only">
@@ -354,6 +390,7 @@ export function TreeEditorJointSection({
                 });
               }}
               isAdvanced={isAdvanced}
+              ignoreLimits={ignoreJointLimits}
               onUpdate={(type, id, data) => {
                 if (type !== 'link' && type !== 'joint') return;
                 onUpdate(

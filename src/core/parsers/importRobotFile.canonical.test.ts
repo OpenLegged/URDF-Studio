@@ -103,7 +103,7 @@ test('ready imports omit dangling joints and unresolved mimic metadata', () => {
   assert.equal(result.robotData.joints.arm_joint?.mimic, undefined);
 });
 
-test('ambiguous duplicate-parent topology remains a hard import error', () => {
+test('duplicate-parent topology imports the first parent and omits the second', () => {
   const result = resolveRobotFileData(
     createUrdfFile(`
       <robot name="duplicate_parent">
@@ -122,12 +122,57 @@ test('ambiguous duplicate-parent topology remains a hard import error', () => {
     `),
   );
 
-  assert.equal(result.status, 'error');
-  if (result.status !== 'error') return;
-  assert.match(result.message ?? '', /duplicate|parent/i);
+  assert.equal(result.status, 'ready');
+  if (result.status !== 'ready') return;
+
+  assert.doesNotThrow(() => assertCanonicalRobotData(result.robotData, 'robot'));
+  assert.equal(Object.keys(result.robotData.links).length, 3);
+  assert.ok(result.robotData.joints.first);
+  assert.equal(result.robotData.joints.second, undefined);
+  assert.ok(
+    result.robotData.inspectionContext?.recovery?.diagnostics.some(
+      (diagnostic) => diagnostic.code === 'duplicate_parent_joint_omitted',
+    ),
+  );
 });
 
-test('duplicate source link identities remain a hard import error', () => {
+test('cyclic joint graphs import with the cycle-closing joint omitted', () => {
+  const result = resolveRobotFileData(
+    createUrdfFile(`
+      <robot name="cyclic_chain">
+        <link name="a" />
+        <link name="b" />
+        <link name="c" />
+        <joint name="a_to_b" type="fixed">
+          <parent link="a" />
+          <child link="b" />
+        </joint>
+        <joint name="b_to_c" type="fixed">
+          <parent link="b" />
+          <child link="c" />
+        </joint>
+        <joint name="c_to_a" type="fixed">
+          <parent link="c" />
+          <child link="a" />
+        </joint>
+      </robot>
+    `),
+  );
+
+  assert.equal(result.status, 'ready');
+  if (result.status !== 'ready') return;
+
+  assert.doesNotThrow(() => assertCanonicalRobotData(result.robotData, 'robot'));
+  assert.equal(Object.keys(result.robotData.links).length, 3);
+  assert.equal(Object.keys(result.robotData.joints).length, 2);
+  assert.ok(
+    result.robotData.inspectionContext?.recovery?.diagnostics.some(
+      (diagnostic) => diagnostic.code === 'cyclic_joint_omitted',
+    ),
+  );
+});
+
+test('duplicate source link identities import the surviving link with a warning', () => {
   const result = resolveRobotFileData(
     createUrdfFile(`
       <robot name="duplicate_link_identity">
@@ -137,9 +182,17 @@ test('duplicate source link identities remain a hard import error', () => {
     `),
   );
 
-  assert.equal(result.status, 'error');
-  if (result.status !== 'error') return;
-  assert.match(result.message ?? '', /duplicate.*link|ambiguous source identities/i);
+  assert.equal(result.status, 'ready');
+  if (result.status !== 'ready') return;
+
+  assert.doesNotThrow(() => assertCanonicalRobotData(result.robotData, 'robot'));
+  assert.equal(Object.keys(result.robotData.links).length, 1);
+  assert.ok(
+    result.robotData.inspectionContext?.recovery?.diagnostics.some(
+      (diagnostic) =>
+        diagnostic.code === 'duplicate_link_name' && diagnostic.severity === 'warning',
+    ),
+  );
 });
 
 for (const [model, relativePath] of [

@@ -2,7 +2,13 @@
 
 import * as THREE from 'three';
 import { getCollisionGeometryEntries } from '@/core/robot';
-import type { RobotFile, UsdSceneMaterialRecord, UsdSceneSnapshot } from '@/types';
+import type {
+  RobotFile,
+  UsdMeshDescriptorRanges,
+  UsdSceneMaterialRecord,
+  UsdSceneMeshDescriptor,
+  UsdSceneSnapshot,
+} from '@/types';
 import { normalizeLoadingProgress } from '@/shared/components/3d/loadingHudState';
 import {
   createSemanticOutlineComposer,
@@ -37,6 +43,7 @@ import { toVirtualUsdPath } from '../utils/usdPreloadSources.ts';
 import { resolveUsdGroundAlignmentSettleDelaysMs } from '../utils/usdGroundAlignmentDelays.ts';
 import { alignUsdSceneRootToGround } from '../utils/usdGroundAlignment.ts';
 import { shouldSettleUsdGroundAlignmentAfterInitialLoad } from '../utils/usdGroundAlignmentPolicy.ts';
+import { shouldAutoFrameUsdGenericSceneSnapshot } from '../utils/usdGenericScenePolicy.ts';
 import {
   disposeUsdDriver,
   ensureUsdWasmRuntime,
@@ -140,6 +147,12 @@ type RuntimeWindow = typeof globalThis & {
   driver?: any;
   usdStage?: unknown;
   _controls?: WorkerControls;
+};
+
+type LiveMeshRenderInterface = {
+  meshes?: Record<string, { _mesh?: THREE.Mesh } | null>;
+  getResolvedVisualTransformPrimPathForMeshId?: (meshId: string) => unknown;
+  getResolvedPrimPathForMeshId?: (meshId: string) => unknown;
 };
 
 interface ActivePointerState {
@@ -1520,7 +1533,7 @@ function summarizeWorkerRenderedScene() {
 
 function buildLiveMeshSceneSnapshotFallback(
   snapshot: UsdSceneSnapshot,
-  renderInterface: any,
+  renderInterface: LiveMeshRenderInterface | null | undefined,
   preferLiveMeshes = false,
 ): UsdSceneSnapshot {
   const nativeMeshDescriptors = Array.from(snapshot.render?.meshDescriptors ?? []);
@@ -1533,8 +1546,8 @@ function buildLiveMeshSceneSnapshotFallback(
   const normalPool: number[] = [];
   const uvPool: number[] = [];
   const transformPool: number[] = [];
-  const rangesByMeshId: Record<string, any> = {};
-  const meshDescriptors: any[] = [];
+  const rangesByMeshId: Record<string, UsdMeshDescriptorRanges> = {};
+  const meshDescriptors: UsdSceneMeshDescriptor[] = [];
   const materials: UsdSceneMaterialRecord[] = [];
   const materialIds = new Map<THREE.Material, string>();
   const liveVisibilityByPrimPath = new Map<string, boolean>();
@@ -1607,7 +1620,7 @@ function buildLiveMeshSceneSnapshotFallback(
   };
 
   Object.entries(renderInterface?.meshes ?? {}).forEach(([rawMeshId, hydraMesh], ordinal) => {
-    const mesh = (hydraMesh as any)?._mesh as THREE.Mesh | undefined;
+    const mesh = hydraMesh?._mesh;
     const geometry = mesh?.geometry;
     const positions = copyAttribute(geometry?.getAttribute('position') ?? null);
     if (!mesh || !geometry || positions.length === 0) return;
@@ -2649,7 +2662,13 @@ async function loadUsdStageIntoWorker(message: UsdOffscreenViewerInitRequest): P
         ...(getRuntimeWarmupDebugDetail(runtimeWindow.renderInterface) ?? {}),
       }),
     });
-    if (!robotSceneSnapshotOnlyLoad && useCollisionVisualProxyMode) {
+    const shouldAutoFrameGenericScene =
+      robotSceneSnapshotOnlyLoad
+      && shouldAutoFrameUsdGenericSceneSnapshot(workerResolvedRobotData.fullSceneSnapshot);
+    if (
+      (!robotSceneSnapshotOnlyLoad && useCollisionVisualProxyMode)
+      || shouldAutoFrameGenericScene
+    ) {
       applyRuntimeVisibility();
       applyGroundAlignment();
       scheduleWorkerAutoFrameSettlePasses(loadGeneration);

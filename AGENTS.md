@@ -10,4 +10,4 @@
 - viewer backend 生命周期归 `src/features/urdf-viewer/renderers/`；`src/shared/components/3d/renderers/` 只放纯 mesh renderer 组件与 Collada scene helpers。
 - workspace/source 同步策略优先放 `src/app/hooks/workspace-source-sync/` 或 `workspace-mutations/` 子模块，避免继续堆大 `useWorkspaceSourceSync.ts` / `workspaceSourceSyncUtils.ts`。
 - `npm run dev` 默认绑定 `127.0.0.1`；远程开发端口转发、容器或局域网访问需显式使用 `URDF_STUDIO_DEV_HOST=0.0.0.0 npm run dev`，具体说明以 `CLAUDE.md` 的 `开发服务器访问` 为准。
-- 浏览器验证、Playwright/Puppeteer/chrome-devtools MCP、浏览器回归脚本结束后，必须按 `CLAUDE.md` 清理残留浏览器进程；优先运行 `node test/usd-viewer/scripts/cleanup-headless.cjs`，不要使用会误杀用户浏览器的宽泛 `pkill chrome` / `killall chrome`。
+- 浏览器验证、Playwright/Puppeteer、浏览器回归脚本结束后，必须按 `CLAUDE.md` 清理残留浏览器进程；优先运行 `node test/usd-viewer/scripts/cleanup-headless.cjs`，不要使用会误杀用户浏览器的宽泛 `pkill chrome` / `killall chrome`。

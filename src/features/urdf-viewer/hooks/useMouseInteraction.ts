@@ -555,6 +555,17 @@ export function useMouseInteraction({
         }
       }
 
+      if (
+        resolveDirectHelperInteraction({
+          robot,
+          raycaster: raycasterRef.current,
+          helperTargets: getHelperTargets(),
+          interactionLayerPriority,
+        })
+      ) {
+        return true;
+      }
+
       const pickTargets = getPickTargets('all');
       if (pickTargets.length > 0 && !rayIntersectsBoundingBox(raycasterRef.current, true)) {
         return false;
@@ -568,6 +579,7 @@ export function useMouseInteraction({
           'all',
           false,
           interactionLayerPriority,
+          false,
         ).length > 0
       );
     };
@@ -1144,6 +1156,7 @@ export function useMouseInteraction({
           'all',
           false,
           interactionLayerPriority,
+          false,
         );
         const resolvedCandidates: ResolvedHoverInteractionCandidate[] = intersections.reduce<
           ResolvedHoverInteractionCandidate[]

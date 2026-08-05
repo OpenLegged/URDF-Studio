@@ -736,6 +736,7 @@ const serializeJointDefinition = (
   const mimicAxisInstance = `rot${axisToken}`;
   const shouldEmitDrive =
     driveInstanceName !== null &&
+    !joint.mimic &&
     !shouldEmitPhysxMimic &&
     (driveStiffness !== null || driveDamping !== null || driveMaxForce !== null);
   const jointFriction =

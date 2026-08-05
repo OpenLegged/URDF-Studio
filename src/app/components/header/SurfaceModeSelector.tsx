@@ -30,13 +30,14 @@ export function SurfaceModeSelector({
     scene: null,
   });
   const menuId = React.useId();
-  const currentCopy = copy[config.current];
+  const currentMode = config.current;
+  const currentCopy = copy[currentMode];
 
   React.useEffect(() => {
     if (isOpen) {
-      optionRefs.current[config.current]?.focus();
+      optionRefs.current[currentMode]?.focus();
     }
-  }, [config.current, isOpen]);
+  }, [currentMode, isOpen]);
 
   const closeAndFocusTrigger = () => {
     onOpenChange(false);

@@ -266,6 +266,7 @@ function WorkspaceSidebarsSection({
           sidebars.setViewConfig((prev) => ({ ...prev, showStructureGraph: false })),
         onJointAnglePreview: sidebars.handleJointPreview,
         onJointAngleChange: sidebars.handleJointChange,
+        onResetJointAngles: sidebars.handleResetJointAngles,
       }}
       filePreviewWindowProps={{
         file: sidebars.previewFile,

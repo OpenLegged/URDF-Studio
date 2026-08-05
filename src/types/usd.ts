@@ -199,6 +199,7 @@ export interface UsdSceneSnapshot {
     timeCodesPerSecond?: number | null;
     framesPerSecond?: number | null;
     primDescriptors?: ArrayLike<UsdScenePrimDescriptor>;
+    sourceMetersPerUnit?: number | null;
   } | null;
   robotTree?: {
     linkParentPairs?: ArrayLike<[string, string | null]>;

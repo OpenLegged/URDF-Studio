@@ -10,7 +10,10 @@ import {
 } from '../../../../types/index.ts';
 import { getVisualGeometryEntries } from '@/core/robot';
 
-import { resolveUsdPrimitiveGeometryFromDescriptor as resolvePrimitiveGeometryFromDescriptor } from '../usdPrimitiveGeometry.ts';
+import {
+  getUsdDescriptorTransformScale,
+  resolveUsdPrimitiveGeometryFromDescriptor as resolvePrimitiveGeometryFromDescriptor,
+} from '../usdPrimitiveGeometry.ts';
 import type { ViewerRobotDataResolution } from '../viewerRobotData.ts';
 
 import {
@@ -38,6 +41,7 @@ import {
   applyDescriptorMaterialToLink,
   applySnapshotMaterialRecordToLink,
   applyVisualMaterialFallbackToLink,
+  buildGeomSubsetAuthoredMaterials,
   buildGeomSubsetDisplayColors,
   buildGeomSubsetMaterialGroups,
   colorArrayToVertexColor,
@@ -90,6 +94,26 @@ function ensureMeshDimensions(
     (value) => Number.isFinite(value) && Math.abs(value) > 1e-9,
   );
   return hasMeaningfulDimension ? dimensions : { x: 1, y: 1, z: 1 };
+}
+
+export function resolveUsdSnapshotMeshDimensions(
+  dimensions: UrdfVisual['dimensions'] | null | undefined,
+  descriptor: SnapshotMeshDescriptor,
+  snapshot: UsdExportSnapshot,
+): UrdfVisual['dimensions'] {
+  const current = ensureMeshDimensions(dimensions);
+  const hasEditedScale =
+    Math.abs(current.x - 1) > 1e-9 ||
+    Math.abs(current.y - 1) > 1e-9 ||
+    Math.abs(current.z - 1) > 1e-9;
+  if (hasEditedScale) {
+    return current;
+  }
+
+  const snapshotScale = getUsdDescriptorTransformScale(descriptor, snapshot);
+  return snapshotScale
+    ? { x: snapshotScale[0], y: snapshotScale[1], z: snapshotScale[2] }
+    : current;
 }
 
 function buildFixedChildLinksByParent(robot: RobotState): Map<string, string[]> {
@@ -371,11 +395,22 @@ function assignVisualDescriptorToLink(
     type: GeometryType.MESH,
     meshPath: entry.exportPath,
     doubleSided: true,
-    dimensions: ensureMeshDimensions(visual?.dimensions),
+    dimensions: resolveUsdSnapshotMeshDimensions(visual?.dimensions, entry.descriptor, snapshot),
     origin: visual?.origin || { ...DEFAULT_LINK.visual.origin },
   };
   entry.bakeTransformIntoMesh = !hasNonIdentityOrigin(link.visual.origin);
   descriptorByPath.set(entry.exportPath, entry);
+  const subsetAuthoredMaterials = buildGeomSubsetAuthoredMaterials(
+    entry.descriptor,
+    materialLookup,
+  );
+  if (subsetAuthoredMaterials) {
+    link.visual = {
+      ...link.visual,
+      authoredMaterials: subsetAuthoredMaterials,
+      materialSource: 'named',
+    };
+  }
   const appliedMaterial = applyDescriptorMaterialToLink(robot, linkId, entry, materialLookup);
   if (
     !appliedMaterial &&
@@ -443,7 +478,11 @@ function assignCollisionDescriptorToLink(
       ...(sanitizedCollision || {}),
       type: GeometryType.MESH,
       meshPath: entry.exportPath,
-      dimensions: ensureMeshDimensions(sanitizedCollision?.dimensions),
+      dimensions: resolveUsdSnapshotMeshDimensions(
+        sanitizedCollision?.dimensions,
+        entry.descriptor,
+        snapshot,
+      ),
       origin: sanitizedCollision?.origin || { ...DEFAULT_LINK.collision.origin },
     };
     entry.bakeTransformIntoMesh = !hasNonIdentityOrigin(link.collision.origin);
@@ -458,7 +497,11 @@ function assignCollisionDescriptorToLink(
     ...(currentBody || {}),
     type: GeometryType.MESH,
     meshPath: entry.exportPath,
-    dimensions: ensureMeshDimensions(currentBody?.dimensions),
+    dimensions: resolveUsdSnapshotMeshDimensions(
+      currentBody?.dimensions,
+      entry.descriptor,
+      snapshot,
+    ),
     origin: currentBody?.origin || { ...DEFAULT_LINK.collision.origin },
   };
   link.collisionBodies = bodies;

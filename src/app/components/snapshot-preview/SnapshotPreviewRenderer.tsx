@@ -18,6 +18,7 @@ import {
   useWorkspaceCanvasTheme,
 } from '@/shared/components/3d';
 import { resolveSnapshotAspectRatio } from '@/shared/components/3d/scene/snapshotConfig';
+import { VIEWER_RENDER_QUALITY_PROFILES } from '@/shared/utils/viewerRenderQuality';
 import {
   applySnapshotLightingPreset,
   applySnapshotShadowQuality,
@@ -30,6 +31,7 @@ import { computeCameraFrame } from '@/features/urdf-viewer';
 import { buildUnifiedViewerResourceScopes } from '@/app/utils/unifiedViewerResourceScopes';
 import { ViewerSceneConnector } from '../unified-viewer/ViewerSceneConnector';
 import { subscribeWorkspaceGroundPlaneInvalidation } from '@/store/robotGroundPlaneInvalidation';
+import { useUIStore } from '@/store';
 import { computeVisibleMeshBounds } from '@/shared/utils/threeBounds';
 
 import type { SnapshotDialogPreviewState, SnapshotPreviewSession } from './types';
@@ -127,7 +129,6 @@ const SNAPSHOT_PREVIEW_BACKGROUND: Record<
 };
 const SNAPSHOT_PREVIEW_READY_SETTLE_MS = 180;
 const SNAPSHOT_PREVIEW_INCLUDE_READY_SETTLE_MS = 900;
-const SNAPSHOT_PREVIEW_MAX_DPR = 1.5;
 const SNAPSHOT_PREVIEW_SHADOW_MAP_SIZE = 512;
 
 function hasMjcfInclude(content: string | null | undefined) {
@@ -527,6 +528,10 @@ export function SnapshotPreviewRenderer({
     ReturnType<typeof buildUnifiedViewerResourceScopes>['viewerResourceScope'] | null
   >(null);
   const effectiveTheme = useWorkspaceCanvasTheme(session?.theme ?? 'light');
+  // The preview shares the main viewport's render-quality profile so a scene
+  // never looks softer here than it does in the editor it was opened from.
+  const renderQuality = useUIStore((state) => state.viewOptions.renderQuality);
+  const renderQualityProfile = VIEWER_RENDER_QUALITY_PROFILES[renderQuality];
   const previewBackground = useMemo(
     () => resolvePreviewBackground(options.backgroundStyle),
     [options.backgroundStyle],
@@ -696,7 +701,8 @@ export function SnapshotPreviewRenderer({
         environmentIntensity={STUDIO_ENVIRONMENT_INTENSITY.viewer[effectiveTheme]}
         enableShadows
         shadowMapSize={SNAPSHOT_PREVIEW_SHADOW_MAP_SIZE}
-        maxDpr={SNAPSHOT_PREVIEW_MAX_DPR}
+        minDpr={renderQualityProfile.minDpr}
+        maxDpr={renderQualityProfile.maxDpr}
         background={previewBackground}
         cameraFollowPrimary
         showWorldOriginAxes={false}
