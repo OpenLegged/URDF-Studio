@@ -8,6 +8,7 @@ interface AIConversationConnectorProps {
   lang: Language;
   launchContext: AIConversationLaunchContext | null;
   onStartNewConversation: (launchContext: AIConversationLaunchContext) => void;
+  onApply: (componentId: string, proposedUrdf: string) => boolean;
 }
 
 export function AIConversationConnector({
@@ -16,6 +17,7 @@ export function AIConversationConnector({
   lang,
   launchContext,
   onStartNewConversation,
+  onApply,
 }: AIConversationConnectorProps) {
   return (
     <AIConversationModal
@@ -24,6 +26,7 @@ export function AIConversationConnector({
       lang={lang}
       launchContext={launchContext}
       onStartNewConversation={onStartNewConversation}
+      onApply={onApply}
     />
   );
 }

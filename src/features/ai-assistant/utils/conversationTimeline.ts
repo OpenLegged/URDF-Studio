@@ -3,6 +3,7 @@ import type {
   AIConversationChatMessage,
   AIConversationDivider,
   AIConversationMessage,
+  AIConversationModificationCard,
 } from '../types'
 
 export function createConversationMessage(
@@ -35,6 +36,12 @@ export function isConversationDivider(
   return message.kind === 'divider'
 }
 
+export function isConversationModificationCard(
+  message: AIConversationMessage,
+): message is AIConversationModificationCard {
+  return message.kind === 'modification-card'
+}
+
 function findLastConversationDividerIndex(messages: AIConversationMessage[]): number {
   for (let index = messages.length - 1; index >= 0; index -= 1) {
     if (isConversationDivider(messages[index])) {
@@ -58,6 +65,10 @@ export function getActiveConversationHistory(
 
     if (isConversationDivider(message)) {
       break
+    }
+
+    if (!isConversationChatMessage(message)) {
+      continue
     }
 
     const content = message.content.trim()
@@ -86,6 +97,10 @@ export function removeTrailingAssistantPlaceholder(
   for (let index = nextMessages.length - 1; index >= 0; index -= 1) {
     const message = nextMessages[index]
     if (!message || isConversationDivider(message)) {
+      return nextMessages
+    }
+
+    if (!isConversationChatMessage(message)) {
       return nextMessages
     }
 

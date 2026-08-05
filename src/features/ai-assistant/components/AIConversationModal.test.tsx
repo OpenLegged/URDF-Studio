@@ -5,7 +5,9 @@ import React, { act } from 'react';
 import { createRoot } from 'react-dom/client';
 import { JSDOM } from 'jsdom';
 
-import { DEFAULT_MANAGED_WINDOW_ORDER, useUIStore } from '@/store';
+import { createSingleComponentWorkspace } from '@/core/robot';
+import { setAiBackendAuthTokenProvider } from '@/features/ai-assistant';
+import { DEFAULT_MANAGED_WINDOW_ORDER, useSelectionStore, useUIStore, useWorkspaceStore } from '@/store';
 import { GeometryType, JointType, type RobotState } from '@/types';
 import type { AIConversationLaunchContext } from '../types';
 import { buildConversationPromptSuggestions } from '../utils/conversationPromptSuggestions';
@@ -600,6 +602,147 @@ test('suggested prompts expose hover and focus border highlight styles', async (
       'suggested prompt label should stay emphasized for keyboard focus',
     );
   } finally {
+    await act(async () => {
+      root.unmount();
+    });
+    dom.window.close();
+  }
+});
+
+test('AI conversation context reflects workspace edits made after the chat was opened', async () => {
+  const previousFetch = globalThis.fetch;
+  const previousBackendUrl = process.env.AI_BACKEND_URL;
+  const previousApiKey = process.env.API_KEY;
+  process.env.AI_BACKEND_URL = 'https://backend.test/api/ai/urdf-studio';
+  delete process.env.API_KEY;
+  setAiBackendAuthTokenProvider(null);
+
+  const dom = installDom();
+  const container = dom.window.document.getElementById('root');
+  assert.ok(container, 'root container should exist');
+
+  const capturedRequests: { url: string; body: Record<string, unknown> }[] = [];
+  const encoder = new TextEncoder();
+  const sseBody = new ReadableStream<Uint8Array>({
+    start(controller) {
+      controller.enqueue(encoder.encode('data: {"delta":"ok"}\n\n'));
+      controller.enqueue(encoder.encode('data: {"done":true}\n\n'));
+      controller.close();
+    },
+  });
+  globalThis.fetch = (async (url: unknown, init?: RequestInit) => {
+    const body = JSON.parse(String(init?.body ?? '{}')) as Record<string, unknown>;
+    capturedRequests.push({ url: String(url), body });
+    return {
+      ok: true,
+      status: 200,
+      body: sseBody,
+      json: async () => null,
+    };
+  }) as typeof fetch;
+
+  const initialRobot = createRobotFixture();
+  const { selection: _initialSelection, ...initialRobotData } = initialRobot;
+  // The chat-panel fixture assumes an implicit 'world' root link; the
+  // workspace validator rejects dangling parent references, so add it here.
+  initialRobotData.links['world'] = {
+    ...structuredClone(initialRobotData.links['base_link']),
+    id: 'world',
+    name: 'world',
+  };
+  initialRobotData.rootLinkId = 'world';
+  useWorkspaceStore.setState({
+    workspace: createSingleComponentWorkspace(initialRobotData, { componentId: 'arm' }),
+    activeComponentId: 'arm',
+  });
+  useSelectionStore.getState().setSelection(null);
+
+  const launchContext = createLaunchContext();
+
+  const { AIConversationModal } = await import('./AIConversationModal.tsx');
+  const root = createRoot(container);
+  const initialUiState = useUIStore.getState();
+  const initialWorkspaceState = useWorkspaceStore.getState();
+  const initialSelectionState = useSelectionStore.getState();
+
+  try {
+    useUIStore.setState({ managedWindowOrder: [...DEFAULT_MANAGED_WINDOW_ORDER] });
+    await act(async () => {
+      root.render(
+        <AIConversationModal
+          isOpen
+          onClose={() => {}}
+          lang="en"
+          launchContext={launchContext}
+          onStartNewConversation={() => {}}
+        />,
+      );
+    });
+    await flush();
+
+    // Simulate a post-launch workspace edit: add tool_link + tool_joint.
+    const armComponent = useWorkspaceStore.getState().workspace.components['arm'];
+    armComponent.robot.links['tool_link'] = {
+      ...structuredClone(initialRobot.links['base_link']),
+      id: 'tool_link',
+      name: 'tool_link',
+    };
+    armComponent.robot.joints['tool_joint'] = {
+      ...structuredClone(initialRobot.joints['hip_joint']),
+      id: 'tool_joint',
+      name: 'tool_joint',
+      parentLinkId: 'base_link',
+      childLinkId: 'tool_link',
+    };
+
+    const [prompt] = buildConversationPromptSuggestions({
+      lang: 'en',
+      isReportFollowup: false,
+      selectedEntityName: null,
+    });
+    assert.ok(prompt, 'expected at least one suggested prompt');
+    await clickButton(findButtonByText(container, prompt));
+    await flush();
+
+    assert.equal(capturedRequests.length, 1, 'AI chat turn must POST once');
+    const sentBody = capturedRequests[0].body;
+    assert.equal(capturedRequests[0].url, 'https://backend.test/api/ai/urdf-studio/chat');
+
+    const contextString = sentBody.context;
+    assert.ok(typeof contextString === 'string', 'context must be sent as a JSON string');
+    const context = JSON.parse(String(contextString)) as {
+      robot: {
+        links: Array<{ id: string; name: string }>;
+        joints: Array<{ id: string; name: string; parent: string; child: string }>;
+      };
+    };
+
+    const linkIds = context.robot.links.map((link) => link.id);
+    assert.ok(linkIds.includes('tool_link'), 'submitted context must include the link added after launch');
+    const jointIds = context.robot.joints.map((joint) => joint.id);
+    assert.ok(jointIds.includes('tool_joint'), 'submitted context must include the joint added after launch');
+    const toolJoint = context.robot.joints.find((joint) => joint.id === 'tool_joint');
+    assert.equal(toolJoint?.parent, 'base_link');
+    assert.equal(toolJoint?.child, 'tool_link');
+
+    // The launch-time snapshot stays frozen so header lookups remain stable.
+    assert.equal(launchContext.robotSnapshot.links['tool_link'], undefined);
+  } finally {
+    useUIStore.setState(initialUiState);
+    useWorkspaceStore.setState(initialWorkspaceState);
+    useSelectionStore.setState(initialSelectionState);
+    setAiBackendAuthTokenProvider(null);
+    globalThis.fetch = previousFetch;
+    if (previousBackendUrl === undefined) {
+      delete process.env.AI_BACKEND_URL;
+    } else {
+      process.env.AI_BACKEND_URL = previousBackendUrl;
+    }
+    if (previousApiKey === undefined) {
+      delete process.env.API_KEY;
+    } else {
+      process.env.API_KEY = previousApiKey;
+    }
     await act(async () => {
       root.unmount();
     });
