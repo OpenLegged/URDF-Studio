@@ -550,6 +550,7 @@ export function AppContent({ extensions, onExposeActions }: AppContentProps = {}
         headerQuickAction={extensions?.config?.headerQuickAction}
         headerSecondaryAction={extensions?.config?.headerSecondaryAction}
         surfaceModeSelector={extensions?.config?.surfaceModeSelector}
+        contextFileMenu={extensions?.config?.contextFileMenu}
         extensionToolboxItems={extensions?.config?.toolboxItems}
         onExposeLayoutActions={handleExposeLayoutActions}
       />

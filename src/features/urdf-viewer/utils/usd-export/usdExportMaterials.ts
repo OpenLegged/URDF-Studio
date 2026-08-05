@@ -88,6 +88,13 @@ function normalizeScalarMaterialValue(
   value: unknown,
   options: { clamp01?: boolean; min?: number } = {},
 ): number | null {
+  // Optional OpenUSD inputs are represented as null when they are not
+  // authored. Number(null) is 0, which would incorrectly turn an absent
+  // opacity into fully transparent in the prepared render cache.
+  if (value === null || value === undefined || value === '') {
+    return null;
+  }
+
   const numeric = Number(value);
   if (!Number.isFinite(numeric)) {
     return null;

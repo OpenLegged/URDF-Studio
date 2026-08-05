@@ -38,6 +38,26 @@ export interface HeaderSurfaceModeSelectorConfig {
   translations: Record<'en' | 'zh', HeaderSurfaceModeSelectorCopy>;
 }
 
+export interface HeaderContextFileMenuItem {
+  key: string;
+  label: string;
+  icon?: ComponentType<{ className?: string }>;
+  onSelect: () => void;
+  disabled?: boolean;
+  separatorBefore?: boolean;
+}
+
+/**
+ * Host-owned file actions for an alternate workspace surface.
+ *
+ * Core owns only the header presentation. The host remains responsible for
+ * file workflows, dialogs, validation, and user-facing copy.
+ */
+export interface HeaderContextFileMenuConfig {
+  label: string;
+  items: readonly HeaderContextFileMenuItem[];
+}
+
 export interface HeaderViewConfig {
   showOptionsPanel: boolean;
   showJointPanel: boolean;

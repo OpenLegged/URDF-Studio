@@ -54,10 +54,6 @@ function buildContextCacheKey(
   ].join('|');
 }
 
-function isUsdStageOpenLayerPath(path: string): boolean {
-  return /\.usd(?:a|c|z)?$/i.test(String(path || '').trim().split('?')[0]);
-}
-
 function filterStageOpenAvailableFiles(
   sourceFile: StageOpenSourceFile,
   availableFiles: StageOpenAvailableFile[],
@@ -73,7 +69,7 @@ function filterStageOpenAvailableFiles(
     if (file.name === sourceFile.name) {
       return false;
     }
-    return isUsdStageOpenLayerPath(file.name) && relevantPathSet.has(toVirtualUsdPath(file.name));
+    return relevantPathSet.has(toVirtualUsdPath(file.name));
   }).map((file) => compactBlobBackedLargeTextUsdForWorker(file));
 }
 
@@ -88,7 +84,7 @@ function filterStageOpenAssets(
 
   return Object.fromEntries(
     Object.entries(assets).filter(
-      ([path]) => isUsdStageOpenLayerPath(path) && relevantPathSet.has(toVirtualUsdPath(path)),
+      ([path]) => relevantPathSet.has(toVirtualUsdPath(path)),
     ),
   );
 }

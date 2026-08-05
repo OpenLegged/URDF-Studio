@@ -361,7 +361,8 @@ test('buildUsdExportBundleFromSnapshot keeps descriptor transforms in origins in
   assert.ok(meshBlob);
 
   const meshText = await meshBlob!.text();
-  assert.match(meshText, /^v 0 0 0 1 1 1$/m);
+  assert.equal(bundle.robot.links.base_link.visual.color, '#ffffff');
+  assert.match(meshText, /^v 0 0 0$/m);
   assert.doesNotMatch(meshText, /^v 5 6 7$/m);
 });
 
@@ -2095,12 +2096,15 @@ test('prepareUsdExportCacheFromResolvedSnapshot omits OBJ UVs for color-only USD
   assert.match(colorOnlyText, /^f 1 2 3$/m);
 
   const textured = prepareUsdExportCacheFromResolvedSnapshot(
-    makeSnapshot({ mapPath: 'textures/base.png' }),
+    makeSnapshot({ mapPath: 'textures/base.png', opacity: null }),
     makeResolution(),
   );
   const texturedText = await textured.meshFiles['base_link_visual_0.obj'].text();
   assert.match(texturedText, /^vt 0 0$/m);
   assert.match(texturedText, /^f 1\/1 2\/2 3\/3$/m);
+  assert.equal(textured.robotData.links.base_link.visual.color, '#ffffff');
+  assert.equal(textured.robotData.materials?.base_link?.color, undefined);
+  assert.equal(textured.robotData.materials?.base_link?.texture, 'textures/base.png');
 });
 
 test('canPrepareUsdExportCacheFromSnapshot requires mesh buffers for buffer-backed descriptors', () => {

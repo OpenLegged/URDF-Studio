@@ -23,6 +23,7 @@ export interface CreateEmbeddedUsdViewerLoadParamsOptions {
   preferSlicedMainThreadLoadForLargePureUsd?: boolean;
   dependenciesPreloadedToVirtualFs?: boolean;
   allowIncompleteWorkerRobotMetadata?: boolean;
+  forceHydraFullDraw?: boolean;
 }
 
 export type EmbeddedUsdViewerLoadProfile =
@@ -86,8 +87,17 @@ export function createEmbeddedUsdViewerLoadParams(
       options.allowIncompleteWorkerRobotMetadata ? '0' : '1';
     safeLoadFlags.robotSceneSnapshotBeforeDraw = '1';
     safeLoadFlags.skipHydraFullDrawForRobotSceneSnapshot = '1';
-    safeLoadFlags.skipHydraPopulateForRobotSceneSnapshot = '1';
+    // The native snapshot contract is optional for generic composed stages.
+    // Keep Hydra population enabled so an empty snapshot can fall back to the
+    // live render graph instead of producing an empty scene.
+    safeLoadFlags.skipHydraPopulateForRobotSceneSnapshot = '0';
     safeLoadFlags.disableStageLayerTextFallbacks = '1';
+    if (options.forceHydraFullDraw) {
+      safeLoadFlags.aggressiveInitialDraw = '1';
+      safeLoadFlags.robotSceneSnapshotBeforeDraw = '0';
+      safeLoadFlags.skipHydraFullDrawForRobotSceneSnapshot = '0';
+      safeLoadFlags.allowPartialMeshHydration = '1';
+    }
   }
 
   if (loadProfile === 'large-pure-usd-sliced') {

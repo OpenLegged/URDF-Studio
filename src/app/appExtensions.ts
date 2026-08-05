@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import type {
   HeaderAction,
+  HeaderContextFileMenuConfig,
   HeaderSurfaceModeSelectorConfig,
   ToolboxItem,
 } from './components/header/types';
@@ -27,6 +28,8 @@ export interface AppExtensionConfig {
   headerQuickAction?: HeaderAction;
   headerSecondaryAction?: HeaderAction;
   surfaceModeSelector?: HeaderSurfaceModeSelectorConfig;
+  /** Host-owned file actions rendered for an alternate workspace surface. */
+  contextFileMenu?: HeaderContextFileMenuConfig;
   /** Additional host-owned tools appended after the built-in toolbox entries. */
   toolboxItems?: readonly AppToolboxItem[];
 }

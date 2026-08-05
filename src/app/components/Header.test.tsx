@@ -124,6 +124,46 @@ test('Header places the optional surface mode selector after the logo and before
   assert.ok(fileIndex > selectorIndex, 'File should follow the surface mode selector');
 });
 
+test('Header renders host-owned file actions for the scene surface', () => {
+  const markup = renderToStaticMarkup(
+    React.createElement(Header, {
+      onImportFile: () => {},
+      onImportFolder: () => {},
+      onOpenExport: () => {},
+      onPrefetchExport: () => {},
+      onExportProject: () => {},
+      toolboxItems: noopToolboxItems,
+      onOpenCodeViewer: () => {},
+      onPrefetchCodeViewer: () => {},
+      onOpenSettings: () => {},
+      onPrefetchSettings: () => {},
+      onSnapshot: () => {},
+      onPrefetchSnapshot: () => {},
+      surfaceModeSelector: {
+        ...surfaceModeSelector,
+        current: 'scene',
+      },
+      contextFileMenu: {
+        label: 'Scene file',
+        items: [{
+          key: 'open-scene',
+          label: 'Open scene project',
+          onSelect: () => {},
+        }],
+      },
+      viewConfig: {
+        showOptionsPanel: true,
+        showJointPanel: true,
+        showStructureGraph: false,
+      },
+      setViewConfig: () => {},
+    }),
+  );
+
+  assert.match(markup, /aria-label="Scene file"/);
+  assert.doesNotMatch(markup, /aria-label="File"/);
+});
+
 test('Header links to the feedback form in a new tab', () => {
   const markup = renderHeader();
 

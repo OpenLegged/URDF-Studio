@@ -2,6 +2,7 @@ import type React from 'react';
 
 import type {
   HeaderAction,
+  HeaderContextFileMenuConfig,
   HeaderSurfaceModeSelectorConfig,
 } from './components/header/types';
 import type { ImportPreparationOverlayState } from './hooks/useFileImport';
@@ -50,6 +51,7 @@ export interface AppLayoutProps {
   headerQuickAction?: HeaderAction;
   headerSecondaryAction?: HeaderAction;
   surfaceModeSelector?: HeaderSurfaceModeSelectorConfig;
+  contextFileMenu?: HeaderContextFileMenuConfig;
   extensionToolboxItems?: readonly AppToolboxItem[];
   viewConfig: AppLayoutViewConfig;
   setViewConfig: React.Dispatch<React.SetStateAction<AppLayoutViewConfig>>;

@@ -18,3 +18,20 @@ test('buildProjectArchiveBlob normalizes blob entries in Node environments', asy
   assert.equal(await zip.file('README.md')?.async('string'), '# archive');
   assert.equal(await zip.file('meshes/base.obj')?.async('string'), 'o base\nv 0 0 0\n');
 });
+
+test('buildProjectArchiveBlob is deterministic and rejects unsafe paths', async () => {
+  const entries = new Map<string, string>([
+    ['scene/state.json', '{"ok":true}'],
+    ['manifest.json', '{"schemaVersion":"test"}'],
+  ]);
+  const first = new Uint8Array(await (await buildProjectArchiveBlob(entries)).arrayBuffer());
+  const second = new Uint8Array(await (await buildProjectArchiveBlob(
+    new Map([...entries].reverse()),
+  )).arrayBuffer());
+
+  assert.deepEqual(first, second);
+  await assert.rejects(
+    buildProjectArchiveBlob(new Map([['../escape.json', '{}']])),
+    /path/i,
+  );
+});

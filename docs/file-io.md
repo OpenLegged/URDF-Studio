@@ -41,6 +41,8 @@
 
 - `App.tsx`：根组件，装配 Providers、懒加载模态框、全局导入导出入口、debug bridge
 - `AppLayout.tsx`：应用壳、Header、TreeEditor、PropertyEditor、UnifiedViewer 主编排
+- `AppExtensionConfig.contextFileMenu`：替代工作区 surface 的 host-owned 文件动作注入；
+  Core 只呈现菜单，不接管 host 的文件 workflow
 - `UnifiedViewer.tsx`：组合 Editor 两个子域场景，统一 selection/hover/preview/tool mode
 - `WorkspaceCanvas.tsx`：应用层 re-export；底层 runtime 在 `shared/components/3d/workspace/*`
 - `AppLayoutOverlays.tsx` + `utils/overlayLoaders.ts`：懒加载业务浮层

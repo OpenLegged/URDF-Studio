@@ -20,6 +20,7 @@ interface AppLayoutViewContentProps extends AppLayoutViewProps {
 
 export function AppLayoutViewContent(props: AppLayoutViewContentProps) {
   const { drag, workspaceChrome } = props;
+  const modelWorkspaceActive = props.header.surfaceModeSelector?.current !== 'scene';
 
   return (
     <div
@@ -35,15 +36,19 @@ export function AppLayoutViewContent(props: AppLayoutViewContentProps) {
       <AppLayoutIkPanelSection ikPanel={props.ikPanel} />
 
       <div className={workspaceChrome.classNames.root}>
-        <WorkspaceViewerSection
-          workspaceChrome={props.workspaceChrome}
-          viewer={props.viewer}
-          shouldSuppressDocumentLoadingOverlay={props.shouldSuppressDocumentLoadingOverlay}
-        />
-        <WorkspaceSidebarsSection
-          workspaceChrome={props.workspaceChrome}
-          sidebars={props.sidebars}
-        />
+        {modelWorkspaceActive ? (
+          <>
+            <WorkspaceViewerSection
+              workspaceChrome={props.workspaceChrome}
+              viewer={props.viewer}
+              shouldSuppressDocumentLoadingOverlay={props.shouldSuppressDocumentLoadingOverlay}
+            />
+            <WorkspaceSidebarsSection
+              workspaceChrome={props.workspaceChrome}
+              sidebars={props.sidebars}
+            />
+          </>
+        ) : null}
       </div>
 
       <SnapshotDialogSection snapshot={props.snapshot} />
@@ -111,6 +116,7 @@ function AppLayoutHeaderSection({
       quickAction={header.headerQuickAction}
       secondaryAction={header.headerSecondaryAction}
       surfaceModeSelector={header.surfaceModeSelector}
+      contextFileMenu={header.contextFileMenu}
       onSnapshot={header.handleSnapshot}
       onPrefetchSnapshot={header.handlePrefetchSnapshot}
       viewConfig={header.viewConfig}

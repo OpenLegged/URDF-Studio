@@ -1579,6 +1579,96 @@ test('normalizeRobotSceneSnapshot synthesizes mesh descriptors from live Hydra m
     }
 });
 
+test('normalizeRobotSceneSnapshot synthesizes generic descriptors from packed mesh ranges', () => {
+    const previousWindow = globalThis.window;
+    globalThis.window = {
+        location: { search: '' },
+    };
+    try {
+        const delegate = new ThreeRenderDelegateInterface({
+            stage: () => ({
+                GetRootLayer: () => ({
+                    ExportToString: () => '#usda 1.0\n',
+                }),
+                GetUsedLayers: () => [],
+                GetDefaultPrim: () => ({
+                    GetPath: () => ({ pathString: '/Root' }),
+                }),
+            }),
+            driver: () => null,
+            allowDriverStageLookup: false,
+        });
+        delegate.getResolvedVisualTransformPrimPathForMeshId = () => '/Root/Room/Wall';
+
+        const snapshot = delegate.normalizeRobotSceneSnapshot({
+            generatedAtMs: 1,
+            stage: {
+                stageSourcePath: '/tmp/simple_room.usdc',
+                defaultPrimPath: '/Root',
+            },
+            robotTree: {
+                linkParentPairs: [],
+                jointCatalogEntries: [],
+                rootLinkPaths: [],
+            },
+            physics: {
+                linkDynamicsEntries: [],
+            },
+            render: {
+                meshDescriptors: [],
+                materials: [],
+            },
+            buffers: {
+                positions: Float32Array.from([
+                    0, 0, 0,
+                    1, 0, 0,
+                    0, 1, 0,
+                ]),
+                indices: Uint32Array.from([0, 1, 2]),
+                normals: Float32Array.from([
+                    0, 0, 1,
+                    0, 0, 1,
+                    0, 0, 1,
+                ]),
+                uvs: Float32Array.from([
+                    0, 0,
+                    1, 0,
+                    0, 1,
+                ]),
+                transforms: Float32Array.from([
+                    1, 0, 0, 0,
+                    0, 1, 0, 0,
+                    0, 0, 1, 0,
+                    0, 0, 0, 1,
+                ]),
+                rangesByMeshId: {
+                    '/Root/Room/Wall': {
+                        positions: { offset: 0, count: 9, stride: 3 },
+                        indices: { offset: 0, count: 3, stride: 1 },
+                        normals: { offset: 0, count: 9, stride: 3 },
+                        uvs: { offset: 0, count: 6, stride: 2 },
+                        transform: { offset: 0, count: 16, stride: 16 },
+                    },
+                },
+            },
+        }, {
+            stageSourcePath: '/tmp/simple_room.usdc',
+        });
+
+        assert.ok(snapshot);
+        assert.equal(snapshot.render.meshDescriptors.length, 1);
+        assert.equal(snapshot.render.meshDescriptors[0].meshId, '/Root/Room/Wall');
+        assert.equal(snapshot.render.meshDescriptors[0].resolvedPrimPath, '/Root/Room/Wall');
+        assert.equal(snapshot.render.meshDescriptors[0].sectionName, 'visuals');
+        assert.equal(snapshot.render.meshDescriptors[0].geometry.numVertices, 3);
+        assert.equal(snapshot.render.meshDescriptors[0].geometry.numIndices, 3);
+        assert.equal(snapshot.render.meshDescriptors[0].ranges.positions.count, 9);
+    }
+    finally {
+        globalThis.window = previousWindow;
+    }
+});
+
 test('normalizeRobotSceneSnapshot synthesizes mesh descriptors for generic CAD-style mesh instance paths', () => {
     const previousWindow = globalThis.window;
     globalThis.window = {

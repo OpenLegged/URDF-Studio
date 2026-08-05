@@ -260,7 +260,12 @@ class HydraMaterial {
                 }
                 // For debugging
                 const matName = Object.keys(this._nodes).find(key => this._nodes[key] === mainMaterial);
-                this._interface.registry.getTexture(textureFileName).then(texture => {
+                const texturePromise = typeof this._interface.loadMaterialTexture === 'function'
+                    ? this._interface.loadMaterialTexture(textureFileName, {
+                        stageSourcePath: this._interface.getStageSourcePath?.(),
+                    })
+                    : this._interface.registry.getTexture(textureFileName);
+                texturePromise.then(texture => {
                     if (!this._material) {
                         console.error("Material not set when trying to assign texture, this is likely a bug");
                         resolve();
@@ -608,6 +613,7 @@ HydraMaterial.usdPreviewToMeshPhysicalTextureMap = {
     'base_color': 'map',
     'albedo': 'map',
     'diffuse_color': 'map',
+    'diffuse': 'map',
     'clearcoat': 'clearcoatMap',
     'clearcoatRoughness': 'clearcoatRoughnessMap',
     'clearcoatNormal': 'clearcoatNormalMap',
@@ -618,6 +624,7 @@ HydraMaterial.usdPreviewToMeshPhysicalTextureMap = {
     'ambientOcclusion': 'aoMap',
     'roughness': 'roughnessMap',
     'reflection_roughness': 'roughnessMap',
+    'reflectionroughness': 'roughnessMap',
     'metallic': 'metalnessMap',
     'metalness': 'metalnessMap',
     'normal': 'normalMap',
@@ -642,6 +649,7 @@ HydraMaterial.usdPreviewTextureColorSpaceMap = {
     'albedo_constant': SRGBColorSpace,
     'diffuse_color': SRGBColorSpace,
     'diffuse_color_constant': SRGBColorSpace,
+    'diffuse': SRGBColorSpace,
     'emissiveColor': SRGBColorSpace,
     'emissive_color': SRGBColorSpace,
     'emissive_color_constant': SRGBColorSpace,

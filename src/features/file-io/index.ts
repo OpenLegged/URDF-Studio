@@ -78,10 +78,23 @@ export {
   remapImportedPath,
   exportProject,
   exportProjectWithWorker,
+  buildProjectArchiveBlob,
+  buildProjectArchiveBlobWithWorker,
+  disposeProjectArchiveWorker,
+  assertProjectArchiveWithinLimits,
+  assertProjectArchiveEntryPath,
+  DEFAULT_PROJECT_ARCHIVE_LIMITS,
+  getProjectArchiveEntryUncompressedSize,
+  loadProjectArchiveZip,
   importProject,
   importProjectWithWorker,
   disposeProjectImportWorker,
   USD_EXPORT_WORKER_SUPPORTED_MESH_EXTENSIONS,
+} from './utils';
+export type {
+  BuildProjectArchiveBlobOptions,
+  ProjectArchiveEntryData,
+  ProjectArchiveLimits,
 } from './utils';
 export { collectRawFilesZip } from './utils/rawFilesExport';
 

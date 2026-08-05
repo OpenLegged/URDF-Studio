@@ -30,3 +30,20 @@ test('HdWebSyncDriver exposes a versioned full-load payload for one-shot TS hydr
   assert.match(source, /payload\.set\("format",\s*std::string\("usd-full-load-payload-v1"\)\);/);
   assert.match(source, /GetRobotSceneSnapshotBlob\(runtimeLinkPaths,\s*stageSourcePath\)/);
 });
+
+test('HdWebSyncDriver projects common OmniPBR texture aliases into snapshot materials', () => {
+  const source = readFileSync(webSyncDriverPath, 'utf8');
+
+  assert.match(
+    source,
+    /setTexture\("mapPath",\s*\{[\s\S]*?"inputs:diffuse_texture"[\s\S]*?\}\);/,
+  );
+  assert.match(
+    source,
+    /setTexture\("roughnessMapPath",\s*\{[\s\S]*?"inputs:reflectionroughness_texture"[\s\S]*?\}\);/,
+  );
+  assert.match(
+    source,
+    /_PrimHasAuthoredTexturePath[\s\S]*?"inputs:diffuse_texture"[\s\S]*?"inputs:reflectionroughness_texture"/,
+  );
+});

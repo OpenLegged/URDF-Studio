@@ -3161,6 +3161,7 @@ private:
         setTexture("mapPath", {
             "inputs:diffuseColor_texture",
             "inputs:diffuse_color_texture",
+            "inputs:diffuse_texture",
             "inputs:baseColor_texture",
             "inputs:base_color_texture",
             "inputs:albedo_texture",
@@ -3173,6 +3174,7 @@ private:
         setTexture("roughnessMapPath", {
             "inputs:roughness_texture",
             "inputs:reflection_roughness_texture",
+            "inputs:reflectionroughness_texture",
             "inputs:specular_roughness_texture",
         });
         setTexture("metalnessMapPath", {
@@ -3306,6 +3308,7 @@ private:
                 "inputs:file",
                 "inputs:diffuseColor_texture",
                 "inputs:diffuse_color_texture",
+                "inputs:diffuse_texture",
                 "inputs:baseColor_texture",
                 "inputs:base_color_texture",
                 "inputs:albedo_texture",
@@ -3314,6 +3317,7 @@ private:
                 "inputs:emissive_texture",
                 "inputs:roughness_texture",
                 "inputs:reflection_roughness_texture",
+                "inputs:reflectionroughness_texture",
                 "inputs:specular_roughness_texture",
                 "inputs:metallic_texture",
                 "inputs:metalness_texture",

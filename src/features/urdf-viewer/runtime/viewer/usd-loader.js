@@ -109,6 +109,7 @@ export async function loadUsdStage(args) {
     const autoLoadDependencies = parseBooleanFlag(params.get("autoLoadDependencies"), true);
     const dependenciesPreloadedToVirtualFs = parseBooleanFlag(params.get("dependenciesPreloadedToVirtualFs"), false);
     const strictOneShot = parseBooleanFlag(params.get("strictOneShot"), !nonBlockingLoad);
+    const allowPartialMeshHydration = parseBooleanFlag(params.get("allowPartialMeshHydration"), false);
     const yieldDuringLoad = parseBooleanFlag(params.get("yieldDuringLoad"), true);
     const normalizedPathForDependencyDefaults = String(pathToLoad || "").toLowerCase();
     const isConfigurationUsdPath = normalizedPathForDependencyDefaults.includes("/configuration/");
@@ -1019,6 +1020,14 @@ export async function loadUsdStage(args) {
         if (pendingProtoCount <= 0 && pendingResolvedPrimCount <= 0) {
             return true;
         }
+        if (allowPartialMeshHydration && pendingProtoCount <= 0) {
+            const stats = getMeshLoadStats(window.renderInterface);
+            const readyMeshCount = Math.max(0, Number(stats?.ready || 0));
+            if (readyMeshCount > 0) {
+                console.warn(`[usd-loader] Continuing with ${readyMeshCount}/${Number(stats?.total || 0)} meshes ready; ${pendingResolvedPrimCount} unresolved scene prim(s) remain source-owned.`);
+                return true;
+            }
+        }
         markHydrationFailure("mesh-hydration-pending-before-ready", new Error(`USD mesh hydration still has pending work before ready (proto: ${pendingProtoCount}, resolved prim: ${pendingResolvedPrimCount}).`));
         return false;
     };
@@ -1273,7 +1282,13 @@ export async function loadUsdStage(args) {
             return false;
         }
         const meshDescriptorCount = Number(preDrawRuntimeBridgeWarmupSummary?.meshDescriptorCount || 0);
-        return Number.isFinite(meshDescriptorCount) && meshDescriptorCount > 0;
+        const protoBlobCount = Number(preDrawRuntimeBridgeWarmupSummary?.protoBlobCount || 0);
+        const primitiveOverrideCount = Number(preDrawRuntimeBridgeWarmupSummary?.collisionOverrideCount || 0)
+            + Number(preDrawRuntimeBridgeWarmupSummary?.visualOverrideCount || 0);
+        return Number.isFinite(meshDescriptorCount)
+            && meshDescriptorCount > 0
+            && ((Number.isFinite(protoBlobCount) && protoBlobCount > 0)
+                || (Number.isFinite(primitiveOverrideCount) && primitiveOverrideCount > 0));
     })();
     if (canCompleteFromRobotSceneSnapshotOnly) {
         state.robotSceneSnapshotOnly = true;
@@ -1543,7 +1558,9 @@ export async function loadUsdStage(args) {
             previousPendingResolvedPrim = pendingResolvedPrimCount;
             const elapsedMs = profileNow() - drainStartedAtMs;
             if ((finalSceneDrainBudgetMs > 0 && elapsedMs >= finalSceneDrainBudgetMs) || stagnantPassCount >= 10) {
-                console.error(`[usd-loader] Strict one-shot drain stopped with ${stats.ready}/${Math.max(stats.total, 1)} meshes ready and ${pendingProtoCount} pending proto meshes.`);
+                if (!allowPartialMeshHydration || pendingProtoCount > 0 || stats.ready <= 0) {
+                    console.error(`[usd-loader] Strict one-shot drain stopped with ${stats.ready}/${Math.max(stats.total, 1)} meshes ready and ${pendingProtoCount} pending proto meshes.`);
+                }
                 return;
             }
             let drewInBurst = false;

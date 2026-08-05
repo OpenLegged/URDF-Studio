@@ -236,7 +236,10 @@ export function applyVisualMaterialOverrideToObject(
 
       const nextMaterial = createMatteMaterial({
         color: nextColor ?? ((material as any).color?.clone?.() || '#ffffff'),
-        opacity: nextOpacity ?? material.opacity ?? 1,
+        // A canonical texture override without authored opacity is opaque by
+        // default. Do not inherit a derived loader material's placeholder
+        // opacity (MDL render networks can surface an unevaluated zero here).
+        opacity: nextOpacity ?? (texturePath ? 1 : (material.opacity ?? 1)),
         transparent: sourceTransparent,
         side: sourceSide,
         map: texturePath ? null : (material as any).map || null,

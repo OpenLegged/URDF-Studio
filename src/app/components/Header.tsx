@@ -9,11 +9,13 @@ import { translations } from '@/shared/i18n';
 import { attachContextMenuBlocker } from '@/shared/utils';
 import { useActiveHistory } from '../hooks/useActiveHistory';
 import { HeaderActions } from './header/HeaderActions';
+import { HeaderContextFileMenu } from './header/HeaderContextFileMenu';
 import { HeaderMenus } from './header/HeaderMenus';
 import { SurfaceModeSelector } from './header/SurfaceModeSelector';
 import { useHeaderResponsiveLayout } from './header/useHeaderResponsiveLayout';
 import type {
   HeaderAction,
+  HeaderContextFileMenuConfig,
   HeaderMenuKey,
   HeaderSurfaceModeSelectorConfig,
   HeaderViewAvailability,
@@ -41,6 +43,7 @@ export interface HeaderProps {
   quickAction?: HeaderAction;
   secondaryAction?: HeaderAction;
   surfaceModeSelector?: HeaderSurfaceModeSelectorConfig;
+  contextFileMenu?: HeaderContextFileMenuConfig;
   // Snapshot
   onSnapshot: () => void;
   onPrefetchSnapshot: () => void;
@@ -69,6 +72,7 @@ export function Header({
   quickAction,
   secondaryAction,
   surfaceModeSelector,
+  contextFileMenu,
   onSnapshot,
   onPrefetchSnapshot,
   viewConfig,
@@ -158,6 +162,16 @@ export function Header({
             closeLabel={t.close}
             isOpen={activeMenu === 'surface'}
             onOpenChange={(isOpen) => setActiveMenu(isOpen ? 'surface' : null)}
+          />
+        ) : null}
+
+        {isSceneSurface && contextFileMenu ? (
+          <HeaderContextFileMenu
+            config={contextFileMenu}
+            closeLabel={t.close}
+            isOpen={activeMenu === 'file'}
+            showLabel={responsive.showMenuLabels}
+            onOpenChange={(isOpen) => setActiveMenu(isOpen ? 'file' : null)}
           />
         ) : null}
 
