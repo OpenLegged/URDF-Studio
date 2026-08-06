@@ -76,11 +76,16 @@ export function isAllowedHandoffOrigin(originInput: string): boolean {
 
 export const IMPORT_QUERY_PARAM = 'import';
 export const FROM_QUERY_PARAM = 'from';
+/** Optional intent param: BOT-World tells the receiver which format to convert to.
+ *  Receivers that don't recognise this param should ignore it gracefully. */
+export const CONVERT_TO_QUERY_PARAM = 'convertTo';
 export const IMPORT_PROTOCOL_VERSION = 2;
 
 export interface AssetImportParams {
   assetId: string;
   fromOrigin: string;
+  /** Optional: BOT-World suggests the receiver convert the asset to this format. */
+  convertTo?: string;
 }
 
 /** Read asset import parameters from a full URL string. Returns null if absent. */
@@ -89,7 +94,8 @@ export function readImportParamsFromUrl(url: string): AssetImportParams | null {
   const assetId = resolvedUrl.searchParams.get(IMPORT_QUERY_PARAM)?.trim() ?? '';
   const fromOrigin = resolvedUrl.searchParams.get(FROM_QUERY_PARAM)?.trim() ?? '';
   if (!assetId || !fromOrigin) return null;
-  return { assetId, fromOrigin };
+  const convertTo = resolvedUrl.searchParams.get(CONVERT_TO_QUERY_PARAM)?.trim() || undefined;
+  return { assetId, fromOrigin, ...(convertTo ? { convertTo } : {}) };
 }
 
 /** Remove asset import query parameters from a URL string, returning the cleaned URL. */
@@ -97,6 +103,7 @@ export function stripImportParamsFromUrl(url: string): string {
   const resolvedUrl = new URL(url);
   resolvedUrl.searchParams.delete(IMPORT_QUERY_PARAM);
   resolvedUrl.searchParams.delete(FROM_QUERY_PARAM);
+  resolvedUrl.searchParams.delete(CONVERT_TO_QUERY_PARAM);
   resolvedUrl.searchParams.delete('jwt');
   return resolvedUrl.toString();
 }
@@ -108,7 +115,7 @@ export function stripImportParamsFromUrl(url: string): string {
 export const HANDOFF_BROADCAST_CHANNEL = 'botworld-handoff';
 
 export type HandoffBroadcastMessage =
-  | { type: 'import-request'; assetId: string; fromOrigin: string }
+  | { type: 'import-request'; assetId: string; fromOrigin: string; convertTo?: string }
   | { type: 'import-accepted'; assetId: string }
   | { type: 'plugin-launch-request'; toolKey: string }
   | { type: 'plugin-launch-accepted'; toolKey: string };

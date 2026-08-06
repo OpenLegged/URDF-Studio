@@ -45,6 +45,8 @@ interface AppOverlayLayerProps {
   closeToast: () => void;
   disconnectedWorkspaceUrdfDialog: DisconnectedWorkspaceUrdfDialogState | null;
   exportDialogTarget: ExportTarget;
+  /** Optional initial export format (e.g. from a `convertTo` handoff). */
+  exportDialogDefaultFormat?: ExportDialogConfig['format'];
   extensions?: { slots?: AppExtensionSlots };
   handleConfirmDisconnectedWorkspaceUrdfExport: () => void;
   handleExportDialogExport: (
@@ -86,6 +88,7 @@ export function AppOverlayLayer({
   closeToast,
   disconnectedWorkspaceUrdfDialog,
   exportDialogTarget,
+  exportDialogDefaultFormat,
   extensions,
   handleConfirmDisconnectedWorkspaceUrdfExport,
   handleExportDialogExport,
@@ -148,6 +151,7 @@ export function AppOverlayLayer({
             target={exportDialogTarget}
             lang={lang}
             isExporting={isExporting}
+            defaultFormat={exportDialogDefaultFormat}
             onClose={() => {
               if (!isExporting) {
                 setIsExportDialogOpen(false);

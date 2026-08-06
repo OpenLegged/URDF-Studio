@@ -142,6 +142,10 @@ interface ImportFromUrlState {
 type UseAssetImportFromUrlOptions = {
   handleImport: (files: readonly File[]) => Promise<{ status: 'completed' | 'skipped' | 'failed' }>;
   onImportComplete?: (success: boolean) => void;
+  /** Invoked after a `convertTo` handoff import resolves (success or fail).
+   *  On success the caller typically opens the export dialog preselected to
+   *  `convertTo` so the user can export/convert. */
+  onConvertToRequest?: (params: { assetId: string; convertTo: string; success: boolean }) => void;
 };
 
 export function resolveAllowedRemoteImportOrigin(fromOrigin: string): string | null {
@@ -207,7 +211,7 @@ export function assertRemoteImportBlobWithinLimits(blob: Blob, nextTotalBytes: n
  *   - If no existing tab responds, the new tab handles the import itself.
  */
 export function useAssetImportFromUrl(options: UseAssetImportFromUrlOptions) {
-  const { handleImport, onImportComplete } = options;
+  const { handleImport, onImportComplete, onConvertToRequest } = options;
 
   const [state, setState] = useState<ImportFromUrlState>({
     isImporting: false,
@@ -221,6 +225,8 @@ export function useAssetImportFromUrl(options: UseAssetImportFromUrlOptions) {
   handleImportRef.current = handleImport;
   const onImportCompleteRef = useRef(onImportComplete);
   onImportCompleteRef.current = onImportComplete;
+  const onConvertToRequestRef = useRef(onConvertToRequest);
+  onConvertToRequestRef.current = onConvertToRequest;
 
   // -----------------------------------------------------------------------
   //  Core import logic (shared by self-import and delegated import)
@@ -448,6 +454,23 @@ export function useAssetImportFromUrl(options: UseAssetImportFromUrlOptions) {
     [importAssetFromBotWorld, importCollectionFromBotWorld],
   );
 
+  /** Handle a handoff arrival (from URL or BroadcastChannel). The asset is
+   *  always downloaded+imported. When `convertTo` is present, signal the
+   *  caller (to open the export dialog preselected) instead of the plain
+   *  import-complete callback. */
+  const handleArrival = useCallback(
+    (assetId: string, fromOrigin: string, convertTo: string | undefined) => {
+      void importFromBotWorld(assetId, fromOrigin).then((result) => {
+        if (convertTo) {
+          onConvertToRequestRef.current?.({ assetId, convertTo, success: result.success });
+        } else {
+          onImportCompleteRef.current?.(result.success);
+        }
+      });
+    },
+    [importFromBotWorld],
+  );
+
   // -----------------------------------------------------------------------
   //  BroadcastChannel: listen for import requests from new tabs.
   //  When this (existing) tab receives an import-request, it claims it
@@ -467,10 +490,8 @@ export function useAssetImportFromUrl(options: UseAssetImportFromUrlOptions) {
           assetId: msg.assetId,
         } satisfies HandoffBroadcastMessage);
 
-        // Perform the import in this existing tab
-        void importFromBotWorld(msg.assetId, msg.fromOrigin).then((result) => {
-          onImportCompleteRef.current?.(result.success);
-        });
+        // Download+import here; route to the convert callback when convertTo is set.
+        handleArrival(msg.assetId, msg.fromOrigin, msg.convertTo);
 
         const { t } = getRuntimeLanguageTranslations();
         startTitleBlink(t.botWorldImportTitleBlink);
@@ -478,7 +499,7 @@ export function useAssetImportFromUrl(options: UseAssetImportFromUrlOptions) {
     };
 
     return () => channel.close();
-  }, [importFromBotWorld]);
+  }, [importFromBotWorld, handleArrival]);
 
   // -----------------------------------------------------------------------
   //  On mount: if URL has import params, show waiting overlay, try
@@ -520,29 +541,29 @@ export function useAssetImportFromUrl(options: UseAssetImportFromUrlOptions) {
       }
     };
 
-    // Broadcast the import request
+    // Broadcast the import request (carries convertTo so an existing tab can
+    // route to the export dialog when it claims the handoff).
     isDelegating = true;
     channel.postMessage({
       type: 'import-request',
       assetId: params.assetId,
       fromOrigin: params.fromOrigin,
+      ...(params.convertTo ? { convertTo: params.convertTo } : {}),
     } satisfies HandoffBroadcastMessage);
 
-    // If no existing tab responds, handle import here
+    // If no existing tab responds, handle here (download+import, then signal)
     setTimeout(() => {
       if (!settled) {
         cleanup();
         isDelegating = false;
-        void importFromBotWorld(params.assetId, params.fromOrigin).then((result) => {
-          onImportCompleteRef.current?.(result.success);
-        });
+        handleArrival(params.assetId, params.fromOrigin, params.convertTo);
       }
     }, HANDOFF_BROADCAST_TIMEOUT_MS);
 
     // No cleanup — the channel is closed by either the import-accepted
     // handler or the timeout. Closing it in cleanup would break Strict
     // Mode (channel dies before import-accepted arrives → double import).
-  }, [importFromBotWorld]);
+  }, [importFromBotWorld, handleArrival]);
 
   return {
     ...state,
