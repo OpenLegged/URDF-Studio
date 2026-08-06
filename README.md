@@ -344,5 +344,11 @@ Supported by [D-Robotics](https://developer.d-robotics.cc/).
 
 ## Star History
 
-[![Star History Chart](https://api.star-history.com/chart?repos=OpenLegged/URDF-Studio&type=date&legend=top-left&sealed_token=kmdzy1ZL1gzaZEez2FPky5BCbmG644II3h8OxV87IkopAIxkAjpqQ6jq65_0QMBWYuH6G62jkznUpYlrhPrQRj-jfp73tthAW_G3pLzJSLFdt1f095YGhfkDYeeqVxSLmunIPddDPTq9bNstiWPWoNZJ608oJfa5PVWTGmQ7rrha-TDqWUwqEbZV1ZmL)](https://www.star-history.com/?repos=OpenLegged%2FURDF-Studio&type=date&legend=top-left)
+<a href="https://www.star-history.com/?repos=OpenLegged%2FURDF-Studio&type=date&legend=top-left">
+ <picture>
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/chart?repos=OpenLegged/URDF-Studio&type=date&theme=dark&legend=top-left&sealed_token=EI0Cvv5ci7KetasrCCz3_469etTmcSwoghMLxux4yRa5Xw5aq9DYomKOdykqgqZbk5aIMu_xFDAiHl7JKktIv-JagvCV02Gew9Ou2e41C-6Wg8CK9RwnqGnUYBFPCAWaleorepDi3MOiEnY-eaco2lUXINFsmLG5xqMsdfLa2otST4wf_CA_DZU7zhH_" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/chart?repos=OpenLegged/URDF-Studio&type=date&legend=top-left&sealed_token=EI0Cvv5ci7KetasrCCz3_469etTmcSwoghMLxux4yRa5Xw5aq9DYomKOdykqgqZbk5aIMu_xFDAiHl7JKktIv-JagvCV02Gew9Ou2e41C-6Wg8CK9RwnqGnUYBFPCAWaleorepDi3MOiEnY-eaco2lUXINFsmLG5xqMsdfLa2otST4wf_CA_DZU7zhH_" />
+   <img alt="Star History Chart" src="https://api.star-history.com/chart?repos=OpenLegged/URDF-Studio&type=date&legend=top-left&sealed_token=EI0Cvv5ci7KetasrCCz3_469etTmcSwoghMLxux4yRa5Xw5aq9DYomKOdykqgqZbk5aIMu_xFDAiHl7JKktIv-JagvCV02Gew9Ou2e41C-6Wg8CK9RwnqGnUYBFPCAWaleorepDi3MOiEnY-eaco2lUXINFsmLG5xqMsdfLa2otST4wf_CA_DZU7zhH_" />
+ </picture>
+</a>
 
