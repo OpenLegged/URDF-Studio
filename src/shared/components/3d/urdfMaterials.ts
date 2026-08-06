@@ -289,10 +289,10 @@ export function parseURDFMaterials(urdfContent: string): Map<string, URDFMateria
       contentLength: urdfContent.length,
       hasRobotTag: urdfContent.includes('<robot'),
     };
-    console.error('[URDFMaterials] Failed to parse URDF material definitions.', context, error);
-    throw new Error(
-      `[URDFMaterials] Failed to parse URDF material definitions (length=${context.contentLength}, hasRobotTag=${context.hasRobotTag}).`,
-      { cause: error },
+    console.warn(
+      '[URDFMaterials] Failed to parse URDF material definitions — robot will display with default materials.',
+      context,
+      error,
     );
   }
 
