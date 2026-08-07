@@ -16,11 +16,13 @@ import { useFileImport } from './useFileImport.ts';
 
 function createPreparedRobotPayload(fileName: string) {
   return {
-    robotFiles: [{
-      name: fileName,
-      format: 'urdf' as const,
-      content: '<robot name="atomic"><link name="base_link" /></robot>',
-    }],
+    robotFiles: [
+      {
+        name: fileName,
+        format: 'urdf' as const,
+        content: '<robot name="atomic"><link name="base_link" /></robot>',
+      },
+    ],
     assetFiles: [],
     deferredAssetFiles: [],
     usdSourceFiles: [],
@@ -53,7 +55,10 @@ before(() => {
   originalFile = globalThis.File;
   Object.defineProperty(globalThis, 'window', { configurable: true, value: dom.window });
   Object.defineProperty(globalThis, 'document', { configurable: true, value: dom.window.document });
-  Object.defineProperty(globalThis, 'navigator', { configurable: true, value: dom.window.navigator });
+  Object.defineProperty(globalThis, 'navigator', {
+    configurable: true,
+    value: dom.window.navigator,
+  });
   Object.defineProperty(globalThis, 'File', { configurable: true, value: dom.window.File });
   Object.defineProperty(globalThis, 'alert', { configurable: true, value: () => {} });
 });
@@ -84,11 +89,13 @@ function createProjectResult(name = 'project workspace'): ProjectImportResult {
     workspaceHistory: {
       past: [],
       future: [],
-      activity: [{
-        id: 'project_activity',
-        timestamp: '2026-07-09T00:00:00.000Z',
-        label: 'Saved project state',
-      }],
+      activity: [
+        {
+          id: 'project_activity',
+          timestamp: '2026-07-09T00:00:00.000Z',
+          label: 'Saved project state',
+        },
+      ],
     },
     componentSourceDrafts: {},
     assets: {
@@ -170,10 +177,7 @@ test('USP import restores canonical workspace/history/assets once', async () => 
     const input = new File(['project'], 'project.usp');
     assert.deepEqual(await rendered.hook.handleImport([input]), { status: 'completed' });
     assert.equal(useWorkspaceStore.getState().workspace.name, 'project workspace');
-    assert.equal(
-      useWorkspaceStore.getState().history.activity[0]?.label,
-      'Saved project state',
-    );
+    assert.equal(useWorkspaceStore.getState().history.activity[0]?.label, 'Saved project state');
     assert.deepEqual(useAssetsStore.getState().assets, {
       'mesh.stl': 'blob:project-mesh',
     });
@@ -193,10 +197,9 @@ test('invalid project result leaves workspace/history/assets untouched', async (
   invalid.workspace.components = {};
   const rendered = renderHook({ projectImporter: async () => invalid });
   try {
-    assert.deepEqual(
-      await rendered.hook.handleImport([new File(['bad'], 'bad.usp')]),
-      { status: 'failed' },
-    );
+    assert.deepEqual(await rendered.hook.handleImport([new File(['bad'], 'bad.usp')]), {
+      status: 'failed',
+    });
     assert.deepEqual(useWorkspaceStore.getState().workspace, beforeWorkspace);
     assert.deepEqual(useWorkspaceStore.getState().history, beforeHistory);
     assert.deepEqual(useAssetsStore.getState().assets, beforeAssets);
@@ -215,10 +218,9 @@ test('project importer rejection leaves the live stores untouched', async () => 
     },
   });
   try {
-    assert.deepEqual(
-      await rendered.hook.handleImport([new File(['bad'], 'bad.usp')]),
-      { status: 'failed' },
-    );
+    assert.deepEqual(await rendered.hook.handleImport([new File(['bad'], 'bad.usp')]), {
+      status: 'failed',
+    });
     assert.deepEqual(useWorkspaceStore.getState().workspace, beforeWorkspace);
     assert.deepEqual(useAssetsStore.getState().assets, beforeAssets);
   } finally {
@@ -272,7 +274,7 @@ test('late standalone auto-open completion is skipped after a newer import gener
   const rendered = renderHook({
     prepareImportPayload: async ({ files }) => {
       const input = files[0];
-      const fileName = input instanceof File ? input.name : input?.file.name ?? 'robot.urdf';
+      const fileName = input instanceof File ? input.name : (input?.file.name ?? 'robot.urdf');
       return createPreparedRobotPayload(fileName);
     },
     onLoadRobot: async (file) => {
@@ -283,18 +285,79 @@ test('late standalone auto-open completion is skipped after a newer import gener
     },
   });
   try {
-    const firstImport = rendered.hook.handleImport([
-      new File(['<robot />'], 'first.urdf'),
-    ]);
+    const firstImport = rendered.hook.handleImport([new File(['<robot />'], 'first.urdf')]);
     await waitUntil(() => loadCalls.includes('first.urdf'));
-    assert.deepEqual(
-      await rendered.hook.handleImport([new File(['<robot />'], 'second.urdf')]),
-      { status: 'completed' },
-    );
+    assert.deepEqual(await rendered.hook.handleImport([new File(['<robot />'], 'second.urdf')]), {
+      status: 'completed',
+    });
 
     resolveFirstLoad();
     assert.deepEqual(await firstImport, { status: 'skipped' });
     assert.deepEqual(loadCalls, ['first.urdf', 'second.urdf']);
+  } finally {
+    rendered.cleanup();
+  }
+});
+
+function seedSelectedAtomicRobot(): void {
+  const atomicContent = '<robot name="atomic"><link name="base_link" /></robot>';
+  const atomicFile = {
+    name: 'atomic.urdf',
+    content: atomicContent,
+    format: 'urdf' as const,
+  };
+  useAssetsStore.setState({
+    assets: {},
+    availableFiles: [atomicFile],
+    selectedFile: atomicFile,
+    allFileContents: { 'atomic.urdf': atomicContent },
+  });
+}
+
+test('handleImport with forceLoadRobot switches the canvas to the imported robot even when a file is already selected', async () => {
+  resetStores();
+  seedSelectedAtomicRobot();
+  const loadedFiles: string[] = [];
+  const rendered = renderHook({
+    prepareImportPayload: async ({ files }) => {
+      const input = files[0];
+      const fileName = input instanceof File ? input.name : (input?.file.name ?? 'robot.urdf');
+      return createPreparedRobotPayload(fileName);
+    },
+    onLoadRobot: async (file) => {
+      loadedFiles.push(file.name);
+    },
+  });
+  try {
+    await rendered.hook.handleImport(
+      [new File(['<robot name="second"><link name="base_link" /></robot>'], 'second.urdf')],
+      { forceLoadRobot: true },
+    );
+    assert.deepEqual(loadedFiles, ['second.urdf']);
+  } finally {
+    rendered.cleanup();
+  }
+});
+
+test('handleImport without forceLoadRobot preserves the current canvas when a file is already selected', async () => {
+  resetStores();
+  seedSelectedAtomicRobot();
+  const loadedFiles: string[] = [];
+  const rendered = renderHook({
+    prepareImportPayload: async ({ files }) => {
+      const input = files[0];
+      const fileName = input instanceof File ? input.name : (input?.file.name ?? 'robot.urdf');
+      return createPreparedRobotPayload(fileName);
+    },
+    onLoadRobot: async (file) => {
+      loadedFiles.push(file.name);
+    },
+  });
+  try {
+    await rendered.hook.handleImport([
+      new File(['<robot name="second"><link name="base_link" /></robot>'], 'second.urdf'),
+    ]);
+    assert.deepEqual(loadedFiles, []);
   } finally {
     rendered.cleanup();
   }

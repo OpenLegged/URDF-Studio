@@ -140,8 +140,15 @@ interface ImportFromUrlState {
 }
 
 type UseAssetImportFromUrlOptions = {
-  handleImport: (files: readonly File[]) => Promise<{ status: 'completed' | 'skipped' | 'failed' }>;
+  handleImport: (
+    files: readonly File[],
+    options?: { forceLoadRobot?: boolean },
+  ) => Promise<{ status: 'completed' | 'skipped' | 'failed' }>;
   onImportComplete?: (success: boolean) => void;
+  /** Invoked after a `convertTo` handoff import resolves (success or fail).
+   *  On success the caller typically opens the export dialog preselected to
+   *  `convertTo` so the user can export/convert. */
+  onConvertToRequest?: (params: { assetId: string; convertTo: string; success: boolean }) => void;
 };
 
 export function resolveAllowedRemoteImportOrigin(fromOrigin: string): string | null {
@@ -207,7 +214,7 @@ export function assertRemoteImportBlobWithinLimits(blob: Blob, nextTotalBytes: n
  *   - If no existing tab responds, the new tab handles the import itself.
  */
 export function useAssetImportFromUrl(options: UseAssetImportFromUrlOptions) {
-  const { handleImport, onImportComplete } = options;
+  const { handleImport, onImportComplete, onConvertToRequest } = options;
 
   const [state, setState] = useState<ImportFromUrlState>({
     isImporting: false,
@@ -221,141 +228,146 @@ export function useAssetImportFromUrl(options: UseAssetImportFromUrlOptions) {
   handleImportRef.current = handleImport;
   const onImportCompleteRef = useRef(onImportComplete);
   onImportCompleteRef.current = onImportComplete;
+  const onConvertToRequestRef = useRef(onConvertToRequest);
+  onConvertToRequestRef.current = onConvertToRequest;
 
   // -----------------------------------------------------------------------
   //  Core import logic (shared by self-import and delegated import)
   // -----------------------------------------------------------------------
-  const importAssetFromBotWorld = useCallback(async (assetId: string, fromOrigin: string) => {
-    const remoteImportOrigin = resolveAllowedRemoteImportOrigin(fromOrigin);
-    if (!remoteImportOrigin) {
-      setState({
-        isImporting: false,
-        error: `Unauthorized origin: ${fromOrigin}`,
-        phase: null,
-        progress: null,
-      });
-      console.error('[AssetImport] Unauthorized origin:', fromOrigin);
-      return { success: false };
-    }
-
-    setState({ isImporting: true, error: null, phase: 'fetching', progress: null });
-
-    try {
-      const apiUrl = resolveAssetDownloadEndpoint(remoteImportOrigin);
-
-      const response = await fetch(apiUrl.toString(), {
-        method: 'POST',
-        headers: buildAssetDownloadRequestHeaders(),
-        body: JSON.stringify({ assetId }),
-      });
-
-      if (!response.ok) {
-        throw new Error(`API request failed: ${response.status} ${response.statusText}`);
+  const importAssetFromBotWorld = useCallback(
+    async (assetId: string, fromOrigin: string, forceLoadRobot = false) => {
+      const remoteImportOrigin = resolveAllowedRemoteImportOrigin(fromOrigin);
+      if (!remoteImportOrigin) {
+        setState({
+          isImporting: false,
+          error: `Unauthorized origin: ${fromOrigin}`,
+          phase: null,
+          progress: null,
+        });
+        console.error('[AssetImport] Unauthorized origin:', fromOrigin);
+        return { success: false };
       }
 
-      const result: AssetDownloadResponse = await response.json();
-      if (!result.success || !result.data?.files) {
-        throw new Error(result.message || 'Failed to fetch asset files');
-      }
+      setState({ isImporting: true, error: null, phase: 'fetching', progress: null });
 
-      const { files, rootFolderName } = result.data;
-      assertRemoteImportFileListWithinLimits(files);
+      try {
+        const apiUrl = resolveAssetDownloadEndpoint(remoteImportOrigin);
 
-      setState({
-        isImporting: true,
-        error: null,
-        phase: 'downloading',
-        progress: {
-          current: 0,
-          total: files.length,
-          currentFileName: files[0]?.path.split('/').pop(),
-        },
-      });
+        const response = await fetch(apiUrl.toString(), {
+          method: 'POST',
+          headers: buildAssetDownloadRequestHeaders(),
+          body: JSON.stringify({ assetId }),
+        });
 
-      // 并行下载（受 REMOTE_IMPORT_DOWNLOAD_CONCURRENCY 限流的 worker pool）。
-      // 不用 Promise.all(files.map(...))：那会同时发起全部请求，资产含上千文件时会
-      // 压垮浏览器与对象存储。worker pool 保持稳定并发度，并按原始 index 写入
-      // downloadedFiles，保证文件顺序与 files 一致（handleImport / webkitRelativePath
-      // 均依赖此顺序）。任一文件失败 → Promise.all 立即 reject，由外层 catch 兜底。
-      const downloadedFiles: File[] = new Array(files.length);
-      let nextFileIndex = 0;
-      let completedCount = 0;
-      let totalDownloadedBytes = 0;
-
-      const downloadWorker = async () => {
-        while (true) {
-          const index = nextFileIndex++;
-          if (index >= files.length) return;
-          const fileInfo = files[index];
-
-          // 后端返回的文件 URL 自带访问凭证，且来自已鉴权的受信接口；其域名与 API 不同源
-          // 属预期（浏览器直连对象存储拉取文件字节）。切勿在此加 origin 白名单或严格相等
-          // 校验——那会误拒合法下载地址、导致导入失败（曾因该错误假设导致线上导入报错）。
-          // 不带 credentials：URL 自带鉴权、不读 cookie，跨域带凭证反而可能触发 CORS 失败。
-          const fileResp = await fetch(fileInfo.url);
-          if (!fileResp.ok) {
-            throw new Error(`Failed to download ${fileInfo.path}: ${fileResp.statusText}`);
-          }
-
-          const blob = await fileResp.blob();
-          totalDownloadedBytes += blob.size;
-          // 单文件大小检查立即生效；累计上限在并行下为 best-effort（JS 单线程下 += 不丢，
-          // 但多 worker 交错检查会偏松），最终由循环外的汇总校验兜底。不再做 content-length
-          // 预估校验——并行累加竞态明显且该字段常缺失。
-          assertRemoteImportBlobWithinLimits(blob, totalDownloadedBytes);
-
-          const fileName = fileInfo.path.split('/').pop() || fileInfo.path;
-          const file = new File([blob], fileName, {
-            type: blob.type || 'application/octet-stream',
-          });
-          Object.defineProperty(file, 'webkitRelativePath', {
-            value: `${rootFolderName}/${fileInfo.path}`,
-            configurable: true,
-          });
-
-          downloadedFiles[index] = file;
-
-          completedCount++;
-          setState((prev) => ({
-            ...prev,
-            progress: {
-              current: completedCount,
-              total: files.length,
-              currentFileName: fileName,
-            },
-          }));
+        if (!response.ok) {
+          throw new Error(`API request failed: ${response.status} ${response.statusText}`);
         }
-      };
 
-      const workerCount = Math.min(REMOTE_IMPORT_DOWNLOAD_CONCURRENCY, files.length);
-      await Promise.all(Array.from({ length: workerCount }, () => downloadWorker()));
+        const result: AssetDownloadResponse = await response.json();
+        if (!result.success || !result.data?.files) {
+          throw new Error(result.message || 'Failed to fetch asset files');
+        }
 
-      // 并行下累计字节检查是 best-effort，此处对总量做一次确定性兜底。
-      if (totalDownloadedBytes > MAX_REMOTE_IMPORT_TOTAL_BYTES) {
-        throw new Error(
-          `Remote import is too large (${totalDownloadedBytes} bytes). ` +
-            `Maximum: ${MAX_REMOTE_IMPORT_TOTAL_BYTES} bytes.`,
-        );
+        const { files, rootFolderName } = result.data;
+        assertRemoteImportFileListWithinLimits(files);
+
+        setState({
+          isImporting: true,
+          error: null,
+          phase: 'downloading',
+          progress: {
+            current: 0,
+            total: files.length,
+            currentFileName: files[0]?.path.split('/').pop(),
+          },
+        });
+
+        // 并行下载（受 REMOTE_IMPORT_DOWNLOAD_CONCURRENCY 限流的 worker pool）。
+        // 不用 Promise.all(files.map(...))：那会同时发起全部请求，资产含上千文件时会
+        // 压垮浏览器与对象存储。worker pool 保持稳定并发度，并按原始 index 写入
+        // downloadedFiles，保证文件顺序与 files 一致（handleImport / webkitRelativePath
+        // 均依赖此顺序）。任一文件失败 → Promise.all 立即 reject，由外层 catch 兜底。
+        const downloadedFiles: File[] = new Array(files.length);
+        let nextFileIndex = 0;
+        let completedCount = 0;
+        let totalDownloadedBytes = 0;
+
+        const downloadWorker = async () => {
+          while (true) {
+            const index = nextFileIndex++;
+            if (index >= files.length) return;
+            const fileInfo = files[index];
+
+            // 后端返回的文件 URL 自带访问凭证，且来自已鉴权的受信接口；其域名与 API 不同源
+            // 属预期（浏览器直连对象存储拉取文件字节）。切勿在此加 origin 白名单或严格相等
+            // 校验——那会误拒合法下载地址、导致导入失败（曾因该错误假设导致线上导入报错）。
+            // 不带 credentials：URL 自带鉴权、不读 cookie，跨域带凭证反而可能触发 CORS 失败。
+            const fileResp = await fetch(fileInfo.url);
+            if (!fileResp.ok) {
+              throw new Error(`Failed to download ${fileInfo.path}: ${fileResp.statusText}`);
+            }
+
+            const blob = await fileResp.blob();
+            totalDownloadedBytes += blob.size;
+            // 单文件大小检查立即生效；累计上限在并行下为 best-effort（JS 单线程下 += 不丢，
+            // 但多 worker 交错检查会偏松），最终由循环外的汇总校验兜底。不再做 content-length
+            // 预估校验——并行累加竞态明显且该字段常缺失。
+            assertRemoteImportBlobWithinLimits(blob, totalDownloadedBytes);
+
+            const fileName = fileInfo.path.split('/').pop() || fileInfo.path;
+            const file = new File([blob], fileName, {
+              type: blob.type || 'application/octet-stream',
+            });
+            Object.defineProperty(file, 'webkitRelativePath', {
+              value: `${rootFolderName}/${fileInfo.path}`,
+              configurable: true,
+            });
+
+            downloadedFiles[index] = file;
+
+            completedCount++;
+            setState((prev) => ({
+              ...prev,
+              progress: {
+                current: completedCount,
+                total: files.length,
+                currentFileName: fileName,
+              },
+            }));
+          }
+        };
+
+        const workerCount = Math.min(REMOTE_IMPORT_DOWNLOAD_CONCURRENCY, files.length);
+        await Promise.all(Array.from({ length: workerCount }, () => downloadWorker()));
+
+        // 并行下累计字节检查是 best-effort，此处对总量做一次确定性兜底。
+        if (totalDownloadedBytes > MAX_REMOTE_IMPORT_TOTAL_BYTES) {
+          throw new Error(
+            `Remote import is too large (${totalDownloadedBytes} bytes). ` +
+              `Maximum: ${MAX_REMOTE_IMPORT_TOTAL_BYTES} bytes.`,
+          );
+        }
+
+        setState({
+          isImporting: true,
+          error: null,
+          phase: 'importing',
+          progress: { current: files.length, total: files.length },
+        });
+        await handleImportRef.current(downloadedFiles, { forceLoadRobot });
+
+        setState({ isImporting: false, error: null, phase: 'complete', progress: null });
+
+        return { success: true };
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        console.error('[AssetImport] Import failed:', message);
+        setState({ isImporting: false, error: message, phase: null, progress: null });
+        return { success: false };
       }
-
-      setState({
-        isImporting: true,
-        error: null,
-        phase: 'importing',
-        progress: { current: files.length, total: files.length },
-      });
-      await handleImportRef.current(downloadedFiles);
-
-      setState({ isImporting: false, error: null, phase: 'complete', progress: null });
-
-      return { success: true };
-    } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      console.error('[AssetImport] Import failed:', message);
-      setState({ isImporting: false, error: message, phase: null, progress: null });
-      return { success: false };
-    }
-  }, []);
+    },
+    [],
+  );
 
   // --- Collection batch import ---
 
@@ -443,9 +455,26 @@ export function useAssetImportFromUrl(options: UseAssetImportFromUrlOptions) {
       if (target.type === 'collection') {
         return importCollectionFromBotWorld(target.slug, fromOrigin);
       }
-      return importAssetFromBotWorld(target.id, fromOrigin);
+      return importAssetFromBotWorld(target.id, fromOrigin, true);
     },
     [importAssetFromBotWorld, importCollectionFromBotWorld],
+  );
+
+  /** Handle a handoff arrival (from URL or BroadcastChannel). The asset is
+   *  always downloaded+imported. When `convertTo` is present, signal the
+   *  caller (to open the export dialog preselected) instead of the plain
+   *  import-complete callback. */
+  const handleArrival = useCallback(
+    (assetId: string, fromOrigin: string, convertTo: string | undefined) => {
+      void importFromBotWorld(assetId, fromOrigin).then((result) => {
+        if (convertTo) {
+          onConvertToRequestRef.current?.({ assetId, convertTo, success: result.success });
+        } else {
+          onImportCompleteRef.current?.(result.success);
+        }
+      });
+    },
+    [importFromBotWorld],
   );
 
   // -----------------------------------------------------------------------
@@ -467,10 +496,8 @@ export function useAssetImportFromUrl(options: UseAssetImportFromUrlOptions) {
           assetId: msg.assetId,
         } satisfies HandoffBroadcastMessage);
 
-        // Perform the import in this existing tab
-        void importFromBotWorld(msg.assetId, msg.fromOrigin).then((result) => {
-          onImportCompleteRef.current?.(result.success);
-        });
+        // Download+import here; route to the convert callback when convertTo is set.
+        handleArrival(msg.assetId, msg.fromOrigin, msg.convertTo);
 
         const { t } = getRuntimeLanguageTranslations();
         startTitleBlink(t.botWorldImportTitleBlink);
@@ -478,7 +505,7 @@ export function useAssetImportFromUrl(options: UseAssetImportFromUrlOptions) {
     };
 
     return () => channel.close();
-  }, [importFromBotWorld]);
+  }, [importFromBotWorld, handleArrival]);
 
   // -----------------------------------------------------------------------
   //  On mount: if URL has import params, show waiting overlay, try
@@ -520,29 +547,29 @@ export function useAssetImportFromUrl(options: UseAssetImportFromUrlOptions) {
       }
     };
 
-    // Broadcast the import request
+    // Broadcast the import request (carries convertTo so an existing tab can
+    // route to the export dialog when it claims the handoff).
     isDelegating = true;
     channel.postMessage({
       type: 'import-request',
       assetId: params.assetId,
       fromOrigin: params.fromOrigin,
+      ...(params.convertTo ? { convertTo: params.convertTo } : {}),
     } satisfies HandoffBroadcastMessage);
 
-    // If no existing tab responds, handle import here
+    // If no existing tab responds, handle here (download+import, then signal)
     setTimeout(() => {
       if (!settled) {
         cleanup();
         isDelegating = false;
-        void importFromBotWorld(params.assetId, params.fromOrigin).then((result) => {
-          onImportCompleteRef.current?.(result.success);
-        });
+        handleArrival(params.assetId, params.fromOrigin, params.convertTo);
       }
     }, HANDOFF_BROADCAST_TIMEOUT_MS);
 
     // No cleanup — the channel is closed by either the import-accepted
     // handler or the timeout. Closing it in cleanup would break Strict
     // Mode (channel dies before import-accepted arrives → double import).
-  }, [importFromBotWorld]);
+  }, [importFromBotWorld, handleArrival]);
 
   return {
     ...state,
