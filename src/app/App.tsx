@@ -32,6 +32,7 @@ import {
   preloadAIConversationConnector,
   preloadAIInspectionConnector,
   preloadDisconnectedWorkspaceUrdfExportDialog,
+  loadExportDialogConnectorModule,
   preloadExportDialogConnector,
   preloadExportProgressDialog,
   preloadSettingsModal,
