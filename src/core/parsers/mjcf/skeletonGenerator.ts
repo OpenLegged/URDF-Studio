@@ -15,6 +15,7 @@ import {
   MAX_PROPERTY_DECIMALS,
   formatNumberWithMaxDecimals,
 } from '@/core/utils/numberPrecision';
+import { escapeXmlAttribute } from '@/core/utils/xmlSourceTextUtils';
 import { normalizeMeshPathForExport } from '../meshPathUtils';
 
 export interface SkeletonExportOptions {
@@ -27,14 +28,6 @@ const ZERO_VECTOR: Vector3 = { x: 0, y: 0, z: 0 };
 const ZERO_EULER: Euler = { r: 0, p: 0, y: 0 };
 const MIN_INERTIAL_MASS = 1e-6;
 const MIN_INERTIAL_DIAG = 1e-8;
-
-function escapeXmlAttribute(value: string): string {
-  return value
-    .replaceAll('&', '&amp;')
-    .replaceAll('"', '&quot;')
-    .replaceAll('<', '&lt;')
-    .replaceAll('>', '&gt;');
-}
 
 function hasRotation(rotation?: Euler): boolean {
   if (!rotation) {

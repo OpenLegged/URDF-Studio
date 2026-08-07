@@ -1,6 +1,13 @@
 import { parseEditableRobotSource } from '@/app/utils/parseEditableRobotSource';
 import type { RobotFile, RobotState } from '@/types';
 import { createRobotSourceSnapshot } from './workspace-source-sync/robot_source_snapshot';
+import {
+  escapeXmlAttribute,
+  escapeRegex,
+  getPreferredNewline,
+  getLineStart,
+  getIndentAt,
+} from '@/core/utils/xmlSourceTextUtils';
 
 export type SourcePreservingExportFormat = Extract<
   RobotFile['format'],
@@ -185,14 +192,6 @@ function getElementAttribute(xml: string, element: XmlElementBounds, attrName: s
   return getAttributeValueFromOpenTag(getOpenTag(xml, element), attrName);
 }
 
-function escapeXmlAttribute(value: string): string {
-  return value
-    .replace(/&/g, '&amp;')
-    .replace(/"/g, '&quot;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;');
-}
-
 function replaceOrInsertAttribute(openTag: string, attrName: string, value: string | null): string {
   const escapedAttrName = escapeRegex(attrName);
   const attrRe = new RegExp(`\\b${escapedAttrName}\\s*=\\s*(["'])(.*?)\\1`, 'i');
@@ -250,10 +249,6 @@ function applyTextReplacements(xml: string, replacements: TextReplacement[]): st
     }, xml);
 }
 
-function escapeRegex(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
-
 function getClosingTagStart(xml: string, element: XmlElementBounds): number {
   const fragment = xml.slice(element.startOffset, element.endOffset);
   const closeTagRe = new RegExp(`</\\s*${escapeRegex(element.tagName)}\\s*>\\s*$`, 'i');
@@ -262,27 +257,6 @@ function getClosingTagStart(xml: string, element: XmlElementBounds): number {
     throw new SourcePreservingExportError(`Cannot locate </${element.tagName}> for source patch.`);
   }
   return element.startOffset + match.index;
-}
-
-function getLineStart(xml: string, index: number): number {
-  let cursor = index;
-  while (cursor > 0) {
-    const previous = xml[cursor - 1];
-    if (previous === '\n' || previous === '\r') {
-      break;
-    }
-    cursor -= 1;
-  }
-  return cursor;
-}
-
-function getIndentAt(xml: string, index: number): string {
-  const lineStart = getLineStart(xml, index);
-  return xml.slice(lineStart, index).match(/^[ \t]*/)?.[0] ?? '';
-}
-
-function getPreferredNewline(xml: string): string {
-  return xml.includes('\r\n') ? '\r\n' : '\n';
 }
 
 function reindentFragment(fragment: string, targetIndent: string): string {
