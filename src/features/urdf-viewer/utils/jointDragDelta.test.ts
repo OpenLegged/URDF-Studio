@@ -1,7 +1,48 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { resolveRevoluteDragDelta } from './jointDragDelta.ts';
+import {
+  resolveRevoluteDragDelta,
+  resolveRevoluteDragStep,
+  resolveRevoluteTangentAngleDelta,
+} from './jointDragDelta.ts';
+
+test('normalizes edge-on tangent travel by the dragged link lever radius', () => {
+  const delta = resolveRevoluteTangentAngleDelta({
+    tangentDistance: 0.02,
+    startRadius: 0.2,
+    endRadius: 0.2,
+  });
+
+  assert.ok(Math.abs(delta - 0.1) < 1e-12);
+});
+
+test('ignores edge-on tangent travel when no stable lever radius is available', () => {
+  assert.equal(
+    resolveRevoluteTangentAngleDelta({
+      tangentDistance: 0.02,
+      startRadius: 0,
+      endRadius: Number.NaN,
+    }),
+    0,
+  );
+});
+
+test('preserves the remainder of a fast drag instead of dropping it at the step limit', () => {
+  const firstStep = resolveRevoluteDragStep({
+    pendingDelta: 0,
+    nextDelta: 0.6,
+    maxStep: Math.PI / 8,
+  });
+  const secondStep = resolveRevoluteDragStep({
+    pendingDelta: firstStep.pendingDelta,
+    maxStep: Math.PI / 8,
+  });
+
+  assert.equal(firstStep.appliedDelta, Math.PI / 8);
+  assert.ok(Math.abs(firstStep.appliedDelta + secondStep.appliedDelta - 0.6) < 1e-12);
+  assert.equal(secondStep.pendingDelta, 0);
+});
 
 test('uses the projected plane angle when the camera is facing the joint plane', () => {
   assert.equal(

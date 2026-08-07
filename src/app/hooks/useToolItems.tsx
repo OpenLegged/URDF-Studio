@@ -8,9 +8,12 @@ import type { ToolboxItem } from '../components/header/types';
 interface UseToolItemsParams {
   t: TranslationKeys;
   openAIInspection: () => void;
+  prefetchAIInspection: () => void;
   openAIConversation: () => void;
+  prefetchAIConversation: () => void;
   openIkTool: () => void;
   openCollisionOptimizer: () => void;
+  prefetchCollisionOptimizer: () => void;
 }
 
 interface UseToolItemsReturn {
@@ -23,7 +26,16 @@ const openExternal = (url: string) => {
 };
 
 export function useToolItems(params: UseToolItemsParams): UseToolItemsReturn {
-  const { t, openAIInspection, openAIConversation, openIkTool, openCollisionOptimizer } = params;
+  const {
+    t,
+    openAIInspection,
+    prefetchAIInspection,
+    openAIConversation,
+    prefetchAIConversation,
+    openIkTool,
+    openCollisionOptimizer,
+    prefetchCollisionOptimizer,
+  } = params;
   const effectiveTheme = useEffectiveTheme();
   const motrixLogoSrc =
     effectiveTheme === 'dark' ? '/logos/motrix-logo-white.svg' : '/logos/motrix-logo.svg';
@@ -36,6 +48,7 @@ export function useToolItems(params: UseToolItemsParams): UseToolItemsReturn {
         description: t.aiInspectionDesc,
         icon: <ScanSearch className="h-[18px] w-[18px]" />,
         onClick: openAIInspection,
+        onPrefetch: prefetchAIInspection,
         tone: 'primary',
       },
       {
@@ -44,6 +57,7 @@ export function useToolItems(params: UseToolItemsParams): UseToolItemsReturn {
         description: t.aiConversationDesc,
         icon: <MessageSquare className="h-[18px] w-[18px]" />,
         onClick: openAIConversation,
+        onPrefetch: prefetchAIConversation,
         tone: 'primary',
       },
       ...(isIkDragToolEnabled()
@@ -64,6 +78,7 @@ export function useToolItems(params: UseToolItemsParams): UseToolItemsReturn {
         description: t.collisionOptimizerToolboxDesc,
         icon: <Box className="h-[18px] w-[18px]" />,
         onClick: openCollisionOptimizer,
+        onPrefetch: prefetchCollisionOptimizer,
         tone: 'primary',
       },
       {
@@ -127,7 +142,17 @@ export function useToolItems(params: UseToolItemsParams): UseToolItemsReturn {
         tone: 'logo',
       },
     ],
-    [t, openAIInspection, openAIConversation, openIkTool, openCollisionOptimizer, motrixLogoSrc],
+    [
+      t,
+      openAIInspection,
+      prefetchAIInspection,
+      openAIConversation,
+      prefetchAIConversation,
+      openIkTool,
+      openCollisionOptimizer,
+      prefetchCollisionOptimizer,
+      motrixLogoSrc,
+    ],
   );
 
   const registry = useMemo(() => {

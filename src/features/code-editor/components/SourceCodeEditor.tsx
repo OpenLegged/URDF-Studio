@@ -27,7 +27,12 @@ import {
   type CodeEditorFontFamily,
   type Language,
 } from '@/store';
-import { DraggableWindow } from '@/shared/components/DraggableWindow';
+import {
+  DraggableWindow,
+  FLOATING_WINDOW_HEADER_HEIGHT_CLASS,
+  FLOATING_WINDOW_RADIUS_CLASS,
+  FLOATING_WINDOW_TITLE_CLASS,
+} from '@/shared/components/DraggableWindow';
 import { useDraggableWindow } from '@/shared/hooks/useDraggableWindow';
 import { CLOSE_BUTTON_DANGER_TERTIARY_CLASS, Select, Tooltip } from '@/shared/components/ui';
 import { translations, type TranslationKeys } from '@/shared/i18n';
@@ -1055,7 +1060,7 @@ export const SourceCodeEditor: React.FC<SourceCodeEditorProps> = ({
           <Code className="h-4 w-4 shrink-0 text-system-blue" />
           <div className="flex min-w-0 flex-1 flex-col justify-center leading-tight">
             <span
-              className="min-w-0 truncate font-mono text-xs font-semibold text-text-primary"
+              className={`min-w-0 truncate font-mono ${FLOATING_WINDOW_TITLE_CLASS}`}
               title={activeDocumentPath}
             >
               {activeDocumentLabel}
@@ -1147,12 +1152,12 @@ export const SourceCodeEditor: React.FC<SourceCodeEditorProps> = ({
         </div>
       }
       style={opacityStyle}
-      className={`source-code-editor-window flex flex-col overflow-hidden rounded-lg border border-border-black text-text-primary shadow-2xl ${
+      className={`source-code-editor-window flex flex-col overflow-hidden ${FLOATING_WINDOW_RADIUS_CLASS} border border-border-black text-text-primary shadow-2xl ${
         isMaximized ? 'inset-0 !h-full !w-full !transform-none rounded-none' : ''
       }`}
       zIndex={sourceCodeWindowLayer.zIndex}
       onActivate={sourceCodeWindowLayer.onActivate}
-      headerClassName="source-code-editor-chrome flex h-10 items-center justify-between gap-3 border-b border-border-black px-3 select-none"
+      headerClassName={`source-code-editor-chrome flex ${FLOATING_WINDOW_HEADER_HEIGHT_CLASS} shrink-0 items-center justify-between gap-3 border-b border-border-black px-3 select-none`}
       headerLeftClassName="flex min-w-0 flex-1 items-center gap-2.5 overflow-hidden"
       headerRightClassName="flex shrink-0 items-center gap-1"
       showMinimizeButton={false}

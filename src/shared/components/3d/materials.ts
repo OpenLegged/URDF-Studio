@@ -434,7 +434,12 @@ export const enhanceSingleMaterial = (
     parsedUrdfEmissive?.color ??
     ((material.userData?.originalEmissive as THREE.Color | undefined)?.isColor
       ? (material.userData.originalEmissive as THREE.Color).clone()
-      : undefined);
+      : material.userData?.materialPreset === undefined &&
+          material.userData?.urdfColorApplied !== true &&
+          material.userData?.urdfTextureApplied !== true &&
+          (material as THREE.MeshStandardMaterial).emissive?.isColor
+        ? (material as THREE.MeshStandardMaterial).emissive.clone()
+        : undefined);
   const existingEmissiveIntensity =
     resolveNonNegativeValue(
       material.userData?.urdfEmissiveIntensityApplied
@@ -470,7 +475,7 @@ export const enhanceSingleMaterial = (
 
   // Route all final visual materials through the shared matte material factory so
   // USD and URDF/MJCF land on the same shading defaults and color normalization.
-  const newMat = createMatteMaterial({
+  const normalizedMatteMaterial = createMatteMaterial({
     color,
     opacity: existingOpacity,
     transparent: existingTransparent,
@@ -483,6 +488,29 @@ export const enhanceSingleMaterial = (
     name: material.name,
     preserveExactColor,
   });
+
+  // Cloning an existing PBR material preserves authored micro-surface data
+  // (normal/roughness/metalness/AO maps and MeshPhysical extensions). We then
+  // apply the viewer's normalized scalar defaults without flattening those maps.
+  const newMat = (material as THREE.MeshStandardMaterial).isMeshStandardMaterial
+    ? (material as THREE.MeshStandardMaterial).clone()
+    : normalizedMatteMaterial;
+
+  if (newMat !== normalizedMatteMaterial) {
+    newMat.color.copy(normalizedMatteMaterial.color);
+    newMat.roughness = normalizedMatteMaterial.roughness;
+    newMat.metalness = normalizedMatteMaterial.metalness;
+    newMat.envMapIntensity = normalizedMatteMaterial.envMapIntensity;
+    newMat.emissive.copy(normalizedMatteMaterial.emissive);
+    newMat.emissiveIntensity = normalizedMatteMaterial.emissiveIntensity;
+    newMat.side = normalizedMatteMaterial.side;
+    newMat.transparent = normalizedMatteMaterial.transparent;
+    newMat.opacity = normalizedMatteMaterial.opacity;
+    newMat.depthWrite = normalizedMatteMaterial.depthWrite;
+    newMat.map = normalizedMatteMaterial.map;
+    newMat.toneMapped = normalizedMatteMaterial.toneMapped;
+    normalizedMatteMaterial.dispose();
+  }
 
   newMat.userData = {
     ...(material.userData ?? {}),
@@ -519,6 +547,10 @@ export const enhanceSingleMaterial = (
   if (newMat.map && newMat.map.colorSpace !== THREE.SRGBColorSpace) {
     newMat.map.colorSpace = THREE.SRGBColorSpace;
     newMat.map.needsUpdate = true;
+  }
+  if (newMat.emissiveMap && newMat.emissiveMap.colorSpace !== THREE.SRGBColorSpace) {
+    newMat.emissiveMap.colorSpace = THREE.SRGBColorSpace;
+    newMat.emissiveMap.needsUpdate = true;
   }
 
   // Preserve URDF color flag for future material operations

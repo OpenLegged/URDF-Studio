@@ -219,6 +219,7 @@ export const useViewerController = ({
     setPaintSelectionScope,
     paintOperation,
     setPaintOperation,
+    paintInteractionRef,
     paintStatus,
     setPaintStatus,
   } = useToolModeController({ defaultToolMode, toolModeScopeKey });
@@ -2097,6 +2098,7 @@ export const useViewerController = ({
     setPaintSelectionScope,
     paintOperation,
     setPaintOperation,
+    paintInteractionRef,
     paintStatus,
     setPaintStatus,
     containerRef,

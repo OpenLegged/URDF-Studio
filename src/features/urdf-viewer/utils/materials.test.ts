@@ -81,6 +81,37 @@ test('enhanceSingleMaterial keeps textured materials in exact-color mode', () =>
   assert.equal(enhancedMaterial.toneMapped, false);
 });
 
+test('enhanceSingleMaterial preserves authored PBR maps and MeshPhysical extensions', () => {
+  const normalMap = new THREE.Texture();
+  const roughnessMap = new THREE.Texture();
+  const metalnessMap = new THREE.Texture();
+  const aoMap = new THREE.Texture();
+  const clearcoatMap = new THREE.Texture();
+  const sourceMaterial = new THREE.MeshPhysicalMaterial({
+    color: 0x6688aa,
+    normalMap,
+    roughnessMap,
+    metalnessMap,
+    aoMap,
+    clearcoat: 0.7,
+    clearcoatMap,
+    transmission: 0.2,
+  });
+
+  const enhancedMaterial = enhanceSingleMaterial(sourceMaterial);
+  assert.equal(enhancedMaterial instanceof THREE.MeshPhysicalMaterial, true);
+  if (!(enhancedMaterial instanceof THREE.MeshPhysicalMaterial)) {
+    assert.fail('expected MeshPhysicalMaterial to remain physical after enhancement');
+  }
+  assert.equal(enhancedMaterial.normalMap, normalMap);
+  assert.equal(enhancedMaterial.roughnessMap, roughnessMap);
+  assert.equal(enhancedMaterial.metalnessMap, metalnessMap);
+  assert.equal(enhancedMaterial.aoMap, aoMap);
+  assert.equal(enhancedMaterial.clearcoat, 0.7);
+  assert.equal(enhancedMaterial.clearcoatMap, clearcoatMap);
+  assert.equal(enhancedMaterial.transmission, 0.2);
+});
+
 test('enhanceSingleMaterial keeps pending texture override bases neutral white', () => {
   const sourceMaterial = new THREE.MeshStandardMaterial({
     color: 0xffffff,

@@ -1,6 +1,11 @@
 import React, { useState, useCallback, useEffect } from 'react';
 import { Upload, Package, FileCode, Layers, Lock, Braces, Loader2 } from 'lucide-react';
-import { DraggableWindow } from '@/shared/components/DraggableWindow';
+import {
+  DraggableWindow,
+  FLOATING_WINDOW_HEADER_HEIGHT_CLASS,
+  FLOATING_WINDOW_RADIUS_CLASS,
+  FLOATING_WINDOW_TITLE_CLASS,
+} from '@/shared/components/DraggableWindow';
 import { CLOSE_BUTTON_DANGER_TERTIARY_CLASS } from '@/shared/components/ui/closeButtonStyles';
 import { useDraggableWindow } from '@/shared/hooks/useDraggableWindow';
 import { translations } from '@/shared/i18n';
@@ -11,6 +16,7 @@ import { ExportProgressView } from '../ExportProgressView';
 import {
   DEFAULT_CONFIG,
   EXPORT_FORMATS,
+  MESH_FORMAT_OPTIONS,
   getExportFormatSupports,
 } from './config';
 import {
@@ -26,6 +32,7 @@ import type {
   ExportDialogConfig,
   ExportDialogProps,
   ExportFormat,
+  ExportMeshFormat,
   GazeboBackend,
   MeshExportFormat,
   RosHwInterface,
@@ -41,6 +48,7 @@ export type {
   ExportDialogConfig,
   ExportDialogProps,
   ExportFormat,
+  ExportMeshFormat,
   GazeboBackend,
   MeshExportFormat,
   MjcfExportConfig,
@@ -286,13 +294,13 @@ export const ExportDialog: React.FC<ExportDialogProps> = ({
             <div className="p-1 rounded-md bg-element-bg text-text-secondary border border-border-black">
               <Upload className="w-3.5 h-3.5" />
             </div>
-            <span className="text-xs font-semibold text-text-primary">{t.exportDialog}</span>
+            <span className={FLOATING_WINDOW_TITLE_CLASS}>{t.exportDialog}</span>
           </div>
         }
-        className="bg-panel-bg flex flex-col text-text-primary overflow-hidden rounded-2xl shadow-xl border border-border-black"
+        className={`bg-panel-bg flex flex-col text-text-primary overflow-hidden ${FLOATING_WINDOW_RADIUS_CLASS} shadow-xl border border-border-black`}
         zIndex={exportDialogWindowLayer.zIndex}
         onActivate={exportDialogWindowLayer.onActivate}
-        headerClassName="h-10 border-b border-border-black flex items-center justify-between px-3 bg-element-bg shrink-0"
+        headerClassName={`${FLOATING_WINDOW_HEADER_HEIGHT_CLASS} border-b border-border-black flex items-center justify-between px-3 bg-element-bg shrink-0`}
         interactionClassName="select-none"
         showMinimizeButton={false}
         showMaximizeButton={false}
@@ -328,7 +336,7 @@ export const ExportDialog: React.FC<ExportDialogProps> = ({
                       isDisabled
                         ? 'opacity-40 cursor-not-allowed text-text-tertiary'
                         : isActive
-                          ? 'bg-white dark:bg-segmented-active text-text-primary shadow-sm'
+                          ? 'bg-segmented-active text-text-primary shadow-sm'
                           : 'text-text-secondary hover:text-text-primary hover:bg-element-hover'
                     }`}
                   >
@@ -426,26 +434,39 @@ export const ExportDialog: React.FC<ExportDialogProps> = ({
                   >
                     <Toggle value={config.includeSkeleton} onChange={updateIncludeSkeleton} />
                   </Row>
-                  <Row label={t.exportIncludeMeshes} stacked={isStackedLayout}>
-                    <Toggle
-                      value={config.mjcf.includeMeshes}
-                      onChange={(v) => updateMjcf('includeMeshes', v)}
-                    />
-                  </Row>
+                 <Row label={t.exportIncludeMeshes} stacked={isStackedLayout}>
+                   <Toggle
+                     value={config.mjcf.includeMeshes}
+                     onChange={(v) => updateMjcf('includeMeshes', v)}
+                   />
+                 </Row>
                   {config.mjcf.includeMeshes && (
-                    <STLQualitySelector
-                      compressSTL={config.mjcf.compressSTL}
-                      stlQuality={config.mjcf.stlQuality}
-                      mode={qualityModes.mjcf}
-                      t={t}
-                      onCompressChange={(v) => updateMjcf('compressSTL', v)}
-                      onQualityChange={(v) => updateMjcf('stlQuality', v)}
-                      onModeChange={(mode) => updateQualityMode('mjcf', mode)}
-                    />
+                    <Row label={t.exportMeshFormat} hint={t.exportMeshFormatDesc} stacked={isStackedLayout}>
+                      <SelectField
+                        value={config.mjcf.meshFormat}
+                        options={MESH_FORMAT_OPTIONS.map((opt) => ({
+                          value: opt.value,
+                          label: t[opt.labelKey as keyof typeof t] as string,
+                        }))}
+                        onChange={(v) => updateMjcf('meshFormat', v as ExportMeshFormat)}
+                        fullWidth={isStackedLayout}
+                      />
+                    </Row>
                   )}
-                </div>
-              </>
-            )}
+                 {config.mjcf.includeMeshes && (
+                   <STLQualitySelector
+                     compressSTL={config.mjcf.compressSTL}
+                     stlQuality={config.mjcf.stlQuality}
+                     mode={qualityModes.mjcf}
+                     t={t}
+                     onCompressChange={(v) => updateMjcf('compressSTL', v)}
+                     onQualityChange={(v) => updateMjcf('stlQuality', v)}
+                     onModeChange={(mode) => updateQualityMode('mjcf', mode)}
+                   />
+                 )}
+               </div>
+             </>
+           )}
 
             {/* URDF Options */}
             {config.format === 'urdf' && (

@@ -17,24 +17,9 @@ export interface ReportScrollTarget {
   anchorId: string;
 }
 
-export interface SetupItemScrollTarget {
-  profileId: string;
-  itemId: string;
-}
-
-export interface InspectionRunPointerLayout {
-  deltaX: number;
-  deltaY: number;
-  targetX: number;
-  targetY: number;
-}
-
 export type InspectionSetupMode = 'normal' | 'advanced';
 
 export const TOTAL_INSPECTION_ITEM_COUNT = getAllInspectionProfileItemCount();
-
-export const RUN_INSPECTION_POINTER_DURATION_MS =
-  typeof navigator !== 'undefined' && /jsdom/i.test(navigator.userAgent) ? 300 : 2400;
 
 export function createInitialSelectedProfiles(): SelectedInspectionProfiles {
   const initial: SelectedInspectionProfiles = {};

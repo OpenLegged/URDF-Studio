@@ -5,7 +5,15 @@
  * a consistent interface for loading and rendering robots across all formats.
  */
 
-import { startTransition, useCallback, useMemo, useState, useRef, useEffect } from 'react';
+import {
+  startTransition,
+  useCallback,
+  useMemo,
+  useState,
+  useRef,
+  useEffect,
+  useLayoutEffect,
+} from 'react';
 import { useThree } from '@react-three/fiber';
 import type * as THREE from 'three';
 import {
@@ -17,6 +25,7 @@ import type { RuntimeRobotObject } from '@/shared/components/3d/runtimeRobotType
 import { copyRobotRootTransform } from '@/shared/components/3d/robotPositioning';
 import { buildColladaRootNormalizationHints } from '@/core/loaders';
 import { getSourceFileDirectory } from '@/core/parsers/meshPathUtils';
+import { applyObjectRenderQuality } from '@/core/utils/three/objectRenderQuality';
 import type { UrdfJoint, UrdfLink } from '@/types';
 import type { ViewerDocumentLoadEvent, ViewerRuntimeStageBridge } from '../types';
 import {
@@ -33,6 +42,7 @@ import {
   isSceneCompileWarmupBlocked,
   warmupSceneCompile,
 } from '@/shared/components/3d/scene/SceneCompileWarmup';
+import { requestShadowMapRefresh } from '@/shared/components/3d/scene/shadowMapRefresh';
 
 export interface UseRendererBackendOptions extends RendererSceneProps {
   /** Reload token to force re-loading */
@@ -119,6 +129,9 @@ export function useRendererBackend(
     robotLinks: providedRobotLinks,
     robotJoints: providedRobotJoints,
     robotData,
+    primitiveGeometryDetail,
+    textureAnisotropy = 1,
+    materialDithering = false,
     initialJointAngles,
     onRuntimeRobotLoaded,
     runtimeBridge,
@@ -127,6 +140,10 @@ export function useRendererBackend(
     onRobotLoaded,
     onDocumentLoadEvent,
   } = options;
+  const resolvedTextureAnisotropy = Math.max(
+    1,
+    Math.min(Math.round(textureAnisotropy), gl.capabilities.getMaxAnisotropy()),
+  );
 
   // State
   const [robot, setRobot] = useState<RuntimeRobotObject | null>(() => initialRobot);
@@ -189,6 +206,9 @@ export function useRendererBackend(
           robotLinks: providedRobotLinks,
           robotJoints: providedRobotJoints,
           robotData,
+          primitiveGeometryDetail,
+          textureAnisotropy: resolvedTextureAnisotropy,
+          materialDithering,
         },
         loadScopeKeyMemoRef.current,
       ),
@@ -196,9 +216,12 @@ export function useRendererBackend(
       assets,
       allowUrdfXmlFallback,
       availableFiles,
+      materialDithering,
+      primitiveGeometryDetail,
       providedRobotJoints,
       providedRobotLinks,
       reloadToken,
+      resolvedTextureAnisotropy,
       robotData,
       sourceFile,
     ],
@@ -244,6 +267,9 @@ export function useRendererBackend(
     robotLinks: providedRobotLinks,
     robotJoints: providedRobotJoints,
     robotData,
+    primitiveGeometryDetail,
+    textureAnisotropy: resolvedTextureAnisotropy,
+    materialDithering,
     initialJointAngles,
     onRuntimeRobotLoaded: (runtimeRobot) => onRuntimeRobotLoadedRef.current?.(runtimeRobot),
     runtimeBridge: runtimeBridge ? runtimeBridgeProxyRef.current : undefined,
@@ -296,6 +322,20 @@ export function useRendererBackend(
     robotRef.current = robot;
   }, [robot]);
 
+  useLayoutEffect(() => {
+    if (!robot) {
+      return;
+    }
+
+    // The backend's load completion callback runs before React commits the new
+    // <primitive> into the R3F scene. Refreshing there can render and consume a
+    // dirty shadow map against the previous scene, leaving the newly imported
+    // robot without a ground shadow until the next interaction. Schedule the
+    // shadow refresh only after the runtime robot (or an in-place patch) commits.
+    requestShadowMapRefresh(gl);
+    invalidate();
+  }, [gl, invalidate, robot, robotVersion]);
+
   useEffect(() => {
     if (!robot || pendingCommitDisposeBackendsRef.current.size === 0) {
       return;
@@ -347,8 +387,15 @@ export function useRendererBackend(
       showVisual: showVisual ?? true,
       showCollision: showCollision ?? false,
       linkMeshMapRef,
-      invalidate,
+      invalidate: () => {
+        applyObjectRenderQuality(currentRobot, {
+          textureAnisotropy: resolvedTextureAnisotropy,
+          materialDithering,
+        });
+        invalidate();
+      },
       isPatchTargetValid: () => isMountedRef.current && robotRef.current === currentRobot,
+      primitiveGeometryDetail,
     });
 
     if (!applied) {
@@ -370,7 +417,10 @@ export function useRendererBackend(
     invalidate,
     linkMeshMapRef,
     loadScopeKey,
+    materialDithering,
+    primitiveGeometryDetail,
     providedRobotLinks,
+    resolvedTextureAnisotropy,
     robotData,
     showCollision,
     showVisual,
@@ -473,6 +523,11 @@ export function useRendererBackend(
         if (!nextRobot) {
           throw new Error('Renderer backend returned no robot root');
         }
+
+        applyObjectRenderQuality(nextRobot, {
+          textureAnisotropy: resolvedTextureAnisotropy,
+          materialDithering,
+        });
 
         const previousRobot = robotRef.current;
         if (previousRobot && activeBaseLoadScopeKeyRef.current === baseLoadScopeKey) {
@@ -591,7 +646,14 @@ export function useRendererBackend(
         backend.dispose();
       }
     };
-  }, [baseLoadScopeKey, invalidate, loadScopeKey, prepareRobotHandoff]);
+  }, [
+    baseLoadScopeKey,
+    invalidate,
+    loadScopeKey,
+    materialDithering,
+    prepareRobotHandoff,
+    resolvedTextureAnisotropy,
+  ]);
 
   return {
     robot,

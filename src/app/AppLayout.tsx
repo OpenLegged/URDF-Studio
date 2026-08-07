@@ -31,6 +31,7 @@ import { useWorkspaceModeTransitions } from './hooks/useWorkspaceModeTransitions
 import { useWorkspaceMutations } from './hooks/useWorkspaceMutations';
 import { useWorkspaceOverlayActions } from './hooks/useWorkspaceOverlayActions';
 import { useWorkspaceViewerDerivations } from './hooks/useWorkspaceViewerDerivations';
+import { preloadSnapshotDialog } from './utils/overlayLoaders';
 import { preloadSourceCodeEditorRuntime } from './utils/sourceCodeEditorLoader';
 import type { SourceCodeDocumentChangeTarget } from './utils/sourceCodeDocuments';
 import { normalizeMergedAppMode } from '@/shared/utils/appMode';
@@ -52,15 +53,19 @@ export function AppLayout({
   importFolderInputRef,
   onFileDrop,
   onOpenExport,
+  onPrefetchExport,
   onOpenLibraryExport,
   onExportProject,
   isExportingProject = false,
   showToast,
   onOpenAIInspection,
+  onPrefetchAIInspection,
   onOpenAIConversation,
+  onPrefetchAIConversation,
   isCodeViewerOpen,
   setIsCodeViewerOpen,
   onOpenSettings,
+  onPrefetchSettings,
   headerQuickAction,
   headerSecondaryAction,
   viewConfig,
@@ -327,10 +332,12 @@ export function AppLayout({
   const {
     handleAddComponent,
     handleCreateBridge,
+    handlePrefetchBridgeCreateModal,
     handleCloseBridgeModal,
     handleBridgePreviewChange,
     handleCreateBridgeCommit,
     handleOpenCollisionOptimizer,
+    handlePrefetchCollisionOptimizer,
   } = useWorkspaceOverlayActions({
     onLoadRobot,
     showAssemblyComponentPreparationOverlay,
@@ -425,12 +432,24 @@ export function AppLayout({
     showToast,
     snapshotFailedMessage: t.snapshotFailed,
   });
+  const handlePrefetchSnapshot = useCallback(() => {
+    void preloadSnapshotDialog().catch((error: unknown) => {
+      logRegressionError('[AppLayout] Failed to preload snapshot dialog:', error);
+    });
+  }, []);
+  const handleOpenSnapshotDialog = useCallback(() => {
+    handlePrefetchSnapshot();
+    handleSnapshot();
+  }, [handlePrefetchSnapshot, handleSnapshot]);
   const { items: toolboxItems, openTool } = useToolItems({
     t,
     openAIInspection: onOpenAIInspection,
+    prefetchAIInspection: onPrefetchAIInspection,
     openAIConversation: onOpenAIConversation,
+    prefetchAIConversation: onPrefetchAIConversation,
     openIkTool: handleOpenIkTool,
     openCollisionOptimizer: handleOpenCollisionOptimizer,
+    prefetchCollisionOptimizer: handlePrefetchCollisionOptimizer,
   });
   useEffect(() => {
     onExposeLayoutActions?.({
@@ -535,9 +554,11 @@ export function AppLayout({
       importInputs={{ importInputRef, importFolderInputRef }}
       header={{
         onOpenExport,
+        onPrefetchExport,
         onExportProject,
         isExportingProject,
         onOpenSettings,
+        onPrefetchSettings,
         headerQuickAction,
         headerSecondaryAction,
         viewConfig,
@@ -545,7 +566,8 @@ export function AppLayout({
         toolboxItems,
         handleOpenCodeViewer,
         handlePrefetchCodeViewer,
-        handleSnapshot,
+        handleSnapshot: handleOpenSnapshotDialog,
+        handlePrefetchSnapshot,
       }}
       ikPanel={{
         isOpen: isIkToolPanelOpen,
@@ -606,6 +628,7 @@ export function AppLayout({
         lang,
         theme,
         viewConfig,
+        onNotify: showToast,
       }}
       sidebars={{
         workspace,
@@ -639,6 +662,7 @@ export function AppLayout({
         handleDeleteAllLibraryFiles,
         handleExportLibraryFile,
         handleCreateBridge,
+        handlePrefetchCreateBridge: handlePrefetchBridgeCreateModal,
         isPreviewingWorkspaceSource: false,
         viewConfig,
         setViewConfig,
@@ -677,6 +701,7 @@ export function AppLayout({
         theme,
         lang,
         labels: {
+          loadingSourceCodeEditor: t.loadingPanel,
           loadingOptimizer: t.loadingOptimizer,
           loadingBridgeDialog: t.loadingBridgeDialog,
         },

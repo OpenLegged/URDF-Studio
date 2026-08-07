@@ -8,6 +8,7 @@
   src: url('/fonts/JetBrainsMono-Regular.woff2') format('woff2');
   font-weight: 400;
   font-style: normal;
+  font-display: swap;
 }
 
 @font-face {
@@ -15,6 +16,7 @@
   src: url('/fonts/JetBrainsMono-Bold.woff2') format('woff2');
   font-weight: 700;
   font-style: normal;
+  font-display: swap;
 }
 
 @font-face {
@@ -22,6 +24,7 @@
   src: url('/fonts/FiraCode-Regular.woff2') format('woff2');
   font-weight: 400;
   font-style: normal;
+  font-display: swap;
 }
 
 @font-face {
@@ -29,6 +32,7 @@
   src: url('/fonts/FiraCode-Bold.woff2') format('woff2');
   font-weight: 700;
   font-style: normal;
+  font-display: swap;
 }
 
 @custom-variant dark (&:where(.dark, .dark *));
@@ -67,6 +71,18 @@
   --font-scale: 1;
   --font-language-scale: 1;
   --font-effective-scale: calc(var(--font-scale) * var(--font-language-scale));
+  --font-ui:
+    system-ui, -apple-system, blinkmacsystemfont, 'Segoe UI', roboto, 'Helvetica Neue', arial,
+    'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif;
+  --font-code:
+    'JetBrains Mono', 'Fira Code', ui-monospace, sfmono-regular, menlo, monaco, consolas,
+    'Liberation Mono', 'Courier New', monospace;
+  --text-ui-micro: 10px;
+  --text-ui-caption: 11px;
+  --text-ui-label: 12px;
+  --text-ui-control: 13px;
+  --text-ui-body: 14px;
+  --text-ui-title: 16px;
 
   --ui-bg: #f8f9fa;
   --ui-panel-bg: #ffffff;
@@ -103,18 +119,7 @@
     0 3px 8px rgba(15, 23, 42, 0.14), 0 8px 18px rgba(15, 23, 42, 0.16);
 
   color-scheme: light;
-  font-family:
-    system-ui,
-    -apple-system,
-    BlinkMacSystemFont,
-    'Segoe UI',
-    Roboto,
-    'Helvetica Neue',
-    Arial,
-    'PingFang SC',
-    'Hiragino Sans GB',
-    'Microsoft YaHei',
-    sans-serif;
+  font-family: var(--font-ui);
   font-size: calc(1rem * var(--font-effective-scale));
 }
 
@@ -210,9 +215,7 @@
 .urdf-studio-canvas pre,
 .urdf-studio-canvas kbd,
 .urdf-studio-canvas samp {
-  font-family:
-    'JetBrains Mono', 'Fira Code', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
-    'Liberation Mono', 'Courier New', monospace !important;
+  font-family: var(--font-code) !important;
 }
 
 .urdf-studio-canvas :where(button, input, select, textarea):focus-visible {
@@ -222,6 +225,36 @@
 
 .urdf-studio-canvas .text-xs {
   font-size: calc(0.75rem * var(--font-effective-scale)) !important;
+}
+
+.urdf-studio-canvas .text-ui-micro {
+  font-size: calc(var(--text-ui-micro) * var(--font-effective-scale)) !important;
+  line-height: 1.35;
+}
+
+.urdf-studio-canvas .text-ui-caption {
+  font-size: calc(var(--text-ui-caption) * var(--font-effective-scale)) !important;
+  line-height: 1.4;
+}
+
+.urdf-studio-canvas .text-ui-label {
+  font-size: calc(var(--text-ui-label) * var(--font-effective-scale)) !important;
+  line-height: 1.4;
+}
+
+.urdf-studio-canvas .text-ui-control {
+  font-size: calc(var(--text-ui-control) * var(--font-effective-scale)) !important;
+  line-height: 1.4;
+}
+
+.urdf-studio-canvas .text-ui-body {
+  font-size: calc(var(--text-ui-body) * var(--font-effective-scale)) !important;
+  line-height: 1.5;
+}
+
+.urdf-studio-canvas .text-ui-title {
+  font-size: calc(var(--text-ui-title) * var(--font-effective-scale)) !important;
+  line-height: 1.4;
 }
 
 .urdf-studio-canvas .text-sm {

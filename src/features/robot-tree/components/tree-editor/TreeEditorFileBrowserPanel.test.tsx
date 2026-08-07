@@ -196,18 +196,20 @@ test('TreeEditorFileBrowserPanel opens files from row clicks and reserves the ad
       /@\[260px\]:inline/,
       'add button text should reappear when the sidebar has enough width',
     );
-    const addButtonColumn = addButton.parentElement;
+    const addButtonColumn = addButton.closest('.sticky');
     assert.ok(addButtonColumn, 'add button column should render');
     assert.match(
       addButtonColumn.className,
       /\bml-auto\b/,
       'add button column should push trailing row controls to the right edge',
     );
-    const formatBadge = fileRow.lastElementChild;
+    const formatBadge = Array.from(fileRow.querySelectorAll('span')).find(
+      (element) => element.textContent === 'URDF',
+    );
     assert.equal(
       formatBadge?.textContent,
       'URDF',
-      'format badge should render as the final aligned file row column',
+      'format badge should render inside the trailing file row column',
     );
     assert.match(
       formatBadge?.getAttribute('class') ?? '',
@@ -218,6 +220,11 @@ test('TreeEditorFileBrowserPanel opens files from row clicks and reserves the ad
       formatBadge?.getAttribute('class') ?? '',
       /text-\[8px\]/,
       'format badge should use compact text for the final column',
+    );
+    assert.equal(
+      formatBadge?.closest('.sticky'),
+      addButtonColumn,
+      'format badge and add controls should share the sticky trailing column',
     );
 
     await act(async () => {
@@ -266,16 +273,25 @@ test('TreeEditorFileBrowserPanel anchors MJCF and USD badges to the final column
       const fileRow = fileLabel.closest('.group');
       assert.ok(fileRow, `${fileCase.name} row should render`);
 
-      const formatBadge = fileRow.lastElementChild;
+      const formatBadge = Array.from(fileRow.querySelectorAll('span')).find(
+        (element) => element.textContent === fileCase.label,
+      );
       assert.equal(
         formatBadge?.textContent,
         fileCase.label,
-        `${fileCase.label} badge should render as the final file row column`,
+        `${fileCase.label} badge should render inside the trailing file row column`,
       );
+      const trailingColumn = formatBadge?.closest('.sticky');
+      assert.ok(trailingColumn, `${fileCase.label} badge should stay in the sticky column`);
       assert.match(
-        formatBadge?.getAttribute('class') ?? '',
+        trailingColumn.className,
         /\bml-auto\b/,
         `${fileCase.label} badge should align to the right edge when no add column is shown`,
+      );
+      assert.match(
+        trailingColumn.className,
+        /\bright-0\b/,
+        `${fileCase.label} badge should remain visible at the right edge while names scroll`,
       );
       assert.match(
         formatBadge?.getAttribute('class') ?? '',

@@ -158,7 +158,69 @@ export function resolveVisualMaterialOverrideFromGeometry(
   };
 }
 
+/**
+ * Resolve an override from a geometry's *first* authored material.
+ *
+ * `resolveVisualMaterialOverrideFromGeometry` deliberately returns null for multi-material
+ * palettes, because one override cannot describe several slots. But a link can end up
+ * holding a whole group's material list while its own geometry is a single mesh — the USD
+ * adapter attaches every descriptor in a visual group to the parent link, then hands the
+ * sibling descriptors to generated child links. In that shape the palette is unusable and
+ * the first entry is the one that belongs to this geometry, since both lists keep
+ * descriptor order. Callers use this only after the name-keyed palette has failed to
+ * apply; otherwise the mesh would silently keep its loader-default material.
+ */
+export function resolvePrimaryAuthoredVisualMaterialOverride(
+  geometry: Pick<UrdfVisual, 'color' | 'authoredMaterials'> | null | undefined,
+): VisualMaterialOverride | null {
+  const primaryAuthoredMaterial = geometry?.authoredMaterials?.[0];
+  if (!primaryAuthoredMaterial) {
+    return null;
+  }
+
+  return resolveVisualMaterialOverrideFromGeometry({
+    color: geometry?.color,
+    authoredMaterials: [primaryAuthoredMaterial],
+  });
+}
+
 export type VisualMaterialOverrideCache = Map<string, THREE.MeshStandardMaterial>;
+
+/**
+ * Resolve which materials a finished texture load should be written to.
+ *
+ * Returns the materials captured when the override was applied, plus any material
+ * currently mounted under `object` that carries the same `urdfTexturePath` marker. The
+ * second group covers materials that replaced the captured ones mid-load; without it the
+ * texture lands on a detached material and the mesh renders untextured.
+ */
+function collectOverrideTargetMaterials(
+  object: THREE.Object3D,
+  texturePath: string,
+  capturedMaterials: readonly THREE.MeshStandardMaterial[],
+): THREE.MeshStandardMaterial[] {
+  const targets = new Set<THREE.MeshStandardMaterial>(capturedMaterials);
+
+  object.traverse((child) => {
+    const mesh = child as THREE.Mesh;
+    if (!mesh.isMesh) {
+      return;
+    }
+
+    const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+    materials.forEach((material) => {
+      const standardMaterial = material as THREE.MeshStandardMaterial | undefined;
+      if (!standardMaterial) {
+        return;
+      }
+      if (standardMaterial.userData?.urdfTexturePath === texturePath) {
+        targets.add(standardMaterial);
+      }
+    });
+  });
+
+  return Array.from(targets);
+}
 
 export function applyVisualMaterialOverrideToObject(
   object: THREE.Object3D,
@@ -320,13 +382,21 @@ export function applyVisualMaterialOverrideToObject(
         texture.rotation = rotation;
         texture.center.set(0.5, 0.5);
       }
-      replacementMaterials.forEach((material) => {
-        material.map = texture;
-        if (!hasExplicitColor && material.color?.isColor) {
-          material.color.set('#ffffff');
-        }
-        material.needsUpdate = true;
-      });
+      // Later scene passes (material enhancement, matte normalization) clone and swap a
+      // mesh's material while this load is still in flight. Those clones copy `map` from
+      // the source, which is still null until we get here, so writing only to the
+      // materials captured before the load would silently drop the texture — and it does
+      // so size-dependently, since only the slowest textures lose that race. Re-resolve
+      // the live materials from the object and match on the marker written above.
+      collectOverrideTargetMaterials(object, texturePath, replacementMaterials).forEach(
+        (material) => {
+          material.map = texture;
+          if (!hasExplicitColor && material.color?.isColor) {
+            material.color.set('#ffffff');
+          }
+          material.needsUpdate = true;
+        },
+      );
     },
     undefined,
     (error) => {

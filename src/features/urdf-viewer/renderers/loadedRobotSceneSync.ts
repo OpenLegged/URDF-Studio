@@ -228,17 +228,6 @@ function meshNeedsMaterialUpgrade(mesh: THREE.Mesh): boolean {
       return true;
     }
 
-    if (
-      materialWithPbrState.emissiveMap ||
-      materialWithPbrState.roughnessMap ||
-      materialWithPbrState.metalnessMap ||
-      materialWithPbrState.normalMap ||
-      materialWithPbrState.aoMap ||
-      materialWithPbrState.bumpMap
-    ) {
-      return true;
-    }
-
     if (currentEmissiveHex !== expectedEmissiveHex) {
       return true;
     }

@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import type {
   MeasureAnchorMode,
   MeasureMode,
@@ -6,6 +6,7 @@ import type {
   MeasureState,
   ToolMode,
   ViewerPaintOperation,
+  ViewerPaintInteractionState,
   ViewerPaintSelectionScope,
   ViewerPaintStatus,
 } from '../../types';
@@ -44,6 +45,16 @@ export function useToolModeController({
     useState<ViewerPaintSelectionScope>('island');
   const [paintOperation, setPaintOperation] = useState<ViewerPaintOperation>('paint');
   const [paintStatus, setPaintStatus] = useState<ViewerPaintStatus | null>(null);
+  const paintInteractionRef = useRef<ViewerPaintInteractionState>({
+    color: paintColor,
+    operation: paintOperation,
+    selectionScope: paintSelectionScope,
+  });
+  paintInteractionRef.current = {
+    color: paintColor,
+    operation: paintOperation,
+    selectionScope: paintSelectionScope,
+  };
   const transformMode = (
     ['translate', 'rotate', 'universal'].includes(toolMode) ? toolMode : 'select'
   ) as 'select' | 'translate' | 'rotate' | 'universal';
@@ -70,6 +81,7 @@ export function useToolModeController({
     setPaintSelectionScope,
     paintOperation,
     setPaintOperation,
+    paintInteractionRef,
     paintStatus,
     setPaintStatus,
   };

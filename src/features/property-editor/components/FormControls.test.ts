@@ -327,6 +327,62 @@ test('pointer down applies the first step immediately before pointer up', async 
   }
 });
 
+test('dragging a number input horizontally applies its configured step in both directions', async () => {
+  const { dom, container, root } = createComponentRoot();
+  try {
+    await renderHarness(root, {
+      initialValue: 1,
+      label: 'Radius',
+      step: 0.1,
+    });
+
+    const input = getTextInput(container);
+
+    await act(async () => {
+      input.dispatchEvent(
+        new PointerEvent('pointerdown', {
+          bubbles: true,
+          button: 0,
+          clientX: 100,
+          pointerId: 7,
+        }),
+      );
+      input.dispatchEvent(
+        new PointerEvent('pointermove', {
+          bubbles: true,
+          clientX: 124,
+          pointerId: 7,
+        }),
+      );
+    });
+
+    assert.equal(getCommittedValue(container), '1.6');
+    assert.equal(dom.window.document.body.style.userSelect, 'none');
+
+    await act(async () => {
+      input.dispatchEvent(
+        new PointerEvent('pointermove', {
+          bubbles: true,
+          clientX: 108,
+          pointerId: 7,
+        }),
+      );
+      input.dispatchEvent(
+        new PointerEvent('pointerup', {
+          bubbles: true,
+          clientX: 108,
+          pointerId: 7,
+        }),
+      );
+    });
+
+    assert.equal(getCommittedValue(container), '1.2');
+    assert.equal(dom.window.document.body.style.userSelect, '');
+  } finally {
+    await destroyComponentRoot(dom, root);
+  }
+});
+
 test('typing a parseable value updates the committed value before blur', async () => {
   const { dom, container, root } = createComponentRoot();
   try {
@@ -476,6 +532,110 @@ test('TransformFields defaults to inline axis labels for position and rotation r
       /\bmin-w-0\b/,
       'rotation axis rows should remain shrinkable inside the transform grid',
     );
+  } finally {
+    await destroyComponentRoot(dom, root);
+  }
+});
+
+test('TransformFields copies and pastes the complete position XYZ value', async () => {
+  const { dom, container, root } = createComponentRoot();
+  let clipboardText = '';
+  let pastedPosition: { x: number; y: number; z: number } | null = null;
+  Object.defineProperty(dom.window.navigator, 'clipboard', {
+    configurable: true,
+    value: {
+      writeText: async (value: string) => {
+        clipboardText = value;
+      },
+      readText: async () => clipboardText,
+    },
+  });
+
+  try {
+    await act(async () => {
+      root.render(
+        React.createElement(TransformFields, {
+          lang: 'en',
+          positionValue: { x: 1, y: 2, z: 3 },
+          rotationValue: { r: 0, p: 0, y: 0 },
+          onPositionChange: (value: { x: number; y: number; z: number }) => {
+            pastedPosition = value;
+          },
+          onRotationChange: () => {},
+        }),
+      );
+    });
+
+    const copyButton = container.querySelector('button[aria-label="Copy position XYZ"]');
+    const pasteButton = container.querySelector('button[aria-label="Paste position XYZ"]');
+    assert.ok(copyButton, 'position copy button should render');
+    assert.ok(pasteButton, 'position paste button should render');
+
+    clipboardText = '4, 5, 6';
+    await act(async () => {
+      (pasteButton as HTMLButtonElement).click();
+    });
+    assert.deepEqual(pastedPosition, { x: 4, y: 5, z: 6 });
+
+    await act(async () => {
+      (copyButton as HTMLButtonElement).click();
+    });
+    assert.equal(clipboardText, '{"x":1,"y":2,"z":3}');
+
+    clipboardText = '7, 8, 9';
+    await act(async () => {
+      (pasteButton as HTMLButtonElement).click();
+    });
+    assert.deepEqual(
+      pastedPosition,
+      { x: 7, y: 8, z: 9 },
+      'the current system clipboard should take precedence over the in-app cache',
+    );
+  } finally {
+    await destroyComponentRoot(dom, root);
+  }
+});
+
+test('TransformFields pastes an in-app position copy across separate panels', async () => {
+  const { dom, container, root } = createComponentRoot();
+  let pastedPosition: { x: number; y: number; z: number } | null = null;
+
+  try {
+    await act(async () => {
+      root.render(
+        React.createElement(
+          'div',
+          null,
+          React.createElement(TransformFields, {
+            lang: 'en',
+            positionValue: { x: 7, y: 8, z: 9 },
+            rotationValue: { r: 0, p: 0, y: 0 },
+            onPositionChange: () => {},
+            onRotationChange: () => {},
+          }),
+          React.createElement(TransformFields, {
+            lang: 'en',
+            positionValue: { x: 0, y: 0, z: 0 },
+            rotationValue: { r: 0, p: 0, y: 0 },
+            onPositionChange: (value: { x: number; y: number; z: number }) => {
+              pastedPosition = value;
+            },
+            onRotationChange: () => {},
+          }),
+        ),
+      );
+    });
+
+    const copyButtons = container.querySelectorAll('button[aria-label="Copy position XYZ"]');
+    const pasteButtons = container.querySelectorAll('button[aria-label="Paste position XYZ"]');
+    assert.equal(copyButtons.length, 2);
+    assert.equal(pasteButtons.length, 2);
+
+    await act(async () => {
+      (copyButtons[0] as HTMLButtonElement).click();
+      (pasteButtons[1] as HTMLButtonElement).click();
+    });
+    assert.deepEqual(pastedPosition, { x: 7, y: 8, z: 9 });
   } finally {
     await destroyComponentRoot(dom, root);
   }

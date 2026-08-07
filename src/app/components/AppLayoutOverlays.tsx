@@ -1,10 +1,8 @@
-import React, { lazy, Suspense } from 'react';
+import { Suspense } from 'react';
 import { LazyOverlayFallback } from './LazyOverlayFallback';
 import { SourceCodeEditorErrorBoundary } from './SourceCodeEditorErrorBoundary';
-import {
-  loadBridgeCreateModalModule,
-  loadCollisionOptimizationDialogModule,
-} from '@/app/utils/overlayLoaders';
+import { BridgeCreateModal, CollisionOptimizationDialog } from '@/app/utils/overlayLoaders';
+import { SourceCodeEditor } from '@/app/utils/sourceCodeEditorLoader';
 import type { Language } from '@/shared/i18n';
 import type { BridgeJoint, InteractionSelection, Theme, UrdfJoint } from '@/types';
 import type { AssemblyState } from '@/types';
@@ -13,22 +11,13 @@ import type {
   CollisionOptimizationSource,
   CollisionTargetRef,
 } from '@/features/property-editor';
-import { SourceCodeEditor, type SourceCodeEditorDocument } from '@/features/code-editor';
-
-const CollisionOptimizationDialog = lazy(() =>
-  loadCollisionOptimizationDialogModule().then((module) => ({
-    default: module.CollisionOptimizationDialog,
-  })),
-);
-
-const BridgeCreateModal = lazy(() =>
-  loadBridgeCreateModalModule().then((module) => ({ default: module.BridgeCreateModal })),
-);
+import type { SourceCodeEditorDocument } from '@/features/code-editor';
 
 interface AppLayoutOverlaysProps {
   isCodeViewerOpen: boolean;
   sourceCodeDocuments: SourceCodeEditorDocument[];
   autoApplyEnabled?: boolean;
+  loadingSourceCodeEditorLabel: string;
   onCloseCodeViewer: () => void;
   theme: Theme;
   lang: Language;
@@ -63,6 +52,7 @@ export function AppLayoutOverlays({
   isCodeViewerOpen,
   sourceCodeDocuments,
   autoApplyEnabled = true,
+  loadingSourceCodeEditorLabel,
   onCloseCodeViewer,
   theme,
   lang,
@@ -87,13 +77,15 @@ export function AppLayoutOverlays({
     <>
       {isCodeViewerOpen && (
         <SourceCodeEditorErrorBoundary lang={lang} onClose={onCloseCodeViewer}>
-          <SourceCodeEditor
-            documents={sourceCodeDocuments}
-            onClose={onCloseCodeViewer}
-            theme={theme}
-            lang={lang}
-            autoApplyEnabled={autoApplyEnabled}
-          />
+          <Suspense fallback={<LazyOverlayFallback label={loadingSourceCodeEditorLabel} />}>
+            <SourceCodeEditor
+              documents={sourceCodeDocuments}
+              onClose={onCloseCodeViewer}
+              theme={theme}
+              lang={lang}
+              autoApplyEnabled={autoApplyEnabled}
+            />
+          </Suspense>
         </SourceCodeEditorErrorBoundary>
       )}
 

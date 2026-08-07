@@ -7,7 +7,12 @@ import {
   PanelSegmentedControl,
   PanelSelect,
 } from '@/shared/components/ui';
-import { DraggableWindow } from '@/shared/components/DraggableWindow';
+import {
+  DraggableWindow,
+  FLOATING_WINDOW_HEADER_HEIGHT_CLASS,
+  FLOATING_WINDOW_RADIUS_CLASS,
+  FLOATING_WINDOW_TITLE_CLASS,
+} from '@/shared/components/DraggableWindow';
 import { useDraggableWindow } from '@/shared/hooks/useDraggableWindow';
 import {
   resolveSnapshotAspectRatio,
@@ -378,13 +383,13 @@ export function SnapshotDialog({
           <div className="rounded-lg border border-border-black bg-panel-bg p-1 text-system-blue shadow-sm">
             <Camera className="h-3 w-3" />
           </div>
-          <div className="text-[11px] font-semibold text-text-primary">{t.snapshotCapture}</div>
+          <div className={FLOATING_WINDOW_TITLE_CLASS}>{t.snapshotCapture}</div>
         </div>
       }
-      className="overflow-hidden rounded-2xl border border-border-black bg-panel-bg text-text-primary shadow-xl pointer-events-auto"
+      className={`overflow-hidden ${FLOATING_WINDOW_RADIUS_CLASS} border border-border-black bg-panel-bg text-text-primary shadow-xl pointer-events-auto`}
       zIndex={snapshotWindowLayer.zIndex}
       onActivate={snapshotWindowLayer.onActivate}
-      headerClassName="flex h-10 items-center justify-between border-b border-border-black bg-element-bg px-3"
+      headerClassName={`flex ${FLOATING_WINDOW_HEADER_HEIGHT_CLASS} shrink-0 items-center justify-between border-b border-border-black bg-element-bg px-3`}
       interactionClassName="select-none"
       controlButtonClassName="rounded-md p-1 text-text-tertiary transition-colors hover:bg-panel-bg hover:text-text-primary"
       closeButtonClassName={`rounded-md p-1 ${CLOSE_BUTTON_DANGER_TERTIARY_CLASS}`}

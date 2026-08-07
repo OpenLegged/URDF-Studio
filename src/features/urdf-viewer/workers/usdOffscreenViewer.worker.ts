@@ -4,6 +4,10 @@ import * as THREE from 'three';
 import { getCollisionGeometryEntries } from '@/core/robot';
 import type { RobotFile } from '@/types';
 import { normalizeLoadingProgress } from '@/shared/components/3d/loadingHudState';
+import {
+  createSemanticOutlineComposer,
+  type SemanticOutlineComposer,
+} from '@/shared/components/3d/scene/semanticOutlineComposer';
 import { disposeObject3D, disposeWebGLRenderer } from '@/shared/utils/three/dispose';
 import {
   WORKSPACE_DEFAULT_CAMERA_FOV,
@@ -31,6 +35,7 @@ import { toVirtualUsdPath } from '../utils/usdPreloadSources.ts';
 import { resolveUsdGroundAlignmentSettleDelaysMs } from '../utils/usdGroundAlignmentDelays.ts';
 import { alignUsdSceneRootToGround } from '../utils/usdGroundAlignment.ts';
 import { shouldSettleUsdGroundAlignmentAfterInitialLoad } from '../utils/usdGroundAlignmentPolicy.ts';
+import { shouldAutoFrameUsdGenericSceneSnapshot } from '../utils/usdGenericScenePolicy.ts';
 import {
   disposeUsdDriver,
   ensureUsdWasmRuntime,
@@ -190,6 +195,7 @@ let navigationSceneBounds: THREE.Box3 | null | undefined = undefined;
 let offscreenLightRig: UsdOffscreenLightRig | null = null;
 let offscreenStudioEnvironment: UsdOffscreenStudioEnvironmentHandle | null = null;
 let offscreenGroundShadowPlane: THREE.Mesh | null = null;
+let offscreenSemanticOutline: SemanticOutlineComposer | null = null;
 let currentDriver: unknown = null;
 let activePointer: ActivePointerState | null = null;
 let lastInteractionAt = 0;
@@ -631,6 +637,16 @@ function renderScene(): void {
     syncUsdOffscreenLightRigWithCamera(offscreenLightRig, camera);
   }
 
+  if (offscreenSemanticOutline && interactionState.highlightedMeshes.length > 0) {
+    offscreenSemanticOutline.setCamera(camera);
+    offscreenSemanticOutline.setIntent(
+      interactionState.hoveredSelection ? 'hover' : 'selection',
+    );
+    offscreenSemanticOutline.setTargets(interactionState.highlightedMeshes);
+    offscreenSemanticOutline.render();
+    return;
+  }
+
   renderer.render(scene, camera);
 }
 
@@ -1041,13 +1057,15 @@ function applyInteractionHighlight(
       restoreHighlightedMeshSnapshot(mesh, snapshot);
     }
 
-    const sourceMaterials = Array.isArray(snapshot.material)
-      ? snapshot.material
-      : [snapshot.material];
-    const overrideMaterials = sourceMaterials.map((sourceMaterial) =>
-      createHighlightOverrideMaterial(sourceMaterial, targetRole),
-    );
-    mesh.material = Array.isArray(snapshot.material) ? overrideMaterials : overrideMaterials[0];
+    if (mesh.userData?.isMjcfTendon === true) {
+      const sourceMaterials = Array.isArray(snapshot.material)
+        ? snapshot.material
+        : [snapshot.material];
+      const overrideMaterials = sourceMaterials.map((sourceMaterial) =>
+        createHighlightOverrideMaterial(sourceMaterial, targetRole),
+      );
+      mesh.material = Array.isArray(snapshot.material) ? overrideMaterials : overrideMaterials[0];
+    }
     mesh.renderOrder = targetRole === 'collision' ? 1000 : 1001;
     snapshot.activeRole = targetRole;
   }
@@ -1353,6 +1371,14 @@ function initializeSceneGraph(canvas: OffscreenCanvas, theme: 'light' | 'dark'):
   };
 
   renderer = createWorkerRenderer(canvas, theme);
+  offscreenSemanticOutline = createSemanticOutlineComposer({
+    renderer,
+    scene,
+    camera,
+    width: runtimeWindow.innerWidth,
+    height: runtimeWindow.innerHeight,
+    pixelRatio: getBasePixelRatio(),
+  });
   offscreenLightRig = createUsdOffscreenLightRig(scene, theme);
   offscreenStudioEnvironment = createUsdOffscreenStudioEnvironment(scene, renderer, theme);
   offscreenGroundShadowPlane = createUsdOffscreenGroundShadowPlane(theme);
@@ -1375,6 +1401,11 @@ function resizeViewer(width: number, height: number, devicePixelRatio: number): 
 
   renderer.setPixelRatio(getBasePixelRatio());
   renderer.setSize(runtimeWindow.innerWidth, runtimeWindow.innerHeight, false);
+  offscreenSemanticOutline?.setSize(
+    runtimeWindow.innerWidth,
+    runtimeWindow.innerHeight,
+    getBasePixelRatio(),
+  );
   camera.aspect = runtimeWindow.innerWidth / runtimeWindow.innerHeight;
   camera.updateProjectionMatrix();
   renderScene();
@@ -2349,7 +2380,13 @@ async function loadUsdStageIntoWorker(message: UsdOffscreenViewerInitRequest): P
         ...(getRuntimeWarmupDebugDetail(runtimeWindow.renderInterface) ?? {}),
       }),
     });
-    if (!robotSceneSnapshotOnlyLoad && useCollisionVisualProxyMode) {
+    const shouldAutoFrameGenericScene =
+      robotSceneSnapshotOnlyLoad
+      && shouldAutoFrameUsdGenericSceneSnapshot(workerResolvedRobotData.fullSceneSnapshot);
+    if (
+      (!robotSceneSnapshotOnlyLoad && useCollisionVisualProxyMode)
+      || shouldAutoFrameGenericScene
+    ) {
       applyRuntimeVisibility();
       applyGroundAlignment();
       scheduleWorkerAutoFrameSettlePasses(loadGeneration);
@@ -2716,6 +2753,9 @@ function disposeWorkerStage(): void {
     offscreenGroundShadowPlane?.material?.dispose();
   }
   offscreenGroundShadowPlane = null;
+
+  offscreenSemanticOutline?.dispose();
+  offscreenSemanticOutline = null;
 
   disposeWebGLRenderer(renderer, { forceContextLoss: true });
   renderer = null;

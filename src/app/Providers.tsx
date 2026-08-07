@@ -46,9 +46,7 @@ export function Providers({ children }: ProvidersProps) {
   );
 
   useLayoutEffect(() => {
-    applyDocumentTheme(effectiveTheme, {
-      animate: document.documentElement.dataset.theme !== undefined,
-    });
+    applyDocumentTheme(effectiveTheme);
   }, [effectiveTheme]);
 
   // Update document title based on language

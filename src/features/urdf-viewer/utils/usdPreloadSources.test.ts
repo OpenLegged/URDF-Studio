@@ -231,7 +231,7 @@ test('collectUsdStageOpenRelevantVirtualPaths still keeps critical sidecars for 
   );
 });
 
-test('buildUsdBundlePreloadEntries only preloads the selected USD root and its referenced layers', () => {
+test('buildUsdBundlePreloadEntries preloads referenced layers and supported bundle textures', () => {
   const preloadEntries = buildUsdBundlePreloadEntries(
     {
       name: 'Go2/usd/go2.usd',
@@ -280,6 +280,10 @@ test('buildUsdBundlePreloadEntries only preloads the selected USD root and its r
 
   assert.deepEqual(
     preloadEntries.map((entry) => entry.path),
-    ['/Go2/usd/configuration/go2_description_base.usd', '/Go2/usd/go2.usd'],
+    [
+      '/Go2/textures/body.png',
+      '/Go2/usd/configuration/go2_description_base.usd',
+      '/Go2/usd/go2.usd',
+    ],
   );
 });

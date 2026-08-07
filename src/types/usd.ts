@@ -158,6 +158,9 @@ export interface UsdSceneSnapshot {
   stageSourcePath?: string | null;
   stage?: {
     defaultPrimPath?: string | null;
+    upAxis?: string | null;
+    metersPerUnit?: number | null;
+    sourceMetersPerUnit?: number | null;
   } | null;
   robotTree?: {
     linkParentPairs?: ArrayLike<[string, string | null]>;

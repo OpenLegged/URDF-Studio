@@ -9,7 +9,12 @@ import {
   Sparkles,
   Wand2,
 } from 'lucide-react';
-import { DraggableWindow } from '@/shared/components/DraggableWindow';
+import {
+  DraggableWindow,
+  FLOATING_WINDOW_HEADER_HEIGHT_CLASS,
+  FLOATING_WINDOW_RADIUS_CLASS,
+  FLOATING_WINDOW_TITLE_CLASS,
+} from '@/shared/components/DraggableWindow';
 import {
   Button,
   CLOSE_BUTTON_DANGER_TERTIARY_CLASS,
@@ -1102,14 +1107,14 @@ export const CollisionOptimizationDialog: React.FC<CollisionOptimizationDialogPr
             <Sparkles className="h-3 w-3" />
           </div>
           <div className="min-w-0">
-            <div className="text-[13px] font-semibold text-text-primary">{copy.title}</div>
+            <div className={FLOATING_WINDOW_TITLE_CLASS}>{copy.title}</div>
           </div>
         </div>
       }
-      className="flex flex-col overflow-hidden rounded-lg border border-border-black bg-panel-bg text-text-primary shadow-lg"
+      className={`flex flex-col overflow-hidden ${FLOATING_WINDOW_RADIUS_CLASS} border border-border-black bg-panel-bg text-text-primary shadow-lg`}
       zIndex={collisionOptimizationWindowLayer.zIndex}
       onActivate={collisionOptimizationWindowLayer.onActivate}
-      headerClassName="flex h-10 shrink-0 items-center justify-between border-b border-border-black bg-element-bg px-2"
+      headerClassName={`flex ${FLOATING_WINDOW_HEADER_HEIGHT_CLASS} shrink-0 items-center justify-between border-b border-border-black bg-element-bg px-2`}
       interactionClassName="select-none"
       showMinimizeButton={false}
       showMaximizeButton={false}

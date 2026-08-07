@@ -5,7 +5,7 @@ import { JSDOM } from 'jsdom';
 
 import { applyDocumentTheme, resolveTheme } from './theme.ts';
 
-function installDom(options: { systemDark?: boolean; reducedMotion?: boolean } = {}) {
+function installDom(options: { systemDark?: boolean } = {}) {
   const originalWindow = globalThis.window;
   const originalDocument = globalThis.document;
   const dom = new JSDOM('<!doctype html><html><body></body></html>');
@@ -22,8 +22,7 @@ function installDom(options: { systemDark?: boolean; reducedMotion?: boolean } =
     configurable: true,
     value: (query: string) => ({
       matches:
-        (query === '(prefers-color-scheme: dark)' && options.systemDark === true) ||
-        (query === '(prefers-reduced-motion: reduce)' && options.reducedMotion === true),
+        query === '(prefers-color-scheme: dark)' && options.systemDark === true,
       media: query,
       onchange: null,
       addEventListener: () => {},
@@ -78,28 +77,19 @@ test('resolveTheme uses current system preference for system theme', () => {
   }
 });
 
-test('applyDocumentTheme marks real theme changes for synchronized transitions', () => {
+test('applyDocumentTheme changes themes without forcing document layout or global transitions', () => {
   const dom = installDom();
 
   try {
     dom.root.classList.add('dark');
+    Object.defineProperty(dom.root, 'offsetWidth', {
+      configurable: true,
+      get() {
+        throw new Error('theme changes must not force synchronous document layout');
+      },
+    });
 
-    applyDocumentTheme('light', { animate: true });
-
-    assert.equal(dom.root.classList.contains('dark'), false);
-    assert.equal(dom.root.classList.contains('theme-switching'), true);
-  } finally {
-    dom.restore();
-  }
-});
-
-test('applyDocumentTheme skips transition marker when reduced motion is enabled', () => {
-  const dom = installDom({ reducedMotion: true });
-
-  try {
-    dom.root.classList.add('dark');
-
-    applyDocumentTheme('light', { animate: true });
+    applyDocumentTheme('light');
 
     assert.equal(dom.root.classList.contains('dark'), false);
     assert.equal(dom.root.classList.contains('theme-switching'), false);

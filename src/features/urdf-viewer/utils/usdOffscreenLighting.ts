@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
+import { createZUpRoomEnvironment } from '@/shared/components/3d/scene/zUpRoomEnvironment';
 import {
   GROUND_SHADOW_RENDER_ORDER,
   GROUND_SHADOW_STYLE,
@@ -132,11 +132,11 @@ export function createUsdOffscreenLightRig(
     cameraFollowStyle.hemisphereIntensity,
   );
   hemisphereLight.name = 'OffscreenViewerHemisphereLight';
-  hemisphereLight.position.set(0, 1, 0);
+  hemisphereLight.position.set(0, 0, 1);
 
   const mainLight = createDirectionalLight(
     'OffscreenViewerMainLight',
-    '#ffffff',
+    LIGHTING_CONFIG.mainLightColor,
     cameraFollowStyle.mainLightIntensity,
     LIGHTING_CONFIG.mainLightPosition,
   );
@@ -149,60 +149,60 @@ export function createUsdOffscreenLightRig(
   mainLight.shadow.camera.top = 10;
   mainLight.shadow.camera.bottom = -10;
   mainLight.shadow.bias = -0.0001;
-  mainLight.shadow.normalBias = 0.02;
+  mainLight.shadow.normalBias = 0.005;
 
   const fillLightLeft = createDirectionalLight(
     'OffscreenViewerFillLightLeft',
-    '#ffffff',
+    LIGHTING_CONFIG.fillLightColor,
     LIGHTING_CONFIG.leftFillIntensity * cameraFollowStyle.staticDirectionalScale,
     LIGHTING_CONFIG.leftFillPosition,
   );
 
   const fillLightLeftSide = createDirectionalLight(
     'OffscreenViewerFillLightLeftSide',
-    '#ffffff',
+    LIGHTING_CONFIG.fillLightColor,
     LIGHTING_CONFIG.leftSideIntensity * cameraFollowStyle.staticDirectionalScale,
     LIGHTING_CONFIG.leftSidePosition,
   );
 
   const fillLightRight = createDirectionalLight(
     'OffscreenViewerFillLightRight',
-    '#ffffff',
+    LIGHTING_CONFIG.fillLightColor,
     LIGHTING_CONFIG.rightFillIntensity * cameraFollowStyle.staticDirectionalScale,
     LIGHTING_CONFIG.rightFillPosition,
   );
 
   const rimLight = createDirectionalLight(
     'OffscreenViewerRimLight',
-    '#ffffff',
+    LIGHTING_CONFIG.rimLightColor,
     LIGHTING_CONFIG.rimLightIntensity * cameraFollowStyle.rimDirectionalScale,
     LIGHTING_CONFIG.rimLightPosition,
   );
 
   const cameraKeyLight = createDirectionalLight(
     'OffscreenViewerCameraKeyLight',
-    '#ffffff',
+    LIGHTING_CONFIG.mainLightColor,
     cameraFollowStyle.cameraKeyIntensity,
     [0, 0, 0],
   );
 
   const cameraSoftFrontLight = createDirectionalLight(
     'OffscreenViewerCameraSoftFrontLight',
-    '#ffffff',
+    LIGHTING_CONFIG.fillLightColor,
     cameraFollowStyle.cameraSoftFrontIntensity,
     [0, 0, 0],
   );
 
   const cameraFillRightLight = createDirectionalLight(
     'OffscreenViewerCameraFillLightRight',
-    '#ffffff',
+    LIGHTING_CONFIG.fillLightColor,
     cameraFollowStyle.cameraFillIntensity,
     [0, 0, 0],
   );
 
   const cameraFillLeftLight = createDirectionalLight(
     'OffscreenViewerCameraFillLightLeft',
-    '#ffffff',
+    LIGHTING_CONFIG.fillLightColor,
     cameraFollowStyle.cameraFillIntensity,
     [0, 0, 0],
   );
@@ -313,7 +313,7 @@ export function createUsdOffscreenStudioEnvironment(
   const previousEnvironment = scene.environment;
   const previousEnvironmentIntensity = sceneWithEnvironmentIntensity.environmentIntensity;
   const pmremGenerator = new THREE.PMREMGenerator(renderer);
-  const envScene = new RoomEnvironment();
+  const envScene = createZUpRoomEnvironment();
   const renderTarget = pmremGenerator.fromScene(envScene, 0.04);
 
   scene.environment = renderTarget.texture;

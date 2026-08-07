@@ -17,6 +17,21 @@ const createTriangleGeometry = () => {
   return geometry;
 };
 
+const assertColorTupleClose = (
+  actual: readonly number[] | undefined,
+  expected: readonly number[],
+  epsilon = 1e-9,
+) => {
+  assert.ok(actual, 'expected a color tuple');
+  assert.equal(actual.length, expected.length);
+  actual.forEach((value, index) => {
+    assert.ok(
+      Math.abs(value - expected[index]!) <= epsilon,
+      `expected color channel ${index} to be ${expected[index]}, received ${value}`,
+    );
+  });
+};
+
 test('applyUsdAuthoredMaterialPalette matches authored materials by normalized source material name', () => {
   const metalMesh = new THREE.Mesh(createTriangleGeometry(), createUsdBaseMaterial('#ffffff'));
   metalMesh.name = 'metal';
@@ -42,8 +57,14 @@ test('applyUsdAuthoredMaterialPalette matches authored materials by normalized s
     },
   ]);
 
-  assert.deepEqual(metalMesh.userData.usdAuthoredColor, [0.85, 0.85, 0.85]);
-  assert.deepEqual(rubberMesh.userData.usdAuthoredColor, [0.6500053, 0.68, 0.6500053]);
+  assertColorTupleClose(
+    metalMesh.userData.usdAuthoredColor,
+    [0.6920710568590398, 0.6920710568590398, 0.6920710568590398],
+  );
+  assertColorTupleClose(
+    rubberMesh.userData.usdAuthoredColor,
+    [0.3800631936621355, 0.4200332886741209, 0.3800631936621355],
+  );
   assert.deepEqual(metalMesh.userData.usdMaterial?.colorRgba, [0.85, 0.85, 0.85, 1]);
   assert.deepEqual(rubberMesh.userData.usdMaterial?.colorRgba, [0.6500053, 0.68, 0.6500053, 1]);
 });

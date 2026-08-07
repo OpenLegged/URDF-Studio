@@ -175,6 +175,7 @@ export interface PropertyEditorProps {
   collapsed?: boolean;
   onToggle?: () => void;
   readOnlyMessage?: string;
+  readOnlyBadge?: string;
   jointTypeLocked?: boolean;
   sourceFilePath?: string;
 }
@@ -465,6 +466,7 @@ export const PropertyEditor: React.FC<PropertyEditorProps> = ({
   collapsed,
   onToggle,
   readOnlyMessage,
+  readOnlyBadge,
   jointTypeLocked = false,
   onAddCollisionBody,
   sourceFilePath,
@@ -545,9 +547,9 @@ export const PropertyEditor: React.FC<PropertyEditorProps> = ({
       }[target.kind]
     : null;
   const { sidebarRef, width, isDragging, handleResizeMouseDown } = useResizablePanel();
-  const isReadOnlyPreview = Boolean(readOnlyMessage);
+  const isReadOnly = Boolean(readOnlyMessage);
   const canRenderEditor = Boolean(
-    target && !isReadOnlyPreview,
+    target && !isReadOnly,
   );
   const effectiveSourceFilePath = componentTarget?.component.sourceFile
     ?? sourceFilePath
@@ -589,9 +591,9 @@ export const PropertyEditor: React.FC<PropertyEditorProps> = ({
         <div style={{ width: `${width}px` }} className="h-full flex flex-col bg-element-bg dark:bg-panel-bg">
           <div className="w-full flex h-8 items-center justify-between px-2 border-b border-border-black bg-panel-bg shrink-0 relative z-30">
             <span className={PROPERTY_EDITOR_PANEL_EYEBROW_CLASS}>{t.properties}</span>
-            {isReadOnlyPreview ? (
+            {isReadOnly ? (
               <span className="ui-static-copy-guard ml-1.5 rounded-md border border-system-blue/20 bg-system-blue/10 px-1.5 py-px text-[9px] font-semibold tracking-[0.02em] text-system-blue">
-                {t.preview}
+                {readOnlyBadge ?? t.preview}
               </span>
             ) : null}
             {target && headerName ? (

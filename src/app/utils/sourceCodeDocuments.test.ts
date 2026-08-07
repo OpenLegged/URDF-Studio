@@ -126,6 +126,35 @@ test('canonical source contract routes a matching single-component draft explici
   assert.equal(componentTargetId(result.documents[0].changeTarget), 'arm-instance');
 });
 
+test('editor locks make owned source drafts read-only so raw text cannot bypass them', () => {
+  const workspace = createSingleComponentWorkspace(robot('arm'), {
+    componentId: 'arm-instance',
+    sourceFile: 'library/arm.urdf',
+  });
+  workspace.components['arm-instance'].robot.links.base!.editorLocked = true;
+  const draft = createComponentSourceDraft({
+    componentId: 'arm-instance',
+    format: 'urdf',
+    content: '<robot name="arm-draft" />',
+    robot: workspace.components['arm-instance'].robot,
+  });
+
+  const result = buildCanonicalWorkspaceSourceDocuments({
+    workspace,
+    activeComponentId: 'arm-instance',
+    componentSourceDrafts: { 'arm-instance': draft },
+    availableFiles: [{
+      name: 'library/arm.urdf',
+      format: 'urdf',
+      content: draft.content,
+    }],
+    allFileContents: {},
+  });
+
+  assert.equal(result.documents[0].readOnly, true);
+  assert.equal(result.documents[0].changeTarget, undefined);
+});
+
 test('disconnected component instances each expose an isolated editable tab', () => {
   const workspace = sharedSourceWorkspace();
   const drafts = {

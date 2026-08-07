@@ -309,7 +309,7 @@ test('ViewerOptionsPanel uses a slightly smaller corner radius', async () => {
   dom.window.close();
 });
 
-test('ViewerOptionsPanel uses a shorter header bar', async () => {
+test('ViewerOptionsPanel keeps its compact header bar', async () => {
   const { dom, container, root } = createComponentRoot();
 
   await renderPanel(root, false);
@@ -318,8 +318,13 @@ test('ViewerOptionsPanel uses a shorter header bar', async () => {
     '.urdf-options-panel > div > div:first-child',
   );
   assert.ok(header, 'viewer options panel header should render');
-  assert.match(header.className, /!py-1/);
+  assert.match(header.className, /!h-auto/);
   assert.match(header.className, /!px-1\.5/);
+  assert.match(header.className, /!py-1/);
+  const title = header.querySelector('span');
+  assert.ok(title, 'viewer options panel title should render');
+  assert.match(title.className, /!text-\[11px\]/);
+  assert.match(title.className, /!text-text-secondary/);
 
   await act(async () => {
     root.unmount();

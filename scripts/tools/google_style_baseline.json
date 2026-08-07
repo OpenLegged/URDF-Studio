@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-07-16",
+  "generatedAt": "2026-07-17",
   "rules": {
     "file-name-snake-case": {
       "max": 1534,
@@ -7,8 +7,8 @@
       "note": "DEAD RULE — count equals every PascalCase component + camelCase module in src/** (the project's real convention), so it grows with the codebase. Retired in Phase 5 in favor of @typescript-eslint/naming-convention; the audit runner reports it as informational only. NEVER rename a file to satisfy it. Count synchronized to the 2026-07-16 post-merge workspace snapshot for accurate reporting."
     },
     "file-too-long": {
-      "max": 53,
-      "note": "src/** files over 800 code lines (blank/comment lines skipped). Exact count synchronized on 2026-07-16 (re-synced after merging feature/botworld, which carries pre-existing oversized parser/solver files); --check rejects both increases and stale headroom. Avoid splitting cohesive parsers/solvers only to satisfy the counter."
+      "max": 52,
+      "note": "src/** files over 800 code lines (blank/comment lines skipped). Exact count synchronized on 2026-07-17 after upstream integration; --check rejects both increases and stale headroom. Avoid splitting cohesive parsers/solvers only to satisfy the counter."
     },
     "function-too-long": {
       "max": 113,
@@ -62,8 +62,8 @@
       "max": 0
     },
     "css-important": {
-      "max": 34,
-      "note": "Historical Tailwind utility font-size overrides, theme-transition guards, and scrollbar styling."
+      "max": 32,
+      "note": "Historical Tailwind utility font-size overrides and scrollbar styling."
     },
     "css-declaration-order": {
       "max": 0,

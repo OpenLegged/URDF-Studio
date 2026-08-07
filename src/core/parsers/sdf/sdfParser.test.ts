@@ -20,7 +20,7 @@ test('parseSDF converts gazebo jointed models into RobotState data', () => {
   assert.ok(robot?.links.link_base);
   assert.ok(robot?.links.link_over_damping);
   assert.ok(robot?.joints.joint_over_damping);
-  assert.equal(robot?.joints.joint_over_damping.type, JointType.REVOLUTE);
+  assert.equal(robot?.joints.joint_over_damping.type, JointType.CONTINUOUS);
   assert.deepEqual(robot?.joints.joint_over_damping.axis, { x: 1, y: 0, z: 0 });
   assert.equal(robot?.joints.joint_over_damping.dynamics.damping, 5);
   assert.equal(robot?.links.link_over_damping.visual.type, GeometryType.MESH);

@@ -925,7 +925,8 @@ test('syncLoadedRobotScene re-normalizes already-standard MJCF visual materials 
   driftedMaterial.metalness = 1;
   driftedMaterial.emissive = new THREE.Color('#ffaa33');
   driftedMaterial.emissiveIntensity = 1;
-  driftedMaterial.roughnessMap = new THREE.Texture();
+  const roughnessMap = new THREE.Texture();
+  driftedMaterial.roughnessMap = roughnessMap;
 
   const mjcfMesh = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), driftedMaterial);
 
@@ -958,7 +959,7 @@ test('syncLoadedRobotScene re-normalizes already-standard MJCF visual materials 
   assert.equal(mjcfMesh.material.metalness, expectedMaterial.metalness);
   assert.equal(mjcfMesh.material.envMapIntensity, expectedMaterial.envMapIntensity);
   assert.equal(mjcfMesh.material.emissive.getHex(), 0x000000);
-  assert.equal(mjcfMesh.material.roughnessMap, null);
+  assert.equal(mjcfMesh.material.roughnessMap, roughnessMap);
   assert.equal(mjcfMesh.material.map, texture);
   assert.equal(mjcfMesh.material.toneMapped, false);
 });

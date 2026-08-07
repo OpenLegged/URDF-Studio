@@ -9,6 +9,8 @@ interface HeaderMenuItemProps {
   disabled?: boolean;
   shortcut?: string;
   onMouseEnter?: () => void;
+  onPointerEnter?: () => void;
+  onPointerDown?: () => void;
   onFocus?: () => void;
   onTouchStart?: () => void;
   iconClassName?: string;
@@ -22,6 +24,8 @@ export function HeaderMenuItem({
   disabled = false,
   shortcut,
   onMouseEnter,
+  onPointerEnter,
+  onPointerDown,
   onFocus,
   onTouchStart,
   iconClassName = 'w-4 h-4 text-text-tertiary',
@@ -33,6 +37,8 @@ export function HeaderMenuItem({
       onClick={onClick}
       disabled={disabled}
       onMouseEnter={onMouseEnter}
+      onPointerEnter={onPointerEnter}
+      onPointerDown={onPointerDown}
       onFocus={onFocus}
       onTouchStart={onTouchStart}
       className={`flex w-full items-center px-3 py-2 text-left text-xs whitespace-nowrap text-text-primary transition-colors hover:bg-element-hover focus:outline-none focus-visible:bg-element-hover focus-visible:ring-2 focus-visible:ring-system-blue/30 ${

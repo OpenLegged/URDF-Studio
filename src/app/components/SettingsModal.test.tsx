@@ -136,6 +136,18 @@ test('SettingsModal removes drag listeners when unmounted mid-drag', async () =>
 
     const dragHandle = container.querySelector('[data-testid="settings-drag-handle"]');
     assert.ok(dragHandle, 'settings modal should render a draggable header');
+    assert.match(dragHandle.className, /\bh-10\b/);
+    const settingsFrame = dragHandle.parentElement?.parentElement;
+    assert.ok(settingsFrame, 'settings modal should render a window frame');
+    assert.match(settingsFrame.className, /\brounded-lg\b/);
+    const settingsTitle = dragHandle.querySelector('h2');
+    assert.ok(settingsTitle, 'settings modal should render its title');
+    assert.equal(settingsTitle.className.includes('text-ui-control'), true);
+    assert.equal(
+      dragHandle.querySelector('h2 + p'),
+      null,
+      'settings modal header should omit the active page subtitle',
+    );
 
     await act(async () => {
       dragHandle.dispatchEvent(
@@ -450,6 +462,54 @@ test('SettingsModal toggles the MJCF world visibility preference from the view p
 
     assert.equal(useUIStore.getState().viewOptions.showMjcfWorldLink, true);
     assert.equal(mjcfWorldSwitch.getAttribute('aria-checked'), 'true');
+  } finally {
+    await act(async () => {
+      root.unmount();
+    });
+    useUIStore.setState(initialState);
+    dom.window.close();
+  }
+});
+
+test('SettingsModal updates the persisted 3D render quality from the view page', async () => {
+  const { dom, container, root } = createComponentRoot();
+  const initialState = useUIStore.getState();
+
+  try {
+    useUIStore.setState({
+      isSettingsOpen: true,
+      settingsPos: { x: 48, y: 64 },
+      lang: 'en',
+      viewOptions: {
+        ...initialState.viewOptions,
+        renderQuality: 'high',
+      },
+    });
+
+    await act(async () => {
+      root.render(React.createElement(SettingsModal));
+    });
+
+    const viewButton = container.querySelector(
+      '[data-settings-page="view"]',
+    ) as HTMLButtonElement | null;
+    assert.ok(viewButton);
+
+    await act(async () => {
+      viewButton.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
+    });
+
+    const ultraQualityButton = container.querySelector(
+      '[data-testid="settings-render-quality"] [aria-label="Ultra"]',
+    ) as HTMLButtonElement | null;
+    assert.ok(ultraQualityButton, 'view settings should expose the ultra render-quality tier');
+
+    await act(async () => {
+      ultraQualityButton.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
+    });
+
+    assert.equal(useUIStore.getState().viewOptions.renderQuality, 'ultra');
+    assert.equal(ultraQualityButton.getAttribute('aria-checked'), 'true');
   } finally {
     await act(async () => {
       root.unmount();

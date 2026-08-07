@@ -12,7 +12,12 @@ import {
 } from 'lucide-react';
 import type { Language } from '@/shared/i18n';
 import { translations } from '@/shared/i18n';
-import { DraggableWindow } from '@/shared/components/DraggableWindow';
+import {
+  DraggableWindow,
+  FLOATING_WINDOW_HEADER_HEIGHT_CLASS,
+  FLOATING_WINDOW_RADIUS_CLASS,
+  FLOATING_WINDOW_TITLE_CLASS,
+} from '@/shared/components/DraggableWindow';
 import { useDraggableWindow } from '@/shared/hooks/useDraggableWindow';
 import { Button } from '@/shared/components/ui/Button';
 import { CLOSE_BUTTON_DANGER_TERTIARY_CLASS } from '@/shared/components/ui/closeButtonStyles';
@@ -528,7 +533,7 @@ export function AIConversationModal({
             <div className="rounded-lg border border-border-black bg-panel-bg p-1.5 text-system-blue dark:bg-element-bg dark:text-system-blue">
               <MessageCircle className="w-4 h-4" />
             </div>
-            <h1 className="text-sm font-semibold text-text-primary">{headerTitle}</h1>
+            <h1 className={FLOATING_WINDOW_TITLE_CLASS}>{headerTitle}</h1>
           </div>
         }
         headerActions={
@@ -557,10 +562,10 @@ export function AIConversationModal({
             </button>
           </div>
         }
-        className="flex flex-col overflow-hidden rounded-2xl border border-border-black bg-panel-bg text-text-primary shadow-xl dark:bg-panel-bg"
+        className={`flex flex-col overflow-hidden ${FLOATING_WINDOW_RADIUS_CLASS} border border-border-black bg-panel-bg text-text-primary shadow-xl dark:bg-panel-bg`}
         zIndex={conversationWindowLayer.zIndex}
         onActivate={conversationWindowLayer.onActivate}
-        headerClassName={`h-12 border-b border-border-black flex items-center justify-between bg-element-bg shrink-0 ${
+        headerClassName={`${FLOATING_WINDOW_HEADER_HEIGHT_CLASS} border-b border-border-black flex items-center justify-between bg-element-bg shrink-0 ${
           isCompactLayout ? 'px-3' : 'px-4'
         }`}
         interactionClassName="select-none"
@@ -581,7 +586,7 @@ export function AIConversationModal({
           <div className="flex flex-1 flex-col overflow-hidden">
             <div
               data-ai-conversation-scroll-viewport
-              className={`min-h-0 flex-1 overflow-y-auto bg-white dark:bg-panel-bg custom-scrollbar ${
+              className={`min-h-0 flex-1 overflow-y-auto bg-panel-bg custom-scrollbar ${
                 isCompactLayout ? 'px-3 pt-3' : 'px-6 pt-6'
               } ${messages.length === 0 ? 'pb-2' : isCompactLayout ? 'pb-3' : 'pb-6'}
               }`}

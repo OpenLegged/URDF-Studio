@@ -349,10 +349,9 @@ export function buildPuppeteerLaunchArgs() {
 export function isIgnorableBrowserConsoleWarning(text) {
   const message = String(text || '');
   return (
-    (message.includes('GL Driver Message') &&
-      message.includes('Performance') &&
-      message.includes('ReadPixels')) ||
-    message.includes('RGBELoader has been deprecated')
+    message.includes('GL Driver Message') &&
+    message.includes('Performance') &&
+    message.includes('ReadPixels')
   );
 }
 
@@ -1030,14 +1029,16 @@ export function summarizePostReadyHistoryDelta(beforeHistory, afterHistory, file
   };
 }
 
-function deriveMetadataSource(entries, fileNames) {
+export function deriveMetadataSource(entries, fileNames) {
   const workerResolveEntry = findLatestEntry(entries, fileNames, 'commit-worker-robot-data');
+  const workerMetadataEntry = findLatestEntry(entries, fileNames, 'resolve-worker-robot-data');
   const runtimeResolveEntry = findLatestEntry(entries, fileNames, 'resolve-runtime-robot-data');
   const readyEntry = findLatestEntry(entries, fileNames, 'ready');
   const prepareEntry = findLatestEntry(entries, fileNames, 'prepare-stage-open-data');
 
   const metadataSource =
     runtimeResolveEntry?.detail?.metadataSource ??
+    workerMetadataEntry?.detail?.metadataSource ??
     workerResolveEntry?.detail?.metadataSource ??
     readyEntry?.detail?.metadataSource ??
     null;
@@ -1055,7 +1056,9 @@ function deriveMetadataSource(entries, fileNames) {
       (metadataSource.startsWith('usd-stage') || metadataSource.startsWith('worker')),
     runtimeResolveEntry,
     stagePreparationMode,
-    stageReady: readyEntry?.status === 'resolved',
+    stageReady:
+      readyEntry?.status === 'resolved' ||
+      (workerMetadataEntry?.status === 'resolved' && workerResolveEntry?.status === 'resolved'),
     workerResolveEntry,
   };
 }

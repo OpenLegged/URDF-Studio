@@ -2,7 +2,10 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import type * as THREE from 'three';
 
-import { requestShadowMapRefresh } from './shadowMapRefresh.ts';
+import {
+  requestShadowMapRefresh,
+  runWithShadowMapUpdatesPaused,
+} from './shadowMapRefresh.ts';
 
 function createRendererShadowMapStub(enabled: boolean, needsUpdate = false) {
   return {
@@ -26,4 +29,35 @@ test('requestShadowMapRefresh leaves disabled or missing shadow maps alone', () 
   assert.equal(requestShadowMapRefresh(renderer), false);
   assert.equal(renderer.shadowMap.needsUpdate, false);
   assert.equal(requestShadowMapRefresh(null), false);
+});
+
+test('runWithShadowMapUpdatesPaused restores shadow update scheduling', () => {
+  const renderer = createRendererShadowMapStub(true, true);
+  renderer.shadowMap.autoUpdate = true;
+
+  const result = runWithShadowMapUpdatesPaused(renderer, () => {
+    assert.equal(renderer.shadowMap.autoUpdate, false);
+    assert.equal(renderer.shadowMap.needsUpdate, false);
+    return 'rendered';
+  });
+
+  assert.equal(result, 'rendered');
+  assert.equal(renderer.shadowMap.autoUpdate, true);
+  assert.equal(renderer.shadowMap.needsUpdate, true);
+});
+
+test('runWithShadowMapUpdatesPaused restores shadow state after a failed pass', () => {
+  const renderer = createRendererShadowMapStub(true, false);
+  renderer.shadowMap.autoUpdate = true;
+  const expectedError = new Error('outline render failed');
+
+  assert.throws(
+    () =>
+      runWithShadowMapUpdatesPaused(renderer, () => {
+        throw expectedError;
+      }),
+    expectedError,
+  );
+  assert.equal(renderer.shadowMap.autoUpdate, true);
+  assert.equal(renderer.shadowMap.needsUpdate, false);
 });

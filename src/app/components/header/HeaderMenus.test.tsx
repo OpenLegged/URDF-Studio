@@ -72,6 +72,7 @@ function renderViewMenu({
       onImportFile: () => {},
       onImportFolder: () => {},
       onOpenExport: () => {},
+      onPrefetchExport: () => {},
       onExportProject: () => {},
       toolboxItems: noopToolboxItems,
       onOpenCodeViewer: () => {},
@@ -106,6 +107,7 @@ function renderHeaderMenusWithToolboxItems(activeMenu: import('./types').HeaderM
       onImportFile: () => {},
       onImportFolder: () => {},
       onOpenExport: () => {},
+      onPrefetchExport: () => {},
       onExportProject: () => {},
       toolboxItems: aiToolboxItems,
       onOpenCodeViewer: () => {},
@@ -225,12 +227,14 @@ function renderFileMenu({
   onImportFile = () => {},
   onImportFolder = () => {},
   onExportProject = () => {},
+  onPrefetchExport = () => {},
   isExportingProject = false,
   setActiveMenu = () => {},
 }: {
   onImportFile?: () => void;
   onImportFolder?: () => void;
   onExportProject?: () => void;
+  onPrefetchExport?: () => void;
   isExportingProject?: boolean;
   setActiveMenu?: (menu: import('./types').HeaderMenuKey) => void;
 }) {
@@ -260,6 +264,7 @@ function renderFileMenu({
         onImportFile,
         onImportFolder,
         onOpenExport: () => {},
+        onPrefetchExport,
         onExportProject,
         isExportingProject,
         toolboxItems: noopToolboxItems,
@@ -365,6 +370,35 @@ test('file menu opens the folder picker synchronously from the menu item click',
     );
 
     assert.equal(importFolderCallCount, 1);
+  } finally {
+    rendered.cleanup();
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    domEnvironment.restore();
+  }
+});
+
+test('file menu prefetches the export dialog on pointer intent before click', async () => {
+  const domEnvironment = installDomEnvironment();
+  let prefetchCallCount = 0;
+  const rendered = renderFileMenu({
+    onPrefetchExport: () => {
+      prefetchCallCount += 1;
+    },
+  });
+
+  try {
+    const exportButton = Array.from(document.querySelectorAll('button')).find(
+      (button) => button.textContent?.trim() === 'Export',
+    );
+    assert.ok(exportButton, 'expected export menu item');
+
+    exportButton.dispatchEvent(
+      new domEnvironment.dom.window.Event('pointerover', {
+        bubbles: true,
+      }),
+    );
+
+    assert.equal(prefetchCallCount, 1);
   } finally {
     rendered.cleanup();
     await new Promise((resolve) => setTimeout(resolve, 20));

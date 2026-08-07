@@ -44,6 +44,8 @@ export {
 export { resolveSnapshotPreviewCaptureOptions } from './snapshotPreviewConfig';
 export { NeutralStudioEnvironment } from './NeutralStudioEnvironment';
 export { SceneLighting } from './SceneLighting';
+export { SemanticOutlineProvider, useSemanticOutline } from './SemanticOutline';
+export type { SemanticOutlineIntent } from './semanticOutlineComposer';
 export { GroundShadowPlane } from './GroundShadowPlane';
 export { ReferenceGrid } from './ReferenceGrid';
 export { AdaptiveGroundPlane } from './AdaptiveGroundPlane';
@@ -55,11 +57,21 @@ export {
   warmupSceneCompile,
 } from './SceneCompileWarmup';
 export {
-  INTERACTION_DPR_CAP,
+  ADAPTIVE_INTERACTION_DPR_STEP,
+  ADAPTIVE_INTERACTION_DEFAULT_FRAME_BUDGET_MS,
+  ADAPTIVE_INTERACTION_CALIBRATION_FRAME_COUNT,
+  ADAPTIVE_INTERACTION_FAST_FRAME_COUNT,
+  ADAPTIVE_INTERACTION_FAST_FRAME_BUDGET_MULTIPLIER,
+  ADAPTIVE_INTERACTION_MIN_DPR,
+  ADAPTIVE_INTERACTION_SLOW_FRAME_COUNT,
+  ADAPTIVE_INTERACTION_SLOW_FRAME_BUDGET_MULTIPLIER,
   INTERACTION_RECOVERY_DELAY_MS,
   MIN_RENDER_DPR,
   RESTING_DPR_CAP,
   resolveCanvasDpr,
+  resolveAdaptiveInteractionFrameBudget,
+  resolveNativeInteractionDpr,
+  sampleAdaptiveInteractionDpr,
   useAdaptiveInteractionQuality,
   useWorkspaceCanvasInteractionState,
   WorkspaceCanvasInteractionStateProvider,
@@ -83,6 +95,7 @@ export {
 } from './viewerOverlaySafeArea';
 export {
   LIGHTING_CONFIG,
+  resolveCameraFollowLightingStyle,
   STUDIO_ENVIRONMENT_INTENSITY,
   WORKSPACE_CANVAS_BACKGROUND,
   WORKSPACE_DEFAULT_CAMERA_FOV,

@@ -7,7 +7,29 @@ import {
   type UsdSceneMeshDescriptor,
   type UsdSceneSnapshot,
 } from '@/types';
-import { resolveUsdPrimitiveGeometryFromDescriptor } from './usdPrimitiveGeometry';
+import {
+  getUsdDescriptorTransformScale,
+  resolveUsdPrimitiveGeometryFromDescriptor,
+} from './usdPrimitiveGeometry';
+
+test('extracts mesh scale while leaving descriptor translation out of geometry dimensions', () => {
+  const descriptor: UsdSceneMeshDescriptor = {
+    primType: 'mesh',
+    ranges: { transform: { offset: 0, count: 16, stride: 16 } },
+  };
+  const snapshot: UsdSceneSnapshot = {
+    buffers: {
+      transforms: [
+        200, 0, 0, 0,
+        0, 15, 0, 0,
+        0, 0, 100, 0,
+        5, 6, 7, 1,
+      ],
+    },
+  };
+
+  assert.deepEqual(getUsdDescriptorTransformScale(descriptor, snapshot), [200, 15, 100]);
+});
 
 test('resolves USD primitive dimensions without baking descriptor world transforms into RobotState geometry', () => {
   const descriptor: UsdSceneMeshDescriptor = {
@@ -239,6 +261,45 @@ test('folds Unitree B2 USD cylinder scale along the schema Z axis', () => {
     dimensions: {
       x: 0.07,
       y: 0.05,
+      z: 0,
+    },
+  });
+});
+
+test('prefers authored B2 cylinder dimensions over the USD schema default extent', () => {
+  const descriptor: UsdSceneMeshDescriptor = {
+    meshId: '/b2_description/FR_hip_rotor/collisions.proto_cylinder_id0',
+    sectionName: 'collisions',
+    resolvedPrimPath: '/b2_description/FR_hip_rotor/collisions/collision_0/cylinder',
+    primType: 'cylinder',
+    axis: 'Z',
+    radius: 0.05,
+    height: 0.02,
+    extentSize: [2, 2, 2],
+    ranges: {
+      transform: {
+        offset: 0,
+        count: 16,
+        stride: 16,
+      },
+    },
+  };
+  const snapshot: UsdSceneSnapshot = {
+    buffers: {
+      transforms: [
+        1, 0, 0, 0,
+        0, 1, 0, 0,
+        0, 0, 1, 0,
+        0, 0, 0, 1,
+      ],
+    },
+  };
+
+  assert.deepEqual(resolveUsdPrimitiveGeometryFromDescriptor(descriptor, null, snapshot), {
+    type: GeometryType.CYLINDER,
+    dimensions: {
+      x: 0.05,
+      y: 0.02,
       z: 0,
     },
   });

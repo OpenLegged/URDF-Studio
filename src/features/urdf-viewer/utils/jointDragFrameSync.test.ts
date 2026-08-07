@@ -3,7 +3,7 @@ import test from 'node:test';
 
 import { createJointDragFrameSync } from './jointDragFrameSync.ts';
 
-test('coalesces multiple pointer updates into a single frame using the latest position', () => {
+test('applies the leading pointer immediately and coalesces the remaining frame burst', () => {
   const queued: FrameRequestCallback[] = [];
   const calls: Array<[number, number]> = [];
   const scheduler = createJointDragFrameSync({
@@ -22,11 +22,14 @@ test('coalesces multiple pointer updates into a single frame using the latest po
   scheduler.schedule(50, 60);
 
   assert.equal(queued.length, 1);
-  assert.deepEqual(calls, []);
+  assert.deepEqual(calls, [[10, 20]]);
 
   queued[0](0);
 
-  assert.deepEqual(calls, [[50, 60]]);
+  assert.deepEqual(calls, [
+    [10, 20],
+    [50, 60],
+  ]);
 });
 
 test('flush applies the latest pending pointer update immediately', () => {
@@ -47,7 +50,10 @@ test('flush applies the latest pending pointer update immediately', () => {
   scheduler.flush();
 
   assert.equal(cancelledHandle, 7);
-  assert.deepEqual(calls, [[56, 78]]);
+  assert.deepEqual(calls, [
+    [12, 34],
+    [56, 78],
+  ]);
 });
 
 test('cancel drops the pending frame without emitting a drag update', () => {
@@ -71,8 +77,8 @@ test('cancel drops the pending frame without emitting a drag update', () => {
   scheduler.cancel();
 
   assert.equal(cancelledHandle, 3);
-  assert.deepEqual(calls, []);
+  assert.deepEqual(calls, [[11, 22]]);
 
   queued[0](0);
-  assert.deepEqual(calls, []);
+  assert.deepEqual(calls, [[11, 22]]);
 });

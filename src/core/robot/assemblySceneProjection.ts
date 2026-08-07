@@ -17,6 +17,7 @@ import {
   type AssemblySceneRenderStrategy,
 } from './assemblyResourcePaths';
 import { cloneAssemblyTransform } from './assemblyTransformUtils';
+import { resolveRobotLinkEditorLock } from './editorLock';
 
 export type { AssemblySceneRenderStrategy } from './assemblyResourcePaths';
 
@@ -549,6 +550,10 @@ function projectComponentRobot(
       ...link,
       id: globalId,
       name: useProjectionGlobalNames ? globalId : link.name,
+      ...(ids.component.editorLocked === true
+        || resolveRobotLinkEditorLock(ids.component.robot, sourceId).locked
+        ? { editorLocked: true }
+        : {}),
       visual: projectGeometryNames(link.visual, ids, useProjectionGlobalNames),
       ...(link.visualBodies
         ? {

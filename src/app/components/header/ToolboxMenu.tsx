@@ -37,9 +37,16 @@ function ToolboxItemCard({
         onClose();
         item.onClick();
       }}
-      onPointerEnter={() => onHoverStart(item)}
+      onPointerEnter={() => {
+        item.onPrefetch?.();
+        onHoverStart(item);
+      }}
+      onPointerDown={item.onPrefetch}
       onPointerLeave={onHoverEnd}
-      onFocus={() => onHoverStart(item)}
+      onFocus={() => {
+        item.onPrefetch?.();
+        onHoverStart(item);
+      }}
       onBlur={onHoverEnd}
       aria-label={item.title}
       className={`group relative flex min-h-[3.45rem] flex-col items-center justify-center gap-0.5 rounded-xl px-0.5 py-1.5 text-center transition-all duration-100 hover:-translate-y-0.5 hover:bg-element-hover/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-system-blue/30 ${

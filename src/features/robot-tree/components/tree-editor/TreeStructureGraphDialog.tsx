@@ -11,7 +11,12 @@ import { createPortal } from 'react-dom';
 import { Network, RotateCcw, X, ZoomIn, ZoomOut } from 'lucide-react';
 import { useShallow } from 'zustand/react/shallow';
 import { getTreeRenderRootLinkIds } from '@/core/robot';
-import { DraggableWindow } from '@/shared/components/DraggableWindow';
+import {
+  DraggableWindow,
+  FLOATING_WINDOW_HEADER_HEIGHT_CLASS,
+  FLOATING_WINDOW_RADIUS_CLASS,
+  FLOATING_WINDOW_TITLE_CLASS,
+} from '@/shared/components/DraggableWindow';
 import { CLOSE_BUTTON_DANGER_TERTIARY_CLASS } from '@/shared/components/ui';
 import { useDraggableWindow } from '@/shared/hooks/useDraggableWindow';
 import type { TranslationKeys } from '@/shared/i18n';
@@ -673,7 +678,6 @@ export function TreeStructureGraphDialog({
   isOpen,
   onClose,
   workspace,
-  activeComponentId,
   t,
   onSelect,
   onFocus,
@@ -731,7 +735,7 @@ export function TreeStructureGraphDialog({
     }
 
     return buildAssemblyRootNodes(workspace, t);
-  }, [activeComponentId, t, workspace]);
+  }, [t, workspace]);
 
   const layout = useMemo(() => layoutGraph(rootNodes), [rootNodes]);
   const layoutKey = useMemo(() => getGraphLayoutKey(layout), [layout]);
@@ -1030,7 +1034,7 @@ export function TreeStructureGraphDialog({
           <div className="rounded-lg border border-border-black bg-panel-bg p-1 text-system-blue shadow-sm">
             <Network className="h-3 w-3" />
           </div>
-          <div className="text-[12px] font-semibold tracking-[0.01em] text-text-primary">
+          <div className={`tracking-[0.01em] ${FLOATING_WINDOW_TITLE_CLASS}`}>
             {t.structureGraphTitle}
           </div>
         </div>
@@ -1066,10 +1070,10 @@ export function TreeStructureGraphDialog({
           </button>
         </div>
       }
-      className="overflow-hidden rounded-2xl border border-border-black bg-panel-bg/60 text-text-primary shadow-xl pointer-events-auto"
+      className={`overflow-hidden ${FLOATING_WINDOW_RADIUS_CLASS} border border-border-black bg-panel-bg/60 text-text-primary shadow-xl pointer-events-auto`}
       zIndex={structureGraphWindowLayer.zIndex}
       onActivate={structureGraphWindowLayer.onActivate}
-      headerClassName="flex h-10 items-center justify-between border-b border-border-black bg-element-bg px-3"
+      headerClassName={`flex ${FLOATING_WINDOW_HEADER_HEIGHT_CLASS} shrink-0 items-center justify-between border-b border-border-black bg-element-bg px-3`}
       interactionClassName="select-none"
       controlButtonClassName="rounded-md p-1 text-text-tertiary transition-colors hover:bg-panel-bg hover:text-text-primary"
       closeButtonClassName={`rounded-md p-1 ${CLOSE_BUTTON_DANGER_TERTIARY_CLASS}`}

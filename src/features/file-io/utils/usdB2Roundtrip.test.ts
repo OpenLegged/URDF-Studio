@@ -3,15 +3,22 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { JSDOM } from 'jsdom';
+import * as THREE from 'three';
 
 import { parseURDF } from '@/core/parsers/urdf/parser';
 import { computeLinkWorldMatrices } from '@/core/robot/kinematics';
+import { buildColladaRootNormalizationHints } from '@/core/loaders/colladaRootNormalization';
 import { disposeColladaParseWorkerPoolClient } from '@/core/loaders/colladaParseWorkerBridge';
-import { parseColladaSceneData } from '@/core/loaders/colladaWorkerSceneData';
+import {
+  createSceneFromSerializedColladaData,
+  parseColladaSceneData,
+} from '@/core/loaders/colladaWorkerSceneData';
 import type { RobotData, RobotState } from '@/types';
 import { adaptUsdViewerSnapshotToRobotData } from '@/features/urdf-viewer/utils/usdViewerRobotAdapter';
 import { ThreeRenderDelegateCore } from '@/features/urdf-viewer/runtime/hydra/render-delegate/ThreeRenderDelegateCore.js';
+import { createUsdAssetRegistry } from './usdAssetRegistry';
 import { exportRobotToUsd } from './usdExport';
+import { buildUsdVisualSceneNode } from './usdSceneNodeFactory';
 
 const B2_DESCRIPTION_ROOT = path.resolve('test/unitree_ros/robots/b2_description');
 const B2_URDF_PATH = path.join(B2_DESCRIPTION_ROOT, 'urdf/b2_description.urdf');
@@ -411,6 +418,79 @@ test('b2 USDA roundtrip preserves the full hierarchy and world transforms', () =
   assert.equal(adapted.robotData.links.usd_scene_root, undefined);
 
   assertWorldTransformsMatch('B2 USD roundtrip', robot, toRobotState(adapted.robotData));
+});
+
+test('b2 USD export preserves Collada calf geometry placement while normalizing its cyclic root transform', async () => {
+  const robot = loadB2RobotState();
+  const calfVisual = robot.links.FL_calf?.visual;
+  assert.ok(calfVisual, 'expected B2 FL calf visual');
+
+  const calfMeshPath = path.join(B2_DESCRIPTION_ROOT, 'meshes/FL_calf.dae');
+  const rawSceneData = parseColladaSceneData(fs.readFileSync(calfMeshPath, 'utf8'), calfMeshPath);
+  const expectedScene = createSceneFromSerializedColladaData(rawSceneData);
+  const expectedBounds = new THREE.Box3().setFromObject(expectedScene);
+
+  const { registry } = createUsdAssetRegistry(buildB2AssetMap());
+  const exportedNode = await buildUsdVisualSceneNode({
+    visual: calfVisual,
+    role: 'visual',
+    registry,
+    colladaRootNormalizationHints: buildColladaRootNormalizationHints(robot.links),
+  });
+  assert.ok(exportedNode, 'expected B2 FL calf visual to build for USD export');
+
+  const exportedBounds = new THREE.Box3().setFromObject(exportedNode);
+  const expectedCenter = expectedBounds.getCenter(new THREE.Vector3());
+  const exportedCenter = exportedBounds.getCenter(new THREE.Vector3());
+  const expectedSize = expectedBounds.getSize(new THREE.Vector3());
+  const exportedSize = exportedBounds.getSize(new THREE.Vector3());
+
+  assert.ok(
+    exportedCenter.distanceTo(expectedCenter) <= 1e-6,
+    `expected calf center ${expectedCenter.toArray()} after export normalization, got ${exportedCenter.toArray()}`,
+  );
+  assert.ok(
+    exportedSize.distanceTo(expectedSize) <= 1e-6,
+    `expected calf size ${expectedSize.toArray()} after export normalization, got ${exportedSize.toArray()}`,
+  );
+  assert.ok(exportedCenter.z < -0.1, 'expected B2 calf geometry to extend down the link Z axis');
+});
+
+test('b2 USD export preserves the mirrored RR hip Collada geometry', async () => {
+  const robot = loadB2RobotState();
+  const hipVisual = robot.links.RR_hip?.visual;
+  assert.ok(hipVisual, 'expected B2 RR hip visual');
+
+  const hipMeshPath = path.join(B2_DESCRIPTION_ROOT, 'meshes/RR_hip.dae');
+  const rawSceneData = parseColladaSceneData(fs.readFileSync(hipMeshPath, 'utf8'), hipMeshPath);
+  const expectedScene = createSceneFromSerializedColladaData(rawSceneData);
+  const expectedBounds = new THREE.Box3().setFromObject(expectedScene);
+
+  const { registry } = createUsdAssetRegistry(buildB2AssetMap());
+  const exportedNode = await buildUsdVisualSceneNode({
+    visual: hipVisual,
+    role: 'visual',
+    registry,
+    colladaRootNormalizationHints: buildColladaRootNormalizationHints(robot.links),
+  });
+  assert.ok(exportedNode, 'expected B2 RR hip visual to build for USD export');
+
+  const exportedBounds = new THREE.Box3().setFromObject(exportedNode);
+  const expectedCenter = expectedBounds.getCenter(new THREE.Vector3());
+  const exportedCenter = exportedBounds.getCenter(new THREE.Vector3());
+  const expectedSize = expectedBounds.getSize(new THREE.Vector3());
+  const exportedSize = exportedBounds.getSize(new THREE.Vector3());
+
+  assert.ok(
+    exportedCenter.distanceTo(expectedCenter) <= 1e-6,
+    `expected RR hip center ${expectedCenter.toArray()}, got ${exportedCenter.toArray()}`,
+  );
+  assert.ok(
+    exportedSize.distanceTo(expectedSize) <= 1e-6,
+    `expected RR hip size ${expectedSize.toArray()}, got ${exportedSize.toArray()}`,
+  );
+  assert.ok(exportedCenter.x > 0, 'expected RR hip mesh to preserve its rear mirrored X offset');
+  assert.ok(exportedCenter.y > 0, 'expected RR hip mesh to preserve its right-side Y offset');
 });
 
 test('b2 isaacsim USD export roundtrip preserves transforms and writes joint/material metadata', async () => {

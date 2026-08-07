@@ -1,19 +1,41 @@
+import { useEffect, useState } from 'react';
 
 interface LazyOverlayFallbackProps {
   label: string;
   detail?: string;
+  delayMs?: number;
 }
 
-export function LazyOverlayFallback({ label, detail }: LazyOverlayFallbackProps) {
+export function LazyOverlayFallback({ label, detail, delayMs = 150 }: LazyOverlayFallbackProps) {
+  const [isVisible, setIsVisible] = useState(delayMs <= 0);
+
+  useEffect(() => {
+    if (delayMs <= 0) {
+      setIsVisible(true);
+      return;
+    }
+
+    setIsVisible(false);
+    const timerId = window.setTimeout(() => {
+      setIsVisible(true);
+    }, delayMs);
+
+    return () => {
+      window.clearTimeout(timerId);
+    };
+  }, [delayMs]);
+
+  if (!isVisible) {
+    return null;
+  }
+
   return (
-    <div className="fixed inset-0 z-[160] flex items-center justify-center bg-black/35">
+    <div className="pointer-events-none fixed inset-0 z-[160] flex items-center justify-center">
       <div
         role="status"
         aria-live="polite"
         className={`flex flex-col gap-2 rounded-xl border border-border-black bg-panel-bg px-4 py-3 text-sm font-medium text-text-primary shadow-xl ${
-          detail
-            ? 'w-[min(22rem,calc(100vw-2rem))]'
-            : 'max-w-md'
+          detail ? 'w-[min(22rem,calc(100vw-2rem))]' : 'max-w-md'
         }`}
       >
         <div className="flex items-center gap-2">

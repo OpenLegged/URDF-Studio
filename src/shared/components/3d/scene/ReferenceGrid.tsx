@@ -17,12 +17,16 @@ interface ReferenceGridProps {
 const REFERENCE_GRID_RENDER_ORDER = -100;
 const REFERENCE_GRID_STYLE = {
   light: {
-    cellColor: '#aeb8c6',
-    sectionColor: '#8693a6',
+    cellColor: '#c9cdd2',
+    sectionColor: '#a3a8ae',
+    cellThickness: 0.28,
+    sectionThickness: 1.15,
   },
   dark: {
     cellColor: '#566172',
     sectionColor: '#748092',
+    cellThickness: 0.38,
+    sectionThickness: 1.35,
   },
 } as const;
 
@@ -66,8 +70,8 @@ export function ReferenceGrid({
       fadeStrength={0.86}
       sectionSize={1}
       cellSize={0.1}
-      sectionThickness={0.96}
-      cellThickness={0.18}
+      sectionThickness={gridStyle.sectionThickness}
+      cellThickness={gridStyle.cellThickness}
       cellColor={gridStyle.cellColor}
       sectionColor={gridStyle.sectionColor}
       rotation={[Math.PI / 2, 0, 0]}

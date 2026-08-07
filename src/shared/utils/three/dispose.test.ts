@@ -4,7 +4,12 @@ import assert from 'node:assert/strict';
 import * as THREE from 'three';
 
 import { markSharedThreeResource } from '@/core/utils/threeResourceOwnership';
-import { disposeObject3D, disposeObject3DGraph, disposeWebGLRenderer } from './dispose.ts';
+import {
+  disposeObject3D,
+  disposeObject3DGraph,
+  disposeTexturesFromMaterial,
+  disposeWebGLRenderer,
+} from './dispose.ts';
 
 test('disposeObject3D disposes shared skeletons once and clears the object tree', () => {
   const root = new THREE.Group();
@@ -107,6 +112,23 @@ test('disposeObject3D preserves resources explicitly shared across backend scene
   assert.equal(geometryDisposeCount, 0);
   assert.equal(materialDisposeCount, 0);
   assert.equal(root.children.length, 0);
+});
+
+test('disposeTexturesFromMaterial releases custom uniform textures without double disposal', () => {
+  const texture = new THREE.Texture();
+  const material = new THREE.MeshStandardMaterial({ map: texture });
+  material.userData.__urdfStudioTextureUniforms = {
+    terrain: { value: texture },
+  };
+  let disposeCount = 0;
+  texture.addEventListener('dispose', () => {
+    disposeCount += 1;
+  });
+
+  disposeTexturesFromMaterial(material);
+
+  assert.equal(disposeCount, 1);
+  material.dispose();
 });
 
 test('disposeWebGLRenderer releases renderer caches without forcing context loss by default', () => {

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { BackSide, BoxGeometry, Color, CylinderGeometry, DoubleSide, Float32BufferAttribute, FrontSide, Group, MeshPhysicalMaterial } from 'three';
+import { BackSide, BoxGeometry, Color, CylinderGeometry, DoubleSide, Float32BufferAttribute, FrontSide, Group, MeshPhysicalMaterial, Vector3 } from 'three';
 
 import { isCoplanarOffsetMaterial } from '../../../../../core/loaders/coplanarMaterialOffset.ts';
 import { HydraMesh } from './HydraMesh.js';
@@ -652,6 +652,51 @@ test('HydraMesh does not generate JS primitive fallback geometry for strict USD 
     assert.equal(hydraMesh._hasGeneratedPrimitiveFallback, false);
     assert.equal(hydraMesh._geometry.getAttribute('position'), undefined);
     assert.equal(hydraMesh._hasCompletedProtoSync, false);
+});
+
+test('HydraMesh does not generate fixed-size fallback cylinders while collision dimensions are pending', () => {
+    const hydraInterface = createHydraInterfaceStub() as any;
+    hydraInterface.strictOneShotSceneLoad = false;
+    hydraInterface.getCollisionProtoOverride = () => null;
+    hydraInterface.getResolvedPrimPathForMeshId = () => null;
+    hydraInterface.getCollisionOverridePrimPath = () => null;
+
+    const hydraMesh = new HydraMesh(
+        'Mesh',
+        '/Robot/RR_hip/collisions.proto_cylinder_id0',
+        hydraInterface,
+    );
+
+    hydraMesh.ensurePrimitiveFallbackGeometry();
+
+    assert.equal(hydraMesh._geometry.getAttribute('position'), undefined);
+    assert.equal(hydraMesh._hasGeneratedPrimitiveFallback, false);
+
+    hydraInterface.getCollisionProtoOverride = () => ({
+        valid: true,
+        primType: 'cylinder',
+        radius: 0.5,
+        height: 1,
+        axis: 'Z',
+    });
+    hydraInterface.getCollisionPrimitiveGeometryOverride = () => ({
+        radius: 0.07,
+        height: 0.05,
+        axis: 'Z',
+    });
+    hydraInterface.getCollisionLocalXformOverride = () => null;
+    hydraInterface.getWorldTransformForPrimPath = () => null;
+
+    hydraMesh.ensurePrimitiveFallbackGeometry();
+
+    assert.equal(hydraMesh._geometry instanceof CylinderGeometry, true);
+    assert.equal(hydraMesh._hasGeneratedPrimitiveFallback, true);
+    assert.equal(hydraMesh._appliedCollisionOverride, true);
+    hydraMesh._geometry.computeBoundingBox();
+    const size = hydraMesh._geometry.boundingBox!.getSize(new Vector3());
+    assert.ok(Math.abs(size.x - 0.14) < 1e-6);
+    assert.ok(Math.abs(size.y - 0.14) < 1e-6);
+    assert.ok(Math.abs(size.z - 0.05) < 1e-6);
 });
 
 test('HydraMesh strict baked primitive overrides require authored size evidence', () => {

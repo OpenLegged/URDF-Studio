@@ -54,6 +54,7 @@ const COMPONENT_KEYS = new Set([
   'renderableBounds',
   'transform',
   'visible',
+  'editorLocked',
 ]);
 const ROBOT_DATA_KEYS = new Set([
   'name',
@@ -541,6 +542,16 @@ function validateRobotLinks(
     validateMjcfSites(linkValue.mjcfSites, `${linkPath}.mjcfSites`, issues);
     if (linkValue.visible !== undefined && typeof linkValue.visible !== 'boolean') {
       addIssue(issues, `${linkPath}.visible`, 'must be a boolean when provided');
+    }
+    if (
+      linkValue.editorLocked !== undefined &&
+      typeof linkValue.editorLocked !== 'boolean'
+    ) {
+      addIssue(
+        issues,
+        `${linkPath}.editorLocked`,
+        'must be a boolean when provided',
+      );
     }
     links[linkKey] = linkValue;
   }
@@ -1371,6 +1382,16 @@ function validateComponents(
     }
     if (typeof componentValue.visible !== 'boolean') {
       addIssue(issues, `${path}.visible`, 'must be a boolean');
+    }
+    if (
+      componentValue.editorLocked !== undefined &&
+      typeof componentValue.editorLocked !== 'boolean'
+    ) {
+      addIssue(
+        issues,
+        `${path}.editorLocked`,
+        'must be a boolean when provided',
+      );
     }
     validateTransform(componentValue.transform, `${path}.transform`, issues);
     if (componentValue.renderableBounds !== undefined) {

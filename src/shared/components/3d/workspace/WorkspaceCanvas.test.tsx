@@ -129,3 +129,115 @@ test('scheduleWorkspaceCanvasResizeEvent dispatches resize on the next animation
 
   assert.equal(dispatchedEventType, 'resize');
 });
+
+test('WorkspaceCanvas keeps a stationary press out of the interaction state until a real drag', async () => {
+  const dom = installDom();
+  const container = dom.window.document.getElementById('root');
+  assert.ok(container, 'root container should exist');
+
+  const root = createRoot(container);
+  const originalConsoleError = console.error;
+  console.error = () => {
+    // jsdom has no WebGL; the unsupported-WebGL report is expected and is
+    // covered by the dedicated test above.
+  };
+
+  const dispatchPointer = (
+    target: Element,
+    type: string,
+    init: { button?: number; buttons?: number; clientX?: number; clientY?: number } = {},
+  ) => {
+    target.dispatchEvent(
+      new dom.window.MouseEvent(type, {
+        bubbles: true,
+        cancelable: true,
+        button: init.button ?? 0,
+        buttons: init.buttons ?? 0,
+        clientX: init.clientX ?? 0,
+        clientY: init.clientY ?? 0,
+      }),
+    );
+  };
+
+  try {
+    await act(async () => {
+      root.render(
+        React.createElement(WorkspaceCanvas, {
+          theme: 'light',
+          lang: 'en',
+          children: React.createElement('div', null, 'scene'),
+        }),
+      );
+    });
+
+    const workspaceContainer = container.querySelector('[data-interacting]');
+    assert.ok(workspaceContainer, 'workspace container should expose data-interacting');
+    const readInteracting = () =>
+      workspaceContainer instanceof dom.window.HTMLElement
+        ? workspaceContainer.dataset.interacting
+        : null;
+
+    assert.equal(readInteracting(), 'false', 'workspace should start settled');
+
+    await act(async () => {
+      dispatchPointer(workspaceContainer, 'pointerdown', {
+        button: 0,
+        buttons: 1,
+        clientX: 200,
+        clientY: 200,
+      });
+    });
+    assert.equal(
+      readInteracting(),
+      'false',
+      'a stationary press must not engage the interaction render path',
+    );
+
+    await act(async () => {
+      dispatchPointer(workspaceContainer, 'pointermove', {
+        buttons: 1,
+        clientX: 202,
+        clientY: 200,
+      });
+    });
+    assert.equal(
+      readInteracting(),
+      'false',
+      'sub-threshold jitter while holding must not engage the interaction render path',
+    );
+
+    await act(async () => {
+      dispatchPointer(workspaceContainer, 'pointermove', {
+        buttons: 1,
+        clientX: 210,
+        clientY: 200,
+      });
+    });
+    assert.equal(
+      readInteracting(),
+      'true',
+      'dragging beyond the threshold should engage the interaction render path',
+    );
+
+    await act(async () => {
+      dispatchPointer(workspaceContainer, 'pointerup', {
+        button: 0,
+        buttons: 0,
+        clientX: 210,
+        clientY: 200,
+      });
+      await new Promise((resolve) => setTimeout(resolve, 250));
+    });
+    assert.equal(
+      readInteracting(),
+      'false',
+      'releasing the pointer should settle the workspace after the recovery delay',
+    );
+  } finally {
+    console.error = originalConsoleError;
+    await act(async () => {
+      root.unmount();
+    });
+    dom.window.close();
+  }
+});

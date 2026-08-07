@@ -31,6 +31,7 @@ export interface UsdOffscreenInteractionState<THighlightSnapshot> {
   readonly meshesByLinkKey: ReadonlyMap<string, THREE.Mesh[]>;
   readonly pickMeshes: THREE.Mesh[];
   readonly helperTargets: THREE.Object3D[];
+  readonly highlightedMeshes: readonly THREE.Mesh[];
   readonly raycaster: THREE.Raycaster;
   readonly pointer: THREE.Vector2;
   setSelection: (selection: OffscreenViewerInteractionSelection | null | undefined) => void;
@@ -122,6 +123,9 @@ export function createUsdOffscreenInteractionState<THighlightSnapshot = unknown>
     },
     get helperTargets() {
       return helperTargets;
+    },
+    get highlightedMeshes() {
+      return [...highlights.keys()];
     },
     raycaster,
     pointer,

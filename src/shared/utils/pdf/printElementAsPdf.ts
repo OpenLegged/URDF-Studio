@@ -88,7 +88,8 @@ function waitForAnimationFrame(document: Document): Promise<void> {
   })
 }
 
-async function waitForStablePdfLayout(document: Document): Promise<void> {
+async function waitForStablePdfLayout(element: HTMLElement): Promise<void> {
+  const document = element.ownerDocument
   const fonts = document.fonts
   if (fonts?.ready) {
     try {
@@ -97,6 +98,16 @@ async function waitForStablePdfLayout(document: Document): Promise<void> {
       console.warn('[PDFExport] Font readiness failed; exporting current layout.', error)
     }
   }
+
+  await Promise.all(
+    Array.from(element.querySelectorAll('img')).map(async image => {
+      try {
+        await image.decode?.()
+      } catch (error) {
+        console.warn('[PDFExport] Image decoding failed; exporting current layout.', error)
+      }
+    })
+  )
 
   await waitForAnimationFrame(document)
   await waitForAnimationFrame(document)
@@ -140,6 +151,43 @@ function createCanvasPageSlice(
   return pageCanvas
 }
 
+function getKeepTogetherRanges(element: HTMLElement, canvasWidth: number) {
+  const rootRect = element.getBoundingClientRect()
+  const layoutWidth = Math.max(1, element.scrollWidth || rootRect.width)
+  const scale = canvasWidth / layoutWidth
+
+  return Array.from(element.querySelectorAll<HTMLElement>('[data-pdf-keep-together]'))
+    .map(node => {
+      const rect = node.getBoundingClientRect()
+      return {
+        start: Math.max(0, Math.floor((rect.top - rootRect.top) * scale)),
+        end: Math.max(0, Math.ceil((rect.bottom - rootRect.top) * scale))
+      }
+    })
+    .filter(range => range.end > range.start)
+    .sort((a, b) => a.start - b.start)
+}
+
+function getPageSliceHeight(
+  offsetY: number,
+  pageHeightPx: number,
+  canvasHeight: number,
+  keepTogetherRanges: Array<{ start: number; end: number }>
+): number {
+  const defaultHeight = Math.min(pageHeightPx, canvasHeight - offsetY)
+  const targetEnd = offsetY + defaultHeight
+
+  const crossingRange = keepTogetherRanges.find(
+    range =>
+      range.start > offsetY &&
+      range.start < targetEnd &&
+      range.end > targetEnd &&
+      range.end - range.start <= pageHeightPx
+  )
+
+  return crossingRange ? crossingRange.start - offsetY : defaultHeight
+}
+
 export async function printElementAsPdf({
   element,
   title
@@ -151,7 +199,7 @@ export async function printElementAsPdf({
     throw new Error('Unable to access document context for PDF export')
   }
 
-  await waitForStablePdfLayout(document)
+  await waitForStablePdfLayout(element)
 
   const { html2canvas, jsPDF } = await loadPdfGenerationDeps()
   const { width, height } = getCaptureDimensions(element)
@@ -182,6 +230,7 @@ export async function printElementAsPdf({
   const pageHeightMm = pdf.internal.pageSize.getHeight()
   const pixelsPerMm = sourceCanvas.width / pageWidthMm
   const pageHeightPx = Math.max(1, Math.floor(pageHeightMm * pixelsPerMm))
+  const keepTogetherRanges = getKeepTogetherRanges(element, sourceCanvas.width)
 
   if (title && pdf.setProperties) {
     pdf.setProperties({ title })
@@ -191,7 +240,12 @@ export async function printElementAsPdf({
   let pageIndex = 0
 
   while (offsetY < sourceCanvas.height) {
-    const sliceHeight = Math.min(pageHeightPx, sourceCanvas.height - offsetY)
+    const sliceHeight = getPageSliceHeight(
+      offsetY,
+      pageHeightPx,
+      sourceCanvas.height,
+      keepTogetherRanges
+    )
     const pageCanvas = createCanvasPageSlice(sourceCanvas, offsetY, sliceHeight, document)
     const sliceHeightMm = sliceHeight / pixelsPerMm
 

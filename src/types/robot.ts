@@ -63,6 +63,8 @@ export interface UrdfLink {
   inertial?: UrdfInertial;
   mjcfSites?: UrdfMjcfSite[];
   visible?: boolean; // Controls visibility in the 3D scene
+  /** Prevents editing, transforms, and viewport picking for this link subtree. */
+  editorLocked?: boolean;
 }
 
 export interface UrdfJointDynamics {
@@ -336,6 +338,8 @@ export interface AssemblyComponent {
   renderableBounds?: RenderableBounds;
   transform: AssemblyTransform;
   visible: boolean;
+  /** Prevents editing, transforms, and viewport picking for this component. */
+  editorLocked?: boolean;
 }
 
 /** Bridge joint with source-local link endpoints scoped by explicit component IDs. */

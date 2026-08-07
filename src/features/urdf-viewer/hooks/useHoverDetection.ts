@@ -42,6 +42,7 @@ import type {
   ViewerInteractiveLayer,
   ViewerSceneMode,
 } from '../types';
+import { isRuntimeInteractionEditorLocked } from '../utils/editorInteractionLock';
 
 export interface UseHoverDetectionOptions {
   robot: THREE.Object3D | null;
@@ -79,6 +80,7 @@ export interface UseHoverDetectionOptions {
     revert: boolean,
     subType?: 'visual' | 'collision',
     meshToHighlight?: THREE.Object3D | null | number,
+    intent?: 'hover' | 'selection',
   ) => void;
 }
 
@@ -329,7 +331,13 @@ export function useHoverDetection({
   const restoreSelectionHighlight = useCallback(() => {
     if (useExternalHover) return;
     if (selection?.type === 'link' && selection.id) {
-      highlightGeometry(selection.id, false, getSelectionHighlightSubType(), selection.objectIndex);
+      highlightGeometry(
+        selection.id,
+        false,
+        getSelectionHighlightSubType(),
+        selection.objectIndex,
+        'selection',
+      );
     }
   }, [getSelectionHighlightSubType, highlightGeometry, selection, useExternalHover]);
 
@@ -666,7 +674,9 @@ export function useHoverDetection({
         interactionLayerPriority,
       });
       const helperCandidates = [helperInteraction, projectedHelperInteraction].filter(
-        (candidate): candidate is ResolvedHoverInteractionCandidate => candidate !== null,
+        (candidate): candidate is ResolvedHoverInteractionCandidate =>
+          candidate !== null &&
+          !isRuntimeInteractionEditorLocked(candidate, robotLinks, robotJoints),
       );
       helperInteraction =
         helperCandidates.length > 0
@@ -757,6 +767,7 @@ export function useHoverDetection({
         'all',
         false,
         interactionLayerPriority,
+        false,
       );
       const activeInteractionSubType = resolveTopLayerInteractionSubTypeFromHits({
         showVisual,
@@ -773,9 +784,13 @@ export function useHoverDetection({
       }
       const isCollisionInteraction = activeInteractionSubType === 'collision';
 
-      const hit = intersects.find(
-        (entry) => isCollisionPickObject(entry.object) === isCollisionInteraction,
-      );
+      const hit = intersects.find((entry) => {
+        if (isCollisionPickObject(entry.object) !== isCollisionInteraction) {
+          return false;
+        }
+        const candidate = resolveInteractionSelectionHit(robot, entry.object);
+        return !isRuntimeInteractionEditorLocked(candidate, robotLinks, robotJoints);
+      });
       if (
         hit &&
         hit.faceIndex !== undefined &&
@@ -836,12 +851,16 @@ export function useHoverDetection({
       'all',
       false,
       interactionLayerPriority,
+      false,
     );
     const resolvedCandidates = (() => {
       const candidates: ResolvedHoverInteractionCandidate[] = [];
       for (const intersection of intersections) {
         const resolved = resolveInteractionSelectionHit(robot, intersection.object);
-        if (resolved) {
+        if (
+          resolved &&
+          !isRuntimeInteractionEditorLocked(resolved, robotLinks, robotJoints)
+        ) {
           candidates.push({
             ...resolved,
             distance: intersection.distance,
@@ -923,7 +942,19 @@ export function useHoverDetection({
       (newHoveredObjectIndex ?? null) !== previousHoveredObjectIndex ||
       nextHoveredSubType !== previousHoveredSubType
     ) {
-      if (hoveredLinkRef.current && hoveredLinkRef.current !== selection?.id) {
+      const sameLink = newHoveredLink === hoveredLinkRef.current;
+      const sameSubType = nextHoveredSubType === previousHoveredSubType;
+
+      // When the link and subType stay the same only the mesh within the link
+      // changed. Skip the clear so the selection highlight is never touched
+      // and the old mesh stays highlighted (the link is still hovered). For
+      // different links or subTypes, clear the previous hover so outlines
+      // do not leak.
+      if (
+        hoveredLinkRef.current &&
+        hoveredLinkRef.current !== selection?.id &&
+        (!sameLink || !sameSubType)
+      ) {
         clearHoverHighlight();
       }
 

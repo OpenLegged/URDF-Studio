@@ -265,3 +265,9 @@ export {
   stripTransientJointMotionFromJoints,
   stripTransientJointMotionFromRobotData,
 } from './semanticSnapshot';
+export {
+  hasComponentEditorLocks,
+  isEntityEditorLocked,
+  isWorkspaceSelectionEditorLocked,
+  resolveRobotLinkEditorLock,
+} from './editorLock';

@@ -58,9 +58,11 @@ export interface AppLayoutImportInputProps {
 
 export interface AppLayoutHeaderSectionProps {
   onOpenExport: AppLayoutProps['onOpenExport'];
+  onPrefetchExport: AppLayoutProps['onPrefetchExport'];
   onExportProject: AppLayoutProps['onExportProject'];
   isExportingProject: NonNullable<AppLayoutProps['isExportingProject']>;
   onOpenSettings: AppLayoutProps['onOpenSettings'];
+  onPrefetchSettings: AppLayoutProps['onPrefetchSettings'];
   headerQuickAction: AppLayoutProps['headerQuickAction'];
   headerSecondaryAction: AppLayoutProps['headerSecondaryAction'];
   viewConfig: AppLayoutProps['viewConfig'];
@@ -69,6 +71,7 @@ export interface AppLayoutHeaderSectionProps {
   handleOpenCodeViewer: HeaderProps['onOpenCodeViewer'];
   handlePrefetchCodeViewer: HeaderProps['onPrefetchCodeViewer'];
   handleSnapshot: HeaderProps['onSnapshot'];
+  handlePrefetchSnapshot: HeaderProps['onPrefetchSnapshot'];
 }
 
 export interface AppLayoutIkPanelProps {
@@ -135,6 +138,7 @@ export interface AppLayoutViewerSectionProps {
   lang: Language;
   theme: ViewerProps['theme'];
   viewConfig: AppLayoutProps['viewConfig'];
+  onNotify: ViewerProps['onNotify'];
 }
 
 export interface AppLayoutSidebarsProps {
@@ -170,6 +174,7 @@ export interface AppLayoutSidebarsProps {
   handleDeleteAllLibraryFiles: TreeEditorProps['onDeleteAllLibraryFiles'];
   handleExportLibraryFile: TreeEditorProps['onExportLibraryFile'];
   handleCreateBridge: TreeEditorProps['onCreateBridge'];
+  handlePrefetchCreateBridge: TreeEditorProps['onPrefetchCreateBridge'];
   isPreviewingWorkspaceSource: boolean;
   viewConfig: AppLayoutProps['viewConfig'];
   setViewConfig: AppLayoutProps['setViewConfig'];
@@ -213,6 +218,7 @@ export interface AppLayoutOverlaysSectionProps {
   theme: ViewerProps['theme'];
   lang: Language;
   labels: {
+    loadingSourceCodeEditor: string;
     loadingOptimizer: string;
     loadingBridgeDialog: string;
   };

@@ -15,7 +15,6 @@ import {
   type UrdfLink,
   type UrdfVisual,
   type UrdfVisualMaterial,
-  type RobotFile,
   type Vector3,
   type SdfHeightmap,
 } from '@/types';
@@ -23,6 +22,7 @@ import { resolveGazeboScriptMaterial } from './gazeboMaterialScripts';
 import {
   createSdfIncludeResolutionContext,
   mergeSdfRobotFileContentsInto,
+  type SdfIncludeAvailableFile,
   type SdfIncludeResolutionContext,
 } from './sdfIncludeResolution';
 
@@ -117,7 +117,7 @@ interface ParsedSdfGraph {
 
 export interface ParseSDFOptions {
   allFileContents?: Record<string, string>;
-  availableFiles?: readonly Pick<RobotFile, 'name' | 'format' | 'content'>[];
+  availableFiles?: readonly SdfIncludeAvailableFile[];
   sourcePath?: string | null;
   /** SDF spec version (e.g. "1.5", "1.6"). Affects axis-frame defaults. */
   sdfVersion?: string;

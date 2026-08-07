@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { GLTFLoader, type GLTF } from 'three/addons/loaders/GLTFLoader.js';
 import { clone as cloneSkeleton } from 'three/examples/jsm/utils/SkeletonUtils.js';
 
 import type { UrdfVisual } from '@/types';
@@ -64,6 +64,7 @@ export type UsdVisualRole = 'visual' | 'collision';
 export type UsdMaterialMetadata = {
   color?: string;
   colorRgba?: [number, number, number, number];
+  opacity?: number;
   texture?: string;
   forceUniformOverride?: boolean;
   preserveEmbeddedMaterials?: boolean;
@@ -178,6 +179,72 @@ const objectHasSkinnedMeshes = (root: THREE.Object3D): boolean => {
   return hasSkinnedMeshes;
 };
 
+type UsdGltfTextureDefinition = {
+  source?: unknown;
+  extensions?: {
+    KHR_texture_basisu?: {
+      source?: unknown;
+    };
+  };
+};
+
+type UsdGltfImageDefinition = {
+  uri?: unknown;
+};
+
+const getUsdGltfTextureSourceIndex = (
+  textureDefinition: UsdGltfTextureDefinition,
+): number | null => {
+  const sourceIndex =
+    textureDefinition.extensions?.KHR_texture_basisu?.source ?? textureDefinition.source;
+  return Number.isInteger(sourceIndex) && Number(sourceIndex) >= 0 ? Number(sourceIndex) : null;
+};
+
+const applyUsdGltfTextureSourcePaths = (gltf: GLTF): void => {
+  const json = gltf.parser.json as unknown;
+  if (!json || typeof json !== 'object') {
+    return;
+  }
+
+  const textureDefinitions = (json as { textures?: unknown }).textures;
+  const imageDefinitions = (json as { images?: unknown }).images;
+  if (!Array.isArray(textureDefinitions) || !Array.isArray(imageDefinitions)) {
+    return;
+  }
+
+  gltf.parser.associations.forEach((association, associatedObject) => {
+    if (!(associatedObject instanceof THREE.Texture) || !Number.isInteger(association.textures)) {
+      return;
+    }
+
+    const textureDefinition = textureDefinitions[Number(association.textures)] as
+      | UsdGltfTextureDefinition
+      | undefined;
+    if (!textureDefinition || typeof textureDefinition !== 'object') {
+      return;
+    }
+
+    const sourceIndex = getUsdGltfTextureSourceIndex(textureDefinition);
+    if (sourceIndex === null) {
+      return;
+    }
+
+    const imageDefinition = imageDefinitions[sourceIndex] as UsdGltfImageDefinition | undefined;
+    const sourcePath =
+      imageDefinition && typeof imageDefinition === 'object'
+        ? String(imageDefinition.uri ?? '').trim()
+        : '';
+    if (!sourcePath) {
+      return;
+    }
+
+    associatedObject.userData = {
+      ...associatedObject.userData,
+      usdSourcePath: sourcePath,
+    };
+  });
+};
+
 const cloneUsdGltfSceneAsset = (asset: CachedUsdGltfSceneAsset): THREE.Object3D => {
   const clonedRoot = asset.preserveSkeletons ? cloneSkeleton(asset.scene) : asset.scene.clone(true);
 
@@ -219,6 +286,7 @@ const loadUsdGltfSceneAsset = async (
   const pendingLoad = (async (): Promise<CachedUsdGltfSceneAsset> => {
     const loader = new GLTFLoader(getUsdTextureLoadingManager(registry));
     const gltf = await loader.loadAsync(assetUrl);
+    applyUsdGltfTextureSourcePaths(gltf);
     return {
       scene: gltf.scene,
       preserveSkeletons: objectHasSkinnedMeshes(gltf.scene),
@@ -345,12 +413,21 @@ const createUsdPrimitiveSceneNode = (
         '#ffffff';
       const mesh = new THREE.Mesh(geometry, createUsdBaseMaterial(color));
       mesh.name = `box_${entry.face}`;
-      mesh.userData.usdGeomType = 'Cube';
       mesh.userData.usdDisplayColor = color;
       mesh.userData.usdMaterial = {
         color,
+        ...(entry.material.colorRgba ? { colorRgba: [...entry.material.colorRgba] } : {}),
+        ...(Number.isFinite(entry.material.opacity)
+          ? { opacity: Math.max(0, Math.min(1, Number(entry.material.opacity))) }
+          : {}),
         ...(entry.material.texture ? { texture: entry.material.texture } : {}),
       };
+      const opacity = Number.isFinite(entry.material.opacity)
+        ? Number(entry.material.opacity)
+        : entry.material.colorRgba?.[3];
+      if (Number.isFinite(opacity)) {
+        mesh.userData.usdOpacity = Math.max(0, Math.min(1, Number(opacity)));
+      }
       mesh.userData.usdSerializeFilteredGroups = true;
       anchor.add(mesh);
     });
@@ -675,25 +752,12 @@ const quaternionNearlyEquals = (
   return Math.abs(Math.abs(normalizedLeft.dot(normalizedRight)) - 1) <= epsilon;
 };
 
-const applyMatrixToMeshNormals = (
-  attribute: THREE.BufferAttribute | THREE.InterleavedBufferAttribute,
-  normalMatrix: THREE.Matrix3,
+const bakeObjectLocalTransformIntoMeshGeometry = (
+  object: THREE.Object3D,
+  replacementLocalMatrix: THREE.Matrix4,
 ): void => {
-  const normal = new THREE.Vector3();
-  for (let index = 0; index < attribute.count; index += 1) {
-    normal
-      .set(attribute.getX(index), attribute.getY(index), attribute.getZ(index))
-      .applyMatrix3(normalMatrix)
-      .normalize();
-    attribute.setXYZ(index, normal.x, normal.y, normal.z);
-  }
-  attribute.needsUpdate = true;
-};
-
-const bakeObjectLocalTransformIntoMeshGeometry = (object: THREE.Object3D): void => {
   object.updateMatrix();
-  const localMatrix = object.matrix.clone();
-  const normalMatrix = new THREE.Matrix3().getNormalMatrix(localMatrix);
+  const bakedMatrix = replacementLocalMatrix.clone().invert().multiply(object.matrix);
 
   object.traverse((child) => {
     if (!isUsdMeshObject(child)) {
@@ -701,11 +765,8 @@ const bakeObjectLocalTransformIntoMeshGeometry = (object: THREE.Object3D): void 
     }
 
     child.geometry = child.geometry.clone();
-    child.geometry.applyMatrix4(localMatrix);
-    const normalAttribute = child.geometry.getAttribute('normal');
-    if (normalAttribute) {
-      applyMatrixToMeshNormals(normalAttribute, normalMatrix);
-    }
+    // BufferGeometry.applyMatrix4 transforms both positions and normals.
+    child.geometry.applyMatrix4(bakedMatrix);
     child.geometry.computeBoundingBox();
     child.geometry.computeBoundingSphere();
   });
@@ -720,9 +781,15 @@ const normalizeIsaacCompatibleColladaMeshTransform = (object: THREE.Object3D): v
     return;
   }
 
-  // Isaac Sim's URDF importer bakes this Blender-authored cyclic root transform into the mesh
-  // payload, then keeps the visual prim at the standard +90deg X orientation.
-  bakeObjectLocalTransformIntoMeshGeometry(object);
+  // Isaac Sim's URDF importer keeps the visual prim at the standard +90deg X orientation.
+  // Bake only the residual between that target transform and the authored cyclic transform;
+  // baking the full authored transform would apply the +90deg rotation twice.
+  const replacementLocalMatrix = new THREE.Matrix4().compose(
+    new THREE.Vector3(),
+    USD_ISAAC_COLLADA_VISUAL_QUATERNION,
+    new THREE.Vector3(1, 1, 1),
+  );
+  bakeObjectLocalTransformIntoMeshGeometry(object, replacementLocalMatrix);
   object.position.set(0, 0, 0);
   object.quaternion.copy(USD_ISAAC_COLLADA_VISUAL_QUATERNION);
   object.scale.set(1, 1, 1);

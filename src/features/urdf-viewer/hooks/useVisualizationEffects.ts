@@ -62,6 +62,7 @@ export interface UseVisualizationEffectsOptions {
     revert: boolean,
     subType?: 'visual' | 'collision',
     meshToHighlight?: THREE.Object3D | null | number,
+    intent?: 'hover' | 'selection',
   ) => void;
   highlightedMeshesRef: React.RefObject<Map<THREE.Mesh, HighlightedMeshSnapshot>>;
   linkMeshMapRef?: RefObject<Map<string, THREE.Mesh[]>>;
@@ -773,8 +774,24 @@ export function useVisualizationEffects({
 
       if (!robot) return;
 
-      let didMutateGeometryHighlight = false;
       syncHelperInteractionHighlight(nextHoveredSelection);
+
+      const {
+        id: hoverTargetId,
+        subType: hoverTargetSubType,
+        objectIndex: hoverTargetObjectIndex,
+        highlightObjectId: hoverTargetHighlightObjectId,
+      } = resolveHighlightTarget(nextHoveredSelection, { allowHelperSelection: false });
+
+      // When the hover target hasn't changed, skip the revert+reapply cycle.
+      // This avoids an unnecessary flicker when syncHoverHighlight is called
+      // from the selection-change effect (the hover itself didn't change).
+      const hoverChanged = !areHighlightTargetsEquivalent(currentHoverRef.current, {
+        id: hoverTargetId,
+        subType: hoverTargetSubType,
+        objectIndex: hoverTargetObjectIndex,
+        highlightObjectId: hoverTargetHighlightObjectId,
+      });
 
       const activeSelection = selectionRef.current;
       const {
@@ -784,53 +801,40 @@ export function useVisualizationEffects({
         highlightObjectId: selectionHighlightObjectId,
       } = resolveHighlightTarget(activeSelection, { allowHelperSelection: false });
 
-      if (currentHoverRef.current.id) {
-        if (
-          !areHighlightTargetsEquivalent(currentHoverRef.current, {
-            id: selectionHighlightId,
-            subType: selectionHighlightSubType,
-            objectIndex: selectionHighlightObjectIndex,
-            highlightObjectId: selectionHighlightObjectId,
-          })
-        ) {
+      let didMutateGeometryHighlight = false;
+
+      if (hoverChanged && currentHoverRef.current.id) {
+        // Always release the previous hover target, even when it matches the
+        // current selection: hover and selection outlines are registered
+        // under separate owners, so skipping this would leave a stale
+        // hover-intent outline stuck on the selected link after the hover
+        // moves away or clears (e.g. after clicking empty space).
+        highlightGeometry(
+          currentHoverRef.current.id,
+          true,
+          currentHoverRef.current.subType as any,
+          resolveStoredHighlightTarget(
+            currentHoverRef.current.highlightObjectId,
+            currentHoverRef.current.objectIndex,
+          ),
+        );
+        didMutateGeometryHighlight = true;
+        if (selectionHighlightId) {
           highlightGeometry(
-            currentHoverRef.current.id,
-            true,
-            currentHoverRef.current.subType as any,
+            selectionHighlightId,
+            false,
+            selectionHighlightSubType,
             resolveStoredHighlightTarget(
-              currentHoverRef.current.highlightObjectId,
-              currentHoverRef.current.objectIndex,
+              selectionHighlightObjectId,
+              selectionHighlightObjectIndex,
             ),
+            'selection',
           );
           didMutateGeometryHighlight = true;
-          if (selectionHighlightId) {
-            highlightGeometry(
-              selectionHighlightId,
-              false,
-              selectionHighlightSubType,
-              resolveStoredHighlightTarget(
-                selectionHighlightObjectId,
-                selectionHighlightObjectIndex,
-              ),
-            );
-            didMutateGeometryHighlight = true;
-          }
         }
       }
 
-      const {
-        id: hoverTargetId,
-        subType: hoverTargetSubType,
-        objectIndex: hoverTargetObjectIndex,
-        highlightObjectId: hoverTargetHighlightObjectId,
-      } = resolveHighlightTarget(nextHoveredSelection, { allowHelperSelection: false });
-
       if (hoverTargetId) {
-        const hoverStateChanged =
-          currentHoverRef.current.id !== hoverTargetId ||
-          currentHoverRef.current.subType !== (hoverTargetSubType || null) ||
-          currentHoverRef.current.objectIndex !== hoverTargetObjectIndex ||
-          currentHoverRef.current.highlightObjectId !== hoverTargetHighlightObjectId;
         highlightGeometry(
           hoverTargetId,
           false,
@@ -843,7 +847,7 @@ export function useVisualizationEffects({
           objectIndex: hoverTargetObjectIndex,
           highlightObjectId: hoverTargetHighlightObjectId,
         };
-        if (hoverStateChanged || didMutateGeometryHighlight) {
+        if (hoverChanged || didMutateGeometryHighlight) {
           invalidate();
         }
         return;
@@ -882,6 +886,7 @@ export function useVisualizationEffects({
           currentSelectionRef.current.highlightObjectId,
           currentSelectionRef.current.objectIndex,
         ),
+        'selection',
       );
     }
 
@@ -898,6 +903,7 @@ export function useVisualizationEffects({
         false,
         targetSubType,
         resolveStoredHighlightTarget(targetHighlightObjectId, targetObjectIndex),
+        'selection',
       );
       currentSelectionRef.current = {
         id: targetId,
@@ -909,6 +915,7 @@ export function useVisualizationEffects({
       currentSelectionRef.current = { id: null, subType: null };
     }
     syncHoverHighlight(latestHoverSelectionRef.current);
+    invalidate();
   }, [
     effectiveSelection?.helperKind,
     effectiveSelection?.highlightObjectId,
@@ -917,6 +924,7 @@ export function useVisualizationEffects({
     effectiveSelection?.subType,
     effectiveSelection?.type,
     highlightGeometry,
+    invalidate,
     robot,
     robotVersion,
     resolveStoredHighlightTarget,

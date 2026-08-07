@@ -892,7 +892,7 @@ test('applyGeometryPatchInPlace replaces stale box meshes when updating cylinder
   linkObject.name = 'base_link';
 
   const collisionGroup = new URDFCollider();
-  const collisionMesh = new THREE.Mesh(
+  const collisionMesh: THREE.Mesh = new THREE.Mesh(
     new THREE.BoxGeometry(1, 1, 1),
     new THREE.MeshBasicMaterial({ color: new THREE.Color('#ffffff') }),
   );
@@ -936,10 +936,19 @@ test('applyGeometryPatchInPlace replaces stale box meshes when updating cylinder
     showCollision: true,
     linkMeshMapRef: { current: new Map<string, THREE.Mesh[]>() },
     invalidate: () => {},
+    primitiveGeometryDetail: {
+      cylinderRadialSegments: 128,
+      sphereWidthSegments: 64,
+      sphereHeightSegments: 48,
+      capsuleCapSegments: 16,
+      capsuleRadialSegments: 32,
+    },
   });
 
   assert.equal(applied, true);
   assert.equal(collisionMesh.geometry.type, 'CylinderGeometry');
+  assert.ok(collisionMesh.geometry instanceof THREE.CylinderGeometry);
+  assert.equal(collisionMesh.geometry.parameters.radialSegments, 128);
   assert.deepEqual(
     collisionMesh.scale.toArray().map((value) => Number(value.toFixed(4))),
     [0.08, 0.7, 0.08],

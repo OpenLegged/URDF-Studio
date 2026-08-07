@@ -1,4 +1,12 @@
-import { Camera, Languages, Moon, Monitor, Settings, Sun } from 'lucide-react';
+import {
+  Camera,
+  Languages,
+  MessageCircleQuestionMark,
+  Moon,
+  Monitor,
+  Settings,
+  Sun,
+} from 'lucide-react';
 import { Button, IconButton } from '@/shared/components/ui';
 import type { Theme } from '@/types';
 import type {
@@ -8,6 +16,9 @@ import type {
   HeaderMenuKey,
 } from './types';
 import { HeaderOverflowMenu } from './HeaderOverflowMenu';
+
+export const FEEDBACK_FORM_URL =
+  'https://enkeebot.feishu.cn/share/base/form/shrcnok1dXPePgAxuu2qnXiVxYf';
 
 interface HeaderActionsProps {
   responsive: HeaderResponsiveLayout;
@@ -26,7 +37,9 @@ interface HeaderActionsProps {
   onOpenCodeViewer: () => void;
   onPrefetchCodeViewer: () => void;
   onSnapshot: () => void;
+  onPrefetchSnapshot: () => void;
   onOpenSettings: () => void;
+  onPrefetchSettings: () => void;
   t: HeaderTranslations;
 }
 
@@ -62,10 +75,12 @@ function InlineActionButton({ action, show, showLabel }: InlineActionButtonProps
 function SnapshotButton({
   show,
   onSnapshot,
+  onPrefetchSnapshot,
   label,
 }: {
   show: boolean;
   onSnapshot: () => void;
+  onPrefetchSnapshot: () => void;
   label: string;
 }) {
   if (!show) {
@@ -76,6 +91,9 @@ function SnapshotButton({
     <IconButton
       type="button"
       onClick={onSnapshot}
+      onPointerEnter={onPrefetchSnapshot}
+      onPointerDown={onPrefetchSnapshot}
+      onFocus={onPrefetchSnapshot}
       variant="ghost"
       size="md"
       className="hidden h-7 w-7 sm:flex"
@@ -170,10 +188,12 @@ function HeaderDivider({ show }: { show: boolean }) {
 function SettingsButton({
   show,
   onOpenSettings,
+  onPrefetchSettings,
   label,
 }: {
   show: boolean;
   onOpenSettings: () => void;
+  onPrefetchSettings: () => void;
   label: string;
 }) {
   if (!show) {
@@ -184,6 +204,9 @@ function SettingsButton({
     <IconButton
       type="button"
       onClick={onOpenSettings}
+      onPointerEnter={onPrefetchSettings}
+      onPointerDown={onPrefetchSettings}
+      onFocus={onPrefetchSettings}
       variant="ghost"
       size="md"
       className="hidden h-7 w-7 sm:flex"
@@ -191,6 +214,22 @@ function SettingsButton({
     >
       <Settings className="w-4 h-4" />
     </IconButton>
+  );
+}
+
+function FeedbackButton({ label }: { label: string }) {
+  return (
+    <a
+      href={FEEDBACK_FORM_URL}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="inline-flex h-7 shrink-0 items-center gap-1 rounded-md border border-transparent px-2 text-xs font-medium text-text-secondary transition-all duration-200 hover:bg-element-hover hover:text-text-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-system-blue/30"
+      title={label}
+      aria-label={label}
+    >
+      <MessageCircleQuestionMark className="h-4 w-4" />
+      <span>{label}</span>
+    </a>
   );
 }
 
@@ -211,7 +250,9 @@ export function HeaderActions({
   onOpenCodeViewer,
   onPrefetchCodeViewer,
   onSnapshot,
+  onPrefetchSnapshot,
   onOpenSettings,
+  onPrefetchSettings,
   t,
 }: HeaderActionsProps) {
   const {
@@ -233,7 +274,12 @@ export function HeaderActions({
         show={showQuickActionInline}
         showLabel={showQuickActionLabel}
       />
-      <SnapshotButton show={showSnapshotInline} onSnapshot={onSnapshot} label={t.snapshot} />
+      <SnapshotButton
+        show={showSnapshotInline}
+        onSnapshot={onSnapshot}
+        onPrefetchSnapshot={onPrefetchSnapshot}
+        label={t.snapshot}
+      />
       <LanguageButton
         show={showLanguageInline}
         lang={lang}
@@ -246,6 +292,7 @@ export function HeaderActions({
         setTheme={setTheme}
         label={t.toggleTheme}
       />
+      <FeedbackButton label={t.feedback} />
       <HeaderDivider show={showThemeInline || showDesktopOverflow} />
 
       {showDesktopOverflow && (
@@ -266,7 +313,9 @@ export function HeaderActions({
           onOpenCodeViewer={onOpenCodeViewer}
           onPrefetchCodeViewer={onPrefetchCodeViewer}
           onSnapshot={onSnapshot}
+          onPrefetchSnapshot={onPrefetchSnapshot}
           onOpenSettings={onOpenSettings}
+          onPrefetchSettings={onPrefetchSettings}
           t={t}
           showQuickAction={Boolean(quickAction) && !showQuickActionInline}
           showSourceCode={!responsive.showSourceInline}
@@ -285,7 +334,12 @@ export function HeaderActions({
         showLabel={showSecondaryActionLabel}
       />
 
-      <SettingsButton show={showSettingsInline} onOpenSettings={onOpenSettings} label={t.settings} />
+      <SettingsButton
+        show={showSettingsInline}
+        onOpenSettings={onOpenSettings}
+        onPrefetchSettings={onPrefetchSettings}
+        label={t.settings}
+      />
 
       <HeaderOverflowMenu
         className="sm:hidden"
@@ -304,7 +358,9 @@ export function HeaderActions({
         onOpenCodeViewer={onOpenCodeViewer}
         onPrefetchCodeViewer={onPrefetchCodeViewer}
         onSnapshot={onSnapshot}
+        onPrefetchSnapshot={onPrefetchSnapshot}
         onOpenSettings={onOpenSettings}
+        onPrefetchSettings={onPrefetchSettings}
         t={t}
         showQuickAction={Boolean(quickAction)}
         showSourceCode

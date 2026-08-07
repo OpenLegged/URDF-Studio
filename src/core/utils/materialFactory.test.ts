@@ -43,15 +43,15 @@ test('createMatteMaterial softens non-authored pure white by default', () => {
   assert.ok(material.envMapIntensity < MATERIAL_CONFIG.envMapIntensity);
 });
 
-test('createMatteMaterial still softens authored near-white colors to keep viewer contrast', () => {
+test('createMatteMaterial preserves authored pure white without dimming its PBR base color', () => {
   const material = createMatteMaterial({
     color: 0xffffff,
     preserveExactColor: true,
   });
 
-  assertColorClose(material.color, new THREE.Color(0.93, 0.93, 0.93));
-  assert.equal(material.toneMapped, true);
-  assert.ok(material.envMapIntensity < MATERIAL_CONFIG.envMapIntensity);
+  assertColorClose(material.color, new THREE.Color(0xffffff));
+  assert.equal(material.toneMapped, false);
+  assert.equal(material.envMapIntensity, 0.46);
 });
 
 test('createMatteMaterial preserves texture-backed neutral white bases', () => {
@@ -88,7 +88,7 @@ test('createMatteMaterial uses a more reflective preset for metal-like material 
   assert.equal(material.userData.materialPreset, 'metal');
   assert.equal(material.roughness, 0.38);
   assert.equal(material.metalness, 0.48);
-  assert.equal(material.envMapIntensity, 0.5);
+  assert.equal(material.envMapIntensity, 0.64);
 });
 
 test('createMatteMaterial uses a coated shell preset for body panels', () => {
@@ -100,7 +100,10 @@ test('createMatteMaterial uses a coated shell preset for body panels', () => {
   assert.equal(material.userData.materialPreset, 'coated');
   assert.equal(material.roughness, 0.64);
   assert.equal(material.metalness, 0.05);
-  assert.ok(material.envMapIntensity < 0.34);
+  assert.equal(
+    material.envMapIntensity,
+    0.46 * MATERIAL_CONFIG.whiteEnvMapIntensityMultiplier,
+  );
 });
 
 test('createMatteMaterial infers a coated preset from unnamed near-white shell colors', () => {

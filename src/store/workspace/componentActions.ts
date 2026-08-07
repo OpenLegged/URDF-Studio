@@ -1,6 +1,7 @@
 import type { AssemblyComponent } from '@/types';
 import {
   buildDefaultAssemblyComponentPlacementTransform,
+  hasComponentEditorLocks,
   normalizeComponentRobot,
 } from '@/core/robot';
 
@@ -27,6 +28,7 @@ type ComponentActions = Pick<
   | 'updateComponentSourceFile'
   | 'updateComponentTransform'
   | 'setComponentVisibility'
+  | 'setComponentEditorLocked'
   | 'replaceComponentRobot'
   | 'replaceComponentRobotAtRevision'
 >;
@@ -36,6 +38,13 @@ export function createComponentActions(
   get: WorkspaceStoreGet,
   runtime: WorkspaceRuntime,
 ): ComponentActions {
+  const isComponentEditorLocked = (componentId: string): boolean =>
+    get().workspace.components[componentId]?.editorLocked === true;
+  const hasLockedContent = (componentId: string): boolean => {
+    const component = get().workspace.components[componentId];
+    return Boolean(component && hasComponentEditorLocks(component));
+  };
+
   return {
     appendComponent: (seed, options) => {
       if (!runtime.isOperationAllowed(options)) {
@@ -113,15 +122,18 @@ export function createComponentActions(
       return inserted;
     },
 
-    removeComponent: (componentId, options) =>
-      runtime.applyMutation(
+    removeComponent: (componentId, options) => {
+      if (hasLockedContent(componentId)) return false;
+      return runtime.applyMutation(
         'Remove component',
         (draft) => removeComponentOrCreateDefault(draft, componentId),
         options,
-      ),
+      );
+    },
 
-    renameComponent: (componentId, name, options) =>
-      runtime.applyMutation(
+    renameComponent: (componentId, name, options) => {
+      if (isComponentEditorLocked(componentId)) return false;
+      return runtime.applyMutation(
         'Rename component',
         (draft) => {
           const component = draft.components[componentId];
@@ -130,10 +142,12 @@ export function createComponentActions(
           }
         },
         options,
-      ),
+      );
+    },
 
-    updateComponentSourceFile: (componentId, sourceFile, options) =>
-      runtime.applyMutation(
+    updateComponentSourceFile: (componentId, sourceFile, options) => {
+      if (hasLockedContent(componentId)) return false;
+      return runtime.applyMutation(
         'Update component source',
         (draft) => {
           const component = draft.components[componentId];
@@ -142,9 +156,11 @@ export function createComponentActions(
           }
         },
         options,
-      ),
+      );
+    },
 
     updateComponentTransform: (componentId, transform, options) => {
+      if (isComponentEditorLocked(componentId)) return false;
       const changed = runtime.applyMutation(
         'Transform component',
         (draft) => {
@@ -177,8 +193,22 @@ export function createComponentActions(
         options,
       ),
 
-    replaceComponentRobot: (componentId, robot, options) =>
+    setComponentEditorLocked: (componentId, locked, options) =>
       runtime.applyMutation(
+        locked ? 'Lock component editing' : 'Unlock component editing',
+        (draft) => {
+          const component = draft.components[componentId];
+          if (component) {
+            if (locked) component.editorLocked = true;
+            else delete component.editorLocked;
+          }
+        },
+        options,
+      ),
+
+    replaceComponentRobot: (componentId, robot, options) => {
+      if (hasLockedContent(componentId)) return false;
+      return runtime.applyMutation(
         'Replace component robot',
         (draft) => {
           const component = draft.components[componentId];
@@ -190,10 +220,15 @@ export function createComponentActions(
           removeInvalidBridges(draft);
         },
         options,
-      ),
+      );
+    },
 
     replaceComponentRobotAtRevision: (componentId, expectedRevision, robot, options) => {
-      if (get().revision !== expectedRevision || !get().workspace.components[componentId]) {
+      if (
+        get().revision !== expectedRevision
+        || !get().workspace.components[componentId]
+        || hasLockedContent(componentId)
+      ) {
         return false;
       }
       return runtime.applyMutation(

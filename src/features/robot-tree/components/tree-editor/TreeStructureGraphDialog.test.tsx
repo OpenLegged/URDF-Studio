@@ -291,10 +291,11 @@ test('TreeStructureGraphDialog clears selection on blank click without clearing 
       );
     });
 
-    assert.equal(useSelectionStore.getState().selection?.entity.type, 'link');
+    const selectedGraphEntity = useSelectionStore.getState().selection?.entity;
+    assert.equal(selectedGraphEntity?.type, 'link');
     assert.equal(
-      useSelectionStore.getState().selection?.entity.type === 'link'
-        ? useSelectionStore.getState().selection.entity.componentId
+      selectedGraphEntity?.type === 'link'
+        ? selectedGraphEntity.componentId
         : null,
       'demo_component',
     );

@@ -3,7 +3,7 @@ import { useFrame, useThree } from '@react-three/fiber';
 import * as THREE from 'three';
 import { UnifiedTransformControls } from '@/shared/components/3d';
 import { resolveLinkKey } from '@/core/robot';
-import type { CollisionTransformControlsProps } from '../types';
+import type { GeometryTransformControlsProps } from '../types';
 import { useCollisionTransformDragLifecycle } from '../hooks/useCollisionTransformDragLifecycle';
 import { getObjectRPY } from '../utils/collisionTransformMath';
 import { resolveCurrentCollisionDraggingControls } from '../utils/collisionTransformControlsShared';
@@ -15,10 +15,11 @@ const COLLISION_ROTATE_GIZMO_SIZE = COLLISION_GIZMO_SIZING.rotateSize;
 const COLLISION_GIZMO_THICKNESS_SCALE = COLLISION_GIZMO_SIZING.thicknessScale;
 const COLLISION_COMMITTED_TRANSFORM_EPSILON = 1e-6;
 
-export const CollisionTransformControls: React.FC<CollisionTransformControlsProps> = ({
+export const GeometryTransformControls: React.FC<GeometryTransformControlsProps> = ({
   robot,
   robotVersion,
   selection,
+  geometrySubType,
   transformMode,
   setIsDragging,
   onTransformChange,
@@ -133,7 +134,7 @@ export const CollisionTransformControls: React.FC<CollisionTransformControlsProp
   );
 
   useEffect(() => {
-    if (selection?.id && selection.subType === 'collision') {
+    if (selection?.id && selection.subType === geometrySubType) {
       const resolvedSelectionId = resolveSelectionLinkId(selection.id);
       if (!resolvedSelectionId) return;
 
@@ -147,7 +148,7 @@ export const CollisionTransformControls: React.FC<CollisionTransformControlsProp
     if (!isDraggingRef.current) {
       activeSelectionRef.current = null;
     }
-  }, [resolveSelectionLinkId, selection?.id, selection?.objectIndex, selection?.subType]);
+  }, [geometrySubType, resolveSelectionLinkId, selection?.id, selection?.objectIndex, selection?.subType]);
 
   const commitTransform = useCallback(() => {
     const activeTargetObject = targetObjectRef.current;
@@ -362,7 +363,7 @@ export const CollisionTransformControls: React.FC<CollisionTransformControlsProp
     if (
       !robot ||
       !selection?.id ||
-      selection.subType !== 'collision' ||
+      selection.subType !== geometrySubType ||
       transformMode === 'select'
     ) {
       if (isDraggingRef.current) {
@@ -393,23 +394,25 @@ export const CollisionTransformControls: React.FC<CollisionTransformControlsProp
       return;
     }
 
-    const colliders: THREE.Object3D[] = [];
+    const geometryObjects: THREE.Object3D[] = [];
     linkObj.traverse((child: any) => {
-      if (child.isURDFCollider && child.parent === linkObj) {
-        colliders.push(child);
+      const matchesGeometry = geometrySubType === 'collision' ? child.isURDFCollider : child.isURDFVisual;
+      if (matchesGeometry && child.parent === linkObj) {
+        geometryObjects.push(child);
       }
     });
 
-    if (colliders.length === 0) {
+    if (geometryObjects.length === 0) {
       linkObj.traverse((child: any) => {
-        if (child.isURDFCollider) {
-          colliders.push(child);
+        const matchesGeometry = geometrySubType === 'collision' ? child.isURDFCollider : child.isURDFVisual;
+        if (matchesGeometry) {
+          geometryObjects.push(child);
         }
       });
     }
 
-    const collisionGroup = colliders[selection.objectIndex ?? 0] || colliders[0] || null;
-    if (!collisionGroup) {
+    const geometryObject = geometryObjects[selection.objectIndex ?? 0] || geometryObjects[0] || null;
+    if (!geometryObject) {
       if (isDraggingRef.current) {
         cancelActiveDrag();
       }
@@ -417,24 +420,25 @@ export const CollisionTransformControls: React.FC<CollisionTransformControlsProp
       return;
     }
 
-    const isSameTarget = targetObjectRef.current === collisionGroup;
+    const isSameTarget = targetObjectRef.current === geometryObject;
     const resolvedSelectionId = resolveSelectionLinkId(selection.id) ?? selection.id;
-    reconcileCommittedTransform(collisionGroup, resolvedSelectionId, selection.objectIndex ?? 0);
+    reconcileCommittedTransform(geometryObject, resolvedSelectionId, selection.objectIndex ?? 0);
 
     if (isDraggingRef.current && targetObjectRef.current && !isSameTarget) {
       cancelActiveDrag();
     }
 
-    setTargetObject((current) => (current === collisionGroup ? current : collisionGroup));
+    setTargetObject((current) => (current === geometryObject ? current : geometryObject));
 
     if (!isDraggingRef.current) {
       activeControlsRef.current = null;
-      originalPositionRef.current.copy(collisionGroup.position);
-      originalRotationRef.current.copy(collisionGroup.rotation);
-      originalQuaternionRef.current.copy(collisionGroup.quaternion);
+      originalPositionRef.current.copy(geometryObject.position);
+      originalRotationRef.current.copy(geometryObject.rotation);
+      originalQuaternionRef.current.copy(geometryObject.quaternion);
     }
   }, [
     cancelActiveDrag,
+    geometrySubType,
     reconcileCommittedTransform,
     resolveSelectionLinkId,
     robot,

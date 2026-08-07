@@ -25,8 +25,10 @@ import {
   Vec3InlineInput,
   PROPERTY_EDITOR_INPUT_CLASS,
   PROPERTY_EDITOR_LINK_CLASS,
+  PROPERTY_EDITOR_FIELD_LABEL_CLASS,
   type Vec3Value,
 } from './FormControls';
+import { Vec3ClipboardActions } from './Vec3ClipboardActions';
 import { useMotorConfig } from '../hooks/useMotorConfig';
 import { TransformFields } from './TransformFields';
 import type { WorkspaceJointPropertyPatch } from '@/store/workspace/types';
@@ -135,8 +137,6 @@ export const JointProperties: React.FC<JointPropertiesProps> = ({
   const sectionInlineLabelWidthClassName = 'w-16 whitespace-nowrap';
   const sectionCompactInlineLabelWidthClassName = 'w-auto min-w-[2.5rem] whitespace-nowrap';
   const sectionWideInlineLabelWidthClassName = 'w-24 whitespace-nowrap';
-  const sectionUnitInlineLabelWidthClassName =
-    'w-24 min-w-24 max-w-24 shrink-0 whitespace-nowrap';
   const jointType = (data.type as JointType | undefined) || JointType.REVOLUTE;
   const origin = data.origin ?? DEFAULT_ORIGIN;
   const supportsAxis = AXIS_BASED_TYPES.has(jointType);
@@ -249,7 +249,20 @@ export const JointProperties: React.FC<JointPropertiesProps> = ({
         </InputGroup>
 
         {supportsAxis && (
-          <InputGroup label={t.axisRotation}>
+          <div className="mb-1">
+            <div className="mb-0.5 flex items-center justify-between gap-2">
+              <label className={PROPERTY_EDITOR_FIELD_LABEL_CLASS}>{t.axisRotation}</label>
+              <Vec3ClipboardActions
+                cacheKey="joint-axis"
+                value={data.axis || DEFAULT_AXIS}
+                onChange={(axis) => updateJoint({ axis: toXYZ(axis, data.axis || DEFAULT_AXIS) })}
+                copyTitle={t.copyAxis}
+                pasteTitle={t.pasteAxis}
+                copiedTitle={t.axisCopied}
+                pastedTitle={t.axisPasted}
+                errorTitle={t.axisClipboardError}
+              />
+            </div>
             <Vec3InlineInput
               value={data.axis || DEFAULT_AXIS}
               onChange={(v) => updateJoint({ axis: toXYZ(v, data.axis || DEFAULT_AXIS) })}
@@ -259,60 +272,56 @@ export const JointProperties: React.FC<JointPropertiesProps> = ({
               precision={MAX_TRANSFORM_DECIMALS}
               commitPrecision={MAX_TRANSFORM_DECIMALS}
             />
-          </InputGroup>
+          </div>
         )}
       </CollapsibleSection>
 
       <div className="@container space-y-2.5">
         {(supportsFullLimit || supportsEffortVelocityLimit) && (
           <CollapsibleSection title={t.limits} storageKey="limits">
-            <div className="grid grid-cols-1 gap-2 @[320px]:grid-cols-2">
+            <div className="grid grid-cols-1 gap-2 @[300px]:grid-cols-2">
               {supportsFullLimit && (
                 <>
-                  <InlineInputGroup
+                  <InputGroup
                     label={withUnitLabel(t.lower, limitUnit)}
                     className="min-w-0 mb-0"
-                    labelWidthClassName={sectionUnitInlineLabelWidthClassName}
                   >
                     <NumberInput
                       value={displayLimit.lower}
                       onChange={(v: number) => updateLimitValue('lower', v)}
                     />
-                  </InlineInputGroup>
-                  <InlineInputGroup
+                  </InputGroup>
+                  <InputGroup
                     label={withUnitLabel(t.upper, limitUnit)}
                     className="min-w-0 mb-0"
-                    labelWidthClassName={sectionUnitInlineLabelWidthClassName}
                   >
                     <NumberInput
                       value={displayLimit.upper}
                       onChange={(v: number) => updateLimitValue('upper', v)}
                     />
-                  </InlineInputGroup>
+                  </InputGroup>
                 </>
               )}
-              <InlineInputGroup
+              <InputGroup
                 label={withUnitLabel(t.effort, effortUnit)}
                 className="min-w-0 mb-0"
-                labelWidthClassName={sectionUnitInlineLabelWidthClassName}
               >
                 <NumberInput
                   value={displayLimit.effort}
                   min={0}
                   onChange={(v: number) => updateLimitValue('effort', v)}
                 />
-              </InlineInputGroup>
-              <InlineInputGroup
+              </InputGroup>
+              <InputGroup
                 label={withUnitLabel(t.velocity, velocityUnit)}
                 className="min-w-0 mb-0"
-                labelWidthClassName={sectionUnitInlineLabelWidthClassName}
               >
                 <NumberInput
                   value={displayLimit.velocity}
                   min={0}
                   onChange={(v: number) => updateLimitValue('velocity', v)}
                 />
-              </InlineInputGroup>
+              </InputGroup>
             </div>
           </CollapsibleSection>
         )}

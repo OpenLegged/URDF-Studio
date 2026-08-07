@@ -44,6 +44,7 @@ interface HeaderMenusProps {
   onImportFile: () => void;
   onImportFolder: () => void;
   onOpenExport: () => void;
+  onPrefetchExport: () => void;
   onExportProject: () => void;
   isExportingProject?: boolean;
   toolboxItems: ToolboxItem[];
@@ -69,6 +70,7 @@ export function HeaderMenus({
   onImportFile,
   onImportFolder,
   onOpenExport,
+  onPrefetchExport,
   onExportProject,
   isExportingProject = false,
   toolboxItems,
@@ -159,6 +161,9 @@ export function HeaderMenus({
               <HeaderMenuSeparator />
               <HeaderMenuItem
                 icon={Upload}
+                onPointerEnter={onPrefetchExport}
+                onPointerDown={onPrefetchExport}
+                onFocus={onPrefetchExport}
                 onClick={() => {
                   setActiveMenu(null);
                   onOpenExport();
@@ -188,7 +193,12 @@ export function HeaderMenus({
         <div className="relative">
           <HeaderButton
             isActive={activeMenu === 'ai'}
-            onClick={() => toggleMenu('ai')}
+            onClick={() => {
+              if (activeMenu !== 'ai') {
+                aiItems.forEach((item) => item.onPrefetch?.());
+              }
+              toggleMenu('ai');
+            }}
             title={t.aiMenu}
             ariaLabel={t.aiMenu}
             ariaHaspopup="menu"
@@ -215,6 +225,9 @@ export function HeaderMenus({
                 {aiItems.map((item) => (
                   <HeaderMenuItem
                     key={item.key}
+                    onPointerEnter={item.onPrefetch}
+                    onPointerDown={item.onPrefetch}
+                    onFocus={item.onPrefetch}
                     onClick={() => {
                       item.onClick();
                       setActiveMenu(null);
@@ -314,7 +327,7 @@ export function HeaderMenus({
             onPointerDown={onPrefetchCodeViewer}
             data-testid="source-code-open"
             variant="ghost"
-            size="xs"
+            size="sm"
             className="whitespace-nowrap px-2.5 text-text-secondary hover:text-text-primary"
             title={t.sourceCode}
             aria-label={t.sourceCode}

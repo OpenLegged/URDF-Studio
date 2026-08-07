@@ -24,6 +24,7 @@ interface HeaderProps {
   onImportFile: () => void;
   onImportFolder: () => void;
   onOpenExport: () => void;
+  onPrefetchExport: () => void;
   onExportProject: () => void;
   isExportingProject?: boolean;
   // Toolbox items
@@ -32,10 +33,12 @@ interface HeaderProps {
   onOpenCodeViewer: () => void;
   onPrefetchCodeViewer: () => void;
   onOpenSettings: () => void;
+  onPrefetchSettings: () => void;
   quickAction?: HeaderAction;
   secondaryAction?: HeaderAction;
   // Snapshot
   onSnapshot: () => void;
+  onPrefetchSnapshot: () => void;
   // View config
   viewConfig: {
     showOptionsPanel: boolean;
@@ -50,15 +53,18 @@ export function Header({
   onImportFile,
   onImportFolder,
   onOpenExport,
+  onPrefetchExport,
   onExportProject,
   isExportingProject = false,
   toolboxItems,
   onOpenCodeViewer,
   onPrefetchCodeViewer,
   onOpenSettings,
+  onPrefetchSettings,
   quickAction,
   secondaryAction,
   onSnapshot,
+  onPrefetchSnapshot,
   viewConfig,
   viewAvailability = { jointPanel: true },
   setViewConfig,
@@ -135,6 +141,7 @@ export function Header({
           onImportFile={onImportFile}
           onImportFolder={onImportFolder}
           onOpenExport={onOpenExport}
+          onPrefetchExport={onPrefetchExport}
           onExportProject={onExportProject}
           isExportingProject={isExportingProject}
           toolboxItems={toolboxItems}
@@ -169,7 +176,9 @@ export function Header({
         onOpenCodeViewer={onOpenCodeViewer}
         onPrefetchCodeViewer={onPrefetchCodeViewer}
         onSnapshot={onSnapshot}
+        onPrefetchSnapshot={onPrefetchSnapshot}
         onOpenSettings={onOpenSettings}
+        onPrefetchSettings={onPrefetchSettings}
         t={t}
       />
     </header>

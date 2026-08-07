@@ -79,6 +79,7 @@ function stripPresentationStateFromVisual<T extends UrdfVisual>(visual: T): T {
 function stripPresentationStateFromLink<T extends UrdfLink>(link: T): T {
   const {
     visible: _visible,
+    editorLocked: _editorLocked,
     visual,
     visualBodies,
     collision,
@@ -92,6 +93,18 @@ function stripPresentationStateFromLink<T extends UrdfLink>(link: T): T {
     visualBodies: visualBodies?.map((body) => stripPresentationStateFromVisual(body)),
     collision: stripPresentationStateFromVisual(collision),
     collisionBodies: collisionBodies?.map((body) => stripPresentationStateFromVisual(body)),
+  } as T;
+}
+
+function stripEditorLockStateFromRobotData<T extends RobotSnapshotLike>(robot: T): T {
+  return {
+    ...robot,
+    links: Object.fromEntries(
+      Object.entries(robot.links).map(([linkId, link]) => {
+        const { editorLocked: _editorLocked, ...sourceLink } = link;
+        return [linkId, sourceLink];
+      }),
+    ),
   } as T;
 }
 
@@ -115,7 +128,11 @@ export function stripRobotPersistenceState<T extends RobotSnapshotLike>(robot: T
 
 export function createRobotSemanticSnapshot(robot: RobotSnapshotLike | RobotState): string {
   const { selection: _selection, ...robotData } = robot as RobotState;
-  return createStableJsonSnapshot(stripTransientJointMotionFromRobotData({ ...robotData }));
+  return createStableJsonSnapshot(
+    stripEditorLockStateFromRobotData(
+      stripTransientJointMotionFromRobotData({ ...robotData }),
+    ),
+  );
 }
 
 export function createRobotPersistenceSnapshot(robot: RobotSnapshotLike | RobotState): string {

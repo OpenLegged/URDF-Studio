@@ -185,6 +185,7 @@ const resolveLinkMaterialEntry = (
     return {
       color: resolvedMaterial.color || undefined,
       colorRgba: resolvedMaterial.colorRgba,
+      opacity: resolvedMaterial.opacity,
       texture: resolvedMaterial.texture || undefined,
       forceUniformOverride: true,
     };
@@ -204,6 +205,7 @@ const resolveLinkMaterialEntry = (
         visual.color ||
         undefined,
       colorRgba: resolvedMaterial.colorRgba,
+      opacity: resolvedMaterial.opacity,
       texture: resolvedMaterial.texture || undefined,
       forceUniformOverride: true,
     };
@@ -358,7 +360,9 @@ const getMaterialPaletteEntryForMerge = (
     ...(mesh.userData.usdDisplayColor !== undefined
       ? { usdDisplayColor: mesh.userData.usdDisplayColor }
       : {}),
-    ...(mesh.userData.usdMaterial ? { usdMaterial: structuredClone(mesh.userData.usdMaterial) } : {}),
+    ...(mesh.userData.usdMaterial
+      ? { usdMaterial: structuredClone(mesh.userData.usdMaterial) }
+      : {}),
     ...(mesh.userData.usdOpacity !== undefined ? { usdOpacity: mesh.userData.usdOpacity } : {}),
     ...(mesh.userData.usdSourceMaterialName || material?.name
       ? { usdSourceMaterialName: mesh.userData.usdSourceMaterialName || material?.name }
@@ -472,7 +476,10 @@ const mergeUsdVisualMeshesInScope = (visualsScope: THREE.Group): void => {
     sourceGroups.forEach((group) => {
       const groupStart = appendedVertexCount;
       const groupEnd = Math.min(sourceIndices.length, group.start + group.count);
-      const sourceMaterialIndex = Math.min(group.materialIndex, Math.max(0, meshMaterials.length - 1));
+      const sourceMaterialIndex = Math.min(
+        group.materialIndex,
+        Math.max(0, meshMaterials.length - 1),
+      );
       const targetMaterialIndex = materialOffset + sourceMaterialIndex;
       for (let index = group.start; index < groupEnd; index += 1) {
         const vertexIndex = sourceIndices[index] ?? 0;
@@ -497,7 +504,11 @@ const mergeUsdVisualMeshesInScope = (visualsScope: THREE.Group): void => {
 
       const appendedCount = appendedVertexCount - groupStart;
       if (appendedCount > 0) {
-        mergedGeometry.addGroup(positions.length / 3 - appendedCount, appendedCount, targetMaterialIndex);
+        mergedGeometry.addGroup(
+          positions.length / 3 - appendedCount,
+          appendedCount,
+          targetMaterialIndex,
+        );
         mergedPalette.push(
           getMaterialPaletteEntryForMerge(mesh, sourceMaterialIndex, targetMaterialIndex),
         );

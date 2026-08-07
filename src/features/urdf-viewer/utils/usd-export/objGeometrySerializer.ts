@@ -182,6 +182,7 @@ type ObjBuildContext = {
   averagedAuthoredNormal: Vector3;
   shouldWriteRepairedFaceVaryingNormals: boolean;
   writesFaceVaryingNormals: boolean;
+  pointBasedKind: 'points' | 'basiscurves' | null;
 };
 
 /**
@@ -195,7 +196,18 @@ function readGeometryData(
 ): ObjBuildContext | null {
   const ranges = getDescriptorRanges(descriptor.descriptor, buffers);
   const positionValues = readRangeValues(buffers?.positions, ranges?.positions);
-  if (positionValues.length < 9) {
+  const normalizedPrimType = String(descriptor.descriptor.primType || '').trim().toLowerCase();
+  const pointBasedKind = normalizedPrimType === 'points'
+    ? 'points'
+    : normalizedPrimType === 'basiscurves'
+      ? 'basiscurves'
+      : null;
+  const minimumPositionValueCount = pointBasedKind === 'points'
+    ? 3
+    : pointBasedKind === 'basiscurves'
+      ? 6
+      : 9;
+  if (positionValues.length < minimumPositionValueCount) {
     return null;
   }
 
@@ -447,6 +459,7 @@ function readGeometryData(
     averagedAuthoredNormal,
     shouldWriteRepairedFaceVaryingNormals,
     writesFaceVaryingNormals,
+    pointBasedKind,
   };
 }
 
@@ -694,7 +707,19 @@ function serializeAsOBJ(ctx: ObjBuildContext): { blob: Blob; bytes: Uint8Array }
     hasPerVertexUvs,
     hasPerVertexNormals,
     writesFaceVaryingNormals,
+    pointBasedKind,
   } = ctx;
+
+  if (pointBasedKind === 'points') {
+    const pointIndexes = Array.from({ length: ctx.vertexCount }, (_, index) => index + 1);
+    if (pointIndexes.length === 0) return null;
+    lines.push(`p ${pointIndexes.join(' ')}`);
+  } else if (pointBasedKind === 'basiscurves') {
+    for (let index = 0; index + 1 < ctx.vertexCount; index += 2) {
+      lines.push(`l ${index + 1} ${index + 2}`);
+    }
+    if (ctx.vertexCount < 2) return null;
+  }
 
   const formatObjFaceVertex = (
     vertexIndex: number,
@@ -713,7 +738,15 @@ function serializeAsOBJ(ctx: ObjBuildContext): { blob: Blob; bytes: Uint8Array }
     return String(vertexIndex);
   };
 
-  let wroteFace = false;
+  let wroteFace = pointBasedKind !== null;
+  if (pointBasedKind !== null) {
+    const objText = `${lines.join('\n')}\n`;
+    const bytes = new TextEncoder().encode(objText);
+    return {
+      blob: new Blob([bytes], { type: 'text/plain;charset=utf-8' }),
+      bytes,
+    };
+  }
   for (let index = 0; index + 2 < triangleIndices.length; index += 3) {
     const a = readRangeNumber(triangleIndices, index) + 1;
     const b = readRangeNumber(triangleIndices, index + 1) + 1;

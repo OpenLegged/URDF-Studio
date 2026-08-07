@@ -274,6 +274,7 @@ export const ViewerScene = ({
           paintColor={controller.paintColor}
           paintSelectionScope={controller.paintSelectionScope}
           paintOperation={controller.paintOperation}
+          paintInteractionRef={controller.paintInteractionRef}
           onPaintStatusChange={controller.setPaintStatus}
           onJointChange={controller.handleJointAngleChange}
           onJointChangeCommit={controller.handleJointChangeCommit}

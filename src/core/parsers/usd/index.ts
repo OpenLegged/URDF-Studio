@@ -4,3 +4,8 @@
  */
 
 export { isUSDA, isUSDCBinary, isUsdLikeFormat } from './usdFormatUtils';
+export {
+  inferUsdBundleVirtualDirectory,
+  isUsdPathWithinBundleDirectory,
+  isUsdRuntimeTexturePath,
+} from './usdAssetPaths';

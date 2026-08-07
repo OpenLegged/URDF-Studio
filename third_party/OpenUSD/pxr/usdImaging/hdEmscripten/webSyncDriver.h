@@ -26,8 +26,12 @@
 #include "pxr/usd/sdf/assetPath.h"
 #include "pxr/usd/usdGeom/xformable.h"
 #include "pxr/usd/usdGeom/xformCache.h"
+#include "pxr/usd/usdGeom/imageable.h"
 #include "pxr/usd/usdGeom/metrics.h"
 #include "pxr/usd/usdGeom/mesh.h"
+#include "pxr/usd/usdGeom/pointBased.h"
+#include "pxr/usd/usdGeom/points.h"
+#include "pxr/usd/usdGeom/basisCurves.h"
 #include "pxr/usd/usdGeom/primvar.h"
 #include "pxr/usd/usdGeom/subset.h"
 #include "pxr/usd/usdGeom/cube.h"
@@ -639,6 +643,9 @@ public:
         std::vector<float> transformPool;
         std::unordered_set<std::string> snapshotRuntimeLinkPathSet;
         std::vector<std::string> snapshotRuntimeLinkPaths;
+        std::unordered_set<std::string> directStageResolvedPrimPaths;
+        std::unordered_set<std::string> directStageMeshIds;
+        int directStageVisualDescriptorCount = 0;
         std::unordered_set<std::string> snapshotTransformPathSet;
         std::vector<std::string> snapshotTransformPaths;
         constexpr int kMeshDescriptorHeaderStride = 30;
@@ -834,7 +841,8 @@ public:
             try {
                 const UsdTimeCode timeCode = _delegate ? _delegate->GetTime() : UsdTimeCode::Default();
                 UsdGeomXformCache xformCache(timeCode);
-                const std::vector<std::string> acceptableTypes = {"mesh", "cube", "sphere", "cylinder", "capsule"};
+                const std::vector<std::string> acceptableTypes = {
+                    "mesh", "cube", "sphere", "cylinder", "capsule", "points", "basiscurves"};
                 _EnsureProtoCandidateMapsPrimed(acceptableTypes);
 
                 _renderDelegate.ReadAllLiveRprimPaths(
@@ -912,7 +920,8 @@ public:
             try {
                 const UsdTimeCode timeCode = _delegate ? _delegate->GetTime() : UsdTimeCode::Default();
                 UsdGeomXformCache xformCache(timeCode);
-                const std::vector<std::string> acceptableTypes = {"mesh", "cube", "sphere", "cylinder", "capsule"};
+                const std::vector<std::string> acceptableTypes = {
+                    "mesh", "cube", "sphere", "cylinder", "capsule", "points", "basiscurves"};
                 _EnsureProtoCandidateMapsPrimed(acceptableTypes);
 
                 auto makeProtoTypeForPrimType = [](std::string const& primType) {
@@ -963,6 +972,21 @@ public:
                             }
                             if (primPath.empty()) continue;
 
+                            // A directory named "visuals" is only a convention, not
+                            // stronger than composed USD visibility. Scene exporters
+                            // may keep collision geometry below such a directory while
+                            // hiding its parent. Leave those prims for the generic pass,
+                            // which can classify CollisionAPI geometry and expose it
+                            // only when no portable visible geometry exists.
+                            if (sectionName == "visuals") {
+                                const UsdGeomImageable imageable(prim);
+                                if (imageable
+                                    && imageable.ComputeVisibility(timeCode)
+                                        == UsdGeomTokens->invisible) {
+                                    continue;
+                                }
+                            }
+
                             const std::string primType = _GetSupportedPrimTypeName(prim);
                             if (primType.empty()) continue;
                             const std::string protoType = makeProtoTypeForPrimType(primType);
@@ -987,6 +1011,7 @@ public:
                             }
                             nextFallbackIndexByProtoType[protoType] =
                                 std::max(nextFallbackIndexByProtoType[protoType], protoIndex + 1);
+                            directStageMeshIds.insert(meshId);
 
                             SnapshotPrimOverrideData overrideData;
                             if (!_BuildSnapshotPrimOverrideDataFromPrim(
@@ -998,12 +1023,16 @@ public:
                                 continue;
                             }
 
+                            directStageResolvedPrimPaths.insert(primPath);
                             appendPackedDescriptorFromSnapshotOverride(
                                 meshId,
                                 sectionName,
                                 applyGeometry,
                                 sectionDirtyMask,
                                 overrideData);
+                            if (sectionName == "visuals") {
+                                directStageVisualDescriptorCount += 1;
+                            }
                             snapshotProfile.directStagePrimPathCount += 1;
                         }
                     }
@@ -1019,6 +1048,164 @@ public:
                     "collisions",
                     true,
                     kFinalStageDirtySectionCollision | kFinalStageDirtyApplyGeometry);
+
+                // Robot exports commonly place renderable prims below /visuals or
+                // /collisions, but ordinary USD scenes do not. Traverse the composed
+                // stage as a general fallback so standard imageable geometry is not
+                // silently dropped by the fast robot-snapshot path.
+                std::vector<std::pair<std::string, UsdPrim>> genericScenePrims;
+                const Usd_PrimFlagsPredicate predicate =
+                    UsdTraverseInstanceProxies(UsdPrimAllPrimsPredicate);
+                for (UsdPrim const& prim : UsdPrimRange::Stage(_stage, predicate)) {
+                    if (!prim) continue;
+                    const std::string primType = _GetSupportedPrimTypeName(prim);
+                    if (primType.empty() || !_ContainsString(acceptableTypes, primType)) continue;
+                    const std::string primPath = prim.GetPath().GetString();
+                    if (primPath.empty() || directStageResolvedPrimPaths.count(primPath) > 0) continue;
+                    genericScenePrims.push_back({primPath, prim});
+                }
+                std::sort(
+                    genericScenePrims.begin(),
+                    genericScenePrims.end(),
+                    [](auto const& left, auto const& right) {
+                        return left.first < right.first;
+                    });
+
+                bool hasGenericVisualCandidate = false;
+                for (auto const& candidate : genericScenePrims) {
+                    const std::string& primPath = candidate.first;
+                    const UsdPrim prim = candidate.second;
+                    const bool collisionPath =
+                        primPath.find("/collisions/") != std::string::npos;
+                    const UsdGeomImageable imageable(prim);
+                    const bool visible =
+                        !imageable
+                        || imageable.ComputeVisibility(timeCode) != UsdGeomTokens->invisible;
+                    if (visible && !collisionPath) {
+                        hasGenericVisualCandidate = true;
+                        break;
+                    }
+                }
+                // Some vendor scenes render a proprietary Volume while keeping a
+                // standard collision mesh hidden as the only portable geometry.
+                // If this runtime cannot find any supported visual candidate,
+                // publish that collision geometry through the visual channel as
+                // a compatibility fallback instead of returning a blank scene.
+                const bool promoteCollisionFallbackToVisual =
+                    directStageVisualDescriptorCount == 0
+                    && !hasGenericVisualCandidate;
+
+                std::unordered_map<std::string, int> nextGenericIndexByContainerAndType;
+                auto appendGenericDescriptor =
+                    [&](std::string const& linkPath,
+                        std::string const& sectionName,
+                        bool applyGeometry,
+                        uint32_t sectionDirtyMask,
+                        SnapshotPrimOverrideData const& overrideData) {
+                    const std::string protoType =
+                        makeProtoTypeForPrimType(overrideData.primType);
+                    const std::string syntheticContainerPath =
+                        linkPath + std::string("/") + sectionName;
+                    const std::string genericIndexKey =
+                        syntheticContainerPath + std::string("|") + protoType;
+                    int protoIndex = nextGenericIndexByContainerAndType[genericIndexKey];
+                    std::string meshId;
+                    for (;;) {
+                        meshId = syntheticContainerPath
+                            + std::string(".proto_")
+                            + protoType
+                            + std::string("_id")
+                            + std::to_string(protoIndex);
+                        if (directStageMeshIds.insert(meshId).second) {
+                            break;
+                        }
+                        ++protoIndex;
+                    }
+                    nextGenericIndexByContainerAndType[genericIndexKey] = protoIndex + 1;
+
+                    appendPackedDescriptorFromSnapshotOverride(
+                        meshId,
+                        sectionName,
+                        applyGeometry,
+                        sectionDirtyMask,
+                        overrideData);
+                    if (sectionName == "visuals") {
+                        directStageVisualDescriptorCount += 1;
+                    }
+                };
+                for (auto const& candidate : genericScenePrims) {
+                    const std::string& primPath = candidate.first;
+                    const UsdPrim prim = candidate.second;
+                    const bool collisionPath =
+                        primPath.find("/collisions/") != std::string::npos;
+                    const bool collisionEnabled = _PrimHasEnabledCollision(prim, timeCode);
+                    const UsdGeomImageable imageable(prim);
+                    const bool visible =
+                        !imageable
+                        || imageable.ComputeVisibility(timeCode) != UsdGeomTokens->invisible;
+                    if (!visible && !collisionEnabled && !collisionPath) {
+                        continue;
+                    }
+
+                    const bool collisionSemantic =
+                        collisionPath || (!visible && collisionEnabled);
+                    const bool useCollisionSection =
+                        collisionSemantic && !promoteCollisionFallbackToVisual;
+                    std::string linkPath = defaultPrimPath;
+                    if (linkPath.empty()) {
+                        linkPath = _GetParentPath(primPath);
+                    }
+                    if (!linkPath.empty()) {
+                        if (snapshotRuntimeLinkPathSet.insert(linkPath).second) {
+                            snapshotRuntimeLinkPaths.push_back(linkPath);
+                        }
+                        appendSnapshotTransformPath(linkPath);
+                    }
+                    if (linkPath.empty()) {
+                        continue;
+                    }
+
+                    SnapshotPrimOverrideData overrideData;
+                    if (!_BuildSnapshotPrimOverrideDataFromPrim(
+                            prim,
+                            primPath,
+                            timeCode,
+                            &xformCache,
+                            &overrideData)) {
+                        continue;
+                    }
+
+                    if (promoteCollisionFallbackToVisual && collisionSemantic) {
+                        // Keep the compatibility visual publication, and also expose
+                        // the collision role so collision toggles and inspectors can
+                        // observe the same vendor-authored geometry.
+                        appendGenericDescriptor(
+                            linkPath,
+                            "visuals",
+                            false,
+                            kFinalStageDirtySectionVisual,
+                            overrideData);
+                        appendGenericDescriptor(
+                            linkPath,
+                            "collisions",
+                            true,
+                            kFinalStageDirtySectionCollision | kFinalStageDirtyApplyGeometry,
+                            overrideData);
+                    } else {
+                        const std::string sectionName =
+                            useCollisionSection ? "collisions" : "visuals";
+                        appendGenericDescriptor(
+                            linkPath,
+                            sectionName,
+                            useCollisionSection,
+                            useCollisionSection
+                                ? (kFinalStageDirtySectionCollision | kFinalStageDirtyApplyGeometry)
+                                : kFinalStageDirtySectionVisual,
+                            overrideData);
+                    }
+                    directStageResolvedPrimPaths.insert(primPath);
+                    snapshotProfile.directStagePrimPathCount += 1;
+                }
             } catch (...) {
             }
         }
@@ -3004,14 +3191,6 @@ private:
             }
             return false;
         };
-        auto tryReadTextureAny = [&](std::initializer_list<char const*> attributeNames, std::string* outValue) {
-            for (char const* attributeName : attributeNames) {
-                if (_TryReadTexturePathAttr(shaderPrim.GetAttribute(TfToken(attributeName)), timeCode, outValue)) {
-                    return true;
-                }
-            }
-            return false;
-        };
         auto setScalar = [&](char const* fieldName, std::initializer_list<char const*> attributeNames, bool clamp01 = false, bool enforceMin = false, double minValue = 0.0) {
             double value = 0.0;
             if (!tryReadDoubleAny(attributeNames, &value) || !std::isfinite(value)) return false;
@@ -3041,9 +3220,22 @@ private:
         };
         auto setTexture = [&](char const* fieldName, std::initializer_list<char const*> attributeNames) {
             std::string texturePath;
-            if (!tryReadTextureAny(attributeNames, &texturePath) || texturePath.empty()) return false;
-            record.set(fieldName, texturePath);
-            return true;
+            for (char const* attributeName : attributeNames) {
+                if (std::string(attributeName) == "inputs:ORM_texture") {
+                    bool ormTextureEnabled = true;
+                    (void)tryReadBoolAny({ "inputs:enable_ORM_texture" }, &ormTextureEnabled);
+                    if (!ormTextureEnabled) continue;
+                }
+                if (_TryReadTexturePathAttr(
+                        shaderPrim.GetAttribute(TfToken(attributeName)),
+                        timeCode,
+                        &texturePath)
+                    && !texturePath.empty()) {
+                    record.set(fieldName, texturePath);
+                    return true;
+                }
+            }
+            return false;
         };
 
         std::string shaderInfoId;
@@ -3159,6 +3351,7 @@ private:
         setVec2("clearcoatNormalScale", { "inputs:clearcoatNormalScale", "inputs:clearcoat_normal_scale" });
 
         setTexture("mapPath", {
+            "inputs:diffuse_texture",
             "inputs:diffuseColor_texture",
             "inputs:diffuse_color_texture",
             "inputs:baseColor_texture",
@@ -3169,25 +3362,31 @@ private:
             "inputs:emissiveColor_texture",
             "inputs:emissive_color_texture",
             "inputs:emissive_texture",
+            "inputs:emissive_mask_texture",
         });
         setTexture("roughnessMapPath", {
             "inputs:roughness_texture",
+            "inputs:reflectionroughness_texture",
             "inputs:reflection_roughness_texture",
             "inputs:specular_roughness_texture",
+            "inputs:ORM_texture",
         });
         setTexture("metalnessMapPath", {
             "inputs:metallic_texture",
             "inputs:metalness_texture",
+            "inputs:ORM_texture",
         });
         setTexture("normalMapPath", {
             "inputs:normal_texture",
             "inputs:normalmap_texture",
             "inputs:normal_map_texture",
+            "inputs:detail_normalmap_texture",
         });
         setTexture("aoMapPath", {
             "inputs:occlusion_texture",
             "inputs:occlusion_map",
             "inputs:ao_texture",
+            "inputs:ORM_texture",
         });
         setTexture("alphaMapPath", {
             "inputs:opacity_texture",
@@ -3304,6 +3503,7 @@ private:
 
         if (_TryReadTexturePathAny(shaderPrim, timeCode, {
                 "inputs:file",
+                "inputs:diffuse_texture",
                 "inputs:diffuseColor_texture",
                 "inputs:diffuse_color_texture",
                 "inputs:baseColor_texture",
@@ -3312,7 +3512,9 @@ private:
                 "inputs:emissiveColor_texture",
                 "inputs:emissive_color_texture",
                 "inputs:emissive_texture",
+                "inputs:emissive_mask_texture",
                 "inputs:roughness_texture",
+                "inputs:reflectionroughness_texture",
                 "inputs:reflection_roughness_texture",
                 "inputs:specular_roughness_texture",
                 "inputs:metallic_texture",
@@ -3320,9 +3522,11 @@ private:
                 "inputs:normal_texture",
                 "inputs:normalmap_texture",
                 "inputs:normal_map_texture",
+                "inputs:detail_normalmap_texture",
                 "inputs:occlusion_texture",
                 "inputs:occlusion_map",
                 "inputs:ao_texture",
+                "inputs:ORM_texture",
                 "inputs:opacity_texture",
                 "inputs:opacity_mask_texture",
                 "inputs:opacityMask_texture"})) {
@@ -3436,7 +3640,9 @@ private:
             || authoredType == "cube"
             || authoredType == "sphere"
             || authoredType == "cylinder"
-            || authoredType == "capsule") {
+            || authoredType == "capsule"
+            || authoredType == "points"
+            || authoredType == "basiscurves") {
             return authoredType;
         }
 
@@ -3445,6 +3651,8 @@ private:
         if (UsdGeomSphere(prim)) return "sphere";
         if (UsdGeomCylinder(prim)) return "cylinder";
         if (UsdGeomCapsule(prim)) return "capsule";
+        if (UsdGeomPoints(prim)) return "points";
+        if (UsdGeomBasisCurves(prim)) return "basiscurves";
         return std::string();
     }
 
@@ -4668,6 +4876,33 @@ private:
         return false;
     }
 
+    static bool _PrimHasEnabledCollision(
+        UsdPrim const& prim,
+        UsdTimeCode const& timeCode) {
+        if (!prim) {
+            return false;
+        }
+
+        const UsdAttribute collisionEnabledAttr =
+            prim.GetAttribute(TfToken("physics:collisionEnabled"));
+        if (collisionEnabledAttr) {
+            bool collisionEnabled = true;
+            if (collisionEnabledAttr.Get(&collisionEnabled, timeCode)) {
+                return collisionEnabled;
+            }
+            return true;
+        }
+
+        const TfTokenVector appliedSchemas = prim.GetAppliedSchemas();
+        for (TfToken const& schemaToken : appliedSchemas) {
+            const std::string schema = _ToLowerAscii(schemaToken.GetString());
+            if (schema.find("collisionapi") != std::string::npos) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     static emscripten::val _GeomSubsetSectionsToJsArray(
         std::vector<WebRenderDelegate::GeomSubsetSection> const& sections) {
         emscripten::val out = emscripten::val::array();
@@ -4782,6 +5017,157 @@ private:
         return diagnostics;
     }
 
+    static bool _BuildPointBasedPayloadRecordFromPrim(
+        UsdPrim const& prim,
+        std::string const& primType,
+        UsdTimeCode const& timeCode,
+        GfMatrix4d const& worldMatrix,
+        WebRenderDelegate::ProtoDataBlobRecord* outRecord) {
+        if (!outRecord || !prim) return false;
+        *outRecord = WebRenderDelegate::ProtoDataBlobRecord();
+
+        VtVec3fArray authoredPoints;
+        const UsdGeomPointBased pointBased(prim);
+        if (!pointBased || !pointBased.GetPointsAttr().Get(&authoredPoints, timeCode)
+            || authoredPoints.empty()) {
+            return false;
+        }
+
+        auto appendPoint = [&](GfVec3f const& point) {
+            outRecord->points.push_back(point[0]);
+            outRecord->points.push_back(point[1]);
+            outRecord->points.push_back(point[2]);
+        };
+        auto appendSegment = [&](GfVec3f const& left, GfVec3f const& right) {
+            appendPoint(left);
+            appendPoint(right);
+        };
+
+        if (primType == "points") {
+            outRecord->points.reserve(authoredPoints.size() * 3);
+            for (GfVec3f const& point : authoredPoints) {
+                appendPoint(point);
+            }
+        } else {
+            const UsdGeomBasisCurves curves(prim);
+            VtIntArray curveVertexCounts;
+            if (!curves || !curves.GetCurveVertexCountsAttr().Get(&curveVertexCounts, timeCode)
+                || curveVertexCounts.empty()) {
+                return false;
+            }
+
+            TfToken typeToken = UsdGeomTokens->linear;
+            TfToken basisToken = UsdGeomTokens->bezier;
+            TfToken wrapToken = UsdGeomTokens->nonperiodic;
+            curves.GetTypeAttr().Get(&typeToken, timeCode);
+            curves.GetBasisAttr().Get(&basisToken, timeCode);
+            curves.GetWrapAttr().Get(&wrapToken, timeCode);
+            const std::string curveType = _ToLowerAscii(typeToken.GetString());
+            const std::string basis = _ToLowerAscii(basisToken.GetString());
+            const std::string wrap = _ToLowerAscii(wrapToken.GetString());
+            constexpr int kCurveSubdivisions = 12;
+            size_t pointOffset = 0;
+
+            auto evaluateCubic = [&](std::array<GfVec3f, 4> const& controls, float t) {
+                const float t2 = t * t;
+                const float t3 = t2 * t;
+                std::array<float, 4> weights;
+                if (basis == "bspline") {
+                    weights = {
+                        std::pow(1.0f - t, 3.0f) / 6.0f,
+                        (3.0f * t3 - 6.0f * t2 + 4.0f) / 6.0f,
+                        (-3.0f * t3 + 3.0f * t2 + 3.0f * t + 1.0f) / 6.0f,
+                        t3 / 6.0f,
+                    };
+                } else if (basis == "catmullrom" || basis == "centripetalcatmullrom") {
+                    weights = {
+                        (-t3 + 2.0f * t2 - t) / 2.0f,
+                        (3.0f * t3 - 5.0f * t2 + 2.0f) / 2.0f,
+                        (-3.0f * t3 + 4.0f * t2 + t) / 2.0f,
+                        (t3 - t2) / 2.0f,
+                    };
+                } else {
+                    const float oneMinusT = 1.0f - t;
+                    weights = {
+                        oneMinusT * oneMinusT * oneMinusT,
+                        3.0f * oneMinusT * oneMinusT * t,
+                        3.0f * oneMinusT * t2,
+                        t3,
+                    };
+                }
+                GfVec3f result(0.0f);
+                for (size_t index = 0; index < controls.size(); ++index) {
+                    result += controls[index] * weights[index];
+                }
+                return result;
+            };
+
+            for (int authoredCount : curveVertexCounts) {
+                const size_t count = authoredCount > 0 ? static_cast<size_t>(authoredCount) : 0;
+                if (count == 0 || pointOffset + count > authoredPoints.size()) {
+                    pointOffset += count;
+                    continue;
+                }
+
+                auto pointAt = [&](size_t index) -> GfVec3f const& {
+                    return authoredPoints[pointOffset + (index % count)];
+                };
+                if (curveType != "cubic") {
+                    if (wrap == "segmented") {
+                        for (size_t index = 0; index + 1 < count; index += 2) {
+                            appendSegment(pointAt(index), pointAt(index + 1));
+                        }
+                    } else {
+                        for (size_t index = 0; index + 1 < count; ++index) {
+                            appendSegment(pointAt(index), pointAt(index + 1));
+                        }
+                        if (wrap == "periodic" && count > 2) {
+                            appendSegment(pointAt(count - 1), pointAt(0));
+                        }
+                    }
+                    pointOffset += count;
+                    continue;
+                }
+
+                const bool periodic = wrap == "periodic";
+                const size_t segmentCount = basis == "bezier"
+                    ? (periodic ? count / 3 : (count > 0 ? (count - 1) / 3 : 0))
+                    : (periodic ? count : (count >= 4 ? count - 3 : 0));
+                for (size_t segment = 0; segment < segmentCount; ++segment) {
+                    const size_t start = basis == "bezier" ? segment * 3 : segment;
+                    const std::array<GfVec3f, 4> controls = {
+                        pointAt(start), pointAt(start + 1), pointAt(start + 2), pointAt(start + 3),
+                    };
+                    for (int step = 0; step < kCurveSubdivisions; ++step) {
+                        const float leftT = static_cast<float>(step) / kCurveSubdivisions;
+                        const float rightT = static_cast<float>(step + 1) / kCurveSubdivisions;
+                        appendSegment(
+                            evaluateCubic(controls, leftT),
+                            evaluateCubic(controls, rightT));
+                    }
+                }
+                pointOffset += count;
+            }
+        }
+
+        if (outRecord->points.empty()) return false;
+        _Matrix4dToFloat16(worldMatrix, &outRecord->transform);
+        outRecord->materialId = _ResolveBoundMaterialId(prim);
+        if (outRecord->materialId.empty()) {
+            outRecord->materialId = _ResolveDisplayColorMaterialId(prim, timeCode);
+        }
+        outRecord->numVertices = static_cast<int>(outRecord->points.size() / 3);
+        outRecord->numIndices = 0;
+        outRecord->numNormals = 0;
+        outRecord->numUVs = 0;
+        outRecord->normalsDimension = 0;
+        outRecord->uvDimension = 0;
+        outRecord->renderReady = true;
+        outRecord->topologyMode = "nonIndexed";
+        outRecord->valid = outRecord->numVertices > 0;
+        return outRecord->valid;
+    }
+
     bool _BuildSnapshotPrimOverrideDataFromPrim(
         UsdPrim const& prim,
         std::string const& primPath,
@@ -4835,6 +5221,18 @@ private:
                     out->meshPayload = std::move(meshPayloadRecord);
                 }
             }
+        } else if (primType == "points" || primType == "basiscurves") {
+            WebRenderDelegate::ProtoDataBlobRecord pointBasedPayloadRecord;
+            if (!_BuildPointBasedPayloadRecordFromPrim(
+                  prim,
+                  primType,
+                  timeCode,
+                  worldMatrix,
+                  &pointBasedPayloadRecord)) {
+                return false;
+            }
+            out->hasMeshPayload = true;
+            out->meshPayload = std::move(pointBasedPayloadRecord);
         }
 
         if (_TryReadExtentSize(prim, timeCode, &out->extentSize)) {

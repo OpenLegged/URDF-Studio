@@ -266,6 +266,7 @@ test('link, joint, and geometry rows keep legacy icons, connectors, visibility, 
   assert.doesNotMatch(markup, />visual(?: \d+)?</);
   assert.doesNotMatch(markup, />collision(?: \d+)?</);
   assert.match(markup, /aria-label="toggle-link-visibility-left-base_link"/);
+  assert.match(markup, /aria-label="toggle-link-editor-lock-left-base_link"/);
   assert.match(markup, /aria-label="toggle-geometry-visibility-left-base_link-visual-0"/);
   assert.match(markup, /aria-label="toggle-geometry-visibility-left-base_link-collision-0"/);
   assert.ok(linkRow, 'link row');
@@ -329,6 +330,91 @@ test('legacy visibility controls keep canonical component ownership', async () =
   }
 });
 
+test('editor locks sit beside visibility and keep tree selection available', async () => {
+  const dom = installDom();
+  const container = dom.window.document.getElementById('root')!;
+  const root = createRoot(container);
+  const updates: Array<{ ref: EntityRef; patch: unknown }> = [];
+  const selections: WorkspaceSelection[] = [];
+
+  try {
+    await act(async () => {
+      root.render(React.createElement(AssemblyTreeView, baseProps(createWorkspace(), {
+        onSelect: (selection) => selections.push(selection),
+        onUpdate: (ref, patch) => updates.push({ ref, patch }),
+      })));
+    });
+
+    const linkVisibility = container.querySelector(
+      '[aria-label="toggle-link-visibility-left-base_link"]',
+    );
+    const linkLock = container.querySelector(
+      '[aria-label="toggle-link-editor-lock-left-base_link"]',
+    );
+    assert.ok(linkVisibility);
+    assert.ok(linkLock);
+    assert.equal(
+      linkVisibility.compareDocumentPosition(linkLock) & dom.window.Node.DOCUMENT_POSITION_FOLLOWING,
+      dom.window.Node.DOCUMENT_POSITION_FOLLOWING,
+      'lock should render immediately after the eye control',
+    );
+
+    await click(dom, linkLock, 'link editor lock');
+    assert.deepEqual(updates.at(-1), {
+      ref: { type: 'link', componentId: 'left', entityId: 'base_link' },
+      patch: { editorLocked: true },
+    });
+    assert.equal(selections.length, 0, 'lock button must not activate the tree row');
+
+    await click(
+      dom,
+      container.querySelector('[aria-label="toggle-component-editor-lock-left"]'),
+      'component editor lock',
+    );
+    assert.deepEqual(updates.at(-1), {
+      ref: { type: 'component', componentId: 'left' },
+      patch: { editorLocked: true },
+    });
+    assert.equal(selections.length, 0, 'component lock button must not activate the root row');
+  } finally {
+    await act(async () => root.unmount());
+    dom.window.close();
+  }
+});
+
+test('a locked link protects its subtree while keeping inspection and unlock controls', () => {
+  const workspace = createWorkspace();
+  workspace.components.left!.robot.links.base_link!.editorLocked = true;
+  const markup = renderToStaticMarkup(
+    React.createElement(AssemblyTreeView, baseProps(workspace, {
+      showGeometryDetailsByDefault: true,
+    })),
+  );
+  const dom = new JSDOM(markup);
+  const document = dom.window.document;
+  const rootRow = document.querySelector('[data-testid="tree-link-left-base_link"] > div');
+  const rootLock = document.querySelector<HTMLButtonElement>(
+    '[aria-label="toggle-link-editor-lock-left-base_link"]',
+  );
+  const childLock = document.querySelector<HTMLButtonElement>(
+    '[aria-label="toggle-link-editor-lock-left-tip_link"]',
+  );
+
+  assert.equal(rootRow?.getAttribute('role'), 'button');
+  assert.equal(rootLock?.getAttribute('aria-pressed'), 'true');
+  assert.equal(rootLock?.disabled, false, 'the authored lock remains available for unlocking');
+  assert.equal(childLock?.disabled, true, 'descendants inherit the parent lock');
+  assert.equal(childLock?.title, translations.en.editingLockedByAncestor);
+  assert.ok(document.querySelector('[aria-label="toggle-link-visibility-left-base_link"]'));
+  assert.equal(
+    document.querySelector('[aria-label="toggle-geometry-visibility-left-base_link-visual-0"]'),
+    null,
+  );
+  assert.equal(document.querySelector('[aria-label="add-collision-left-base_link"]'), null);
+
+  dom.window.close();
+});
+
 test('read-only tree keeps disclosure controls but removes selection and mutation affordances', () => {
   const markup = renderToStaticMarkup(
     React.createElement(AssemblyTreeView, baseProps(createWorkspace(), {
@@ -354,6 +440,8 @@ test('read-only tree keeps disclosure controls but removes selection and mutatio
   assert.equal(geometryRow.getAttribute('role'), null);
   assert.equal(geometryRow.getAttribute('tabindex'), null);
   assert.equal(document.querySelector('[aria-label^="toggle-link-visibility-"]'), null);
+  assert.equal(document.querySelector('[aria-label^="toggle-link-editor-lock-"]'), null);
+  assert.equal(document.querySelector('[aria-label^="toggle-component-editor-lock-"]'), null);
   assert.equal(document.querySelector('[aria-label^="delete-link-"]'), null);
 
   dom.window.close();

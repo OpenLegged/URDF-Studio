@@ -1,6 +1,6 @@
 import { inferCommonPackageAssetBundleRoot } from '@/app/utils/importPackageAssetReferences.ts';
 import { isAssetLibraryOnlyFormat } from '@/shared/utils/robotFileSupport';
-import { normalizeLibraryPathKey } from '@/shared/utils/pathKeys';
+import { normalizeLibraryPathKey } from '@/core/utils/pathKeys';
 import type { RobotFile } from '@/types';
 
 interface BundleRootPayload {

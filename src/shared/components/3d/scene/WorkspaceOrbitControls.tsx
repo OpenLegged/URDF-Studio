@@ -9,6 +9,7 @@ import {
   resolveWorkspaceOrbitPanSpeed,
   resolveWorkspaceOrbitZoomSpeed,
 } from './workspaceOrbitPan';
+import { shouldScheduleWorkspaceOrbitDemandFrame } from './workspaceOrbitRenderPolicy';
 import { useSceneBoundsCache } from './useSceneBoundsCache';
 import {
   applyWorkspaceCameraSnapshot,
@@ -94,7 +95,7 @@ export function WorkspaceOrbitControls({
   const size = useThree((state) => state.size);
   const controls = useMemo(() => new OrbitControlsImpl(camera), [camera]);
   const controlsRef = useRef<OrbitControlsImpl | null>(controls);
-  const { getClipBounds, getPanBounds, invalidate: invalidateSceneBounds } = useSceneBoundsCache();
+  const { getClipBounds, getPanBounds } = useSceneBoundsCache();
 
   // Fold the user sensitivity multiplier into the base tuning so the adaptive
   // pan/zoom resolvers and the OrbitControls props all share one effective
@@ -154,23 +155,36 @@ export function WorkspaceOrbitControls({
   useEffect(() => {
     let scheduledFrame: number | null = null;
     const scheduleRender = () => {
-      if (!controls.enabled) {
-        return;
-      }
-
-      if (scheduledFrame !== null) {
+      if (
+        !shouldScheduleWorkspaceOrbitDemandFrame({
+          controlsEnabled: controls.enabled,
+          frameloop: get().frameloop,
+          frameScheduled: scheduledFrame !== null,
+        })
+      ) {
         return;
       }
 
       scheduledFrame = window.requestAnimationFrame(() => {
         scheduledFrame = null;
-        if (!controls.enabled) {
+        // Interaction quality switches the workspace to a continuous frameloop.
+        // Re-check here because that transition may land after the DOM event
+        // queued this callback but before the browser executes it.
+        if (
+          !shouldScheduleWorkspaceOrbitDemandFrame({
+            controlsEnabled: controls.enabled,
+            frameloop: get().frameloop,
+            frameScheduled: false,
+          })
+        ) {
           return;
         }
 
         const { camera } = get();
+        // OrbitControls.update() emits its own `change` event when the camera
+        // moves. Re-dispatching here would run clipping, navigation-speed, and
+        // camera-light subscribers twice in the same interaction frame.
         const cameraChanged = controls.update() as unknown as boolean;
-        controls.dispatchEvent({ type: 'change', target: controls });
         camera.updateMatrixWorld(true);
         // Let R3F run the full demand-frame pipeline; direct gl.render() skips Hud passes.
         invalidate();
@@ -319,10 +333,9 @@ export function WorkspaceOrbitControls({
       const clipBounds = getClipBounds();
       const panBounds = getPanBounds();
 
-      // `zoomToCursor` can place the camera very close to one surface while
-      // the orbit target remains deeper in the model. Keep the near plane
-      // conservative so dense robot geometry does not clip away while
-      // zooming.
+      // A consumer may opt into `zoomToCursor`, placing the camera very close
+      // to one surface while the orbit target remains deeper in the model.
+      // Keep the near plane conservative so dense geometry does not clip away.
       syncWorkspaceClipPlanes(camera, controls, {
         minDistance,
         sceneBounds: clipBounds,
@@ -366,10 +379,10 @@ export function WorkspaceOrbitControls({
       invalidate();
     };
     const handleStart = () => {
-      // Refresh bounds before a user interaction so any drift since the
-      // last compute (e.g. programmatic joint motion that did not mutate
-      // the scene tree) is rebuilt before pan/zoom tuning is evaluated.
-      invalidateSceneBounds();
+      // Scene mutations and workspace updates invalidate the shared cache.
+      // Invalidating on every orbit start forced two hierarchy walks (clip +
+      // navigation bounds) into the first visible drag frame even though a
+      // camera-only orbit cannot change scene bounds.
       onStart?.();
     };
     const handleEnd = () => {
@@ -384,7 +397,7 @@ export function WorkspaceOrbitControls({
       controls.removeEventListener('start', handleStart);
       controls.removeEventListener('end', handleEnd);
     };
-  }, [controls, invalidate, invalidateSceneBounds, onEnd, onStart]);
+  }, [controls, invalidate, onEnd, onStart]);
 
   return null;
 }

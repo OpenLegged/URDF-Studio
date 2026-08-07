@@ -92,6 +92,11 @@ public:
         uintptr_t transformPtr = 0;
         int transformCount = 0;
         std::vector<RprimPrimvarDeltaRecord> primvars;
+        std::vector<int32_t> curveVertexCounts;
+        std::vector<int32_t> curveIndices;
+        std::string curveType;
+        std::string curveBasis;
+        std::string curveWrap;
     };
 
     enum RprimDeltaDirtyMask : uint32_t
@@ -103,6 +108,7 @@ public:
         kRprimDeltaDirtyPrimvars = 1u << 4,
         kRprimDeltaDirtyNormals = 1u << 5,
         kRprimDeltaDirtyTransform = 1u << 6,
+        kRprimDeltaDirtyCurveTopology = 1u << 7,
     };
 
     WebRenderDelegate(emscripten::val renderDelegateInterface) :
@@ -208,6 +214,12 @@ public:
                            int dimension,
                            float const* data,
                            int dataCount);
+    void QueueRprimCurveTopology(std::string const& rprimPath,
+                                 VtIntArray const& curveVertexCounts,
+                                 VtIntArray const& curveIndices,
+                                 TfToken const& curveType,
+                                 TfToken const& curveBasis,
+                                 TfToken const& curveWrap);
     void ClearRprimDelta(std::string const& rprimPath);
     emscripten::val TakeRprimDeltaBatch();
     void SetPreferProtoBlobOverHydraPayload(bool prefer);

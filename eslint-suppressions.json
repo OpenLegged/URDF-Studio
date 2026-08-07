@@ -4,11 +4,6 @@
       "count": 1
     }
   },
-  "scripts/test/browser/test_ai_assistant.mjs": {
-    "@typescript-eslint/no-unused-vars": {
-      "count": 1
-    }
-  },
   "scripts/test/browser/test_assembly_export.mjs": {
     "@typescript-eslint/no-unused-vars": {
       "count": 1
@@ -155,11 +150,6 @@
   "src/app/utils/simpleModeDrafts.ts": {
     "@typescript-eslint/no-unused-vars": {
       "count": 1
-    }
-  },
-  "src/app/utils/usdBinaryArchive.test.ts": {
-    "@typescript-eslint/no-explicit-any": {
-      "count": 6
     }
   },
   "src/core/loaders/meshLoader.test.ts": {
@@ -841,11 +831,6 @@
   "src/shared/debug/regressionBridge.ts": {
     "@typescript-eslint/no-unused-vars": {
       "count": 1
-    }
-  },
-  "src/shared/hooks/useDraggableWindow.ts": {
-    "react-hooks/exhaustive-deps": {
-      "count": 2
     }
   },
   "src/shared/utils/reports/inspectionReportPdfExport.test.tsx": {

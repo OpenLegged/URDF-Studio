@@ -9,13 +9,14 @@ import {
   Shapes,
   Shield,
 } from 'lucide-react';
-import { useEffect, useState, type KeyboardEvent } from 'react';
+import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
 
 import type { TranslationKeys } from '@/shared/i18n';
 import type { AppMode, AssemblyState, EntityRef, WorkspaceSelection } from '@/types';
 import { AssemblyTreeView } from '../AssemblyTreeView';
 import { TreeStructureGraphDialog } from './TreeStructureGraphDialog';
 import type { WorkspacePropertyPatch } from '@/store/workspace/types';
+import { useSelectionStore } from '@/store/selectionStore';
 
 type LinkRef = Extract<EntityRef, { type: 'link' }>;
 
@@ -49,6 +50,7 @@ interface TreeEditorStructureSectionProps {
   onDelete: (ref: EntityRef) => void;
   onUpdate: (ref: EntityRef, patch: WorkspacePropertyPatch) => void;
   onCreateBridge?: () => void;
+  onPrefetchCreateBridge?: () => void;
   isReadOnly?: boolean;
   onCloseStructureGraph?: () => void;
 }
@@ -77,14 +79,44 @@ export function TreeEditorStructureSection({
   onDelete,
   onUpdate,
   onCreateBridge,
+  onPrefetchCreateBridge,
   isReadOnly = false,
   onCloseStructureGraph,
 }: TreeEditorStructureSectionProps) {
   const [graphOpen, setGraphOpen] = useState(showStructureGraph);
   const isSimplifiedWorkspace = Object.keys(workspace.components).length === 1
     && Object.keys(workspace.bridges).length === 0;
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => setGraphOpen(showStructureGraph), [showStructureGraph]);
+
+  // Scroll the structure tree to the row that matches the canonical selection whenever the
+  // attention pulse fires (canvas click / programmatic selection). Tree-internal clicks only
+  // update `selection` without pulsing, so they don't trigger a scroll.
+  useEffect(() => {
+    if (!isOpen) return;
+    let lastScrolledKey: string | null = null;
+    return useSelectionStore.subscribe((state, previousState) => {
+      if (state.attentionSelection === previousState.attentionSelection) return;
+      const target = state.selection?.entity;
+      if (!target || (target.type !== 'link' && target.type !== 'joint')) return;
+      if (!('componentId' in target)) return;
+      const key = `${target.type}:${target.componentId}:${target.entityId}`;
+      if (key === lastScrolledKey) return;
+      lastScrolledKey = key;
+      // Wait one frame so auto-expanding ancestors (TreeNode/AssemblyTreeView) has a chance to
+      // mount the target row before we try to scroll it into view.
+      window.requestAnimationFrame(() => {
+        const testId = target.type === 'link'
+          ? `tree-link-${target.componentId}-${target.entityId}`
+          : `tree-joint-${target.componentId}-${target.entityId}`;
+        const row = scrollContainerRef.current?.querySelector<HTMLElement>(
+          `[data-testid="${testId}"]`,
+        );
+        row?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      });
+    });
+  }, [isOpen]);
 
   const handleHeaderKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     if (event.target !== event.currentTarget || (event.key !== 'Enter' && event.key !== ' ')) return;
@@ -118,7 +150,7 @@ export function TreeEditorStructureSection({
           ) : null}
           {showStructureFilePath ? (
             <div
-              className="flex min-w-0 max-w-full flex-1 items-center gap-1 overflow-hidden rounded-md border border-border-black bg-white px-1.5 py-0.5 dark:bg-panel-bg"
+              className="flex min-w-0 max-w-full flex-1 items-center gap-1 overflow-hidden rounded-md border border-border-black bg-panel-bg px-1.5 py-0.5"
               title={currentFileName}
               onClick={(event) => event.stopPropagation()}
               onMouseDown={(event) => event.stopPropagation()}
@@ -211,7 +243,10 @@ export function TreeEditorStructureSection({
       </div>
 
       {isOpen ? (
-        <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden bg-white py-2 dark:bg-panel-bg custom-scrollbar">
+        <div
+          ref={scrollContainerRef}
+          className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden bg-panel-bg py-2 custom-scrollbar"
+        >
           <AssemblyTreeView
             workspace={workspace}
             showGeometryDetailsByDefault={structureTreeShowGeometryDetails}
@@ -224,6 +259,7 @@ export function TreeEditorStructureSection({
             onDelete={onDelete}
             onUpdate={onUpdate}
             onCreateBridge={onCreateBridge}
+            onPrefetchCreateBridge={onPrefetchCreateBridge}
             showAssemblyRoot={false}
             mode={mode}
             t={t}

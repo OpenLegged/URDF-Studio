@@ -192,6 +192,57 @@ test('URDFLoader.parseAsync preserves robot structure while yielding between bat
   assert.ok(yieldMarkers.length >= 3);
 });
 
+test('URDFLoader applies curved primitive detail in sync and async parsing', async () => {
+  const source = `
+    <robot name="quality_robot">
+      <link name="base">
+        <visual>
+          <geometry><sphere radius="0.2" /></geometry>
+        </visual>
+        <visual>
+          <geometry><capsule radius="0.1" length="0.8" /></geometry>
+        </visual>
+      </link>
+    </robot>
+  `;
+  const detail = {
+    cylinderRadialSegments: 128,
+    sphereWidthSegments: 64,
+    sphereHeightSegments: 48,
+    capsuleCapSegments: 16,
+    capsuleRadialSegments: 32,
+  };
+
+  for (const parseRobot of [
+    () => {
+      const loader = new URDFLoader();
+      loader.primitiveGeometryDetail = detail;
+      return Promise.resolve(loader.parse(source));
+    },
+    async () => {
+      const loader = new URDFLoader();
+      loader.primitiveGeometryDetail = detail;
+      return loader.parseAsync(source);
+    },
+  ]) {
+    const robot = await parseRobot();
+    const spheres: THREE.SphereGeometry[] = [];
+    const capsules: THREE.CapsuleGeometry[] = [];
+    robot.traverse((object) => {
+      if (!(object instanceof THREE.Mesh)) return;
+      if (object.geometry instanceof THREE.SphereGeometry) spheres.push(object.geometry);
+      if (object.geometry instanceof THREE.CapsuleGeometry) capsules.push(object.geometry);
+    });
+
+    assert.equal(spheres[0]?.parameters.widthSegments, 64);
+    assert.equal(spheres[0]?.parameters.heightSegments, 48);
+    assert.equal(capsules[0]?.parameters.capSegments, 16);
+    assert.equal(capsules[0]?.parameters.radialSegments, 32);
+    spheres.forEach((geometry) => geometry.dispose());
+    capsules.forEach((geometry) => geometry.dispose());
+  }
+});
+
 test('URDFLoader preserves named mesh materials for multi-material DAE groups', () => {
   const loader = new URDFLoader();
   loader.loadMeshCb = (_url, _manager, onLoad) => {

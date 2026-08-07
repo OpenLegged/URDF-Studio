@@ -33,11 +33,14 @@ export interface ResolvedVisualMaterialOverride {
   color?: string;
   colorRgba?: [number, number, number, number];
   texture?: string;
+  textureRotation?: number;
   opacity?: number;
   roughness?: number;
   metalness?: number;
   emissive?: string;
   emissiveIntensity?: number;
+  alphaTest?: number;
+  passes?: UrdfVisualMaterial['passes'];
   source: 'authored' | 'legacy-link' | 'none';
   isMultiMaterial: boolean;
 }
@@ -63,7 +66,7 @@ function normalizeNonNegativeValue(value?: number | null): number | undefined {
   return Math.max(0, Number(value));
 }
 
-function normalizeAuthoredMaterialEntry(
+export function normalizeAuthoredMaterialEntry(
   material: UrdfVisualMaterial | null | undefined,
 ): UrdfVisualMaterial | null {
   if (!material) {
@@ -84,22 +87,43 @@ function normalizeAuthoredMaterialEntry(
         ] as [number, number, number, number])
       : undefined;
   const texture = normalizeMaterialValue(material.texture);
+  const textureRotation = Number.isFinite(material.textureRotation)
+    ? Number(material.textureRotation)
+    : undefined;
   const opacity = normalizeUnitIntervalValue(material.opacity);
   const roughness = normalizeUnitIntervalValue(material.roughness);
   const metalness = normalizeUnitIntervalValue(material.metalness);
   const emissive = normalizeMaterialValue(material.emissive);
   const emissiveIntensity = normalizeNonNegativeValue(material.emissiveIntensity);
+  const alphaTest = normalizeUnitIntervalValue(material.alphaTest);
+  const passes = Array.isArray(material.passes)
+    ? material.passes.map((pass) => ({
+        ...(normalizeMaterialValue(pass.texture)
+          ? { texture: normalizeMaterialValue(pass.texture) }
+          : {}),
+        ...(pass.sceneBlend === 'alpha_blend' ||
+        pass.sceneBlend === 'add' ||
+        pass.sceneBlend === 'modulate'
+          ? { sceneBlend: pass.sceneBlend }
+          : {}),
+        ...(typeof pass.depthWrite === 'boolean' ? { depthWrite: pass.depthWrite } : {}),
+        ...(typeof pass.lighting === 'boolean' ? { lighting: pass.lighting } : {}),
+      }))
+    : undefined;
 
   if (
     !name &&
     !color &&
     !colorRgba &&
     !texture &&
+    textureRotation === undefined &&
     opacity === undefined &&
     roughness === undefined &&
     metalness === undefined &&
     !emissive &&
-    emissiveIntensity === undefined
+    emissiveIntensity === undefined &&
+    alphaTest === undefined &&
+    passes === undefined
   ) {
     return null;
   }
@@ -109,11 +133,14 @@ function normalizeAuthoredMaterialEntry(
     ...(color ? { color } : {}),
     ...(colorRgba ? { colorRgba } : {}),
     ...(texture ? { texture } : {}),
+    ...(textureRotation !== undefined ? { textureRotation } : {}),
     ...(opacity !== undefined ? { opacity } : {}),
     ...(roughness !== undefined ? { roughness } : {}),
     ...(metalness !== undefined ? { metalness } : {}),
     ...(emissive ? { emissive } : {}),
     ...(emissiveIntensity !== undefined ? { emissiveIntensity } : {}),
+    ...(alphaTest !== undefined ? { alphaTest } : {}),
+    ...(passes !== undefined ? { passes } : {}),
   };
 }
 
@@ -238,11 +265,14 @@ export function resolveVisualMaterialOverride(
       color: primaryMaterial?.color,
       colorRgba: primaryMaterial?.colorRgba,
       texture: primaryMaterial?.texture,
+      textureRotation: primaryMaterial?.textureRotation,
       opacity: primaryMaterial?.opacity ?? primaryMaterial?.colorRgba?.[3],
       roughness: primaryMaterial?.roughness,
       metalness: primaryMaterial?.metalness,
       emissive: primaryMaterial?.emissive,
       emissiveIntensity: primaryMaterial?.emissiveIntensity,
+      alphaTest: primaryMaterial?.alphaTest,
+      passes: primaryMaterial?.passes?.map((pass) => ({ ...pass })),
       source: 'authored',
       isMultiMaterial: authoredMaterials.length > 1,
     };

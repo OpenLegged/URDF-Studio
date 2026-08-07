@@ -290,6 +290,7 @@ export function findPickIntersections(
   mode: PickTargetMode,
   fallbackOnMiss = true,
   interactionLayerPriority?: readonly ViewerInteractiveLayer[],
+  includeSelectableHelperHits = true,
 ): THREE.Intersection[] {
   const directHits =
     pickTargets.length > 0
@@ -302,15 +303,25 @@ export function findPickIntersections(
     return sortByInteractionPriority(directHits, interactionLayerPriority);
   }
 
-  const helperHits = raycaster
-    .intersectObject(robot, true)
-    .filter((hit) => isSelectableHelperObject(hit.object) && matchesIntersectionMode(hit, mode));
+  if (includeSelectableHelperHits) {
+    const helperHits = raycaster
+      .intersectObject(robot, true)
+      .filter((hit) => isSelectableHelperObject(hit.object) && matchesIntersectionMode(hit, mode));
 
-  if (helperHits.length > 0) {
-    return sortByInteractionPriority(directHits.concat(helperHits), interactionLayerPriority);
+    if (helperHits.length > 0) {
+      return sortByInteractionPriority(directHits.concat(helperHits), interactionLayerPriority);
+    }
   }
 
   if (directHits.length > 0 || (!fallbackOnMiss && pickTargets.length > 0)) {
+    return sortByInteractionPriority(directHits, interactionLayerPriority);
+  }
+
+  // Some callers already resolve selectable helpers from a cached target list.
+  // Do not turn an interaction miss into a second recursive robot raycast in
+  // those paths; the authoritative click handler will still use its direct
+  // helper result when one exists.
+  if (!includeSelectableHelperHits && !fallbackOnMiss) {
     return sortByInteractionPriority(directHits, interactionLayerPriority);
   }
 

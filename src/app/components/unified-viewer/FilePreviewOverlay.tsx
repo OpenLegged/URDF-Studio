@@ -54,7 +54,7 @@ export function FilePreviewBanner({
 export function FilePreviewError({ lang }: { lang: Language }) {
   const t = translations[lang];
   return (
-    <div className="pointer-events-none absolute inset-0 z-20 flex flex-col items-center justify-center gap-2 text-slate-500 dark:text-slate-400">
+    <div className="pointer-events-none absolute inset-0 z-20 flex flex-col items-center justify-center gap-2 text-text-tertiary">
       <AlertCircle className="h-5 w-5" />
       <span className="text-sm">{t.noPreviewImage}</span>
     </div>

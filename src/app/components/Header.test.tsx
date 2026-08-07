@@ -16,12 +16,15 @@ function renderHeader() {
       onImportFile: () => {},
       onImportFolder: () => {},
       onOpenExport: () => {},
+      onPrefetchExport: () => {},
       onExportProject: () => {},
       toolboxItems: noopToolboxItems,
       onOpenCodeViewer: () => {},
       onPrefetchCodeViewer: () => {},
       onOpenSettings: () => {},
+      onPrefetchSettings: () => {},
       onSnapshot: () => {},
+      onPrefetchSnapshot: () => {},
       quickAction: {
         label: 'Quick action',
         icon: Box,
@@ -89,4 +92,30 @@ test('Header uses a slimmer top bar height', () => {
   assert.match(markup, /h-10/, 'header should keep a compact top bar height');
   assert.doesNotMatch(markup, /h-11/, 'header should no longer use the taller top bar height');
   assert.doesNotMatch(markup, /h-12/, 'header should no longer use the tallest top bar height');
+});
+
+test('Header links to the feedback form in a new tab', () => {
+  const markup = renderHeader();
+
+  const feedbackLink = markup.match(
+    /<a[^>]*href="https:\/\/enkeebot\.feishu\.cn\/share\/base\/form\/shrcnok1dXPePgAxuu2qnXiVxYf"[^>]*>/,
+  )?.[0];
+  assert.ok(feedbackLink, 'header should render the feedback link');
+  assert.match(feedbackLink, /target="_blank"/, 'feedback should open in a new tab');
+  assert.match(
+    feedbackLink,
+    /rel="noopener noreferrer"/,
+    'feedback link should isolate the opened tab',
+  );
+  assert.match(feedbackLink, /aria-label="Feedback"/);
+
+  const feedbackLinkContent = markup.match(
+    /<a[^>]*aria-label="Feedback"[^>]*>(.*?)<\/a>/,
+  )?.[1];
+  assert.ok(feedbackLinkContent, 'feedback link should render an icon and label');
+  assert.match(
+    feedbackLinkContent,
+    />Feedback</,
+    'feedback button should include a visible text label so its purpose is clear',
+  );
 });

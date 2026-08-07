@@ -60,7 +60,7 @@ export function TreeEditorFileBrowserContent({
 }: TreeEditorFileBrowserContentProps) {
   return (
     <div
-      className={`@container flex flex-col bg-white dark:bg-panel-bg border-b border-border-black dark:border-border-black ${shouldFillSpace ? 'flex-1 min-h-0' : 'shrink-0'} ${isDragging ? '' : 'transition-all duration-200'}`}
+      className={`@container flex flex-col bg-panel-bg border-b border-border-black ${shouldFillSpace ? 'flex-1 min-h-0' : 'shrink-0'} ${isDragging ? '' : 'transition-[height] duration-200'}`}
       style={shouldFillSpace ? undefined : { height: isOpen ? `${height}px` : 'auto' }}
     >
       <div className="flex h-8 items-center gap-2 bg-element-bg px-2.5 dark:bg-element-bg">

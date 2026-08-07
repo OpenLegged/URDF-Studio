@@ -7,7 +7,7 @@ export { JointControlItem } from './components/JointControlItem';
 export { JointInteraction } from './components/JointInteraction';
 export { ViewerToolbar } from './components/ViewerToolbar';
 export { MeasureTool } from './components/MeasureTool.tsx';
-export { CollisionTransformControls } from './components/CollisionTransformControls';
+export { GeometryTransformControls } from './components/CollisionTransformControls';
 export { ViewerScene } from './components/ViewerScene';
 export { ViewerPanels } from './components/ViewerPanels';
 
@@ -16,6 +16,7 @@ export { useViewerController, useResponsivePanelLayout } from './hooks';
 export type { ViewerController } from './hooks';
 export { resolveDefaultViewerToolMode } from './utils/scopedToolMode';
 export type { ScopedToolModeState } from './utils/scopedToolMode';
+export { shouldNotifyVisualTransformLock } from './utils/geometryTransformPolicy';
 export { buildViewerSceneProps } from './utils/viewerSceneProps';
 export type { ViewerSceneBaseProps } from './utils/viewerSceneProps';
 export {

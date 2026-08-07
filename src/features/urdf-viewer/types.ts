@@ -78,6 +78,12 @@ export type ViewerPaintStatusTone = 'info' | 'success' | 'error';
 export type ViewerPaintSelectionScope = 'face' | 'island';
 export type ViewerPaintOperation = 'paint' | 'erase';
 
+export interface ViewerPaintInteractionState {
+  color: string;
+  operation: ViewerPaintOperation;
+  selectionScope: ViewerPaintSelectionScope;
+}
+
 export interface ViewerPaintStatus {
   tone: ViewerPaintStatusTone;
   message: string;
@@ -237,6 +243,7 @@ export interface RobotModelProps {
   paintColor?: string;
   paintSelectionScope?: ViewerPaintSelectionScope;
   paintOperation?: ViewerPaintOperation;
+  paintInteractionRef?: React.RefObject<ViewerPaintInteractionState>;
   onPaintStatusChange?: (status: ViewerPaintStatus | null) => void;
   onJointChange?: (name: string, angle: number, context?: ViewerJointChangeContext) => void;
   onJointChangeCommit?: (name: string, angle: number) => void;
@@ -337,10 +344,11 @@ export interface AssemblyComponentAutoGroundResolution {
   runtimeRobotLocalPositionDelta: { x: number; y: number; z: number } | null;
 }
 
-export interface CollisionTransformControlsProps {
+export interface GeometryTransformControlsProps {
   robot: THREE.Object3D | null;
   robotVersion?: number;
   selection: ViewerProps['selection'];
+  geometrySubType: 'visual' | 'collision';
   transformMode: 'select' | 'translate' | 'rotate' | 'universal';
   setIsDragging: (dragging: boolean) => void;
   onTransformChange?: (

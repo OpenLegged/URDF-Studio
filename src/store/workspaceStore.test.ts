@@ -207,6 +207,78 @@ test('explicit refs isolate same-local-ID component mutations and component rena
   assert.equal(useWorkspaceStore.getState().workspace.name, 'test workspace');
 });
 
+test('editor locks are canonical undoable workspace mutations', () => {
+  const store = useWorkspaceStore.getState();
+
+  assert.equal(store.setComponentEditorLocked('left', true), true);
+  assert.equal(
+    useWorkspaceStore.getState().workspace.components.left?.editorLocked,
+    true,
+  );
+  assert.equal(store.setComponentEditorLocked('left', false), true);
+  assert.equal(
+    store.setLinkEditorLocked(
+      { type: 'link', componentId: 'left', entityId: 'tool_link' },
+      true,
+    ),
+    true,
+  );
+  assert.equal(
+    useWorkspaceStore.getState().workspace.components.left?.robot.links.tool_link
+      ?.editorLocked,
+    true,
+  );
+
+  assert.equal(
+    store.updateLink(
+      { type: 'link', componentId: 'left', entityId: 'tool_link' },
+      { name: 'blocked rename' },
+    ),
+    false,
+  );
+  assert.equal(
+    store.setJointMotion(
+      { type: 'joint', componentId: 'left', entityId: 'wrist' },
+      0.5,
+    ),
+    false,
+  );
+  assert.equal(
+    store.setLinkVisibility(
+      { type: 'link', componentId: 'left', entityId: 'tool_link' },
+      false,
+    ),
+    true,
+  );
+
+  assert.equal(useWorkspaceStore.getState().undo(), true);
+  assert.equal(
+    useWorkspaceStore.getState().workspace.components.left?.robot.links.tool_link
+      ?.visible,
+    true,
+  );
+});
+
+test('component editor locks block transforms and authored subtree mutations', () => {
+  const store = useWorkspaceStore.getState();
+  const component = structuredClone(store.workspace.components.left!);
+
+  assert.equal(store.setComponentEditorLocked('left', true), true);
+  assert.equal(store.renameComponent('left', 'blocked'), false);
+  assert.equal(store.updateComponentTransform('left', {
+    ...component.transform,
+    position: { ...component.transform.position, x: 3 },
+  }), false);
+  assert.equal(store.updateLink(
+    { type: 'link', componentId: 'left', entityId: 'tool_link' },
+    { name: 'blocked tool' },
+  ), false);
+  assert.equal(store.removeComponent('left'), false);
+  assert.equal(store.setComponentVisibility('left', false), true);
+  assert.equal(store.setComponentEditorLocked('left', false), true);
+  assert.equal(store.renameComponent('left', 'unlocked'), true);
+});
+
 test('deep property patches preserve nested sibling fields at the store boundary', () => {
   const store = useWorkspaceStore.getState();
   const linkBefore = structuredClone(

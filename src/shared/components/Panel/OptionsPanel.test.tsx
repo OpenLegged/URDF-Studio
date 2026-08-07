@@ -88,7 +88,7 @@ test('OptionsPanel can transition from hidden to visible without changing hook o
   }
 });
 
-test('OptionsPanel uses a slimmer shared header by default', async () => {
+test('OptionsPanel uses the shared floating window header dimensions', async () => {
   const dom = installDom();
   const container = dom.window.document.getElementById('root');
   assert.ok(container, 'root container should exist');
@@ -115,10 +115,10 @@ test('OptionsPanel uses a slimmer shared header by default', async () => {
     );
     const header = titleNode?.closest<HTMLElement>('div.group');
     assert.ok(header, 'options panel header should render');
+    assert.match(header.className, /\bh-10\b/);
     assert.match(header.className, /\bpx-2\b/);
-    assert.match(header.className, /\bpy-1\.5\b/);
     const titleClasses = titleNode?.className.split(/\s+/) ?? [];
-    assert.ok(titleClasses.includes('text-[11px]'));
+    assert.ok(titleClasses.includes('text-[13px]'));
     assert.ok(titleClasses.includes('leading-4'));
     assert.equal(titleClasses.includes('leading-none'), false);
   } finally {

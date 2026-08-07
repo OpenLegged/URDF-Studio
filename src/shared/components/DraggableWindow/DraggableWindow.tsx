@@ -3,6 +3,7 @@ import { Maximize2, Minimize2, Minus, X } from 'lucide-react';
 import type { DraggableWindowReturn, ResizeDirection } from '@/shared/hooks/useDraggableWindow';
 import { useOverlayHoverBlock } from '@/shared/hooks/useOverlayHoverBlock';
 import { CLOSE_BUTTON_DANGER_TERTIARY_CLASS } from '@/shared/components/ui/closeButtonStyles';
+import { ResizeCornerIndicator } from './ResizeCornerIndicator';
 
 type DraggableWindowState = Pick<
   DraggableWindowReturn,
@@ -79,9 +80,7 @@ const DEFAULT_BOTTOM_RESIZE_CLASS =
   "absolute resize-edge-bottom resize-edge-visual-bottom left-0 right-0 h-2 cursor-ns-resize z-20 after:absolute after:bottom-0 after:left-0 after:right-0 after:h-px after:bg-transparent after:content-[''] after:transition-colors hover:after:bg-system-blue/50 active:after:bg-system-blue/70";
 const DEFAULT_CORNER_RESIZE_CLASS =
   'absolute resize-edge-bottom resize-edge-right w-5 h-5 cursor-nwse-resize z-30';
-const DEFAULT_CORNER_RESIZE_HANDLE = (
-  <span className="pointer-events-none absolute bottom-1 right-1 h-2 w-2 border-b border-r border-border-strong/80 opacity-70 transition-colors group-hover:border-system-blue/60 group-active:border-system-blue/80" />
-);
+const DEFAULT_CORNER_RESIZE_HANDLE = <ResizeCornerIndicator />;
 
 const joinClassNames = (...classes: Array<string | undefined | false>) =>
   classes.filter(Boolean).join(' ');

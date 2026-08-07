@@ -19,6 +19,7 @@ import type {
   WorkspaceSelection,
 } from '@/types';
 import type { AssemblyScenePlacement, AssemblySceneProjection } from '@/core/robot';
+import { isEntityEditorLocked, isWorkspaceSelectionEditorLocked } from '@/core/robot';
 import type { Language } from '@/shared/i18n';
 import { translations } from '@/shared/i18n';
 import { WorkspaceCanvas } from '@/shared/components/3d';
@@ -41,6 +42,7 @@ import {
   type ViewerJointMotionStateValue,
   type ViewerRobotSourceFormat,
   useViewerController,
+  shouldNotifyVisualTransformLock,
 } from '@/features/editor';
 import { resolveViewerJointScopeKey } from '@/app/utils/viewerJointScopeKey';
 import { resolveUnifiedViewerForcedSessionState } from '@/app/utils/unifiedViewerForcedSessionState';
@@ -50,6 +52,7 @@ import {
   shouldRestoreUnifiedViewerOptionsPanel,
 } from '@/app/utils/unifiedViewerOptionsRestore';
 import { useUIStore } from '@/store';
+import { VIEWER_RENDER_QUALITY_PROFILES } from '@/shared/utils/viewerRenderQuality';
 import { subscribeWorkspaceGroundPlaneInvalidation } from '@/store/robotGroundPlaneInvalidation';
 import type { DocumentLoadLifecycleState } from '@/store/assetsStore';
 import type { UpdateCommitOptions } from '@/types/viewer';
@@ -145,6 +148,7 @@ interface UnifiedViewerProps {
   viewerReloadKey?: number;
   documentLoadState: DocumentLoadLifecycleState;
   gizmoMargin?: WorkspaceOverlayGizmoMargin;
+  onNotify?: (message: string, type?: 'info' | 'success' | 'error') => void;
 }
 
 export const UnifiedViewer = React.memo(
@@ -199,6 +203,7 @@ export const UnifiedViewer = React.memo(
     viewerReloadKey = 0,
     documentLoadState,
     gizmoMargin,
+    onNotify,
   }: UnifiedViewerProps) => {
     const t = translations[lang];
     const workspaceInteractionEnabled = modelInteractionEnabled && !filePreview;
@@ -301,16 +306,17 @@ export const UnifiedViewer = React.memo(
         subType?: 'visual' | 'collision',
         helperKind?: ViewerHelperKind,
       ) => {
-        onSelect(
-          resolveRendererSelectionToWorkspace(sceneProjection, {
-            type,
-            id,
-            subType,
-            helperKind,
-          }),
-        );
+        const nextSelection = resolveRendererSelectionToWorkspace(sceneProjection, {
+          type,
+          id,
+          subType,
+          helperKind,
+        });
+        if (!isWorkspaceSelectionEditorLocked(workspace, nextSelection)) {
+          onSelect(nextSelection);
+        }
       },
-      [onSelect, sceneProjection],
+      [onSelect, sceneProjection, workspace],
     );
     const handleRendererMeshSelect = React.useCallback(
       (
@@ -319,16 +325,17 @@ export const UnifiedViewer = React.memo(
         objectIndex: number,
         objectType: 'visual' | 'collision',
       ) => {
-        onSelect(
-          resolveRendererSelectionToWorkspace(sceneProjection, {
-            type: 'link',
-            id: linkId,
-            subType: objectType,
-            objectIndex,
-          }),
-        );
+        const nextSelection = resolveRendererSelectionToWorkspace(sceneProjection, {
+          type: 'link',
+          id: linkId,
+          subType: objectType,
+          objectIndex,
+        });
+        if (!isWorkspaceSelectionEditorLocked(workspace, nextSelection)) {
+          onSelect(nextSelection);
+        }
       },
-      [onSelect, sceneProjection],
+      [onSelect, sceneProjection, workspace],
     );
     const handleRendererHover = React.useCallback(
       (
@@ -339,18 +346,19 @@ export const UnifiedViewer = React.memo(
         helperKind?: ViewerHelperKind,
         highlightObjectId?: number,
       ) => {
+        const nextSelection = resolveRendererSelectionToWorkspace(sceneProjection, {
+          type,
+          id,
+          subType,
+          objectIndex,
+          helperKind,
+          highlightObjectId,
+        });
         onHover?.(
-          resolveRendererSelectionToWorkspace(sceneProjection, {
-            type,
-            id,
-            subType,
-            objectIndex,
-            helperKind,
-            highlightObjectId,
-          }),
+          isWorkspaceSelectionEditorLocked(workspace, nextSelection) ? null : nextSelection,
         );
       },
-      [onHover, sceneProjection],
+      [onHover, sceneProjection, workspace],
     );
     const handleRendererUpdate = React.useCallback(
       (type: 'link' | 'joint', id: string, data: unknown) => {
@@ -358,9 +366,10 @@ export const UnifiedViewer = React.memo(
         if (!resolved || (resolved.entity.type !== 'link' && resolved.entity.type !== 'joint')) {
           return;
         }
+        if (isEntityEditorLocked(workspace, resolved.entity)) return;
         onUpdate(resolved.entity, data as Partial<UrdfLink> | Partial<UrdfJoint>);
       },
-      [onUpdate, sceneProjection],
+      [onUpdate, sceneProjection, workspace],
     );
     const resolveRendererLinkRef = React.useCallback(
       (linkId: string): LinkEntityRef | null => {
@@ -380,11 +389,11 @@ export const UnifiedViewer = React.memo(
         objectIndex?: number,
       ) => {
         const ref = resolveRendererLinkRef(linkId);
-        if (ref) {
+        if (ref && !isEntityEditorLocked(workspace, ref)) {
           onCollisionTransformPreview?.(ref, position, rotation, objectIndex);
         }
       },
-      [onCollisionTransformPreview, resolveRendererLinkRef],
+      [onCollisionTransformPreview, resolveRendererLinkRef, workspace],
     );
     const handleRendererCollisionTransform = React.useCallback(
       (
@@ -394,11 +403,11 @@ export const UnifiedViewer = React.memo(
         objectIndex?: number,
       ) => {
         const ref = resolveRendererLinkRef(linkId);
-        if (ref) {
+        if (ref && !isEntityEditorLocked(workspace, ref)) {
           onCollisionTransform?.(ref, position, rotation, objectIndex);
         }
       },
-      [onCollisionTransform, resolveRendererLinkRef],
+      [onCollisionTransform, resolveRendererLinkRef, workspace],
     );
     const handleRendererAssemblyTransform = React.useCallback(
       (transform: AssemblyTransform) => {
@@ -408,15 +417,17 @@ export const UnifiedViewer = React.memo(
     );
     const handleRendererComponentTransform = React.useCallback(
       (componentId: string, transform: AssemblyTransform, options?: UpdateCommitOptions) => {
+        if (isEntityEditorLocked(workspace, { type: 'component', componentId })) return;
         onComponentTransform?.({ type: 'component', componentId }, transform, options);
       },
-      [onComponentTransform],
+      [onComponentTransform, workspace],
     );
     const handleRendererBridgeTransform = React.useCallback(
       (bridgeId: string, origin: UrdfOrigin, options?: UpdateCommitOptions) => {
+        if (isEntityEditorLocked(workspace, { type: 'bridge', bridgeId })) return;
         onBridgeTransform?.({ type: 'bridge', bridgeId }, origin, options);
       },
-      [onBridgeTransform],
+      [onBridgeTransform, workspace],
     );
     const commitProjectedJointMotion = useProjectedJointMotionCommit(sceneProjection);
     const assemblyAutoGrounding = useAssemblyAutoGroundingCoordinator({
@@ -459,6 +470,15 @@ export const UnifiedViewer = React.memo(
       closedLoopRobotState: robot,
       projectJointInteractionPreview,
     });
+    const previousShowCollisionRef = React.useRef(viewerController.showCollision);
+
+    useEffect(() => {
+      const wasShowingCollision = previousShowCollisionRef.current;
+      previousShowCollisionRef.current = viewerController.showCollision;
+      if (shouldNotifyVisualTransformLock(wasShowingCollision, viewerController.showCollision)) {
+        onNotify?.(t.visualTransformDisabledWithCollisions, 'info');
+      }
+    }, [onNotify, t.visualTransformDisabledWithCollisions, viewerController.showCollision]);
     const nextForcedViewerSession = resolveUnifiedViewerForcedSessionState({
       forcedViewerSession,
       pendingViewerToolMode,
@@ -492,6 +512,8 @@ export const UnifiedViewer = React.memo(
     const showUsageGuidePreference = useUIStore((state) => state.viewOptions.showUsageGuide);
     const navigationSensitivity = useUIStore((state) => state.navigationSensitivity);
     const cameraProjection = useUIStore((state) => state.viewOptions.cameraProjection);
+    const renderQuality = useUIStore((state) => state.viewOptions.renderQuality);
+    const renderQualityProfile = VIEWER_RENDER_QUALITY_PROFILES[renderQuality];
     const showWorldOriginAxes = showWorldOriginAxesPreference && !viewerController.showOrigins;
     const effectiveShowUsageGuide = resolveUnifiedViewerUsageGuideVisibility(
       showUsageGuidePreference,
@@ -639,12 +661,22 @@ export const UnifiedViewer = React.memo(
         environmentIntensity={workspaceEnvironmentIntensity}
         subscribeGroundPlaneInvalidation={subscribeWorkspaceGroundPlaneInvalidation}
         cameraFollowPrimary={useViewerCanvasPresentation}
+        // Keep the authored material colors, lighting, and drafting grid on the
+        // same direct-render path while orbiting and while resting. The realtime
+        // GTAO composer applies its final OutputPass only after interaction ends,
+        // which visibly darkens the robot and softens the grid at rest.
+        enableAmbientOcclusion={false}
+        minDpr={renderQualityProfile.minDpr}
+        maxDpr={renderQualityProfile.maxDpr}
+        shadowMapSize={renderQualityProfile.shadowMapSize}
         controlLayerKey={controlLayerKey}
         gizmoMargin={gizmoMargin}
         showWorldOriginAxes={showWorldOriginAxes}
         cameraProjection={cameraProjection}
         orbitControlsProps={{
-          minDistance: 0.05,
+          // Keep the main editor's orbit pivot stable across rotate + zoom.
+          // Cursor zoom needs surface-depth picking to avoid target drift.
+          zoomToCursor: false,
           maxDistance: 2000,
           enabled: !viewerController.isDragging,
           zoomSensitivity: navigationSensitivity.zoom,

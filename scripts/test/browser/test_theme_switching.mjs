@@ -3,7 +3,8 @@
 /**
  * Theme Switching browser regression test.
  *
- * Covers: detecting current theme, toggling theme, verifying DOM changes.
+ * Covers: detecting current theme, toggling theme, verifying DOM changes, and
+ * preventing document-wide animation fan-out during a switch.
  */
 
 import { setTimeout as delay } from 'node:timers/promises';
@@ -16,6 +17,7 @@ async function main() {
   const suite = createTestSuite('Theme Switching');
   const session = await createSession();
   const { page } = session;
+  let themeSwitchMetrics = null;
 
   try {
     await importModel(page, 'unitree_go2', 'go2.xml');
@@ -37,92 +39,56 @@ async function main() {
 
     // ── 2. Find and click theme toggle button ──
     const themeToggleProbe = await page.evaluate(async () => {
-      const readTransitionSnapshot = () => {
-        const isVisible = (el) => {
-          const rect = el.getBoundingClientRect();
-          return rect.width > 0 && rect.height > 0;
-        };
-        const sample = [
-          document.documentElement,
-          document.body,
-          ...[
-            ...document.querySelectorAll(
-              'header, button, [class*="bg-"], [class*="border"], [class*="text-"]',
-            ),
-          ]
-            .filter(isVisible)
-            .slice(0, 20),
-        ];
-        const styles = sample.map((el) => {
-          const computed = getComputedStyle(el);
-          return {
-            duration: computed.transitionDuration,
-            property: computed.transitionProperty,
-            timing: computed.transitionTimingFunction,
-          };
-        });
-        return {
-          rootSwitching: document.documentElement.classList.contains('theme-switching'),
-          sampleCount: sample.length,
-          durationValues: [
-            ...new Set(
-              styles.flatMap((style) => style.duration.split(',').map((value) => value.trim())),
-            ),
-          ],
-          propertyValues: [...new Set(styles.map((style) => style.property))],
-          timingValues: [...new Set(styles.map((style) => style.timing))],
-        };
-      };
-
-      let transitionSnapshot = null;
-      const root = document.documentElement;
-      const observer = new MutationObserver(() => {
-        if (transitionSnapshot === null && root.classList.contains('theme-switching')) {
-          transitionSnapshot = readTransitionSnapshot();
-        }
-      });
-      observer.observe(root, { attributes: true, attributeFilter: ['class'] });
-
       const btn = [...document.querySelectorAll('button')].find((b) =>
         /theme|dark|light|moon|sun/i.test(b.textContent ?? '') ||
         /theme|dark|light/i.test(b.getAttribute('aria-label') ?? '') ||
         b.dataset?.action === 'toggle-theme');
 
       if (!btn) {
-        observer.disconnect();
-        return { found: false, transitionSnapshot: null };
+        return { found: false, metrics: null };
       }
 
+      const domElementCount = document.querySelectorAll('*').length;
+      const start = performance.now();
       btn.click();
-      await new Promise((resolve) => setTimeout(resolve, 80));
-      if (transitionSnapshot === null && root.classList.contains('theme-switching')) {
-        transitionSnapshot = readTransitionSnapshot();
-      }
-      observer.disconnect();
+      const clickTaskMs = performance.now() - start;
+      await new Promise((resolve) => requestAnimationFrame(resolve));
+      const firstFrameMs = performance.now() - start;
+      const animations = document.getAnimations();
+      const animatedTargetCount = new Set(
+        animations
+          .map((animation) => animation.effect?.target ?? null)
+          .filter((target) => target !== null),
+      ).size;
 
       return {
         found: true,
-        transitionSnapshot,
+        metrics: {
+          activeAnimationCount: animations.length,
+          animatedTargetCount,
+          clickTaskMs,
+          domElementCount,
+          firstFrameMs,
+          rootSwitching: document.documentElement.classList.contains('theme-switching'),
+        },
       };
     });
 
+    themeSwitchMetrics = themeToggleProbe.metrics;
     if (themeToggleProbe.found) {
-      const transitionProbe = themeToggleProbe.transitionSnapshot;
-      assert(suite, transitionProbe !== null, 'root uses synchronized theme transition marker');
-      if (transitionProbe === null) {
-        throw new Error('missing theme transition snapshot');
+      if (themeSwitchMetrics === null) {
+        throw new Error('missing theme switch performance metrics');
       }
-      assert(suite, transitionProbe.sampleCount >= 4, 'theme transition sampled visible UI elements');
       assert(
         suite,
-        transitionProbe.durationValues.length === 1 && transitionProbe.durationValues[0] === '0.18s',
-        `theme transition duration is uniform (${transitionProbe.durationValues.join(', ')})`,
+        !themeSwitchMetrics.rootSwitching,
+        'theme switch avoids a document-wide transition marker',
       );
       assert(
         suite,
-        transitionProbe.propertyValues.every((value) =>
-          value.includes('background-color') && value.includes('border-color') && value.includes('color')),
-        'theme transition properties are color-focused across sampled elements',
+        themeSwitchMetrics.activeAnimationCount < themeSwitchMetrics.domElementCount,
+        'theme switch does not fan out multiple animations across the DOM '
+          + `(${themeSwitchMetrics.activeAnimationCount}/${themeSwitchMetrics.domElementCount})`,
       );
 
       await delay(300);
@@ -175,7 +141,7 @@ async function main() {
     await session.cleanup();
   }
 
-  await writeReport('theme_switching', {});
+  await writeReport('theme_switching', { themeSwitchMetrics });
   process.exitCode = printSummary(suite) ? 0 : 1;
 }
 

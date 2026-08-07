@@ -12,7 +12,7 @@ import {
 import type { PreparedUsdExportCacheResult } from '@/features/editor/usd_export';
 import type { RobotData, RobotFile, UsdBakedScene, UsdSceneSnapshot } from '@/types';
 import { DEFAULT_ORIGIN_AXES_SIZE } from '@/shared/components/3d/helpers/coordinateAxesSizing';
-import { normalizeLibraryPathKey } from '@/shared/utils/pathKeys';
+import { normalizeLibraryPathKey } from '@/core/utils/pathKeys';
 
 export interface UsdRobotStateHydrationWorkerLike {
   addEventListener: Worker['addEventListener'];

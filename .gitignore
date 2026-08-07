@@ -62,6 +62,8 @@ snapshot-default-page.png
 *.png
 *.jpg
 *.jpeg
+!public/logos/botworld-logo.png
+!public/logos/motion-studio-logo.png
 canvas-jpg-chunks.json
 /.trellis
 /.worktrees/

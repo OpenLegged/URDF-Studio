@@ -4,10 +4,44 @@ import test from 'node:test';
 import {
   buildResult,
   buildPuppeteerLaunchArgs,
+  deriveMetadataSource,
   getPreferredRuntimeSnapshot,
   isIgnorableBrowserConsoleWarning,
   summarizePostReadyHistoryDelta,
 } from './run_unitree_browser_regression.mjs';
+
+test('deriveMetadataSource accepts the offscreen worker resolve/commit lifecycle', () => {
+  const fileName = 'unitree_model/Go2/usd/go2.usd';
+  const result = deriveMetadataSource(
+    [
+      {
+        sourceFileName: fileName,
+        step: 'prepare-stage-open-data',
+        status: 'resolved',
+        detail: { stagePreparationMode: 'worker' },
+      },
+      {
+        sourceFileName: fileName,
+        step: 'resolve-worker-robot-data',
+        status: 'resolved',
+        detail: { metadataSource: 'usd-stage-cpp' },
+      },
+      {
+        sourceFileName: fileName,
+        step: 'commit-worker-robot-data',
+        status: 'resolved',
+        detail: { linkCount: 19, jointCount: 18 },
+      },
+    ],
+    [fileName],
+  );
+
+  assert.equal(result.metadataSource, 'usd-stage-cpp');
+  assert.equal(result.metadataSourcePass, true);
+  assert.equal(result.stagePreparationMode, 'worker');
+  assert.equal(result.stageReady, true);
+  assert.equal(result.workerResolveEntry?.status, 'resolved');
+});
 
 test('summarizePostReadyHistoryDelta reports target-file steps added after the ready sample', () => {
   const beforeHistory = [
@@ -82,14 +116,14 @@ test('summarizePostReadyHistoryDelta handles unchanged capped histories without 
   );
 });
 
-test('isIgnorableBrowserConsoleWarning suppresses known browser/loader noise only', () => {
+test('isIgnorableBrowserConsoleWarning suppresses only known WebGL readback noise', () => {
   assert.equal(
     isIgnorableBrowserConsoleWarning(
       '[.WebGL-0x20ec02ce3600]GL Driver Message (OpenGL, Performance, GL_CLOSE_PATH_NV, High): GPU stall due to ReadPixels',
     ),
     true,
   );
-  assert.equal(isIgnorableBrowserConsoleWarning('RGBELoader has been deprecated.'), true);
+  assert.equal(isIgnorableBrowserConsoleWarning('RGBELoader has been deprecated.'), false);
   assert.equal(isIgnorableBrowserConsoleWarning('USD parser warning: missing material'), false);
 });
 

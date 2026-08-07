@@ -232,6 +232,71 @@ test('transparent AI inspection backdrop does not intercept pointer events', asy
       true,
       'transparent backdrop should not block interactions with the workspace',
     );
+    const dialog = container.querySelector<HTMLElement>(
+      `[role="dialog"][aria-label="${translations.zh.aiInspection}"]`,
+    );
+    assert.ok(dialog, 'expected the inspection window to expose a stable dialog landmark');
+    assert.equal(dialog.getAttribute('aria-modal'), 'false');
+  } finally {
+    await act(async () => {
+      root.unmount();
+    });
+    dom.window.close();
+  }
+});
+
+test('AIInspectionModal can be resized below the viewport', async () => {
+  const dom = installDom();
+  Object.defineProperty(dom.window, 'innerWidth', { value: 900, configurable: true });
+  Object.defineProperty(dom.window, 'innerHeight', { value: 600, configurable: true });
+  const container = dom.window.document.getElementById('root');
+  assert.ok(container, 'root container should exist');
+
+  const { AIInspectionModal } = await import('./AIInspectionModal.tsx');
+  const root = createRoot(container);
+
+  try {
+    await act(async () => {
+      root.render(
+        <AIInspectionModal
+          isOpen
+          onClose={() => {}}
+          robot={createRobotFixture()}
+          lang="zh"
+          onSelectItem={() => {}}
+          onOpenConversationWithReport={() => {}}
+        />,
+      );
+    });
+
+    const dialog = container.querySelector<HTMLElement>(
+      `[role="dialog"][aria-label="${translations.zh.aiInspection}"]`,
+    );
+    const bottomResizeHandle = dialog?.querySelector<HTMLButtonElement>(
+      '.resize-edge-bottom.resize-edge-visual-bottom',
+    );
+    assert.ok(dialog, 'expected the AI inspection dialog to render');
+    assert.ok(bottomResizeHandle, 'expected the bottom resize handle to render');
+
+    await act(async () => {
+      bottomResizeHandle.dispatchEvent(
+        new dom.window.MouseEvent('mousedown', { bubbles: true, clientY: 568 }),
+      );
+    });
+    await act(async () => {
+      dom.window.document.dispatchEvent(
+        new dom.window.MouseEvent('mousemove', { bubbles: true, clientY: 800 }),
+      );
+    });
+
+    assert.ok(
+      Number.parseFloat(dialog.style.height) > dom.window.innerHeight,
+      'dragging the bottom edge should allow the inspection window to extend below the viewport',
+    );
+
+    await act(async () => {
+      dom.window.document.dispatchEvent(new dom.window.MouseEvent('mouseup', { bubbles: true }));
+    });
   } finally {
     await act(async () => {
       root.unmount();
@@ -400,7 +465,7 @@ test('inspection report stays available after closing and reopening the modal', 
   }
 });
 
-test('inspection report footer uses regenerate confirmation instead of a back button', async () => {
+test('inspection report footer renders save and regenerate actions', async () => {
   const dom = installDom();
   const container = dom.window.document.getElementById('root');
   assert.ok(container, 'root container should exist');
@@ -449,6 +514,7 @@ test('inspection report footer uses regenerate confirmation instead of a back bu
 
     const regenerateButton = getButtonByText(t.retryLastResponse);
     assert.ok(regenerateButton, 'expected the regenerate button to render in the report footer');
+    assert.ok(getButtonByText(t.saveReport), 'expected the save report button in the report footer');
 
     await act(async () => {
       regenerateButton!.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
@@ -480,8 +546,8 @@ test('inspection report footer uses regenerate confirmation instead of a back bu
     );
     assert.equal(
       dialogButtons.some((button) => button.textContent?.trim() === t.saveReport),
-      true,
-      'expected confirmation dialog to render the save report action',
+      false,
+      'expected the save report action to stay in the report footer',
     );
     assert.equal(
       dialogButtons.some((button) => button.textContent?.trim() === t.retryLastResponse),
@@ -501,7 +567,7 @@ test('inspection report footer uses regenerate confirmation instead of a back bu
   }
 });
 
-test('saving the report from regenerate confirmation returns to the inspection result view', async () => {
+test('saving the report from the report footer keeps the inspection result visible', async () => {
   const dom = installDom();
   const container = dom.window.document.getElementById('root');
   assert.ok(container, 'root container should exist');
@@ -544,23 +610,11 @@ test('saving the report from regenerate confirmation returns to the inspection r
       });
     });
 
-    const regenerateButton = getButtonByText(t.retryLastResponse);
-    assert.ok(regenerateButton, 'expected the regenerate button to render in the report footer');
+    const saveReportButton = getButtonByText(t.saveReport);
+    assert.ok(saveReportButton, 'expected the report footer to render the save report action');
 
     await act(async () => {
-      regenerateButton!.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
-    });
-
-    const confirmDialog = dom.window.document.querySelector('[role="dialog"][aria-modal="true"]');
-    assert.ok(confirmDialog, 'expected regenerate confirmation dialog to open');
-
-    const saveReportButton = Array.from(confirmDialog.querySelectorAll('button')).find(
-      (button) => button.textContent?.trim() === t.saveReport,
-    );
-    assert.ok(saveReportButton, 'expected confirmation dialog to render the save report action');
-
-    await act(async () => {
-      saveReportButton!.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
+      saveReportButton.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
       await new Promise((resolve) => {
         setTimeout(resolve, 80);
       });
@@ -570,7 +624,7 @@ test('saving the report from regenerate confirmation returns to the inspection r
     assert.equal(
       dom.window.document.querySelector('[role="dialog"][aria-modal="true"]'),
       null,
-      'expected the confirmation dialog to close after saving the report',
+      'expected saving from the footer not to open the regenerate confirmation',
     );
     assert.ok(
       getButtonByText(t.discussReportWithAI),
@@ -1049,6 +1103,14 @@ test('professional setup preserves manual selected checks across selection-only 
 
     await switchInspectionSetupMode(container, dom, t.inspectionAdvancedMode);
 
+    const profileToggle = container.querySelector<HTMLButtonElement>(
+      `[data-inspection-current-plan-profile-toggle="${profileId}"]`,
+    );
+    assert.ok(profileToggle, 'expected the current-plan profile dropdown to render');
+    await act(async () => {
+      profileToggle!.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
+    });
+
     const getBadge = () =>
       container.querySelector<HTMLButtonElement>(
         `[data-inspection-setup-item-badge="${profileId}:${itemId}"]`,
@@ -1060,7 +1122,7 @@ test('professional setup preserves manual selected checks across selection-only 
       badge!.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
     });
 
-    assert.equal(badge!.textContent?.trim(), t.inspectionSkipped);
+    assert.equal(badge!.textContent?.includes(t.inspectionSkipped), true);
 
     await act(async () => {
       root.render(
@@ -1076,8 +1138,8 @@ test('professional setup preserves manual selected checks across selection-only 
     });
 
     assert.equal(
-      getBadge()?.textContent?.trim(),
-      t.inspectionSkipped,
+      getBadge()?.textContent?.includes(t.inspectionSkipped),
+      true,
       'expected a selection-only robot update to preserve the manually skipped item',
     );
     assert.equal(
@@ -1122,21 +1184,34 @@ test('inspection setup starts in normal mode and keeps selection in sync with pr
       );
     });
 
-    assert.equal(
-      container.textContent?.includes(t.inspectionRecommendedPlan),
-      true,
-      'expected normal mode to render the simplified setup heading',
+    const recognitionPanel = container.querySelector<HTMLElement>(
+      '[data-inspection-recognition-panel="true"]',
     );
-    assert.equal(
-      container.textContent?.includes(t.inspectionRunSummary),
-      false,
-      'expected the normal mode to hide the professional run summary',
+    assert.ok(recognitionPanel, 'expected normal mode to render the editable recognition panel');
+    const recognitionGrid = recognitionPanel.querySelector<HTMLElement>(
+      '[data-inspection-recognition-grid="true"]',
     );
+    assert.ok(recognitionGrid, 'expected normal mode to show the recognition grid');
     assert.equal(
-      container.textContent?.includes(t.inspectionRecommendedPlanDescription),
-      true,
-      'expected normal mode to explain how the recommendation is derived',
+      recognitionGrid.style.gridTemplateColumns,
+      'repeat(auto-fit, minmax(min(100%, 22rem), 1fr))',
+      'expected recognition controls to form two columns when space allows and one otherwise',
     );
+    const sourceFormatSelect = recognitionPanel.querySelector<HTMLSelectElement>(
+      '[data-inspection-recognition-select="sourceFormat"]',
+    );
+    const robotTypeSelect = recognitionPanel.querySelector<HTMLSelectElement>(
+      '[data-inspection-recognition-select="robotType"]',
+    );
+    assert.ok(sourceFormatSelect, 'expected normal mode to allow editing source format');
+    assert.ok(robotTypeSelect, 'expected normal mode to allow editing robot type');
+
+    await act(async () => {
+      sourceFormatSelect!.value = 'mjcf';
+      sourceFormatSelect!.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
+      robotTypeSelect!.value = 'quadruped';
+      robotTypeSelect!.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
+    });
 
     const advancedModeButton = getButtonByText(t.inspectionAdvancedMode);
     assert.ok(advancedModeButton, 'expected the advanced mode toggle to render');
@@ -1145,138 +1220,88 @@ test('inspection setup starts in normal mode and keeps selection in sync with pr
       advancedModeButton!.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
     });
 
-    assert.equal(
-      container.textContent?.includes(t.inspectionRecommendedPlan),
-      true,
-      'expected the professional mode to expose editable recommendation inputs',
-    );
-    assert.equal(
-      container.textContent?.includes(t.inspectionRunSummary),
-      false,
-      'expected professional mode to replace the old run summary heading',
-    );
     const reviewDetails = container.querySelector('[data-inspection-review-details="true"]');
     assert.ok(reviewDetails, 'expected professional mode to render a review details container');
     assert.equal(
-      reviewDetails.querySelector('[data-inspection-recommendation-architecture="true"]'),
-      null,
-      'expected professional mode not to treat current edits as the recommendation architecture',
-    );
-    assert.ok(
       reviewDetails.querySelector('[data-inspection-recognition-panel="true"]'),
-      'expected professional mode to show a recognition panel',
+      null,
+      'expected professional mode to omit the recognition panel moved to normal mode',
     );
     assert.ok(
       reviewDetails.querySelector('[data-inspection-current-plan="true"]'),
       'expected professional mode to show the editable current plan',
     );
+    const currentPlanViewport = reviewDetails.querySelector<HTMLElement>(
+      '[data-inspection-current-plan-viewport="true"]',
+    );
+    const currentPlan = reviewDetails.querySelector<HTMLElement>(
+      '[data-inspection-current-plan="true"]',
+    );
+    const currentPlanScroll = reviewDetails.querySelector<HTMLElement>(
+      '[data-inspection-current-plan-scroll="true"]',
+    );
+    assert.ok(currentPlanViewport, 'expected the current plan viewport to render');
+    assert.ok(currentPlan, 'expected the current plan panel to render');
+    assert.ok(currentPlanScroll, 'expected the current plan list container to render');
+    assert.equal(currentPlanViewport.className.includes('overflow-hidden'), false);
+    assert.equal(currentPlan.className.includes('flex-1'), false);
+    assert.equal(currentPlanScroll.className.includes('xl:overflow-y-auto'), false);
     assert.equal(
       reviewDetails.querySelector('[data-inspection-recommendation-baseline="true"]'),
       null,
       'expected professional mode not to keep a full recommendation baseline column',
     );
-    assert.ok(
+    assert.equal(
       reviewDetails.querySelector('[data-inspection-focused-profile-panel="true"]'),
-      'expected professional mode to show the focused profile checks beside the current plan',
+      null,
+      'expected professional mode to remove the separate focused profile panel',
     );
     assert.ok(
       reviewDetails.querySelector('[data-inspection-current-plan-layer="base"]'),
       'expected current plan to group profiles by the base layer',
     );
-    const purposeSelect = reviewDetails.querySelector<HTMLSelectElement>(
-      '[data-inspection-recognition-select="purpose"]',
-    );
-    assert.ok(purposeSelect, 'expected review purpose to render as a dropdown');
-    assert.ok(
-      [
-        'basic_health',
-        'simulation_readiness',
-        'export_preflight',
-        'assembly_consistency',
-        'hardware_config',
-      ].includes(purposeSelect.value),
-      'expected review purpose dropdown to hold a recognized purpose value',
-    );
-    const targetPlatformSelect = reviewDetails.querySelector<HTMLSelectElement>(
-      '[data-inspection-recognition-select="targetPlatform"]',
-    );
-    assert.ok(targetPlatformSelect, 'expected target usage to render as a dropdown');
-    assert.ok(
-      ['generic', 'gazebo', 'mujoco', 'isaac_sim', 'ros_control', 'export_portability'].includes(
-        targetPlatformSelect.value,
-      ),
-      'expected target usage dropdown to hold a recognized target value',
-    );
     assert.equal(
-      reviewDetails.querySelector<HTMLSelectElement>(
-        '[data-inspection-recognition-select="sourceFormat"]',
-      )?.value,
-      'urdf',
-      'expected source format to render as a dropdown',
-    );
-    assert.equal(
-      reviewDetails.querySelector<HTMLSelectElement>(
-        '[data-inspection-recognition-select="robotType"]',
-      )?.value,
-      'generic',
-      'expected robot type to render as a dropdown',
-    );
-    const targetProfile = INSPECTION_PROFILE_DEFINITIONS.find(
-      (profile) => profile.id === 'base.physical_plausibility',
-    );
-    assert.ok(targetProfile, 'expected the physical plausibility profile to exist');
-    const targetProfileButton = container.querySelector<HTMLButtonElement>(
-      '[data-inspection-current-plan-profile="base.physical_plausibility"]',
-    );
-    assert.ok(targetProfileButton, 'expected current plan profiles to be directly focusable');
-
-    await act(async () => {
-      targetProfileButton!.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
-    });
-
-    assert.equal(
-      container.querySelector('[data-inspection-focused-profile-name]')?.textContent?.trim(),
-      targetProfile!.nameZh,
-      'expected clicking a profile in the current plan to focus its checks',
-    );
-    const sourceFormatSelect = reviewDetails.querySelector<HTMLSelectElement>(
-      '[data-inspection-recognition-select="sourceFormat"]',
-    );
-    assert.ok(sourceFormatSelect, 'expected professional mode to allow editing source format');
-
-    await act(async () => {
-      sourceFormatSelect!.value = 'mjcf';
-      sourceFormatSelect!.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
-    });
-
-    assert.equal(
-      sourceFormatSelect!.value,
-      'mjcf',
-      'expected changing source format to update recognition state',
+      reviewDetails
+        .querySelector('[data-inspection-current-plan-layer-header="base"]')
+        ?.textContent?.trim(),
+      '基础通用层',
+      'expected current plan layer headings not to repeat the profile count',
     );
     assert.ok(
       container.querySelector('[data-inspection-current-plan-profile="format.mjcf"]'),
-      'expected changing source format to overwrite the current plan with the new recommendation',
+      'expected the source-format choice from normal mode to reach the professional plan',
     );
-
-    const robotTypeSelect = reviewDetails.querySelector<HTMLSelectElement>(
-      '[data-inspection-recognition-select="robotType"]',
+    const profileToggle = reviewDetails.querySelector<HTMLButtonElement>(
+      '[data-inspection-current-plan-profile-toggle]',
     );
-    assert.ok(robotTypeSelect, 'expected professional mode to allow editing robot type');
-
+    assert.ok(profileToggle, 'expected current plan profiles to expose dropdown controls');
     await act(async () => {
-      robotTypeSelect!.value = 'quadruped';
-      robotTypeSelect!.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
+      profileToggle!.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
     });
-
+    assert.ok(
+      reviewDetails.querySelector('[data-inspection-current-plan-profile-details]'),
+      'expected profile checks to expand directly inside the current plan',
+    );
+    const profileToggles = reviewDetails.querySelectorAll<HTMLButtonElement>(
+      '[data-inspection-current-plan-profile-toggle]',
+    );
+    assert.ok(profileToggles.length >= 2, 'expected at least two current-plan profiles');
+    await act(async () => {
+      profileToggles[1]!.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
+    });
     assert.equal(
-      robotTypeSelect!.value,
-      'quadruped',
-      'expected changing robot type to update recognition state',
+      reviewDetails.querySelectorAll('[data-inspection-current-plan-profile-details]').length,
+      2,
+      'expected opening another profile to preserve the first expanded profile',
+    );
+    assert.equal(
+      profileToggle!.getAttribute('aria-expanded'),
+      'true',
+      'expected the first profile to remain expanded',
     );
     assert.ok(
       container.querySelector('[data-inspection-current-plan-profile="morph.quadruped"]'),
-      'expected changing robot type to overwrite the current plan with the new recommendation',
+      'expected the robot-type choice from normal mode to reach the professional plan',
     );
   } finally {
     await act(async () => {
@@ -1394,6 +1419,13 @@ test('professional setup edits the current plan through a draft plan editor', as
       '[data-inspection-plan-editor="true"]',
     );
     assert.ok(editor, 'expected current plan editor dialog to open');
+    const editorDialog = editor.closest<HTMLElement>('[role="dialog"][aria-modal="true"]');
+    assert.ok(editorDialog, 'expected current plan editor to render in a modal dialog');
+    assert.equal(
+      editorDialog.className.includes('z-[260]'),
+      true,
+      'expected current plan editor to render above managed AI windows',
+    );
     assert.ok(
       editor!.querySelector('[data-inspection-plan-editor-layer="base"]'),
       'expected plan editor to show the base layer',
@@ -1406,11 +1438,24 @@ test('professional setup edits the current plan through a draft plan editor', as
       editor!.querySelector('[data-inspection-plan-editor-profile="morph.humanoid"]'),
       'expected plan editor to list profiles not currently included',
     );
-    assert.ok(
-      editor!.querySelector(
-        '[data-inspection-plan-editor-item="morph.humanoid:humanoid_body_hierarchy"]',
+    const unselectedEditorItem = editor!.querySelector<HTMLElement>(
+      '[data-inspection-plan-editor-item="morph.humanoid:humanoid_body_hierarchy"]',
+    );
+    assert.ok(unselectedEditorItem, 'expected plan editor to list checks under each profile');
+    const editorItems = Array.from(
+      editor!.querySelectorAll<HTMLElement>('[data-inspection-plan-editor-item]'),
+    );
+    assert.equal(
+      editorItems.some((item) => item.textContent?.includes(translations.zh.inspectionSkipped)),
+      true,
+      'expected unselected plan editor items to use the not-included status',
+    );
+    assert.equal(
+      editorItems.some((item) =>
+        item.textContent?.includes(translations.zh.inspectionNotRecommended),
       ),
-      'expected plan editor to list checks under each profile',
+      false,
+      'expected the plan editor not to describe unselected items as recommendation metadata',
     );
 
     const humanoidToggle = editor!.querySelector<HTMLButtonElement>(
@@ -1515,16 +1560,29 @@ test('professional mode status badge toggles the inspection item selection', asy
       professionalModeButton!.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
     });
 
+    const profileToggle = container.querySelector<HTMLButtonElement>(
+      `[data-inspection-current-plan-profile-toggle="${firstProfile!.id}"]`,
+    );
+    assert.ok(profileToggle, 'expected the current-plan profile dropdown to render');
+    await act(async () => {
+      profileToggle!.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
+    });
+
     const badge = container.querySelector<HTMLButtonElement>(
       `[data-inspection-setup-item-badge="${firstProfile!.id}:${firstItem!.id}"]`,
     );
     assert.ok(badge, 'expected the focused item badge button to render');
-    assert.equal(badge.textContent?.trim(), t.inspectionIncluded);
+    assert.equal(badge.textContent?.includes(t.inspectionIncluded), true);
     assert.equal(badge.getAttribute('aria-pressed'), 'true');
-    const focusedProfilePanel = container.querySelector<HTMLElement>(
-      '[data-inspection-focused-profile-panel="true"]',
+    const expandedProfileDetails = container.querySelector<HTMLElement>(
+      `[data-inspection-current-plan-profile-details="${firstProfile!.id}"]`,
     );
-    assert.ok(focusedProfilePanel, 'expected the focused profile checks panel to render');
+    assert.ok(expandedProfileDetails, 'expected the profile checks to expand in the current plan');
+    assert.equal(
+      expandedProfileDetails!.textContent?.includes(firstItem!.id),
+      false,
+      'expected expanded checks not to expose internal English item identifiers',
+    );
     const severityLabel =
       firstItem!.severityOnFailure === 'error'
         ? '错误'
@@ -1532,12 +1590,12 @@ test('professional mode status badge toggles the inspection item selection', asy
           ? '警告'
           : '建议';
     assert.equal(
-      focusedProfilePanel!.textContent?.includes(severityLabel),
+      expandedProfileDetails!.textContent?.includes(severityLabel),
       false,
       'expected focused profile checks not to display severity labels',
     );
     assert.equal(
-      focusedProfilePanel!.textContent?.includes(firstItem!.evidenceLevelRequired ?? 'L1'),
+      expandedProfileDetails!.textContent?.includes(firstItem!.evidenceLevelRequired ?? 'L1'),
       false,
       'expected focused profile checks not to display evidence levels',
     );
@@ -1546,7 +1604,7 @@ test('professional mode status badge toggles the inspection item selection', asy
       badge!.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
     });
 
-    assert.equal(badge!.textContent?.trim(), t.inspectionSkipped);
+    assert.equal(badge!.textContent?.includes(t.inspectionSkipped), true);
     assert.equal(badge!.getAttribute('aria-pressed'), 'false');
 
     const summaryText = t.inspectionSelectedChecks.replace(
@@ -1559,9 +1617,9 @@ test('professional mode status badge toggles the inspection item selection', asy
       'expected the professional-mode summary to reflect the deselected item',
     );
     assert.equal(
-      container.textContent?.includes('用户排除推荐'),
-      true,
-      'expected the deselected recommended item to be marked as user-excluded from the recommendation',
+      expandedProfileDetails!.textContent?.includes('用户排除推荐'),
+      false,
+      'expected the item checkbox to be the only selection-status indicator',
     );
     assert.ok(
       container.querySelector('[data-inspection-current-plan-custom-state="true"]'),
@@ -1588,12 +1646,7 @@ test('professional mode status badge toggles the inspection item selection', asy
       restoreProfileButton!.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
     });
 
-    assert.equal(badge!.textContent?.trim(), t.inspectionIncluded);
-    assert.equal(
-      container.textContent?.includes('用户排除推荐'),
-      false,
-      'expected restoring the focused profile recommendation to clear the user-excluded badge',
-    );
+    assert.equal(badge!.textContent?.includes(t.inspectionIncluded), true);
   } finally {
     await act(async () => {
       root.unmount();
@@ -1663,10 +1716,6 @@ test('inspection setup normal mode adjustment keeps the generated plan runnable'
 
   const { AIInspectionModal } = await import('./AIInspectionModal.tsx');
   const root = createRoot(container);
-  const getButtonByText = (label: string) =>
-    Array.from(container.querySelectorAll('button')).find(
-      (button) => button.textContent?.trim() === label,
-    ) ?? null;
 
   try {
     await act(async () => {
@@ -1687,32 +1736,38 @@ test('inspection setup normal mode adjustment keeps the generated plan runnable'
     assert.ok(getRunButton(), 'expected the normal mode run button to render');
     assert.equal(getRunButton()?.disabled, false, 'expected run inspection to start enabled');
 
-    const adjustButton = container.querySelector<HTMLButtonElement>(
-      '[data-inspection-profile-adjust-scope]',
+    const targetPlatformSelect = container.querySelector<HTMLSelectElement>(
+      '[data-inspection-recognition-select="targetPlatform"]',
     );
-    assert.ok(adjustButton, 'expected the normal mode adjustment action to render');
-
-    await act(async () => {
-      adjustButton!.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
-    });
-
-    const gazeboButton = getButtonByText('Gazebo');
-    assert.ok(gazeboButton, 'expected target-platform correction controls to render');
-
-    await act(async () => {
-      gazeboButton!.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
-    });
-
+    assert.ok(targetPlatformSelect, 'expected the normal mode target selector to render');
     assert.equal(
-      container.textContent?.includes('Gazebo'),
-      true,
-      'expected the normal plan summary to reflect the corrected target platform',
+      targetPlatformSelect.value,
+      '',
+      'expected target selection to start in automatic mode',
     );
+
+    await act(async () => {
+      targetPlatformSelect!.value = 'gazebo';
+      targetPlatformSelect!.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
+    });
+
+    assert.equal(targetPlatformSelect.value, 'gazebo');
     assert.equal(
       getRunButton()?.disabled,
       false,
       'expected target correction to keep running the inspection enabled',
     );
+
+    await act(async () => {
+      targetPlatformSelect!.value = '';
+      targetPlatformSelect!.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
+    });
+
+    assert.equal(
+      targetPlatformSelect.value,
+      '',
+      'expected users to be able to restore automatic target selection',
+    );
   } finally {
     await act(async () => {
       root.unmount();
@@ -1721,7 +1776,7 @@ test('inspection setup normal mode adjustment keeps the generated plan runnable'
   }
 });
 
-test('inspection setup normal mode uses a compact recommendation-card layout', async () => {
+test('inspection setup normal mode renders only the recognition panel without direct check editing', async () => {
   const dom = installDom();
   const container = dom.window.document.getElementById('root');
   assert.ok(container, 'root container should exist');
@@ -1743,36 +1798,29 @@ test('inspection setup normal mode uses a compact recommendation-card layout', a
       );
     });
 
-    const title = container.querySelector<HTMLElement>('[data-inspection-normal-title]');
-    assert.ok(title, 'expected the normal mode title to render a test hook');
-    assert.equal(
-      title.className.includes('text-lg'),
-      true,
-      'expected the normal mode title to use a compact heading scale',
-    );
-
     const recommendationCard = container.querySelector<HTMLElement>(
-      '[data-inspection-profile-recommendation-card]',
+      '[data-inspection-recognition-panel="true"]',
     );
-    assert.ok(recommendationCard, 'expected normal mode to render the recommendation card');
+    assert.ok(recommendationCard, 'expected normal mode to render the recognition panel');
     assert.equal(recommendationCard.className.includes('overflow-hidden'), true);
-    assert.equal(recommendationCard.className.includes('rounded-xl'), true);
+    assert.equal(recommendationCard.className.includes('rounded-2xl'), true);
     assert.ok(
       recommendationCard.querySelector('svg.lucide-sparkles'),
       'expected the recommendation card to render the recommendation icon',
     );
     assert.ok(
-      recommendationCard.querySelector('[data-inspection-profile-adjust-scope]'),
-      'expected normal mode to expose scope correction without item-level controls',
+      container.querySelector('[data-inspection-recognition-grid="true"]'),
+      'expected normal mode to expose the editable recognition grid',
     );
     assert.equal(
-      container.querySelector('[data-inspection-normal-profile-row]'),
+      container.querySelector('[data-inspection-normal-check-editor="true"]'),
       null,
-      'expected the simplified normal mode to omit professional item rows',
+      'normal mode no longer renders the direct check editor (move selection to professional mode)',
     );
-    assert.ok(
-      container.querySelector('[data-inspection-normal-footer-summary]'),
-      'expected selected-check counts to remain visible in the footer',
+    assert.equal(
+      container.querySelector('[data-inspection-normal-item]'),
+      null,
+      'normal mode no longer exposes per-item toggles',
     );
   } finally {
     await act(async () => {
@@ -1782,7 +1830,127 @@ test('inspection setup normal mode uses a compact recommendation-card layout', a
   }
 });
 
-test('inspection setup normal mode exposes correction controls through a low-priority action', async () => {
+test('inspection selection is edited in professional mode and persists across mode switches', async () => {
+  const dom = installDom();
+  const container = dom.window.document.getElementById('root');
+  assert.ok(container, 'root container should exist');
+
+  const { AIInspectionModal } = await import('./AIInspectionModal.tsx');
+  const root = createRoot(container);
+  const robot = createRobotFixture();
+  const plan = buildNormalInspectionPlan({ robot });
+  const profile = INSPECTION_PROFILE_DEFINITIONS.find(
+    (candidate) => (plan.selectedProfiles[candidate.id]?.size ?? 0) > 1,
+  );
+  assert.ok(profile, 'expected a recommended category with multiple checks');
+  const itemId = Array.from(plan.selectedProfiles[profile.id] ?? [])[0];
+  assert.ok(itemId, 'expected a recommended check in the selected category');
+  const t = translations.zh;
+
+  const getProfessionalItemBadge = () =>
+    container.querySelector<HTMLButtonElement>(
+      `[data-inspection-setup-item-badge="${profile.id}:${itemId}"]`,
+    );
+
+  try {
+    await act(async () => {
+      root.render(
+        <AIInspectionModal
+          isOpen
+          onClose={() => {}}
+          robot={robot}
+          lang="zh"
+          onSelectItem={() => {}}
+          onOpenConversationWithReport={() => {}}
+        />,
+      );
+    });
+
+    // Normal mode no longer exposes direct per-item toggles; selection editing lives in professional mode only.
+    assert.equal(
+      container.querySelector('[data-inspection-normal-item]'),
+      null,
+      'normal mode must not expose per-item toggles anymore',
+    );
+
+    await switchInspectionSetupMode(container, dom, t.inspectionAdvancedMode);
+
+    // Professional mode collapses profile details by default; expand the target profile to reach its item toggles.
+    const professionalProfileToggle = container.querySelector<HTMLButtonElement>(
+      `[data-inspection-current-plan-profile-toggle="${profile.id}"]`,
+    );
+    assert.ok(professionalProfileToggle, 'expected the target category to render in professional mode');
+    await act(async () => {
+      professionalProfileToggle.dispatchEvent(
+        new dom.window.MouseEvent('click', { bubbles: true }),
+      );
+    });
+    assert.equal(
+      professionalProfileToggle.getAttribute('aria-expanded'),
+      'true',
+      'clicking the professional profile toggle should expand its details',
+    );
+
+    await act(async () => {
+      getProfessionalItemBadge()?.dispatchEvent(
+        new dom.window.MouseEvent('click', { bubbles: true }),
+      );
+    });
+    assert.equal(
+      getProfessionalItemBadge()?.getAttribute('aria-pressed'),
+      'false',
+      'professional mode should toggle the recommended item off',
+    );
+
+    // Switching back to normal mode must not silently restore the recommendation.
+    await switchInspectionSetupMode(container, dom, t.inspectionNormalMode);
+    assert.equal(
+      container.querySelector('[data-inspection-normal-item]'),
+      null,
+      'normal mode still hides per-item toggles after a professional edit',
+    );
+
+    await switchInspectionSetupMode(container, dom, t.inspectionAdvancedMode);
+    // The professional view collapses profile details on remount; expand the target profile again to reach its restore action.
+    const professionalProfileToggleAgain = container.querySelector<HTMLButtonElement>(
+      `[data-inspection-current-plan-profile-toggle="${profile.id}"]`,
+    );
+    assert.ok(
+      professionalProfileToggleAgain,
+      'expected the target category to remain visible in professional mode after the edit',
+    );
+    if (professionalProfileToggleAgain.getAttribute('aria-expanded') !== 'true') {
+      await act(async () => {
+        professionalProfileToggleAgain.dispatchEvent(
+          new dom.window.MouseEvent('click', { bubbles: true }),
+        );
+      });
+    }
+    const restoreProfileButton = Array.from(
+      container.querySelectorAll<HTMLButtonElement>('button'),
+    ).find((button) => button.textContent === t.inspectionRestoreProfileRecommendation);
+    assert.ok(restoreProfileButton, 'expected professional mode to expose the per-profile restore');
+    await act(async () => {
+      restoreProfileButton.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
+    });
+    assert.equal(
+      container
+        .querySelector<HTMLButtonElement>(
+          `[data-inspection-setup-item-badge="${profile.id}:${itemId}"]`,
+        )
+        ?.getAttribute('aria-pressed'),
+      'true',
+      'expected the per-profile restore to recover the removed item',
+    );
+  } finally {
+    await act(async () => {
+      root.unmount();
+    });
+    dom.window.close();
+  }
+});
+
+test('inspection setup normal mode replaces the old adjustment action with direct selectors', async () => {
   const dom = installDom();
   const container = dom.window.document.getElementById('root');
   assert.ok(container, 'root container should exist');
@@ -1804,16 +1972,15 @@ test('inspection setup normal mode exposes correction controls through a low-pri
       );
     });
 
-    const adjustButton = container.querySelector<HTMLButtonElement>(
-      '[data-inspection-profile-adjust-scope]',
-    );
-
-    assert.ok(adjustButton, 'expected the normal plan adjustment action to render');
     assert.equal(
-      adjustButton.className.includes('bg-element-bg') &&
-        adjustButton.className.includes('text-text-secondary'),
-      true,
-      'expected adjustment to use low-priority secondary styling',
+      container.querySelector('[data-inspection-profile-adjust-scope]'),
+      null,
+      'expected the old adjustment action to be removed',
+    );
+    assert.equal(
+      container.querySelectorAll('[data-inspection-recognition-select]').length,
+      4,
+      'expected all recommendation inputs to be directly editable',
     );
     assert.equal(
       container.querySelector('[data-inspection-normal-action]'),
@@ -1931,19 +2098,13 @@ test('inspection setup mode switcher uses the professional mode label', async ()
   }
 });
 
-test('inspection setup highlights the run inspection action from the window center with synced breathing', async () => {
+test('inspection setup opens without an animated operation hint', async () => {
   const dom = installDom();
   const container = dom.window.document.getElementById('root');
   assert.ok(container, 'root container should exist');
 
   const { AIInspectionModal } = await import('./AIInspectionModal.tsx');
   const root = createRoot(container);
-  const t = translations.zh;
-
-  const getButtonByText = (label: string) =>
-    Array.from(container.querySelectorAll('button')).find(
-      (button) => button.textContent?.trim() === label,
-    ) ?? null;
 
   try {
     await act(async () => {
@@ -1964,133 +2125,18 @@ test('inspection setup highlights the run inspection action from the window cent
     assert.ok(getRunButton(), 'expected the setup footer to expose the run inspection button hook');
     assert.equal(
       getRunButton()?.className.includes('inspection-run-cta-pulse'),
-      true,
-      'expected entering normal mode to pulse the run inspection button',
-    );
-
-    const pointerOverlay = container.querySelector<HTMLElement>(
-      '[data-inspection-run-pointer-overlay]',
-    );
-    assert.ok(pointerOverlay, 'expected the pointer cue to render in a full-window overlay');
-    assert.equal(
-      pointerOverlay.style.getPropertyValue('--inspection-run-pointer-origin-x'),
-      '50%',
-      'expected the pointer cue to originate from the horizontal center of the modal window',
+      false,
+      'expected the run inspection button not to pulse when the modal opens',
     );
     assert.equal(
-      pointerOverlay.style.getPropertyValue('--inspection-run-pointer-origin-y'),
-      '50%',
-      'expected the pointer cue to originate from the vertical center of the modal window',
-    );
-
-    const firstPointer = container.querySelector<HTMLElement>('[data-inspection-run-pointer]');
-    assert.ok(
-      firstPointer,
-      'expected entering setup mode to render a temporary pointer cue toward the run inspection button',
+      getRunButton()?.className.includes('inspection-run-cta-breathe-sync'),
+      false,
+      'expected the run inspection button not to play a breathing hint when the modal opens',
     );
     assert.equal(
-      container.querySelector('[data-inspection-run-hint]'),
+      container.querySelector('[data-inspection-run-pointer-overlay]'),
       null,
-      'expected the previous text hint capsule to be removed',
-    );
-    assert.equal(
-      Boolean(firstPointer.querySelector('.inspection-run-pointer-cta')),
-      true,
-      'expected the pointer cue to use the dedicated pointer animation styling',
-    );
-    assert.equal(
-      getRunButton()?.className.includes('inspection-run-cta-breathe-sync'),
-      true,
-      'expected the run inspection button to coordinate a breathing animation with the pointer cue',
-    );
-
-    const professionalModeButton = getButtonByText(t.inspectionAdvancedMode);
-    assert.ok(
-      professionalModeButton,
-      'expected the setup mode switcher to render the professional mode',
-    );
-
-    await act(async () => {
-      professionalModeButton!.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
-    });
-
-    const secondPointer = container.querySelector<HTMLElement>('[data-inspection-run-pointer]');
-    assert.ok(
-      secondPointer,
-      'expected entering professional mode to trigger the pointer cue again',
-    );
-    assert.equal(
-      getRunButton()?.className.includes('inspection-run-cta-pulse'),
-      true,
-      'expected entering professional mode to re-apply the run inspection pulse',
-    );
-    assert.equal(
-      getRunButton()?.className.includes('inspection-run-cta-breathe-sync'),
-      true,
-      'expected entering professional mode to re-apply the synced breathing state',
-    );
-  } finally {
-    await act(async () => {
-      root.unmount();
-    });
-    dom.window.close();
-  }
-});
-
-test('inspection setup replays the run inspection cue when switching modes before the previous cue ends', async () => {
-  const dom = installDom();
-  const container = dom.window.document.getElementById('root');
-  assert.ok(container, 'root container should exist');
-
-  const { AIInspectionModal } = await import('./AIInspectionModal.tsx');
-  const root = createRoot(container);
-  const t = translations.zh;
-
-  const getSetupModeButton = (label: string) =>
-    Array.from(container.querySelectorAll('[data-inspection-setup-mode-switcher] button')).find(
-      (button) => button.textContent?.trim() === label,
-    ) ?? null;
-
-  try {
-    await act(async () => {
-      root.render(
-        <AIInspectionModal
-          isOpen
-          onClose={() => {}}
-          robot={createRobotFixture()}
-          lang="zh"
-          onSelectItem={() => {}}
-          onOpenConversationWithReport={() => {}}
-        />,
-      );
-    });
-
-    const initialPointer = container.querySelector<HTMLElement>('[data-inspection-run-pointer]');
-    assert.ok(initialPointer, 'expected entering setup mode to render the initial pointer cue');
-
-    const professionalModeButton = getSetupModeButton(t.inspectionAdvancedMode);
-    assert.ok(
-      professionalModeButton,
-      'expected the setup mode switcher to render the professional mode',
-    );
-
-    await act(async () => {
-      professionalModeButton!.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
-    });
-
-    const normalModeButton = getSetupModeButton(t.inspectionNormalMode);
-    assert.ok(normalModeButton, 'expected the setup mode switcher to render the normal mode');
-
-    await act(async () => {
-      normalModeButton!.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
-    });
-
-    const replayedPointer = container.querySelector<HTMLElement>('[data-inspection-run-pointer]');
-    assert.ok(replayedPointer, 'expected switching back to normal mode to keep the cue visible');
-    assert.notEqual(
-      replayedPointer,
-      initialPointer,
-      'expected the pointer cue to remount so the animation can replay before the previous cue ends',
+      'expected the modal not to render an operation pointer overlay',
     );
   } finally {
     await act(async () => {
@@ -2135,10 +2181,9 @@ test('inspection setup does not restore or persist the selected mode across remo
       container.querySelector('[data-inspection-normal-footer-summary]'),
       'expected stale saved professional mode to be ignored on first open',
     );
-    assert.equal(
+    assert.ok(
       container.querySelector('[data-inspection-recognition-panel="true"]'),
-      null,
-      'expected first open to skip the professional setup even when old storage says advanced',
+      'expected first open to use the normal-mode recognition panel even when old storage says advanced',
     );
 
     dom.window.localStorage.setItem(setupModeStorageKey, 'legacy-stale');
@@ -2150,9 +2195,10 @@ test('inspection setup does not restore or persist the selected mode across remo
       advancedModeButton!.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
     });
 
-    assert.ok(
+    assert.equal(
       container.querySelector('[data-inspection-recognition-panel="true"]'),
-      'expected the current session to switch to professional mode',
+      null,
+      'expected the current session to switch to professional mode without the moved panel',
     );
     assert.equal(
       dom.window.localStorage.getItem(setupModeStorageKey),
@@ -2184,10 +2230,9 @@ test('inspection setup does not restore or persist the selected mode across remo
         container.querySelector('[data-inspection-normal-footer-summary]'),
         'expected remounting the setup to return to normal mode',
       );
-      assert.equal(
+      assert.ok(
         container.querySelector('[data-inspection-recognition-panel="true"]'),
-        null,
-        'expected remounting not to restore the previous professional-mode session state',
+        'expected remounting to restore the normal-mode recognition panel',
       );
       assert.equal(
         dom.window.localStorage.getItem(setupModeStorageKey),
@@ -2354,6 +2399,64 @@ test('compact professional setup exposes one vertical scroll viewport', async ()
   }
 });
 
+test('wide short professional setup keeps one vertical scroll viewport', async () => {
+  const dom = installDom();
+  Object.defineProperty(dom.window, 'innerWidth', { value: 1400, configurable: true });
+  Object.defineProperty(dom.window, 'innerHeight', { value: 500, configurable: true });
+  const container = dom.window.document.getElementById('root');
+  assert.ok(container, 'root container should exist');
+
+  const { AIInspectionModal } = await import('./AIInspectionModal.tsx');
+  const root = createRoot(container);
+  const t = translations.zh;
+
+  try {
+    await act(async () => {
+      root.render(
+        <AIInspectionModal
+          isOpen
+          onClose={() => {}}
+          robot={createRobotFixture()}
+          lang="zh"
+          onSelectItem={() => {}}
+          onOpenConversationWithReport={() => {}}
+        />,
+      );
+    });
+
+    await act(async () => {
+      getSetupModeButton(container, t.inspectionAdvancedMode)?.dispatchEvent(
+        new dom.window.MouseEvent('click', { bubbles: true }),
+      );
+    });
+
+    const scrollViewport = container.querySelector<HTMLElement>(
+      '[data-inspection-advanced-scroll-viewport]',
+    );
+    const reviewDetails = container.querySelector<HTMLElement>(
+      '[data-inspection-review-details="true"]',
+    );
+    assert.ok(scrollViewport, 'expected professional setup to render its scroll viewport');
+    assert.ok(reviewDetails, 'expected professional setup to render review details');
+    assert.equal(scrollViewport.className.includes('overflow-y-auto'), true);
+    assert.equal(scrollViewport.className.includes('xl:overflow-hidden'), false);
+    assert.equal(reviewDetails.className.includes('flex-none'), true);
+    assert.equal(reviewDetails.className.includes('xl:flex-1'), false);
+    assert.equal(
+      Array.from(reviewDetails.querySelectorAll<HTMLElement>('[class]')).some((element) =>
+        element.getAttribute('class')?.includes('xl:overflow-y-auto'),
+      ),
+      false,
+      'expected the professional content not to introduce a nested xl scroll container',
+    );
+  } finally {
+    await act(async () => {
+      root.unmount();
+    });
+    dom.window.close();
+  }
+});
+
 test('inspection setup header uses the toolbox AI inspection logo', async () => {
   const dom = installDom();
   const container = dom.window.document.getElementById('root');
@@ -2380,15 +2483,32 @@ test('inspection setup header uses the toolbox AI inspection logo', async () => 
       '[data-inspection-setup-header-logo]',
     );
     assert.ok(setupHeaderLogo, 'expected the setup header logo wrapper to render');
+    assert.match(setupHeaderLogo.className, /\bh-7\b/);
+    assert.match(setupHeaderLogo.className, /\bw-7\b/);
     assert.ok(
       setupHeaderLogo.querySelector('svg.lucide-scan-search'),
       'expected the setup header logo to match the toolbox AI inspection ScanSearch icon',
+    );
+    assert.match(
+      setupHeaderLogo.querySelector('svg.lucide-scan-search')?.getAttribute('class') ?? '',
+      /\bh-4\b/,
     );
     assert.equal(
       setupHeaderLogo.querySelector('svg.lucide-bot'),
       null,
       'expected the setup header logo to stop rendering the Bot icon',
     );
+    const dialog = container.querySelector<HTMLElement>(
+      `[role="dialog"][aria-label="${translations.zh.aiInspection}"]`,
+    );
+    assert.ok(dialog, 'expected the inspection dialog to render');
+    assert.match(dialog.className, /\brounded-lg\b/);
+    const header = dialog.querySelector<HTMLElement>(':scope > [role="toolbar"]');
+    assert.ok(header, 'expected the inspection header to render');
+    assert.match(header.className, /\bh-10\b/);
+    const title = header.querySelector('h1');
+    assert.ok(title, 'expected the inspection title to render');
+    assert.equal(title.className.includes('text-[13px]'), true);
   } finally {
     await act(async () => {
       root.unmount();
@@ -2476,6 +2596,11 @@ test('professional setup summary chip uses content-based width instead of stretc
       summaryChip.className.includes('w-fit'),
       true,
       'expected the professional setup summary chip to stop expanding toward the footer actions',
+    );
+    assert.equal(
+      summaryChip.textContent?.includes(translations.zh.inspectionMaxPossibleScore),
+      false,
+      'expected the professional setup summary to omit the theoretical maximum score',
     );
   } finally {
     await act(async () => {

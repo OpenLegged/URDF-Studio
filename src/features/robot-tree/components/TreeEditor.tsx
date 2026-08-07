@@ -82,6 +82,7 @@ export interface TreeEditorProps {
   onDeleteAllLibraryFiles?: () => void;
   onExportLibraryFile?: (file: RobotFile) => void | Promise<void>;
   onCreateBridge?: () => void;
+  onPrefetchCreateBridge?: () => void;
   isReadOnly?: boolean;
   showJointPanel?: boolean;
   showStructureGraph?: boolean;
@@ -146,6 +147,7 @@ export const TreeEditor: React.FC<TreeEditorProps> = ({
   onDeleteAllLibraryFiles,
   onExportLibraryFile,
   onCreateBridge,
+  onPrefetchCreateBridge,
   isReadOnly = false,
   showJointPanel = false,
   showStructureGraph = false,
@@ -661,6 +663,7 @@ export const TreeEditor: React.FC<TreeEditorProps> = ({
               onDelete={onDelete}
               onUpdate={onUpdate}
               onCreateBridge={onCreateBridge}
+              onPrefetchCreateBridge={onPrefetchCreateBridge}
               isReadOnly={isReadOnly}
             />
           </div>

@@ -14,6 +14,11 @@ interface SceneLightingProps {
   shadowMapSize?: number;
 }
 
+// The main light spans a 20-unit shadow frustum. Keep the receiver offset
+// proportional to the selected shadow-map resolution so quality changes do not
+// reintroduce self-shadow contours or create an oversized detached shadow.
+const MAIN_LIGHT_SHADOW_NORMAL_BIAS_AT_1024 = 0.03;
+
 export function SceneLighting({
   theme = 'system',
   cameraFollowPrimary = false,
@@ -25,7 +30,6 @@ export function SceneLighting({
   const controls = useThree((state) => state.controls) as
     | (THREE.EventDispatcher & { addEventListener: (...args: never[]) => void })
     | null;
-  const isInteracting = useWorkspaceCanvasInteractionState();
   const cameraKeyLightRef = useRef<THREE.DirectionalLight>(null);
   const cameraSoftFrontLightRef = useRef<THREE.DirectionalLight>(null);
   const cameraFillRightLightRef = useRef<THREE.DirectionalLight>(null);
@@ -41,10 +45,15 @@ export function SceneLighting({
 
   const effectiveTheme = resolveEffectiveTheme(theme);
   const snapshotRenderActive = useSnapshotRenderActive();
+  const isInteracting = useWorkspaceCanvasInteractionState();
   const cameraFollowStyle = resolveCameraFollowLightingStyle(effectiveTheme);
   const shouldUseShadows =
     snapshotRenderActive || (enableShadows && (cameraFollowPrimary || effectiveTheme !== 'light'));
   const resolvedShadowMapSize = shadowMapSize ?? (cameraFollowPrimary ? 1024 : 768);
+  const mainLightShadowNormalBias = Math.min(
+    0.04,
+    (MAIN_LIGHT_SHADOW_NORMAL_BIAS_AT_1024 * 1024) / resolvedShadowMapSize,
+  );
   const staticDirectionalScale = cameraFollowPrimary ? cameraFollowStyle.staticDirectionalScale : 1;
   const rimDirectionalScale = cameraFollowPrimary
     ? cameraFollowStyle.rimDirectionalScale
@@ -52,12 +61,12 @@ export function SceneLighting({
   const ambientIntensity = cameraFollowPrimary
     ? cameraFollowStyle.ambientIntensity
     : effectiveTheme === 'light'
-      ? 0.74
+      ? LIGHTING_CONFIG.ambientIntensity * 1.5
       : LIGHTING_CONFIG.ambientIntensity;
   const hemisphereIntensity = cameraFollowPrimary
     ? cameraFollowStyle.hemisphereIntensity
     : effectiveTheme === 'light'
-      ? 0.56
+      ? LIGHTING_CONFIG.hemisphereIntensity * 1.1
       : LIGHTING_CONFIG.hemisphereIntensity;
   const cameraKeyIntensity = cameraFollowPrimary
     ? cameraFollowStyle.cameraKeyIntensity
@@ -98,11 +107,9 @@ export function SceneLighting({
     snapshotRenderActive,
   ]);
 
-  // Freeze the shadow map while orbiting / dragging a gizmo so the renderer
-  // does not re-render every shadow-casting mesh on every demanded frame (the
-  // dominant cost once several MJCF models are in the scene). When idle,
-  // autoUpdate is back on so any settling/content-change frame produces a
-  // correct shadow with no manual refresh bookkeeping.
+  // Joint/link dragging changes the scene every demanded frame. Reusing the
+  // last shadow map during that short interaction avoids a second full scene
+  // render; the settled frame below refreshes the shadow immediately afterward.
   useEffect(() => {
     if (!shouldUseShadows || snapshotRenderActive) {
       return;
@@ -212,19 +219,19 @@ export function SceneLighting({
           LIGHTING_CONFIG.hemisphereGround,
           hemisphereIntensity,
         ]}
-        position={[0, 1, 0]}
+        position={[0, 0, 1]}
       />
 
       <directionalLight
+        key={`main-light-${resolvedShadowMapSize}`}
         name="MainLight"
         position={LIGHTING_CONFIG.mainLightPosition}
         intensity={
           cameraFollowPrimary
             ? cameraFollowStyle.mainLightIntensity
-            : (effectiveTheme === 'light' ? 0.5 : LIGHTING_CONFIG.mainLightIntensity) *
-              staticDirectionalScale
+            : LIGHTING_CONFIG.mainLightIntensity * staticDirectionalScale
         }
-        color="#ffffff"
+        color={LIGHTING_CONFIG.mainLightColor}
         castShadow={shouldUseShadows}
         shadow-mapSize-width={resolvedShadowMapSize}
         shadow-mapSize-height={resolvedShadowMapSize}
@@ -234,14 +241,14 @@ export function SceneLighting({
         shadow-camera-top={10}
         shadow-camera-bottom={-10}
         shadow-bias={-0.0001}
-        shadow-normalBias={0.02}
+        shadow-normalBias={mainLightShadowNormalBias}
       />
 
       <directionalLight
         name="FillLightLeft"
         position={LIGHTING_CONFIG.leftFillPosition}
         intensity={LIGHTING_CONFIG.leftFillIntensity * staticDirectionalScale}
-        color="#ffffff"
+        color={LIGHTING_CONFIG.fillLightColor}
         castShadow={false}
       />
 
@@ -249,7 +256,7 @@ export function SceneLighting({
         name="FillLightLeftSide"
         position={LIGHTING_CONFIG.leftSidePosition}
         intensity={LIGHTING_CONFIG.leftSideIntensity * staticDirectionalScale}
-        color="#ffffff"
+        color={LIGHTING_CONFIG.fillLightColor}
         castShadow={false}
       />
 
@@ -257,7 +264,7 @@ export function SceneLighting({
         name="FillLightRight"
         position={LIGHTING_CONFIG.rightFillPosition}
         intensity={LIGHTING_CONFIG.rightFillIntensity * staticDirectionalScale}
-        color="#ffffff"
+        color={LIGHTING_CONFIG.fillLightColor}
         castShadow={false}
       />
 
@@ -265,7 +272,7 @@ export function SceneLighting({
         name="RimLight"
         position={LIGHTING_CONFIG.rimLightPosition}
         intensity={LIGHTING_CONFIG.rimLightIntensity * rimDirectionalScale}
-        color="#ffffff"
+        color={LIGHTING_CONFIG.rimLightColor}
         castShadow={false}
       />
 
@@ -274,7 +281,7 @@ export function SceneLighting({
         name="CameraKeyLight"
         position={[0, 0, 0]}
         intensity={cameraKeyIntensity}
-        color="#ffffff"
+        color={LIGHTING_CONFIG.mainLightColor}
         castShadow={false}
       />
       <directionalLight
@@ -282,7 +289,7 @@ export function SceneLighting({
         name="CameraSoftFrontLight"
         position={[0, 0, 0]}
         intensity={cameraSoftFrontIntensity}
-        color="#ffffff"
+        color={LIGHTING_CONFIG.fillLightColor}
         castShadow={false}
       />
       <directionalLight
@@ -290,7 +297,7 @@ export function SceneLighting({
         name="CameraFillLightRight"
         position={[0, 0, 0]}
         intensity={cameraFillIntensity}
-        color="#ffffff"
+        color={LIGHTING_CONFIG.fillLightColor}
         castShadow={false}
       />
       <directionalLight
@@ -298,7 +305,7 @@ export function SceneLighting({
         name="CameraFillLightLeft"
         position={[0, 0, 0]}
         intensity={cameraFillIntensity}
-        color="#ffffff"
+        color={LIGHTING_CONFIG.fillLightColor}
         castShadow={false}
       />
     </>

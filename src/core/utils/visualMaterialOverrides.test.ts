@@ -5,6 +5,7 @@ import * as THREE from 'three';
 import {
   applyVisualMaterialOverrideToObject,
   hasExplicitGeometryMaterialOverride,
+  resolvePrimaryAuthoredVisualMaterialOverride,
   resolveVisualMaterialOverrideFromGeometry,
 } from './visualMaterialOverrides';
 
@@ -192,4 +193,65 @@ test('applyVisualMaterialOverrideToObject applies alphaTest to generated materia
 
   const appliedMaterial = mesh.material as THREE.MeshStandardMaterial;
   assert.ok(Math.abs(appliedMaterial.alphaTest - 0.5) <= 1e-6);
+});
+
+test('applyVisualMaterialOverrideToObject textures a material that replaced the original mid-load', () => {
+  const originalTextureLoad = THREE.TextureLoader.prototype.load;
+  let resolveTextureLoad: ((texture: THREE.Texture) => void) | null = null;
+  THREE.TextureLoader.prototype.load = function mockTextureLoad(
+    _url: string,
+    onLoad?: (texture: THREE.Texture<HTMLImageElement>) => void,
+  ) {
+    const texture = new THREE.Texture() as THREE.Texture<HTMLImageElement>;
+    resolveTextureLoad = () => onLoad?.(texture);
+    return texture;
+  };
+
+  const mesh = new THREE.Mesh(
+    new THREE.BoxGeometry(1, 1, 1),
+    new THREE.MeshStandardMaterial({ color: '#ffffff' }),
+  );
+  const root = new THREE.Group();
+  root.add(mesh);
+
+  try {
+    applyVisualMaterialOverrideToObject(root, { texture: 'textures/floor.png' });
+
+    // Stand in for the later scene passes (material enhancement / matte normalization)
+    // that clone and swap a mesh's material while the texture load is still pending.
+    const pendingMaterial = mesh.material as THREE.MeshStandardMaterial;
+    mesh.material = pendingMaterial.clone();
+
+    assert.equal(resolveTextureLoad === null, false);
+    resolveTextureLoad!(new THREE.Texture());
+  } finally {
+    THREE.TextureLoader.prototype.load = originalTextureLoad;
+  }
+
+  const currentMaterial = mesh.material as THREE.MeshStandardMaterial;
+  assert.equal(currentMaterial.userData.urdfTexturePath, 'textures/floor.png');
+  assert.notEqual(currentMaterial.map, null);
+});
+
+test('resolvePrimaryAuthoredVisualMaterialOverride falls back to the first entry of a palette', () => {
+  const geometry = {
+    color: '#808080',
+    authoredMaterials: [
+      { name: 'material0000', color: '#ffffff', texture: 'textures/a.png' },
+      { name: 'material0001', color: '#ffffff', texture: 'textures/b.png' },
+    ],
+  };
+
+  // The multi-material resolver refuses palettes, which is what leaves such a mesh
+  // untextured; the primary-entry resolver is the explicit opt-in for that case.
+  assert.equal(resolveVisualMaterialOverrideFromGeometry(geometry), null);
+  assert.deepEqual(resolvePrimaryAuthoredVisualMaterialOverride(geometry), {
+    color: '#ffffff',
+    texture: 'textures/a.png',
+  });
+});
+
+test('resolvePrimaryAuthoredVisualMaterialOverride returns null without authored materials', () => {
+  assert.equal(resolvePrimaryAuthoredVisualMaterialOverride({ color: '#808080' }), null);
+  assert.equal(resolvePrimaryAuthoredVisualMaterialOverride(null), null);
 });

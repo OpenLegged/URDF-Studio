@@ -9,12 +9,17 @@ import {
   EyeOff,
   Link2,
   LockKeyhole,
+  LockKeyholeOpen,
   Plus,
   Trash2,
   Waves,
 } from 'lucide-react';
 
-import { getTreeRenderRootLinkIds } from '@/core/robot';
+import {
+  getTreeRenderRootLinkIds,
+  hasComponentEditorLocks,
+  isEntityEditorLocked,
+} from '@/core/robot';
 import { isAssemblyComponentIndividuallyTransformable } from '@/core/robot/assemblyTransforms';
 import type { TranslationKeys } from '@/shared/i18n';
 import { useSelectionStore } from '@/store/selectionStore';
@@ -51,6 +56,7 @@ export interface AssemblyTreeViewProps {
   onDelete: (ref: EntityRef) => void;
   onUpdate: (ref: EntityRef, patch: WorkspacePropertyPatch) => void;
   onCreateBridge?: () => void;
+  onPrefetchCreateBridge?: () => void;
   showAssemblyRoot?: boolean;
   mode: AppMode;
   t: TranslationKeys;
@@ -172,6 +178,7 @@ function renderComponentContents({
             t={t}
             readOnly={readOnly}
             componentDisplayNamePrefix={component.name}
+            inheritedEditorLockSource={component.editorLocked ? 'component' : undefined}
           />
         </div>
       ))}
@@ -220,6 +227,7 @@ export const AssemblyTreeView = memo(function AssemblyTreeView({
   onDelete,
   onUpdate,
   onCreateBridge,
+  onPrefetchCreateBridge,
   showAssemblyRoot = true,
   mode,
   t,
@@ -249,6 +257,19 @@ export const AssemblyTreeView = memo(function AssemblyTreeView({
       : new Set([...current, components[0].id]));
   }, [components, simplified]);
 
+  // When the canvas selects an entity inside a collapsed component, expand that component so the
+  // target row mounts and can be scrolled into view. Driven by attentionSelection (pulse) so
+  // tree-internal clicks don't fight the user's own collapse/expand actions.
+  useEffect(() => {
+    const target = attentionSelection?.entity;
+    if (!target || !('componentId' in target)) return;
+    const targetComponentId = target.componentId;
+    if (!workspace.components[targetComponentId]) return;
+    setExpandedComponents((current) => current.has(targetComponentId)
+      ? current
+      : new Set([...current, targetComponentId]));
+  }, [attentionSelection, workspace.components]);
+
   useEffect(() => {
     if (!editing) return;
     const frame = window.requestAnimationFrame(() => {
@@ -270,8 +291,8 @@ export const AssemblyTreeView = memo(function AssemblyTreeView({
     if (onHover) onHover(null);
     else clearHover();
   };
-  const beginRename = (ref: EntityRef, name: string) => {
-    if (readOnly) return;
+  const beginRename = (ref: EntityRef, name: string, editorLocked = false) => {
+    if (readOnly || editorLocked) return;
     setDraft(name);
     setEditing(ref);
   };
@@ -383,7 +404,7 @@ export const AssemblyTreeView = memo(function AssemblyTreeView({
         <>
           <div
             data-testid={`tree-robot-root-${singleComponent.id}`}
-            className={`mx-1 my-0.5 flex items-center rounded-md bg-element-bg px-2 py-1 text-text-primary transition-colors ${readOnly ? 'cursor-default' : 'cursor-pointer'} ${
+            className={`group mx-1 my-0.5 flex items-center rounded-md bg-element-bg px-2 py-1 text-text-primary transition-colors ${readOnly ? 'cursor-default' : 'cursor-pointer'} ${
               selectionTargets(attentionSelection, {
                 type: 'component',
                 componentId: singleComponent.id,
@@ -407,6 +428,7 @@ export const AssemblyTreeView = memo(function AssemblyTreeView({
               : () => beginRename(
                   { type: 'component', componentId: singleComponent.id },
                   singleComponent.name,
+                  singleComponent.editorLocked === true,
                 )}
             onKeyDown={readOnly
               ? undefined
@@ -450,6 +472,51 @@ export const AssemblyTreeView = memo(function AssemblyTreeView({
                 {singleComponent.name}
               </span>
             )}
+            {!readOnly ? (
+              <div className="ml-1 flex shrink-0 items-center gap-0.5">
+                <button
+                  type="button"
+                  aria-label={`toggle-component-${singleComponent.id}`}
+                  className="h-5 w-5 rounded p-1 text-text-tertiary transition-colors hover:bg-system-blue/10 hover:text-text-primary dark:hover:bg-system-blue/20"
+                  title={singleComponent.visible !== false ? t.hide : t.show}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onUpdate(
+                      { type: 'component', componentId: singleComponent.id },
+                      { visible: singleComponent.visible === false },
+                    );
+                  }}
+                >
+                  {singleComponent.visible !== false ? <Eye size={12} /> : <EyeOff size={12} />}
+                </button>
+                <button
+                  type="button"
+                  aria-label={`toggle-component-editor-lock-${singleComponent.id}`}
+                  aria-pressed={singleComponent.editorLocked === true}
+                  className={`h-5 w-5 rounded p-1 transition-colors ${
+                    singleComponent.editorLocked === true
+                      ? 'bg-amber-500/10 text-amber-600 hover:bg-amber-500/20 dark:text-amber-300'
+                      : 'text-text-tertiary hover:bg-system-blue/10 hover:text-text-primary dark:hover:bg-system-blue/20'
+                  }`}
+                  title={singleComponent.editorLocked === true
+                    ? t.unlockEditing
+                    : t.lockEditing}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onUpdate(
+                      { type: 'component', componentId: singleComponent.id },
+                      {
+                        editorLocked: singleComponent.editorLocked !== true,
+                      },
+                    );
+                  }}
+                >
+                  {singleComponent.editorLocked === true
+                    ? <LockKeyhole size={12} />
+                    : <LockKeyholeOpen size={12} />}
+                </button>
+              </div>
+            ) : null}
           </div>
           {componentContents(singleComponent, 'ml-1 border-l border-border-black')}
         </>
@@ -466,6 +533,7 @@ export const AssemblyTreeView = memo(function AssemblyTreeView({
               workspace,
               component.id,
             );
+            const hasLockedContent = hasComponentEditorLocks(component);
             const rowStateClass = attention
               ? itemAttentionClass
               : selected
@@ -483,9 +551,13 @@ export const AssemblyTreeView = memo(function AssemblyTreeView({
                   onClick={readOnly ? undefined : () => dispatchSelection({ entity: componentRef })}
                   onMouseEnter={readOnly ? undefined : () => dispatchHover({ entity: componentRef })}
                   onMouseLeave={readOnly ? undefined : clearCanonicalHover}
-                  onDoubleClick={readOnly
+                  onDoubleClick={readOnly || component.editorLocked === true
                     ? undefined
-                    : () => beginRename(componentRef, component.name)}
+                    : () => beginRename(
+                        componentRef,
+                        component.name,
+                        component.editorLocked === true,
+                      )}
                   onKeyDown={readOnly
                     ? undefined
                     : (event) => runOnActivationKey(
@@ -571,9 +643,39 @@ export const AssemblyTreeView = memo(function AssemblyTreeView({
                       </button>
                       <button
                         type="button"
+                        aria-label={`toggle-component-editor-lock-${component.id}`}
+                        aria-pressed={component.editorLocked === true}
+                        className={`rounded p-1 transition-colors ${
+                          component.editorLocked === true
+                            ? 'bg-amber-500/10 text-amber-600 hover:bg-amber-500/20 dark:text-amber-300'
+                            : 'text-text-tertiary hover:bg-element-hover'
+                        }`}
+                        title={component.editorLocked === true
+                          ? t.unlockEditing
+                          : t.lockEditing}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          onUpdate(componentRef, {
+                            editorLocked: component.editorLocked !== true,
+                          });
+                        }}
+                      >
+                        {component.editorLocked === true
+                          ? <LockKeyhole size={12} />
+                          : <LockKeyholeOpen size={12} />}
+                      </button>
+                      <button
+                        type="button"
                         aria-label={`delete-component-${component.id}`}
-                        className="rounded p-1 text-red-500 transition-colors hover:bg-red-100 dark:hover:bg-red-900/30"
-                        title={t.deleteBranch}
+                        disabled={hasLockedContent}
+                        className={`rounded p-1 transition-colors ${
+                          hasLockedContent
+                            ? 'cursor-not-allowed text-text-tertiary/40'
+                            : 'text-red-500 hover:bg-red-100 dark:hover:bg-red-900/30'
+                        }`}
+                        title={hasLockedContent
+                          ? t.editingLockedMessage
+                          : t.deleteBranch}
                         onClick={(event) => {
                           event.stopPropagation();
                           onDelete(componentRef);
@@ -627,6 +729,9 @@ export const AssemblyTreeView = memo(function AssemblyTreeView({
                 className="group/btn flex shrink-0 items-center gap-1 rounded border border-system-blue/25 bg-system-blue/10 px-1.5 py-0.5 text-system-blue transition-colors hover:bg-system-blue/15 dark:border-system-blue/35 dark:bg-system-blue/20 dark:hover:bg-system-blue/25"
                 title={t.createBridge}
                 aria-label={t.createBridge}
+                onPointerEnter={onPrefetchCreateBridge}
+                onPointerDown={onPrefetchCreateBridge}
+                onFocus={onPrefetchCreateBridge}
                 onClick={(event) => {
                   event.stopPropagation();
                   onCreateBridge();
@@ -648,6 +753,7 @@ export const AssemblyTreeView = memo(function AssemblyTreeView({
                 const selected = selectionTargets(selection, bridgeRef);
                 const hovered = selectionTargets(hoveredSelection, bridgeRef);
                 const attention = selectionTargets(attentionSelection, bridgeRef);
+                const editorLocked = isEntityEditorLocked(workspace, bridgeRef);
                 const rowStateClass = attention
                   ? itemAttentionClass
                   : selected
@@ -664,7 +770,9 @@ export const AssemblyTreeView = memo(function AssemblyTreeView({
                     onClick={readOnly ? undefined : () => dispatchSelection({ entity: bridgeRef })}
                     onMouseEnter={readOnly ? undefined : () => dispatchHover({ entity: bridgeRef })}
                     onMouseLeave={readOnly ? undefined : clearCanonicalHover}
-                    onDoubleClick={readOnly ? undefined : () => beginRename(bridgeRef, bridge.name)}
+                    onDoubleClick={readOnly || editorLocked
+                      ? undefined
+                      : () => beginRename(bridgeRef, bridge.name, editorLocked)}
                     onKeyDown={readOnly
                       ? undefined
                       : (event) => runOnActivationKey(
@@ -703,8 +811,13 @@ export const AssemblyTreeView = memo(function AssemblyTreeView({
                       <button
                         type="button"
                         aria-label={`delete-bridge-${bridge.id}`}
-                        className="rounded p-1 text-red-500 opacity-0 transition-opacity hover:bg-red-100 group-hover:opacity-100 dark:hover:bg-red-900/30"
-                        title={t.deleteBranch}
+                        disabled={editorLocked}
+                        className={`rounded p-1 opacity-0 transition-opacity group-hover:opacity-100 ${
+                          editorLocked
+                            ? 'cursor-not-allowed text-text-tertiary/40'
+                            : 'text-red-500 hover:bg-red-100 dark:hover:bg-red-900/30'
+                        }`}
+                        title={editorLocked ? t.editingLockedMessage : t.deleteBranch}
                         onClick={(event) => {
                           event.stopPropagation();
                           onDelete(bridgeRef);

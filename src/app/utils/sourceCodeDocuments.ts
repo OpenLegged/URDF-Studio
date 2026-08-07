@@ -7,6 +7,7 @@ import type {
 import { generateURDF } from '@/core/parsers';
 import { buildExportableAssemblyRobotData } from '@/core/robot/assemblyTransforms';
 import { analyzeAssemblyConnectivity } from '@/core/robot/assemblyConnectivity';
+import { hasComponentEditorLocks } from '@/core/robot/editorLock';
 import type { SourceCodeDocumentFlavor } from './sourceCodeDisplay';
 import { detectImportFormat } from './import-preparation/formatDetection.ts';
 import {
@@ -656,6 +657,7 @@ function buildComponentDraftDocuments(
     sourceCodeDocumentFlavor: documentFlavor,
     availableFiles,
     allFileContents,
+    forceReadOnly: hasComponentEditorLocks(component),
   });
 }
 
@@ -734,6 +736,10 @@ function buildGroupMergedDocument(
   componentIds: string[],
   componentSourceDrafts: Record<string, ComponentSourceDraft>,
 ): SourceCodeDocumentDescriptor {
+  const editorLocked = componentIds.some((componentId) => {
+    const component = workspace.components[componentId];
+    return Boolean(component && hasComponentEditorLocks(component));
+  });
   const masterComponentId = resolveAssemblyGroupMasterComponentId(workspace, componentIds);
   const masterComponent = masterComponentId ? workspace.components[masterComponentId] : null;
   const groupName = masterComponent?.name || workspace.name;
@@ -757,14 +763,16 @@ function buildGroupMergedDocument(
           filePath: null,
           content: grafted.urdfText,
           documentFlavor: 'urdf',
-          readOnly: false,
+          readOnly: editorLocked,
           validationEnabled: true,
-          changeTarget: {
-            kind: 'group',
-            rootComponentId: masterComponentId,
-            groupComponentIds: [...componentIds],
-            provenance: grafted.provenance,
-          },
+          changeTarget: editorLocked
+            ? undefined
+            : {
+                kind: 'group',
+                rootComponentId: masterComponentId,
+                groupComponentIds: [...componentIds],
+                provenance: grafted.provenance,
+              },
         };
       }
     }

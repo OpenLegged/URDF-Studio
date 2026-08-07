@@ -115,3 +115,18 @@ test('createRobotPersistenceSnapshot ignores scene visibility-only changes', () 
     createRobotPersistenceSnapshot(hidden),
   );
 });
+
+test('robot snapshots ignore editor locks as editor-only presentation state', () => {
+  const baseline = createRobotData();
+  const locked = structuredClone(baseline);
+  locked.links.base_link.editorLocked = true;
+
+  assert.equal(
+    createRobotSemanticSnapshot(baseline),
+    createRobotSemanticSnapshot(locked),
+  );
+  assert.equal(
+    createRobotPersistenceSnapshot(baseline),
+    createRobotPersistenceSnapshot(locked),
+  );
+});

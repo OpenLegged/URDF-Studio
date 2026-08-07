@@ -3,7 +3,12 @@
  */
 import React, { useCallback, useEffect, useMemo } from 'react';
 import { Link2 } from 'lucide-react';
-import { DraggableWindow } from '@/shared/components/DraggableWindow';
+import {
+  DraggableWindow,
+  FLOATING_WINDOW_HEADER_HEIGHT_CLASS,
+  FLOATING_WINDOW_RADIUS_CLASS,
+  FLOATING_WINDOW_TITLE_CLASS,
+} from '@/shared/components/DraggableWindow';
 import {
   Button,
   CLOSE_BUTTON_DANGER_TERTIARY_CLASS,
@@ -785,16 +790,16 @@ export const BridgeCreateModal: React.FC<BridgeCreateModalProps> = ({
             <Link2 className="h-3.5 w-3.5" />
           </div>
           <div className="min-w-0">
-            <div className="truncate text-[13px] font-semibold text-text-primary">
+            <div className={`truncate ${FLOATING_WINDOW_TITLE_CLASS}`}>
               {t.createBridge}
             </div>
           </div>
         </div>
       }
-      className="flex flex-col overflow-hidden rounded-xl border border-border-black bg-panel-bg text-text-primary shadow-2xl"
+      className={`flex flex-col overflow-hidden ${FLOATING_WINDOW_RADIUS_CLASS} border border-border-black bg-panel-bg text-text-primary shadow-2xl`}
       zIndex={bridgeCreateWindowLayer.zIndex}
       onActivate={bridgeCreateWindowLayer.onActivate}
-      headerClassName="flex h-9 shrink-0 items-center justify-between gap-2 border-b border-border-black bg-element-bg px-2.5"
+      headerClassName={`flex ${FLOATING_WINDOW_HEADER_HEIGHT_CLASS} shrink-0 items-center justify-between gap-2 border-b border-border-black bg-element-bg px-2.5`}
       headerLeftClassName="flex min-w-0 flex-1 items-center gap-2"
       headerRightClassName="flex shrink-0 items-center gap-1"
       interactionClassName="select-none"

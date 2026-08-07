@@ -330,14 +330,14 @@ test('visualizer options panel uses a narrower default width', async () => {
   dom.window.close();
 });
 
-test('visualizer options panel uses a slimmer header bar', async () => {
+test('visualizer options panel uses the shared floating window header bar', async () => {
   const { dom, container, root } = createComponentRoot();
 
   await renderPanel(root);
 
   const header = container.querySelector<HTMLElement>(':scope > div > div > div:first-child');
   assert.ok(header, 'visualizer options panel header should render');
-  assert.match(header.className, /\bpy-1\.5\b/);
+  assert.match(header.className, /\bh-10\b/);
   assert.match(header.className, /\bpx-2\b/);
 
   await act(async () => {
@@ -359,9 +359,11 @@ test('visualizer view options keep the same right-edge resize affordance as the 
     container.querySelector('[data-testid="ui-options-panel-resize-bottom"]'),
     'visualizer view options should keep the bottom resize handle',
   );
+  const cornerHandle = container.querySelector('[data-testid="ui-options-panel-resize-corner"]');
+  assert.ok(cornerHandle, 'visualizer view options should keep the bottom-right resize handle');
   assert.ok(
-    container.querySelector('[data-testid="ui-options-panel-resize-corner"]'),
-    'visualizer view options should keep the bottom-right resize handle',
+    cornerHandle.querySelector('[data-testid="resize-corner-indicator"]'),
+    'visualizer view options should reuse the shared corner resize indicator',
   );
 
   await act(async () => {

@@ -621,13 +621,26 @@ test('paint tool state switches back to select when the paint panel closes', asy
   try {
     assert.equal(getHook().paintColor, '#ff6c0a');
     assert.equal(getHook().paintStatus, null);
+    assert.deepEqual(getHook().paintInteractionRef.current, {
+      color: '#ff6c0a',
+      operation: 'paint',
+      selectionScope: 'island',
+    });
 
     await act(async () => {
       getHook().handleToolModeChange('paint');
+      getHook().setPaintColor('#123456');
+      getHook().setPaintOperation('erase');
+      getHook().setPaintSelectionScope('face');
       getHook().setPaintStatus({ tone: 'success', message: 'painted' });
     });
 
     assert.equal(getHook().toolMode, 'paint');
+    assert.deepEqual(getHook().paintInteractionRef.current, {
+      color: '#123456',
+      operation: 'erase',
+      selectionScope: 'face',
+    });
     assert.deepEqual(getHook().paintStatus, { tone: 'success', message: 'painted' });
 
     await act(async () => {

@@ -1,9 +1,13 @@
 import type { RobotFile } from '@/types';
 import {
   normalizeLibraryPathKey,
-  normalizeVirtualDirectoryPath,
   normalizeVirtualUsdPath,
-} from '@/shared/utils/pathKeys';
+} from '@/core/utils/pathKeys';
+import {
+  inferUsdBundleVirtualDirectory,
+  isUsdPathWithinBundleDirectory,
+  isUsdRuntimeTexturePath,
+} from '@/core/parsers/usd/usdAssetPaths';
 import { buildCriticalUsdDependencyPaths } from './usdCriticalDependencyPaths.ts';
 import { USD_INSTANCEABLE_VISUAL_SCOPE_NORMALIZATION_VERSION } from './usdStageOpenTextNormalization.ts';
 import {
@@ -45,13 +49,14 @@ function normalizeUsdAssetPath(path: string): string {
   return normalizeLibraryPathKey(path);
 }
 
-function normalizeUsdBundleVirtualDirectory(path: string): string {
-  return normalizeVirtualDirectoryPath(path);
-}
-
 export function toVirtualUsdPath(path: string): string {
   return normalizeVirtualUsdPath(path);
 }
+
+export {
+  inferUsdBundleVirtualDirectory,
+  isUsdPathWithinBundleDirectory,
+} from '@/core/parsers/usd/usdAssetPaths';
 
 function isUsdLayerPath(path: string): boolean {
   return /\.usd(?:a|c|z)?$/i.test(normalizeUsdAssetPath(path));
@@ -275,41 +280,6 @@ export function collectUsdStageOpenRelevantVirtualPaths(
   return orderedPaths;
 }
 
-export function inferUsdBundleVirtualDirectory(sourcePath: string): string {
-  const normalizedSourcePath = normalizeUsdAssetPath(sourcePath);
-  if (!normalizedSourcePath) {
-    return '/';
-  }
-
-  const segments = normalizedSourcePath.split('/').filter(Boolean);
-  if (segments.length === 0) {
-    return '/';
-  }
-
-  const usdSegmentIndex = segments.findIndex((segment) => segment.toLowerCase() === 'usd');
-  if (usdSegmentIndex > 0) {
-    return normalizeUsdBundleVirtualDirectory(segments.slice(0, usdSegmentIndex).join('/'));
-  }
-  if (usdSegmentIndex === 0) {
-    return '/';
-  }
-
-  if (segments.length === 1) {
-    return '/';
-  }
-  return normalizeUsdBundleVirtualDirectory(segments.slice(0, -1).join('/'));
-}
-
-export function isUsdPathWithinBundleDirectory(path: string, bundleDirectory: string): boolean {
-  const virtualPath = toVirtualUsdPath(path);
-  const normalizedBundleDirectory = normalizeUsdBundleVirtualDirectory(bundleDirectory);
-
-  if (normalizedBundleDirectory === '/') {
-    return true;
-  }
-  return virtualPath.startsWith(normalizedBundleDirectory);
-}
-
 async function fetchBlobFromUrl(url: string): Promise<Blob> {
   const response = await fetch(url);
   if (!response.ok) {
@@ -432,6 +402,7 @@ export function buildUsdBundlePreloadEntries(
   assets: Record<string, string>,
 ): UsdPreloadEntry[] {
   const rootPath = toVirtualUsdPath(sourceFile.name);
+  const bundleDirectory = inferUsdBundleVirtualDirectory(sourceFile.name);
   const fileIndex = buildUsdStageOpenFileIndex(sourceFile, availableFiles);
   const relevantVirtualPaths = collectUsdStageOpenRelevantVirtualPaths(sourceFile, availableFiles);
   const preloadEntries = new Map<string, UsdPreloadEntry>();
@@ -488,6 +459,38 @@ export function buildUsdBundlePreloadEntries(
         'blob-url',
       );
     }
+  });
+
+  availableFiles.forEach((file) => {
+    if (
+      !isUsdRuntimeTexturePath(file.name)
+      || !isUsdPathWithinBundleDirectory(file.name, bundleDirectory)
+    ) {
+      return;
+    }
+
+    const resolvedBlobUrl = resolveUsdBlobUrl(file.name, file.blobUrl, assets);
+    if (!resolvedBlobUrl) {
+      return;
+    }
+    addEntry(
+      file.name,
+      () => fetchBlobFromUrl(resolvedBlobUrl),
+      null,
+      null,
+      'blob-url',
+    );
+  });
+
+  Object.entries(assets).forEach(([path, blobUrl]) => {
+    if (
+      !blobUrl
+      || !isUsdRuntimeTexturePath(path)
+      || !isUsdPathWithinBundleDirectory(path, bundleDirectory)
+    ) {
+      return;
+    }
+    addEntry(path, () => fetchBlobFromUrl(blobUrl), null, null, 'blob-url');
   });
 
   const sourcePreload = createUsdPreloadSource(sourceFile, assets);

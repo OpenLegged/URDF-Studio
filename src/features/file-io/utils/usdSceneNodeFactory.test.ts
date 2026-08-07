@@ -117,6 +117,69 @@ const createTriangleGltfBlob = () => {
   return new Blob([JSON.stringify(gltf)], { type: 'model/gltf+json' });
 };
 
+const createTriangleGlbBlob = () => {
+  const positions = new Float32Array([0, 0, 0, 1, 0, 0, 0, 1, 0]);
+  const indices = new Uint16Array([0, 1, 2]);
+  const positionBytes = new Uint8Array(positions.buffer);
+  const indexBytes = new Uint8Array(indices.buffer);
+  const binaryBytes = new Uint8Array(positionBytes.byteLength + indexBytes.byteLength);
+  binaryBytes.set(positionBytes, 0);
+  binaryBytes.set(indexBytes, positionBytes.byteLength);
+
+  const gltf = {
+    asset: { version: '2.0' },
+    scene: 0,
+    scenes: [{ nodes: [0] }],
+    nodes: [{ mesh: 0 }],
+    meshes: [{ primitives: [{ attributes: { POSITION: 0 }, indices: 1 }] }],
+    buffers: [{ byteLength: binaryBytes.byteLength }],
+    bufferViews: [
+      { buffer: 0, byteOffset: 0, byteLength: positionBytes.byteLength, target: 34962 },
+      {
+        buffer: 0,
+        byteOffset: positionBytes.byteLength,
+        byteLength: indexBytes.byteLength,
+        target: 34963,
+      },
+    ],
+    accessors: [
+      {
+        bufferView: 0,
+        componentType: 5126,
+        count: 3,
+        type: 'VEC3',
+        min: [0, 0, 0],
+        max: [1, 1, 0],
+      },
+      {
+        bufferView: 1,
+        componentType: 5123,
+        count: 3,
+        type: 'SCALAR',
+      },
+    ],
+  };
+  const encodedJson = new TextEncoder().encode(JSON.stringify(gltf));
+  const paddedJsonLength = Math.ceil(encodedJson.byteLength / 4) * 4;
+  const paddedBinaryLength = Math.ceil(binaryBytes.byteLength / 4) * 4;
+  const totalLength = 12 + 8 + paddedJsonLength + 8 + paddedBinaryLength;
+  const glb = new Uint8Array(totalLength);
+  const view = new DataView(glb.buffer);
+  view.setUint32(0, 0x46546c67, true);
+  view.setUint32(4, 2, true);
+  view.setUint32(8, totalLength, true);
+  view.setUint32(12, paddedJsonLength, true);
+  view.setUint32(16, 0x4e4f534a, true);
+  glb.fill(0x20, 20, 20 + paddedJsonLength);
+  glb.set(encodedJson, 20);
+  const binaryChunkOffset = 20 + paddedJsonLength;
+  view.setUint32(binaryChunkOffset, paddedBinaryLength, true);
+  view.setUint32(binaryChunkOffset + 4, 0x004e4942, true);
+  glb.set(binaryBytes, binaryChunkOffset + 8);
+
+  return new Blob([glb], { type: 'model/gltf-binary' });
+};
+
 const RED_TEXTURE_DATA_URL =
   'data:image/png;base64,' +
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8z8AABQMBgK8NtwAAAABJRU5ErkJggg==';
@@ -413,7 +476,7 @@ test('buildUsdVisualSceneNode splits six-face box palettes into per-face meshes 
       rpy: { r: 0, p: 0, y: 0 },
     },
     authoredMaterials: [
-      { texture: 'textures/right.png' },
+      { texture: 'textures/right.png', opacity: 0.25 },
       { texture: 'textures/left.png' },
       { texture: 'textures/up.png' },
       { texture: 'textures/down.png' },
@@ -445,6 +508,11 @@ test('buildUsdVisualSceneNode splits six-face box palettes into per-face meshes 
   assert.equal(texturesByMeshName.get('box_down'), 'textures/down.png');
   assert.equal(texturesByMeshName.get('box_front'), 'textures/front.png');
   assert.equal(texturesByMeshName.get('box_back'), 'textures/back.png');
+  assert.equal(node.getObjectByName('box_right')?.userData.usdOpacity, 0.25);
+  node.children.forEach((child) => {
+    assert.ok(child instanceof THREE.Mesh);
+    assert.equal(child.userData.usdGeomType, undefined);
+  });
 });
 
 test('buildUsdVisualSceneNode loads mesh visuals with anchor transforms and explicit display colors', async () => {
@@ -670,6 +738,30 @@ test('buildUsdVisualSceneNode reuses parsed GLTF assets per registry while retur
     assert.notEqual(firstMaterial, secondMaterial);
   } finally {
     globalThis.fetch = originalFetch;
+    tempObjectUrls.forEach((url) => URL.revokeObjectURL(url));
+  }
+});
+
+test('buildUsdVisualSceneNode loads binary GLB mesh geometry', async () => {
+  const meshPath = 'meshes/triangle.glb';
+  const { registry, tempObjectUrls } = createUsdAssetRegistry(
+    {},
+    new Map([[meshPath, createTriangleGlbBlob()]]),
+  );
+
+  try {
+    const node = await buildUsdVisualSceneNode({
+      visual: createMeshVisual(meshPath),
+      role: 'visual',
+      registry,
+      materialState: { color: '#12ab34' },
+    });
+    const mesh = node?.getObjectByProperty('isMesh', true);
+
+    assert.ok(mesh instanceof THREE.Mesh);
+    assert.equal(mesh.geometry.getAttribute('position')?.count, 3);
+    assert.equal(mesh.userData.usdDisplayColor, '#12ab34');
+  } finally {
     tempObjectUrls.forEach((url) => URL.revokeObjectURL(url));
   }
 });

@@ -11,7 +11,7 @@ const COATED_SHELL_MATERIAL_PATTERN =
 export const MATERIAL_CONFIG = {
   roughness: 0.56,
   metalness: 0.035,
-  envMapIntensity: 0.42,
+  envMapIntensity: 0.56,
   whiteColorMultiplier: 0.93,
   whiteEnvMapIntensityMultiplier: 0.82,
   nearWhiteThreshold: 0.88,
@@ -26,7 +26,7 @@ const MATERIAL_PRESET_CONFIG = {
   coated: {
     roughness: 0.64,
     metalness: 0.05,
-    envMapIntensity: 0.34,
+    envMapIntensity: 0.46,
   },
   rubber: {
     roughness: 0.82,
@@ -36,7 +36,7 @@ const MATERIAL_PRESET_CONFIG = {
   metal: {
     roughness: 0.38,
     metalness: 0.48,
-    envMapIntensity: 0.5,
+    envMapIntensity: 0.64,
   },
 } as const;
 
@@ -143,10 +143,10 @@ export function createMatteMaterial(options: CreateMaterialOptions): THREE.MeshS
     finalColor.r >= MATERIAL_CONFIG.nearWhiteThreshold &&
     finalColor.g >= MATERIAL_CONFIG.nearWhiteThreshold &&
     finalColor.b >= MATERIAL_CONFIG.nearWhiteThreshold;
-  const envMapIntensity = isNearWhite
+  const shouldPreserveExactColorAppearance = preserveExactColor;
+  const envMapIntensity = isNearWhite && !shouldPreserveExactColorAppearance
     ? preset.envMapIntensity * MATERIAL_CONFIG.whiteEnvMapIntensityMultiplier
     : preset.envMapIntensity;
-  const shouldPreserveExactColorAppearance = preserveExactColor && (!isNearWhite || Boolean(map));
 
   if (
     !shouldPreserveExactColorAppearance &&

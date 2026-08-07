@@ -1,32 +1,35 @@
 export const LIGHTING_CONFIG = {
-  ambientIntensity: 0.72,
-  hemisphereIntensity: 0.58,
-  hemisphereSky: '#f7fbff',
-  hemisphereGround: '#d7dde5',
-  mainLightIntensity: 0.42,
-  mainLightPosition: [4.8, 5.6, 6.4] as [number, number, number],
-  leftFillIntensity: 0.36,
-  leftFillPosition: [-5.2, 4.8, 4.6] as [number, number, number],
-  leftSideIntensity: 0.2,
-  leftSidePosition: [-5.8, 2.8, 0.8] as [number, number, number],
-  rightFillIntensity: 0.36,
-  rightFillPosition: [5.2, 4.8, 4.6] as [number, number, number],
-  rimLightIntensity: 0.14,
-  rimLightPosition: [0, 5.4, -5.8] as [number, number, number],
-  cameraKeyIntensityLight: 0.44,
-  cameraKeyIntensityDark: 0.34,
-  cameraKeyPriorityIntensityLight: 0.58,
-  cameraKeyPriorityIntensityDark: 0.48,
-  cameraFillIntensityLight: 0.32,
-  cameraFillIntensityDark: 0.24,
-  cameraSoftFrontIntensityLight: 0.38,
-  cameraSoftFrontIntensityDark: 0.3,
+  ambientIntensity: 0.04,
+  hemisphereIntensity: 0.3,
+  hemisphereSky: '#f4f7ff',
+  hemisphereGround: '#151c26',
+  mainLightColor: '#fffaf2',
+  mainLightIntensity: 1.35,
+  mainLightPosition: [8, -10, 14] as [number, number, number],
+  fillLightColor: '#bfd7ff',
+  leftFillIntensity: 0.3,
+  leftFillPosition: [-10, -4, 7] as [number, number, number],
+  leftSideIntensity: 0.03,
+  leftSidePosition: [-7, 2, 6] as [number, number, number],
+  rightFillIntensity: 0.03,
+  rightFillPosition: [7, -2, 5] as [number, number, number],
+  rimLightColor: '#e8f0ff',
+  rimLightIntensity: 0.22,
+  rimLightPosition: [-4, 10, 12] as [number, number, number],
+  cameraKeyIntensityLight: 0.06,
+  cameraKeyIntensityDark: 0.05,
+  cameraKeyPriorityIntensityLight: 0.08,
+  cameraKeyPriorityIntensityDark: 0.06,
+  cameraFillIntensityLight: 0.018,
+  cameraFillIntensityDark: 0.015,
+  cameraSoftFrontIntensityLight: 0.03,
+  cameraSoftFrontIntensityDark: 0.025,
 } as const;
 
 export const GROUND_SHADOW_STYLE = {
   light: {
     color: '#000000',
-    opacity: 0.08,
+    opacity: 0.045,
   },
   dark: {
     color: '#000000',
@@ -39,13 +42,11 @@ export const GROUND_SHADOW_Z_OFFSET = -0.0015;
 
 export function resolveCameraFollowLightingStyle(theme: 'light' | 'dark') {
   return {
-    ambientIntensity: theme === 'light' ? 0.37 : 0.34,
-    hemisphereIntensity: theme === 'light' ? 0.43 : 0.4,
-    staticDirectionalScale: theme === 'light' ? 0.76 : 0.8,
-    rimDirectionalScale: 0.38,
-    mainLightIntensity:
-      (theme === 'light' ? 0.5 : LIGHTING_CONFIG.mainLightIntensity) *
-      (theme === 'light' ? 0.76 : 0.8),
+    ambientIntensity: theme === 'light' ? 0.03 : 0.02,
+    hemisphereIntensity: theme === 'light' ? 0.3 : 0.28,
+    staticDirectionalScale: theme === 'light' ? 1 : 0.96,
+    rimDirectionalScale: 1,
+    mainLightIntensity: LIGHTING_CONFIG.mainLightIntensity * (theme === 'light' ? 1 : 0.96),
     cameraKeyIntensity:
       theme === 'light'
         ? LIGHTING_CONFIG.cameraKeyPriorityIntensityLight
@@ -58,13 +59,13 @@ export function resolveCameraFollowLightingStyle(theme: 'light' | 'dark') {
       theme === 'light'
         ? LIGHTING_CONFIG.cameraSoftFrontIntensityLight
         : LIGHTING_CONFIG.cameraSoftFrontIntensityDark,
-    toneMappingExposure: theme === 'light' ? 0.98 : 1.0,
+    toneMappingExposure: theme === 'light' ? 0.98 : 1,
   } as const;
 }
 
 export const STUDIO_ENVIRONMENT_INTENSITY = {
   viewer: {
-    light: 0.3,
+    light: 0.31,
     dark: 0.29,
   },
   workspace: {
