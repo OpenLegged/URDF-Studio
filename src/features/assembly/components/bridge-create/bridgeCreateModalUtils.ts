@@ -1,7 +1,14 @@
 import { getMjcfLinkDisplayName } from '@/shared/utils/robot/mjcfDisplayNames';
 import { formatNumberWithMaxDecimals, roundToMaxDecimals } from '@/core/utils/numberPrecision';
-import type { AssemblyComponent, AssemblyState } from '@/types';
+import {
+  JointType,
+  type AssemblyComponent,
+  type AssemblyState,
+  type JointHardwareInterface,
+} from '@/types';
 import type { SelectOption } from '@/shared/components/ui';
+import type { BridgePreviewDraft } from '../../utils/bridgePreview';
+import type { BridgeRotationDisplayMode } from './bridgeCreateModalTypes';
 import {
   BRIDGE_EMPTY_SELECT_OPTION,
   BRIDGE_HALF_ROTATION_DEGREES,
@@ -168,4 +175,59 @@ export function buildSuggestedBridgeName({
   }
 
   return nextName;
+}
+
+export interface BuildBridgePreviewDraftInput {
+  name: string;
+  parentComponentId: string;
+  parentLinkId: string;
+  childComponentId: string;
+  childLinkId: string;
+  jointType: JointType;
+  hardwareInterface?: JointHardwareInterface;
+  jointSupportsAxisAndLimits: boolean;
+  originX: number;
+  originY: number;
+  originZ: number;
+  axisX: number;
+  axisY: number;
+  axisZ: number;
+  limitLower: number;
+  limitUpper: number;
+  limitEffort: number;
+  limitVelocity: number;
+  rotationDisplayMode: BridgeRotationDisplayMode;
+  rollDeg: number;
+  pitchDeg: number;
+  yawDeg: number;
+  quatX: number;
+  quatY: number;
+  quatZ: number;
+  quatW: number;
+}
+
+/**
+ * Build the BridgePreviewDraft shared by preview + submit from modal form state.
+ * Extracted from BridgeCreateModal, where previewBridge / submitJoint useMemo
+ * duplicated this exact object literal (~18 fields).
+ */
+export function buildBridgePreviewDraft(input: BuildBridgePreviewDraftInput): BridgePreviewDraft {
+  return {
+    name: input.name,
+    parentComponentId: input.parentComponentId,
+    parentLinkId: input.parentLinkId,
+    childComponentId: input.childComponentId,
+    childLinkId: input.childLinkId,
+    jointType: input.jointType,
+    hardwareInterface: input.jointSupportsAxisAndLimits ? input.hardwareInterface : undefined,
+    originXyz: { x: input.originX, y: input.originY, z: input.originZ },
+    axis: { x: input.axisX, y: input.axisY, z: input.axisZ },
+    limitLower: input.limitLower,
+    limitUpper: input.limitUpper,
+    limitEffort: input.limitEffort,
+    limitVelocity: input.limitVelocity,
+    rotationMode: input.rotationDisplayMode === 'quaternion' ? 'quaternion' : 'euler_deg',
+    rotationEulerDeg: { r: input.rollDeg, p: input.pitchDeg, y: input.yawDeg },
+    rotationQuaternion: { x: input.quatX, y: input.quatY, z: input.quatZ, w: input.quatW },
+  };
 }

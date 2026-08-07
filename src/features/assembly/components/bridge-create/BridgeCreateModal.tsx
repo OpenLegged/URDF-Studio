@@ -45,6 +45,7 @@ import type {
   BridgeEulerAxisKey,
 } from './bridgeCreateModalTypes';
 import {
+  buildBridgePreviewDraft,
   buildFlatBridgeLinkOptions,
   buildSuggestedBridgeName,
   getBridgeLinkDisplayName,
@@ -410,25 +411,35 @@ export const BridgeCreateModal: React.FC<BridgeCreateModalProps> = ({
     },
   ];
 
-  const previewBridge = useMemo(
+  const draftInput = useMemo(
     () =>
-      buildBridgePreview({
+      buildBridgePreviewDraft({
         name: effectiveBridgeName,
         parentComponentId: parentCompId,
         parentLinkId,
         childComponentId: childCompId,
         childLinkId,
         jointType,
-        hardwareInterface: jointSupportsAxisAndLimits ? hardwareInterface : undefined,
-        originXyz: { x: originX, y: originY, z: originZ },
-        axis: { x: axisX, y: axisY, z: axisZ },
+        hardwareInterface,
+        jointSupportsAxisAndLimits,
+        originX,
+        originY,
+        originZ,
+        axisX,
+        axisY,
+        axisZ,
         limitLower,
         limitUpper,
         limitEffort,
         limitVelocity,
-        rotationMode: rotationDisplayMode === 'quaternion' ? 'quaternion' : 'euler_deg',
-        rotationEulerDeg: { r: rollDeg, p: pitchDeg, y: yawDeg },
-        rotationQuaternion: { x: quatX, y: quatY, z: quatZ, w: quatW },
+        rotationDisplayMode,
+        rollDeg,
+        pitchDeg,
+        yawDeg,
+        quatX,
+        quatY,
+        quatZ,
+        quatW,
       }),
     [
       axisX,
@@ -459,57 +470,10 @@ export const BridgeCreateModal: React.FC<BridgeCreateModalProps> = ({
       yawDeg,
     ],
   );
+  const previewBridge = useMemo(() => buildBridgePreview(draftInput), [draftInput]);
   const submitJoint = useMemo(
-    () =>
-      buildBridgeJointFromDraft(
-        {
-          name: effectiveBridgeName,
-          parentComponentId: parentCompId,
-          parentLinkId,
-          childComponentId: childCompId,
-          childLinkId,
-          jointType,
-          hardwareInterface: jointSupportsAxisAndLimits ? hardwareInterface : undefined,
-          originXyz: { x: originX, y: originY, z: originZ },
-          axis: { x: axisX, y: axisY, z: axisZ },
-          limitLower,
-          limitUpper,
-          limitEffort,
-          limitVelocity,
-          rotationMode: rotationDisplayMode === 'quaternion' ? 'quaternion' : 'euler_deg',
-          rotationEulerDeg: { r: rollDeg, p: pitchDeg, y: yawDeg },
-          rotationQuaternion: { x: quatX, y: quatY, z: quatZ, w: quatW },
-        },
-        effectiveBridgeName || 'bridge_joint',
-      ),
-    [
-      axisX,
-      axisY,
-      axisZ,
-      childCompId,
-      childLinkId,
-      hardwareInterface,
-      jointSupportsAxisAndLimits,
-      jointType,
-      limitLower,
-      limitUpper,
-      limitEffort,
-      limitVelocity,
-      effectiveBridgeName,
-      originX,
-      originY,
-      originZ,
-      parentCompId,
-      parentLinkId,
-      pitchDeg,
-      quatW,
-      quatX,
-      quatY,
-      quatZ,
-      rollDeg,
-      rotationDisplayMode,
-      yawDeg,
-    ],
+    () => buildBridgeJointFromDraft(draftInput, effectiveBridgeName || 'bridge_joint'),
+    [draftInput, effectiveBridgeName],
   );
   const isBridgeSelectionIncomplete =
     !parentCompId ||
