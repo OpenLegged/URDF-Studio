@@ -7,8 +7,8 @@
       "note": "DEAD RULE — count equals every PascalCase component + camelCase module in src/** (the project's real convention), so it grows with the codebase. Retired in Phase 5 in favor of @typescript-eslint/naming-convention; the audit runner reports it as informational only. NEVER rename a file to satisfy it. Count synchronized to the 2026-07-16 post-merge workspace snapshot for accurate reporting."
     },
     "file-too-long": {
-      "max": 41,
-      "note": "src/** files over 800 code lines (blank/comment lines skipped). Exact count synchronized on 2026-08-07 after FormControls split (useNumberInputController -> hooks/useNumberInputController); --check rejects both increases and stale headroom. Avoid splitting cohesive parsers/solvers only to satisfy the counter."
+      "max": 40,
+      "note": "src/** files over 800 code lines (blank/comment lines skipped). Exact count synchronized on 2026-08-07 after OptionsPanel split (usePanelResize + useDraggablePanel -> shared/hooks); --check rejects both increases and stale headroom. Avoid splitting cohesive parsers/solvers only to satisfy the counter."
     },
     "function-too-long": {
       "max": 113,

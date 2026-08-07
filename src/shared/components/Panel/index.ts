@@ -13,7 +13,6 @@ export {
   SliderOption,
   SectionDivider,
   CollapsibleSection,
-  useDraggablePanel,
   DragGripIcon,
   ChevronDown,
   ChevronUp,
@@ -22,3 +21,4 @@ export {
 } from './OptionsPanel';
 
 export * from './UnifiedVisualizerOptionsPanel';
+export { useDraggablePanel } from '@/shared/hooks/useDraggablePanel';
