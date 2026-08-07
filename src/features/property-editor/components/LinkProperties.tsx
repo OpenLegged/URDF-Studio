@@ -24,7 +24,6 @@ import { translations } from '@/shared/i18n';
 import {
   useUIStore,
   type Language,
-  type MassInertiaChangeBehavior,
 } from '@/store/uiStore';
 import { MAX_PROPERTY_DECIMALS, formatNumberWithMaxDecimals } from '@/core/utils/numberPrecision';
 import {
@@ -65,6 +64,11 @@ import {
 } from './FormControls';
 import { GeometryEditor } from './GeometryEditor';
 import { TransformFields } from './TransformFields';
+import {
+  useMassInertiaDecision,
+  type ResolvedMassInertiaBehavior,
+  type FloatingMassInertiaNotice,
+} from '../hooks/useMassInertiaDecision';
 
 const DEFAULT_INERTIAL = {
   mass: 0,
@@ -81,19 +85,6 @@ const DEFAULT_PRINCIPAL_AXES = [
   { x: 0, y: 1, z: 0 },
   { x: 0, y: 0, z: 1 },
 ] as const;
-
-type ResolvedMassInertiaBehavior = Exclude<MassInertiaChangeBehavior, 'ask'>;
-
-interface PendingMassInertiaDecision {
-  linkSnapshot: UrdfLink;
-  nextMass: number;
-  scaledEstimate: ReturnType<typeof scaleInertiaTensorForMassChange>;
-}
-
-interface FloatingMassInertiaNotice {
-  message: string;
-  tone: 'info' | 'success';
-}
 
 const formatReadonlyNumber = (value: number | null | undefined): string => {
   if (value === null || value === undefined || !Number.isFinite(value)) {
@@ -304,14 +295,27 @@ export const LinkProperties: React.FC<LinkPropertiesProps> = ({
   const massInertiaChangeBehavior = useUIStore((state) => state.massInertiaChangeBehavior);
   const setMassInertiaChangeBehavior = useUIStore((state) => state.setMassInertiaChangeBehavior);
   const inertial = data.inertial ?? DEFAULT_INERTIAL;
-  const noticeTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
-  const [pendingMassInertiaDecision, setPendingMassInertiaDecision] =
-    React.useState<PendingMassInertiaDecision | null>(null);
-  const [selectedMassInertiaBehavior, setSelectedMassInertiaBehavior] =
-    React.useState<ResolvedMassInertiaBehavior>('reestimate');
-  const [rememberMassInertiaBehavior, setRememberMassInertiaBehavior] = React.useState(false);
-  const [floatingMassInertiaNotice, setFloatingMassInertiaNotice] =
-    React.useState<FloatingMassInertiaNotice | null>(null);
+  const {
+    pendingMassInertiaDecision,
+    selectedMassInertiaBehavior,
+    setSelectedMassInertiaBehavior,
+    rememberMassInertiaBehavior,
+    setRememberMassInertiaBehavior,
+    setPendingMassInertiaDecision,
+    floatingMassInertiaNotice,
+    handleMassChange,
+    handleConfirmMassInertiaDecision,
+  } = useMassInertiaDecision({
+    linkSnapshot: data,
+    currentMass: inertial.mass,
+    inertial,
+    preferredBehavior: massInertiaChangeBehavior,
+    persistPreferredBehavior: (behavior) => setMassInertiaChangeBehavior(behavior),
+    applyInertialUpdate: (linkId, nextInertial) =>
+      onUpdate('link', linkId, { inertial: nextInertial }),
+    buildNotice: (linkName, nextMass, behavior, scaledEstimate) =>
+      buildMassInertiaNotice(t, linkName, nextMass, behavior, scaledEstimate),
+  });
   const [collisionListContextMenu, setCollisionListContextMenu] =
     React.useState<CollisionListContextMenuState | null>(null);
   const [collisionListEditingObjectIndex, setCollisionListEditingObjectIndex] = React.useState<
@@ -368,30 +372,7 @@ export const LinkProperties: React.FC<LinkPropertiesProps> = ({
     });
   };
 
-  const showFloatingMassInertiaNotice = React.useCallback((notice: FloatingMassInertiaNotice) => {
-    if (noticeTimerRef.current) {
-      clearTimeout(noticeTimerRef.current);
-    }
-
-    setFloatingMassInertiaNotice(notice);
-    noticeTimerRef.current = setTimeout(() => {
-      setFloatingMassInertiaNotice(null);
-      noticeTimerRef.current = null;
-    }, 5000);
-  }, []);
-
   React.useEffect(() => {
-    return () => {
-      if (noticeTimerRef.current) {
-        clearTimeout(noticeTimerRef.current);
-      }
-    };
-  }, []);
-
-  React.useEffect(() => {
-    setPendingMassInertiaDecision(null);
-    setRememberMassInertiaBehavior(false);
-    setSelectedMassInertiaBehavior('reestimate');
     setCollisionListContextMenu(null);
     setCollisionListEditingObjectIndex(null);
     setCollisionListEditingDraft('');
@@ -447,82 +428,6 @@ export const LinkProperties: React.FC<LinkPropertiesProps> = ({
       setCollisionListEditingDraft('');
     }
   }, [collisionGeometryEntries, collisionListEditingObjectIndex]);
-
-  const applyMassChange = React.useCallback(
-    (
-      linkSnapshot: UrdfLink,
-      nextMass: number,
-      behavior: ResolvedMassInertiaBehavior,
-      scaledEstimate: ReturnType<typeof scaleInertiaTensorForMassChange>,
-      options?: { remember?: boolean },
-    ) => {
-      const nextInertial = {
-        mass: nextMass,
-        ...(behavior === 'reestimate' && scaledEstimate ? { inertia: scaledEstimate.inertia } : {}),
-      };
-
-      onUpdate('link', linkSnapshot.id, {
-        inertial: nextInertial,
-      });
-
-      if (options?.remember) {
-        setMassInertiaChangeBehavior(behavior);
-      }
-
-      showFloatingMassInertiaNotice(
-        buildMassInertiaNotice(t, linkSnapshot.name, nextMass, behavior, scaledEstimate),
-      );
-    },
-    [onUpdate, setMassInertiaChangeBehavior, showFloatingMassInertiaNotice, t],
-  );
-
-  const handleMassChange = React.useCallback(
-    (nextMass: number) => {
-      if (Math.abs(nextMass - inertial.mass) <= 1e-12) {
-        return;
-      }
-
-      const preferredBehavior = massInertiaChangeBehavior;
-      const scaledEstimate = scaleInertiaTensorForMassChange(inertial, nextMass);
-
-      if (preferredBehavior === 'ask') {
-        setPendingMassInertiaDecision({
-          linkSnapshot: data,
-          nextMass,
-          scaledEstimate,
-        });
-        setSelectedMassInertiaBehavior(scaledEstimate ? 'reestimate' : 'preserve');
-        setRememberMassInertiaBehavior(false);
-        return;
-      }
-
-      applyMassChange(data, nextMass, preferredBehavior, scaledEstimate);
-    },
-    [applyMassChange, data, inertial, massInertiaChangeBehavior],
-  );
-
-  const handleConfirmMassInertiaDecision = React.useCallback(() => {
-    if (!pendingMassInertiaDecision) {
-      return;
-    }
-
-    applyMassChange(
-      pendingMassInertiaDecision.linkSnapshot,
-      pendingMassInertiaDecision.nextMass,
-      selectedMassInertiaBehavior,
-      pendingMassInertiaDecision.scaledEstimate,
-      {
-        remember: rememberMassInertiaBehavior,
-      },
-    );
-    setPendingMassInertiaDecision(null);
-    setRememberMassInertiaBehavior(false);
-  }, [
-    applyMassChange,
-    pendingMassInertiaDecision,
-    rememberMassInertiaBehavior,
-    selectedMassInertiaBehavior,
-  ]);
 
   const nameField = (
     <InlineInputGroup label={t.name} labelWidthClassName="w-11">
