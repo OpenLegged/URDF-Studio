@@ -9,7 +9,6 @@ import {
   Send,
   Square,
   Trash2,
-  Wand2,
 } from 'lucide-react';
 import type { Language } from '@/shared/i18n';
 import { translations } from '@/shared/i18n';
@@ -23,22 +22,14 @@ import { useDraggableWindow } from '@/shared/hooks/useDraggableWindow';
 import { Button } from '@/shared/components/ui/Button';
 import { CLOSE_BUTTON_DANGER_TERTIARY_CLASS } from '@/shared/components/ui/closeButtonStyles';
 import { Dialog } from '@/shared/components/ui/Dialog';
-import { useManagedWindowLayer } from '@/store';
-import {
-  sendConversationTurnStream,
-  type ConversationHistoryTurn,
-} from '../services/conversationService';
+import { useManagedWindowLayer, useUIStore } from '@/store';
 import { ConversationMessageMarkdown } from './ConversationMessageMarkdown';
-import { resolveCurrentAIRobotSnapshot } from '../utils/aiConversationRobotSnapshot';
-import { buildConversationContext } from '../utils/buildConversationContext';
 import { shouldSubmitConversationInput } from '../utils/conversationInput';
 import { buildConversationPromptSuggestions } from '../utils/conversationPromptSuggestions';
 import {
   createConversationMessage,
   isConversationChatMessage,
   removeTrailingAssistantPlaceholder,
-  getActiveConversationHistory,
-  replaceActiveConversationTimeline,
   startNewConversationTimeline,
 } from '../utils/conversationTimeline';
 import type {
@@ -49,7 +40,7 @@ import type {
 import type { RobotState } from '@/types';
 import { generateURDF } from '@/core/parsers';
 import { canGenerateUrdf } from '@/core/parsers/urdf/urdfExportSupport';
-import { generateRobotFromPrompt } from '../services/aiService';
+import { resolveModificationProposal } from '../utils/resolveModificationProposal';
 import { resolveAIWorkspaceRobotTarget } from '../utils/aiWorkspaceTarget';
 import { useAssetsStore } from '@/store/assetsStore';
 import { useSelectionStore } from '@/store/selectionStore';
@@ -65,12 +56,6 @@ interface AIConversationModalProps {
   onApply: (componentId: string, proposedUrdf: string) => boolean;
 }
 
-interface ConversationSubmissionState {
-  history: ConversationHistoryTurn[];
-  userMessage: string;
-  replaceCurrentConversation?: boolean;
-}
-
 type ConversationResetAction = 'new-conversation' | 'clear-history';
 
 function resolveSelectedEntityName(context: AIConversationLaunchContext | null): string | null {
@@ -82,73 +67,6 @@ function resolveSelectedEntityName(context: AIConversationLaunchContext | null):
   return type === 'link'
     ? context.robotSnapshot.links[snapshotEntityId]?.name || entityId
     : context.robotSnapshot.joints[snapshotEntityId]?.name || entityId;
-}
-
-function replaceTrailingAssistantMessage(
-  messages: AIConversationMessage[],
-  nextContent: string,
-): AIConversationMessage[] {
-  const nextMessages = [...messages];
-
-  for (let index = nextMessages.length - 1; index >= 0; index -= 1) {
-    const message = nextMessages[index];
-    if (!message || !isConversationChatMessage(message)) {
-      break;
-    }
-
-    if (message.role !== 'assistant') {
-      continue;
-    }
-
-    nextMessages[index] = {
-      kind: 'message',
-      role: 'assistant',
-      content: nextContent,
-    };
-    return nextMessages;
-  }
-
-  nextMessages.push({
-    kind: 'message',
-    role: 'assistant',
-    content: nextContent,
-  });
-  return nextMessages;
-}
-
-function appendTrailingAssistantDelta(
-  messages: AIConversationMessage[],
-  delta: string,
-): AIConversationMessage[] {
-  if (!delta) {
-    return messages;
-  }
-
-  const nextMessages = [...messages];
-  for (let index = nextMessages.length - 1; index >= 0; index -= 1) {
-    const message = nextMessages[index];
-    if (!message || !isConversationChatMessage(message)) {
-      break;
-    }
-
-    if (message.role !== 'assistant') {
-      continue;
-    }
-
-    nextMessages[index] = {
-      kind: 'message',
-      role: 'assistant',
-      content: `${message.content}${delta}`,
-    };
-    return nextMessages;
-  }
-
-  nextMessages.push({
-    kind: 'message',
-    role: 'assistant',
-    content: delta,
-  });
-  return nextMessages;
 }
 
 export function AIConversationModal({
@@ -192,13 +110,12 @@ export function AIConversationModal({
   const [input, setInput] = useState('');
   const [isSending, setIsSending] = useState(false);
   const [copiedMessageKey, setCopiedMessageKey] = useState<string | null>(null);
-  const [lastSubmittedTurn, setLastSubmittedTurn] = useState<ConversationSubmissionState | null>(
+  const [lastSubmittedTurn, setLastSubmittedTurn] = useState<{ userMessage: string } | null>(
     null,
   );
   const [pendingResetAction, setPendingResetAction] = useState<ConversationResetAction | null>(
     null,
   );
-  const [requestError, setRequestError] = useState<string | null>(null);
 
   const isMountedRef = useRef(false);
   const requestIdRef = useRef(0);
@@ -213,10 +130,8 @@ export function AIConversationModal({
     () => resolveSelectedEntityName(launchContext),
     [launchContext],
   );
+  const aiAutoApply = useUIStore((s) => s.aiAutoApplyEdits);
   const isReportFollowup = launchContext?.mode === 'inspection-followup';
-  const reportSnapshot = isReportFollowup
-    ? (launchContext?.inspectionReportSnapshot ?? null)
-    : null;
   const focusedIssue = isReportFollowup ? (launchContext?.focusedIssue ?? null) : null;
   const headerTitle = isReportFollowup ? t.discussReportWithAI : t.aiConversation;
   const latestTimelineValue = (() => {
@@ -268,7 +183,6 @@ export function AIConversationModal({
       setCopiedMessageKey(null);
       setLastSubmittedTurn(null);
       setPendingResetAction(null);
-      setRequestError(null);
       isComposingRef.current = false;
     },
     [],
@@ -394,113 +308,7 @@ export function AIConversationModal({
     }
 
     setInput('');
-    await submitConversationTurn({
-      history: [],
-      userMessage: prompt,
-    });
-  };
-
-  const submitConversationTurn = async ({
-    history,
-    userMessage,
-    replaceCurrentConversation = false,
-  }: ConversationSubmissionState) => {
-    if (!launchContext || !userMessage.trim() || isSending) {
-      return;
-    }
-
-    const trimmedMessage = userMessage.trim();
-    const requestId = requestIdRef.current + 1;
-    requestIdRef.current = requestId;
-    const abortController = new AbortController();
-    abortControllerRef.current = abortController;
-    const isRequestActive = () =>
-      isMountedRef.current &&
-      requestIdRef.current === requestId &&
-      abortControllerRef.current === abortController;
-
-    setLastSubmittedTurn({
-      history: history.map((message) => ({ ...message })),
-      userMessage: trimmedMessage,
-    });
-    setRequestError(null);
-    const nextTurnMessages = [
-      createConversationMessage('user', trimmedMessage),
-      createConversationMessage('assistant', ''),
-    ];
-    setMessages((prev) => {
-      if (replaceCurrentConversation) {
-        return replaceActiveConversationTimeline(prev, [
-          ...history.map((message) => createConversationMessage(message.role, message.content)),
-          ...nextTurnMessages,
-        ]);
-      }
-
-      return [...removeTrailingAssistantPlaceholder(prev), ...nextTurnMessages];
-    });
-    setIsSending(true);
-
-    try {
-      // Re-snapshot the workspace so post-launch edits propagate to the AI.
-      const liveRobotSnapshot = resolveCurrentAIRobotSnapshot();
-      const result = await sendConversationTurnStream({
-        mode: launchContext.mode,
-        lang,
-        context: buildConversationContext({
-          mode: launchContext.mode,
-          robot: liveRobotSnapshot,
-          inspectionReport: reportSnapshot,
-          selectedEntity: launchContext.selectedEntity,
-          focusedIssue,
-        }),
-        history,
-        userMessage: trimmedMessage,
-        signal: abortController.signal,
-        onReplyDelta: (delta) => {
-          if (!isRequestActive()) {
-            return;
-          }
-
-          setMessages((prev) => appendTrailingAssistantDelta(prev, delta));
-        },
-      });
-
-      if (!isRequestActive()) {
-        return;
-      }
-
-      if (result.status === 'aborted') {
-        setRequestError(null);
-        setMessages((prev) => {
-          if (result.reply) {
-            return replaceTrailingAssistantMessage(prev, result.reply);
-          }
-
-          return removeTrailingAssistantPlaceholder(prev);
-        });
-        return;
-      }
-
-      if (result.status === 'error') {
-        setRequestError(result.error?.message ?? t.unknownError);
-        setMessages((prev) => {
-          if (result.reply) {
-            return replaceTrailingAssistantMessage(prev, result.reply);
-          }
-
-          return removeTrailingAssistantPlaceholder(prev);
-        });
-        return;
-      }
-
-      setRequestError(null);
-      setMessages((prev) => replaceTrailingAssistantMessage(prev, result.reply));
-    } finally {
-      if (isRequestActive()) {
-        abortControllerRef.current = null;
-        setIsSending(false);
-      }
-    }
+    await submitModificationTurn(prompt);
   };
 
   const handleSend = async () => {
@@ -509,12 +317,8 @@ export function AIConversationModal({
       return;
     }
 
-    const history = getActiveConversationHistory(messages);
     setInput('');
-    await submitConversationTurn({
-      history,
-      userMessage: trimmedInput,
-    });
+    await submitModificationTurn(trimmedInput);
   };
 
   const handleRetry = async () => {
@@ -522,11 +326,7 @@ export function AIConversationModal({
       return;
     }
 
-    await submitConversationTurn({
-      history: lastSubmittedTurn.history,
-      userMessage: lastSubmittedTurn.userMessage,
-      replaceCurrentConversation: true,
-    });
+    await submitModificationTurn(lastSubmittedTurn.userMessage);
   };
 
   const submitModificationTurn = async (userMessage: string) => {
@@ -542,6 +342,16 @@ export function AIConversationModal({
       createConversationMessage('assistant', ''),
     ]);
     setIsSending(true);
+
+    const requestId = requestIdRef.current + 1;
+    requestIdRef.current = requestId;
+    const abortController = new AbortController();
+    abortControllerRef.current = abortController;
+    const isRequestActive = () =>
+      isMountedRef.current &&
+      requestIdRef.current === requestId &&
+      abortControllerRef.current === abortController;
+    setLastSubmittedTurn({ userMessage: trimmedMessage });
 
     try {
       const workspace = useWorkspaceStore.getState().workspace;
@@ -562,29 +372,34 @@ export function AIConversationModal({
       };
       const motorLibrary = useAssetsStore.getState().motorLibrary;
 
-      const response = await generateRobotFromPrompt(
-        trimmedMessage,
+      const proposal = await resolveModificationProposal({
+        message: trimmedMessage,
         currentRobot,
+        robotData: target.robotData,
         motorLibrary,
         lang,
-      );
+        signal: abortController.signal,
+      });
 
-      if (!response || !response.robotData) {
+      if (proposal.kind === 'aborted') {
+        return;
+      }
+      if (proposal.kind === 'no-change') {
         setMessages((prev) => [
           ...removeTrailingAssistantPlaceholder(prev),
           createConversationMessage(
             'assistant',
-            response?.explanation || t.aiModificationNoChange,
+            proposal.explanation || t.aiModificationNoChange,
           ),
         ]);
         return;
       }
 
       const proposedRobotState: RobotState = {
-        name: response.robotData.name ?? currentRobot.name,
-        links: response.robotData.links ?? currentRobot.links,
-        joints: response.robotData.joints ?? currentRobot.joints,
-        rootLinkId: response.robotData.rootLinkId ?? currentRobot.rootLinkId,
+        name: proposal.robot.name ?? currentRobot.name,
+        links: proposal.robot.links ?? currentRobot.links,
+        joints: proposal.robot.joints ?? currentRobot.joints,
+        rootLinkId: proposal.robot.rootLinkId ?? currentRobot.rootLinkId,
         selection: { type: null, id: null },
       };
 
@@ -603,10 +418,27 @@ export function AIConversationModal({
           ? currentDraft.content
           : generateURDF(currentRobot, { preserveMeshPaths: true });
 
+      if (aiAutoApply) {
+        // Highest permission: apply immediately, surface a summary. Undoable
+        // via workspace history (Ctrl+Z), same as the card's Apply path.
+        const applied = onApply(componentId, proposedUrdf);
+        const summary = applied
+          ? t.aiAutoAppliedSummary.replace(
+              '{explanation}',
+              proposal.explanation || t.aiModificationApplied,
+            )
+          : t.aiModificationFailed;
+        setMessages((prev) => [
+          ...removeTrailingAssistantPlaceholder(prev),
+          createConversationMessage('assistant', summary),
+        ]);
+        return;
+      }
+
       const cardMessage: AIConversationModificationCard = {
         kind: 'modification-card',
         role: 'assistant',
-        explanation: response.explanation || '',
+        explanation: proposal.explanation,
         proposedUrdf,
         currentUrdf,
         componentId,
@@ -614,13 +446,17 @@ export function AIConversationModal({
       };
       setMessages((prev) => [...removeTrailingAssistantPlaceholder(prev), cardMessage]);
     } catch (error) {
+      if (abortController.signal.aborted) {
+        return;
+      }
       console.error('AI modification turn failed', error);
       setMessages((prev) => [
         ...removeTrailingAssistantPlaceholder(prev),
         createConversationMessage('assistant', t.aiModificationFailed),
       ]);
     } finally {
-      if (isMountedRef.current) {
+      if (isRequestActive()) {
+        abortControllerRef.current = null;
         setIsSending(false);
       }
     }
@@ -908,11 +744,6 @@ export function AIConversationModal({
               }`}
             >
               <div className="rounded-xl border border-border-black bg-panel-bg p-2 shadow-sm dark:bg-panel-bg">
-                {requestError && (
-                  <div className="mb-2 rounded-xl border border-danger-border bg-danger-soft px-3 py-2 text-[12px] text-danger">
-                    {requestError}
-                  </div>
-                )}
                 <textarea
                   ref={textareaRef}
                   value={input}
@@ -973,18 +804,6 @@ export function AIConversationModal({
                         {t.stopGenerating}
                       </button>
                     )}
-                    <button
-                      type="button"
-                      onClick={() => {
-                        void submitModificationTurn(input);
-                      }}
-                      disabled={isSending || !input.trim()}
-                      className="flex h-8 items-center gap-2 rounded-lg border border-system-blue/35 bg-system-blue/10 px-3 text-xs font-semibold text-system-blue transition-colors hover:bg-system-blue/20 disabled:opacity-30"
-                      title={t.aiModificationButton}
-                    >
-                      <Wand2 className="w-3.5 h-3.5" />
-                      {t.aiModificationButton}
-                    </button>
                     <button
                       type="button"
                       onClick={() => {

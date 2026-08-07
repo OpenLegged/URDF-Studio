@@ -29,6 +29,10 @@ export type {
   AIInspectableEntityRef,
   AIWorkspaceRobotTarget,
 } from './utils/aiWorkspaceTarget'
+export {
+  cloneAISnapshot,
+  resolveCurrentAIRobotSnapshot,
+} from './utils/aiConversationRobotSnapshot'
 
 // Types
 export type {
