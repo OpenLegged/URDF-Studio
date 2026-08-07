@@ -607,13 +607,13 @@ test('loadMJCFToThreeJS reports ready before deferred textures finish and applie
   disposeTransientObject3D(root);
 });
 
-test('loadMJCFToThreeJS rejects missing mesh assets instead of creating placeholders', async () => {
+test('loadMJCFToThreeJS warns and skips missing mesh assets instead of rejecting', async () => {
   installDomGlobals();
   clearParsedMJCFModelCache();
 
-  await assert.rejects(
-    loadMJCFToThreeJS(
-      `
+  // Should not reject — missing mesh assets are now skipped with a warning
+  const root = await loadMJCFToThreeJS(
+    `
             <mujoco model="missing-mesh">
               <asset>
                 <mesh name="base_mesh" file="meshes/missing.stl" />
@@ -625,11 +625,11 @@ test('loadMJCFToThreeJS rejects missing mesh assets instead of creating placehol
               </worldbody>
             </mujoco>
         `,
-      {},
-    ),
-    /Mesh file could not be resolved: meshes\/missing\.stl/,
+    {},
   );
 
+  // The scene should load successfully, just without the problematic geom
+  assert.ok(root instanceof THREE.Group);
   assert.equal(getParsedMJCFModelCacheSize(), 0);
 });
 

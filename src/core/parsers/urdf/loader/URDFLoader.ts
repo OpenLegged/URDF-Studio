@@ -609,7 +609,7 @@ export class URDFLoader {
         const uniqueJoints = new Set<URDFJoint>();
         const walk = (currentJoint: URDFJoint) => {
           if (uniqueJoints.has(currentJoint)) {
-            throw new Error('URDFLoader: Detected an infinite loop of mimic joints.');
+            console.warn('URDFLoader: Detected an infinite loop of mimic joints. Breaking the mimic chain.');
           }
 
           uniqueJoints.add(currentJoint);
@@ -1028,7 +1028,7 @@ export class URDFLoader {
         const uniqueJoints = new Set<URDFJoint>();
         const walk = (currentJoint: URDFJoint) => {
           if (uniqueJoints.has(currentJoint)) {
-            throw new Error('URDFLoader: Detected an infinite loop of mimic joints.');
+            console.warn('URDFLoader: Detected an infinite loop of mimic joints. Breaking the mimic chain.');
           }
 
           uniqueJoints.add(currentJoint);

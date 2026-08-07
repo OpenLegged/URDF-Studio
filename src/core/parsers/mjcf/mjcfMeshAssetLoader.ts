@@ -203,7 +203,8 @@ const loadCachedMJCFMeshAsset = async (
       };
     }
 
-    throw createMJCFMeshLoadError(filePath, `Unsupported mesh format "${extension}"`);
+    console.warn(`[MJCFLoader] Unsupported mesh format "${extension}" for "${filePath}". Skipping.`);
+    return null;
   } catch (error) {
     if (isMJCFLoadAbortedError(error)) {
       throw error;

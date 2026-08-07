@@ -35,7 +35,7 @@ import {
   preloadExportProgressDialog,
   preloadSettingsModal,
 } from './components/lazyAppOverlays';
-import { resolveCurrentAIRobotSnapshot } from '@/features/ai-assistant/utils/aiConversationRobotSnapshot';
+import { resolveCurrentAIRobotSnapshot } from '@/features/ai-assistant';
 import type {
   AIConversationFocusedIssue,
   AIConversationLaunchContext,

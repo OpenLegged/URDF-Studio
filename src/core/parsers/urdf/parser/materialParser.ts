@@ -16,30 +16,40 @@ export const parseMaterials = (robotEl: Element) => {
   // so we iterate all and check parent.
   Array.from(robotEl.children).forEach((child) => {
     if (child.tagName === 'material') {
-      const name = child.getAttribute('name');
-      const colorDefinition = parseColorDefinition(child);
-      const texture = parseTexture(child);
-      if (name && (colorDefinition?.color || texture)) {
-        globalMaterials[name] = {
-          ...(colorDefinition?.color ? { color: colorDefinition.color } : {}),
-          ...(colorDefinition?.colorRgba ? { colorRgba: colorDefinition.colorRgba } : {}),
-          ...(texture ? { texture } : {}),
-        };
+      try {
+        const name = child.getAttribute('name');
+        const colorDefinition = parseColorDefinition(child);
+        const texture = parseTexture(child);
+        if (name && (colorDefinition?.color || texture)) {
+          globalMaterials[name] = {
+            ...(colorDefinition?.color ? { color: colorDefinition.color } : {}),
+            ...(colorDefinition?.colorRgba ? { colorRgba: colorDefinition.colorRgba } : {}),
+            ...(texture ? { texture } : {}),
+          };
+        }
+      } catch (error) {
+        const materialName = child.getAttribute('name') || '<unnamed>';
+        console.warn(`[URDFParser] Failed to parse material "${materialName}":`, error);
       }
     }
   });
 
   // 0.5 Parse Gazebo Materials
   robotEl.querySelectorAll('gazebo').forEach((gazeboEl) => {
-    const reference = gazeboEl.getAttribute('reference');
-    if (reference) {
-      const materialEl = gazeboEl.querySelector('material');
-      if (materialEl && materialEl.textContent) {
-        const gazeboColorName = materialEl.textContent.trim();
-        if (GAZEBO_COLORS[gazeboColorName]) {
-          linkGazeboMaterials[reference] = GAZEBO_COLORS[gazeboColorName];
+    try {
+      const reference = gazeboEl.getAttribute('reference');
+      if (reference) {
+        const materialEl = gazeboEl.querySelector('material');
+        if (materialEl && materialEl.textContent) {
+          const gazeboColorName = materialEl.textContent.trim();
+          if (GAZEBO_COLORS[gazeboColorName]) {
+            linkGazeboMaterials[reference] = GAZEBO_COLORS[gazeboColorName];
+          }
         }
       }
+    } catch (error) {
+      const reference = gazeboEl.getAttribute('reference') || '<unnamed>';
+      console.warn(`[URDFParser] Failed to parse gazebo material for "${reference}":`, error);
     }
   });
 

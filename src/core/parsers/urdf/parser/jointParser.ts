@@ -170,47 +170,52 @@ export const parseJoints = (robotEl: Element): Record<string, UrdfJoint> => {
     const jointEl = child;
     const jointName = jointEl.getAttribute('name');
     if (!jointName) return;
-    const id = jointName;
 
-    const parentEl = jointEl.querySelector('parent');
-    const childEl = jointEl.querySelector('child');
-    const originEl = findOriginElement(jointEl);
+    try {
+      const id = jointName;
 
-    const axisEl = jointEl.querySelector('axis');
-    const calibrationEl = jointEl.querySelector('calibration');
-    const limitEl = jointEl.querySelector('limit');
-    const dynamicsEl = jointEl.querySelector('dynamics');
-    const safetyControllerEl = jointEl.querySelector('safety_controller');
-    const hardwareEl = jointEl.querySelector('hardware');
-    const mimicEl = jointEl.querySelector('mimic');
+      const parentEl = jointEl.querySelector('parent');
+      const childEl = jointEl.querySelector('child');
+      const originEl = findOriginElement(jointEl);
 
-    const jointType = (jointEl.getAttribute('type') as JointType) || JointType.REVOLUTE;
-    const axis = AXIS_IMPORT_TYPES.has(jointType)
-      ? parseVec3(axisEl?.getAttribute('xyz') || '1 0 0')
-      : undefined;
-    const limit = parseJointLimit(jointType, limitEl);
-    const { calibration, referencePosition } = parseJointCalibration(calibrationEl);
-    const safetyController = parseJointSafetyController(safetyControllerEl);
+      const axisEl = jointEl.querySelector('axis');
+      const calibrationEl = jointEl.querySelector('calibration');
+      const limitEl = jointEl.querySelector('limit');
+      const dynamicsEl = jointEl.querySelector('dynamics');
+      const safetyControllerEl = jointEl.querySelector('safety_controller');
+      const hardwareEl = jointEl.querySelector('hardware');
+      const mimicEl = jointEl.querySelector('mimic');
 
-    joints[id] = {
-      id,
-      name: jointName,
-      type: jointType,
-      parentLinkId: parentEl?.getAttribute('link') || '',
-      childLinkId: childEl?.getAttribute('link') || '',
-      origin: parseOrigin(originEl),
-      axis,
-      limit,
-      dynamics: {
-        damping: parseFloatSafe(dynamicsEl?.getAttribute('damping'), 0),
-        friction: parseFloatSafe(dynamicsEl?.getAttribute('friction'), 0),
-      },
-      hardware: parseJointHardware(hardwareEl),
-      ...(calibration ? { calibration } : {}),
-      ...(safetyController ? { safetyController } : {}),
-      ...(referencePosition !== undefined ? { referencePosition } : {}),
-      mimic: parseJointMimic(mimicEl),
-    };
+      const jointType = (jointEl.getAttribute('type') as JointType) || JointType.REVOLUTE;
+      const axis = AXIS_IMPORT_TYPES.has(jointType)
+        ? parseVec3(axisEl?.getAttribute('xyz') || '1 0 0')
+        : undefined;
+      const limit = parseJointLimit(jointType, limitEl);
+      const { calibration, referencePosition } = parseJointCalibration(calibrationEl);
+      const safetyController = parseJointSafetyController(safetyControllerEl);
+
+      joints[id] = {
+        id,
+        name: jointName,
+        type: jointType,
+        parentLinkId: parentEl?.getAttribute('link') || '',
+        childLinkId: childEl?.getAttribute('link') || '',
+        origin: parseOrigin(originEl),
+        axis,
+        limit,
+        dynamics: {
+          damping: parseFloatSafe(dynamicsEl?.getAttribute('damping'), 0),
+          friction: parseFloatSafe(dynamicsEl?.getAttribute('friction'), 0),
+        },
+        hardware: parseJointHardware(hardwareEl),
+        ...(calibration ? { calibration } : {}),
+        ...(safetyController ? { safetyController } : {}),
+        ...(referencePosition !== undefined ? { referencePosition } : {}),
+        mimic: parseJointMimic(mimicEl),
+      };
+    } catch (error) {
+      console.warn(`[URDFParser] Failed to parse joint "${jointName}":`, error);
+    }
   });
 
   return joints;

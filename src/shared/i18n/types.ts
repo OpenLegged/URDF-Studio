@@ -24,6 +24,9 @@ export interface TranslationKeys extends TranslationWorkflowKeys {
   aiModificationNoChange: string;
   aiModificationUnsupportedJoint: string;
   aiModificationFailed: string;
+  aiAutoApply: string;
+  aiAutoApplyDesc: string;
+  aiAutoAppliedSummary: string;
   feedback: string;
   file: string;
   import: string;

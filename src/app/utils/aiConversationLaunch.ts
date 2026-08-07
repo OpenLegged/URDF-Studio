@@ -5,12 +5,12 @@ import type {
   AIConversationMode,
   AIConversationSelection,
 } from '@/features/ai-assistant';
-import { cloneAISnapshot } from '@/features/ai-assistant/utils/aiConversationRobotSnapshot';
+import { cloneAISnapshot } from '@/features/ai-assistant';
 import { useSelectionStore } from '@/store/selectionStore';
 import { useWorkspaceStore } from '@/store/workspaceStore';
 import type { InspectionReport, RobotState } from '@/types';
 
-export { cloneAISnapshot } from '@/features/ai-assistant/utils/aiConversationRobotSnapshot';
+export { cloneAISnapshot } from '@/features/ai-assistant';
 
 export function resolveCurrentAIConversationSelection(): AIConversationSelection | null {
   const workspace = useWorkspaceStore.getState().workspace;

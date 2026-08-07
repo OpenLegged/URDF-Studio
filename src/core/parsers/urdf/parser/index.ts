@@ -152,10 +152,28 @@ export const parseURDF = (xmlString: string): RobotState | null => {
   const version = robotEl.getAttribute("version")?.trim() || undefined;
 
   // Parse Materials
-  const { globalMaterials, linkGazeboMaterials } = parseMaterials(robotEl);
+  let globalMaterials: Record<string, { color?: string; colorRgba?: [number, number, number, number]; texture?: string }> = {};
+  let linkGazeboMaterials: Record<string, string> = {};
+  try {
+    const materialResult = parseMaterials(robotEl);
+    globalMaterials = materialResult.globalMaterials;
+    linkGazeboMaterials = materialResult.linkGazeboMaterials;
+  } catch (error) {
+    console.warn('[URDFParser] Failed to parse materials:', error);
+  }
 
   // Parse Links
-  const { links: parsedLinks, extraJoints, linkMaterials } = parseLinks(robotEl, globalMaterials, linkGazeboMaterials);
+  let parsedLinks: Record<string, UrdfLink> = {};
+  let extraJoints: any[] = [];
+  let linkMaterials: Record<string, { color?: string; colorRgba?: [number, number, number, number]; texture?: string }> = {};
+  try {
+    const linkResult = parseLinks(robotEl, globalMaterials, linkGazeboMaterials);
+    parsedLinks = linkResult.links;
+    extraJoints = linkResult.extraJoints;
+    linkMaterials = linkResult.linkMaterials;
+  } catch (error) {
+    console.warn('[URDFParser] Failed to parse links:', error);
+  }
 
   if (Object.keys(parsedLinks).length === 0) {
       console.error("Invalid URDF: No <link> tags found.");
@@ -163,7 +181,12 @@ export const parseURDF = (xmlString: string): RobotState | null => {
   }
 
   // Parse Joints
-  const joints = parseJoints(robotEl);
+  let joints: Record<string, UrdfJoint> = {};
+  try {
+    joints = parseJoints(robotEl);
+  } catch (error) {
+    console.warn('[URDFParser] Failed to parse joints:', error);
+  }
 
   // Add virtual joints from multi-collision parsing
   extraJoints.forEach(j => {

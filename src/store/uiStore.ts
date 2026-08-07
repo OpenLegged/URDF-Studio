@@ -236,6 +236,10 @@ interface UIState {
   sourceCodeAutoApply: boolean;
   setSourceCodeAutoApply: (enabled: boolean) => void;
 
+  // AI conversation: apply agent edits without a confirmation card.
+  aiAutoApplyEdits: boolean;
+  setAiAutoApplyEdits: (enabled: boolean) => void;
+
   // Floating workbench window z-order. Session-only; intentionally not persisted.
   managedWindowOrder: ManagedWindowId[];
   bringWindowToFront: (windowId: ManagedWindowId) => void;
@@ -623,6 +627,10 @@ export const useUIStore = create<UIState>()(
       sourceCodeAutoApply: false,
       setSourceCodeAutoApply: (sourceCodeAutoApply) => set({ sourceCodeAutoApply }),
 
+      // AI conversation
+      aiAutoApplyEdits: false,
+      setAiAutoApplyEdits: (aiAutoApplyEdits) => set({ aiAutoApplyEdits }),
+
       // Floating workbench windows
       managedWindowOrder: [...DEFAULT_MANAGED_WINDOW_ORDER],
       bringWindowToFront: (windowId) =>
@@ -768,6 +776,7 @@ export const useUIStore = create<UIState>()(
         codeEditorFontSize: state.codeEditorFontSize,
         codeEditorOpacity: state.codeEditorOpacity,
         sourceCodeAutoApply: state.sourceCodeAutoApply,
+        aiAutoApplyEdits: state.aiAutoApplyEdits,
         rotationDisplayMode: state.rotationDisplayMode,
         massInertiaChangeBehavior: state.massInertiaChangeBehavior,
         detailLinkTab: state.detailLinkTab,

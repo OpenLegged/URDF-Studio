@@ -26,6 +26,9 @@ export const en: TranslationKeys = {
   aiModificationUnsupportedJoint:
     'The robot contains a joint type that cannot be exported to URDF (e.g. ball).',
   aiModificationFailed: 'AI modification request failed.',
+  aiAutoApply: 'Auto-apply AI edits',
+  aiAutoApplyDesc: 'Apply AI-proposed modifications immediately without a confirmation card. Undo with Ctrl+Z.',
+  aiAutoAppliedSummary: 'Applied AI edit: {explanation}',
   feedback: 'Feedback',
   file: 'File',
   import: 'Import',

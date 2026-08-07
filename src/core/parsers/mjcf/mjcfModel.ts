@@ -25,6 +25,7 @@ import {
   buildGeneratedMjcfGeomName,
   buildGeneratedMjcfSiteName,
 } from './mjcfGeneratedNames';
+import { convertMjcfAngle, mjcfQuatToThreeQuat } from './mjcfMath';
 
 export interface MJCFModelGeom {
   name?: string;
@@ -275,10 +276,6 @@ function toOptionalRangeTuple(values: number[]): [number, number] | undefined {
   return [values[0] ?? 0, values[1] ?? 0];
 }
 
-function convertAngularValue(value: number, settings: MJCFCompilerSettings): number {
-  return settings.angleUnit === 'degree' ? THREE.MathUtils.degToRad(value) : value;
-}
-
 function normalizeJointRange(
   range: [number, number] | undefined,
   jointType: string,
@@ -293,8 +290,8 @@ function normalizeJointRange(
   }
 
   return [
-    convertAngularValue(range[0] ?? 0, settings),
-    convertAngularValue(range[1] ?? 0, settings),
+    convertMjcfAngle(range[0] ?? 0, settings.angleUnit),
+    convertMjcfAngle(range[1] ?? 0, settings.angleUnit),
   ];
 }
 
@@ -373,7 +370,7 @@ function parseJointElement(
     joint.ref =
       joint.type.toLowerCase() === 'slide'
         ? parsedRef
-        : convertAngularValue(parsedRef, compilerSettings);
+        : convertMjcfAngle(parsedRef, compilerSettings.angleUnit);
   }
 
   const parsedActuatorForceRange = toOptionalRangeTuple(actuatorForceRange);
@@ -868,14 +865,6 @@ interface MJCFLocalTransform {
   quaternion: THREE.Quaternion;
 }
 
-function mjcfQuatToThreeQuat(quat?: [number, number, number, number]): THREE.Quaternion {
-  if (!quat) {
-    return new THREE.Quaternion();
-  }
-
-  return new THREE.Quaternion(quat[1], quat[2], quat[3], quat[0]);
-}
-
 function threeQuatToMJCFQuat(quaternion: THREE.Quaternion): [number, number, number, number] {
   return [quaternion.w, quaternion.x, quaternion.y, quaternion.z];
 }
@@ -1342,6 +1331,20 @@ export function normalizeMultiJointBodies(body: MJCFModelBody): MJCFModelBody {
   return chainedBody;
 }
 
+/**
+ * Safely collects MJCF elements within a body, logging a warning and returning
+ * an empty array on failure so that a single malformed geom, joint, site, or
+ * child body does not abort the entire model parse.
+ */
+function tryCollect<T>(collect: () => T[], bodyPath: string, elementType: string): T[] {
+  try {
+    return collect();
+  } catch (error) {
+    console.warn(`[MJCF] Failed to parse ${elementType} in body "${bodyPath}":`, error);
+    return [];
+  }
+}
+
 function parseBody(
   bodyElement: Element,
   defaults: MJCFDefaultsRegistry,
@@ -1386,47 +1389,69 @@ function parseBody(
     resolvedBodyEuler = undefined;
   }
 
-  const geoms = collectGeomsInBodyOrder(
-    bodyElement,
-    defaults,
-    childDefaultsClassQName,
-    bodyCompilerSettings,
-    bodyPath,
-    { value: 0 },
-  );
-  const sites = collectSitesInBodyOrder(
-    bodyElement,
-    defaults,
-    childDefaultsClassQName,
-    bodyCompilerSettings,
-    bodyPath,
-    { value: 0 },
-  );
+  const geoms = tryCollect(() =>
+      collectGeomsInBodyOrder(
+        bodyElement,
+        defaults,
+        childDefaultsClassQName,
+        bodyCompilerSettings,
+        bodyPath,
+        { value: 0 },
+      ),
+      bodyPath,
+      'geoms',
+    );
+    const sites = tryCollect(() =>
+      collectSitesInBodyOrder(
+        bodyElement,
+        defaults,
+        childDefaultsClassQName,
+        bodyCompilerSettings,
+        bodyPath,
+        { value: 0 },
+      ),
+      bodyPath,
+      'sites',
+    );
 
-  const joints = collectJointsInBodyOrder(
-    bodyElement,
-    defaults,
-    childDefaultsClassQName,
-    bodyCompilerSettings,
-    jointIndexRef,
-  );
+    const joints = tryCollect(() =>
+      collectJointsInBodyOrder(
+        bodyElement,
+        defaults,
+        childDefaultsClassQName,
+        bodyCompilerSettings,
+        jointIndexRef,
+      ),
+      bodyPath,
+      'joints',
+    );
 
-  const inertial = collectFirstInertialInBodyOrder(
-    bodyElement,
-    defaults,
-    childDefaultsClassQName,
-    bodyCompilerSettings,
-  );
+    let inertial: MJCFModelInertial | undefined;
+    try {
+      inertial = collectFirstInertialInBodyOrder(
+        bodyElement,
+        defaults,
+        childDefaultsClassQName,
+        bodyCompilerSettings,
+      );
+    } catch (error) {
+      console.warn(`[MJCF] Failed to parse inertial in body "${bodyPath}":`, error);
+      inertial = undefined;
+    }
 
-  const children = collectBodiesInBodyOrder(
-    bodyElement,
-    defaults,
-    childDefaultsClassQName,
-    bodyCompilerSettings,
-    bodyPath,
-    jointIndexRef,
-    { value: 0 },
-  );
+    const children = tryCollect(() =>
+      collectBodiesInBodyOrder(
+        bodyElement,
+        defaults,
+        childDefaultsClassQName,
+        bodyCompilerSettings,
+        bodyPath,
+        jointIndexRef,
+        { value: 0 },
+      ),
+      bodyPath,
+      'children',
+    );
 
   return {
     name: bodyPath,
@@ -1497,48 +1522,64 @@ export function parseMJCFModel(xmlContent: string): ParsedMJCFModel | null {
     const tendonMap = parseTendonMap(mujocoElement, defaults, compilerSettings);
 
     worldbodyElements.forEach((worldbodyElement) => {
-      worldBody.geoms.push(
-        ...collectGeomsInBodyOrder(
-          worldbodyElement,
-          defaults,
-          undefined,
-          compilerSettings,
-          'world',
-          { value: worldBody.geoms.length },
-        ),
-      );
-      worldBody.sites.push(
-        ...collectSitesInBodyOrder(
-          worldbodyElement,
-          defaults,
-          undefined,
-          compilerSettings,
-          'world',
-          { value: worldBody.sites.length },
-        ),
-      );
+      try {
+        worldBody.geoms.push(
+          ...collectGeomsInBodyOrder(
+            worldbodyElement,
+            defaults,
+            undefined,
+            compilerSettings,
+            'world',
+            { value: worldBody.geoms.length },
+          ),
+        );
+      } catch (error) {
+        console.warn('[MJCF] Failed to parse top-level geoms:', error);
+      }
+      try {
+        worldBody.sites.push(
+          ...collectSitesInBodyOrder(
+            worldbodyElement,
+            defaults,
+            undefined,
+            compilerSettings,
+            'world',
+            { value: worldBody.sites.length },
+          ),
+        );
+      } catch (error) {
+        console.warn('[MJCF] Failed to parse top-level sites:', error);
+      }
 
-      worldBody.joints.push(
-        ...collectJointsInBodyOrder(
-          worldbodyElement,
-          defaults,
-          undefined,
-          compilerSettings,
-          jointIndexRef,
-        ),
-      );
+      try {
+        worldBody.joints.push(
+          ...collectJointsInBodyOrder(
+            worldbodyElement,
+            defaults,
+            undefined,
+            compilerSettings,
+            jointIndexRef,
+          ),
+        );
+      } catch (error) {
+        console.warn('[MJCF] Failed to parse top-level joints:', error);
+      }
 
-      worldBody.children.push(
-        ...collectBodiesInBodyOrder(
-          worldbodyElement,
-          defaults,
-          undefined,
-          compilerSettings,
-          'world',
-          jointIndexRef,
-          { value: worldBody.children.length },
-        ),
-      );
+      try {
+        worldBody.children.push(
+          ...collectBodiesInBodyOrder(
+            worldbodyElement,
+            defaults,
+            undefined,
+            compilerSettings,
+            'world',
+            jointIndexRef,
+            { value: worldBody.children.length },
+          ),
+        );
+      } catch (error) {
+        console.warn('[MJCF] Failed to parse top-level bodies:', error);
+      }
     });
 
     return rememberParsedModel(
