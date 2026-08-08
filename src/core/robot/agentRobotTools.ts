@@ -410,3 +410,105 @@ export function getJoint(robot: RobotData, args: GetJointArgs): AgentToolResult 
   };
   return ok(JSON.stringify(summary));
 }
+
+// -------------------------------------------------------------------------------------
+// Generic read/write-by-path tools.
+//
+// These give the agent a "catch-all" escape hatch for fields not covered by a
+// dedicated capability (color, motor sub-fields, dynamics, etc.). Paths are
+// dot-separated and MUST start with `links.<id>` or `joints.<id>` so the agent
+// can never reach outside the robot draft. Writes shallow-merge at an object
+// leaf (preserving sibling fields) and replace otherwise — the same surgical
+// principle as the dedicated tools.
+// -------------------------------------------------------------------------------------
+
+export interface ReadRobotPathArgs {
+  /** e.g. `links.base_link.visual.color` or `joints.shoulder_h.axis`. */
+  path: string;
+}
+
+/** Read any scalar/sub-object under `links.*` or `joints.*` as JSON. */
+export function readRobotPath(robot: RobotData, args: ReadRobotPathArgs): AgentToolResult {
+  const path = (args.path || '').trim();
+  const segments = path.split('.').map((s) => s.trim()).filter(Boolean);
+  if (segments.length < 2 || !['links', 'joints'].includes(segments[0])) {
+    return fail(
+      'Invalid path. Path must start with "links.<linkId>" or "joints.<jointId>", e.g. links.base_link.visual.color.',
+    );
+  }
+
+  const root: Record<string, Record<string, unknown>> =
+    segments[0] === 'links'
+      ? (robot.links as unknown as Record<string, Record<string, unknown>>)
+      : (robot.joints as unknown as Record<string, Record<string, unknown>>);
+  const id = segments[1];
+  const entity = root[id];
+  if (!entity) {
+    return fail(`${segments[0]} "${id}" not found.`);
+  }
+
+  let value: unknown = entity;
+  for (let i = 2; i < segments.length; i += 1) {
+    if (typeof value !== 'object' || value === null) {
+      return fail(`Path segment "${segments[i]}" on non-object value at "${segments.slice(0, i).join('.')}".`);
+    }
+    value = (value as Record<string, unknown>)[segments[i]];
+    if (value === undefined) {
+      return fail(`Key "${segments[i]}" does not exist at "${segments.slice(0, i).join('.')}".`);
+    }
+  }
+
+  return ok(JSON.stringify(value));
+}
+
+export interface WriteRobotPathArgs {
+  /** e.g. `links.base_link.visual.color` or `joints.shoulder_h.dynamics.damping`. */
+  path: string;
+  /** JSON value to write. When the target is an object, it is shallow-merged with existing. */
+  value: unknown;
+}
+
+/** Write a scalar or shallow-merge an object under `links.*` / `joints.*`. */
+export function writeRobotPath(robot: RobotData, args: WriteRobotPathArgs): AgentToolResult {
+  const path = (args.path || '').trim();
+  const segments = path.split('.').map((s) => s.trim()).filter(Boolean);
+  if (segments.length < 3 || !['links', 'joints'].includes(segments[0])) {
+    return fail(
+      'Invalid path. Path must have at least 3 segments and start with "links.<linkId>" or "joints.<jointId>", e.g. links.base_link.visual.color.',
+    );
+  }
+
+  const root: Record<string, Record<string, unknown>> =
+    segments[0] === 'links'
+      ? (robot.links as unknown as Record<string, Record<string, unknown>>)
+      : (robot.joints as unknown as Record<string, Record<string, unknown>>);
+  const id = segments[1];
+  const entity = root[id];
+  if (!entity) {
+    return fail(`${segments[0]} "${id}" not found.`);
+  }
+
+  // Walk to the parent of the leaf segment.
+  let parent: Record<string, unknown> = entity;
+  for (let i = 2; i < segments.length - 1; i += 1) {
+    const next = parent[segments[i]];
+    if (typeof next !== 'object' || next === null) {
+      return fail(`Cannot write: "${segments.slice(0, i + 1).join('.')}" is not an object.`);
+    }
+    parent = next as Record<string, unknown>;
+  }
+
+  const leafKey = segments[segments.length - 1];
+  const existing = parent[leafKey];
+  if (typeof existing === 'object' && existing !== null && !Array.isArray(existing)) {
+    // Shallow-merge so unspecified sibling fields are preserved.
+    parent[leafKey] = {
+      ...(existing as Record<string, unknown>),
+      ...(args.value as Record<string, unknown>),
+    };
+  } else {
+    parent[leafKey] = args.value;
+  }
+
+  return ok(`Wrote "${path}".`);
+}

@@ -7,11 +7,13 @@ import {
   deleteLink,
   getJoint,
   getLink,
+  readRobotPath,
   updateJoint,
   updateJointLimit,
   updateLinkGeometry,
   updateLinkInertial,
   updateLinkOrigin,
+  writeRobotPath,
 } from './agentRobotTools.ts';
 import { GeometryType, JointType, type RobotData } from '@/types';
 
@@ -261,4 +263,59 @@ test('getJoint fails for unknown joint', () => {
   const robot = buildRobot();
   const res = getJoint(robot, { jointId: 'nope' });
   assert.equal(res.ok, false);
+});
+
+test('readRobotPath reads a nested link field as JSON', () => {
+  const robot = buildRobot();
+  const res = readRobotPath(robot, { path: 'links.base_link.visual.dimensions' });
+  assert.equal(res.ok, true);
+  const dims = JSON.parse(res.message);
+  assert.equal(dims.x, 0.05);
+  assert.equal(dims.y, 0.5);
+});
+
+test('readRobotPath reads a joint field', () => {
+  const robot = buildRobot();
+  const res = readRobotPath(robot, { path: 'joints.elbow.axis' });
+  assert.equal(res.ok, true);
+  const axis = JSON.parse(res.message);
+  assert.equal(axis.z, 1);
+});
+
+test('readRobotPath rejects paths outside links/joints', () => {
+  const robot = buildRobot();
+  const res = readRobotPath(robot, { path: 'globalThis.process' });
+  assert.equal(res.ok, false);
+  assert.match(res.message, /links|<linkId>|joints/);
+});
+
+test('readRobotPath fails for missing entity or key', () => {
+  const robot = buildRobot();
+  assert.equal(readRobotPath(robot, { path: 'links.nope.visual' }).ok, false);
+  assert.equal(readRobotPath(robot, { path: 'links.base_link.notAKey' }).ok, false);
+});
+
+test('writeRobotPath replaces a scalar leaf', () => {
+  const robot = buildRobot();
+  const res = writeRobotPath(robot, { path: 'links.base_link.visual.dimensions.x', value: 0.3 });
+  assert.equal(res.ok, true);
+  assert.equal(robot.links.base_link.visual.dimensions.x, 0.3);
+  assert.equal(robot.links.base_link.visual.dimensions.y, 0.5, 'sibling preserved');
+});
+
+test('writeRobotPath shallow-merges an object leaf', () => {
+  const robot = buildRobot();
+  const res = writeRobotPath(robot, {
+    path: 'joints.elbow.dynamics',
+    value: { damping: 5 },
+  });
+  assert.equal(res.ok, true);
+  assert.equal(robot.joints.elbow.dynamics.damping, 5);
+  assert.equal(robot.joints.elbow.dynamics.friction, 0, 'unspecified sibling preserved');
+});
+
+test('writeRobotPath rejects paths outside links/joints and short paths', () => {
+  const robot = buildRobot();
+  assert.equal(writeRobotPath(robot, { path: 'process.exit', value: 1 }).ok, false);
+  assert.equal(writeRobotPath(robot, { path: 'links.base_link', value: {} }).ok, false);
 });
