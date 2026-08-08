@@ -15,46 +15,7 @@ import {
 } from './mjcfLoadLifecycle';
 import {
   type MJCFFittedPrimitive,
-  type PrimitiveFitStrategy,
   type MeshPrimitiveFitStrategy,
-  type PrimitivePoint,
-  type ProjectedPoint,
-  type Circle2D,
-  type PrimitiveFitCandidate,
-  type MeshTriangle,
-  type ProcessedMeshFrame,
-  MAX_FIT_POINTS,
-  canonicalizeAxis,
-  addCandidateAxis,
-  computePrincipalAxes,
-  createDeterministicRandom,
-  shuffleDeterministically,
-  isPointInsideCircle,
-  createCircleFromDiameter,
-  createCircleFromThreePoints,
-  computeMinimumEnclosingCircle,
-  createPerpendicularBasis,
-  computeCapsuleVolume,
-  evaluateCapsuleRadius,
-  computeBestCapsuleFit,
-  computePrimitiveFitsForAxis,
-  computeBestPrimitiveFits,
-  computeAabbPrimitiveFitFromBounds,
-  computeAabbPrimitiveFit,
-  tupleToThreeQuaternion,
-  multiplyQuaternionTuples,
-  normalizeQuaternionTuple,
-  quaternionTupleToMatrix3,
-  transposeMatrix3,
-  multiplyMatrix3,
-  diagonalizeSymmetricMatrixMuJoCo,
-  collectMeshTriangles,
-  collectMeshVertices,
-  computeTriangleStats,
-  computeMeshFaceCentroid,
-  computeVolumeWeightedCenterOfMass,
-  computeSurfaceWeightedCenterOfMass,
-  computeMeshInertiaTensor,
   computeProcessedMeshFrame,
   fitPrimitiveFromProcessedMeshFrame,
   collectMeshPrimitiveFitPoints,
@@ -63,9 +24,6 @@ import {
 
 // Re-export for backward compatibility (tests import from this module)
 export { collectMeshPrimitiveFitPoints, fitPrimitiveFromPoints, type MJCFFittedPrimitive };
-
-
-
 
 interface FitPrimitiveFromMeshAssetParams {
   geomType: 'capsule' | 'cylinder';

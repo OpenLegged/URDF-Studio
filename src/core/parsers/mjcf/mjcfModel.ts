@@ -454,8 +454,7 @@ function parseActuatorData(
           tendonName ||
           actuatorType,
         type: actuatorType,
-        className:
-          actuatorClassQName?.split('/').pop() || child.getAttribute('class') || undefined,
+        className: actuatorClassQName?.split('/').pop() || child.getAttribute('class') || undefined,
         classQName: actuatorClassQName,
         joint: jointName,
         tendon: tendonName,
@@ -1065,7 +1064,10 @@ function applyJointTransform(
     return joint;
   }
 
-  const composedTransform = composeTransforms(inheritedTransform, createLocalTransform(joint.pos, undefined));
+  const composedTransform = composeTransforms(
+    inheritedTransform,
+    createLocalTransform(joint.pos, undefined),
+  );
 
   return {
     ...joint,
@@ -1331,20 +1333,6 @@ export function normalizeMultiJointBodies(body: MJCFModelBody): MJCFModelBody {
   return chainedBody;
 }
 
-/**
- * Safely collects MJCF elements within a body, logging a warning and returning
- * an empty array on failure so that a single malformed geom, joint, site, or
- * child body does not abort the entire model parse.
- */
-function tryCollect<T>(collect: () => T[], bodyPath: string, elementType: string): T[] {
-  try {
-    return collect();
-  } catch (error) {
-    console.warn(`[MJCF] Failed to parse ${elementType} in body "${bodyPath}":`, error);
-    return [];
-  }
-}
-
 function parseBody(
   bodyElement: Element,
   defaults: MJCFDefaultsRegistry,
@@ -1389,69 +1377,44 @@ function parseBody(
     resolvedBodyEuler = undefined;
   }
 
-  const geoms = tryCollect(() =>
-      collectGeomsInBodyOrder(
-        bodyElement,
-        defaults,
-        childDefaultsClassQName,
-        bodyCompilerSettings,
-        bodyPath,
-        { value: 0 },
-      ),
-      bodyPath,
-      'geoms',
-    );
-    const sites = tryCollect(() =>
-      collectSitesInBodyOrder(
-        bodyElement,
-        defaults,
-        childDefaultsClassQName,
-        bodyCompilerSettings,
-        bodyPath,
-        { value: 0 },
-      ),
-      bodyPath,
-      'sites',
-    );
-
-    const joints = tryCollect(() =>
-      collectJointsInBodyOrder(
-        bodyElement,
-        defaults,
-        childDefaultsClassQName,
-        bodyCompilerSettings,
-        jointIndexRef,
-      ),
-      bodyPath,
-      'joints',
-    );
-
-    let inertial: MJCFModelInertial | undefined;
-    try {
-      inertial = collectFirstInertialInBodyOrder(
-        bodyElement,
-        defaults,
-        childDefaultsClassQName,
-        bodyCompilerSettings,
-      );
-    } catch (error) {
-      console.warn(`[MJCF] Failed to parse inertial in body "${bodyPath}":`, error);
-      inertial = undefined;
-    }
-
-    const children = tryCollect(() =>
-      collectBodiesInBodyOrder(
-        bodyElement,
-        defaults,
-        childDefaultsClassQName,
-        bodyCompilerSettings,
-        bodyPath,
-        jointIndexRef,
-        { value: 0 },
-      ),
-      bodyPath,
-      'children',
-    );
+  const geoms = collectGeomsInBodyOrder(
+    bodyElement,
+    defaults,
+    childDefaultsClassQName,
+    bodyCompilerSettings,
+    bodyPath,
+    { value: 0 },
+  );
+  const sites = collectSitesInBodyOrder(
+    bodyElement,
+    defaults,
+    childDefaultsClassQName,
+    bodyCompilerSettings,
+    bodyPath,
+    { value: 0 },
+  );
+  const joints = collectJointsInBodyOrder(
+    bodyElement,
+    defaults,
+    childDefaultsClassQName,
+    bodyCompilerSettings,
+    jointIndexRef,
+  );
+  const inertial = collectFirstInertialInBodyOrder(
+    bodyElement,
+    defaults,
+    childDefaultsClassQName,
+    bodyCompilerSettings,
+  );
+  const children = collectBodiesInBodyOrder(
+    bodyElement,
+    defaults,
+    childDefaultsClassQName,
+    bodyCompilerSettings,
+    bodyPath,
+    jointIndexRef,
+    { value: 0 },
+  );
 
   return {
     name: bodyPath,
@@ -1522,64 +1485,46 @@ export function parseMJCFModel(xmlContent: string): ParsedMJCFModel | null {
     const tendonMap = parseTendonMap(mujocoElement, defaults, compilerSettings);
 
     worldbodyElements.forEach((worldbodyElement) => {
-      try {
-        worldBody.geoms.push(
-          ...collectGeomsInBodyOrder(
-            worldbodyElement,
-            defaults,
-            undefined,
-            compilerSettings,
-            'world',
-            { value: worldBody.geoms.length },
-          ),
-        );
-      } catch (error) {
-        console.warn('[MJCF] Failed to parse top-level geoms:', error);
-      }
-      try {
-        worldBody.sites.push(
-          ...collectSitesInBodyOrder(
-            worldbodyElement,
-            defaults,
-            undefined,
-            compilerSettings,
-            'world',
-            { value: worldBody.sites.length },
-          ),
-        );
-      } catch (error) {
-        console.warn('[MJCF] Failed to parse top-level sites:', error);
-      }
-
-      try {
-        worldBody.joints.push(
-          ...collectJointsInBodyOrder(
-            worldbodyElement,
-            defaults,
-            undefined,
-            compilerSettings,
-            jointIndexRef,
-          ),
-        );
-      } catch (error) {
-        console.warn('[MJCF] Failed to parse top-level joints:', error);
-      }
-
-      try {
-        worldBody.children.push(
-          ...collectBodiesInBodyOrder(
-            worldbodyElement,
-            defaults,
-            undefined,
-            compilerSettings,
-            'world',
-            jointIndexRef,
-            { value: worldBody.children.length },
-          ),
-        );
-      } catch (error) {
-        console.warn('[MJCF] Failed to parse top-level bodies:', error);
-      }
+      worldBody.geoms.push(
+        ...collectGeomsInBodyOrder(
+          worldbodyElement,
+          defaults,
+          undefined,
+          compilerSettings,
+          'world',
+          { value: worldBody.geoms.length },
+        ),
+      );
+      worldBody.sites.push(
+        ...collectSitesInBodyOrder(
+          worldbodyElement,
+          defaults,
+          undefined,
+          compilerSettings,
+          'world',
+          { value: worldBody.sites.length },
+        ),
+      );
+      worldBody.joints.push(
+        ...collectJointsInBodyOrder(
+          worldbodyElement,
+          defaults,
+          undefined,
+          compilerSettings,
+          jointIndexRef,
+        ),
+      );
+      worldBody.children.push(
+        ...collectBodiesInBodyOrder(
+          worldbodyElement,
+          defaults,
+          undefined,
+          compilerSettings,
+          'world',
+          jointIndexRef,
+          { value: worldBody.children.length },
+        ),
+      );
     });
 
     return rememberParsedModel(

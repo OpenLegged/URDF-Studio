@@ -1,6 +1,4 @@
 import * as THREE from 'three';
-import { stackCoincidentVisualRoots } from '@/core/loaders/visualMeshStacking';
-import { GENERATED_OBJ_MATERIAL_USER_DATA_KEY } from '@/core/loaders/objModelData';
 import { isImageAssetPath } from '@/core/utils/assetFileTypes';
 import {
   applyVisualMaterialOverrideToObject,
@@ -15,20 +13,12 @@ import {
   getVisualGeometryEntries,
   isUnactuatedJoint,
   resolveMjcfPassiveSpringJointMetadata,
-  resolveVisualMaterialOverride as resolveRobotVisualMaterialOverride,
 } from '@/core/robot';
-import { createBoxFaceMaterialArray } from '@/core/utils/boxFaceMaterialArray';
-import { colorRgbaTupleToHex, colorRgbaTupleToOpacity } from '@/core/utils/color.ts';
 import { createMatteMaterial } from '@/core/utils/materialFactory';
 import { applyVisualMeshMaterialGroupsToObject } from '@/core/utils/meshMaterialGroups';
-import { forceObjectMaterialSide } from '@/core/utils/three/materialSide';
 import { createMainThreadYieldController } from '@/core/utils/yieldToMainThread';
 import { getJointMotionAngleFromActualAngle } from '@/core/robot/kinematics';
 import { normalizeJointLimitOrder } from '@/core/robot/jointLimits';
-import {
-  createTerrainBlendMaterial,
-  loadTexturesForBlending,
-} from '@/core/utils/heightmapBlendMaterial';
 import {
   GeometryType,
   JointType,
@@ -45,23 +35,10 @@ import {
   URDFVisual,
 } from './URDFClasses';
 import type { MeshLoadFunc } from './URDFLoader';
-import {
-  createRobotCapsuleGeometry,
-  createRobotCylinderGeometry,
-  createRobotSphereGeometry,
-  type RobotPrimitiveGeometryDetail,
-} from './primitiveGeometry';
+import { type RobotPrimitiveGeometryDetail } from './primitiveGeometry';
 import { createVisualRestackBatch } from './visualRestackBatch';
-import type { VisualMaterialOverride } from '@/core/utils/visualMaterialOverrides';
 import {
-  DEFAULT_COLOR,
-  DEFAULT_ORIGIN,
-  tempQuaternion,
-  tempEuler,
-  applyRotation,
   applyOrigin,
-  RuntimeBallJoint,
-  createFiniteQuaternion,
   attachBallJointQuaternionState,
   loadedObjectShouldPreserveEmbeddedMaterials,
   loadedObjectHasSingleMaterialSlot,
@@ -69,10 +46,8 @@ import {
   extractSubmesh,
   restackLinkVisualRoots,
   restackRobotVisualRoots,
-  createPrimitiveMaterial,
   resolveStateVisualMaterialOverride,
   applyMeshScale,
-  hasMirroredMeshScale,
   applyVisualMaterialSidePolicy,
   createImagePreviewMesh,
   createHeightfieldMesh,

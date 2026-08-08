@@ -11,18 +11,9 @@ import {
   GeometryType,
   JointType,
   UrdfLink,
-  type UrdfMjcfSite,
 } from '@/types';
-import {
-  MAX_GEOMETRY_DIMENSION_DECIMALS,
-  MAX_PROPERTY_DECIMALS,
-  formatNumberWithMaxDecimals,
-} from '@/core/utils/numberPrecision';
-import {
-  colorRgbaTupleToHex,
-  normalizeColorRgbaTuple,
-  type ColorRgbaTuple,
-} from '@/core/utils/color';
+import { formatNumberWithMaxDecimals } from '@/core/utils/numberPrecision';
+import { colorRgbaTupleToHex, type ColorRgbaTuple } from '@/core/utils/color';
 import {
   getGeometryAuthoredMaterials,
   collectGeometryTexturePaths,
@@ -39,24 +30,47 @@ import {
 } from '../meshPathUtils';
 
 import {
-  formatScalar, formatShape, formatInertiaScalar, vecStr, quatStr, hasRotation, quatAttr,
-  hasFiniteJointRange, getMujocoJointRange, normalizeExportRelativePath,
-  computeSymmetricEigenvalues3x3, hasInvalidMujocoInertia, clampUnitForRgba, hexToRgba,
-  escapeXmlAttribute, sanitizeMjcfIdentifier, ensureFiniteVector3, formatVectorTuple,
-  formatRgbaTuple, convertMjcfSite, renderMjcfSite, negativeScaleCompensationQuat,
-  normalizeMeshScale, meshScaleKey, normalizeMeshRefpos, normalizeMeshRefquat,
-  normalizeMjcfMeshScale, buildMeshAssetKey, mergeRefquat, normalizeHfieldSize,
-  buildHfieldAssetKey, clampUnitScalar, colorRgbaToMjcfRgba, materialToMjcfRgba,
-  sanitizeMaterialAssetName, normalizeMaterialIdentifier, resolveVisualEntryKey,
-  resolveVisualVariantKey, LOCKED_JOINT_RANGE_EPSILON,
-  type MjcfActuatorType, type MjcfVisualMeshVariant, type MujocoExportOptions,
-  type ExportedMjcfSite, type MeshScaleTuple, type MeshRefPosTuple, type MeshRefQuatTuple,
-  type MeshAssetEntry, type HfieldSizeTuple, type HfieldAssetEntry,
-  type VisualMaterialAssetEntry, type CubeTextureAssetEntry, type VisualVariantMaterialAssetEntry,
+  formatScalar,
+  formatShape,
+  formatInertiaScalar,
+  vecStr,
+  quatStr,
+  quatAttr,
+  getMujocoJointRange,
+  normalizeExportRelativePath,
+  hasInvalidMujocoInertia,
+  hexToRgba,
+  escapeXmlAttribute,
+  sanitizeMjcfIdentifier,
+  ensureFiniteVector3,
+  convertMjcfSite,
+  renderMjcfSite,
+  meshScaleKey,
+  normalizeMeshRefpos,
+  normalizeMeshRefquat,
+  normalizeMjcfMeshScale,
+  buildMeshAssetKey,
+  mergeRefquat,
+  normalizeHfieldSize,
+  buildHfieldAssetKey,
+  clampUnitScalar,
+  materialToMjcfRgba,
+  sanitizeMaterialAssetName,
+  normalizeMaterialIdentifier,
+  resolveVisualEntryKey,
+  resolveVisualVariantKey,
+  type MjcfActuatorType,
+  type MjcfVisualMeshVariant,
+  type MujocoExportOptions,
+  type ExportedMjcfSite,
+  type MeshAssetEntry,
+  type HfieldAssetEntry,
+  type VisualMaterialAssetEntry,
+  type CubeTextureAssetEntry,
+  type VisualVariantMaterialAssetEntry,
 } from './mjcfGeneratorUtils';
 
 export type { MjcfActuatorType, MjcfVisualMeshVariant, MujocoExportOptions };
-
 
 export const generateMujocoXML = (robot: RobotState, options: MujocoExportOptions = {}): string => {
   const FIXED_SPATIAL_TENDON_RANGE_EPSILON = 1e-6;
@@ -1066,7 +1080,6 @@ export const generateMujocoXML = (robot: RobotState, options: MujocoExportOption
         );
         bodyXml += `${indent}  <freejoint name="${parentJoint.name}"/>\n`;
       } else {
-
         let jType = 'hinge';
         if (parentJoint.type === JointType.PRISMATIC) {
           jType = 'slide';
@@ -1400,7 +1413,9 @@ export const generateMujocoXML = (robot: RobotState, options: MujocoExportOption
         // Use joint dynamics for actuator gains
         const kv = j.dynamics?.damping ?? 1.0;
         const kp = j.limit?.effort ? j.limit.effort * 0.5 : 100.0;
-        const effortLimit = Number.isFinite(j.limit?.effort) ? Math.abs(Number(j.limit?.effort)) : 0;
+        const effortLimit = Number.isFinite(j.limit?.effort)
+          ? Math.abs(Number(j.limit?.effort))
+          : 0;
         const forceRangeStr =
           effortLimit > 1e-12
             ? ` forcelimited="true" forcerange="${formatScalar(-effortLimit)} ${formatScalar(effortLimit)}"`
@@ -1423,7 +1438,9 @@ export const generateMujocoXML = (robot: RobotState, options: MujocoExportOption
         j.type !== JointType.FLOATING &&
         j.type !== JointType.BALL
       ) {
-        const effortLimit = Number.isFinite(j.limit?.effort) ? Math.abs(Number(j.limit?.effort)) : 0;
+        const effortLimit = Number.isFinite(j.limit?.effort)
+          ? Math.abs(Number(j.limit?.effort))
+          : 0;
         const controlRangeStr =
           effortLimit > 1e-12
             ? ` ctrllimited="true" ctrlrange="${formatScalar(-effortLimit)} ${formatScalar(effortLimit)}"`

@@ -62,8 +62,8 @@ const parseJointHardware = (hardwareEl: Element | null): UrdfJoint['hardware'] =
     motorDirection: motorDirection === -1 ? -1 : 1,
     armature: parseFloatSafe(hardwareEl.querySelector('armature')?.textContent, 0),
     hardwareInterface:
-      (hardwareEl.querySelector('hardwareInterface')?.textContent as JointHardwareInterface | null) ||
-      undefined,
+      (hardwareEl.querySelector('hardwareInterface')
+        ?.textContent as JointHardwareInterface | null) || undefined,
   };
 };
 
@@ -171,51 +171,47 @@ export const parseJoints = (robotEl: Element): Record<string, UrdfJoint> => {
     const jointName = jointEl.getAttribute('name');
     if (!jointName) return;
 
-    try {
-      const id = jointName;
+    const id = jointName;
 
-      const parentEl = jointEl.querySelector('parent');
-      const childEl = jointEl.querySelector('child');
-      const originEl = findOriginElement(jointEl);
+    const parentEl = jointEl.querySelector('parent');
+    const childEl = jointEl.querySelector('child');
+    const originEl = findOriginElement(jointEl);
 
-      const axisEl = jointEl.querySelector('axis');
-      const calibrationEl = jointEl.querySelector('calibration');
-      const limitEl = jointEl.querySelector('limit');
-      const dynamicsEl = jointEl.querySelector('dynamics');
-      const safetyControllerEl = jointEl.querySelector('safety_controller');
-      const hardwareEl = jointEl.querySelector('hardware');
-      const mimicEl = jointEl.querySelector('mimic');
+    const axisEl = jointEl.querySelector('axis');
+    const calibrationEl = jointEl.querySelector('calibration');
+    const limitEl = jointEl.querySelector('limit');
+    const dynamicsEl = jointEl.querySelector('dynamics');
+    const safetyControllerEl = jointEl.querySelector('safety_controller');
+    const hardwareEl = jointEl.querySelector('hardware');
+    const mimicEl = jointEl.querySelector('mimic');
 
-      const jointType = (jointEl.getAttribute('type') as JointType) || JointType.REVOLUTE;
-      const axis = AXIS_IMPORT_TYPES.has(jointType)
-        ? parseVec3(axisEl?.getAttribute('xyz') || '1 0 0')
-        : undefined;
-      const limit = parseJointLimit(jointType, limitEl);
-      const { calibration, referencePosition } = parseJointCalibration(calibrationEl);
-      const safetyController = parseJointSafetyController(safetyControllerEl);
+    const jointType = (jointEl.getAttribute('type') as JointType) || JointType.REVOLUTE;
+    const axis = AXIS_IMPORT_TYPES.has(jointType)
+      ? parseVec3(axisEl?.getAttribute('xyz') || '1 0 0')
+      : undefined;
+    const limit = parseJointLimit(jointType, limitEl);
+    const { calibration, referencePosition } = parseJointCalibration(calibrationEl);
+    const safetyController = parseJointSafetyController(safetyControllerEl);
 
-      joints[id] = {
-        id,
-        name: jointName,
-        type: jointType,
-        parentLinkId: parentEl?.getAttribute('link') || '',
-        childLinkId: childEl?.getAttribute('link') || '',
-        origin: parseOrigin(originEl),
-        axis,
-        limit,
-        dynamics: {
-          damping: parseFloatSafe(dynamicsEl?.getAttribute('damping'), 0),
-          friction: parseFloatSafe(dynamicsEl?.getAttribute('friction'), 0),
-        },
-        hardware: parseJointHardware(hardwareEl),
-        ...(calibration ? { calibration } : {}),
-        ...(safetyController ? { safetyController } : {}),
-        ...(referencePosition !== undefined ? { referencePosition } : {}),
-        mimic: parseJointMimic(mimicEl),
-      };
-    } catch (error) {
-      console.warn(`[URDFParser] Failed to parse joint "${jointName}":`, error);
-    }
+    joints[id] = {
+      id,
+      name: jointName,
+      type: jointType,
+      parentLinkId: parentEl?.getAttribute('link') || '',
+      childLinkId: childEl?.getAttribute('link') || '',
+      origin: parseOrigin(originEl),
+      axis,
+      limit,
+      dynamics: {
+        damping: parseFloatSafe(dynamicsEl?.getAttribute('damping'), 0),
+        friction: parseFloatSafe(dynamicsEl?.getAttribute('friction'), 0),
+      },
+      hardware: parseJointHardware(hardwareEl),
+      ...(calibration ? { calibration } : {}),
+      ...(safetyController ? { safetyController } : {}),
+      ...(referencePosition !== undefined ? { referencePosition } : {}),
+      mimic: parseJointMimic(mimicEl),
+    };
   });
 
   return joints;

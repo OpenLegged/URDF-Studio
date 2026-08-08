@@ -1,33 +1,21 @@
-import * as THREE from 'three';
 import {
   MJCF_COMPILER_ANGLE_SCOPE_ATTR,
   MJCF_COMPILER_EULERSEQ_SCOPE_ATTR,
 } from './mjcfCompilerScope';
-import { convertMjcfAngle } from './mjcfMath';
 import {
   MJCFElementType,
   MJCFAttributeMap,
-  MJCFElementDefaults,
   MJCFDefaultClassEntry,
   MJCF_ROOT_PATTERN,
   repairMissingAttributeWhitespace,
   parseXmlDocument,
   normalizeAngleUnit,
-  normalizeEulerSequence,
-  pickOrthogonalUnitVector,
-  convertAngle,
-  makeQuaternionFromBasis,
-  normalizeVector3OrNull,
   quaternionFromAxisAngle,
   quaternionFromEuler,
   quaternionFromXYAxes,
   quaternionFromZAxis,
   createEmptyDefaults,
-  cloneDefaults,
   mergeDefaults,
-  collectDirectAttributes,
-  collectDefaultAttributes,
-  registerDefaultClass,
   visitDefaultElement,
   findDescendantClassQName,
   deriveAssetName,
@@ -692,7 +680,6 @@ export function parseMaterialAssets(
   return materialMap;
 }
 
-export type {
-} from './mjcfUtilsHelpers';
+export type {} from './mjcfUtilsHelpers';
 
 export type { MJCFCompilerSettings, MJCFDefaultsRegistry } from './mjcfUtilsHelpers';

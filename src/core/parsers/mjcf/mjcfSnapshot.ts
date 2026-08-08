@@ -1,27 +1,10 @@
-import * as THREE from 'three';
-import path from 'node:path';
 import type { ParsedMJCFModel } from './mjcfModel';
 import {
   buildGeneratedMjcfBodyPath,
-  buildGeneratedMjcfBodySegment,
   buildGeneratedMjcfGeomName,
   buildGeneratedMjcfJointName,
 } from './mjcfGeneratedNames';
 import {
-  createMuJoCoFromToQuaternion,
-  diagonalizeMjcfSymmetric3x3,
-  mjcfQuatTupleFromQuaternion,
-  normalizeMjcfQuatTuple,
-  type MJCFSymmetric3x3,
-} from './mjcfMath';
-import {
-  NUMBER_PRECISION,
-  EPSILON,
-  RELAXED_NUMERIC_EPSILON,
-  AXISYMMETRIC_GEOM_AXIS_DOT_TOLERANCE,
-  DEFAULT_MATERIAL_RGBA,
-  GEOM_SIZE_ARITY_BY_TYPE,
-  roundNumber,
   normalizeVector,
   normalizeUnitVector,
   normalizeQuatFromEuler,
@@ -30,14 +13,11 @@ import {
   normalizeNumber,
   normalizeScale,
   normalizeGeomRGBA,
-  quaternionToMjcfTuple,
-  normalizeQuaternionFromDirection,
   canonicalizeFromToGeom,
   diagonalizeFullInertia,
   quaternionsEqual,
   axisymmetricGeomOrientationsEqual,
   normalizeRange,
-  trimTrailingZeros,
   canonicalizeGeomSize,
   normalizeOracleJointType,
   normalizeOracleGeomType,
@@ -50,7 +30,6 @@ import {
   arraysEqual,
   optionalMassesEqual,
   applyBoundInertia,
-  bodyHasExplicitInertial,
   geomMassesEqual,
   jointAxesEqual,
   rangesEqual,
@@ -62,7 +41,6 @@ import {
 
 export type { CanonicalMJCFBody, CanonicalMJCFGeom } from './mjcfSnapshotHelpers';
 
-
 export interface CanonicalMJCFJoint {
   key: string;
   name: string | null;
@@ -72,7 +50,6 @@ export interface CanonicalMJCFJoint {
   range: [number, number] | null;
   pos: [number, number, number] | null;
 }
-
 
 export interface CanonicalMJCFMeshAsset {
   name: string;

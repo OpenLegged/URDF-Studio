@@ -1,30 +1,15 @@
 import * as THREE from 'three';
 import { stackCoincidentVisualRoots } from '@/core/loaders/visualMeshStacking';
 import { GENERATED_OBJ_MATERIAL_USER_DATA_KEY } from '@/core/loaders/objModelData';
-import { isImageAssetPath } from '@/core/utils/assetFileTypes';
-import {
-  applyVisualMaterialOverrideToObject,
-  hasExplicitGeometryMaterialOverride,
-  resolvePrimaryAuthoredVisualMaterialOverride,
-  resolveVisualMaterialOverrideFromGeometry,
-} from '@/core/utils/visualMaterialOverrides';
+import { hasExplicitGeometryMaterialOverride } from '@/core/utils/visualMaterialOverrides';
 import {
   getBoxFaceMaterialPalette,
-  getCollisionGeometryEntries,
-  hasGeometryMeshMaterialGroups,
-  getVisualGeometryEntries,
-  isUnactuatedJoint,
-  resolveMjcfPassiveSpringJointMetadata,
   resolveVisualMaterialOverride as resolveRobotVisualMaterialOverride,
 } from '@/core/robot';
 import { createBoxFaceMaterialArray } from '@/core/utils/boxFaceMaterialArray';
 import { colorRgbaTupleToHex, colorRgbaTupleToOpacity } from '@/core/utils/color.ts';
 import { createMatteMaterial } from '@/core/utils/materialFactory';
-import { applyVisualMeshMaterialGroupsToObject } from '@/core/utils/meshMaterialGroups';
 import { forceObjectMaterialSide } from '@/core/utils/three/materialSide';
-import { createMainThreadYieldController } from '@/core/utils/yieldToMainThread';
-import { getJointMotionAngleFromActualAngle } from '@/core/robot/kinematics';
-import { normalizeJointLimitOrder } from '@/core/robot/jointLimits';
 import {
   createTerrainBlendMaterial,
   loadTexturesForBlending,
@@ -36,36 +21,14 @@ import {
   type UrdfJoint as RobotJoint,
   type UrdfLink as RobotLink,
 } from '@/types';
-import {
-  URDFCollider,
-  URDFJoint,
-  URDFLink,
-  URDFMimicJoint,
-  URDFRobot,
-  URDFVisual,
-} from './URDFClasses';
-import type { MeshLoadFunc } from './URDFLoader';
+import { URDFJoint } from './URDFClasses';
 import {
   createRobotCapsuleGeometry,
   createRobotCylinderGeometry,
   createRobotSphereGeometry,
   type RobotPrimitiveGeometryDetail,
 } from './primitiveGeometry';
-import { createVisualRestackBatch } from './visualRestackBatch';
 import type { VisualMaterialOverride } from '@/core/utils/visualMaterialOverrides';
-import {
-  computeLinkWorldMatrices,
-  createOriginMatrix,
-  getJointEffectiveAngle,
-  getJointActualAngleFromMotionAngle,
-  getNormalizedJointAxis,
-  getParentJointByChildLink,
-  type JointAngleOverrideMap,
-  type JointKinematicOverrideMap,
-  type JointQuaternionOverrideMap,
-} from '@/core/robot/kinematics';
-import { hasFiniteJointLimitBounds } from '@/core/robot/jointLimits';
-
 
 export const DEFAULT_COLOR = '#808080';
 
@@ -201,7 +164,12 @@ export function loadedObjectShouldPreserveEmbeddedMaterials(object: THREE.Object
     });
   });
 
-  return hasExternalAuthoredMaterial || hasMaterialTexture || hasMultiMaterialMesh || materialNames.size > 1;
+  return (
+    hasExternalAuthoredMaterial ||
+    hasMaterialTexture ||
+    hasMultiMaterialMesh ||
+    materialNames.size > 1
+  );
 }
 
 export function loadedObjectHasSingleMaterialSlot(object: THREE.Object3D): boolean {
@@ -219,7 +187,10 @@ export function loadedObjectHasSingleMaterialSlot(object: THREE.Object3D): boole
   return materialSlotCount === 1;
 }
 
-export function shouldAttachLoadedMeshObject(object: THREE.Object3D, isCollisionNode: boolean): boolean {
+export function shouldAttachLoadedMeshObject(
+  object: THREE.Object3D,
+  isCollisionNode: boolean,
+): boolean {
   if (isCollisionNode && object.userData?.isPlaceholder === true) {
     return false;
   }
@@ -256,10 +227,7 @@ export function extractSubmesh(
     const candidates: THREE.Object3D[] = [];
     scene.traverse((child) => {
       if (child === scene || !child.name) return;
-      if (
-        submeshName.startsWith(child.name) ||
-        child.name.startsWith(submeshName)
-      ) {
+      if (submeshName.startsWith(child.name) || child.name.startsWith(submeshName)) {
         candidates.push(child);
       }
     });
@@ -385,12 +353,9 @@ export function resolveStateVisualMaterialOverride({
   link: Pick<RobotLink, 'id' | 'name'>;
   materials: RobotData['materials'] | undefined;
 }): { override: VisualMaterialOverride | null; isExplicit: boolean } {
-  const resolved = resolveRobotVisualMaterialOverride(
-    { materials },
-    link,
-    geometry,
-    { isPrimaryVisual },
-  );
+  const resolved = resolveRobotVisualMaterialOverride({ materials }, link, geometry, {
+    isPrimaryVisual,
+  });
 
   if (resolved.source === 'none' || resolved.isMultiMaterial) {
     return { override: null, isExplicit: false };
@@ -412,9 +377,7 @@ export function resolveStateVisualMaterialOverride({
 
   return {
     override: Object.keys(override).length > 0 ? override : null,
-    isExplicit:
-      resolved.source === 'legacy-link' ||
-      hasExplicitGeometryMaterialOverride(geometry),
+    isExplicit: resolved.source === 'legacy-link' || hasExplicitGeometryMaterialOverride(geometry),
   };
 }
 
@@ -697,10 +660,7 @@ export function createPrimitiveMesh(
   }
 
   if (geometry.type === GeometryType.CYLINDER) {
-    const mesh = new THREE.Mesh(
-      createRobotCylinderGeometry(primitiveGeometryDetail),
-      material,
-    );
+    const mesh = new THREE.Mesh(createRobotCylinderGeometry(primitiveGeometryDetail), material);
     mesh.scale.set(dimensions.x || 0.05, dimensions.y || 0.5, dimensions.z || dimensions.x || 0.05);
     mesh.rotation.set(Math.PI / 2, 0, 0);
     return mesh;

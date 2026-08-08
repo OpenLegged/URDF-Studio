@@ -1,34 +1,12 @@
 // Pure helpers and local types extracted from mjcfParser.ts
 import * as THREE from 'three';
-import {
-  GeometryType,
-  JointType,
-  type RobotState,
-  type RobotClosedLoopConstraint,
-  type UrdfJoint,
-  type UrdfLink,
-  type UrdfMjcfSite,
-  type UrdfVisual,
-} from '@/types';
-import {
-  computeLinkWorldMatrices,
-  solveClosedLoopMotionCompensation,
-} from '@/core/robot';
-import {
-  type MJCFCompilerSettings,
-  type MJCFHfield,
-  type MJCFMaterial,
-  type MJCFMesh,
-  type MJCFTexture,
-} from './mjcfUtils';
-import {
-  convertMjcfAngle,
-  isNonZeroPosition,
-  toPositionObject,
-  toQuatObject,
-  toRPYObjectFromQuat,
-} from './mjcfMath';
+import { GeometryType, JointType, type RobotState, type UrdfJoint, type UrdfVisual } from '@/types';
+import { computeLinkWorldMatrices, solveClosedLoopMotionCompensation } from '@/core/robot';
+import { type MJCFCompilerSettings, type MJCFHfield, type MJCFMesh } from './mjcfUtils';
+import { isNonZeroPosition, toPositionObject, toQuatObject, toRPYObjectFromQuat } from './mjcfMath';
 import type {
+  MJCFModelActuator,
+  MJCFModelBody,
   MJCFModelJointEqualityConstraint,
   MJCFModelTendonAttachment,
   ParsedMJCFModel,
@@ -448,13 +426,13 @@ export function toRPYObjectFromEulerTuple(
   });
 }
 
-export function toParserBody(sharedBody: any, settings: MJCFCompilerSettings): MJCFBody {
+export function toParserBody(sharedBody: MJCFModelBody, settings: MJCFCompilerSettings): MJCFBody {
   return {
     name: sharedBody.name,
     pos: toPositionObject(sharedBody.pos),
     euler: toRPYObjectFromEulerTuple(sharedBody.euler, settings),
     quat: toQuatObject(sharedBody.quat),
-    geoms: (sharedBody.geoms || []).map((geom: any) => ({
+    geoms: (sharedBody.geoms || []).map((geom) => ({
       name: geom.sourceName || geom.name,
       sourceName: geom.sourceName,
       className: geom.className,
@@ -474,7 +452,7 @@ export function toParserBody(sharedBody: any, settings: MJCFCompilerSettings): M
       conaffinity: geom.conaffinity,
       group: geom.group,
     })),
-    sites: (sharedBody.sites || []).map((site: any) => ({
+    sites: (sharedBody.sites || []).map((site) => ({
       name: site.name,
       sourceName: site.sourceName,
       type: site.type,
@@ -486,7 +464,7 @@ export function toParserBody(sharedBody: any, settings: MJCFCompilerSettings): M
       quat: toQuatObject(site.quat),
       group: typeof site.group === 'number' ? site.group : undefined,
     })),
-    joints: (sharedBody.joints || []).map((joint: any) => ({
+    joints: (sharedBody.joints || []).map((joint) => ({
       name: joint.name,
       type: joint.type,
       axis: joint.axis ? toPositionObject(joint.axis) : undefined,
@@ -517,12 +495,12 @@ export function toParserBody(sharedBody: any, settings: MJCFCompilerSettings): M
           fullinertia: sharedBody.inertial.fullinertia,
         }
       : undefined,
-    children: (sharedBody.children || []).map((child: any) => toParserBody(child, settings)),
+    children: (sharedBody.children || []).map((child) => toParserBody(child, settings)),
   };
 }
 
 export function toParserActuatorMap(
-  sharedActuatorMap: Map<string, any[]> | undefined,
+  sharedActuatorMap: Map<string, MJCFModelActuator[]> | undefined,
 ): Map<string, MJCFActuator[]> {
   const actuatorMap = new Map<string, MJCFActuator[]>();
   if (!sharedActuatorMap) {

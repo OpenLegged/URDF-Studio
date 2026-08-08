@@ -60,7 +60,7 @@ const hexToRgba = (hex: string): string => {
   if (result) {
     const serializeChannel = (channelHex: string) => {
       const channel = parseInt(channelHex, 16);
-      return Math.min(1, (channel + 1e-3) / 255).toFixed(8);
+      return (channel / 255).toFixed(8);
     };
 
     const r = serializeChannel(result[1]);
@@ -135,7 +135,7 @@ const hexToRgbaWithOpacity = (hex: string, opacityOverride?: number): string => 
 
   const serializeChannel = (channelHex: string) => {
     const channel = parseInt(channelHex, 16);
-    return Math.min(1, (channel + 1e-3) / 255).toFixed(8);
+    return (channel / 255).toFixed(8);
   };
 
   const r = serializeChannel(result[1]);

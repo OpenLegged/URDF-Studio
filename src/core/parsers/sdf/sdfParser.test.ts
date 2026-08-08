@@ -62,6 +62,90 @@ test('parseSDF resolves joint axis xyz expressed_in frames into the joint frame'
   assert.ok(Math.abs(axis.z) < 1e-9);
 });
 
+test('parseSDF fails fast when a pose references an unknown frame', () => {
+  assert.throws(
+    () =>
+      parseSDF(`<?xml version="1.0"?>
+<sdf version="1.12">
+  <model name="unknown_frame_demo">
+    <link name="base">
+      <visual name="body">
+        <pose relative_to="missing_frame">0 0 0 0 0 0</pose>
+        <geometry><box><size>1 1 1</size></box></geometry>
+      </visual>
+    </link>
+  </model>
+</sdf>`),
+    /Unknown SDF frame reference: "missing_frame"/,
+  );
+});
+
+test('parseSDF fails fast when the frame graph contains a cycle', () => {
+  assert.throws(
+    () =>
+      parseSDF(`<?xml version="1.0"?>
+<sdf version="1.12">
+  <model name="frame_cycle_demo">
+    <frame name="frame_a" attached_to="frame_b" />
+    <frame name="frame_b" attached_to="frame_a" />
+    <link name="base">
+      <pose relative_to="frame_a">0 0 0 0 0 0</pose>
+    </link>
+  </model>
+</sdf>`),
+    /Frame resolution cycle detected: .*frame_a.*frame_b.*frame_a/,
+  );
+});
+
+test('parseSDF fails fast when a joint references an unknown link', () => {
+  assert.throws(
+    () =>
+      parseSDF(`<?xml version="1.0"?>
+<sdf version="1.12">
+  <model name="unknown_joint_link_demo">
+    <link name="base" />
+    <joint name="broken_joint" type="fixed">
+      <parent>base</parent>
+      <child>missing_child</child>
+    </joint>
+  </model>
+</sdf>`),
+    /Joint references unknown child link "missing_child"/,
+  );
+});
+
+test('parseSDF fails fast instead of coercing an unknown joint type', () => {
+  assert.throws(
+    () =>
+      parseSDF(`<?xml version="1.0"?>
+<sdf version="1.12">
+  <model name="unknown_joint_type_demo">
+    <link name="base" />
+    <link name="tip" />
+    <joint name="broken_joint" type="mystery">
+      <parent>base</parent>
+      <child>tip</child>
+    </joint>
+  </model>
+</sdf>`),
+    /Unrecognized joint type "mystery"/,
+  );
+});
+
+test('parseSDF fails instead of returning a partial model when an include cannot be resolved', () => {
+  assert.throws(
+    () =>
+      parseSDF(`<?xml version="1.0"?>
+<sdf version="1.12">
+  <model name="missing_include_demo">
+    <link name="base" />
+    <include><uri>model://missing_child</uri></include>
+  </model>
+</sdf>`),
+    /Included model could not be resolved: "model:\/\/missing_child"/,
+  );
+});
+
 test('parseSDF preserves tuple positions when an authored token is malformed', () => {
   const robot = parseSDF(`<?xml version="1.0"?>
 <sdf version="1.12">

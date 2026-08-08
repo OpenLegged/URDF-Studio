@@ -117,6 +117,36 @@ test('parseURDF tolerates undeclared namespace-prefixed extension tags and attri
   assert.equal(robot.rootLinkId, 'base_link');
 });
 
+test('parseURDF fails instead of returning a partially parsed robot', (t) => {
+  const xml = `<?xml version="1.0"?>
+<robot name="parser_failure">
+  <link name="base_link" />
+  <link name="broken_link">
+    <visual><geometry><box size="1 1 1" /></geometry></visual>
+  </link>
+</robot>`;
+  const documentWithBrokenLink = new dom.window.DOMParser().parseFromString(xml, 'text/xml');
+  const brokenLink = documentWithBrokenLink.querySelector('link[name="broken_link"]');
+  assert.ok(brokenLink);
+  Object.defineProperty(brokenLink, 'querySelector', {
+    configurable: true,
+    value() {
+      throw new Error('link traversal failed');
+    },
+  });
+
+  const originalParseFromString = DOMParser.prototype.parseFromString;
+  const originalConsoleError = console.error;
+  DOMParser.prototype.parseFromString = () => documentWithBrokenLink;
+  console.error = () => {};
+  t.after(() => {
+    DOMParser.prototype.parseFromString = originalParseFromString;
+    console.error = originalConsoleError;
+  });
+
+  assert.equal(parseURDF(xml), null);
+});
+
 test('parseURDF records URDF diagnostics for later AI inspection without blocking import', () => {
   const robot = parseURDF(`<?xml version="1.0"?>
 <robot name="diagnostic_fixture">
@@ -228,12 +258,10 @@ test('parseURDF and generateURDF preserve visual material alpha values', () => {
 
   assert.ok(robot);
   assert.equal(robot.links.base_link.visual.color, '#19334c');
-  assert.deepEqual(robot.links.base_link.visual.authoredMaterials?.[0]?.colorRgba, [
-    0.1,
-    0.2,
-    0.3,
-    0.4,
-  ]);
+  assert.deepEqual(
+    robot.links.base_link.visual.authoredMaterials?.[0]?.colorRgba,
+    [0.1, 0.2, 0.3, 0.4],
+  );
   assert.deepEqual(robot.materials?.base_link?.colorRgba, [0.1, 0.2, 0.3, 0.4]);
 
   const exported = generateURDF({

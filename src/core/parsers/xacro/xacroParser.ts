@@ -60,6 +60,7 @@ const EXPRESSION_KEYWORDS = new Map<string, string>([
   ['True', 'true'],
   ['False', 'false'],
   ['None', 'null'],
+  ['pi', String(Math.PI)],
 ]);
 
 function resolveContextValue(identifier: string, ctx: XacroContext): string | undefined {
@@ -81,7 +82,9 @@ function toJavaScriptLiteral(value: string): string {
   if (trimmed === 'None') return 'null';
 
   if (/^[+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?$/.test(trimmed)) {
-    return trimmed;
+    // Parentheses keep unary operators authored around a variable from merging
+    // with a signed property value (for example `-${negative_limit}`).
+    return `(${trimmed})`;
   }
 
   return JSON.stringify(trimmed);
@@ -205,9 +208,7 @@ function normalizeXacroRobotRootTags(content: string): string {
 }
 
 function stripRobotWrapperTags(content: string): string {
-  return content
-    .replace(ROBOT_WRAPPER_OPEN_TAG_RE, '')
-    .replace(ROBOT_WRAPPER_CLOSE_TAG_RE, '');
+  return content.replace(ROBOT_WRAPPER_OPEN_TAG_RE, '').replace(ROBOT_WRAPPER_CLOSE_TAG_RE, '');
 }
 
 /**
@@ -456,14 +457,13 @@ function findFileInMap(filename: string, ctx: XacroContext): string | null {
  */
 function processIncludes(content: string, ctx: XacroContext): string {
   // Match both self-closing and block-style include tags.
-  const includeRegex =
-    /<xacro:include\b([^>]*?)(?:\/>|>\s*<\/xacro:include>)/g;
+  const includeRegex = /<xacro:include\b([^>]*?)(?:\/>|>\s*<\/xacro:include>)/g;
 
   return content.replace(includeRegex, (_match, attrsStr) => {
     const attrs = parseXmlAttributeMap(attrsStr);
     const filename = attrs.get('filename');
     if (!filename) {
-      return '<!-- Include ignored: missing filename -->';
+      throw new Error('[Xacro] Include element is missing a filename attribute.');
     }
     const includeNamespace = attrs.get('ns')?.trim() ?? '';
     const resolvedFilename = substituteVariables(filename, ctx);
@@ -472,8 +472,7 @@ function processIncludes(content: string, ctx: XacroContext): string {
     if (foundPath && ctx.fileMap[foundPath]) {
       const normalizedFoundPath = normalizePath(foundPath);
       if (ctx.includeStack.includes(normalizedFoundPath)) {
-        console.error(`[Xacro] Circular include detected: ${resolvedFilename}`);
-        return `<!-- Circular include ignored: ${resolvedFilename} -->`;
+        throw new Error(`[Xacro] Circular include detected: ${resolvedFilename}`);
       }
 
       // Recursively process the included file
@@ -500,16 +499,13 @@ function processIncludes(content: string, ctx: XacroContext): string {
       }
 
       // Remove robot tags from included content to avoid nesting
-      includedContent = includedContent
-        .replace(/<\?xml[^?]*\?>/g, '');
+      includedContent = includedContent.replace(/<\?xml[^?]*\?>/g, '');
       includedContent = stripRobotWrapperTags(includedContent);
 
       return includedContent;
     }
 
-    // If file not found, return empty (or could return a comment)
-    console.error(`[Xacro] Include file not found: ${resolvedFilename}`);
-    return `<!-- Include not found: ${resolvedFilename} -->`;
+    throw new Error(`[Xacro] Include file not found: ${resolvedFilename}`);
   });
 }
 
@@ -636,14 +632,13 @@ function processConditionals(content: string, ctx: XacroContext): string {
 
     const unresolvedArgOnly = value.match(/^\$\(arg\s+([^)]+)\)$/);
     if (unresolvedArgOnly) {
-      return false;
+      throw new Error(`[Xacro] Unresolved conditional expression: ${rawCondition}`);
     }
 
     // Avoid silently taking a branch when the condition still contains unresolved
-    // xacro syntax. Log a warning and treat as false to avoid including broken content.
+    // xacro syntax. Failing fast keeps the import path debuggable.
     if (/\$\(|\$\{/.test(value)) {
-      console.warn(`[Xacro] Unresolved conditional expression "${rawCondition}" — treating as false.`);
-      return false;
+      throw new Error(`[Xacro] Unresolved conditional expression: ${rawCondition}`);
     }
 
     const normalized = value
@@ -684,18 +679,15 @@ function cleanupXacroElements(content: string): string {
   // Remove xacro:macro definitions (they've been used for expansion)
   content = content.replace(/<xacro:macro[^>]*>[\s\S]*?<\/xacro:macro>/g, '');
 
-  const unresolvedXacroTags = Array.from(content.matchAll(/<xacro:([^\s/>]+)/g))
+  const unresolvedXacroTags = Array.from(content.matchAll(/<\s*\/?\s*xacro:([^\s/>]+)/g))
     .map((match) => match[1])
     .filter(Boolean);
   if (unresolvedXacroTags.length > 0) {
     const uniqueUnresolvedTags = Array.from(new Set(unresolvedXacroTags));
     const preview = uniqueUnresolvedTags.slice(0, 5).join(', ');
-    console.warn(
-      `[Xacro] Unresolved xacro elements remain after expansion (${uniqueUnresolvedTags.length}): ${preview}. Removing them.`,
+    throw new Error(
+      `[Xacro] Unresolved xacro elements remain after expansion (${uniqueUnresolvedTags.length}): ${preview}`,
     );
-    // Remove unresolved xacro tags from content
-    content = content.replace(/<xacro:[^\s/>]+[^>]*\/>/g, '');
-    content = content.replace(/<xacro:[^\s/>]+[^>]*>[\s\S]*?<\/xacro:[^\s/>]+>/g, '');
   }
 
   const unresolvedArgs = Array.from(content.matchAll(/\$\(arg\s+([^)]+)\)/g))
@@ -704,13 +696,31 @@ function cleanupXacroElements(content: string): string {
   if (unresolvedArgs.length > 0) {
     const uniqueUnresolvedArgs = Array.from(new Set(unresolvedArgs));
     const preview = uniqueUnresolvedArgs.slice(0, 5).join(', ');
-    console.warn(
-      `[Xacro] Unresolved substitution arguments remain after expansion (${uniqueUnresolvedArgs.length}): ${preview}. Replacing with empty strings.`,
+    throw new Error(
+      `[Xacro] Unresolved substitution arguments remain after expansion (${uniqueUnresolvedArgs.length}): ${preview}`,
     );
-    for (const argName of uniqueUnresolvedArgs) {
-      const escaped = argName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-      content = content.replace(new RegExp(`\\$\\(arg\\s+${escaped}\\)`, 'g'), '');
-    }
+  }
+
+  const unresolvedExpressions = Array.from(content.matchAll(/\$\{([^}]*)\}/g)).map(
+    (match) => match[1]?.trim() || '<empty>',
+  );
+  if (unresolvedExpressions.length > 0) {
+    const uniqueUnresolvedExpressions = Array.from(new Set(unresolvedExpressions));
+    const preview = uniqueUnresolvedExpressions.slice(0, 5).join(', ');
+    throw new Error(
+      `[Xacro] Unresolved substitution expressions remain after expansion (${uniqueUnresolvedExpressions.length}): ${preview}`,
+    );
+  }
+
+  const unresolvedSubstitutions = Array.from(content.matchAll(/\$\(([^)]*)\)/g)).map(
+    (match) => match[1]?.trim() || '<empty>',
+  );
+  if (unresolvedSubstitutions.length > 0) {
+    const uniqueUnresolvedSubstitutions = Array.from(new Set(unresolvedSubstitutions));
+    const preview = uniqueUnresolvedSubstitutions.slice(0, 5).join(', ');
+    throw new Error(
+      `[Xacro] Unresolved substitutions remain after expansion (${uniqueUnresolvedSubstitutions.length}): ${preview}`,
+    );
   }
 
   // Clean up xmlns:xacro attributes
@@ -731,116 +741,107 @@ export function processXacro(
   fileMap: XacroFileMap = {},
   basePath: string = '',
 ): string {
-  try {
-    // Preprocess XML
-    content = preprocessXML(content);
-    content = normalizeXacroRobotRootTags(content);
+  // Preprocess XML
+  content = preprocessXML(content);
+  content = normalizeXacroRobotRootTags(content);
 
-    // Initialize context
-    const ctx: XacroContext = {
-      properties: new Map(),
-      macros: new Map(),
-      args,
-      fileMap,
-      includeFileIndex: createIncludeFileIndex(fileMap),
-      basePath: normalizePath(basePath),
-      includeStack: [],
-    };
+  // Initialize context
+  const ctx: XacroContext = {
+    properties: new Map(),
+    macros: new Map(),
+    args,
+    fileMap,
+    includeFileIndex: createIncludeFileIndex(fileMap),
+    basePath: normalizePath(basePath),
+    includeStack: [],
+  };
 
-    // Parse default args from xacro:arg elements
-    const defaultArgs = parseXacroArgs(content);
-    for (const [name, value] of defaultArgs) {
-      if (ctx.args[name] === undefined) {
-        ctx.args[name] = value;
-      }
+  // Parse default args from xacro:arg elements
+  const defaultArgs = parseXacroArgs(content);
+  for (const [name, value] of defaultArgs) {
+    if (ctx.args[name] === undefined) {
+      ctx.args[name] = value;
     }
-
-    // Multiple passes to handle nested includes and macros
-    let prevContent = '';
-    let iterations = 0;
-    const maxIterations = 10; // Prevent infinite loops
-
-    while (content !== prevContent && iterations < maxIterations) {
-      prevContent = content;
-      iterations++;
-
-      // Parse properties
-      parseProperties(content, ctx);
-
-      // Parse macros
-      parseMacros(content, ctx);
-      content = stripMacroDefinitions(content);
-
-      // Process includes
-      content = processIncludes(content, ctx);
-
-      // Included files can define additional properties/macros that must be
-      // registered before we evaluate conditionals or expand call sites.
-      parseProperties(content, ctx);
-      parseMacros(content, ctx);
-      content = stripMacroDefinitions(content);
-
-      // Substitute variables
-      content = substituteVariables(content, ctx);
-
-      // Expand macros
-      content = expandMacros(content, ctx);
-
-      // Process conditionals
-      content = processConditionals(content, ctx);
-    }
-
-    // Final cleanup
-    content = cleanupXacroElements(content);
-
-    // Convert package:// paths to relative paths for browser compatibility
-    content = content.replace(/package:\/\/([^\/]+)\/([^"'<>\s]+)/g, (_match, pkg, path) => {
-      // Try to find the actual file in the file map
-      const pathsToTry = [`${pkg}/${path}`, path, path.split('/').pop() || ''];
-
-      for (const tryPath of pathsToTry) {
-        if (ctx.fileMap[tryPath]) {
-          return tryPath;
-        }
-      }
-
-      // Search for matching path in file map, preferring keys from the correct package
-      const fileMapKeys = Object.keys(ctx.fileMap);
-      const suffix = '/' + path;
-      const pkgSuffix = '/' + pkg + suffix;
-
-      // First pass: prefer keys that contain the correct package name
-      for (const key of fileMapKeys) {
-        if (key.endsWith(pkgSuffix)) {
-          return key;
-        }
-      }
-
-      // Second pass: fall back to any key matching the relative path
-      for (const key of fileMapKeys) {
-        if (key.endsWith(path) || key.endsWith(suffix)) {
-          return key;
-        }
-      }
-
-      // Return just the relative path (mesh loader will handle it)
-      return path;
-    });
-
-    // Ensure proper XML structure
-    if (!ROBOT_OPEN_TAG_RE.test(content)) {
-      content = `<robot name="xacro_robot">${content}</robot>`;
-    }
-
-    return content;
-  } catch (error) {
-    console.warn('[Xacro] Failed to process xacro. Returning partially processed content:', error);
-    // Ensure we still have a valid XML wrapper even on error
-    if (!ROBOT_OPEN_TAG_RE.test(content)) {
-      content = `<robot name="xacro_robot">${content}</robot>`;
-    }
-    return content;
   }
+
+  // Multiple passes to handle nested includes and macros
+  let prevContent = '';
+  let iterations = 0;
+  const maxIterations = 10; // Prevent infinite loops
+
+  while (content !== prevContent && iterations < maxIterations) {
+    prevContent = content;
+    iterations++;
+
+    // Parse properties
+    parseProperties(content, ctx);
+
+    // Parse macros
+    parseMacros(content, ctx);
+    content = stripMacroDefinitions(content);
+
+    // Process includes
+    content = processIncludes(content, ctx);
+
+    // Included files can define additional properties/macros that must be
+    // registered before we evaluate conditionals or expand call sites.
+    parseProperties(content, ctx);
+    parseMacros(content, ctx);
+    content = stripMacroDefinitions(content);
+
+    // Substitute variables
+    content = substituteVariables(content, ctx);
+
+    // Expand macros
+    content = expandMacros(content, ctx);
+
+    // Process conditionals
+    content = processConditionals(content, ctx);
+  }
+
+  // Final cleanup
+  content = cleanupXacroElements(content);
+
+  // Convert package:// paths to relative paths for browser compatibility
+  content = content.replace(/package:\/\/([^\/]+)\/([^"'<>\s]+)/g, (_match, pkg, path) => {
+    // Try to find the actual file in the file map
+    const pathsToTry = [`${pkg}/${path}`, path, path.split('/').pop() || ''];
+
+    for (const tryPath of pathsToTry) {
+      if (ctx.fileMap[tryPath]) {
+        return tryPath;
+      }
+    }
+
+    // Search for matching path in file map, preferring keys from the correct package
+    const fileMapKeys = Object.keys(ctx.fileMap);
+    const suffix = '/' + path;
+    const pkgSuffix = '/' + pkg + suffix;
+
+    // First pass: prefer keys that contain the correct package name
+    for (const key of fileMapKeys) {
+      if (key.endsWith(pkgSuffix)) {
+        return key;
+      }
+    }
+
+    // Second pass: fall back to any key matching the relative path
+    for (const key of fileMapKeys) {
+      if (key.endsWith(path) || key.endsWith(suffix)) {
+        return key;
+      }
+    }
+
+    // Return just the relative path (mesh loader will handle it)
+    return path;
+  });
+
+  // Ensure proper XML structure
+  if (!ROBOT_OPEN_TAG_RE.test(content)) {
+    content = `<robot name="xacro_robot">${content}</robot>`;
+  }
+
+  return content;
 }
 
 /**
@@ -852,13 +853,13 @@ export function parseXacro(
   fileMap: XacroFileMap = {},
   basePath: string = '',
 ): RobotState | null {
-  try {
-    const urdfContent = processXacro(content, args, fileMap, basePath);
-    return parseURDF(urdfContent);
-  } catch (error) {
-    console.error('[Xacro Parser] Failed to parse xacro:', error);
-    return null;
+  const urdfContent = processXacro(content, args, fileMap, basePath);
+  const robot = parseURDF(urdfContent);
+  if (!robot) {
+    throw new Error('[Xacro] Processed output is not valid URDF.');
   }
+
+  return robot;
 }
 
 /**

@@ -1,8 +1,4 @@
 import * as THREE from 'three';
-import {
-  MJCF_COMPILER_ANGLE_SCOPE_ATTR,
-  MJCF_COMPILER_EULERSEQ_SCOPE_ATTR,
-} from './mjcfCompilerScope';
 import { convertMjcfAngle } from './mjcfMath';
 
 export interface MJCFCompilerSettings {
@@ -18,13 +14,11 @@ export interface MJCFCompilerSettings {
   boundinertia?: number;
 }
 
-
 export interface MJCFDefaultsRegistry {
   root: MJCFElementDefaults;
   classesByQName: Map<string, MJCFDefaultClassEntry>;
   qnamesByClassName: Map<string, string[]>;
 }
-
 
 export type MJCFElementType =
   | 'body'
@@ -341,7 +335,10 @@ export function mergeDefaults(
   };
 }
 
-export function collectDirectAttributes(element: Element, selector: MJCFElementType): MJCFAttributeMap {
+export function collectDirectAttributes(
+  element: Element,
+  selector: MJCFElementType,
+): MJCFAttributeMap {
   const directChild = element.querySelector(`:scope > ${selector}`);
   if (!directChild) {
     return {};
@@ -465,7 +462,11 @@ export function findDescendantClassQName(
   return undefined;
 }
 
-export function deriveAssetName(filePath: string, fallbackPrefix: string, assetIndex: number): string {
+export function deriveAssetName(
+  filePath: string,
+  fallbackPrefix: string,
+  assetIndex: number,
+): string {
   const fileName = filePath.split('/').pop()?.split('\\').pop() || '';
   const lastDotIndex = fileName.lastIndexOf('.');
   return (

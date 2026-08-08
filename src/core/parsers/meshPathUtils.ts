@@ -8,42 +8,16 @@
  * - windows\\path\\part.stl
  */
 
-import {
-  GeometryType,
-  type RobotData,
-  type RobotState,
-  type SdfHeightmapTexture,
-  type UrdfLink,
-} from '@/types';
+import { type UrdfLink } from '@/types';
 import { normalizeRelativePath } from '@/core/utils/pathNormalization';
 import {
-  MESH_EXPORT_ROOT_SEGMENTS,
-  TEXTURE_EXPORT_ROOT_SEGMENTS,
-  PACKAGE_ASSET_ROOT_SEGMENTS,
-  SOURCE_LAYOUT_DIRECTORIES,
-  slicePathFromKnownRoot,
   stripPackagePrefix,
   stripBlobPrefix,
   stripFilePrefix,
   stripExternalPrefix,
-  normalizePackageAssetPath,
   ImportedAssetPathResolutionOptions,
-  countCommonLeadingSegments,
-  resolvePackageAssetPathFromCandidates,
-  buildPackageAssetReferencePaths,
-  getSourceFileDirectory,
-  getSourceBundleRootSegments,
-  isBundleRootedAssetPath,
-  resolveImportedAssetPath,
   RobotWithLinks,
-  IMPORTED_ASSET_DIRECTORY_HINTS,
-  inferSourcePackageSegment,
-  isExplicitRelativeAssetPath,
-  normalizeAssetPathForComparison,
-  isLikelyCanonicalImportedAssetPath,
   rewriteTexturePathForSource,
-  rewriteGeometryTextureRefsForSource,
-  rewriteMeshGeometryForSource,
   rewriteGeometryAssetPathsForSource,
   normalizeMeshPathForExport,
   normalizeTexturePathForExport,
@@ -51,15 +25,18 @@ import {
   buildTextureCollisionFallbackPath,
   dedupeExportPath,
   RewriteUrdfAssetPathsForExportOptions,
-  isExternalAssetPath,
   buildUrdfMeshExportFilename,
   buildUrdfTextureExportFilename,
   rewriteXmlTagFilenameAttribute,
   pushUnique,
 } from './meshPathUtilsHelpers';
 export type { ImportedAssetPathResolutionOptions } from './meshPathUtilsHelpers';
-export { getSourceFileDirectory, resolveImportedAssetPath, normalizeMeshPathForExport, normalizeTexturePathForExport } from './meshPathUtilsHelpers';
-
+export {
+  getSourceFileDirectory,
+  resolveImportedAssetPath,
+  normalizeMeshPathForExport,
+  normalizeTexturePathForExport,
+} from './meshPathUtilsHelpers';
 
 /**
  * Directory of the source robot file, always with forward slashes and a trailing slash.
@@ -82,9 +59,7 @@ export const rewriteRobotMeshPathsForSource = <T extends RobotWithLinks>(
 
   const rewriteOptions = {
     ...options,
-    candidateAssetPaths: options.candidateAssetPaths
-      ? [...options.candidateAssetPaths]
-      : undefined,
+    candidateAssetPaths: options.candidateAssetPaths ? [...options.candidateAssetPaths] : undefined,
   };
   let linksChanged = false;
   let materialsChanged = false;

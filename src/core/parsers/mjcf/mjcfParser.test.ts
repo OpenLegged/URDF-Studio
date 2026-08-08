@@ -185,6 +185,44 @@ test('loadMJCFToThreeJS surfaces the MJCF parse failure reason', async () => {
   );
 });
 
+test('parseMJCFModel fails instead of returning a model with a silently dropped body', (t) => {
+  installDomGlobals();
+  clearParsedMJCFModelCache();
+
+  const xml = `
+    <mujoco model="body-parse-failure">
+      <worldbody>
+        <body name="base_link">
+          <geom type="box" size="0.1 0.1 0.1" />
+        </body>
+      </worldbody>
+    </mujoco>
+  `;
+  const parser = new DOMParser();
+  const documentWithBrokenBody = parser.parseFromString(xml, 'text/xml');
+  const bodyElement = documentWithBrokenBody.querySelector('body');
+  assert.ok(bodyElement);
+  Object.defineProperty(bodyElement, 'children', {
+    configurable: true,
+    get() {
+      throw new Error('body child traversal failed');
+    },
+  });
+
+  const originalParseFromString = DOMParser.prototype.parseFromString;
+  const originalConsoleError = console.error;
+  DOMParser.prototype.parseFromString = () => documentWithBrokenBody;
+  console.error = () => {};
+  t.after(() => {
+    DOMParser.prototype.parseFromString = originalParseFromString;
+    console.error = originalConsoleError;
+    clearParsedMJCFModelCache(xml);
+  });
+
+  assert.equal(parseMJCFModel(xml), null);
+  assert.equal(getParsedMJCFModelError(xml), 'body child traversal failed');
+});
+
 test('parseMJCF releases parsed model cache after import completes', () => {
   installDomGlobals();
   clearParsedMJCFModelCache();
@@ -1303,22 +1341,17 @@ test('parseMJCF applies Cassie home keyframe qpos and solves passive closed-loop
   assert.ok(Math.abs((robot.joints['left-tarsus']?.angle ?? 0) - 1.4250551414265926) < 1e-9);
   assert.ok(Math.abs((robot.joints['left-foot-crank']?.angle ?? 0) + 1.4888223188309895) < 1e-9);
   assert.ok(Math.abs((robot.joints['left-plantar-rod']?.angle ?? 0) - 1.470421577023918) < 1e-9);
-  assert.ok(Math.abs((robot.joints['left-heel-spring']?.angle ?? 0) + 0.0015298326074860882) < 1e-9);
   assert.ok(
-    Math.abs((robot.joints['right-tarsus']?.angle ?? 0) - 1.42505450519475) < 1e-9,
+    Math.abs((robot.joints['left-heel-spring']?.angle ?? 0) + 0.0015298326074860882) < 1e-9,
   );
-  assert.ok(
-    Math.abs((robot.joints['right-foot-crank']?.angle ?? 0) + 1.4888223188241143) < 1e-9,
-  );
-  assert.ok(
-    Math.abs((robot.joints['right-plantar-rod']?.angle ?? 0) - 1.4704215770168598) < 1e-9,
-  );
+  assert.ok(Math.abs((robot.joints['right-tarsus']?.angle ?? 0) - 1.42505450519475) < 1e-9);
+  assert.ok(Math.abs((robot.joints['right-foot-crank']?.angle ?? 0) + 1.4888223188241143) < 1e-9);
+  assert.ok(Math.abs((robot.joints['right-plantar-rod']?.angle ?? 0) - 1.4704215770168598) < 1e-9);
   assert.ok(
     Math.abs((robot.joints['right-heel-spring']?.angle ?? 0) + 0.0015281140578806555) < 1e-9,
   );
   assert.ok(
-    Math.abs((robot.joints['right-achilles-rod']?.quaternion?.w ?? 0) - 0.9786415639566073) <
-      1e-9,
+    Math.abs((robot.joints['right-achilles-rod']?.quaternion?.w ?? 0) - 0.9786415639566073) < 1e-9,
   );
   assert.ok(
     Math.abs((robot.joints['right-achilles-rod']?.quaternion?.y ?? 0) + 0.014423187695796426) <
@@ -1635,17 +1668,15 @@ test('parseMJCF matches MuJoCo tendon metadata counts for MyoSuite arm fixtures'
     },
   ];
 
-  cases.forEach(
-    ({ relativePath, siteCount, tendonCount, tendonActuatorCount, lastTendonName }) => {
-      const robot = parseResolvedMyosuiteMjcf(relativePath);
-      const mjcfContext = robot.inspectionContext?.mjcf;
+  cases.forEach(({ relativePath, siteCount, tendonCount, tendonActuatorCount, lastTendonName }) => {
+    const robot = parseResolvedMyosuiteMjcf(relativePath);
+    const mjcfContext = robot.inspectionContext?.mjcf;
 
-      assert.equal(mjcfContext?.siteCount, siteCount, relativePath);
-      assert.equal(mjcfContext?.tendonCount, tendonCount, relativePath);
-      assert.equal(mjcfContext?.tendonActuatorCount, tendonActuatorCount, relativePath);
-      assert.equal(mjcfContext?.tendons.at(-1)?.name, lastTendonName, relativePath);
-    },
-  );
+    assert.equal(mjcfContext?.siteCount, siteCount, relativePath);
+    assert.equal(mjcfContext?.tendonCount, tendonCount, relativePath);
+    assert.equal(mjcfContext?.tendonActuatorCount, tendonActuatorCount, relativePath);
+    assert.equal(mjcfContext?.tendons.at(-1)?.name, lastTendonName, relativePath);
+  });
 });
 
 test('parseMJCF preserves rebased MJCF site metadata on imported links', () => {

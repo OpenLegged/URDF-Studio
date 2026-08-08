@@ -26,16 +26,7 @@ import {
 } from './mjcfLoadLifecycle';
 import {
   isMjcfCubeTexture,
-  clampBuiltinTextureChannel,
-  resolveBuiltinTextureColor,
-  resolveBuiltinTextureDimension,
-  createBuiltinDataTexture,
-  createBuiltinCheckerTexture,
-  createBuiltinFlatTexture,
-  createBuiltinGradientTexture,
-  createBuiltinTexture,
   createBuiltinCubeFaceTextures,
-  getBuiltinTextureCacheKey,
   getBuiltinTexturePromise,
 } from './mjcfBuiltinTextures';
 
@@ -119,6 +110,13 @@ type RuntimeJointMetadataNode = THREE.Object3D & {
   parentLink?: THREE.Object3D | null;
   child?: THREE.Object3D;
 };
+
+function isRecoverableMissingMeshAssetError(error: unknown): boolean {
+  return (
+    error instanceof Error &&
+    error.message.startsWith('[MJCFLoader] Mesh file could not be resolved:')
+  );
+}
 
 function restackLinkVisualRoots(linkTarget: THREE.Object3D): void {
   const visualRoots = linkTarget.children
@@ -1035,13 +1033,17 @@ export async function buildMJCFHierarchy(
           collisionGroup.add(collisionMesh);
           targetGroup.add(collisionGroup);
         }
-
       } catch (error) {
         if (mesh && !mesh.parent) {
           disposeTransientObject3D(mesh);
         }
-        console.warn(`[MJCFLoader] Failed to build geom "${geom.name || geom.type || 'unnamed'}":`, error);
-        // continue to next geom — do not re-throw
+        if (!isRecoverableMissingMeshAssetError(error)) {
+          throw error;
+        }
+        console.warn(
+          `[MJCFLoader] Failed to build geom "${geom.name || geom.type || 'unnamed'}":`,
+          error,
+        );
       } finally {
         processedGeoms += 1;
         onProgress?.({ processedGeoms, totalGeoms });

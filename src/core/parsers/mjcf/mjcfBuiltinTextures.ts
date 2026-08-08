@@ -1,7 +1,7 @@
 // Builtin texture generation extracted from mjcfHierarchyBuilder.ts
 import * as THREE from 'three';
 import { BOX_FACE_MATERIAL_ORDER } from '@/core/robot';
-import type { MJCFMaterial, MJCFTexture } from './mjcfUtils';
+import type { MJCFTexture } from './mjcfUtils';
 
 export type MJCFTextureLoadCache = Map<string, Promise<THREE.Texture | null>>;
 
@@ -11,7 +11,6 @@ export function configureLoadedTexture(texture: THREE.Texture): THREE.Texture {
   texture.needsUpdate = true;
   return texture;
 }
-
 
 export function isMjcfCubeTexture(textureDef: MJCFTexture | null | undefined): boolean {
   return (

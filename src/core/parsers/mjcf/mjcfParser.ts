@@ -3,7 +3,6 @@
  * Parses MuJoCo XML format and converts to RobotState
  */
 
-import * as THREE from 'three';
 import {
   RobotState,
   UrdfLink,
@@ -16,12 +15,7 @@ import {
   UrdfVisual,
 } from '@/types';
 import {
-  computeLinkWorldMatrices,
-  solveClosedLoopMotionCompensation,
-} from '@/core/robot';
-import {
   looksLikeMJCFDocument,
-  type MJCFCompilerSettings,
   type MJCFHfield,
   type MJCFMaterial,
   type MJCFMesh,
@@ -36,43 +30,25 @@ import {
   isNonZeroPosition,
   rotateLocalOffsetToParentFrame,
   subtractLocalOffset,
-  toPositionObject,
-  toQuatObject,
   toRPYObjectFromQuat,
 } from './mjcfMath';
-import {
-  clearParsedMJCFModelCache,
-  normalizeMultiJointBodies,
-  parseMJCFModel,
-  type MJCFModelJointEqualityConstraint,
-  type MJCFModelTendonAttachment,
-  type ParsedMJCFModel,
-} from './mjcfModel';
+import { clearParsedMJCFModelCache, normalizeMultiJointBodies, parseMJCFModel } from './mjcfModel';
 import {
   MJCFBody,
   MJCFGeom,
   MJCFLinkPair,
-  MJCFJointDef,
-  MJCFSite,
   MJCFActuator,
-  MJCFInertial,
   buildHfieldDimensions,
   cloneMjcfMeshAsset,
   convertJointType,
   convertGeomType,
-  hasImportableGeometry,
   shouldPreserveSyntheticWorldRoot,
-  convertAngle,
-  convertJointRange,
-  toEffortMagnitude,
-  pickMaxDefined,
   resolveJointMechanicalRange,
   resolveJointEffortLimit,
   buildImportedJointLimit,
   resolveJointInitialAngle,
   rgbaToHexColor,
   rgbaToColorRgbaTuple,
-  toRPYObjectFromEulerTuple,
   toParserBody,
   toParserActuatorMap,
   applyJointEqualityMimics,

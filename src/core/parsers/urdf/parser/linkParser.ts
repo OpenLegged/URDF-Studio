@@ -147,116 +147,112 @@ export const parseLinks = (
     const linkName = linkEl.getAttribute('name');
     if (!linkName) return;
 
-    try {
-      const id = linkName; // Use name as ID for imported structure
-      const linkType = linkEl.getAttribute('type')?.trim() || undefined;
+    const id = linkName; // Use name as ID for imported structure
+    const linkType = linkEl.getAttribute('type')?.trim() || undefined;
 
-      const visualEls = getDirectChildElements(linkEl, 'visual');
-      const parsedVisuals = visualEls.map((visualEl) =>
-        parseVisualElement(visualEl, globalMaterials, linkGazeboMaterials[linkName]),
+    const visualEls = getDirectChildElements(linkEl, 'visual');
+    const parsedVisuals = visualEls.map((visualEl) =>
+      parseVisualElement(visualEl, globalMaterials, linkGazeboMaterials[linkName]),
+    );
+    const primaryVisual = parsedVisuals[0]?.geometry ?? {
+      ...DEFAULT_LINK.visual,
+      type: GeometryType.NONE,
+      dimensions: { x: 0, y: 0, z: 0 },
+      origin: {
+        xyz: parseVec3(null),
+        rpy: { r: 0, p: 0, y: 0 },
+      },
+      color: undefined,
+      materialSource: undefined,
+    };
+    const visualBodies = parsedVisuals.slice(1).map((visual) => visual.geometry);
+    const primaryVisualMaterial = parsedVisuals[0]?.material;
+
+    // Collision (Handle multiple collisions)
+    const collisionEls = getDirectChildElements(linkEl, 'collision');
+    let mainCollisionGeo: any = { type: GeometryType.NONE, dimensions: { x: 0, y: 0, z: 0 } };
+    let mainCollisionOrigin = { xyz: { x: 0, y: 0, z: 0 }, rpy: { r: 0, p: 0, y: 0 } };
+    let primaryCollisionName: string | undefined;
+    let primaryCollisionVerbose: string | undefined;
+
+    if (collisionEls.length > 0) {
+      // Process primary collision (index 0)
+      const firstCol = collisionEls[0];
+      const parsedGeo = parseGeometry(
+        getDirectChildElements(firstCol, 'geometry')[0],
+        DEFAULT_LINK.collision,
       );
-      const primaryVisual = parsedVisuals[0]?.geometry ?? {
-        ...DEFAULT_LINK.visual,
-        type: GeometryType.NONE,
-        dimensions: { x: 0, y: 0, z: 0 },
-        origin: {
-          xyz: parseVec3(null),
-          rpy: { r: 0, p: 0, y: 0 },
-        },
-        color: undefined,
-        materialSource: undefined,
-      };
-      const visualBodies = parsedVisuals.slice(1).map((visual) => visual.geometry);
-      const primaryVisualMaterial = parsedVisuals[0]?.material;
+      if (parsedGeo) mainCollisionGeo = parsedGeo;
 
-      // Collision (Handle multiple collisions)
-      const collisionEls = getDirectChildElements(linkEl, 'collision');
-      let mainCollisionGeo: any = { type: GeometryType.NONE, dimensions: { x: 0, y: 0, z: 0 } };
-      let mainCollisionOrigin = { xyz: { x: 0, y: 0, z: 0 }, rpy: { r: 0, p: 0, y: 0 } };
-      let primaryCollisionName: string | undefined;
-      let primaryCollisionVerbose: string | undefined;
+      const originEl = getDirectChildElements(firstCol, 'origin')[0];
+      const verboseEl = getDirectChildElements(firstCol, 'verbose')[0];
+      mainCollisionOrigin = parseOrigin(originEl);
+      primaryCollisionName = firstCol.getAttribute('name')?.trim() || undefined;
+      primaryCollisionVerbose = verboseEl?.getAttribute('value')?.trim() || undefined;
+    }
 
-      if (collisionEls.length > 0) {
-        // Process primary collision (index 0)
-        const firstCol = collisionEls[0];
-        const parsedGeo = parseGeometry(
-          getDirectChildElements(firstCol, 'geometry')[0],
-          DEFAULT_LINK.collision,
-        );
-        if (parsedGeo) mainCollisionGeo = parsedGeo;
+    // Inertial
+    const inertialEl = linkEl.querySelector('inertial');
+    const massEl = inertialEl?.querySelector('mass');
+    const inertiaEl = inertialEl?.querySelector('inertia');
+    const inertialOriginEl = inertialEl?.querySelector('origin');
 
-        const originEl = getDirectChildElements(firstCol, 'origin')[0];
-        const verboseEl = getDirectChildElements(firstCol, 'verbose')[0];
-        mainCollisionOrigin = parseOrigin(originEl);
-        primaryCollisionName = firstCol.getAttribute('name')?.trim() || undefined;
-        primaryCollisionVerbose = verboseEl?.getAttribute('value')?.trim() || undefined;
-      }
+    const inertial = inertialEl
+      ? {
+          mass: parseFloat(massEl?.getAttribute('value') || '0'),
+          origin: inertialOriginEl ? parseOrigin(inertialOriginEl) : undefined,
+          inertia: {
+            ixx: parseFloat(inertiaEl?.getAttribute('ixx') || '0'),
+            ixy: parseFloat(inertiaEl?.getAttribute('ixy') || '0'),
+            ixz: parseFloat(inertiaEl?.getAttribute('ixz') || '0'),
+            iyy: parseFloat(inertiaEl?.getAttribute('iyy') || '0'),
+            iyz: parseFloat(inertiaEl?.getAttribute('iyz') || '0'),
+            izz: parseFloat(inertiaEl?.getAttribute('izz') || '0'),
+          },
+        }
+      : undefined;
 
-      // Inertial
-      const inertialEl = linkEl.querySelector('inertial');
-      const massEl = inertialEl?.querySelector('mass');
-      const inertiaEl = inertialEl?.querySelector('inertia');
-      const inertialOriginEl = inertialEl?.querySelector('origin');
+    links[id] = {
+      id,
+      name: linkName,
+      type: linkType,
+      visual: primaryVisual,
+      visualBodies,
+      collision: {
+        ...DEFAULT_LINK.collision,
+        name: primaryCollisionName,
+        verbose: primaryCollisionVerbose,
+        ...mainCollisionGeo,
+        origin: mainCollisionOrigin,
+      },
+      collisionBodies: [],
+      inertial,
+    };
 
-      const inertial = inertialEl
-        ? {
-            mass: parseFloat(massEl?.getAttribute('value') || '0'),
-            origin: inertialOriginEl ? parseOrigin(inertialOriginEl) : undefined,
-            inertia: {
-              ixx: parseFloat(inertiaEl?.getAttribute('ixx') || '0'),
-              ixy: parseFloat(inertiaEl?.getAttribute('ixy') || '0'),
-              ixz: parseFloat(inertiaEl?.getAttribute('ixz') || '0'),
-              iyy: parseFloat(inertiaEl?.getAttribute('iyy') || '0'),
-              iyz: parseFloat(inertiaEl?.getAttribute('iyz') || '0'),
-              izz: parseFloat(inertiaEl?.getAttribute('izz') || '0'),
-            },
-          }
-        : undefined;
+    if (primaryVisualMaterial) {
+      linkMaterials[id] = primaryVisualMaterial;
+    }
 
-      links[id] = {
-        id,
-        name: linkName,
-        type: linkType,
-        visual: primaryVisual,
-        visualBodies,
-        collision: {
-          ...DEFAULT_LINK.collision,
-          name: primaryCollisionName,
-          verbose: primaryCollisionVerbose,
-          ...mainCollisionGeo,
-          origin: mainCollisionOrigin,
-        },
-        collisionBodies: [],
-        inertial,
-      };
+    // Keep additional collisions on the same link
+    for (let i = 1; i < collisionEls.length; i++) {
+      const colEl = collisionEls[i];
 
-      if (primaryVisualMaterial) {
-        linkMaterials[id] = primaryVisualMaterial;
-      }
+      // Parse geometry and origin for this collision
+      let colGeo = parseGeometry(colEl.querySelector('geometry'), DEFAULT_LINK.collision);
+      if (!colGeo) colGeo = { type: GeometryType.NONE, dimensions: { x: 0, y: 0, z: 0 } };
 
-      // Keep additional collisions on the same link
-      for (let i = 1; i < collisionEls.length; i++) {
-        const colEl = collisionEls[i];
+      const originEl = getDirectChildElements(colEl, 'origin')[0];
+      const verboseEl = getDirectChildElements(colEl, 'verbose')[0];
+      const colOrigin = parseOrigin(originEl);
 
-        // Parse geometry and origin for this collision
-        let colGeo = parseGeometry(colEl.querySelector('geometry'), DEFAULT_LINK.collision);
-        if (!colGeo) colGeo = { type: GeometryType.NONE, dimensions: { x: 0, y: 0, z: 0 } };
-
-        const originEl = getDirectChildElements(colEl, 'origin')[0];
-        const verboseEl = getDirectChildElements(colEl, 'verbose')[0];
-        const colOrigin = parseOrigin(originEl);
-
-        links[id].collisionBodies = links[id].collisionBodies || [];
-        links[id].collisionBodies.push({
-          ...DEFAULT_LINK.collision,
-          name: colEl.getAttribute('name')?.trim() || undefined,
-          verbose: verboseEl?.getAttribute('value')?.trim() || undefined,
-          ...colGeo,
-          origin: colOrigin,
-        });
-      }
-    } catch (error) {
-      console.warn(`[URDFParser] Failed to parse link "${linkName}":`, error);
+      links[id].collisionBodies = links[id].collisionBodies || [];
+      links[id].collisionBodies.push({
+        ...DEFAULT_LINK.collision,
+        name: colEl.getAttribute('name')?.trim() || undefined,
+        verbose: verboseEl?.getAttribute('value')?.trim() || undefined,
+        ...colGeo,
+        origin: colOrigin,
+      });
     }
   });
 

@@ -2,12 +2,6 @@ import * as THREE from 'three';
 import path from 'node:path';
 import type { ParsedMJCFModel } from './mjcfModel';
 import {
-  buildGeneratedMjcfBodyPath,
-  buildGeneratedMjcfBodySegment,
-  buildGeneratedMjcfGeomName,
-  buildGeneratedMjcfJointName,
-} from './mjcfGeneratedNames';
-import {
   createMuJoCoFromToQuaternion,
   diagonalizeMjcfSymmetric3x3,
   mjcfQuatTupleFromQuaternion,
@@ -69,7 +63,10 @@ export function roundNumber(value: number): number {
   return Number(value.toFixed(NUMBER_PRECISION));
 }
 
-export function normalizeVector(value: number[] | undefined | null, length: number): number[] | null {
+export function normalizeVector(
+  value: number[] | undefined | null,
+  length: number,
+): number[] | null {
   if (!value || value.length === 0) {
     return null;
   }
@@ -81,7 +78,10 @@ export function normalizeVector(value: number[] | undefined | null, length: numb
   return normalized;
 }
 
-export function normalizeUnitVector(value: number[] | undefined | null, length: number): number[] | null {
+export function normalizeUnitVector(
+  value: number[] | undefined | null,
+  length: number,
+): number[] | null {
   if (!value || value.length === 0) {
     return null;
   }
@@ -149,7 +149,9 @@ export function normalizeScale(value: number[] | undefined | null): number[] {
   return [normalized[0] ?? 1, normalized[1] ?? 1, normalized[2] ?? 1];
 }
 
-export function normalizeGeomRGBA(value: number[] | undefined | null): [number, number, number, number] {
+export function normalizeGeomRGBA(
+  value: number[] | undefined | null,
+): [number, number, number, number] {
   const normalized = normalizeVector(value, 4);
   if (!normalized) {
     return [0.5, 0.5, 0.5, 1];
@@ -158,7 +160,9 @@ export function normalizeGeomRGBA(value: number[] | undefined | null): [number, 
   return [normalized[0] ?? 0.5, normalized[1] ?? 0.5, normalized[2] ?? 0.5, normalized[3] ?? 1];
 }
 
-export function quaternionToMjcfTuple(quaternion: THREE.Quaternion): [number, number, number, number] {
+export function quaternionToMjcfTuple(
+  quaternion: THREE.Quaternion,
+): [number, number, number, number] {
   return mjcfQuatTupleFromQuaternion(quaternion, { precision: NUMBER_PRECISION });
 }
 
