@@ -4,7 +4,7 @@
  * Runs agent-authored JS against a *whitelist* of helpers and a data draft, and
  * returns the result for downstream validation. The function is deliberately
  * pure (no Worker, no DOM, no store imports) so it can be unit-tested in Node
- * and reused as the body of the worker in `scriptSandboxWorker.ts`.
+ * and reused as the body of the worker in `scriptSandbox.worker.ts`.
  *
  * Security model:
  *  - The code is compiled with `new Function` (not `eval`) under `'use strict'`,
@@ -14,7 +14,7 @@
  *  - The result must be a plain object (agent returns the edited draft), so a
  *    script that returns a scalar/array/`null` is rejected.
  *
- * The real isolation boundary is the worker (`scriptSandboxWorker.ts`): it runs
+ * The real isolation boundary is the worker (`scriptSandbox.worker.ts`): it runs
  * this without DOM access and its result is validated before it can touch the
  * workspace. This file is the shared, testable core.
  */

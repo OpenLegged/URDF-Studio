@@ -59,7 +59,7 @@ export interface ScriptSandboxWorkerClient {
 
 export function createScriptSandboxWorkerClient({
   createWorker = () =>
-    new Worker(new URL('./scriptSandboxWorker.ts', import.meta.url), { type: 'module' }),
+    new Worker(new URL('./scriptSandbox.worker.ts', import.meta.url), { type: 'module' }),
   canUseWorker = () => typeof Worker !== 'undefined',
   requestTimeoutMs = DEFAULT_SCRIPT_TIMEOUT_MS,
 }: CreateScriptSandboxWorkerClientOptions = {}): ScriptSandboxWorkerClient {
