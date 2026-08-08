@@ -16,7 +16,6 @@ export { useViewerController, useResponsivePanelLayout } from './hooks';
 export type { ViewerController } from './hooks';
 export { resolveDefaultViewerToolMode } from './utils/scopedToolMode';
 export type { ScopedToolModeState } from './utils/scopedToolMode';
-export { shouldNotifyVisualTransformLock } from './utils/geometryTransformPolicy';
 export { buildViewerSceneProps } from './utils/viewerSceneProps';
 export type { ViewerSceneBaseProps } from './utils/viewerSceneProps';
 export {

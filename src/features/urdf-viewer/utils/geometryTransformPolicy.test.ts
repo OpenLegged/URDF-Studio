@@ -1,18 +1,19 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import {
-  canTransformGeometry,
-  shouldNotifyVisualTransformLock,
-} from './geometryTransformPolicy.ts';
+import { canTransformGeometry } from './geometryTransformPolicy.ts';
 
-test('visual geometry can be transformed only while collisions are hidden', () => {
+test('visual geometry can be transformed while visual is visible, regardless of collision visibility', () => {
   assert.equal(
     canTransformGeometry('visual', { showVisual: true, showCollision: false }),
     true,
   );
   assert.equal(
     canTransformGeometry('visual', { showVisual: true, showCollision: true }),
+    true,
+  );
+  assert.equal(
+    canTransformGeometry('visual', { showVisual: false, showCollision: true }),
     false,
   );
 });
@@ -26,10 +27,4 @@ test('collision geometry can be transformed while collisions are visible', () =>
     canTransformGeometry('collision', { showVisual: true, showCollision: false }),
     false,
   );
-});
-
-test('notification is emitted only when collision visibility turns on', () => {
-  assert.equal(shouldNotifyVisualTransformLock(false, true), true);
-  assert.equal(shouldNotifyVisualTransformLock(true, true), false);
-  assert.equal(shouldNotifyVisualTransformLock(true, false), false);
 });

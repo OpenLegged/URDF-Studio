@@ -42,7 +42,6 @@ import {
   type ViewerJointMotionStateValue,
   type ViewerRobotSourceFormat,
   useViewerController,
-  shouldNotifyVisualTransformLock,
 } from '@/features/editor';
 import { resolveViewerJointScopeKey } from '@/app/utils/viewerJointScopeKey';
 import { resolveUnifiedViewerForcedSessionState } from '@/app/utils/unifiedViewerForcedSessionState';
@@ -470,15 +469,6 @@ export const UnifiedViewer = React.memo(
       closedLoopRobotState: robot,
       projectJointInteractionPreview,
     });
-    const previousShowCollisionRef = React.useRef(viewerController.showCollision);
-
-    useEffect(() => {
-      const wasShowingCollision = previousShowCollisionRef.current;
-      previousShowCollisionRef.current = viewerController.showCollision;
-      if (shouldNotifyVisualTransformLock(wasShowingCollision, viewerController.showCollision)) {
-        onNotify?.(t.visualTransformDisabledWithCollisions, 'info');
-      }
-    }, [onNotify, t.visualTransformDisabledWithCollisions, viewerController.showCollision]);
     const nextForcedViewerSession = resolveUnifiedViewerForcedSessionState({
       forcedViewerSession,
       pendingViewerToolMode,

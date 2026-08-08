@@ -576,7 +576,6 @@ export const en: TranslationKeys = {
   trajectoryEditing: 'Trajectory Editing',
   featureInDevelopment: 'Feature in development',
   transformMode: 'Transform Mode',
-  visualTransformDisabledWithCollisions: 'Collisions are visible: only collision geometry can be transformed; visual geometry is locked.',
   translateMode: 'Translate',
   rotateMode: 'Rotate',
   universalMode: 'Universal',

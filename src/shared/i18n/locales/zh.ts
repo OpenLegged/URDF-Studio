@@ -553,7 +553,6 @@ export const zh: TranslationKeys = {
   trajectoryEditing: '轨迹编辑',
   featureInDevelopment: '功能开发中',
   transformMode: '变换模式',
-  visualTransformDisabledWithCollisions: '已显示碰撞体：当前只能移动碰撞体，不能移动可视化几何体。',
   translateMode: '移动',
   rotateMode: '旋转',
   universalMode: '万能',
