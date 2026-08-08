@@ -181,8 +181,17 @@ export function getEffectiveGeometryAuthoredMaterials(
   }
 
   const inlineColor = normalizeMaterialValue(geometry?.color);
-  if (!inlineColor || authoredMaterials[0]?.color || authoredMaterials[0]?.colorRgba) {
+  if (!inlineColor) {
     return authoredMaterials;
+  }
+
+  if (!authoredMaterials[0]?.color && !authoredMaterials[0]?.colorRgba) {
+    return [
+      {
+        ...authoredMaterials[0],
+        color: inlineColor,
+      },
+    ];
   }
 
   return [

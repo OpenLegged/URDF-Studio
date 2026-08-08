@@ -510,5 +510,23 @@ export function writeRobotPath(robot: RobotData, args: WriteRobotPathArgs): Agen
     parent[leafKey] = args.value;
   }
 
-  return ok(`Wrote "${path}".`);
+  // When writing to links.<id>.visual.color, also update the first
+  // authoredMaterial so the change survives the authored-materials
+  // precedence in resolveVisualMaterialOverride.
+  if (
+    segments[0] === 'links'
+    && segments[2] === 'visual'
+    && leafKey === 'color'
+    && typeof args.value === 'string'
+  ) {
+    const visual = entity.visual as Record<string, unknown> | undefined;
+    const authoredMaterials = visual?.authoredMaterials as Array<Record<string, unknown>> | undefined;
+    if (authoredMaterials && authoredMaterials.length === 1) {
+      authoredMaterials[0].color = args.value;
+      authoredMaterials[0].colorRgba = undefined;
+    }
+  }
+
+  const valueStr = typeof args.value === 'string' ? args.value : JSON.stringify(args.value);
+  return ok(`Wrote "${path}" → ${valueStr}`);
 }

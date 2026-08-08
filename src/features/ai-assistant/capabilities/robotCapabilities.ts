@@ -260,14 +260,14 @@ export function buildRobotCapabilities(_lang: Language): AgentCapability[] {
     {
       name: 'run_script',
       description:
-        "Run JavaScript that edits the robot draft. The script body is executed as `(draft, api) => ...` and MUST return the edited draft object. `draft` is the current robot (links/joints/rootLinkId); `api` exposes safe helpers only (json, math, clone, keys, has) — no DOM, no network, no stores. Use this for edits that combine or loop over many fields (e.g. 'set every joint upper limit to X'), or anything the dedicated tools cannot express. Prefer the dedicated tools when they cover the request. The result is validated before it can be applied.",
+        "Run arbitrary JavaScript to edit the robot. This is the most powerful tool — use it for ANY edit that the dedicated tools cannot express, or when you need to loop over many links/joints. The script runs as `(draft, api) => { ...; return draft; }`. `draft` is the full robot: `draft.links` (Record<id, link>), `draft.joints` (Record<id, joint>), `draft.rootLinkId`. Each link has: `visual { type, dimensions{x,y,z}, origin{xyz,rpy}, color }, collision { type, dimensions, origin }, inertial { mass, origin, inertia{ixx,ixy,ixz,iyy,iyz,izz} }`. Each joint has: `type, origin{xyz, rpy}, axis{x,y,z}, limit{lower,upper,effort,velocity}, dynamics{damping,friction}, hardware`. `api` gives: `json` (JSON), `math` (Math), `clone` (structuredClone), `keys` (Object.keys), `has` (in operator). No DOM, no network, no stores. ALWAYS return the draft object. Examples: change all link colors: `Object.values(draft.links).forEach(l => l.visual.color = '#ff0000'); return draft;` — set every joint limit: `Object.values(draft.joints).forEach(j => { if(j.limit) j.limit.upper = 3.14; }); return draft;`",
       parameters: {
         type: 'object',
         properties: {
           code: {
             type: 'string',
             description:
-              "JavaScript function body. Example: `draft.links['base_link'].visual.dimensions.x = 0.3; return draft;`",
+              "JavaScript function body. Receives `draft` and `api`. Must return the edited draft. Example: `draft.links['base_link'].visual.color = '#ff0000'; return draft;`",
           },
         },
         required: ['code'],
