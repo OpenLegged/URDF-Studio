@@ -1,6 +1,7 @@
 node_modules/
 .worktrees/
 .omc/
+.omo/
 .omx/
 .mimocode/
 .env.local
