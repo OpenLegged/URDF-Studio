@@ -19,10 +19,7 @@ import {
   type SharedControlRef,
   type TransformControlObjectTarget,
 } from './gizmoCore';
-import {
-  FUSION_ROTATE_ARC_RADIUS,
-  resolveFusionTrackballQuaternion,
-} from './fusionRotateGeometry';
+import { FUSION_ROTATE_ARC_RADIUS, resolveFusionTrackballQuaternion } from './fusionRotateGeometry';
 import {
   getFusionTranslatePlaneAxes,
   resolveFusionTranslatePlanarDelta,
@@ -62,7 +59,6 @@ import {
   dispatchControlEvent,
   formatDragReadout,
   getAxisVisible,
-  getCameraDirection,
   getCameraRight,
   getCameraUp,
   getParentWorldQuaternionInv,
@@ -144,9 +140,8 @@ export const FusionTransformControls = forwardRef<unknown, FusionTransformContro
     const translateGroupRef = useRef<THREE.Group>(null);
     const rotateGroupRef = useRef<THREE.Group>(null);
     const guideGroupRef = useRef<THREE.Group>(null);
-    const rotateDragSectorRef = useRef<THREE.Mesh<THREE.BufferGeometry, THREE.MeshBasicMaterial>>(
-      null,
-    );
+    const rotateDragSectorRef =
+      useRef<THREE.Mesh<THREE.BufferGeometry, THREE.MeshBasicMaterial>>(null);
     const rotateDragSectorGeometryRef = useRef<THREE.BufferGeometry | null>(null);
     const rotateDragEmptyGeometryRef = useRef<THREE.BufferGeometry | null>(null);
     const rotateDragFeedbackStateRef = useRef<{
@@ -190,8 +185,8 @@ export const FusionTransformControls = forwardRef<unknown, FusionTransformContro
     const activeRotateDragObject = hasActiveRotateDrag ? activeDrag.object : undefined;
     const primaryObject =
       mode === 'rotate'
-        ? attachedRotateObject ?? activeRotateDragObject
-        : attachedTranslateObject ?? activeRotateDragObject;
+        ? (attachedRotateObject ?? activeRotateDragObject)
+        : (attachedTranslateObject ?? activeRotateDragObject);
     const canRender =
       Boolean(primaryObject) &&
       (mode !== 'universal' || Boolean(attachedRotateObject) || hasActiveRotateDrag);
@@ -376,7 +371,6 @@ export const FusionTransformControls = forwardRef<unknown, FusionTransformContro
           rotateDragSectorGeometryRef.current = null;
           rotateDragFeedbackStateRef.current = null;
         }
-
       },
       [getRotateDragEmptyGeometry, hideRotateDragFeedback],
     );
@@ -870,9 +864,9 @@ export const FusionTransformControls = forwardRef<unknown, FusionTransformContro
     }, [finishDrag, restoreDefaultControls]);
 
     const applyControlLayout = useCallback(() => {
-      const root = rootRef.current as (
-        import('./FusionTransformControls.types').FusionRootGroup | null
-      );
+      const root = rootRef.current as
+        | import('./FusionTransformControls.types').FusionRootGroup
+        | null;
       const activeDrag = activeDragRef.current;
       const activeHandle = activeHandleRef.current;
       const origin = prepareFusionRootLayout({
@@ -1015,12 +1009,7 @@ export const FusionTransformControls = forwardRef<unknown, FusionTransformContro
           </mesh>
         </group>
 
-        <Html
-          center
-          position={[0, 0, 0]}
-          style={{ pointerEvents: 'none' }}
-          zIndexRange={[60, 0]}
-        >
+        <Html center position={[0, 0, 0]} style={{ pointerEvents: 'none' }} zIndexRange={[60, 0]}>
           <div
             ref={dragReadoutRef}
             style={{

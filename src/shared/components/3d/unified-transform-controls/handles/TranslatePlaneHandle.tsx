@@ -1,6 +1,5 @@
 import React from 'react';
 import { type ThreeEvent } from '@react-three/fiber';
-import * as THREE from 'three';
 
 import { GIZMO_ARC_RENDER_ORDER } from '../gizmoCore';
 import type { FusionTranslatePlaneName } from '../fusionTranslatePlane';

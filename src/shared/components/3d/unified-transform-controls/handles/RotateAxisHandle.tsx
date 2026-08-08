@@ -1,9 +1,11 @@
 import React from 'react';
 import { type ThreeEvent } from '@react-three/fiber';
-import * as THREE from 'three';
 
 import { GIZMO_ARC_RENDER_ORDER, THICK_ROTATE_ARC_RADIUS } from '../gizmoCore';
-import { createFusionRotateFullRingGeometry, createFusionRotateFrontArcGeometry } from '../fusionRotateGeometry';
+import {
+  createFusionRotateFullRingGeometry,
+  createFusionRotateFrontArcGeometry,
+} from '../fusionRotateGeometry';
 import { useDisposableGeometry } from '../hooks/useDisposableGeometry';
 import { GizmoMaterial, RotateRingMaterial, PlainGizmoMaterial } from '../FusionTransformMaterials';
 import { getVisualThicknessScale, getPickerThicknessScale } from '../FusionTransformControls.utils';

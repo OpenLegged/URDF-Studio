@@ -1,5 +1,4 @@
 import React, { useMemo } from 'react';
-import * as THREE from 'three';
 
 import { createGuideLineGeometry } from '../FusionTransformControls.utils';
 import type { AxisName } from '../FusionTransformControls.types';

@@ -1,9 +1,11 @@
 import React from 'react';
 import { type ThreeEvent } from '@react-three/fiber';
-import * as THREE from 'three';
 
 import { GIZMO_ARC_RENDER_ORDER, THICK_ROTATE_ARC_RADIUS } from '../gizmoCore';
-import { createFusionRotateFullRingGeometry, FUSION_ROTATE_E_RING_RADIUS } from '../fusionRotateGeometry';
+import {
+  createFusionRotateFullRingGeometry,
+  FUSION_ROTATE_E_RING_RADIUS,
+} from '../fusionRotateGeometry';
 import { useDisposableGeometry } from '../hooks/useDisposableGeometry';
 import { PlainGizmoMaterial } from '../FusionTransformMaterials';
 import { getVisualThicknessScale, getPickerThicknessScale } from '../FusionTransformControls.utils';
@@ -78,12 +80,7 @@ export function RotateScreenRingHandle({
         urdfRotateScreenRing: true,
       }}
     >
-      <mesh
-        {...handleProps}
-        frustumCulled={false}
-        geometry={eRingGeometry}
-        name="rotate-e-ring"
-      >
+      <mesh {...handleProps} frustumCulled={false} geometry={eRingGeometry} name="rotate-e-ring">
         <PlainGizmoMaterial
           active={active}
           color={ROTATE_E_RING_COLOR}

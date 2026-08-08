@@ -6,22 +6,16 @@ import {
   getFusionRotateFrontArcCenterAngle,
   getFusionRotateFrontArcQuaternion,
   getFusionRotateScreenQuaternion,
-  FUSION_ROTATE_ARC_RADIUS,
-  FUSION_ROTATE_E_RING_RADIUS,
-  FUSION_ROTATE_TRACKBALL_RADIUS,
 } from './fusionRotateGeometry';
 import {
   getFusionTranslateAxisUnit,
   getFusionTranslateCenterDragPlane,
   getFusionTranslatePlaneAxes,
   getFusionTranslatePlaneDragPlane,
-  getFusionTranslatePlaneNormalAxis,
-  resolveFusionTranslatePlanarDelta,
 } from './fusionTranslatePlane';
 import type {
   ActiveHandle,
   AxisName,
-  DragKind,
   DragSetup,
   DragState,
   FusionControlState,
@@ -30,7 +24,6 @@ import type {
   FusionTransformControlsProps,
 } from './FusionTransformControls.types';
 import {
-  ACTIVE_AXIS_COLOR,
   AXIS_COLORS,
   AXIS_UNIT,
   GUIDE_DASH_DUTY,
@@ -38,7 +31,6 @@ import {
   GUIDE_MIN_HALF_LENGTH,
   ROTATE_GUIDE_DASH_DUTY,
   ROTATE_GUIDE_DASH_SEGMENTS,
-  ROTATE_DRAG_SECTOR_OPACITY,
   ROTATE_DRAG_SECTOR_RADIUS,
   ROTATE_DRAG_SECTOR_SEGMENTS,
   HOVER_SCALE_LERP,
@@ -63,7 +55,11 @@ export const createFusionControlState = (mode: FusionOwner): FusionControlState 
   return state;
 };
 
-export const dispatchControlEvent = (control: FusionControlState, type: string, value?: unknown) => {
+export const dispatchControlEvent = (
+  control: FusionControlState,
+  type: string,
+  value?: unknown,
+) => {
   (
     control.dispatchEvent as (event: {
       target: FusionControlState;
@@ -439,8 +435,7 @@ export const clampObjectPosition = (
 // Visibility & scale helpers
 // ---------------------------------------------------------------------------
 
-export const resolveWorldGizmoScale = (size = 1) =>
-  Number.isFinite(size) && size > 0 ? size : 1;
+export const resolveWorldGizmoScale = (size = 1) => (Number.isFinite(size) && size > 0 ? size : 1);
 
 export const getAxisVisible = (
   axis: AxisName,
@@ -470,10 +465,7 @@ export const getCameraRight = (camera: THREE.Camera) =>
 export const getCameraUp = (camera: THREE.Camera) =>
   new THREE.Vector3().setFromMatrixColumn(camera.matrixWorld, 1).normalize();
 
-export const getObjectToCameraVector = (
-  camera: THREE.Camera,
-  origin: THREE.Vector3,
-) => {
+export const getObjectToCameraVector = (camera: THREE.Camera, origin: THREE.Vector3) => {
   const cameraPosition = new THREE.Vector3().setFromMatrixPosition(camera.matrixWorld);
   const objectToCamera = cameraPosition.sub(origin);
   if (objectToCamera.lengthSq() > 1e-8) {
@@ -495,10 +487,7 @@ export const isWorldVisible = (object: THREE.Object3D) => {
 // Hover & scale utilities
 // ---------------------------------------------------------------------------
 
-export const collectActiveHoverTargets = (
-  root: THREE.Object3D | null,
-  active: ActiveHandle,
-) => {
+export const collectActiveHoverTargets = (root: THREE.Object3D | null, active: ActiveHandle) => {
   const targets: THREE.Object3D[] = [];
   root?.traverse((node) => {
     if (!isWorldVisible(node)) return;
@@ -511,10 +500,7 @@ export const collectActiveHoverTargets = (
   return targets;
 };
 
-export const updateHoverScales = (
-  root: THREE.Object3D | null,
-  active: ActiveHandle | null,
-) => {
+export const updateHoverScales = (root: THREE.Object3D | null, active: ActiveHandle | null) => {
   root?.traverse((node) => {
     if (!node.userData?.urdfHoverScaleTarget) return;
     const isActive =
@@ -613,9 +599,7 @@ export const resolveTranslateDragSetup = ({
       ownerSpace,
       plane,
       planeAxesWorld: planeAxes.map((planeAxis) =>
-        getFusionTranslateAxisUnit(planeAxis)
-          .applyQuaternion(spaceQuaternion)
-          .normalize(),
+        getFusionTranslateAxisUnit(planeAxis).applyQuaternion(spaceQuaternion).normalize(),
       ) as [THREE.Vector3, THREE.Vector3],
     };
   }
@@ -808,9 +792,7 @@ export const applyGuideGroupLayout = ({
     active.owner === 'translate' ? translateQuaternion : effectiveRotateQuaternion,
   );
   guideGroup.scale.setScalar(
-    active.owner === 'rotate'
-      ? rotateScale
-      : Math.max(GUIDE_MIN_HALF_LENGTH, translateScale * 3),
+    active.owner === 'rotate' ? rotateScale : Math.max(GUIDE_MIN_HALF_LENGTH, translateScale * 3),
   );
 };
 

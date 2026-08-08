@@ -1,15 +1,10 @@
 import React, { useMemo } from 'react';
-import * as THREE from 'three';
 
 import { createRotateGuideRingGeometry } from '../FusionTransformControls.utils';
 import type { AxisName } from '../FusionTransformControls.types';
 import { ACTIVE_AXIS_COLOR } from '../FusionTransformControls.constants';
 
-export function RotateGuideRing({
-  axis,
-}: {
-  axis: AxisName;
-}) {
+export function RotateGuideRing({ axis }: { axis: AxisName }) {
   const guideGeometry = useMemo(() => createRotateGuideRingGeometry(axis), [axis]);
 
   return (

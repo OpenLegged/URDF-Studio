@@ -1,12 +1,14 @@
 import React from 'react';
 import { type ThreeEvent } from '@react-three/fiber';
-import * as THREE from 'three';
 
 import { GIZMO_ARC_RENDER_ORDER } from '../gizmoCore';
 import { FUSION_ROTATE_TRACKBALL_RADIUS } from '../fusionRotateGeometry';
 import { PlainGizmoMaterial } from '../FusionTransformMaterials';
 import type { FusionHandleName, FusionOwner } from '../FusionTransformControls.types';
-import { ROTATE_TRACKBALL_COLOR, ROTATE_TRACKBALL_OPACITY } from '../FusionTransformControls.constants';
+import {
+  ROTATE_TRACKBALL_COLOR,
+  ROTATE_TRACKBALL_OPACITY,
+} from '../FusionTransformControls.constants';
 
 export function RotateTrackballHandle({
   active,
@@ -49,11 +51,7 @@ export function RotateTrackballHandle({
       name="fusion-rotate-trackball"
       userData={{ urdfAxis: 'XYZE', urdfHoverScaleTarget: true, urdfOwner: 'rotate' }}
     >
-      <mesh
-        {...handleProps}
-        frustumCulled={false}
-        name="rotate-trackball"
-      >
+      <mesh {...handleProps} frustumCulled={false} name="rotate-trackball">
         <sphereGeometry args={[FUSION_ROTATE_TRACKBALL_RADIUS, 32, 18]} />
         <PlainGizmoMaterial
           active={active}

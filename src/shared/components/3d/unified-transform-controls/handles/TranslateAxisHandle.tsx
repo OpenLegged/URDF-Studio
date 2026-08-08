@@ -1,8 +1,13 @@
 import React, { useMemo } from 'react';
 import { type ThreeEvent } from '@react-three/fiber';
-import * as THREE from 'three';
 
-import { GIZMO_ARC_RENDER_ORDER, THICK_TRANSLATE_PICKER_RADIUS, THICK_TRANSLATE_SHAFT_RADIUS, THICK_ROTATE_ARC_RADIUS, TRANSLATE_CENTER_GAP } from '../gizmoCore';
+import {
+  GIZMO_ARC_RENDER_ORDER,
+  THICK_TRANSLATE_PICKER_RADIUS,
+  THICK_TRANSLATE_SHAFT_RADIUS,
+  THICK_ROTATE_ARC_RADIUS,
+  TRANSLATE_CENTER_GAP,
+} from '../gizmoCore';
 import { resolveFusionTranslateShaftStart } from '../fusionRotateKnob';
 import { GizmoMaterial } from '../FusionTransformMaterials';
 import {

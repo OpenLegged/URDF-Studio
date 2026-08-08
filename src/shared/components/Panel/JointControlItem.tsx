@@ -1,18 +1,18 @@
-import React, { useRef, useState, useEffect, useCallback } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+
 import { JointType } from '@/types';
-import { normalizeJointLimitOrder } from '@/core/robot';
 import { createJointDragStoreSync } from '@/shared/utils/jointDragStoreSync';
 import { getJointType } from '@/shared/utils/jointTypes';
 import {
   fromJointDisplayValue,
   getJointSliderStep,
   getJointValueUnitLabel,
-  hasEffectivelyFiniteJointLimits,
   isAngularJointType,
   normalizeJointTypeValue,
-  supportsFiniteJointLimits,
   toJointDisplayValue,
 } from '@/shared/utils/jointUnits';
+import { JointAdvancedInputs, JointLimitField, JointValueField } from './JointControlFields';
+import type { EditableJointNumberField } from './jointControlFieldTypes';
 import {
   JOINT_PANEL_STORE_SYNC_INTERVAL_MS,
   type JointControlItemProps,
@@ -21,6 +21,7 @@ import {
 } from './jointControlItemTypes';
 import { snapSliderValue } from './jointSliderMath';
 import { useFocusInputWhenEditing } from './useFocusInputWhenEditing';
+import { useJointLimitEditing } from './useJointLimitEditing';
 
 export type { JointControlItemProps } from './jointControlItemTypes';
 
@@ -47,9 +48,7 @@ const JointControlItemComponent: React.FC<JointControlItemProps> = ({
 }) => {
   const resolvedDisplayName = displayName?.trim() || joint?.name?.trim() || name;
   const jointType = getJointType(joint);
-  const limit = joint.limit;
   const usesAngularUnits = isAngularJointType(jointType);
-  const supportsAdjustableLimits = supportsFiniteJointLimits(jointType);
   const isContinuousJoint = normalizeJointTypeValue(jointType) === JointType.CONTINUOUS;
   const itemRef = useRef<HTMLDivElement>(null);
   const continuousPreviewValueRef = useRef(value);
@@ -60,7 +59,7 @@ const JointControlItemComponent: React.FC<JointControlItemProps> = ({
       createJointDragStoreSync({
         onDragChange: handleJointAngleChange,
         onDragCommit: handleJointChangeCommit,
-        // Callers choose how often expensive runtime/store sync runs; local slider feedback stays immediate.
+        // Callers choose how often expensive runtime/store sync runs; local feedback stays immediate.
         throttleChanges: throttleDragSync,
         intervalMs: dragSyncIntervalMs,
         syncMode: dragSyncMode,
@@ -73,83 +72,24 @@ const JointControlItemComponent: React.FC<JointControlItemProps> = ({
       throttleDragSync,
     ],
   );
-
-  const [localLimits, setLocalLimits] = useState(() =>
-    normalizeJointLimitOrder({
-      lower: limit?.lower,
-      upper: limit?.upper,
-      effort: limit?.effort,
-      velocity: limit?.velocity,
-    }),
-  );
-
-  useEffect(() => {
-    setLocalLimits(
-      normalizeJointLimitOrder({
-        lower: limit?.lower,
-        upper: limit?.upper,
-        effort: limit?.effort,
-        velocity: limit?.velocity,
-      }),
-    );
-  }, [joint.id, limit?.lower, limit?.upper, limit?.effort, limit?.velocity]);
-
-  const orderedLocalLimits = React.useMemo(
-    () => normalizeJointLimitOrder(localLimits),
-    [localLimits],
-  );
-  const hasFiniteLimits =
-    supportsAdjustableLimits && hasEffectivelyFiniteJointLimits(orderedLocalLimits);
-
-  const formatLimitInputValue = (limitValue: number | undefined) =>
-    Number.isFinite(limitValue) ? Number(limitValue).toFixed(2) : '';
-  const formatLimitDisplayValue = (limitValue: number | undefined) =>
-    Number.isFinite(limitValue) ? Number(limitValue).toFixed(2) : '—';
-
-  const updateLimit = useCallback(
-    (key: 'lower' | 'upper' | 'effort' | 'velocity', val: number) => {
-      const newLimits = normalizeJointLimitOrder({ ...localLimits, [key]: val });
-      setLocalLimits(newLimits);
-
-      if ((key === 'lower' || key === 'upper') && hasEffectivelyFiniteJointLimits(newLimits)) {
-        const clampedValue = Math.min(Math.max(value, newLimits.lower), newLimits.upper);
-        if (Math.abs(clampedValue - value) > 1e-9) {
-          handleJointAngleChange(name, clampedValue);
-          handleJointChangeCommit(name, clampedValue);
-        }
-      }
-
-      const jointId = name || (joint.id == null ? '' : String(joint.id));
-      if (jointId) {
-        const finiteLimits = {
-          ...(typeof newLimits.lower === 'number' && Number.isFinite(newLimits.lower)
-            ? { lower: newLimits.lower }
-            : {}),
-          ...(typeof newLimits.upper === 'number' && Number.isFinite(newLimits.upper)
-            ? { upper: newLimits.upper }
-            : {}),
-          ...(typeof newLimits.effort === 'number' && Number.isFinite(newLimits.effort)
-            ? { effort: newLimits.effort }
-            : {}),
-          ...(typeof newLimits.velocity === 'number' && Number.isFinite(newLimits.velocity)
-            ? { velocity: newLimits.velocity }
-            : {}),
-        };
-        onUpdate?.('joint', jointId, {
-          limit: finiteLimits,
-        });
-      }
-    },
-    [
-      handleJointAngleChange,
-      handleJointChangeCommit,
-      joint,
-      localLimits,
-      name,
-      onUpdate,
-      value,
-    ],
-  );
+  const {
+    localLimits,
+    orderedLimits,
+    hasFiniteLimits,
+    lowerEditor,
+    upperEditor,
+    effortEditor,
+    velocityEditor,
+  } = useJointLimitEditing({
+    joint,
+    jointType,
+    name,
+    value,
+    angleUnit,
+    handleJointAngleChange,
+    handleJointChangeCommit,
+    onUpdate,
+  });
 
   useEffect(() => {
     if (shouldAutoScroll && itemRef.current) {
@@ -174,24 +114,23 @@ const JointControlItemComponent: React.FC<JointControlItemProps> = ({
   }, []);
 
   const displayValue = toJointDisplayValue(sliderPreviewValue, jointType, angleUnit);
-  const displayMin = hasFiniteLimits
-    ? toJointDisplayValue(orderedLocalLimits.lower, jointType, angleUnit)
-    : Number.NEGATIVE_INFINITY;
-  const displayMax = hasFiniteLimits
-    ? toJointDisplayValue(orderedLocalLimits.upper, jointType, angleUnit)
-    : Number.POSITIVE_INFINITY;
+  const displayMin =
+    hasFiniteLimits && typeof orderedLimits.lower === 'number'
+      ? toJointDisplayValue(orderedLimits.lower, jointType, angleUnit)
+      : Number.NEGATIVE_INFINITY;
+  const displayMax =
+    hasFiniteLimits && typeof orderedLimits.upper === 'number'
+      ? toJointDisplayValue(orderedLimits.upper, jointType, angleUnit)
+      : Number.POSITIVE_INFINITY;
   const displayUnit = getJointValueUnitLabel(jointType, angleUnit);
   const step = getJointSliderStep(jointType, angleUnit);
   const continuousSliderWindow = angleUnit === 'deg' ? 180 : Math.PI;
   const sliderValue = isContinuousJoint
     ? toJointDisplayValue(sliderPreviewValue - continuousSliderAnchor, jointType, angleUnit)
     : displayValue;
-  // The limit override only frees the slider's travel; the authored bounds stay
-  // visible and editable so they can be corrected after posing the joint.
+  // Limit override frees slider travel while authored bounds remain visible and editable.
   const sliderBoundedByLimits = hasFiniteLimits && !ignoreLimits;
-  // Anchor the override window to the authored limits rather than to the live
-  // value: a value-centred window would shift under the cursor on every input
-  // event, so one drag would run the angle away instead of tracking the mouse.
+  // Keep the override window stable under the pointer by anchoring it to authored limits.
   const limitOverrideMargin = usesAngularUnits
     ? angleUnit === 'deg'
       ? 360
@@ -243,43 +182,7 @@ const JointControlItemComponent: React.FC<JointControlItemProps> = ({
   const [inputValue, setInputValue] = useState(displayValue.toFixed(2));
   const [isEditingValue, setIsEditingValue] = useState(false);
   const valueInputRef = useRef<HTMLInputElement>(null);
-
-  const [isEditingLower, setIsEditingLower] = useState(false);
-  const [isEditingUpper, setIsEditingUpper] = useState(false);
-  const [isEditingEffort, setIsEditingEffort] = useState(false);
-  const [isEditingVelocity, setIsEditingVelocity] = useState(false);
-  const lowerInputRef = useRef<HTMLInputElement>(null);
-  const upperInputRef = useRef<HTMLInputElement>(null);
-  const effortInputRef = useRef<HTMLInputElement>(null);
-  const velocityInputRef = useRef<HTMLInputElement>(null);
-
   useFocusInputWhenEditing(valueInputRef, isEditingValue);
-  useFocusInputWhenEditing(lowerInputRef, isEditingLower);
-  useFocusInputWhenEditing(upperInputRef, isEditingUpper);
-  useFocusInputWhenEditing(effortInputRef, isEditingEffort);
-  useFocusInputWhenEditing(velocityInputRef, isEditingVelocity);
-
-  const [lowerInput, setLowerInput] = useState(formatLimitInputValue(orderedLocalLimits.lower));
-  const [upperInput, setUpperInput] = useState(formatLimitInputValue(orderedLocalLimits.upper));
-
-  const [effortInput, setEffortInput] = useState(formatLimitInputValue(localLimits.effort));
-  const [velocityInput, setVelocityInput] = useState(formatLimitInputValue(localLimits.velocity));
-
-  useEffect(() => {
-    if (!isEditingLower) setLowerInput(formatLimitInputValue(orderedLocalLimits.lower));
-  }, [orderedLocalLimits.lower, isEditingLower]);
-
-  useEffect(() => {
-    if (!isEditingUpper) setUpperInput(formatLimitInputValue(orderedLocalLimits.upper));
-  }, [orderedLocalLimits.upper, isEditingUpper]);
-
-  useEffect(() => {
-    if (!isEditingEffort) setEffortInput(formatLimitInputValue(localLimits.effort));
-  }, [localLimits.effort, isEditingEffort]);
-
-  useEffect(() => {
-    if (!isEditingVelocity) setVelocityInput(formatLimitInputValue(localLimits.velocity));
-  }, [localLimits.velocity, isEditingVelocity]);
 
   useEffect(() => {
     if (isSliderDraggingRef.current) {
@@ -342,7 +245,6 @@ const JointControlItemComponent: React.FC<JointControlItemProps> = ({
     }
 
     const committedValue = continuousPreviewValueRef.current;
-
     isSliderDraggingRef.current = false;
     sliderDragSourceRef.current = null;
     sliderDragBoundsRef.current = null;
@@ -364,7 +266,6 @@ const JointControlItemComponent: React.FC<JointControlItemProps> = ({
         angleUnit: currentAngleUnit,
         name: currentName,
       } = latestValuesRef.current;
-
       const nextValue = currentIsContinuousJoint
         ? continuousSliderAnchorRef.current +
           fromJointDisplayValue(nextSliderValue, currentJointType, currentAngleUnit)
@@ -392,10 +293,7 @@ const JointControlItemComponent: React.FC<JointControlItemProps> = ({
       return null;
     }
 
-    return {
-      left: rect.left,
-      width: rect.width,
-    };
+    return { left: rect.left, width: rect.width };
   }, []);
 
   const updateSliderValueFromClientX = useCallback(
@@ -410,7 +308,6 @@ const JointControlItemComponent: React.FC<JointControlItemProps> = ({
         sliderMax: currentMax,
         step: currentStep,
       } = latestValuesRef.current;
-
       const ratio = Math.min(Math.max((clientX - bounds.left) / bounds.width, 0), 1);
       const rawSliderValue = currentMin + ratio * (currentMax - currentMin);
       handleSliderInput(snapSliderValue(rawSliderValue, currentMin, currentMax, currentStep));
@@ -428,7 +325,7 @@ const JointControlItemComponent: React.FC<JointControlItemProps> = ({
         try {
           sliderShellRef.current.setPointerCapture(pointerId);
         } catch {
-          // Ignore if pointer capture fails
+          // Pointer capture is an optimization; window listeners still complete the drag.
         }
       }
     },
@@ -448,7 +345,6 @@ const JointControlItemComponent: React.FC<JointControlItemProps> = ({
       const thumbCenterY = rect.top + rect.height / 2;
       const withinX = Math.abs(clientX - thumbCenterX) <= sliderThumbHalf + 7;
       const withinY = Math.abs(clientY - thumbCenterY) <= sliderThumbHalf + 10;
-
       setIsSliderThumbHovered(withinX && withinY);
     },
     [clampedSliderPercentage, sliderThumbHalf],
@@ -460,16 +356,11 @@ const JointControlItemComponent: React.FC<JointControlItemProps> = ({
     }
 
     const handleWindowPointerMove = (event: PointerEvent) => {
-      if (sliderDragSourceRef.current !== 'slider-shell') {
-        return;
+      if (sliderDragSourceRef.current === 'slider-shell') {
+        updateSliderValueFromClientX(event.clientX);
       }
-
-      updateSliderValueFromClientX(event.clientX);
     };
-
-    const handleWindowPointerUp = () => {
-      handleSliderChangeEnd();
-    };
+    const handleWindowPointerUp = () => handleSliderChangeEnd();
 
     window.addEventListener('pointermove', handleWindowPointerMove, { passive: true });
     window.addEventListener('pointerup', handleWindowPointerUp);
@@ -486,128 +377,43 @@ const JointControlItemComponent: React.FC<JointControlItemProps> = ({
 
   useEffect(() => {
     const currentParsed = parseFloat(inputValue);
-    const isDifferent = isNaN(currentParsed) || Math.abs(currentParsed - displayValue) > 0.0001;
-
+    const isDifferent =
+      Number.isNaN(currentParsed) || Math.abs(currentParsed - displayValue) > 0.0001;
     if (!isEditingValue && isDifferent) {
       setInputValue(displayValue.toFixed(2));
     }
-  }, [displayValue, isEditingValue]);
+  }, [displayValue, inputValue, isEditingValue]);
 
-  const commitChange = useCallback(
-    (valStr: string) => {
-      const val = parseFloat(valStr);
-      if (!isNaN(val)) {
-        handleJointChangeCommit(name, fromJointDisplayValue(val, jointType, angleUnit));
+  const commitValue = useCallback(
+    (input: string) => {
+      const parsedValue = parseFloat(input);
+      if (!Number.isNaN(parsedValue)) {
+        handleJointChangeCommit(name, fromJointDisplayValue(parsedValue, jointType, angleUnit));
       }
       setIsEditingValue(false);
     },
     [angleUnit, handleJointChangeCommit, jointType, name],
   );
 
-  const handleLimitCommit = useCallback(
-    (type: 'lower' | 'upper', valStr: string) => {
-      if (!hasFiniteLimits) {
-        if (type === 'lower') setIsEditingLower(false);
-        if (type === 'upper') setIsEditingUpper(false);
-        return;
-      }
-
-      const val = parseFloat(valStr);
-      if (!isNaN(val)) {
-        updateLimit(type, fromJointDisplayValue(val, jointType, angleUnit));
-      }
-      if (type === 'lower') setIsEditingLower(false);
-      if (type === 'upper') setIsEditingUpper(false);
-    },
-    [angleUnit, hasFiniteLimits, jointType, updateLimit],
-  );
-
-  const handleAdvancedCommit = useCallback(
-    (type: 'effort' | 'velocity', valStr: string) => {
-      const val = parseFloat(valStr);
-      if (!isNaN(val)) {
-        updateLimit(type, val);
-      }
-      if (type === 'effort') setIsEditingEffort(false);
-      if (type === 'velocity') setIsEditingVelocity(false);
-    },
-    [updateLimit],
-  );
-
-  const commitOpenEditors = useCallback(() => {
-    if (isEditingValue) commitChange(valueInputRef.current?.value ?? inputValue);
-    if (isEditingLower) handleLimitCommit('lower', lowerInputRef.current?.value ?? lowerInput);
-    if (isEditingUpper) handleLimitCommit('upper', upperInputRef.current?.value ?? upperInput);
-    if (isEditingEffort) {
-      handleAdvancedCommit('effort', effortInputRef.current?.value ?? effortInput);
-    }
-    if (isEditingVelocity) {
-      handleAdvancedCommit('velocity', velocityInputRef.current?.value ?? velocityInput);
-    }
-  }, [
-    commitChange,
-    effortInput,
-    handleAdvancedCommit,
-    handleLimitCommit,
-    inputValue,
-    isEditingEffort,
-    isEditingLower,
-    isEditingUpper,
-    isEditingValue,
-    isEditingVelocity,
-    lowerInput,
-    upperInput,
-    velocityInput,
-  ]);
-
   useEffect(() => {
-    if (
-      !isEditingValue &&
-      !isEditingLower &&
-      !isEditingUpper &&
-      !isEditingEffort &&
-      !isEditingVelocity
-    ) {
+    if (!isEditingValue) {
       return;
     }
 
     const handlePointerDownCapture = (event: PointerEvent) => {
       const target = event.target;
-      if (!(target instanceof Node)) return;
-
-      const activeInputs = [
-        isEditingValue ? valueInputRef.current : null,
-        isEditingLower ? lowerInputRef.current : null,
-        isEditingUpper ? upperInputRef.current : null,
-        isEditingEffort ? effortInputRef.current : null,
-        isEditingVelocity ? velocityInputRef.current : null,
-      ].filter((input): input is HTMLInputElement => input instanceof HTMLInputElement);
-
-      if (activeInputs.some((input) => input.contains(target))) {
+      if (!(target instanceof Node) || valueInputRef.current?.contains(target)) {
         return;
       }
-
-      commitOpenEditors();
+      commitValue(valueInputRef.current?.value ?? inputValue);
     };
 
     document.addEventListener('pointerdown', handlePointerDownCapture, true);
     return () => {
       document.removeEventListener('pointerdown', handlePointerDownCapture, true);
     };
-  }, [
-    commitOpenEditors,
-    isEditingEffort,
-    isEditingLower,
-    isEditingUpper,
-    isEditingValue,
-    isEditingVelocity,
-  ]);
+  }, [commitValue, inputValue, isEditingValue]);
 
-  const mainValueFieldWidthClassName = 'w-[2.35rem]';
-  const limitFieldBaseClassName =
-    'flex h-4 items-center rounded border px-0.5 py-0 font-mono tabular-nums text-[9px] leading-none transition-colors';
-  const limitFieldColumnWidthClassName = 'min-w-[2.35rem]';
-  const limitInputWidthClassName = 'w-[2.35rem]';
   const cardSpacingClassName = compact
     ? 'space-y-0.5 rounded-md px-1 py-1'
     : 'space-y-1 rounded-lg px-1 py-1.5';
@@ -621,11 +427,7 @@ const JointControlItemComponent: React.FC<JointControlItemProps> = ({
   }, [name, onSelect, setActiveJoint]);
   const handleCardKeyDown = useCallback(
     (event: React.KeyboardEvent<HTMLDivElement>) => {
-      if (event.target !== event.currentTarget) {
-        return;
-      }
-
-      if (event.key !== 'Enter' && event.key !== ' ') {
+      if (event.target !== event.currentTarget || (event.key !== 'Enter' && event.key !== ' ')) {
         return;
       }
 
@@ -634,141 +436,14 @@ const JointControlItemComponent: React.FC<JointControlItemProps> = ({
     },
     [selectCurrentJoint],
   );
-
-  const renderValueDisplay = () => (
-    <div className="flex h-full shrink-0 items-center justify-end gap-0.5 whitespace-nowrap">
-      <div
-        className={`flex items-center justify-end ${mainValueFieldWidthClassName}`}
-        onClick={(e) => {
-          e.stopPropagation();
-          setIsEditingValue(true);
-        }}
-        onKeyDown={(e) => {
-          if (e.target !== e.currentTarget || (e.key !== 'Enter' && e.key !== ' ')) {
-            return;
-          }
-          e.preventDefault();
-          e.stopPropagation();
-          setIsEditingValue(true);
-        }}
-        role="button"
-        tabIndex={-1}
-      >
-        {isEditingValue ? (
-          <input
-            ref={valueInputRef}
-            type="text"
-            value={inputValue}
-            onChange={(e) => setInputValue(e.target.value)}
-            onBlur={(e) => commitChange(e.currentTarget.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') {
-                commitChange(e.currentTarget.value);
-                e.currentTarget.blur();
-              }
-            }}
-            onClick={(e) => e.stopPropagation()}
-            className="h-3.5 w-full rounded border border-border-strong bg-input-bg px-0.5 py-0 text-right text-[9px] leading-none font-mono tabular-nums text-text-primary outline-none focus:border-system-blue focus:ring-1 focus:ring-system-blue/20"
-          />
-        ) : (
-          <button
-            type="button"
-            onClick={(e) => {
-              e.stopPropagation();
-              setIsEditingValue(true);
-            }}
-            className="w-full border-0 bg-transparent p-0 text-right"
-          >
-            <div className="flex h-3.5 w-full items-center justify-end whitespace-nowrap rounded border border-transparent px-0.5 py-0 text-right font-mono tabular-nums text-[9px] leading-none text-text-primary transition-colors hover:border-border-strong/70 hover:text-system-blue">
-              {displayValue.toFixed(2)}
-            </div>
-          </button>
-        )}
-      </div>
-      <span className="inline-flex h-3.5 min-w-[1.1rem] items-center text-left text-[9px] leading-none text-text-tertiary">
-        {displayUnit}
-      </span>
-    </div>
-  );
-
-  const renderAdvancedInputs = () => (
-    <div className="flex items-center gap-2 shrink-0">
-      {isEditingEffort ? (
-        <div className="flex items-center gap-1.5 cursor-text group">
-          <span className="inline-flex h-4 w-3 items-center justify-center font-serif text-[10px] italic leading-none text-text-tertiary">
-            τ
-          </span>
-          <input
-            ref={effortInputRef}
-            type="text"
-            value={effortInput}
-            onChange={(e) => setEffortInput(e.target.value)}
-            onBlur={(e) => handleAdvancedCommit('effort', e.currentTarget.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') {
-                handleAdvancedCommit('effort', e.currentTarget.value);
-              }
-            }}
-            onClick={(e) => e.stopPropagation()}
-            className="h-4 w-10 rounded border border-border-strong bg-input-bg px-0.5 py-0 text-center text-[10px] leading-none font-mono text-text-primary outline-none focus:border-system-blue focus:ring-1 focus:ring-system-blue/20"
-          />
-        </div>
-      ) : (
-        <button
-          type="button"
-          className="flex items-center gap-1.5 cursor-text group border-0 bg-transparent p-0"
-          onClick={(e) => {
-            e.stopPropagation();
-            setIsEditingEffort(true);
-          }}
-        >
-          <span className="inline-flex h-4 w-3 items-center justify-center font-serif text-[10px] italic leading-none text-text-tertiary">
-            τ
-          </span>
-          <span className="flex h-4 w-10 items-center justify-center border-b border-transparent text-center text-[10px] leading-none text-text-secondary transition-colors group-hover:border-border-strong/80 group-hover:text-text-primary">
-            {formatLimitDisplayValue(localLimits.effort)}
-          </span>
-        </button>
-      )}
-      {isEditingVelocity ? (
-        <div className="flex items-center gap-1.5 cursor-text group">
-          <span className="inline-flex h-4 w-3 items-center justify-center font-serif text-[10px] italic leading-none text-text-tertiary">
-            v
-          </span>
-          <input
-            ref={velocityInputRef}
-            type="text"
-            value={velocityInput}
-            onChange={(e) => setVelocityInput(e.target.value)}
-            onBlur={(e) => handleAdvancedCommit('velocity', e.currentTarget.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') {
-                handleAdvancedCommit('velocity', e.currentTarget.value);
-              }
-            }}
-            onClick={(e) => e.stopPropagation()}
-            className="h-4 w-10 rounded border border-border-strong bg-input-bg px-0.5 py-0 text-center text-[10px] leading-none font-mono text-text-primary outline-none focus:border-system-blue focus:ring-1 focus:ring-system-blue/20"
-          />
-        </div>
-      ) : (
-        <button
-          type="button"
-          className="flex items-center gap-1.5 cursor-text group border-0 bg-transparent p-0"
-          onClick={(e) => {
-            e.stopPropagation();
-            setIsEditingVelocity(true);
-          }}
-        >
-          <span className="inline-flex h-4 w-3 items-center justify-center font-serif text-[10px] italic leading-none text-text-tertiary">
-            v
-          </span>
-          <span className="flex h-4 w-10 items-center justify-center border-b border-transparent text-center text-[10px] text-text-secondary transition-colors group-hover:border-border-strong/80 group-hover:text-text-primary">
-            {formatLimitDisplayValue(localLimits.velocity)}
-          </span>
-        </button>
-      )}
-    </div>
-  );
+  const valueEditor: EditableJointNumberField = {
+    inputRef: valueInputRef,
+    inputValue,
+    setInputValue,
+    isEditing: isEditingValue,
+    beginEditing: () => setIsEditingValue(true),
+    commit: commitValue,
+  };
 
   return (
     <div
@@ -803,74 +478,38 @@ const JointControlItemComponent: React.FC<JointControlItemProps> = ({
           {resolvedDisplayName}
         </span>
 
-        {!isAdvanced && renderValueDisplay()}
+        {!isAdvanced ? (
+          <JointValueField
+            displayValue={displayValue}
+            displayUnit={displayUnit}
+            editor={valueEditor}
+          />
+        ) : null}
       </div>
 
-      {isAdvanced && (
+      {isAdvanced ? (
         <div className={`flex ${rowHeightClassName} items-center justify-between gap-1`}>
-          {renderAdvancedInputs()}
-          {renderValueDisplay()}
+          <JointAdvancedInputs
+            effort={localLimits.effort}
+            velocity={localLimits.velocity}
+            effortEditor={effortEditor}
+            velocityEditor={velocityEditor}
+          />
+          <JointValueField
+            displayValue={displayValue}
+            displayUnit={displayUnit}
+            editor={valueEditor}
+          />
         </div>
-      )}
+      ) : null}
 
       <div className="grid grid-cols-[max-content_minmax(0,1fr)_max-content] items-center gap-1">
-        <div
-          className={`relative flex h-4 items-center justify-end ${limitFieldColumnWidthClassName}`}
-          onClick={(e) => {
-            if (!hasFiniteLimits) return;
-            e.stopPropagation();
-            setIsEditingLower(true);
-          }}
-          onKeyDown={(e) => {
-            if (
-              !hasFiniteLimits ||
-              e.target !== e.currentTarget ||
-              (e.key !== 'Enter' && e.key !== ' ')
-            ) {
-              return;
-            }
-            e.preventDefault();
-            e.stopPropagation();
-            setIsEditingLower(true);
-          }}
-          role={hasFiniteLimits ? 'button' : undefined}
-          tabIndex={hasFiniteLimits ? -1 : undefined}
-        >
-          {hasFiniteLimits && isEditingLower ? (
-            <input
-              ref={lowerInputRef}
-              type="text"
-              value={lowerInput}
-              onChange={(e) => setLowerInput(e.target.value)}
-              onBlur={(e) => handleLimitCommit('lower', e.currentTarget.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') handleLimitCommit('lower', e.currentTarget.value);
-              }}
-              className={`absolute left-0 top-0 z-20 ${limitFieldBaseClassName} ${limitInputWidthClassName} border-border-strong bg-input-bg text-right text-text-primary outline-none focus:border-system-blue focus:ring-1 focus:ring-system-blue/20`}
-            />
-          ) : hasFiniteLimits ? (
-            <button
-              type="button"
-              className="border-0 bg-transparent p-0"
-              onClick={(e) => {
-                e.stopPropagation();
-                setIsEditingLower(true);
-              }}
-            >
-              <div
-                className={`${limitFieldBaseClassName} w-fit cursor-text justify-end border-transparent text-right text-text-tertiary hover:border-border-strong/70 hover:text-system-blue`}
-              >
-                {displayMin.toFixed(2)}
-              </div>
-            </button>
-          ) : (
-            <div
-              className={`${limitFieldBaseClassName} w-fit cursor-text justify-end border-transparent text-right text-text-tertiary hover:border-border-strong/70 hover:text-system-blue`}
-            >
-              −∞
-            </div>
-          )}
-        </div>
+        <JointLimitField
+          side="lower"
+          hasFiniteLimits={hasFiniteLimits}
+          displayValue={displayMin}
+          editor={lowerEditor}
+        />
 
         <div
           ref={sliderShellRef}
@@ -947,80 +586,29 @@ const JointControlItemComponent: React.FC<JointControlItemProps> = ({
             max={sliderMax}
             step={step}
             value={sliderValue}
-            onInput={(e) => {
-              handleSliderInput(parseFloat((e.target as HTMLInputElement).value));
+            onInput={(event) => {
+              handleSliderInput(parseFloat(event.currentTarget.value));
             }}
-            onPointerDown={(e) => {
-              e.stopPropagation();
+            onPointerDown={(event) => {
+              event.stopPropagation();
               handleSliderChangeStart('native-input');
             }}
-            onPointerUp={(e) => {
-              e.stopPropagation();
+            onPointerUp={(event) => {
+              event.stopPropagation();
               handleSliderChangeEnd();
             }}
-            onClick={(e) => e.stopPropagation()}
+            onClick={(event) => event.stopPropagation()}
             className={`relative z-10 block ${sliderInputHeightClassName} w-full cursor-pointer appearance-none bg-transparent opacity-0`}
             style={{ accentColor: 'var(--ui-slider-accent)' }}
           />
         </div>
 
-        <div
-          className={`relative flex h-4 items-center justify-start ${limitFieldColumnWidthClassName}`}
-          onClick={(e) => {
-            if (!hasFiniteLimits) return;
-            e.stopPropagation();
-            setIsEditingUpper(true);
-          }}
-          onKeyDown={(e) => {
-            if (
-              !hasFiniteLimits ||
-              e.target !== e.currentTarget ||
-              (e.key !== 'Enter' && e.key !== ' ')
-            ) {
-              return;
-            }
-            e.preventDefault();
-            e.stopPropagation();
-            setIsEditingUpper(true);
-          }}
-          role={hasFiniteLimits ? 'button' : undefined}
-          tabIndex={hasFiniteLimits ? -1 : undefined}
-        >
-          {hasFiniteLimits && isEditingUpper ? (
-            <input
-              ref={upperInputRef}
-              type="text"
-              value={upperInput}
-              onChange={(e) => setUpperInput(e.target.value)}
-              onBlur={(e) => handleLimitCommit('upper', e.currentTarget.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') handleLimitCommit('upper', e.currentTarget.value);
-              }}
-              className={`absolute right-0 top-0 z-20 ${limitFieldBaseClassName} ${limitInputWidthClassName} border-border-strong bg-input-bg text-left text-text-primary outline-none focus:border-system-blue focus:ring-1 focus:ring-system-blue/20`}
-            />
-          ) : hasFiniteLimits ? (
-            <button
-              type="button"
-              className="border-0 bg-transparent p-0"
-              onClick={(e) => {
-                e.stopPropagation();
-                setIsEditingUpper(true);
-              }}
-            >
-              <div
-                className={`${limitFieldBaseClassName} w-fit cursor-text justify-start border-transparent text-left text-text-tertiary hover:border-border-strong/70 hover:text-system-blue`}
-              >
-                {displayMax.toFixed(2)}
-              </div>
-            </button>
-          ) : (
-            <div
-              className={`${limitFieldBaseClassName} w-fit cursor-text justify-start border-transparent text-left text-text-tertiary hover:border-border-strong/70 hover:text-system-blue`}
-            >
-              ∞
-            </div>
-          )}
-        </div>
+        <JointLimitField
+          side="upper"
+          hasFiniteLimits={hasFiniteLimits}
+          displayValue={displayMax}
+          editor={upperEditor}
+        />
       </div>
     </div>
   );

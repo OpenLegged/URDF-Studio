@@ -3,7 +3,7 @@
  * Extracted common panel patterns used across the unified editor viewers.
  */
 
-import React, { useRef, useState, useCallback, useEffect, ReactNode } from 'react';
+import React, { ReactNode, useState } from 'react';
 import { Paperclip } from 'lucide-react';
 import { ResizeCornerIndicator } from '@/shared/components/DraggableWindow/ResizeCornerIndicator';
 import {
@@ -13,7 +13,6 @@ import {
 } from '@/shared/components/DraggableWindow/floatingWindowStyles';
 import { Checkbox, IconButton, Slider as UiSlider } from '@/shared/components/ui';
 import { useOverlayHoverBlock } from '@/shared/hooks/useOverlayHoverBlock';
-import { useDraggablePanel } from '@/shared/hooks/useDraggablePanel';
 import { usePanelResize } from '@/shared/hooks/usePanelResize';
 
 // Drag grip icon SVG path
@@ -104,9 +103,7 @@ export const CheckboxOption: React.FC<CheckboxOptionProps> = ({
   const content = (
     <div className={`flex ${contentHeightClassName} items-center gap-2`}>
       {icon}
-      <span className={`text-ui-label ${textLineHeightClassName} ${labelClassName}`}>
-        {label}
-      </span>
+      <span className={`text-ui-label ${textLineHeightClassName} ${labelClassName}`}>{label}</span>
     </div>
   );
 
@@ -417,7 +414,7 @@ export const GroundPlaneControls: React.FC<GroundPlaneControlsProps> = ({
             type="button"
             onClick={onAutoFit}
             disabled={disabled}
-          className="flex flex-1 items-center justify-center gap-1 rounded-md border border-system-blue/20 bg-system-blue/10 px-2 py-1 text-ui-label font-medium text-system-blue transition-colors hover:bg-system-blue/15 focus:outline-none focus-visible:ring-2 focus-visible:ring-system-blue/30 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-system-blue/10 dark:border-system-blue/30 dark:bg-system-blue/20 dark:hover:bg-system-blue/25 dark:disabled:hover:bg-system-blue/20"
+            className="flex flex-1 items-center justify-center gap-1 rounded-md border border-system-blue/20 bg-system-blue/10 px-2 py-1 text-ui-label font-medium text-system-blue transition-colors hover:bg-system-blue/15 focus:outline-none focus-visible:ring-2 focus-visible:ring-system-blue/30 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-system-blue/10 dark:border-system-blue/30 dark:bg-system-blue/20 dark:hover:bg-system-blue/25 dark:disabled:hover:bg-system-blue/20"
           >
             {autoFitIcon}
             {autoFitLabel}
@@ -646,7 +643,6 @@ export const OptionsPanelContainer: React.FC<OptionsPanelContainerProps> = ({
     </div>
   );
 };
-
 
 // ============== Complete Options Panel ==============
 interface OptionsPanelProps {

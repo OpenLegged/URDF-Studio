@@ -1,6 +1,5 @@
 import React from 'react';
 import { type ThreeEvent } from '@react-three/fiber';
-import * as THREE from 'three';
 
 import { GIZMO_ARC_RENDER_ORDER } from '../gizmoCore';
 import {
@@ -55,11 +54,7 @@ export function TranslateCenterHandle({
       name="fusion-translate-center"
       userData={{ urdfAxis: 'XYZ', urdfHoverScaleTarget: true, urdfOwner: 'translate' }}
     >
-      <mesh
-        {...handleProps}
-        frustumCulled={false}
-        name="translate-center"
-      >
+      <mesh {...handleProps} frustumCulled={false} name="translate-center">
         <sphereGeometry args={[FUSION_TRANSLATE_CENTER_RADIUS, 28, 16]} />
         <PlainGizmoMaterial
           active={active}
