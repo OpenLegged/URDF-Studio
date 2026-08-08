@@ -142,11 +142,6 @@
       "count": 1
     }
   },
-  "src/app/utils/mjcfEditableSourcePatch.ts": {
-    "@typescript-eslint/no-unused-vars": {
-      "count": 1
-    }
-  },
   "src/app/utils/simpleModeDrafts.ts": {
     "@typescript-eslint/no-unused-vars": {
       "count": 1
@@ -225,11 +220,6 @@
       "count": 1
     }
   },
-  "src/core/parsers/mjcf/mjcfParser.ts": {
-    "@typescript-eslint/no-explicit-any": {
-      "count": 6
-    }
-  },
   "src/core/parsers/mjcf/mjcfRenderHelpers.ts": {
     "@typescript-eslint/no-explicit-any": {
       "count": 1
@@ -243,9 +233,6 @@
   "src/core/parsers/mjcf/mjcfSnapshot.ts": {
     "@typescript-eslint/no-explicit-any": {
       "count": 6
-    },
-    "@typescript-eslint/no-unused-vars": {
-      "count": 1
     }
   },
   "src/core/parsers/mjcf/mjcfSourceResolver.test.ts": {
@@ -303,11 +290,6 @@
       "count": 7
     }
   },
-  "src/core/robot/linkIk.ts": {
-    "@typescript-eslint/no-unused-vars": {
-      "count": 2
-    }
-  },
   "src/core/utils/meshMaterialGroups.ts": {
     "@typescript-eslint/no-unused-vars": {
       "count": 1
@@ -335,7 +317,7 @@
   },
   "src/features/file-io/utils/mjcfMeshExport.ts": {
     "@typescript-eslint/no-explicit-any": {
-      "count": 3
+      "count": 1
     }
   },
   "src/features/file-io/utils/projectArchiveWorkerBridge.ts": {
@@ -369,23 +351,8 @@
       "count": 1
     }
   },
-  "src/features/property-editor/components/CollisionOptimizationDialog.tsx": {
-    "react-hooks/exhaustive-deps": {
-      "count": 5
-    }
-  },
-  "src/features/property-editor/components/CollisionOptimizationPlanarGraph.tsx": {
-    "@typescript-eslint/no-unused-vars": {
-      "count": 2
-    }
-  },
   "src/features/property-editor/components/GeometryEditor.tsx": {
     "react-hooks/exhaustive-deps": {
-      "count": 1
-    }
-  },
-  "src/features/property-editor/components/LinkProperties.tsx": {
-    "@typescript-eslint/no-unused-vars": {
       "count": 1
     }
   },
@@ -443,14 +410,6 @@
       "count": 1
     }
   },
-  "src/features/urdf-viewer/components/RobotModel.tsx": {
-    "@typescript-eslint/no-explicit-any": {
-      "count": 1
-    },
-    "react-hooks/exhaustive-deps": {
-      "count": 2
-    }
-  },
   "src/features/urdf-viewer/components/ViewerOptionsPanel.tsx": {
     "@typescript-eslint/no-explicit-any": {
       "count": 1
@@ -481,10 +440,10 @@
   },
   "src/features/urdf-viewer/hooks/useMouseInteraction.ts": {
     "@typescript-eslint/no-explicit-any": {
-      "count": 22
+      "count": 11
     },
     "react-hooks/exhaustive-deps": {
-      "count": 2
+      "count": 1
     }
   },
   "src/features/urdf-viewer/hooks/useRobotLoader.ts": {
@@ -496,14 +455,6 @@
     },
     "react-hooks/exhaustive-deps": {
       "count": 1
-    }
-  },
-  "src/features/urdf-viewer/hooks/useViewerController.ts": {
-    "@typescript-eslint/no-unused-vars": {
-      "count": 1
-    },
-    "react-hooks/exhaustive-deps": {
-      "count": 2
     }
   },
   "src/features/urdf-viewer/hooks/useViewerSettings.ts": {
@@ -580,11 +531,6 @@
   "src/features/urdf-viewer/utils/robotGeometryVisibilitySync.ts": {
     "@typescript-eslint/no-explicit-any": {
       "count": 5
-    }
-  },
-  "src/features/urdf-viewer/utils/robotLoaderGeometryPatch.ts": {
-    "@typescript-eslint/no-explicit-any": {
-      "count": 12
     }
   },
   "src/features/urdf-viewer/utils/robotLoaderJointPatch.ts": {
@@ -815,7 +761,7 @@
   },
   "src/shared/components/Panel/JointControlItem.tsx": {
     "react-hooks/exhaustive-deps": {
-      "count": 2
+      "count": 1
     }
   },
   "src/shared/components/Panel/OptionsPanel.tsx": {

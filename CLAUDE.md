@@ -171,7 +171,7 @@ P0 内部的执行顺序是：可能导致错误 mutation/history 或多 viewer 
 - P1 `src/app/App.tsx` / `AppLayout.tsx`：document load/import、viewer derivation 与 snapshot workflow 已抽离，`AppContent` 当前约 594 代码行、`AppLayout` 约 731 代码行；下一步只抽有明确 owner 的 overlay/panel 组合，不把状态机切成互相捕获 ref 的碎 hook。
 - P1 `src/app/components/UnifiedViewer.tsx`：retained scene 生命周期已抽离；继续把 scene/view mode 派生和 overlays/panels render 分开，但 backend strategy 继续不得接触 mutation/selection/history。
 - P1 `src/features/urdf-viewer/workers/usdOffscreenViewer.worker.ts`：interaction state 与 deferred snapshot owner 已抽离；后续再按独立生命周期抽 stage/cache、picking 算法与 preload/load pipeline，entry 保留 dispatch 和统一销毁，不引入万能 manager/class。
-- P1 `SettingsModal.tsx` / `SnapshotDialog.tsx`：Snapshot capture config model 已抽离；`SettingsModal.tsx` 约 1023 行、`SnapshotDialog.tsx` 约 730 行；继续分离 Settings pane model 与 Snapshot preview/layout render，让 UI 只消费窄 props 和稳定 command；共享是因为真实合约，不是因为 JSX 长得像。
+- P1 `SnapshotDialog.tsx`：Settings pane model 与 Snapshot capture config model 已抽离；`SettingsModal.tsx` 已收敛至约 257 行，`SnapshotDialog.tsx` 约 730 行；继续分离 Snapshot preview/layout render，让 UI 只消费窄 props 和稳定 command；共享是因为真实合约，不是因为 JSX 长得像。
 - P2 `src/store/workspace/runtime.ts`：`createWorkspaceRuntime` 约 561 行但共享 transaction/history/joint-motion 不变量；只在能以窄 command contract 分开且不复制可变闭包状态时拆分。
 
 以上行数只是定位信号，不是验收条件。验收看依赖是否单向、数据是否单一所有、测试是否可稳定保护行为，以及调试时能否沿简单数据流定位失败。
@@ -188,14 +188,14 @@ P0 内部的执行顺序是：可能导致错误 mutation/history 或多 viewer 
 
 ## 状态管理
 
-| Store                          | 职责                                                                                       |
-| ------------------------------ | ------------------------------------------------------------------------------------------ |
-| `workspaceStore`               | 唯一可写 `AssemblyState`、component/bridge/entity CRUD、单一 history/activity、transaction |
-| `uiStore`                      | 主题、语言、侧栏、面板、显示选项（含持久化）                                               |
-| `selectionStore`               | 唯一 `WorkspaceSelection`，覆盖 assembly/component/bridge/link/joint/tendon 与 hover/focus |
-| `assetsStore`                  | mesh、texture、library templates、component source drafts、USD snapshot/export cache       |
-| `collisionTransformStore`      | 碰撞 gizmo 瞬时 pending transform                                                          |
-| `jointInteractionPreviewStore` | 跨 viewer 关节交互预览                                                                     |
+| Store                          | 职责                                                                                                  |
+| ------------------------------ | ----------------------------------------------------------------------------------------------------- |
+| `workspaceStore`               | 唯一可写 `AssemblyState`、component/bridge/entity CRUD、单一 history/activity、transaction            |
+| `uiStore`                      | 主题、语言、侧栏、面板、显示选项（含持久化）                                                          |
+| `selectionStore`               | 唯一 `WorkspaceSelection`，覆盖 assembly/component/bridge/link/joint/tendon 与 hover/focus            |
+| `assetsStore`                  | mesh、texture、library templates、component source drafts、USD snapshot/export cache                  |
+| `collisionTransformStore`      | 碰撞 gizmo 瞬时 pending transform                                                                     |
+| `jointInteractionPreviewStore` | 跨 viewer 关节交互预览                                                                                |
 | `jointPickSessionStore`        | 桥接关节创建时的拾取会话：side/mode/pending snap、feature sample、parent/child frame 与 relation 同步 |
 
 `RobotData` 只允许存在于 component 或只读 projection；不得在 Zustand 顶层恢复第二份可写 `name/links/joints/components`。`assetsStore` 拥有 draft/cache/blob 等持久或可订阅状态，`app/hooks` / `app/utils` 拥有 parse/validate/apply/invalidate 编排；状态存放不等于 store action 可以越过 app 拥有业务 workflow。跨 store 协调放 `app/hooks/*`；USD 中间态优先落在 `assetsStore` 或 `app/utils/*`。
