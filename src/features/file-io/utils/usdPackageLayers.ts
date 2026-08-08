@@ -1,19 +1,10 @@
-import type {
-  RobotClosedLoopConstraint,
-  RobotState,
-  UrdfJoint,
-  UrdfLink,
-} from '../../../types/index.ts';
+import type { RobotState, UrdfLink } from '../../../types/index.ts';
 import {
   USD_GEOMETRY_TYPES as GEOMETRY_TYPES,
   getUsdGeometryType as getGeometryType,
 } from './usdSceneNodeFactory.ts';
 import {
-  escapeUsdString,
-  formatUsdFloat,
-  formatUsdTuple,
   makeUsdIndent,
-  quaternionToUsdTuple,
   sanitizeUsdIdentifier,
   serializeUsdPrimSpecWithMetadata,
 } from './usdTextFormatting.ts';
@@ -25,18 +16,7 @@ import {
   ISAACSIM_DEFAULT_PHYSX_SCENE_SOLVER_TYPE,
   ZERO_EPSILON,
 } from './usdIsaacSimDefaults.ts';
-import {
-  getAxisToken,
-  normalizeUsdJointAxisToken,
-  type UsdJointAxisToken,
-} from './usdJointAxisUtils.ts';
-import { getUsdDriveInstanceName } from './usdUnitConversion.ts';
-import {
-  getUsdPhysicsAxisKeys,
-  normalizeUsdPhysicsQuaternionWxyz,
-  resolveUsdPhysicsLocalPos1,
-  supportsPhysxMimicJoint,
-} from './usdJointAttributeWriters.ts';
+import { supportsPhysxMimicJoint } from './usdJointAttributeWriters.ts';
 import {
   serializeClosedLoopConstraintDefinition,
   serializeJointDefinition,

@@ -1,8 +1,6 @@
-import { GeometryType, JointType, type RobotFile, type UrdfInertial, type UrdfJoint, type UrdfVisual } from '@/types';
-import { assignMJCFBodyGeomRoles, type MJCFGeomClassificationInput } from '@/core/parsers/mjcf/mjcfGeomClassification';
+import { type RobotFile } from '@/types';
 import {
   escapeXmlAttribute,
-  escapeRegex,
   getPreferredNewline,
   getLineStart,
   getIndentAt,
@@ -10,40 +8,19 @@ import {
 } from '@/core/utils/xmlSourceTextUtils';
 import {
   AppendMJCFChildBodyOptions,
-  BodyInsertionPoint,
-  NamedStartTagOccurrence,
-  GeomTagOccurrence,
   AppendMJCFBodyCollisionGeomOptions,
   MJCFJointLimitSourcePatchOptions,
   MJCFBodyInertialSourcePatchOptions,
   EditableCollisionGeom,
-  ANGLE_ATTR_RE,
-  NAME_ATTR_RE,
-  XML_TAG_OR_COMMENT_RE,
   DEFAULT_INDENT_UNIT,
-  LOCKED_JOINT_RANGE_EPSILON,
   getLineEnd,
-  isZeroVec3,
-  isZeroRpy,
-  replaceOutsideXmlComments,
-  resolveMJCFJointType,
-  shouldEmitRange,
   findBodyInsertionPoint,
   findNamedStartTagOccurrence,
   findFirstStartTagOccurrence,
-  replaceNameAttribute,
   findNamedStartTagOccurrenceForTags,
-  replaceAttributeValueOccurrences,
-  replaceNamedTagOccurrences,
   buildRenamePlaceholder,
-  parseXmlAttributes,
-  parseOptionalNumber,
-  parseGeomClassificationInput,
-  findDirectBodyGeomOccurrences,
   findDirectBodyInertialOccurrence,
-  buildManagedInertialAttributeEntries,
   updateInertialRawTag,
-  buildManagedCollisionGeomAttributeEntries,
   buildCollisionGeomSnippet,
   updateCollisionGeomRawTag,
   findCollisionGeomOccurrenceByObjectIndex,
@@ -51,13 +28,10 @@ import {
   detectIndentUnit,
   buildChildBodySnippet,
   resolveMJCFSourceAngleUnit,
-  formatMJCFJointRangeValue,
-  getMujocoJointRange,
   buildPatchedMJCFJointLimitTag,
   type MJCFRenameOperation,
 } from './mjcfEditableSourcePatchHelpers';
 export type { MJCFRenameOperation } from './mjcfEditableSourcePatchHelpers';
-
 
 export function appendMJCFChildBodyToSource({
   sourceContent,
@@ -74,7 +48,12 @@ export function appendMJCFChildBodyToSource({
   const parentIndent = getIndentAt(sourceContent, insertionPoint.openTagStart);
   const indentUnit = insertionPoint.selfClosing
     ? DEFAULT_INDENT_UNIT
-    : detectIndentUnit(sourceContent, insertionPoint.openTagEnd, insertionPoint.closeTagStart, parentIndent);
+    : detectIndentUnit(
+        sourceContent,
+        insertionPoint.openTagEnd,
+        insertionPoint.closeTagStart,
+        parentIndent,
+      );
   const childIndent = `${parentIndent}${indentUnit}`;
   const childContentIndent = `${childIndent}${indentUnit}`;
   const snippet = buildChildBodySnippet(
@@ -123,7 +102,12 @@ export function appendMJCFBodyCollisionGeomToSource({
   const parentIndent = getIndentAt(sourceContent, insertionPoint.openTagStart);
   const indentUnit = insertionPoint.selfClosing
     ? DEFAULT_INDENT_UNIT
-    : detectIndentUnit(sourceContent, insertionPoint.openTagEnd, insertionPoint.closeTagStart, parentIndent);
+    : detectIndentUnit(
+        sourceContent,
+        insertionPoint.openTagEnd,
+        insertionPoint.closeTagStart,
+        parentIndent,
+      );
   const geomIndent = `${parentIndent}${indentUnit}`;
   const snippet = buildCollisionGeomSnippet(geometry, { newline, geomIndent });
 
@@ -172,10 +156,14 @@ export function patchMJCFBodyInertialInSource({
   const parentIndent = getIndentAt(sourceContent, insertionPoint.openTagStart);
   const indentUnit = insertionPoint.selfClosing
     ? DEFAULT_INDENT_UNIT
-    : detectIndentUnit(sourceContent, insertionPoint.openTagEnd, insertionPoint.closeTagStart, parentIndent);
+    : detectIndentUnit(
+        sourceContent,
+        insertionPoint.openTagEnd,
+        insertionPoint.closeTagStart,
+        parentIndent,
+      );
   const inertialIndent = `${parentIndent}${indentUnit}`;
-  const inertialSnippet =
-    `${inertialIndent}${updateInertialRawTag('<inertial />', inertial, angleUnit)}${newline}`;
+  const inertialSnippet = `${inertialIndent}${updateInertialRawTag('<inertial />', inertial, angleUnit)}${newline}`;
 
   if (insertionPoint.selfClosing) {
     const expandedOpenTag = insertionPoint.rawOpenTag.replace(/\/\s*>$/, '>');
@@ -220,11 +208,15 @@ export function removeMJCFBodyCollisionGeomFromSource(
 ): string {
   const target = findCollisionGeomOccurrenceByObjectIndex(sourceContent, bodyName, objectIndex);
   if (!target) {
-    throw new Error(`Failed to locate MJCF collision geom #${objectIndex} in <body name="${bodyName}">.`);
+    throw new Error(
+      `Failed to locate MJCF collision geom #${objectIndex} in <body name="${bodyName}">.`,
+    );
   }
 
   if (target.renderVisual) {
-    throw new Error(`Cannot safely remove shared visual/collision MJCF geom #${objectIndex} from <body name="${bodyName}">.`);
+    throw new Error(
+      `Cannot safely remove shared visual/collision MJCF geom #${objectIndex} from <body name="${bodyName}">.`,
+    );
   }
 
   const removalStart = getLineStart(sourceContent, target.occurrence.start);
@@ -240,11 +232,15 @@ export function updateMJCFBodyCollisionGeomInSource(
 ): string {
   const target = findCollisionGeomOccurrenceByObjectIndex(sourceContent, bodyName, objectIndex);
   if (!target) {
-    throw new Error(`Failed to locate MJCF collision geom #${objectIndex} in <body name="${bodyName}">.`);
+    throw new Error(
+      `Failed to locate MJCF collision geom #${objectIndex} in <body name="${bodyName}">.`,
+    );
   }
 
   if (target.renderVisual) {
-    throw new Error(`Cannot safely update shared visual/collision MJCF geom #${objectIndex} in <body name="${bodyName}">.`);
+    throw new Error(
+      `Cannot safely update shared visual/collision MJCF geom #${objectIndex} in <body name="${bodyName}">.`,
+    );
   }
 
   const nextRawTag = updateCollisionGeomRawTag(target.occurrence.rawTag, geometry);
@@ -261,7 +257,10 @@ export function renameMJCFEntitiesInSource(
       currentName: operation.currentName.trim(),
       nextName: operation.nextName.trim(),
     }))
-    .filter((operation) => operation.currentName && operation.nextName && operation.currentName !== operation.nextName);
+    .filter(
+      (operation) =>
+        operation.currentName && operation.nextName && operation.currentName !== operation.nextName,
+    );
 
   if (!normalizedOperations.length) {
     return sourceContent;
@@ -282,7 +281,9 @@ export function renameMJCFEntitiesInSource(
     );
     if (!occurrence) {
       const tagLabel = operation.kind === 'link' ? '<body>' : '<joint>/<freejoint>';
-      throw new Error(`Failed to locate MJCF ${tagLabel} named "${operation.currentName}" in editable source.`);
+      throw new Error(
+        `Failed to locate MJCF ${tagLabel} named "${operation.currentName}" in editable source.`,
+      );
     }
   });
 
@@ -308,9 +309,7 @@ export function renameMJCFBodyInSource(
   currentName: string,
   nextName: string,
 ): string {
-  return renameMJCFEntitiesInSource(sourceContent, [
-    { kind: 'link', currentName, nextName },
-  ]);
+  return renameMJCFEntitiesInSource(sourceContent, [{ kind: 'link', currentName, nextName }]);
 }
 
 export function renameMJCFJointInSource(
@@ -318,15 +317,10 @@ export function renameMJCFJointInSource(
   currentName: string,
   nextName: string,
 ): string {
-  return renameMJCFEntitiesInSource(sourceContent, [
-    { kind: 'joint', currentName, nextName },
-  ]);
+  return renameMJCFEntitiesInSource(sourceContent, [{ kind: 'joint', currentName, nextName }]);
 }
 
-export function patchMJCFRootModelNameInSource(
-  sourceContent: string,
-  modelName: string,
-): string {
+export function patchMJCFRootModelNameInSource(sourceContent: string, modelName: string): string {
   const rootOccurrence = findFirstStartTagOccurrence(sourceContent, 'mujoco');
   if (!rootOccurrence) {
     throw new Error('Failed to locate MJCF <mujoco> root in editable source.');

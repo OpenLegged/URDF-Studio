@@ -1,20 +1,10 @@
-
-import {
-  createLoadingManager,
-  createMeshLoader,
-  buildColladaRootNormalizationHints,
-  findAssetByPath,
-  isCoplanarOffsetMaterial,
-  postProcessColladaScene,
-} from '@/core/loaders';
-import { collectExplicitlyScaledMeshPaths } from '@/core/loaders/meshScaleHints';
+import { findAssetByPath, isCoplanarOffsetMaterial, postProcessColladaScene } from '@/core/loaders';
 import {
   createSceneFromSerializedColladaData,
   parseColladaSceneData,
 } from '@/core/loaders/colladaWorkerSceneData';
 import { normalizeMeshPathForExport } from '@/core/parsers/meshPathUtils';
-import { getVisualGeometryEntries, hasGeometryMeshMaterialGroups } from '@/core/robot';
-import { applyVisualMeshMaterialGroupsToObject } from '@/core/utils/meshMaterialGroups';
+import { getVisualGeometryEntries } from '@/core/robot';
 import { GeometryType, type RobotState } from '@/types';
 import { disposeObject3D } from '@/shared/utils/three/dispose';
 
@@ -1113,11 +1103,11 @@ export function findVisualGeometryByMeshPath(
   return null;
 }
 
-export function containsPlaceholderMesh(object: any): boolean {
-  let hasPlaceholder = Boolean(object?.userData?.isPlaceholder);
+export function containsPlaceholderMesh(object: THREE.Object3D): boolean {
+  let hasPlaceholder = Boolean(object.userData.isPlaceholder);
 
-  object?.traverse?.((child: any) => {
-    if (child?.userData?.isPlaceholder) {
+  object.traverse((child) => {
+    if (child.userData.isPlaceholder) {
       hasPlaceholder = true;
     }
   });
@@ -1196,7 +1186,10 @@ export async function hashMeshBytes(bytes: Uint8Array): Promise<string> {
   return (hash >>> 0).toString(16).padStart(8, '0');
 }
 
-export async function buildNativeMeshFingerprint(meshPath: string, meshBlob: Blob): Promise<string> {
+export async function buildNativeMeshFingerprint(
+  meshPath: string,
+  meshBlob: Blob,
+): Promise<string> {
   const normalizedPath = normalizeMeshPathForExport(meshPath) || meshPath;
   const extensionMatch = normalizedPath.match(/\.([^.]+)$/);
   const extension = extensionMatch?.[1]?.toLowerCase() || '';

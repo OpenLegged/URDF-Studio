@@ -1,11 +1,17 @@
-import { GeometryType, JointType, type RobotFile, type UrdfInertial, type UrdfJoint, type UrdfVisual } from '@/types';
-import { assignMJCFBodyGeomRoles, type MJCFGeomClassificationInput } from '@/core/parsers/mjcf/mjcfGeomClassification';
+import {
+  GeometryType,
+  JointType,
+  type UrdfInertial,
+  type UrdfJoint,
+  type UrdfVisual,
+} from '@/types';
+import {
+  assignMJCFBodyGeomRoles,
+  type MJCFGeomClassificationInput,
+} from '@/core/parsers/mjcf/mjcfGeomClassification';
 import {
   escapeXmlAttribute,
   escapeRegex,
-  getPreferredNewline,
-  getLineStart,
-  getIndentAt,
   replaceOrRemoveXmlAttribute,
 } from '@/core/utils/xmlSourceTextUtils';
 import {
@@ -57,7 +63,10 @@ export interface GeomTagOccurrence {
 export interface AppendMJCFBodyCollisionGeomOptions {
   sourceContent: string;
   bodyName: string;
-  geometry: Pick<UrdfVisual, 'type' | 'dimensions' | 'color' | 'origin' | 'meshPath' | 'assetRef' | 'mjcfHfield'>;
+  geometry: Pick<
+    UrdfVisual,
+    'type' | 'dimensions' | 'color' | 'origin' | 'meshPath' | 'assetRef' | 'mjcfHfield'
+  >;
 }
 
 export interface MJCFJointLimitSourcePatchOptions {
@@ -73,7 +82,10 @@ export interface MJCFBodyInertialSourcePatchOptions {
   inertial: UrdfInertial;
 }
 
-export type EditableCollisionGeom = Pick<UrdfVisual, 'type' | 'dimensions' | 'color' | 'origin' | 'meshPath' | 'assetRef' | 'mjcfHfield'>;
+export type EditableCollisionGeom = Pick<
+  UrdfVisual,
+  'type' | 'dimensions' | 'color' | 'origin' | 'meshPath' | 'assetRef' | 'mjcfHfield'
+>;
 
 export const ANGLE_ATTR_RE = /\bangle\s*=\s*(["'])(.*?)\1/i;
 
@@ -103,15 +115,11 @@ export function getLineEnd(sourceContent: string, index: number): number {
 }
 
 export function isZeroVec3(vector: { x: number; y: number; z: number }): boolean {
-  return Math.abs(vector.x) < 1e-9
-    && Math.abs(vector.y) < 1e-9
-    && Math.abs(vector.z) < 1e-9;
+  return Math.abs(vector.x) < 1e-9 && Math.abs(vector.y) < 1e-9 && Math.abs(vector.z) < 1e-9;
 }
 
 export function isZeroRpy(rpy: { r: number; p: number; y: number }): boolean {
-  return Math.abs(rpy.r) < 1e-9
-    && Math.abs(rpy.p) < 1e-9
-    && Math.abs(rpy.y) < 1e-9;
+  return Math.abs(rpy.r) < 1e-9 && Math.abs(rpy.p) < 1e-9 && Math.abs(rpy.y) < 1e-9;
 }
 
 export function replaceOutsideXmlComments(
@@ -141,12 +149,13 @@ export function resolveMJCFJointType(type: JointType): 'hinge' | 'slide' | 'ball
 }
 
 export function shouldEmitRange(type: JointType): boolean {
-  return type !== JointType.CONTINUOUS
-    && type !== JointType.BALL
-    && type !== JointType.FIXED;
+  return type !== JointType.CONTINUOUS && type !== JointType.BALL && type !== JointType.FIXED;
 }
 
-export function findBodyInsertionPoint(sourceContent: string, targetBodyName: string): BodyInsertionPoint | null {
+export function findBodyInsertionPoint(
+  sourceContent: string,
+  targetBodyName: string,
+): BodyInsertionPoint | null {
   XML_TAG_OR_COMMENT_RE.lastIndex = 0;
   const stack: Array<{
     name: string | null;
@@ -280,7 +289,10 @@ export function replaceNameAttribute(rawTag: string, nextName: string): string {
     throw new Error('Failed to locate name attribute in editable MJCF tag.');
   }
 
-  return rawTag.replace(NAME_ATTR_RE, (_match, quote) => `name=${quote}${escapeXmlAttribute(nextName)}${quote}`);
+  return rawTag.replace(
+    NAME_ATTR_RE,
+    (_match, quote) => `name=${quote}${escapeXmlAttribute(nextName)}${quote}`,
+  );
 }
 
 export function findNamedStartTagOccurrenceForTags(
@@ -308,7 +320,10 @@ export function replaceAttributeValueOccurrences(
   const escapedCurrentValue = escapeRegex(currentValue);
 
   for (const attributeName of attributeNames) {
-    const attributeRe = new RegExp(`(\\b${escapeRegex(attributeName)}\\s*=\\s*)(["'])${escapedCurrentValue}\\2`, 'g');
+    const attributeRe = new RegExp(
+      `(\\b${escapeRegex(attributeName)}\\s*=\\s*)(["'])${escapedCurrentValue}\\2`,
+      'g',
+    );
     nextSource = replaceOutsideXmlComments(nextSource, (segment) =>
       segment.replace(attributeRe, (_match, prefix: string, quote: string) => {
         return `${prefix}${quote}${nextValue}${quote}`;
@@ -329,7 +344,10 @@ export function replaceNamedTagOccurrences(
   const escapedCurrentName = escapeRegex(currentName);
 
   for (const tagName of tagNames) {
-    const tagRe = new RegExp(`(<\\s*${escapeRegex(tagName)}\\b[^>]*\\bname\\s*=\\s*)(["'])${escapedCurrentName}\\2`, 'g');
+    const tagRe = new RegExp(
+      `(<\\s*${escapeRegex(tagName)}\\b[^>]*\\bname\\s*=\\s*)(["'])${escapedCurrentName}\\2`,
+      'g',
+    );
     nextSource = replaceOutsideXmlComments(nextSource, (segment) =>
       segment.replace(tagRe, (_match, prefix: string, quote: string) => {
         return `${prefix}${quote}${nextName}${quote}`;
@@ -381,7 +399,10 @@ export function parseGeomClassificationInput(rawTag: string): MJCFGeomClassifica
   };
 }
 
-export function findDirectBodyGeomOccurrences(sourceContent: string, bodyName: string): GeomTagOccurrence[] {
+export function findDirectBodyGeomOccurrences(
+  sourceContent: string,
+  bodyName: string,
+): GeomTagOccurrence[] {
   const bodyPoint = findBodyInsertionPoint(sourceContent, bodyName);
   if (!bodyPoint) {
     throw new Error(`Failed to locate MJCF <body name="${bodyName}"> in editable source.`);
@@ -445,13 +466,18 @@ export function findDirectBodyGeomOccurrences(sourceContent: string, bodyName: s
   }
 
   if (pendingGeomStart !== null) {
-    throw new Error(`Failed to resolve closing MJCF <geom> while inspecting <body name="${bodyName}">.`);
+    throw new Error(
+      `Failed to resolve closing MJCF <geom> while inspecting <body name="${bodyName}">.`,
+    );
   }
 
   return occurrences;
 }
 
-export function findDirectBodyInertialOccurrence(sourceContent: string, bodyName: string): GeomTagOccurrence | null {
+export function findDirectBodyInertialOccurrence(
+  sourceContent: string,
+  bodyName: string,
+): GeomTagOccurrence | null {
   const bodyPoint = findBodyInsertionPoint(sourceContent, bodyName);
   if (!bodyPoint) {
     throw new Error(`Failed to locate MJCF <body name="${bodyName}"> in editable source.`);
@@ -512,7 +538,9 @@ export function findDirectBodyInertialOccurrence(sourceContent: string, bodyName
   }
 
   if (pendingInertialStart !== null) {
-    throw new Error(`Failed to resolve closing MJCF <inertial> while inspecting <body name="${bodyName}">.`);
+    throw new Error(
+      `Failed to resolve closing MJCF <inertial> while inspecting <body name="${bodyName}">.`,
+    );
   }
 
   return null;
@@ -535,8 +563,10 @@ export function buildManagedInertialAttributeEntries(
   }
 
   if (origin?.rpy) {
-    if (Object.prototype.hasOwnProperty.call(options.existingAttributes, 'euler') &&
-        !Object.prototype.hasOwnProperty.call(options.existingAttributes, 'quat')) {
+    if (
+      Object.prototype.hasOwnProperty.call(options.existingAttributes, 'euler') &&
+      !Object.prototype.hasOwnProperty.call(options.existingAttributes, 'quat')
+    ) {
       entries.push(['euler', formatEulerForAngleUnit(origin.rpy, options.angleUnit)]);
     } else {
       entries.push(['quat', formatQuaternionWxyzFromRpy(origin.rpy)]);
@@ -578,18 +608,17 @@ export function updateInertialRawTag(
     nextAttributes.set(name, value);
   });
 
-  buildManagedInertialAttributeEntries(inertial, { angleUnit, existingAttributes })
-    .forEach(([name, value]) => {
+  buildManagedInertialAttributeEntries(inertial, { angleUnit, existingAttributes }).forEach(
+    ([name, value]) => {
       nextAttributes.set(name, value);
-    });
+    },
+  );
 
   const serializedAttributes = Array.from(nextAttributes.entries())
     .map(([name, value]) => `${name}="${escapeXmlAttribute(value)}"`)
     .join(' ');
 
-  return serializedAttributes
-    ? `<inertial ${serializedAttributes} />`
-    : '<inertial />';
+  return serializedAttributes ? `<inertial ${serializedAttributes} />` : '<inertial />';
 }
 
 export function buildManagedCollisionGeomAttributeEntries(
@@ -612,11 +641,7 @@ export function buildManagedCollisionGeomAttributeEntries(
   entries.push(['rgba', formatColorRgba(geometry.color)]);
 
   if (options.includeCollisionDefaults) {
-    entries.push(
-      ['group', '3'],
-      ['contype', '1'],
-      ['conaffinity', '1'],
-    );
+    entries.push(['group', '3'], ['contype', '1'], ['conaffinity', '1']);
   }
 
   switch (geometry.type) {
@@ -663,7 +688,9 @@ export function buildManagedCollisionGeomAttributeEntries(
       break;
     }
     default:
-      throw new Error(`Failed to patch MJCF collision geom: unsupported geometry type "${geometry.type}".`);
+      throw new Error(
+        `Failed to patch MJCF collision geom: unsupported geometry type "${geometry.type}".`,
+      );
   }
 
   return entries;
@@ -676,8 +703,9 @@ export function buildCollisionGeomSnippet(
     geomIndent: string;
   },
 ): string {
-  const attrs = buildManagedCollisionGeomAttributeEntries(geometry, { includeCollisionDefaults: true })
-    .map(([name, value]) => `${name}="${escapeXmlAttribute(value)}"`);
+  const attrs = buildManagedCollisionGeomAttributeEntries(geometry, {
+    includeCollisionDefaults: true,
+  }).map(([name, value]) => `${name}="${escapeXmlAttribute(value)}"`);
 
   return `${indentation.geomIndent}<geom ${attrs.join(' ')} />${indentation.newline}`;
 }
@@ -707,18 +735,17 @@ export function updateCollisionGeomRawTag(rawTag: string, geometry: EditableColl
     nextAttributes.set(name, value);
   });
 
-  buildManagedCollisionGeomAttributeEntries(geometry, { includeCollisionDefaults: false })
-    .forEach(([name, value]) => {
+  buildManagedCollisionGeomAttributeEntries(geometry, { includeCollisionDefaults: false }).forEach(
+    ([name, value]) => {
       nextAttributes.set(name, value);
-    });
+    },
+  );
 
   const serializedAttributes = Array.from(nextAttributes.entries())
     .map(([name, value]) => `${name}="${escapeXmlAttribute(value)}"`)
     .join(' ');
 
-  return serializedAttributes
-    ? `<geom ${serializedAttributes} />`
-    : '<geom />';
+  return serializedAttributes ? `<geom ${serializedAttributes} />` : '<geom />';
 }
 
 export function findCollisionGeomOccurrenceByObjectIndex(
@@ -761,7 +788,12 @@ export function renameMJCFEntityWithPlaceholder(
   }
 
   return replaceAttributeValueOccurrences(
-    replaceNamedTagOccurrences(sourceContent, ['joint', 'freejoint'], operation.currentName, placeholder),
+    replaceNamedTagOccurrences(
+      sourceContent,
+      ['joint', 'freejoint'],
+      operation.currentName,
+      placeholder,
+    ),
     ['joint', 'joint1', 'joint2'],
     operation.currentName,
     placeholder,
@@ -819,10 +851,7 @@ export function buildChildBodySnippet(
   const lines = [`${childIndent}<body ${bodyAttrs.join(' ')}>`];
 
   if (jointType) {
-    const jointAttrs = [
-      `name="${escapeXmlAttribute(joint.name)}"`,
-      `type="${jointType}"`,
-    ];
+    const jointAttrs = [`name="${escapeXmlAttribute(joint.name)}"`, `type="${jointType}"`];
 
     if (jointType !== 'ball') {
       jointAttrs.push(`axis="${formatVec3(joint.axis ?? { x: 0, y: 0, z: 1 })}"`);
@@ -876,7 +905,7 @@ export function formatMJCFJointRangeValue(
     return value;
   }
 
-  return value * 180 / Math.PI;
+  return (value * 180) / Math.PI;
 }
 
 export function getMujocoJointRange(

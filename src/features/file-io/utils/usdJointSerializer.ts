@@ -1,5 +1,3 @@
-import * as THREE from 'three';
-
 import type { RobotClosedLoopConstraint, RobotState, UrdfJoint } from '../../../types/index.ts';
 import { computeUsdInertiaProperties } from '../../../shared/utils/inertiaUsd.ts';
 import {
@@ -20,7 +18,6 @@ import {
   ZERO_EPSILON,
 } from './usdIsaacSimDefaults.ts';
 import {
-  createJointAxisAlignmentQuaternion,
   getAxisToken,
   normalizeUsdJointAxisToken,
   type UsdJointAxisToken,
@@ -28,7 +25,6 @@ import {
 import {
   angularVelocityToUsdUnits,
   getUsdDriveInstanceName,
-  radiansToDegrees,
   resolveIsaacSimDriveGain,
 } from './usdUnitConversion.ts';
 import {
@@ -38,8 +34,6 @@ import {
   appendUsdJointPhysxAttributes,
   getPlanarJointLimitAxes,
   getUsdPhysicsAxisKeys,
-  normalizeUsdPhysicsQuaternionWxyz,
-  resolveUsdPhysicsLocalPos1,
   supportsPhysxMimicJoint,
   type UsdJointTypeName,
 } from './usdJointAttributeWriters.ts';

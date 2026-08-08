@@ -1,22 +1,10 @@
 // Pure validators and schema keys extracted from canonicalWorkspace.ts
-import {
-  GeometryType,
-  JointType,
-  type AssemblyComponent,
-  type AssemblyState,
-  type AssemblyTransform,
-  type RobotData,
-  type UrdfJoint,
-  type UrdfLink,
-} from '@/types';
+import { GeometryType, JointType } from '@/types';
 import { wouldBridgeCreateUnsupportedAssemblyCycle } from './assemblyBridgeTopology';
 import {
-  validateCanonicalClosedLoopConstraints,
-  validateCanonicalRobotMaterials,
   validateCanonicalUrdfInspection,
   validateCanonicalVisualGeometryNested,
 } from './canonicalRobotValidation';
-import { DEFAULT_ROBOT_NAME } from './constants';
 
 export interface CanonicalWorkspaceValidationIssue {
   path: string;
@@ -157,13 +145,7 @@ export const MJCF_TENDON_KEYS = new Set([
   'actuatorNames',
 ]);
 
-export const MJCF_TENDON_ATTACHMENT_KEYS = new Set([
-  'type',
-  'ref',
-  'sidesite',
-  'divisor',
-  'coef',
-]);
+export const MJCF_TENDON_ATTACHMENT_KEYS = new Set(['type', 'ref', 'sidesite', 'divisor', 'coef']);
 
 export const MJCF_SITE_KEYS = new Set([
   'name',
@@ -200,11 +182,7 @@ export function validateAllowedKeys(
 ): void {
   for (const key of Object.keys(value)) {
     if (!allowedKeys.has(key)) {
-      addIssue(
-        issues,
-        path ? `${path}.${key}` : key,
-        'is not a canonical workspace field',
-      );
+      addIssue(issues, path ? `${path}.${key}` : key, 'is not a canonical workspace field');
     }
   }
 }
@@ -483,25 +461,14 @@ export function validateRobotLinks(
     validateVisualGeometry(linkValue.visual, `${linkPath}.visual`, issues);
     validateVisualGeometryArray(linkValue.visualBodies, `${linkPath}.visualBodies`, issues);
     validateVisualGeometry(linkValue.collision, `${linkPath}.collision`, issues);
-    validateVisualGeometryArray(
-      linkValue.collisionBodies,
-      `${linkPath}.collisionBodies`,
-      issues,
-    );
+    validateVisualGeometryArray(linkValue.collisionBodies, `${linkPath}.collisionBodies`, issues);
     validateLinkInertial(linkValue.inertial, `${linkPath}.inertial`, issues);
     validateMjcfSites(linkValue.mjcfSites, `${linkPath}.mjcfSites`, issues);
     if (linkValue.visible !== undefined && typeof linkValue.visible !== 'boolean') {
       addIssue(issues, `${linkPath}.visible`, 'must be a boolean when provided');
     }
-    if (
-      linkValue.editorLocked !== undefined &&
-      typeof linkValue.editorLocked !== 'boolean'
-    ) {
-      addIssue(
-        issues,
-        `${linkPath}.editorLocked`,
-        'must be a boolean when provided',
-      );
+    if (linkValue.editorLocked !== undefined && typeof linkValue.editorLocked !== 'boolean') {
+      addIssue(issues, `${linkPath}.editorLocked`, 'must be a boolean when provided');
     }
     links[linkKey] = linkValue;
   }
@@ -569,10 +536,10 @@ export function validateJointFields(
             }
           });
           if (
-            field === 'driveAxes'
-            && axisValue.type !== undefined
-            && axisValue.type !== null
-            && typeof axisValue.type !== 'string'
+            field === 'driveAxes' &&
+            axisValue.type !== undefined &&
+            axisValue.type !== null &&
+            typeof axisValue.type !== 'string'
           ) {
             addIssue(issues, `${axisPath}.type`, 'must be a string or null');
           }
@@ -620,11 +587,9 @@ export function validateJointFields(
       addIssue(issues, `${path}.hardware.motorDirection`, 'must be 1 or -1');
     }
     if (
-      joint.hardware.hardwareInterface !== undefined
-      && (
-        typeof joint.hardware.hardwareInterface !== 'string'
-        || !HARDWARE_INTERFACES.has(joint.hardware.hardwareInterface)
-      )
+      joint.hardware.hardwareInterface !== undefined &&
+      (typeof joint.hardware.hardwareInterface !== 'string' ||
+        !HARDWARE_INTERFACES.has(joint.hardware.hardwareInterface))
     ) {
       addIssue(
         issues,
@@ -666,7 +631,8 @@ export function validateJointFields(
     }
     validateAllowedKeys(value, allowedFields, `${path}.${field}`, issues);
     Object.entries(value).forEach(([key, nestedValue]) =>
-      validateFiniteNumber(nestedValue, `${path}.${field}.${key}`, issues));
+      validateFiniteNumber(nestedValue, `${path}.${field}.${key}`, issues),
+    );
   }
 }
 
@@ -734,10 +700,10 @@ export function validateRobotJoints(
     const parentLinkId = joint.parentLinkId;
     const childLinkId = joint.childLinkId;
     if (
-      typeof parentLinkId !== 'string'
-      || typeof childLinkId !== 'string'
-      || !links?.[parentLinkId]
-      || !links[childLinkId]
+      typeof parentLinkId !== 'string' ||
+      typeof childLinkId !== 'string' ||
+      !links?.[parentLinkId] ||
+      !links[childLinkId]
     ) {
       continue;
     }
@@ -787,11 +753,7 @@ export function createReferenceAliases(): ReferenceAliases {
   return { targetsByAlias: new Map() };
 }
 
-export function addReferenceAlias(
-  aliases: ReferenceAliases,
-  alias: unknown,
-  target: string,
-): void {
+export function addReferenceAlias(aliases: ReferenceAliases, alias: unknown, target: string): void {
   if (typeof alias !== 'string' || !alias.trim()) return;
   const targets = aliases.targetsByAlias.get(alias) ?? new Set<string>();
   targets.add(target);
@@ -875,11 +837,7 @@ export function validateImportRecovery(
   validateAllowedKeys(recovery, IMPORT_RECOVERY_KEYS, path, issues);
   validateFiniteNumber(recovery.recoveredItemCount, `${path}.recoveredItemCount`, issues);
   if (recovery.omittedDiagnosticCount !== undefined) {
-    validateFiniteNumber(
-      recovery.omittedDiagnosticCount,
-      `${path}.omittedDiagnosticCount`,
-      issues,
-    );
+    validateFiniteNumber(recovery.omittedDiagnosticCount, `${path}.omittedDiagnosticCount`, issues);
   }
   if (!isRecord(recovery.diagnosticCounts)) {
     addIssue(issues, `${path}.diagnosticCounts`, 'must be a diagnostic count object');
@@ -896,7 +854,8 @@ export function validateImportRecovery(
         diagnosticCounts[severity],
         `${path}.diagnosticCounts.${severity}`,
         issues,
-      ));
+      ),
+    );
   }
   if (!Array.isArray(recovery.diagnostics)) {
     addIssue(issues, `${path}.diagnostics`, 'must be an array');
@@ -908,36 +867,24 @@ export function validateImportRecovery(
       addIssue(issues, diagnosticPath, 'must be an import recovery diagnostic');
       return;
     }
-    validateAllowedKeys(
-      diagnostic,
-      IMPORT_RECOVERY_DIAGNOSTIC_KEYS,
-      diagnosticPath,
-      issues,
-    );
+    validateAllowedKeys(diagnostic, IMPORT_RECOVERY_DIAGNOSTIC_KEYS, diagnosticPath, issues);
     for (const field of ['code', 'message'] as const) {
       validateNonEmptyString(diagnostic[field], `${diagnosticPath}.${field}`, issues);
     }
     if (
-      typeof diagnostic.severity !== 'string'
-      || !DIAGNOSTIC_SEVERITIES.has(diagnostic.severity)
+      typeof diagnostic.severity !== 'string' ||
+      !DIAGNOSTIC_SEVERITIES.has(diagnostic.severity)
     ) {
       addIssue(issues, `${diagnosticPath}.severity`, 'must be info, warning, or error');
     }
     if (
-      typeof diagnostic.category !== 'string'
-      || !DIAGNOSTIC_CATEGORIES.has(diagnostic.category)
+      typeof diagnostic.category !== 'string' ||
+      !DIAGNOSTIC_CATEGORIES.has(diagnostic.category)
     ) {
       addIssue(issues, `${diagnosticPath}.category`, 'must be a diagnostic category');
     }
-    if (
-      typeof diagnostic.action !== 'string'
-      || !IMPORT_RECOVERY_ACTIONS.has(diagnostic.action)
-    ) {
-      addIssue(
-        issues,
-        `${diagnosticPath}.action`,
-        'must be omitted, defaulted, or downgraded',
-      );
+    if (typeof diagnostic.action !== 'string' || !IMPORT_RECOVERY_ACTIONS.has(diagnostic.action)) {
+      addIssue(issues, `${diagnosticPath}.action`, 'must be omitted, defaulted, or downgraded');
     }
     if (diagnostic.relatedIds !== undefined) {
       validateStringArray(diagnostic.relatedIds, `${diagnosticPath}.relatedIds`, issues);
@@ -955,11 +902,7 @@ export function validateImportRecovery(
         );
         IMPORT_RECOVERY_DIAGNOSTIC_SOURCE_KEYS.forEach((field) => {
           if (source[field] !== undefined) {
-            validateNonEmptyString(
-              source[field],
-              `${diagnosticPath}.source.${field}`,
-              issues,
-            );
+            validateNonEmptyString(source[field], `${diagnosticPath}.source.${field}`, issues);
           }
         });
       }
@@ -987,8 +930,8 @@ export function validateTendonIdentities({
   }
   validateAllowedKeys(inspectionContext, INSPECTION_CONTEXT_KEYS, path, issues);
   if (
-    typeof inspectionContext.sourceFormat !== 'string'
-    || !ROBOT_SOURCE_FORMATS.has(inspectionContext.sourceFormat)
+    typeof inspectionContext.sourceFormat !== 'string' ||
+    !ROBOT_SOURCE_FORMATS.has(inspectionContext.sourceFormat)
   ) {
     addIssue(issues, `${path}.sourceFormat`, 'must be a supported source format');
   }
@@ -1003,11 +946,7 @@ export function validateTendonIdentities({
   validateAllowedKeys(mjcf, MJCF_INSPECTION_KEYS, `${path}.mjcf`, issues);
   validateFiniteNumber(mjcf.siteCount, `${path}.mjcf.siteCount`, issues);
   validateFiniteNumber(mjcf.tendonCount, `${path}.mjcf.tendonCount`, issues);
-  validateFiniteNumber(
-    mjcf.tendonActuatorCount,
-    `${path}.mjcf.tendonActuatorCount`,
-    issues,
-  );
+  validateFiniteNumber(mjcf.tendonActuatorCount, `${path}.mjcf.tendonActuatorCount`, issues);
   const aliases = collectRobotReferenceAliases(links, joints);
   let derivedSiteCount = 0;
   if (!Array.isArray(mjcf.bodiesWithSites)) {
@@ -1116,17 +1055,12 @@ export function validateTendonIdentities({
           addIssue(issues, attachmentPath, 'must be a tendon attachment object');
           return;
         }
-        validateAllowedKeys(
-          attachment,
-          MJCF_TENDON_ATTACHMENT_KEYS,
-          attachmentPath,
-          issues,
-        );
+        validateAllowedKeys(attachment, MJCF_TENDON_ATTACHMENT_KEYS, attachmentPath, issues);
         if (
-          attachment.type !== 'site'
-          && attachment.type !== 'geom'
-          && attachment.type !== 'joint'
-          && attachment.type !== 'pulley'
+          attachment.type !== 'site' &&
+          attachment.type !== 'geom' &&
+          attachment.type !== 'joint' &&
+          attachment.type !== 'pulley'
         ) {
           addIssue(issues, `${attachmentPath}.type`, 'must be site, geom, joint, or pulley');
         }
@@ -1134,11 +1068,7 @@ export function validateTendonIdentities({
           validateNonEmptyString(attachment.ref, `${attachmentPath}.ref`, issues);
         }
         if (attachment.sidesite !== undefined) {
-          validateNonEmptyString(
-            attachment.sidesite,
-            `${attachmentPath}.sidesite`,
-            issues,
-          );
+          validateNonEmptyString(attachment.sidesite, `${attachmentPath}.sidesite`, issues);
         }
         if (attachment.divisor !== undefined) {
           validateFiniteNumber(attachment.divisor, `${attachmentPath}.divisor`, issues);
@@ -1151,11 +1081,7 @@ export function validateTendonIdentities({
           if (attachment.divisor === undefined) {
             addIssue(issues, `${attachmentPath}.divisor`, 'is required for a pulley');
           }
-        } else if (validateNonEmptyString(
-          attachment.ref,
-          `${attachmentPath}.ref`,
-          issues,
-        )) {
+        } else if (validateNonEmptyString(attachment.ref, `${attachmentPath}.ref`, issues)) {
           // MJCF spatial tendons may reference helper sites/geoms that are kept
           // only in source inspection metadata and are not projected into the
           // canonical render graph. Joint attachments, however, point at the
@@ -1170,21 +1096,20 @@ export function validateTendonIdentities({
             });
           }
         }
-        const attachmentRef = typeof attachment.ref === 'string'
-          ? attachment.ref
-          : typeof attachment.sidesite === 'string'
-            ? attachment.sidesite
-            : null;
+        const attachmentRef =
+          typeof attachment.ref === 'string'
+            ? attachment.ref
+            : typeof attachment.sidesite === 'string'
+              ? attachment.sidesite
+              : null;
         if (attachmentRef) derivedAttachmentRefs.push(attachmentRef);
       });
       if (
-        attachmentRefsValid
-        && (
-          attachmentRefs.length !== derivedAttachmentRefs.length
-          || attachmentRefs.some(
+        attachmentRefsValid &&
+        (attachmentRefs.length !== derivedAttachmentRefs.length ||
+          attachmentRefs.some(
             (reference, referenceIndex) => reference !== derivedAttachmentRefs[referenceIndex],
-          )
-        )
+          ))
       ) {
         addIssue(
           issues,
@@ -1211,8 +1136,8 @@ export function validateTendonIdentities({
     addIssue(issues, `${path}.mjcf.tendonCount`, 'must equal tendons.length');
   }
   if (
-    typeof mjcf.tendonActuatorCount === 'number'
-    && mjcf.tendonActuatorCount !== actuatorIds.size
+    typeof mjcf.tendonActuatorCount === 'number' &&
+    mjcf.tendonActuatorCount !== actuatorIds.size
   ) {
     addIssue(
       issues,
@@ -1280,27 +1205,15 @@ export function validateBridgeJoint(
 
   validateNonEmptyString(joint.id, `${bridgePath}.joint.id`, issues);
   if (joint.id !== bridge.id) {
-    addIssue(
-      issues,
-      `${bridgePath}.joint.id`,
-      'must equal the bridge id',
-    );
+    addIssue(issues, `${bridgePath}.joint.id`, 'must equal the bridge id');
   }
   validateNonEmptyString(joint.name, `${bridgePath}.joint.name`, issues);
   validateJointFields(joint, `${bridgePath}.joint`, issues);
   if (joint.parentLinkId !== bridge.parentLinkId) {
-    addIssue(
-      issues,
-      `${bridgePath}.joint.parentLinkId`,
-      'must equal the bridge parentLinkId',
-    );
+    addIssue(issues, `${bridgePath}.joint.parentLinkId`, 'must equal the bridge parentLinkId');
   }
   if (joint.childLinkId !== bridge.childLinkId) {
-    addIssue(
-      issues,
-      `${bridgePath}.joint.childLinkId`,
-      'must equal the bridge childLinkId',
-    );
+    addIssue(issues, `${bridgePath}.joint.childLinkId`, 'must equal the bridge childLinkId');
   }
 }
 
@@ -1353,20 +1266,16 @@ export function validateBridges(
     const childComponentId = bridgeValue.childComponentId;
     const joint = bridgeValue.joint;
     if (
-      typeof parentComponentId !== 'string'
-      || typeof childComponentId !== 'string'
-      || !isRecord(joint)
-      || typeof joint.type !== 'string'
-      || !JOINT_TYPES.has(joint.type)
+      typeof parentComponentId !== 'string' ||
+      typeof childComponentId !== 'string' ||
+      !isRecord(joint) ||
+      typeof joint.type !== 'string' ||
+      !JOINT_TYPES.has(joint.type)
     ) {
       continue;
     }
     if (parentComponentId === childComponentId) {
-      addIssue(
-        issues,
-        `${bridgePath}.childComponentId`,
-        'must differ from parentComponentId',
-      );
+      addIssue(issues, `${bridgePath}.childComponentId`, 'must differ from parentComponentId');
       continue;
     }
     const existingIncomingBridge = incomingBridgeByChildComponentId.get(childComponentId);

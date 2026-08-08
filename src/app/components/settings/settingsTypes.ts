@@ -1,8 +1,6 @@
 import React from 'react';
 
 import {
-  NAVIGATION_SENSITIVITY_MIN,
-  NAVIGATION_SENSITIVITY_MAX,
   DEFAULT_CODE_EDITOR_OPACITY,
   MIN_CODE_EDITOR_OPACITY,
   MAX_CODE_EDITOR_OPACITY,
@@ -34,7 +32,10 @@ export const formatSensitivityPercent = (value: number) => `${Math.round(value *
 
 export const CODE_EDITOR_OPACITY_MARKS = [
   { value: MIN_CODE_EDITOR_OPACITY, label: formatSensitivityPercent(MIN_CODE_EDITOR_OPACITY) },
-  { value: DEFAULT_CODE_EDITOR_OPACITY, label: formatSensitivityPercent(DEFAULT_CODE_EDITOR_OPACITY) },
+  {
+    value: DEFAULT_CODE_EDITOR_OPACITY,
+    label: formatSensitivityPercent(DEFAULT_CODE_EDITOR_OPACITY),
+  },
   { value: MAX_CODE_EDITOR_OPACITY, label: formatSensitivityPercent(MAX_CODE_EDITOR_OPACITY) },
 ];
 

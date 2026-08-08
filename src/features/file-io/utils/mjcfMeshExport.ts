@@ -1,4 +1,3 @@
-import * as THREE from 'three';
 import { OBJExporter } from 'three/addons/exporters/OBJExporter.js';
 import { STLExporter } from 'three/addons/exporters/STLExporter.js';
 
@@ -6,75 +5,33 @@ import {
   createLoadingManager,
   createMeshLoader,
   buildColladaRootNormalizationHints,
-  findAssetByPath,
-  isCoplanarOffsetMaterial,
-  postProcessColladaScene,
 } from '@/core/loaders';
 import { collectExplicitlyScaledMeshPaths } from '@/core/loaders/meshScaleHints';
-import {
-  createSceneFromSerializedColladaData,
-  parseColladaSceneData,
-} from '@/core/loaders/colladaWorkerSceneData';
 import { normalizeMeshPathForExport } from '@/core/parsers/meshPathUtils';
-import { getVisualGeometryEntries, hasGeometryMeshMaterialGroups } from '@/core/robot';
+import { hasGeometryMeshMaterialGroups } from '@/core/robot';
 import { applyVisualMeshMaterialGroupsToObject } from '@/core/utils/meshMaterialGroups';
-import { GeometryType, type RobotState } from '@/types';
+import { type RobotState } from '@/types';
 import { disposeObject3D } from '@/shared/utils/three/dispose';
 import {
   isMjcfNativeMeshPath,
-  collectMeshPathAliases,
-  buildConvertedMeshBasePath,
   buildConvertedMeshExportPath,
-  ExtractedVisualMeshVariant,
-  PendingVisualMeshVariant,
-  COPLANAR_ANCHOR_BAKE_OFFSET,
-  GeometryGroup,
-  GeometryAttribute,
-  sanitizeVariantSegment,
-  ConvertedVisualVariantPathOptions,
-  buildConvertedVisualVariantPath,
   colorToHex,
-  exportObjBlob,
   MeshFormatKind,
-  MeshExtension,
   MeshExporters,
-  exportStlBlob,
   resolveMeshFormat,
   exportMeshBlob,
   isColorLike,
   getMaterialColor,
   isBufferGeometryLike,
-  getAttributeArray,
-  cloneAttributeSubset,
-  getUsableGeometryIndex,
-  getTriangleVertexIndex,
-  buildTriangleVertexKey,
-  buildTriangleKey,
-  pickPreferredTriangleOwner,
-  buildDuplicateTriangleOwnerMap,
-  buildIndexedGeometrySubset,
-  buildNonIndexedGeometrySubset,
-  extractGeometryForMaterial,
-  buildSceneVariantTriangleOwnerMap,
-  buildSceneVariantGeometrySubset,
-  shouldBakeCoplanarAnchorOffset,
-  applyGeometryNormalOffset,
   createBakedVariantMesh,
-  ExtractVisualMeshVariantsOptions,
   extractVisualMeshVariants,
   registerInlineMeshBlobUrls,
   collectReferencedMeshPaths,
-  ReferencedMeshUsage,
-  hasCustomMeshMaterialUsage,
   collectReferencedMeshUsage,
   findVisualGeometryByMeshPath,
   containsPlaceholderMesh,
-  getInlineMeshBlob,
   shouldParseColladaInProcessForMjcfExport,
   loadColladaMeshInProcessForMjcfExport,
-  hashMeshBytes,
-  buildNativeMeshFingerprint,
-  markSharedMeshReuse,
   registerNativeMeshPassThroughOverride,
   createMjcfMeshExportError,
   prepareSharedNativeMeshReuse,
@@ -96,7 +53,6 @@ export interface PreparedMjcfMeshExportAssets {
   convertedSourceMeshPaths: Set<string>;
   visualMeshVariants: Map<string, MjcfVisualMeshVariant[]>;
 }
-
 
 // Resolve effective mesh format: 'auto' picks STL (binary, smallest) for
 // meshes without UVs, and OBJ (preserves UVs) for textured meshes.
@@ -198,7 +154,11 @@ export async function prepareMjcfMeshExportAssets(
 
         if (needsFullMeshExport) {
           const fullExtension = resolveMeshFormat(meshFormat, meshObject);
-          const exportPath = buildConvertedMeshExportPath(meshPath, usedArchivePaths, fullExtension);
+          const exportPath = buildConvertedMeshExportPath(
+            meshPath,
+            usedArchivePaths,
+            fullExtension,
+          );
           if (!exportPath) {
             disposeObject3D(meshObject, true);
             throw new Error(`[MJCF export] Could not derive a mesh export path for "${meshPath}".`);

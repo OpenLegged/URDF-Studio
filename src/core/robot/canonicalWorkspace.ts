@@ -1,6 +1,4 @@
 import {
-  GeometryType,
-  JointType,
   type AssemblyComponent,
   type AssemblyState,
   type AssemblyTransform,
@@ -9,13 +7,10 @@ import {
 
 import { IDENTITY_ASSEMBLY_TRANSFORM } from './assemblyTransformUtils';
 import { normalizeComponentRobot } from './assemblyComponentPreparation';
-import { wouldBridgeCreateUnsupportedAssemblyCycle } from './assemblyBridgeTopology';
 import { createAttachedChildLink } from './builders';
 import {
   validateCanonicalClosedLoopConstraints,
   validateCanonicalRobotMaterials,
-  validateCanonicalUrdfInspection,
-  validateCanonicalVisualGeometryNested,
 } from './canonicalRobotValidation';
 import { DEFAULT_ROBOT_NAME } from './constants';
 import {
@@ -24,60 +19,19 @@ import {
   WORKSPACE_KEYS,
   COMPONENT_KEYS,
   ROBOT_DATA_KEYS,
-  BRIDGE_KEYS,
-  GEOMETRY_TYPES,
-  JOINT_TYPES,
-  HARDWARE_INTERFACES,
-  ROBOT_SOURCE_FORMATS,
-  INSPECTION_CONTEXT_KEYS,
-  IMPORT_RECOVERY_KEYS,
-  IMPORT_RECOVERY_DIAGNOSTIC_KEYS,
-  IMPORT_RECOVERY_DIAGNOSTIC_SOURCE_KEYS,
-  DIAGNOSTIC_SEVERITIES,
-  DIAGNOSTIC_CATEGORIES,
-  IMPORT_RECOVERY_ACTIONS,
-  USD_JOINT_PHYSICS_KEYS,
-  USD_JOINT_LIMIT_KEYS,
-  USD_JOINT_DRIVE_KEYS,
-  MJCF_INSPECTION_KEYS,
-  MJCF_BODY_SITE_KEYS,
-  MJCF_TENDON_KEYS,
-  MJCF_TENDON_ATTACHMENT_KEYS,
-  MJCF_SITE_KEYS,
   isRecord,
   createLookup,
   addIssue,
   validateAllowedKeys,
   validateNonEmptyString,
-  validateFiniteNumber,
-  validateFiniteNumberArray,
-  validateStringArray,
-  validateVector3,
-  validateEuler,
-  validateQuaternion,
-  validateOrigin,
-  validateVisualGeometry,
-  validateVisualGeometryArray,
-  validateLinkInertial,
-  validateMjcfSites,
   validateTransform,
   validateRenderableBounds,
   validateMapKey,
   validateRobotLinks,
-  validateJointFields,
   validateRobotJoints,
-  ReferenceAliases,
-  createReferenceAliases,
-  addReferenceAlias,
-  hasUniqueReference,
-  collectRobotReferenceAliases,
-  validateReference,
-  validateImportRecovery,
   validateTendonIdentities,
   ValidatedRobot,
   ValidatedComponent,
-  validateBridgeEndpoint,
-  validateBridgeJoint,
   validateBridges,
   type CanonicalWorkspaceValidationIssue,
   type CanonicalWorkspaceValidationResult,
@@ -102,8 +56,6 @@ export interface CreateSingleComponentWorkspaceOptions {
   visible?: boolean;
 }
 
-
-
 function createDefaultRobot(name: string): RobotData {
   const rootLink = createAttachedChildLink({
     id: DEFAULT_ROOT_LINK_ID,
@@ -119,9 +71,7 @@ function createDefaultRobot(name: string): RobotData {
 }
 
 /** Create the canonical non-empty workspace used for a blank project. */
-export function createDefaultWorkspace(
-  name: string = DEFAULT_ROBOT_NAME,
-): CanonicalAssemblyState {
+export function createDefaultWorkspace(name: string = DEFAULT_ROBOT_NAME): CanonicalAssemblyState {
   return createSingleComponentWorkspace(createDefaultRobot(name), {
     workspaceName: name,
     componentName: name,
@@ -164,7 +114,6 @@ export function createSingleComponentWorkspace(
   return workspace;
 }
 
-
 function validateRobot(
   value: unknown,
   path: string,
@@ -183,11 +132,7 @@ function validateRobot(
   const links = validateRobotLinks(value.links, `${path}.links`, issues);
   const joints = validateRobotJoints(value.joints, links, `${path}.joints`, issues);
   validateCanonicalRobotMaterials(value.materials, `${path}.materials`, issues);
-  const rootLinkIdValid = validateNonEmptyString(
-    value.rootLinkId,
-    `${path}.rootLinkId`,
-    issues,
-  );
+  const rootLinkIdValid = validateNonEmptyString(value.rootLinkId, `${path}.rootLinkId`, issues);
   if (rootLinkIdValid && !links?.[value.rootLinkId as string]) {
     addIssue(
       issues,
@@ -270,19 +215,11 @@ function validateComponents(
       componentValue.editorLocked !== undefined &&
       typeof componentValue.editorLocked !== 'boolean'
     ) {
-      addIssue(
-        issues,
-        `${path}.editorLocked`,
-        'must be a boolean when provided',
-      );
+      addIssue(issues, `${path}.editorLocked`, 'must be a boolean when provided');
     }
     validateTransform(componentValue.transform, `${path}.transform`, issues);
     if (componentValue.renderableBounds !== undefined) {
-      validateRenderableBounds(
-        componentValue.renderableBounds,
-        `${path}.renderableBounds`,
-        issues,
-      );
+      validateRenderableBounds(componentValue.renderableBounds, `${path}.renderableBounds`, issues);
     }
     const robot = validateRobot(componentValue.robot, `${path}.robot`, issues);
     components[componentKey] = { robot };
@@ -291,9 +228,7 @@ function validateComponents(
 }
 
 /** Return all canonical workspace invariant violations without mutating the input. */
-export function validateCanonicalWorkspace(
-  value: unknown,
-): CanonicalWorkspaceValidationResult {
+export function validateCanonicalWorkspace(value: unknown): CanonicalWorkspaceValidationResult {
   const issues: CanonicalWorkspaceValidationIssue[] = [];
   if (!isRecord(value)) {
     return {
@@ -312,9 +247,7 @@ export function validateCanonicalWorkspace(
 }
 
 /** Fail fast when data crossing a project/import boundary is not canonical. */
-export function assertCanonicalWorkspace(
-  value: unknown,
-): asserts value is CanonicalAssemblyState {
+export function assertCanonicalWorkspace(value: unknown): asserts value is CanonicalAssemblyState {
   const result = validateCanonicalWorkspace(value);
   if (!result.valid) {
     const detail = result.issues.map((issue) => `${issue.path}: ${issue.message}`).join('; ');

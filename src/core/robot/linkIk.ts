@@ -1,77 +1,41 @@
 import * as THREE from 'three';
 
-import { JointType, type RobotData, type UrdfLink, type UrdfMjcfSite, type Vector3 } from '@/types';
+import { type RobotData, type Vector3 } from '@/types';
 
-import { resolveLinkRenderableBounds } from './assemblyPlacement';
-import { solveClosedLoopMotionCompensation } from './closedLoops';
-import { hasFiniteJointLimitBounds } from './jointLimits';
 import {
-  computeLinkWorldMatrices,
-  createOriginMatrix,
-  getJointActualAngleFromMotionAngle,
-  getJointEffectiveAngle,
-  getNormalizedJointAxis,
-  getParentJointByChildLink,
   type JointAngleOverrideMap,
   type JointKinematicOverrideMap,
   type JointQuaternionOverrideMap,
 } from './kinematics';
 import {
-  IK_HANDLE_RADIUS,
   IK_LINE_SEARCH_ATTEMPTS,
-  IK_COORDINATE_SEARCH_SCALES,
-  IK_SOLVER_STEP_ANGLE_LIMIT,
-  IK_SOLVER_STEP_TRANSLATION_LIMIT,
   IK_NUMERICAL_EPSILON,
-  IK_WORLD_POINT_EPSILON,
-  IK_AXIS_ANCHOR_EPSILON,
-  SUPPORTED_LINK_IK_JOINT_TYPES,
-  VARIABLE_LINK_IK_JOINT_TYPES,
-  SupportedVariableLinkIkJointType,
-  LinkIkChainJoint,
-  LinkIkChain,
   LinkIkEvaluation,
-  tempBoundsCenter,
-  tempEffectorPosition,
-  tempJointPosition,
-  tempJointQuaternion,
-  tempMatrixPosition,
   tempTargetWorldPosition,
-  tempErrorVector,
-  tempJointAxis,
-  tempJacobianColumn,
-  tempAnchorAxis,
-  tempAnchorCandidate,
   toVector3Value,
   toThreeVector3,
   getLeafLinkIds,
-  hasOnlyDecorativeMjcfGeomDescendants,
   isLinkIkHandleCandidate,
-  getNonRootIkHandleCandidateLinkIds,
-  isStrictJointIdPrefix,
   isShadowedByMoreDistalIkHandleCandidate,
-  clampJointActualAngle,
   collectLinkIkChain,
-  resolveJointAxisForIkAnchor,
-  getAnchorAxisDistanceSq,
-  resolveIkHandleAnchorLocal,
-  scoreMjcfSiteForIkAnchor,
-  resolveLinkIkAnchorFromMjcfSites,
   buildLinkIkHandleDescriptor,
   computeLinkIkEffectorWorldPosition,
-  mergeJointKinematicOverrides,
   buildLinkIkEvaluation,
-  solveLinearSystem,
   buildSeedOverrides,
   buildPositionJacobian,
   solveDampedLeastSquaresStep,
   applyIkStep,
   findCoordinateSearchImprovement,
-  type LinkIkHandleAnchorSource, LinkIkHandleDescriptor, LinkIkSolveFailureReason, LinkIkPositionSolveRequest,
+  LinkIkHandleDescriptor,
+  LinkIkSolveFailureReason,
+  LinkIkPositionSolveRequest,
 } from './linkIkHelpers';
-export type { LinkIkHandleAnchorSource, LinkIkHandleDescriptor, LinkIkSolveFailureReason, LinkIkPositionSolveRequest } from './linkIkHelpers';
-
-
+export type {
+  LinkIkHandleAnchorSource,
+  LinkIkHandleDescriptor,
+  LinkIkSolveFailureReason,
+  LinkIkPositionSolveRequest,
+} from './linkIkHelpers';
 
 export interface LinkIkPositionSolveResult {
   angles: JointAngleOverrideMap;
