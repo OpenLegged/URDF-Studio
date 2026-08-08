@@ -1,93 +1,11 @@
-import type { RefObject } from 'react';
-import * as THREE from 'three';
 import {
-  createRobotCapsuleGeometry,
-  createRobotCylinderGeometry,
-  createRobotSphereGeometry,
-  type RobotPrimitiveGeometryDetail,
-  URDFCollider,
-  URDFVisual,
-} from '@/core/parsers/urdf/loader';
-import {
-  createLoadingManager,
-  createMeshLoader,
-  type ColladaRootNormalizationHints,
-} from '@/core/loaders';
-import {
-  getBoxFaceMaterialPalette,
-  getCollisionGeometryEntries,
-  hasGeometryMeshMaterialGroups,
-  getVisualGeometryEntries,
-} from '@/core/robot';
-import { createBoxFaceMaterialArray } from '@/core/utils/boxFaceMaterialArray';
-import { applyVisualMeshMaterialGroupsToObject } from '@/core/utils/meshMaterialGroups';
-import { forceObjectMaterialSide } from '@/core/utils/three/materialSide';
-import {
-  applyVisualMaterialOverrideToObject,
-  resolveVisualMaterialOverrideFromGeometry,
-} from '@/core/utils/visualMaterialOverrides';
-import { GeometryType } from '@/types';
-import type { UrdfLink, UrdfVisual as LinkGeometry } from '@/types';
-import {
-  collisionBaseMaterial,
-  createHighlightOverrideMaterial,
-  createMatteMaterial,
-  enhanceMaterials,
-} from './materials';
-import { disposeObject3D } from './dispose';
-import { SHARED_MATERIALS } from '../constants';
-import {
-  DEFAULT_VEC3,
-  type GeometryPatchCandidate,
-  sameGeometry,
-  sameOrigin,
-  sameVec3,
-  sameVisibleFlag,
-} from './robotLoaderDiff';
-import {
-  applyOriginToGroup,
-  captureHighlightedMaterialState,
-  clearGroupChildren,
-  disposeReplacedMaterials,
-  findRobotLinkObject,
-  getHighlightedMeshSnapshot,
-  markCollisionObject,
-  markVisualObject,
-  rebuildLinkMeshMapForLink,
-  updateVisualMaterialPalette,
-  updateVisualMaterial,
-} from './robotLoaderPatchUtils';
-import {
-  applyURDFMaterials,
-  applyURDFMaterialTextures,
-  collectURDFMaterialsFromVisualGeometry,
-} from './urdfMaterials';
-import { getSyntheticGeomParentName, resolveRuntimeGeometryRoot } from './runtimeGeometrySelection';
-import {
-  toPrimaryAuthoredMaterialGeometry,
-  PATCHABLE_VISUAL_MATERIAL_GROUP_GEOMETRY_TYPES,
-  PatchCategoryOptions,
-  applyMeshScaleToGroup,
-  hasMirroredMeshScale,
   patchGeometryCategory,
-  getDirectCollisionGroups,
-  getDirectVisualGroups,
   patchVisualEntriesInPlace,
   patchCollisionEntriesInPlace,
-  sameGeometryStructure,
-  getAuthoredMaterialSignature,
-  getAuthoredMaterialSlotSignature,
-  getMeshMaterialGroupSignature,
-  canPatchGeometryInPlace,
-  findFirstMeshInObject,
-  patchPrimitiveDimensionsInPlace,
   patchGeometryGroupInPlace,
   ApplyGeometryPatchOptions,
   ApplyGeometryPatchesOptions,
-  ResolvedPatchTarget,
   updateRuntimeLinkDisplayName,
-  getSyntheticGeomOrdinal,
-  resolveSyntheticAttachmentTargetGroup,
   resolvePatchTarget,
   getPatchRuntimeLinkName,
   getPatchRuntimeNames,

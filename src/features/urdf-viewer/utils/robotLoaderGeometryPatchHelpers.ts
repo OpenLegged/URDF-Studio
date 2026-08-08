@@ -84,6 +84,23 @@ export const PATCHABLE_VISUAL_MATERIAL_GROUP_GEOMETRY_TYPES = new Set<GeometryTy
   GeometryType.CAPSULE,
 ]);
 
+type RuntimeGeometryGroup = THREE.Object3D & {
+  isURDFCollider?: boolean;
+  isURDFVisual?: boolean;
+};
+
+function isCollisionGroup(object: THREE.Object3D): boolean {
+  return (object as RuntimeGeometryGroup).isURDFCollider === true;
+}
+
+function isVisualGroup(object: THREE.Object3D): boolean {
+  return (object as RuntimeGeometryGroup).isURDFVisual === true;
+}
+
+function isMeshObject(object: THREE.Object3D): object is THREE.Mesh {
+  return (object as THREE.Mesh).isMesh === true;
+}
+
 export interface PatchCategoryOptions {
   robotModel: THREE.Object3D;
   linkObject: THREE.Object3D;
@@ -140,9 +157,7 @@ export function patchGeometryCategory({
 }: PatchCategoryOptions): void {
   const isCollision = category === 'collision';
 
-  const groupPredicate = isCollision
-    ? (child: THREE.Object3D) => (child as any).isURDFCollider
-    : (child: THREE.Object3D) => (child as any).isURDFVisual;
+  const groupPredicate = isCollision ? isCollisionGroup : isVisualGroup;
 
   let targetGroup =
     explicitTargetGroup ?? (linkObject.children.find(groupPredicate) as THREE.Object3D | undefined);
@@ -155,8 +170,7 @@ export function patchGeometryCategory({
   }
 
   targetGroup.visible = isCollision ? showCollision : true;
-  const defersGroupReplacement =
-    geometry.type === GeometryType.MESH && Boolean(geometry.meshPath);
+  const defersGroupReplacement = geometry.type === GeometryType.MESH && Boolean(geometry.meshPath);
   if (!defersGroupReplacement) {
     clearGroupChildren(targetGroup);
     applyOriginToGroup(targetGroup, geometry.origin);
@@ -195,9 +209,7 @@ export function patchGeometryCategory({
       ? collectURDFMaterialsFromVisualGeometry(geometry)
       : null;
   const textureManager =
-    !isCollision && visualMaterialOverride?.texture
-      ? createPatchLoadingManager()
-      : null;
+    !isCollision && visualMaterialOverride?.texture ? createPatchLoadingManager() : null;
   const applyPrimitiveVisualOverride = (mesh: THREE.Mesh) => {
     if (!isCollision && visualMaterialOverride) {
       applyVisualMaterialOverrideToObject(
@@ -376,10 +388,9 @@ export function patchGeometryCategory({
             // carries a loader-generated material instead of the authored slots. Falling
             // back to the first authored material keeps that mesh textured instead of
             // leaving it on the loader's untextured default.
-            const primaryMaterialOverride =
-              resolveVisualMaterialOverrideFromGeometry(
-                toPrimaryAuthoredMaterialGeometry(geometry),
-              );
+            const primaryMaterialOverride = resolveVisualMaterialOverrideFromGeometry(
+              toPrimaryAuthoredMaterialGeometry(geometry),
+            );
             if (primaryMaterialOverride) {
               applyVisualMaterialOverrideToObject(obj, primaryMaterialOverride, manager);
             }
@@ -414,11 +425,11 @@ export function patchGeometryCategory({
 }
 
 export function getDirectCollisionGroups(linkObject: THREE.Object3D): THREE.Object3D[] {
-  return linkObject.children.filter((child: any) => child.isURDFCollider) as THREE.Object3D[];
+  return linkObject.children.filter(isCollisionGroup);
 }
 
 export function getDirectVisualGroups(linkObject: THREE.Object3D): THREE.Object3D[] {
-  return linkObject.children.filter((child: any) => child.isURDFVisual) as THREE.Object3D[];
+  return linkObject.children.filter(isVisualGroup);
 }
 
 export function patchVisualEntriesInPlace({
@@ -610,13 +621,7 @@ export function patchCollisionEntriesInPlace({
     }
 
     if (sameGeometry(previousEntry.geometry, nextEntry.geometry)) {
-      if (
-        patchPrimitiveDimensionsInPlace(
-          group,
-          nextEntry.geometry,
-          primitiveGeometryDetail,
-        )
-      ) {
+      if (patchPrimitiveDimensionsInPlace(group, nextEntry.geometry, primitiveGeometryDetail)) {
         applied = true;
       }
       continue;
@@ -704,7 +709,10 @@ export function patchCollisionEntriesInPlace({
   return true;
 }
 
-export function sameGeometryStructure(a: LinkGeometry | undefined, b: LinkGeometry | undefined): boolean {
+export function sameGeometryStructure(
+  a: LinkGeometry | undefined,
+  b: LinkGeometry | undefined,
+): boolean {
   if (!a || !b) return a === b;
   return a.type === b.type && (a.meshPath || '') === (b.meshPath || '');
 }
@@ -724,12 +732,13 @@ export function getAuthoredMaterialSignature(geometry: LinkGeometry | undefined)
       emissive: (material.emissive || '').trim().toLowerCase(),
       emissiveIntensity: material.emissiveIntensity ?? null,
       alphaTest: material.alphaTest ?? null,
-      passes: material.passes?.map((pass) => ({
-        texture: (pass.texture || '').trim(),
-        sceneBlend: pass.sceneBlend ?? null,
-        depthWrite: pass.depthWrite ?? null,
-        lighting: pass.lighting ?? null,
-      })) ?? null,
+      passes:
+        material.passes?.map((pass) => ({
+          texture: (pass.texture || '').trim(),
+          sceneBlend: pass.sceneBlend ?? null,
+          depthWrite: pass.depthWrite ?? null,
+          lighting: pass.lighting ?? null,
+        })) ?? null,
     })),
   );
 }
@@ -797,9 +806,9 @@ export function canPatchGeometryInPlace(
 export function findFirstMeshInObject(object: THREE.Object3D): THREE.Mesh | null {
   let firstMesh: THREE.Mesh | null = null;
 
-  object.traverse((child: any) => {
-    if (!firstMesh && child.isMesh) {
-      firstMesh = child as THREE.Mesh;
+  object.traverse((child) => {
+    if (!firstMesh && isMeshObject(child)) {
+      firstMesh = child;
     }
   });
 
@@ -904,9 +913,7 @@ export function patchGeometryGroupInPlace({
   if (!canPatchGeometryInPlace(previousGeometry, geometry, category)) return false;
 
   const isCollision = category === 'collision';
-  const groupPredicate = isCollision
-    ? (child: THREE.Object3D) => (child as any).isURDFCollider
-    : (child: THREE.Object3D) => (child as any).isURDFVisual;
+  const groupPredicate = isCollision ? isCollisionGroup : isVisualGroup;
 
   const targetGroup =
     explicitTargetGroup ?? (linkObject.children.find(groupPredicate) as THREE.Object3D | undefined);
@@ -933,8 +940,8 @@ export function patchGeometryGroupInPlace({
 
   if (visibilityChanged || category === 'visual') {
     targetGroup.visible = isVisible;
-    targetGroup.traverse((child: any) => {
-      if (child.isMesh) {
+    targetGroup.traverse((child) => {
+      if (isMeshObject(child)) {
         child.visible = isVisible;
       }
     });
@@ -949,9 +956,9 @@ export function patchGeometryGroupInPlace({
 
   if (!isCollision && colorChanged) {
     const disposedMaterials = new Set<THREE.Material>();
-    targetGroup.traverse((child: any) => {
-      if (child.isMesh) {
-        updateVisualMaterial(child as THREE.Mesh, { color: geometry.color }, disposedMaterials);
+    targetGroup.traverse((child) => {
+      if (isMeshObject(child)) {
+        updateVisualMaterial(child, { color: geometry.color }, disposedMaterials);
       }
     });
   }
@@ -961,20 +968,16 @@ export function patchGeometryGroupInPlace({
     const disposedMaterials = new Set<THREE.Material>();
 
     if (authoredMaterialPalette.size > 1) {
-      targetGroup.traverse((child: any) => {
-        if (child.isMesh) {
-          updateVisualMaterialPalette(
-            child as THREE.Mesh,
-            authoredMaterialPalette,
-            disposedMaterials,
-          );
+      targetGroup.traverse((child) => {
+        if (isMeshObject(child)) {
+          updateVisualMaterialPalette(child, authoredMaterialPalette, disposedMaterials);
         }
       });
     } else {
       const visualMaterialOverride = resolveVisualMaterialOverrideFromGeometry(geometry);
-      targetGroup.traverse((child: any) => {
-        if (child.isMesh && visualMaterialOverride) {
-          updateVisualMaterial(child as THREE.Mesh, visualMaterialOverride, disposedMaterials);
+      targetGroup.traverse((child) => {
+        if (isMeshObject(child) && visualMaterialOverride) {
+          updateVisualMaterial(child, visualMaterialOverride, disposedMaterials);
         }
       });
     }
@@ -994,12 +997,12 @@ export function patchGeometryGroupInPlace({
       THREE.Mesh,
       NonNullable<ReturnType<typeof getHighlightedMeshSnapshot>>
     >();
-    targetGroup.traverse((child: any) => {
-      if (!child.isMesh) {
+    targetGroup.traverse((child) => {
+      if (!isMeshObject(child)) {
         return;
       }
 
-      const highlightSnapshot = getHighlightedMeshSnapshot(child as THREE.Mesh);
+      const highlightSnapshot = getHighlightedMeshSnapshot(child);
       if (!highlightSnapshot?.activeRole) {
         return;
       }
@@ -1009,7 +1012,7 @@ export function patchGeometryGroupInPlace({
         | THREE.Material[]
         | undefined;
       child.material = highlightSnapshot.material;
-      highlightedSnapshots.set(child as THREE.Mesh, highlightSnapshot);
+      highlightedSnapshots.set(child, highlightSnapshot);
       disposeReplacedMaterials(previousVisibleMaterial, disposedMaterials, false);
     });
 
@@ -1036,10 +1039,7 @@ export function patchGeometryGroupInPlace({
     });
   }
 
-  if (
-    !isCollision
-    && (geometry.doubleSided === true || hasMirroredMeshScale(geometry))
-  ) {
+  if (!isCollision && (geometry.doubleSided === true || hasMirroredMeshScale(geometry))) {
     forceObjectMaterialSide(targetGroup, THREE.DoubleSide);
   }
 

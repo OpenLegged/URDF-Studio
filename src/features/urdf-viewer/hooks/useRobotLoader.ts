@@ -41,17 +41,16 @@ import { shouldWaitForStructuredUrdfRobotState } from '@/features/urdf-viewer/re
 import type { ViewerDocumentLoadEvent } from '../types';
 import {
   createAssetScopeKey,
-  createLoadingDispatchKey,
-  normalizeExternalDocumentLoadEvent,
   preprocessURDFForLoader,
   resolveRobotJoint,
   VIEWER_LOAD_YIELD_BUDGET_MS,
   waitForLoadingHudPaint,
-  type PendingLoadingDispatch,
   type RobotLoadingProgress,
   type UseRobotLoaderOptions,
   type UseRobotLoaderResult,
 } from './robotLoaderSupport';
+import { useDeferredRobotDisposal } from './useDeferredRobotDisposal';
+import { useRobotLoadingDispatch } from './useRobotLoadingDispatch';
 
 export type {
   RobotLoadingProgress,
@@ -116,18 +115,11 @@ export function useRobotLoader({
   const loadAbortRef = useRef<{ aborted: boolean }>({ aborted: false });
   // Dispose the previously rendered robot only after the new one has had a chance to mount,
   // otherwise the canvas can flash a blank frame during file switching.
-  const pendingDisposeRobotRef = useRef<THREE.Object3D | null>(null);
-  const pendingDisposeFrameRef = useRef<number | null>(null);
   const groundAlignTimerRef = useRef<number[]>([]);
   const mountedRobotSourceScopeKeyRef = useRef<string | null>(null);
   const mountedRobotReloadTokenRef = useRef<number | null>(null);
   const mountedRobotHasCollisionGroupsRef = useRef(false);
-  const progressDispatchFrameRef = useRef<number | null>(null);
-  const pendingLoadingDispatchRef = useRef<PendingLoadingDispatch | null>(null);
-  const lastPublishedLoadingDispatchKeyRef = useRef('');
-  const lastPublishedProgressRef = useRef<RobotLoadingProgress | null>(null);
   const onRobotLoadedRef = useRef(onRobotLoaded);
-  const onDocumentLoadEventRef = useRef(onDocumentLoadEvent);
   // Ground offset is a presentation-only adjustment; changing it must not
   // restart the robot load pipeline or re-emit loading HUD phases.
   const groundPlaneOffsetRef = useRef(groundPlaneOffset);
@@ -219,151 +211,19 @@ export function useRobotLoader({
     onRobotLoadedRef.current = onRobotLoaded;
   }, [onRobotLoaded]);
   useEffect(() => {
-    onDocumentLoadEventRef.current = onDocumentLoadEvent;
-  }, [onDocumentLoadEvent]);
-  useEffect(() => {
     groundPlaneOffsetRef.current = groundPlaneOffset;
   }, [groundPlaneOffset]);
 
-  const disposeRobotObject = useCallback((robotObject: THREE.Object3D | null) => {
-    if (!robotObject) return;
-    if (robotObject.parent) {
-      robotObject.parent.remove(robotObject);
-    }
-    disposeObject3D(robotObject, true, SHARED_MATERIALS);
-  }, []);
-
-  const flushPendingRobotDispose = useCallback(() => {
-    if (pendingDisposeFrameRef.current !== null && typeof window !== 'undefined') {
-      window.cancelAnimationFrame(pendingDisposeFrameRef.current);
-      pendingDisposeFrameRef.current = null;
-    }
-
-    if (pendingDisposeRobotRef.current) {
-      const robotToDispose = pendingDisposeRobotRef.current;
-      pendingDisposeRobotRef.current = null;
-      disposeRobotObject(robotToDispose);
-    }
-  }, [disposeRobotObject]);
+  const { disposeRobotObject, flushPendingRobotDispose, schedulePreviousRobotDispose } =
+    useDeferredRobotDisposal(robotRef);
 
   const clearGroundAlignTimers = useCallback(() => {
     groundAlignTimerRef.current.forEach((timer) => window.clearTimeout(timer));
     groundAlignTimerRef.current = [];
   }, []);
 
-  const emitDocumentLoadEvent = useCallback((event: ViewerDocumentLoadEvent) => {
-    const nextEvent = onDocumentLoadEventRef.current
-      ? normalizeExternalDocumentLoadEvent(event)
-      : event;
-    onDocumentLoadEventRef.current?.(nextEvent);
-  }, []);
-
-  const applyLoadingDispatch = useCallback(
-    (dispatch: PendingLoadingDispatch) => {
-      const normalizedExternalEvent = onDocumentLoadEventRef.current
-        ? normalizeExternalDocumentLoadEvent(dispatch.event)
-        : dispatch.event;
-      const dispatchKey = createLoadingDispatchKey(
-        onDocumentLoadEventRef.current ? null : dispatch.progress,
-        normalizedExternalEvent,
-      );
-      if (dispatchKey === lastPublishedLoadingDispatchKeyRef.current) {
-        return;
-      }
-
-      lastPublishedLoadingDispatchKeyRef.current = dispatchKey;
-      lastPublishedProgressRef.current = dispatch.progress;
-      // AppLayout owns the global loading overlay state for the main viewer.
-      // Updating both the local hook state and the external document-load
-      // state on every MJCF progress tick can create a render feedback loop
-      // during large scene imports such as flybody.
-      if (!onDocumentLoadEventRef.current) {
-        setLoadingProgress(dispatch.progress);
-      }
-      emitDocumentLoadEvent(dispatch.event);
-    },
-    [emitDocumentLoadEvent],
-  );
-
-  const flushPendingLoadingDispatch = useCallback(() => {
-    if (progressDispatchFrameRef.current !== null && typeof window !== 'undefined') {
-      window.cancelAnimationFrame(progressDispatchFrameRef.current);
-      progressDispatchFrameRef.current = null;
-    }
-
-    const pendingDispatch = pendingLoadingDispatchRef.current;
-    pendingLoadingDispatchRef.current = null;
-    if (!pendingDispatch) {
-      return;
-    }
-
-    applyLoadingDispatch(pendingDispatch);
-  }, [applyLoadingDispatch]);
-
-  const publishLoadingDispatch = useCallback(
-    (
-      progress: RobotLoadingProgress | null,
-      event: ViewerDocumentLoadEvent,
-      options: { defer?: boolean } = {},
-    ) => {
-      const nextDispatch: PendingLoadingDispatch = { progress, event };
-
-      if (!options.defer) {
-        pendingLoadingDispatchRef.current = null;
-        flushPendingLoadingDispatch();
-        applyLoadingDispatch(nextDispatch);
-        return;
-      }
-
-      pendingLoadingDispatchRef.current = nextDispatch;
-
-      if (progressDispatchFrameRef.current !== null) {
-        return;
-      }
-
-      if (typeof window !== 'undefined' && typeof window.requestAnimationFrame === 'function') {
-        progressDispatchFrameRef.current = window.requestAnimationFrame(() => {
-          progressDispatchFrameRef.current = null;
-          flushPendingLoadingDispatch();
-        });
-        return;
-      }
-
-      queueMicrotask(flushPendingLoadingDispatch);
-    },
-    [applyLoadingDispatch, flushPendingLoadingDispatch],
-  );
-
-  const schedulePreviousRobotDispose = useCallback(
-    (previousRobot: THREE.Object3D | null) => {
-      if (!previousRobot) return;
-
-      flushPendingRobotDispose();
-      pendingDisposeRobotRef.current = previousRobot;
-
-      const disposePreviousRobot = () => {
-        pendingDisposeFrameRef.current = null;
-        const robotToDispose = pendingDisposeRobotRef.current;
-        pendingDisposeRobotRef.current = null;
-
-        if (!robotToDispose || robotToDispose === robotRef.current) {
-          return;
-        }
-
-        disposeRobotObject(robotToDispose);
-      };
-
-      if (typeof window !== 'undefined') {
-        pendingDisposeFrameRef.current = window.requestAnimationFrame(() => {
-          pendingDisposeFrameRef.current = window.requestAnimationFrame(disposePreviousRobot);
-        });
-        return;
-      }
-
-      queueMicrotask(disposePreviousRobot);
-    },
-    [disposeRobotObject, flushPendingRobotDispose],
-  );
+  const { flushPendingLoadingDispatch, getLatestLoadingProgress, publishLoadingDispatch } =
+    useRobotLoadingDispatch({ onDocumentLoadEvent, setLoadingProgress });
 
   const scheduleGroundAlignment = useCallback(
     (loadedRobot: THREE.Object3D) => {
@@ -783,8 +643,7 @@ export function useRobotLoader({
             const loadedRobot = robotModel;
             if (!loadedRobot) return;
             if (!abortController.aborted && isMountedRef.current) {
-              const currentProgress =
-                pendingLoadingDispatchRef.current?.progress ?? lastPublishedProgressRef.current;
+              const currentProgress = getLatestLoadingProgress();
               const nextProgress: RobotLoadingProgress =
                 normalizeLoadingProgress<RobotLoadingProgress>({
                   phase: 'finalizing-scene',
@@ -917,8 +776,7 @@ export function useRobotLoader({
         const loadedRobot = robotModel as THREE.Object3D;
 
         if (isMountedRef.current) {
-          const currentProgress =
-            pendingLoadingDispatchRef.current?.progress ?? lastPublishedProgressRef.current;
+          const currentProgress = getLatestLoadingProgress();
           const nextProgress =
             currentProgress ??
             normalizeLoadingProgress<RobotLoadingProgress>({
@@ -987,6 +845,7 @@ export function useRobotLoader({
     error,
     allowUrdfXmlFallback,
     hasStructuredRobotState,
+    getLatestLoadingProgress,
     invalidate,
     loadScopeKey,
     publishLoadingDispatch,

@@ -1,11 +1,10 @@
-import { useRef, useEffect, useCallback } from 'react';
+import { useRef, useEffect } from 'react';
 import { useThree } from '@react-three/fiber';
 import * as THREE from 'three';
-import { getJointActualAngleFromMotionAngle, resolveLinkKey, resolveJointKey } from '@/core/robot';
+import { resolveLinkKey, resolveJointKey } from '@/core/robot';
 import { throttle } from '@/shared/utils';
-import { requestShadowMapRefresh } from '@/shared/components/3d/scene/shadowMapRefresh';
 import type { JointPanelActiveJointOptions } from '@/shared/utils/jointPanelStore';
-import { JointType, type InteractionSelection, type UrdfJoint, type UrdfLink } from '@/types';
+import type { InteractionSelection, UrdfJoint, UrdfLink } from '@/types';
 import { THROTTLE_INTERVAL } from '../constants';
 import type {
   MeasureMode,
@@ -14,81 +13,44 @@ import type {
   ViewerPaintFaceHit,
   ViewerSceneMode,
 } from '../types';
-import { isSingleDofJoint } from '@/shared/utils/jointTypes';
 import {
-  collectGizmoRaycastTargets,
   isGizmoObject,
   shouldBlockBackgroundInteractionForGizmoHit,
   shouldPreserveSelectionForGizmoPointerDown,
 } from '../utils/raycast';
-import {
-  collectPickTargets,
-  collectSelectableHelperTargets,
-  findPickIntersections,
-  type PickTargetMode,
-} from '../utils/pickTargets';
-import { resolveInteractionSelectionHit } from '../utils/selectionTargets';
-import { resolveHelperSelectionPlan } from '../utils/helperSelectionPlan';
+import { findPickIntersections } from '../utils/pickTargets';
 import {
   shouldBlockOrbitForGeometryHit,
   shouldDisableOrbitForDirectJointDrag,
   shouldStartJointDragFromGeometryHit,
 } from '../utils/interactionMode';
 import {
-  isPointerInteractionWithinClickThreshold,
   resolveDeferredSelectionHoverState,
   shouldFinalizePointerInteraction,
   shouldDeferSelectionUntilPointerUp,
 } from '../utils/clickSelectionPolicy';
-import {
-  resolveHoverInteractionResolution,
-  type ResolvedHoverInteractionCandidate,
-} from '../utils/hoverInteractionResolution';
-import {
-  collectProjectedHelperInteractionTargets,
-  resolveScreenSpaceHelperInteraction,
-} from '../utils/screenSpaceHelperInteraction';
-import {
-  resolveRevoluteDragDelta,
-  resolveRevoluteDragStep,
-  resolveRevoluteTangentAngleDelta,
-} from '../utils/jointDragDelta';
-import { createJointDragStoreSync } from '../utils/jointDragStoreSync';
-import { createJointDragFrameSync } from '../utils/jointDragFrameSync';
 import { resolveActiveViewerJointKeyFromSelection } from '../utils/activeJointSelection';
-import { resolveMouseDownSelectionPlan } from '../utils/mouseDownSelectionPlan';
 import { resolveIkGeometrySelectionState } from '../utils/ikGeometrySelectionState';
 import { resolveHoverMoveEventName } from '../utils/hoverMoveEventName';
 import type { ViewerHelperKind } from '../types';
 import { resolveDirectHelperInteraction } from '../utils/directHelperInteraction';
-import { resolveHelperSelectionIdentity } from '../utils/helperSelectionIdentity';
-import { resolveSelectionCommitHoverAction } from '../utils/selectionCommitHoverPolicy';
-import { resolveJointDragRuntimeStep } from '../utils/jointDragRuntimeStep';
-import { isPassiveSpringJointDragTarget } from '../utils/passiveSpringJointDragTarget';
 import {
   armSelectionMissGuard,
   disarmSelectionMissGuard,
   clearSelectionMissGuardTimer,
-  scheduleSelectionMissGuardReset,
   shouldDisarmSelectionMissGuardOnPointerMove,
-  shouldTreatPointerUpAsBackgroundMiss,
 } from '../utils/selectionMissGuard';
-import { unwrapContinuousJointAngle } from '@/shared/utils/continuousJointAngle';
-import { isRuntimeInteractionEditorLocked } from '../utils/editorInteractionLock';
-
-const JOINT_DRAG_EPSILON = 1e-5;
-const MAX_REVOLUTE_DELTA_PER_FRAME = Math.PI / 8;
-const MAX_REVOLUTE_DELTA_PER_INPUT = Math.PI;
-const JOINT_DRAG_STORE_SYNC_INTERVAL = 16;
-const POINTER_TARGET_PREWARM_IDLE_TIMEOUT_MS = 180;
-const POINTER_TARGET_PREWARM_SETTLE_FRAMES = 1;
-
-interface PendingPointerSelection {
-  resolvedHit: ResolvedHoverInteractionCandidate;
-  resolvedLinkObject: THREE.Object3D | null;
-  resolvedSubType: 'visual' | 'collision' | undefined;
-  clickedJoint: any;
-}
+import { usePointerInteractionTargets } from './usePointerInteractionTargets';
+import {
+  createDirectJointDragController,
+  type DraggableRuntimeJoint,
+} from '../utils/directJointDragController';
+import { resolvePointerDownHit } from '../utils/pointerDownHitResolution';
+import {
+  createPointerSelectionCommit,
+  type PendingPointerSelection,
+} from '../utils/pointerSelectionCommit';
+import { createPointerInteractionFinalizer } from '../utils/pointerInteractionFinalizer';
 
 export interface UseMouseInteractionOptions {
   enabled?: boolean;
@@ -194,28 +156,6 @@ export function useMouseInteraction({
   const { camera, gl, scene, invalidate } = useThree();
   const orbitControls = useThree((state) => state.controls as { enabled?: boolean } | undefined);
 
-  const resolveDraggedRuntimeJointActualAngle = useCallback(
-    (jointName: string, runtimeMotionAngle: number) => {
-      const sourceJoints = robotJoints ?? {};
-      const jointKey = resolveJointKey(sourceJoints, jointName) ?? jointName;
-      const sourceJoint = sourceJoints[jointKey];
-      if (!sourceJoint) {
-        return runtimeMotionAngle;
-      }
-
-      const actualAngle = getJointActualAngleFromMotionAngle(sourceJoint, runtimeMotionAngle);
-      if (sourceJoint.type !== JointType.CONTINUOUS) {
-        return actualAngle;
-      }
-
-      const referenceAngle = Number(sourceJoint.angle ?? actualAngle);
-      return Number.isFinite(referenceAngle)
-        ? unwrapContinuousJointAngle(actualAngle, referenceAngle)
-        : actualAngle;
-    },
-    [robotJoints],
-  );
-
   const mouseRef = useRef(new THREE.Vector2(-1000, -1000));
   const raycasterRef = useRef(new THREE.Raycaster());
   const hoveredLinkRef = useRef<string | null>(null);
@@ -228,7 +168,7 @@ export function useMouseInteraction({
   const pointerButtonsRef = useRef(0);
 
   const isDraggingJoint = useRef(false);
-  const dragJoint = useRef<any>(null);
+  const dragJoint = useRef<DraggableRuntimeJoint | null>(null);
   const dragJointRuntimeValueRef = useRef<number | null>(null);
   const dragHitDistance = useRef(0);
   const lastRayRef = useRef(new THREE.Ray());
@@ -240,23 +180,6 @@ export function useMouseInteraction({
   const pointerDownPositionRef = useRef<{ x: number; y: number } | null>(null);
   const pointerExceededClickThresholdRef = useRef(false);
   const gizmoPointerDownRef = useRef<{ x: number; y: number } | null>(null);
-  const gizmoTargetsRef = useRef<THREE.Object3D[]>([]);
-  const gizmoTargetsCacheKeyRef = useRef('');
-  const gizmoTargetsUpdatedAtRef = useRef(0);
-  const pickTargetCachesRef = useRef<
-    Record<
-      PickTargetMode,
-      {
-        key: string;
-        updatedAt: number;
-        targets: THREE.Object3D[];
-      }
-    >
-  >({
-    all: { key: '', updatedAt: 0, targets: [] },
-    visual: { key: '', updatedAt: 0, targets: [] },
-    collision: { key: '', updatedAt: 0, targets: [] },
-  });
 
   // Keep refs up to date
   const onJointChangeRef = useRef(onJointChange);
@@ -273,155 +196,19 @@ export function useMouseInteraction({
     setActiveJointRef.current = setActiveJoint;
   }, [invalidate, onJointChange, onJointChangeCommit, setIsDragging, setActiveJoint]);
 
-  const getGizmoTargets = useCallback(() => {
-    const nextCacheKey = [
-      scene.children.length,
+  const { getGizmoTargets, getHelperTargets, getPickTargets } =
+    usePointerInteractionTargets({
+      robot,
+      robotVersion,
+      scene,
       toolMode,
-      mode ?? 'editor',
-      selection?.type ?? 'none',
-      selection?.id ?? '',
-      selection?.helperKind ?? '',
-      robot ? 'robot' : 'empty',
-    ].join(':');
-    const now = performance.now();
-
-    if (gizmoTargetsCacheKeyRef.current !== nextCacheKey || gizmoTargetsRef.current.length === 0) {
-      gizmoTargetsRef.current = collectGizmoRaycastTargets(scene);
-      gizmoTargetsCacheKeyRef.current = nextCacheKey;
-      gizmoTargetsUpdatedAtRef.current = now;
-    }
-
-    return gizmoTargetsRef.current;
-  }, [mode, robot, scene, selection?.helperKind, selection?.id, selection?.type, toolMode]);
-
-  const getPickTargets = useCallback(
-    (targetMode: PickTargetMode) => {
-      const cache = pickTargetCachesRef.current[targetMode];
-      const nextCacheKey = [
-        robotVersion,
-        targetMode,
-        showCollision ? 'col:1' : 'col:0',
-        showVisual ? 'vis:1' : 'vis:0',
-        showCollisionAlwaysOnTop ? 'col-top:1' : 'col-top:0',
-        linkMeshMapRef.current.size,
-      ].join(':');
-      const now = performance.now();
-
-      if (cache.key !== nextCacheKey || cache.targets.length === 0) {
-        cache.targets = collectPickTargets(linkMeshMapRef.current, targetMode, robot);
-        cache.key = nextCacheKey;
-        cache.updatedAt = now;
-      }
-
-      return cache.targets;
-    },
-    [linkMeshMapRef, robot, robotVersion, showCollision, showCollisionAlwaysOnTop, showVisual],
-  );
-
-  const getHelperTargets = useCallback(() => collectSelectableHelperTargets(robot), [robot]);
-
-  const prewarmPointerInteractionTargets = useCallback(() => {
-    if (!robot) {
-      return;
-    }
-
-    scene.updateMatrixWorld(true);
-    getGizmoTargets();
-    getPickTargets('all');
-    getHelperTargets();
-  }, [getGizmoTargets, getHelperTargets, getPickTargets, robot, scene]);
-
-  useEffect(() => {
-    if (!robot || typeof window === 'undefined') {
-      return;
-    }
-
-    const requestIdle =
-      typeof window.requestIdleCallback === 'function'
-        ? window.requestIdleCallback.bind(window)
-        : undefined;
-    const cancelIdle =
-      typeof window.cancelIdleCallback === 'function'
-        ? window.cancelIdleCallback.bind(window)
-        : undefined;
-
-    let cancelled = false;
-    let frameHandle: number | null = null;
-    let idleHandle: number | null = null;
-    let timeoutHandle: number | null = null;
-
-    const cancelScheduledWork = () => {
-      if (frameHandle !== null) {
-        window.cancelAnimationFrame(frameHandle);
-        frameHandle = null;
-      }
-
-      if (idleHandle !== null && cancelIdle) {
-        cancelIdle(idleHandle);
-        idleHandle = null;
-      }
-
-      if (timeoutHandle !== null) {
-        window.clearTimeout(timeoutHandle);
-        timeoutHandle = null;
-      }
-    };
-
-    const runPrewarm = () => {
-      if (cancelled) {
-        return;
-      }
-
-      prewarmPointerInteractionTargets();
-    };
-
-    const schedulePrewarm = () => {
-      if (cancelled) {
-        return;
-      }
-
-      if (requestIdle) {
-        idleHandle = requestIdle(
-          () => {
-            idleHandle = null;
-            runPrewarm();
-          },
-          { timeout: POINTER_TARGET_PREWARM_IDLE_TIMEOUT_MS },
-        );
-        return;
-      }
-
-      timeoutHandle = window.setTimeout(() => {
-        timeoutHandle = null;
-        runPrewarm();
-      }, POINTER_TARGET_PREWARM_IDLE_TIMEOUT_MS);
-    };
-
-    const waitForStableFrames = (remainingFrames: number) => {
-      if (cancelled) {
-        return;
-      }
-
-      if (remainingFrames <= 0) {
-        schedulePrewarm();
-        return;
-      }
-
-      frameHandle = window.requestAnimationFrame(() => {
-        frameHandle = null;
-        waitForStableFrames(remainingFrames - 1);
-      });
-    };
-
-    // Prebuild the heavy raycast target lists before the first pointerdown so
-    // direct joint-dragging does not pay the full cost on the user's first drag.
-    waitForStableFrames(POINTER_TARGET_PREWARM_SETTLE_FRAMES);
-
-    return () => {
-      cancelled = true;
-      cancelScheduledWork();
-    };
-  }, [prewarmPointerInteractionTargets, robot, robotVersion]);
+      mode,
+      selection,
+      showCollision,
+      showVisual,
+      showCollisionAlwaysOnTop,
+      linkMeshMapRef,
+    });
 
   // Mouse tracking for hover detection AND joint dragging
   useEffect(() => {
@@ -595,189 +382,45 @@ export function useMouseInteraction({
       }
     };
 
-    const jointDragStoreSync = createJointDragStoreSync({
-      onDragChange: (jointName, angle) => {
-        onJointChangeRef.current?.(jointName, angle);
+    const jointDragController = createDirectJointDragController({
+      state: {
+        isDraggingJoint,
+        dragJoint,
+        runtimeValue: dragJointRuntimeValueRef,
+        hitDistance: dragHitDistance,
+        lastRay: lastRayRef,
       },
-      onDragCommit: (jointName, angle) => {
-        onJointChangeCommitRef.current?.(jointName, angle);
-      },
-      // Keep drag motion fully local in Three.js, but cap React/store sync to once per frame.
+      robot,
+      robotJoints,
+      camera,
+      renderer: gl,
       throttleChanges: throttleJointChangeDuringDrag,
-      intervalMs: JOINT_DRAG_STORE_SYNC_INTERVAL,
+      deferRuntimeUpdate: deferDirectJointRuntimeUpdate,
+      updatePointerFromLocalPoint,
+      getCurrentRay: () => raycasterRef.current.ray,
+      onChange: (jointName, angle) => onJointChangeRef.current?.(jointName, angle),
+      onCommit: (jointName, angle) => onJointChangeCommitRef.current?.(jointName, angle),
+      onDraggingChange: (dragging) => setIsDraggingRef.current?.(dragging),
+      onActiveJointChange: (jointName, options) =>
+        setActiveJointRef.current?.(jointName, options),
+      invalidate: () => invalidateRef.current(),
     });
 
-    const jointDragFrameSync = createJointDragFrameSync({
-      onFrame: (localX, localY) => {
-        if (!updatePointerFromLocalPoint(localX, localY)) {
-          return;
-        }
-        moveRay(raycasterRef.current.ray);
-        invalidateRef.current();
-      },
+    const commitPointerSelection = createPointerSelectionCommit({
+      toolMode,
+      mode,
+      robotLinks,
+      robotJoints,
+      resolveDirectIkHandleLink,
+      onSelect,
+      onMeshSelect,
+      highlightGeometry,
+      clearHoveredState,
+      applyHoveredState,
     });
-
-    const tempWorldQuat = new THREE.Quaternion();
-    const tempAxisWorld = new THREE.Vector3();
-    const tempPivotPoint = new THREE.Vector3();
-    const tempPlane = new THREE.Plane();
-    const tempProjStart = new THREE.Vector3();
-    const tempProjEnd = new THREE.Vector3();
-    const tempCross = new THREE.Vector3();
-    const tempDelta = new THREE.Vector3();
-    const tempPrevHitPoint = new THREE.Vector3();
-    const tempNewHitPoint = new THREE.Vector3();
-    const tempTangentWorld = new THREE.Vector3();
-    const tempCameraView = new THREE.Vector3();
-    const tempCameraForward = new THREE.Vector3();
-
-    const syncJointWorldFrame = (joint: any) => {
-      const axis = joint.axis || new THREE.Vector3(0, 0, 1);
-      joint.getWorldQuaternion(tempWorldQuat);
-
-      tempAxisWorld.copy(axis).applyQuaternion(tempWorldQuat).normalize();
-      tempPivotPoint.setFromMatrixPosition(joint.matrixWorld);
-    };
-
-    const isRuntimeJointObject = (object: THREE.Object3D | null): boolean =>
-      Boolean(object && ((object as any).isURDFJoint || (object as any).type === 'URDFJoint'));
-
-    const findParentLinkForJoint = (jointObject: THREE.Object3D): THREE.Object3D | null => {
-      let parentLink: THREE.Object3D | null = jointObject.parent;
-      while (parentLink && parentLink !== robot) {
-        if ((parentLink as any).isURDFLink || (parentLink as any).type === 'URDFLink') {
-          return parentLink;
-        }
-        parentLink = parentLink.parent;
-      }
-
-      return null;
-    };
-
-    function resolveControllableJoint(jointObject: THREE.Object3D): any {
-      // Skip non-interactive joints and passive MJCF spring hinges; direct
-      // link dragging should drive the nearest controllable parent joint.
-      if (
-        !isSingleDofJoint(jointObject) ||
-        isPassiveSpringJointDragTarget(jointObject.name, robotJoints, jointObject)
-      ) {
-        return findParentJoint(findParentLinkForJoint(jointObject));
-      }
-
-      return jointObject;
-    }
-
-    /**
-     * Find the parent joint of a link (for drag rotation)
-     */
-    function findParentJoint(linkObject: THREE.Object3D | null): any {
-      if (!linkObject) return null;
-
-      let current: THREE.Object3D | null = linkObject.parent;
-
-      while (current && current !== robot) {
-        if (isRuntimeJointObject(current)) {
-          return resolveControllableJoint(current);
-        }
-
-        current = current.parent;
-      }
-
-      return null;
-    }
-
-    const applyResolvedSelection = ({
-      resolvedHit,
-      resolvedLinkObject,
-      resolvedSubType,
-      clickedJoint,
-    }: PendingPointerSelection) => {
+    const applyResolvedSelection = (pendingSelection: PendingPointerSelection) => {
       armSelectionMissGuard(justSelectedRef);
-      const committedHoverAction = resolveSelectionCommitHoverAction(resolvedHit);
-
-      if (committedHoverAction.mode === 'preserve') {
-        applyHoveredState(committedHoverAction.hoveredSelection, resolvedHit.highlightTarget);
-      }
-
-      if (onSelect || onMeshSelect) {
-        if (resolvedHit.targetKind === 'helper') {
-          if (resolvedHit.type === 'tendon') {
-            clearHoveredState();
-            return;
-          }
-          const helperSelectionPlan = resolveHelperSelectionPlan({
-            fallbackType: resolvedHit.type,
-            fallbackId: resolvedHit.id,
-            helperKind: resolvedHit.helperKind,
-            linkObject: resolvedLinkObject,
-          });
-          const helperSelectionIdentity = resolveHelperSelectionIdentity(
-            helperSelectionPlan.selectTarget,
-            robotLinks,
-            robotJoints,
-          );
-          if (onSelect) {
-            onSelect(
-              helperSelectionIdentity.type,
-              helperSelectionIdentity.id,
-              undefined,
-              resolvedHit.helperKind,
-            );
-          }
-        } else if (resolvedSubType && resolvedHit.type === 'link') {
-          const { preferredIkHandleLinkId } = resolveIkGeometrySelectionState({
-            toolMode,
-            hitType: resolvedHit.type,
-            hitSubType: resolvedSubType,
-            linkId: resolvedHit.linkId,
-            fallbackId: resolvedHit.id,
-            resolveDirectIkHandleLink,
-          });
-          const selectionPlan = resolveMouseDownSelectionPlan({
-            mode,
-            linkName: resolvedHit.linkId ?? resolvedHit.id,
-            jointName: clickedJoint?.name ?? null,
-            subType: resolvedSubType,
-            preferredIkHandleLinkId,
-          });
-          const shouldDispatchMeshSelection =
-            selectionPlan.shouldSyncMeshSelection && typeof onMeshSelect === 'function';
-
-          if (onSelect && !shouldDispatchMeshSelection) {
-            const selectTarget = selectionPlan.selectTarget;
-            if (selectTarget.type === 'joint') {
-              onSelect('joint', selectTarget.id);
-            } else {
-              onSelect('link', selectTarget.id, selectTarget.subType, selectTarget.helperKind);
-            }
-          }
-
-          if (shouldDispatchMeshSelection) {
-            onMeshSelect(
-              resolvedHit.linkId ?? resolvedHit.id,
-              clickedJoint ? clickedJoint.name : null,
-              resolvedHit.objectIndex ?? 0,
-              resolvedSubType,
-            );
-          }
-
-          if (selectionPlan.shouldApplyImmediateGeometryHighlight && resolvedHit.linkId) {
-            highlightGeometry(
-              resolvedHit.linkId,
-              false,
-              resolvedSubType,
-              resolvedHit.highlightTarget ?? resolvedHit.objectIndex,
-              'selection',
-            );
-          }
-        } else if (resolvedHit.type === 'tendon') {
-          onSelect?.('tendon', resolvedHit.id);
-        }
-
-        if (committedHoverAction.mode === 'clear') {
-          clearHoveredState();
-        }
-      }
+      commitPointerSelection(pendingSelection);
     };
 
     const syncActiveJointFromCurrentSelection = () => {
@@ -794,190 +437,6 @@ export function useMouseInteraction({
       if (activeJointKey) {
         setActiveJointRef.current(activeJointKey);
       }
-    };
-
-    const getRevoluteDelta = (joint: any, startPt: THREE.Vector3, endPt: THREE.Vector3): number => {
-      syncJointWorldFrame(joint);
-      tempPlane.setFromNormalAndCoplanarPoint(tempAxisWorld, tempPivotPoint);
-
-      tempPlane.projectPoint(startPt, tempProjStart);
-      tempPlane.projectPoint(endPt, tempProjEnd);
-
-      tempProjStart.sub(tempPivotPoint);
-      tempProjEnd.sub(tempPivotPoint);
-
-      if (
-        tempProjStart.lengthSq() <= JOINT_DRAG_EPSILON ||
-        tempProjEnd.lengthSq() <= JOINT_DRAG_EPSILON
-      ) {
-        return 0;
-      }
-
-      tempCross.crossVectors(tempProjStart, tempProjEnd);
-      const worldDelta = Math.atan2(tempCross.dot(tempAxisWorld), tempProjStart.dot(tempProjEnd));
-      tempCameraView.copy(camera.position).sub(startPt);
-      if (tempCameraView.lengthSq() <= JOINT_DRAG_EPSILON) {
-        camera.getWorldDirection(tempCameraView).multiplyScalar(-1);
-      } else {
-        tempCameraView.normalize();
-      }
-
-      camera.getWorldDirection(tempCameraForward);
-      tempTangentWorld.copy(tempCameraForward).cross(tempAxisWorld);
-      const tangentDistance =
-        tempTangentWorld.lengthSq() > JOINT_DRAG_EPSILON
-          ? tempTangentWorld.normalize().dot(tempDelta.subVectors(endPt, startPt))
-          : 0;
-      const tangentDelta =
-        Math.abs(tangentDistance) > JOINT_DRAG_EPSILON
-          ? resolveRevoluteTangentAngleDelta({
-              tangentDistance,
-              startRadius: tempProjStart.length(),
-              endRadius: tempProjEnd.length(),
-              epsilon: JOINT_DRAG_EPSILON,
-            })
-          : 0;
-
-      return resolveRevoluteDragDelta({
-        worldDelta,
-        tangentDelta,
-        planeFacingRatio: Math.abs(tempCameraView.dot(tempAxisWorld)),
-        epsilon: JOINT_DRAG_EPSILON,
-        // Keep a generous singularity guard here. The smaller per-frame safety
-        // step is applied below without discarding the remaining pointer travel.
-        maxDelta: MAX_REVOLUTE_DELTA_PER_INPUT,
-      });
-    };
-
-    const getPrismaticDelta = (
-      joint: any,
-      startPt: THREE.Vector3,
-      endPt: THREE.Vector3,
-    ): number => {
-      syncJointWorldFrame(joint);
-      tempDelta.subVectors(endPt, startPt);
-      return tempDelta.dot(tempAxisWorld);
-    };
-
-    let pendingRevoluteDelta = 0;
-    let revoluteDeltaFrameHandle: number | null = null;
-
-    const applyJointDelta = (delta: number) => {
-      if (!dragJoint.current || Math.abs(delta) <= JOINT_DRAG_EPSILON) {
-        return;
-      }
-
-      const step = resolveJointDragRuntimeStep({
-        currentRuntimeValue: dragJointRuntimeValueRef.current,
-        fallbackRuntimeValue: dragJoint.current.angle ?? dragJoint.current.jointValue ?? 0,
-        delta,
-        jointType: dragJoint.current.jointType,
-        limit: dragJoint.current.limit,
-        deferRuntimeUpdate: deferDirectJointRuntimeUpdate,
-        epsilon: JOINT_DRAG_EPSILON,
-      });
-
-      if (step.changed && dragJoint.current.setJointValue) {
-        const newAngle = step.nextRuntimeValue;
-        dragJointRuntimeValueRef.current = newAngle;
-        if (step.shouldApplyRuntimeUpdate) {
-          dragJoint.current.setJointValue(newAngle);
-          requestShadowMapRefresh(gl);
-        }
-        jointDragStoreSync.emit(
-          dragJoint.current.name,
-          resolveDraggedRuntimeJointActualAngle(dragJoint.current.name, newAngle),
-        );
-      }
-    };
-
-    const cancelPendingRevoluteDelta = () => {
-      if (revoluteDeltaFrameHandle !== null) {
-        window.cancelAnimationFrame(revoluteDeltaFrameHandle);
-        revoluteDeltaFrameHandle = null;
-      }
-      pendingRevoluteDelta = 0;
-    };
-
-    const schedulePendingRevoluteDelta = () => {
-      if (
-        revoluteDeltaFrameHandle !== null ||
-        Math.abs(pendingRevoluteDelta) <= JOINT_DRAG_EPSILON
-      ) {
-        return;
-      }
-
-      revoluteDeltaFrameHandle = window.requestAnimationFrame(() => {
-        revoluteDeltaFrameHandle = null;
-        if (!isDraggingJoint.current || !dragJoint.current) {
-          pendingRevoluteDelta = 0;
-          return;
-        }
-
-        const dragStep = resolveRevoluteDragStep({
-          pendingDelta: pendingRevoluteDelta,
-          maxStep: MAX_REVOLUTE_DELTA_PER_FRAME,
-          epsilon: JOINT_DRAG_EPSILON,
-        });
-        pendingRevoluteDelta = dragStep.pendingDelta;
-        applyJointDelta(dragStep.appliedDelta);
-        invalidateRef.current();
-        schedulePendingRevoluteDelta();
-      });
-    };
-
-    const applyRevoluteJointDelta = (delta: number) => {
-      const dragStep = resolveRevoluteDragStep({
-        pendingDelta: pendingRevoluteDelta,
-        nextDelta: delta,
-        maxStep: MAX_REVOLUTE_DELTA_PER_FRAME,
-        epsilon: JOINT_DRAG_EPSILON,
-      });
-      pendingRevoluteDelta = dragStep.pendingDelta;
-      applyJointDelta(dragStep.appliedDelta);
-      schedulePendingRevoluteDelta();
-    };
-
-    const flushPendingRevoluteDelta = () => {
-      if (revoluteDeltaFrameHandle !== null) {
-        window.cancelAnimationFrame(revoluteDeltaFrameHandle);
-        revoluteDeltaFrameHandle = null;
-      }
-
-      while (Math.abs(pendingRevoluteDelta) > JOINT_DRAG_EPSILON) {
-        const dragStep = resolveRevoluteDragStep({
-          pendingDelta: pendingRevoluteDelta,
-          maxStep: MAX_REVOLUTE_DELTA_PER_FRAME,
-          epsilon: JOINT_DRAG_EPSILON,
-        });
-        pendingRevoluteDelta = dragStep.pendingDelta;
-        applyJointDelta(dragStep.appliedDelta);
-      }
-    };
-
-    const moveRay = (toRay: THREE.Ray) => {
-      if (!isDraggingJoint.current || !dragJoint.current) return;
-
-      let delta = 0;
-      const jt = dragJoint.current.jointType;
-
-      if (jt === 'revolute' || jt === 'continuous') {
-        lastRayRef.current.at(dragHitDistance.current, tempPrevHitPoint);
-        toRay.at(dragHitDistance.current, tempNewHitPoint);
-        delta = getRevoluteDelta(dragJoint.current, tempPrevHitPoint, tempNewHitPoint);
-      } else if (jt === 'prismatic') {
-        lastRayRef.current.at(dragHitDistance.current, tempPrevHitPoint);
-        toRay.at(dragHitDistance.current, tempNewHitPoint);
-        delta = getPrismaticDelta(dragJoint.current, tempPrevHitPoint, tempNewHitPoint);
-      }
-
-      if (jt === 'revolute' || jt === 'continuous') {
-        applyRevoluteJointDelta(delta);
-      } else {
-        applyJointDelta(delta);
-      }
-
-      lastRayRef.current.copy(toRay);
     };
 
     // Core mouse move logic (will be throttled for hover, but immediate for dragging)
@@ -1041,7 +500,7 @@ export function useMouseInteraction({
       if (isDraggingJoint.current && dragJoint.current) {
         // Apply the leading event immediately so demand rendering does not trail
         // the pointer by a full frame, then coalesce only the remaining burst.
-        jointDragFrameSync.schedule(e.offsetX, e.offsetY);
+        jointDragController.schedulePointerMove(e.offsetX, e.offsetY);
       } else {
         // Throttled for normal hover detection
         throttledMouseMove(e);
@@ -1105,138 +564,35 @@ export function useMouseInteraction({
         return;
       }
 
-      let resolvedHit: ResolvedHoverInteractionCandidate | null = null;
-      let helperInteraction: ResolvedHoverInteractionCandidate | null | undefined;
-      const getHelperInteraction = () => {
-        if (helperInteraction !== undefined) {
-          return helperInteraction;
-        }
-
-        helperInteraction = resolveDirectHelperInteraction({
-          robot,
-          raycaster: raycasterRef.current,
-          helperTargets,
-          interactionLayerPriority,
-        });
-        const canvasRect = gl.domElement.getBoundingClientRect();
-        const projectedHelperInteraction = resolveScreenSpaceHelperInteraction({
-          pointerClientX: e.clientX,
-          pointerClientY: e.clientY,
-          projectedHelpers: collectProjectedHelperInteractionTargets({
-            robot,
-            camera,
-            canvasRect,
-          }),
-          interactionLayerPriority,
-        });
-        const helperCandidates = [helperInteraction, projectedHelperInteraction].filter(
-          (candidate): candidate is ResolvedHoverInteractionCandidate =>
-            candidate !== null &&
-            !isRuntimeInteractionEditorLocked(candidate, robotLinks, robotJoints),
-        );
-        helperInteraction =
-          helperCandidates.length > 0
-            ? resolveHoverInteractionResolution(helperCandidates, interactionLayerPriority)
-                .primaryInteraction
-            : null;
-        return helperInteraction;
-      };
-
-      if (pickTargets.length > 0 && !rayIntersectsBoundingBox(raycasterRef.current, true)) {
-        if (toolMode === 'paint') {
-          disarmSelectionMissGuard(justSelectedRef, selectionResetTimerRef);
-          return;
-        }
-        resolvedHit = getHelperInteraction();
-      } else {
-        const intersections = findPickIntersections(
-          robot,
-          raycasterRef.current,
-          pickTargets,
-          'all',
-          false,
-          interactionLayerPriority,
-          false,
-        );
-        const resolvedCandidates: ResolvedHoverInteractionCandidate[] = intersections.reduce<
-          ResolvedHoverInteractionCandidate[]
-        >((candidates, rayHit) => {
-          const selectionHit = resolveInteractionSelectionHit(robot, rayHit.object);
-          if (
-            selectionHit &&
-            !isRuntimeInteractionEditorLocked(selectionHit, robotLinks, robotJoints)
-          ) {
-            candidates.push({
-              ...selectionHit,
-              distance: rayHit.distance,
-            });
-          }
-          return candidates;
-        }, []);
-        const nextHelperInteraction = getHelperInteraction();
-
-        ({ primaryInteraction: resolvedHit } = resolveHoverInteractionResolution(
-          nextHelperInteraction
-            ? resolvedCandidates.concat(nextHelperInteraction)
-            : resolvedCandidates,
-          interactionLayerPriority,
-        ));
-
-        if (toolMode === 'paint') {
-          const paintIntersection = intersections.find((intersection) => {
-            if (intersection.faceIndex === undefined || intersection.faceIndex === null) {
-              return false;
-            }
-
-            if (!(intersection.object instanceof THREE.Mesh)) {
-              return false;
-            }
-
-            const selectionHit = resolveInteractionSelectionHit(robot, intersection.object);
-            return (
-              selectionHit?.type === 'link' &&
-              selectionHit.subType === 'visual' &&
-              !isRuntimeInteractionEditorLocked(
-                selectionHit,
-                robotLinks,
-                robotJoints,
-              )
-            );
-          });
-
-          if (!paintIntersection) {
-            disarmSelectionMissGuard(justSelectedRef, selectionResetTimerRef);
-            return;
-          }
-
-          const paintSelectionHit = resolveInteractionSelectionHit(robot, paintIntersection.object);
-          if (!paintSelectionHit?.linkId) {
-            disarmSelectionMissGuard(justSelectedRef, selectionResetTimerRef);
-            return;
-          }
-          if (!(paintIntersection.object instanceof THREE.Mesh)) {
-            disarmSelectionMissGuard(justSelectedRef, selectionResetTimerRef);
-            return;
-          }
-
-          onPaintFace?.({
-            linkId: paintSelectionHit.linkId,
-            objectIndex: paintSelectionHit.objectIndex ?? 0,
-            mesh: paintIntersection.object,
-            faceIndex: paintIntersection.faceIndex as number,
-          });
-          pointerInteractionHitTargetRef.current = true;
-          clearHoveredState();
-          e.preventDefault();
-          e.stopPropagation();
-          return;
-        }
-      }
-
-      if (!resolvedHit) {
+      const hitResolution = resolvePointerDownHit({
+        robot,
+        camera,
+        canvas: gl.domElement,
+        raycaster: raycasterRef.current,
+        pickTargets,
+        helperTargets,
+        interactionLayerPriority,
+        robotLinks,
+        robotJoints,
+        toolMode,
+        rayIntersectsBoundingBox,
+        pointerClientX: e.clientX,
+        pointerClientY: e.clientY,
+      });
+      if (hitResolution.kind === 'miss') {
         disarmSelectionMissGuard(justSelectedRef, selectionResetTimerRef);
         return;
       }
+      if (hitResolution.kind === 'paint') {
+        onPaintFace?.(hitResolution.hit);
+        pointerInteractionHitTargetRef.current = true;
+        clearHoveredState();
+        e.preventDefault();
+        e.stopPropagation();
+        return;
+      }
+
+      const resolvedHit = hitResolution.hit;
 
       pointerInteractionHitTargetRef.current = true;
 
@@ -1249,13 +605,7 @@ export function useMouseInteraction({
             ? (robotJoints?.[canonicalJointId]?.name ?? resolvedHit.id)
             : resolvedHit.id;
           const jointObject = robot?.getObjectByName(jointName) ?? null;
-          if (
-            jointObject &&
-            isRuntimeJointObject(jointObject)
-          ) {
-            return resolveControllableJoint(jointObject);
-          }
-          return null;
+          return jointDragController.resolveJointObject(jointObject);
         }
 
         if (resolvedHit.targetKind !== 'geometry' || resolvedSubType === 'collision') {
@@ -1271,7 +621,7 @@ export function useMouseInteraction({
         const runtimeLinkObject =
           resolvedLinkObject ?? robot?.getObjectByName(runtimeLinkName) ?? null;
 
-        return findParentJoint(runtimeLinkObject);
+        return jointDragController.findParentJoint(runtimeLinkObject);
       })();
 
       const pendingSelection: PendingPointerSelection = {
@@ -1335,159 +685,44 @@ export function useMouseInteraction({
           : clickedJoint;
 
       if (joint) {
-        cancelPendingRevoluteDelta();
-        isDraggingJoint.current = true;
-        dragJoint.current = joint;
-        dragJointRuntimeValueRef.current = Number(joint.angle ?? joint.jointValue ?? 0);
-        dragHitDistance.current = resolvedHit.distance;
-        lastRayRef.current.copy(raycasterRef.current.ray);
-        if (shouldDisableOrbitForDirectJointDrag(toolMode || 'select', true)) {
-          // Direct joint dragging starts from robot geometry, not the
-          // gizmo picker path, so explicitly suspend orbit before the
-          // first move.
-          setOrbitControlsEnabled(false);
-        }
-        setIsDraggingRef.current?.(true);
-        if (setActiveJointRef.current) {
-          setActiveJointRef.current(joint.name, {
-            autoScroll: false,
-            suppressNextAutoScroll: true,
-          });
-        }
+        jointDragController.start(joint, resolvedHit.distance, raycasterRef.current.ray, () => {
+          if (shouldDisableOrbitForDirectJointDrag(toolMode || 'select', true)) {
+            // Direct joint dragging starts from robot geometry, not the
+            // gizmo picker path, so explicitly suspend orbit before the
+            // first move.
+            setOrbitControlsEnabled(false);
+          }
+        });
         e.preventDefault();
         e.stopPropagation();
       }
     };
 
-    const handleMouseUp = () => {
-      pointerButtonsRef.current = 0;
-      const shouldFinalizeInteraction = shouldFinalizePointerInteraction({
-        interactionStarted: pointerInteractionActiveRef.current,
-        dragging: isDraggingJoint.current,
-        hasPendingSelection: pendingPointerSelectionRef.current !== null,
-      });
-
-      if (!shouldFinalizeInteraction) {
-        return;
-      }
-
-      pointerInteractionActiveRef.current = false;
-      let shouldResetSelectionMissGuard = justSelectedRef?.current === true;
-      const interactionHitTarget = pointerInteractionHitTargetRef.current;
-      pointerInteractionHitTargetRef.current = false;
-
-      // Capture empty-click state before the refs below are cleared.
-      // An empty click is one where no gizmo, mesh, or helper was hit,
-      // no deferred selection is pending, and no joint drag is active.
-      // Additionally, if the pointer landed on a gizmo (invisible picker)
-      // but the user dragged to orbit instead of clicking, the movement
-      // threshold prevents accidental deselection.
-      const gizmoDown = gizmoPointerDownRef.current;
-      gizmoPointerDownRef.current = null;
-      const wasGizmoDrag =
-        gizmoDown !== null &&
-        !isPointerInteractionWithinClickThreshold({
-          startX: gizmoDown.x,
-          startY: gizmoDown.y,
-          endX: lastMousePosRef.current.x,
-          endY: lastMousePosRef.current.y,
-        });
-      const pointerDownPosition = pointerDownPositionRef.current;
-      const pointerMovedBeyondClickThreshold =
-        pointerExceededClickThresholdRef.current ||
-        (pointerDownPosition !== null &&
-          !isPointerInteractionWithinClickThreshold({
-            startX: pointerDownPosition.x,
-            startY: pointerDownPosition.y,
-            endX: lastMousePosRef.current.x,
-            endY: lastMousePosRef.current.y,
-          }));
-      const wasEmptyClick = shouldTreatPointerUpAsBackgroundMiss({
-        hasPendingSelection: pendingPointerSelectionRef.current !== null,
-        dragging: isDraggingJoint.current,
-        interactionHitTarget,
-        wasGizmoDrag,
-        pointerMovedBeyondClickThreshold,
-      });
-
-      if (pendingPointerSelectionRef.current) {
-        const pendingSelection = pendingPointerSelectionRef.current;
-        const shouldCommitPendingSelection = !pointerMovedBeyondClickThreshold;
-        clearPendingPointerSelection();
-
-        if (shouldCommitPendingSelection) {
-          applyResolvedSelection(pendingSelection);
-          releaseDeferredSelectionHover();
-          shouldResetSelectionMissGuard = true;
-        } else {
-          releaseDeferredSelectionHover();
-          shouldResetSelectionMissGuard = false;
-          disarmSelectionMissGuard(justSelectedRef, selectionResetTimerRef);
-        }
-      }
-
-      if (isDraggingJoint.current) {
-        jointDragFrameSync.flush();
-        flushPendingRevoluteDelta();
-        const committedRuntimeValue = dragJointRuntimeValueRef.current;
-
-        const commitPayload = dragJoint.current
-          ? {
-              name: dragJoint.current.name,
-              angle: resolveDraggedRuntimeJointActualAngle(
-                dragJoint.current.name,
-                committedRuntimeValue ??
-                  dragJoint.current.angle ??
-                  dragJoint.current.jointValue ??
-                  0,
-              ),
-            }
-          : null;
-
-        isDraggingJoint.current = false;
-        dragJoint.current = null;
-        dragJointRuntimeValueRef.current = null;
-        setIsDraggingRef.current?.(false);
-
-        if (commitPayload) {
-          jointDragStoreSync.commit(commitPayload.name, commitPayload.angle);
-        }
-      }
-
-      if (wasEmptyClick) {
-        shouldResetSelectionMissGuard = false;
-        disarmSelectionMissGuard(justSelectedRef, selectionResetTimerRef);
-      }
-
-      if (shouldResetSelectionMissGuard && justSelectedRef?.current) {
-        scheduleSelectionMissGuardReset({
-          justSelectedRef,
-          timerRef: selectionResetTimerRef,
-          onReset: () => {
-            needsRaycastRef.current = true;
-            invalidateRef.current();
-          },
-        });
-      } else {
-        clearSelectionMissGuardTimer(selectionResetTimerRef);
-      }
-
-      // When clicking on empty space (no gizmo hit, no mesh hit, no joint
-      // drag), clear the selection so the transform gizmo disappears.  This
-      // provides a fallback deselection path that works even if R3F's
-      // onPointerMissed does not fire (e.g. when gizmo picker meshes cause
-      // useFrame hover suppression to disable orbit controls, which can
-      // interfere with R3F's click-detection cycle).
-      if (wasEmptyClick) {
-        onSelect?.('link', '');
-      }
-
-      pointerDownPositionRef.current = null;
-      pointerExceededClickThresholdRef.current = false;
-      setOrbitControlsEnabled(true);
-      needsRaycastRef.current = true;
-      invalidateRef.current();
-    };
+    const handleMouseUp = createPointerInteractionFinalizer({
+      state: {
+        pointerButtonsRef,
+        pointerInteractionActiveRef,
+        pointerInteractionHitTargetRef,
+        gizmoPointerDownRef,
+        lastMousePosRef,
+        pointerDownPositionRef,
+        pointerExceededClickThresholdRef,
+        pendingPointerSelectionRef,
+        isDraggingJointRef: isDraggingJoint,
+        justSelectedRef,
+        selectionResetTimerRef,
+        needsRaycastRef,
+      },
+      clearPendingPointerSelection,
+      applyResolvedSelection,
+      releaseDeferredSelectionHover,
+      finishJointDrag: () => {
+        jointDragController.finish();
+      },
+      setOrbitControlsEnabled,
+      invalidate: () => invalidateRef.current(),
+      onSelect,
+    });
 
     const handleWindowBlur = () => {
       pointerButtonsRef.current = 0;
@@ -1551,10 +786,7 @@ export function useMouseInteraction({
     return () => {
       // Cancel throttled handler to prevent pending callbacks
       throttledMouseMove.cancel();
-      jointDragFrameSync.cancel();
-      cancelPendingRevoluteDelta();
-      jointDragStoreSync.dispose();
-      dragJointRuntimeValueRef.current = null;
+      jointDragController.dispose();
       clearSelectionMissGuardTimer(selectionResetTimerRef);
       releaseDeferredSelectionHover();
       setOrbitControlsEnabled(true);
@@ -1567,18 +799,6 @@ export function useMouseInteraction({
       window.removeEventListener('pointerup', handleMouseUp);
       window.removeEventListener('blur', handleWindowBlur);
       document.removeEventListener('visibilitychange', handleVisibilityChange);
-      gizmoTargetsRef.current = [];
-      gizmoTargetsCacheKeyRef.current = '';
-      gizmoTargetsUpdatedAtRef.current = 0;
-      pickTargetCachesRef.current.all.key = '';
-      pickTargetCachesRef.current.all.updatedAt = 0;
-      pickTargetCachesRef.current.all.targets = [];
-      pickTargetCachesRef.current.visual.key = '';
-      pickTargetCachesRef.current.visual.updatedAt = 0;
-      pickTargetCachesRef.current.visual.targets = [];
-      pickTargetCachesRef.current.collision.key = '';
-      pickTargetCachesRef.current.collision.updatedAt = 0;
-      pickTargetCachesRef.current.collision.targets = [];
     };
   }, [
     enabled,
