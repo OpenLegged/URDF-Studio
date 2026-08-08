@@ -6,10 +6,7 @@ import { useCallback, useRef } from 'react';
 import type { RobotFile } from '@/types';
 import { DEFAULT_MOTOR_LIBRARY } from '@/shared/data/motorLibrary';
 import { mergeMotorLibraryEntries } from '@/shared/data/motorLibraryMerge';
-import {
-  useAssetsStore,
-  useUIStore,
-} from '@/store';
+import { useAssetsStore, useUIStore } from '@/store';
 import type { ProjectImportResult } from '@/features/file-io';
 import { translations } from '@/shared/i18n';
 import {
@@ -216,9 +213,7 @@ export function useFileImport(options: UseFileImportOptions = {}) {
             : (assetsState.getUsdPreparedExportCache(file.name)?.robotData ?? null),
       });
 
-      if (
-        importResult.status === 'ready' || importResult.status === 'needs_hydration'
-      ) {
+      if (importResult.status === 'ready' || importResult.status === 'needs_hydration') {
         if (onLoadRobot) {
           await onLoadRobot(file);
         } else {
@@ -238,7 +233,11 @@ export function useFileImport(options: UseFileImportOptions = {}) {
   );
 
   const handleImport = useCallback(
-    async (files: ImportInputFiles): Promise<HandleImportResult> => {
+    async (
+      files: ImportInputFiles,
+      options?: { forceLoadRobot?: boolean },
+    ): Promise<HandleImportResult> => {
+      const { forceLoadRobot = false } = options ?? {};
       if (!files || files.length === 0) {
         return { status: 'skipped' };
       }
@@ -293,7 +292,9 @@ export function useFileImport(options: UseFileImportOptions = {}) {
 
       try {
         if (projectInputFiles.length > 1) {
-          throw new Error('Import contains multiple project files. Import one .usp project at a time.');
+          throw new Error(
+            'Import contains multiple project files. Import one .usp project at a time.',
+          );
         }
 
         const projectInputFile = projectInputFiles[0] ?? null;
@@ -374,8 +375,7 @@ export function useFileImport(options: UseFileImportOptions = {}) {
                     label: t.importPreparationLoadingTitle,
                     detail: `${processedEntries} / ${totalEntries}`,
                     progress: totalEntries > 0 ? processedEntries / totalEntries : null,
-                    statusLabel:
-                      totalEntries > 0 ? `${processedEntries} / ${totalEntries}` : null,
+                    statusLabel: totalEntries > 0 ? `${processedEntries} / ${totalEntries}` : null,
                     stageLabel: t.importPreparationFinalizingImport,
                   });
                 }
@@ -527,8 +527,7 @@ export function useFileImport(options: UseFileImportOptions = {}) {
                 allFileContents: liveMerge.mergedAllFileContents,
               },
               {
-                preferredFileName:
-                  renamedDeferredAssetFiles.length > 0 ? preferredFileName : null,
+                preferredFileName: renamedDeferredAssetFiles.length > 0 ? preferredFileName : null,
               },
             )
           : [];
@@ -654,7 +653,7 @@ export function useFileImport(options: UseFileImportOptions = {}) {
             }
 
             if (!standaloneImportAssetWarning || canProceedDespiteStandaloneAssetWarning) {
-              if (!liveMerge.hadExistingAvailableFiles) {
+              if (!liveMerge.hadExistingAvailableFiles || forceLoadRobot) {
                 throwIfStaleImport();
                 prewarmUsdSelectionInBackground(
                   fileForStandaloneImportOpen,

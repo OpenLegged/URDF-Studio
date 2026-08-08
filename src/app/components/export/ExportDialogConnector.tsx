@@ -3,7 +3,11 @@ import { useShallow } from 'zustand/react/shallow';
 
 import type { ExportTarget } from '@/app/hooks/file-export/types';
 import { resolveCurrentUsdExportMode } from '@/app/utils/currentUsdExportMode';
-import { ExportDialog, type ExportDialogConfig, type ExportProgressState } from '@/features/file-io';
+import {
+  ExportDialog,
+  type ExportDialogConfig,
+  type ExportProgressState,
+} from '@/features/file-io';
 import { useAssetsStore } from '@/store';
 import { toDocumentLoadLifecycleState } from '@/store/assetsStore';
 import type { Language } from '@/shared/i18n';
@@ -13,6 +17,9 @@ interface ExportDialogConnectorProps {
   target: ExportTarget;
   lang: Language;
   isExporting: boolean;
+  /** Optional initial format to preselect in the dialog (e.g. from a BOT-World
+   *  `convertTo` handoff). Defaults to `'mjcf'` when unset. */
+  defaultFormat?: ExportDialogConfig['format'];
   onClose: () => void;
   onExport: (
     config: ExportDialogConfig,
@@ -24,6 +31,7 @@ export function ExportDialogConnector({
   target,
   lang,
   isExporting,
+  defaultFormat,
   onClose,
   onExport,
 }: ExportDialogConnectorProps) {
@@ -61,7 +69,6 @@ export function ExportDialogConnector({
         ? currentUsdExportMode !== 'unavailable'
         : !isSelectedUsdHydrating
       : isLibraryRobotExportableFormat(target.file.format);
-  const defaultFormat: ExportDialogConfig['format'] = 'mjcf';
 
   return (
     <ExportDialog
@@ -70,7 +77,7 @@ export function ExportDialogConnector({
       lang={lang}
       isExporting={isExporting}
       canExportUsd={canExportUsd}
-      defaultFormat={defaultFormat}
+      defaultFormat={defaultFormat ?? 'mjcf'}
     />
   );
 }
