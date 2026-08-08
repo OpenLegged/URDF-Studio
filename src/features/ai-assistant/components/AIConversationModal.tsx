@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Check,
+  ChevronDown,
+  ChevronRight,
   Copy,
   Loader2,
   MessageCircle,
@@ -109,6 +111,7 @@ export function AIConversationModal({
   const [messages, setMessages] = useState<AIConversationMessage[]>([]);
   const [input, setInput] = useState('');
   const [isSending, setIsSending] = useState(false);
+  const [thinkingExpanded, setThinkingExpanded] = useState(true);
   const [copiedMessageKey, setCopiedMessageKey] = useState<string | null>(null);
   const [lastSubmittedTurn, setLastSubmittedTurn] = useState<{ userMessage: string } | null>(
     null,
@@ -379,6 +382,21 @@ export function AIConversationModal({
         motorLibrary,
         lang,
         signal: abortController.signal,
+        onToolCall: (step) => {
+          setMessages((prev) => {
+            const last = prev[prev.length - 1];
+            if (!last || !isConversationChatMessage(last) || last.role !== 'assistant') {
+              return prev;
+            }
+            const updated = [...prev];
+            const current = last.content || '';
+            updated[updated.length - 1] = {
+              ...last,
+              content: current ? `${current}\n${step}` : step,
+            };
+            return updated;
+          });
+        },
       });
 
       if (proposal.kind === 'aborted') {
@@ -417,6 +435,19 @@ export function AIConversationModal({
         currentDraft?.format === 'urdf'
           ? currentDraft.content
           : generateURDF(currentRobot, { preserveMeshPaths: true });
+
+      if (proposedUrdf === currentUrdf) {
+        setMessages((prev) => [
+          ...removeTrailingAssistantPlaceholder(prev),
+          createConversationMessage(
+            'assistant',
+            proposal.explanation
+              ? `${proposal.explanation}\n\n⚠️ 修改后与当前内容一致，未产生实际变更。`
+              : t.aiModificationNoChange,
+          ),
+        ]);
+        return;
+      }
 
       if (aiAutoApply) {
         // Highest permission: apply immediately, surface a summary. Undoable
@@ -533,7 +564,7 @@ export function AIConversationModal({
               aria-label={t.newConversation}
               title={t.newConversation}
             >
-              <Plus className="h-3.5 w-3.5" />
+              <Plus className="h-3 w-3" />
               {showHeaderActionLabels && <span>{t.newConversation}</span>}
             </button>
             <button
@@ -544,7 +575,7 @@ export function AIConversationModal({
               aria-label={t.clearConversationHistory}
               title={t.clearConversationHistory}
             >
-              <Trash2 className="h-3.5 w-3.5" />
+              <Trash2 className="h-3 w-3" />
               {showHeaderActionLabels && <span>{t.clearConversationHistory}</span>}
             </button>
           </div>
@@ -574,8 +605,8 @@ export function AIConversationModal({
             <div
               data-ai-conversation-scroll-viewport
               className={`min-h-0 flex-1 overflow-y-auto bg-panel-bg custom-scrollbar ${
-                isCompactLayout ? 'px-3 pt-3' : 'px-6 pt-6'
-              } ${messages.length === 0 ? 'pb-2' : isCompactLayout ? 'pb-3' : 'pb-6'}
+                isCompactLayout ? 'px-2.5 pt-2.5' : 'px-4 pt-3'
+              } ${messages.length === 0 ? 'pb-2' : isCompactLayout ? 'pb-2.5' : 'pb-4'}
               }`}
               role="log"
               aria-live="polite"
@@ -590,15 +621,15 @@ export function AIConversationModal({
                 >
                   <div className={`${isCompactLayout ? '' : 'mt-4'} w-full max-w-2xl`}>
                     <div
-                      className={`space-y-3 rounded-2xl border border-border-black bg-panel-bg/80 text-left shadow-sm dark:bg-element-bg/70 ${
-                        isCompactLayout ? 'px-3 py-3' : 'px-4 py-4'
+                      className={`space-y-2.5 rounded-2xl border border-border-black bg-panel-bg/80 text-left shadow-sm dark:bg-element-bg/70 ${
+                        isCompactLayout ? 'px-2 py-2' : 'px-2.5 py-2.5'
                       }`}
                     >
-                      <div className="flex items-center gap-3 rounded-xl border border-border-black/60 bg-element-bg/70 px-3 py-3 dark:bg-element-bg">
-                        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl border border-system-blue/20 bg-system-blue/10 text-system-blue">
-                          <MessageCircle className="h-4 w-4" />
+                      <div className="flex items-center gap-3 rounded-xl border border-border-black/60 bg-element-bg/70 px-2 py-2 dark:bg-element-bg">
+                        <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-xl border border-system-blue/20 bg-system-blue/10 text-system-blue">
+                          <MessageCircle className="h-3.5 w-3.5" />
                         </div>
-                        <div className="text-sm font-semibold uppercase tracking-[0.12em] text-text-secondary">
+                        <div className="text-xs font-semibold uppercase tracking-[0.12em] text-text-secondary">
                           {t.examples}
                         </div>
                       </div>
@@ -614,14 +645,14 @@ export function AIConversationModal({
                             onClick={() => {
                               void handleSuggestedPromptSelect(prompt);
                             }}
-                            className="group flex items-start gap-3 rounded-xl border border-border-black bg-panel-bg px-3.5 py-3 text-left shadow-sm transition-all duration-100 hover:-translate-y-0.5 hover:border-system-blue/35 hover:bg-element-hover focus:border-system-blue/35 focus:bg-element-hover focus:outline-none focus:ring-2 focus:ring-system-blue/30 dark:bg-panel-bg"
+                            className="group flex items-start gap-2.5 rounded-xl border border-border-black bg-panel-bg px-2.5 py-2 text-left shadow-sm transition-all duration-100 hover:-translate-y-0.5 hover:border-system-blue/35 hover:bg-element-hover focus:border-system-blue/35 focus:bg-element-hover focus:outline-none focus:ring-2 focus:ring-system-blue/30 dark:bg-panel-bg"
                             title={prompt}
                           >
-                            <span className="mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-system-blue/20 bg-system-blue/10 text-system-blue transition-colors group-hover:border-system-blue/35 group-hover:bg-system-blue/15 group-hover:text-system-blue-hover group-focus-visible:border-system-blue/35 group-focus-visible:bg-system-blue/15 group-focus-visible:text-system-blue-hover">
-                              <Send className="h-3.5 w-3.5" />
+                            <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-lg border border-system-blue/20 bg-system-blue/10 text-system-blue transition-colors group-hover:border-system-blue/35 group-hover:bg-system-blue/15 group-hover:text-system-blue-hover group-focus-visible:border-system-blue/35 group-focus-visible:bg-system-blue/15 group-focus-visible:text-system-blue-hover">
+                              <Send className="h-3 w-3" />
                             </span>
                             <span className="min-w-0 flex-1">
-                              <span className="block text-xs leading-relaxed text-text-secondary transition-colors group-hover:text-text-primary group-focus-visible:text-text-primary">
+                              <span className="block text-[11px] leading-relaxed text-text-secondary transition-colors group-hover:text-text-primary group-focus-visible:text-text-primary">
                                 {prompt}
                               </span>
                             </span>
@@ -632,7 +663,7 @@ export function AIConversationModal({
                   </div>
                 </div>
               ) : (
-                <div className="space-y-4">
+                <div className="space-y-2.5">
                   {messages.map((message, index) => {
                     if (message.kind === 'modification-card') {
                       return (
@@ -654,9 +685,9 @@ export function AIConversationModal({
 
                     if (!isConversationChatMessage(message)) {
                       return (
-                        <div key={`divider-${index}`} className="flex items-center gap-3 py-3">
+                        <div key={`divider-${index}`} className="flex items-center gap-2 py-2">
                           <div className="h-px flex-1 bg-border-black" />
-                          <span className="rounded-full border border-border-black bg-element-bg px-3 py-1 text-[10px] font-semibold tracking-[0.08em] text-text-tertiary dark:bg-element-bg">
+                          <span className="rounded-full border border-border-black bg-element-bg px-2 py-0.5 text-[9px] font-semibold tracking-[0.08em] text-text-tertiary dark:bg-element-bg">
                             {t.newConversationDividerLabel}
                           </span>
                           <div className="h-px flex-1 bg-border-black" />
@@ -682,24 +713,26 @@ export function AIConversationModal({
                                 : 'rounded-tl-[4px] border border-border-black bg-panel-bg text-text-secondary dark:bg-element-bg'
                             }`}
                           >
-                            {isStreamingAssistant && !message.content ? (
+{isStreamingAssistant && !message.content ? (
                               <div className="flex items-center gap-2 text-sm text-text-tertiary">
                                 <Loader2 className="w-4 h-4 animate-spin text-system-blue" />
                                 <span>{t.aiAnalyzing}</span>
                               </div>
+                            ) : isStreamingAssistant && message.content ? (
+                              <div className="space-y-1">
+                                <div className="flex items-center gap-2 text-xs text-text-tertiary">
+                                  <Loader2 className="w-3.5 h-3.5 animate-spin text-system-blue" />
+                                  <span>{t.aiAnalyzing}</span>
+                                </div>
+                                <div className="text-[11px] text-text-tertiary/80 font-mono whitespace-pre-wrap">
+                                  {message.content}
+                                </div>
+                              </div>
                             ) : (
-                              <>
-                                <ConversationMessageMarkdown
-                                  content={message.content}
-                                  tone={message.role === 'user' ? 'user' : 'assistant'}
-                                />
-                                {isStreamingAssistant && message.content && (
-                                  <div className="mt-2 flex items-center gap-1.5 text-[10px] text-text-tertiary">
-                                    <Loader2 className="w-3 h-3 animate-spin text-system-blue" />
-                                    <span>{t.aiAnalyzing}</span>
-                                  </div>
-                                )}
-                              </>
+                              <ConversationMessageMarkdown
+                                content={message.content}
+                                tone={message.role === 'user' ? 'user' : 'assistant'}
+                              />
                             )}
                           </div>
                           {message.content && (
@@ -711,7 +744,7 @@ export function AIConversationModal({
                                 onClick={() => {
                                   void handleCopyMessage(messageKey, message.content);
                                 }}
-                                className={`inline-flex items-center gap-1.5 rounded-md border px-2 py-1 text-[10px] font-medium transition-colors focus:outline-none focus:ring-2 ${
+                                className={`inline-flex items-center gap-1 rounded-md border px-1 py-0.5 text-[9px] font-medium transition-colors focus:outline-none focus:ring-2 ${
                                   message.role === 'user'
                                     ? 'border-white/20 bg-white/10 text-white/90 hover:bg-white/15 focus:ring-white/30'
                                     : 'border-border-black bg-panel-bg text-text-tertiary hover:bg-element-hover hover:text-text-secondary focus:ring-system-blue/30 dark:bg-element-bg'
@@ -743,7 +776,7 @@ export function AIConversationModal({
                 isCompactLayout ? 'p-2.5' : 'p-4'
               }`}
             >
-              <div className="rounded-xl border border-border-black bg-panel-bg p-2 shadow-sm dark:bg-panel-bg">
+              <div className="rounded-xl border border-border-black bg-panel-bg p-1 shadow-sm dark:bg-panel-bg">
                 <textarea
                   ref={textareaRef}
                   value={input}
@@ -763,7 +796,7 @@ export function AIConversationModal({
                     }
                   }}
                   placeholder={t.chatPlaceholder}
-                  className={`w-full resize-none rounded-lg border-none bg-transparent px-2 py-2 text-sm text-text-primary outline-none placeholder:text-text-tertiary ${
+                  className={`w-full resize-none rounded-lg border-none bg-transparent px-1 py-1 text-[11px] text-text-primary outline-none placeholder:text-text-tertiary ${
                     isCompactLayout ? 'min-h-[64px]' : 'min-h-[88px]'
                   }`}
                 />
@@ -775,7 +808,7 @@ export function AIConversationModal({
                   }`}
                 >
                   <span
-                    className={`px-2 text-[10px] font-medium text-text-tertiary ${
+                    className={`px-1.5 text-[9px] font-medium text-text-tertiary ${
                       isCompactLayout ? 'mr-auto' : ''
                     }`}
                   >
@@ -788,9 +821,9 @@ export function AIConversationModal({
                         onClick={() => {
                           void handleRetry();
                         }}
-                        className="flex h-8 items-center gap-2 rounded-lg border border-border-black bg-panel-bg px-3 text-xs font-semibold text-text-secondary transition-colors hover:bg-element-hover"
+                        className="flex h-6 items-center gap-1 rounded-lg border border-border-black bg-panel-bg px-2 text-[11px] font-semibold text-text-secondary transition-colors hover:bg-element-hover"
                       >
-                        <RotateCcw className="w-3.5 h-3.5" />
+                        <RotateCcw className="w-3 h-3" />
                         {t.retryLastResponse}
                       </button>
                     )}
@@ -798,9 +831,9 @@ export function AIConversationModal({
                       <button
                         type="button"
                         onClick={handleStopGenerating}
-                        className="flex h-8 items-center gap-2 rounded-lg border border-border-black bg-panel-bg px-3 text-xs font-semibold text-text-secondary transition-colors hover:bg-element-hover"
+                        className="flex h-6 items-center gap-1 rounded-lg border border-border-black bg-panel-bg px-2 text-[11px] font-semibold text-text-secondary transition-colors hover:bg-element-hover"
                       >
-                        <Square className="w-3.5 h-3.5 fill-current" />
+                        <Square className="w-3 h-3 fill-current" />
                         {t.stopGenerating}
                       </button>
                     )}
@@ -810,12 +843,12 @@ export function AIConversationModal({
                         void handleSend();
                       }}
                       disabled={isSending || !input.trim()}
-                      className="flex h-8 items-center gap-2 rounded-lg bg-system-blue-solid px-4 text-xs font-semibold text-white transition-colors hover:bg-system-blue-hover disabled:opacity-30"
+                      className="flex h-6 items-center gap-1 rounded-lg bg-system-blue-solid px-2.5 text-[11px] font-semibold text-white transition-colors hover:bg-system-blue-hover disabled:opacity-30"
                     >
                       {isSending ? (
-                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        <Loader2 className="w-3 h-3 animate-spin" />
                       ) : (
-                        <Send className="w-3.5 h-3.5" />
+                        <Send className="w-3 h-3" />
                       )}
                       {t.send}
                     </button>
@@ -827,7 +860,7 @@ export function AIConversationModal({
         )}
 
         {isResizing && (
-          <div className="absolute bottom-2 right-12 z-50 rounded-lg bg-system-blue-solid px-2 py-1 text-[10px] font-medium text-white shadow-sm">
+          <div className="absolute bottom-2 right-12 z-50 rounded-lg bg-system-blue-solid px-2 py-1 text-[9px] font-medium text-white shadow-sm">
             {size.width} × {size.height}
           </div>
         )}

@@ -70,14 +70,34 @@ function summarizeRobot(robot: RobotData): string {
 function getAgentSystemPrompt(robot: RobotData, lang: Language): string {
   const langInstruction = lang === 'zh' ? '请用中文回复。' : 'Respond in English.';
   return [
-    'You are a URDF editing agent inside URDF Studio. Edit the robot by calling the provided tools.',
-    '- Only change what the user asked. Preserve every other field (inertia, origin, color, sibling links, unrelated joints).',
-    '- Geometry dimensions are Vector3 {x,y,z}: cylinder/sphere use x=radius, cylinder y=length; box uses x/y/z as size.',
-    '- Use get_link / get_joint to inspect exact current values before editing (e.g. to preserve an unspecified field like length when only radius should change).',
-    '- Call validate_robot after edits to confirm the result is a valid URDF tree before finishing.',
-    '- Call tools to make edits. Do NOT output URDF or code snippets.',
-    '- When all edits are done, reply with ONE short sentence summarizing what you changed.',
-    '- If the request is impossible with the available tools, say so briefly without calling tools.',
+    'You are a URDF editing agent inside URDF Studio. You MUST call tools to make ANY change to the robot. If you do not call a tool, NO change will be applied — the robot stays exactly as-is.',
+    '',
+    'HOW TO EXPLORE THE ROBOT:',
+    '- Use read_path to inspect any field: read_path path="links.base_link.visual" returns the entire visual object as JSON.',
+    '- Use get_link linkId="base_link" to get a full link summary.',
+    '',
+    'HOW TO MAKE CHANGES (like Codex — write code to edit the robot):',
+    '- run_script is the PRIMARY tool. You can write arbitrary JavaScript that receives the full robot draft and returns the modified draft.',
+    '- For simple single-field changes, use write_path: write_path path="links.base_link.visual.color" value="#ff0000".',
+    '- For geometry changes, use update_link_geometry: update_link_geometry linkId="base_link" geometryType="box" dimensions=[0.1,0.2,0.3].',
+    '- Colors are hex strings: #ff0000=red, #00ff00=green, #0000ff=blue, #ffffff=white.',
+    '- For bulk edits across many links, ALWAYS use run_script with a loop.',
+    '',
+    'WORKFLOW:',
+    '1. Explore: read_path or get_link to see current values.',
+    '2. Edit: run_script or write_path or update_link_geometry to make changes.',
+    '3. Verify: read_path the SAME fields you changed to confirm the new values are correct.',
+    '4. Validate: validate_robot to confirm the result is structurally valid.',
+    '',
+    'CRITICAL RULES:',
+    '1. You CANNOT change the robot by just saying you changed it. You MUST call at least one mutating tool.',
+    '2. ALWAYS explore first: use read_path or get_link to see current values before writing.',
+    '3. ALWAYS verify after: read back the fields you changed to confirm they match what you intended.',
+    '4. Only change what the user asked. Preserve every other field.',
+    '5. Call validate_robot after edits to confirm the result is valid.',
+    '6. Do NOT output URDF or code snippets. Tools are the ONLY way to edit.',
+    '7. When all edits are done, reply with ONE short sentence summarizing what you changed.',
+    '8. If the request is truly impossible with the available tools, say so briefly WITHOUT claiming you made a change.',
     '',
     'Current robot:',
     summarizeRobot(robot),
@@ -101,6 +121,7 @@ export async function runRobotEditAgent(
   robot: RobotData,
   lang: Language,
   signal?: AbortSignal,
+  onToolCall?: (step: string) => void,
 ): Promise<RobotEditAgentResult> {
   const runtime = resolveAiRuntimeEnv();
   if (!runtime.apiKey) {
@@ -117,6 +138,7 @@ export async function runRobotEditAgent(
     {
       capabilities: buildRobotCapabilities(lang),
       systemPrompt: (draft) => getAgentSystemPrompt(draft, lang),
+      onToolCall,
     },
   );
 }

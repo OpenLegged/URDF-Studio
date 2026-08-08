@@ -28,6 +28,8 @@ export const zh: TranslationKeys = {
   aiAutoApply: '自动应用 AI 修改',
   aiAutoApplyDesc: 'AI 提出的修改直接应用,不弹确认卡片。可用 Ctrl+Z 撤销。',
   aiAutoAppliedSummary: '已应用 AI 修改:{explanation}',
+  aiDiffCollapsedLines: '{count} 行未变更（已折叠）',
+  aiDiffCollapsedHint: '长段未变更行已折叠，点击展开查看完整上下文。',
   feedback: '反馈',
   file: '文件',
   import: '导入',

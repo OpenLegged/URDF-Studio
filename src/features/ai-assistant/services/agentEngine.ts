@@ -42,6 +42,8 @@ export interface RunAgentEngineOptions {
   systemPrompt?: (robot: RobotData, capabilities: AgentCapability[]) => string;
   /** Maximum tool-calling steps before the loop bails. */
   maxSteps?: number;
+  /** Called for each tool call with a human-readable step description. */
+  onToolCall?: (step: string) => void;
 }
 
 const DEFAULT_MAX_STEPS = 10;
@@ -51,12 +53,76 @@ const isAbortError = (e: unknown): boolean =>
 
 const isToolsUnsupportedError = (e: unknown): boolean => {
   const err = e as { status?: number; message?: string; error?: { error?: { message?: string } } };
-  if (err.status === 400 || err.status === 404) {
+  const msg = (err.message || err.error?.error?.message || '').toLowerCase();
+  if (msg.includes('tool') || msg.includes('function call') || msg.includes('does not support')) {
     return true;
   }
-  const msg = (err.message || err.error?.error?.message || '').toLowerCase();
-  return msg.includes('tool') || msg.includes('function call') || msg.includes('does not support');
+  if (err.status === 404) {
+    return true;
+  }
+  return false;
 };
+
+const CHANGE_CLAIM_PATTERNS = [
+  /\b(changed|updated|modified|set|applied|已(将|经)|修改|更新|设置|应用|改为)\b/i,
+];
+
+function looksLikeChangeClaim(text: string): boolean {
+  return CHANGE_CLAIM_PATTERNS.some((pattern) => pattern.test(text));
+}
+
+function formatPreToolCallStep(name: string, args: Record<string, unknown>): string {
+  const label = name.replace(/_/g, ' ');
+  const detail = summarizeToolArgs(args);
+  return detail ? `${label}: ${detail}` : label;
+}
+
+function summarizeToolArgs(args: Record<string, unknown>): string {
+  const parts: string[] = [];
+  const linkId = args.linkId as string | undefined;
+  const jointId = args.jointId as string | undefined;
+  const path = args.path as string | undefined;
+  const value = args.value;
+  const type = args.geometryType as string | undefined;
+  const radius = args.radius as number | undefined;
+  const dims = args.dimensions as number[] | undefined;
+  const code = args.code as string | undefined;
+  const lower = args.lower as number | undefined;
+  const upper = args.upper as number | undefined;
+
+  if (linkId) parts.push(linkId);
+  if (jointId) parts.push(jointId);
+  if (path) {
+    parts.push(path);
+    if (value !== undefined) {
+      parts.push('= ' + (typeof value === 'string' ? value : JSON.stringify(value)));
+    }
+  } else if (value !== undefined && !linkId && !jointId) {
+    parts.push(JSON.stringify(value));
+  }
+  if (type) parts.push(type);
+  if (radius !== undefined) parts.push(`r=${radius}`);
+  if (dims) parts.push(dims.join('×'));
+  if (lower !== undefined || upper !== undefined) {
+    const limits = [];
+    if (lower !== undefined) limits.push(`lo=${lower}`);
+    if (upper !== undefined) limits.push(`hi=${upper}`);
+    parts.push(limits.join(' '));
+  }
+  if (code) {
+    const preview = code.replace(/\n/g, ' ').slice(0, 60);
+    parts.push(preview + (code.length > 60 ? '...' : ''));
+  }
+  return parts.join(' · ');
+}
+
+function formatToolCallStep(name: string, ok: boolean, message: string): string {
+  if (!ok) {
+    return `  ✗ ${message}`;
+  }
+  const clean = message.length > 100 ? message.slice(0, 97) + '...' : message;
+  return `  → ${clean}`;
+}
 
 /** Build the OpenAI tool-schema array from a capability registry. */
 export function buildToolSchemas(capabilities: AgentCapability[]): Array<{
@@ -154,15 +220,30 @@ export async function runAgentEngine(
     const assistantMessage = response.choices[0].message;
     messages.push(assistantMessage);
 
+    const reasoning = assistantMessage.content?.trim();
+    if (reasoning && options.onToolCall) {
+      options.onToolCall(`📝 ${reasoning}`);
+      await new Promise<void>((r) => setTimeout(r, 0));
+    }
+
     const toolCalls = assistantMessage.tool_calls;
     if (!toolCalls || toolCalls.length === 0) {
+      const explanation = assistantMessage.content?.trim() ?? '';
+      if (!anyToolRan && looksLikeChangeClaim(explanation)) {
+        return {
+          explanation: `The model claimed a change was made but no tool was actually called. The robot was NOT modified. Please try again with a more specific request. Original response: "${explanation}"`,
+          robot: null,
+        };
+      }
       return {
-        explanation: assistantMessage.content?.trim() ?? '',
+        explanation,
         robot: anyToolRan ? draft : null,
       };
     }
 
-    for (const call of toolCalls) {
+    for (let ti = 0; ti < toolCalls.length; ti += 1) {
+      const call = toolCalls[ti];
+      const stepNum = toolCalls.length > 1 ? `[${ti + 1}/${toolCalls.length}] ` : '';
       let parsedArgs: Record<string, unknown>;
       try {
         parsedArgs = JSON.parse(call.function.arguments || '{}') as Record<string, unknown>;
@@ -174,6 +255,10 @@ export async function runAgentEngine(
         });
         continue;
       }
+      if (options.onToolCall) {
+        options.onToolCall(stepNum + formatPreToolCallStep(call.function.name, parsedArgs));
+        await new Promise<void>((r) => setTimeout(r, 0));
+      }
       const result = await dispatchCapability(capabilities, call.function.name, parsedArgs, draft);
       if (result.ok && result.replacement) {
         // Async rebuilders (e.g. the script sandbox) return a fresh draft.
@@ -181,6 +266,10 @@ export async function runAgentEngine(
       }
       if (result.ok && mutatingNames.has(call.function.name)) {
         anyToolRan = true;
+      }
+      if (options.onToolCall) {
+        options.onToolCall(formatToolCallStep(call.function.name, result.ok, result.message));
+        await new Promise<void>((r) => setTimeout(r, 0));
       }
       messages.push({ role: 'tool', tool_call_id: call.id, content: result.message });
     }

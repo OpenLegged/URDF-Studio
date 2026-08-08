@@ -29,6 +29,8 @@ export const en: TranslationKeys = {
   aiAutoApply: 'Auto-apply AI edits',
   aiAutoApplyDesc: 'Apply AI-proposed modifications immediately without a confirmation card. Undo with Ctrl+Z.',
   aiAutoAppliedSummary: 'Applied AI edit: {explanation}',
+  aiDiffCollapsedLines: '{count} unchanged lines collapsed',
+  aiDiffCollapsedHint: 'Long unchanged sections are collapsed — click to expand.',
   feedback: 'Feedback',
   file: 'File',
   import: 'Import',
