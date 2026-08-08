@@ -61,7 +61,6 @@ import {
   buildGraphLabels,
   buildMeshStrategyOptions,
   buildRodBoxStrategyOptions,
-  type CollisionOptimizationCopy,
   formatGeometryTypeLabel,
   getCandidateReasonLabel,
   getCandidateStatusLabel,
@@ -264,10 +263,7 @@ export const CollisionOptimizationDialog: React.FC<CollisionOptimizationDialogPr
     [baseAnalysis?.targets],
   );
 
-  const linkRelationByDirection = useMemo(
-    () => buildLinkRelationByDirection(source),
-    [source],
-  );
+  const linkRelationByDirection = useMemo(() => buildLinkRelationByDirection(source), [source]);
 
   const effectiveSelectedTargetId = scope === 'selected' ? selectedTargetId : null;
   const shouldIncludePrimitiveFits =
