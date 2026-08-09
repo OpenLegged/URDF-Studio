@@ -267,7 +267,7 @@ test('generateURDF emits fallback materials that only define colorRgba', () => {
   assert.match(generated, /<color rgba="0\.10000000 0\.20000000 0\.30000000 0\.40000000"\/>/);
 });
 
-test('generateURDF downgrades capsule geometry to urdfdom-compatible cylinders', () => {
+test('generateURDF preserves capsule semantics on urdfdom-compatible cylinders', () => {
   const robot: RobotState = {
     name: 'capsule_compat_demo',
     rootLinkId: 'base_link',
@@ -294,9 +294,18 @@ test('generateURDF downgrades capsule geometry to urdfdom-compatible cylinders',
   };
 
   const generated = generateURDF(robot);
+  const reparsed = parseURDF(generated);
 
   assert.doesNotMatch(generated, /<capsule\b/);
-  assert.match(generated, /<cylinder radius="0\.05" length="0\.5"\s*\/>/);
+  assert.match(
+    generated,
+    /<cylinder radius="0\.05" length="0\.5" data-urdf-studio-geometry="capsule" data-urdf-studio-capsule-length="0\.4"\s*\/>/,
+  );
+  assert.ok(reparsed);
+  assert.equal(reparsed.links.base_link.visual.type, GeometryType.CAPSULE);
+  assert.deepEqual(reparsed.links.base_link.visual.dimensions, { x: 0.05, y: 0.4, z: 0 });
+  assert.equal(reparsed.links.base_link.collision.type, GeometryType.CAPSULE);
+  assert.deepEqual(reparsed.links.base_link.collision.dimensions, { x: 0.05, y: 0.4, z: 0 });
 });
 
 test('generateURDF fails fast for unsupported URDF joint types', () => {

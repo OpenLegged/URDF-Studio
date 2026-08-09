@@ -359,9 +359,11 @@ function generateCapsuleCompatibilityGeometryXml(
 ): string {
   // Standard URDF / urdfdom do not support <capsule>, so emit the closest
   // compatible primitive while preserving the capsule's end-to-end extent.
+  // The data attributes let URDF Studio restore the authored primitive without
+  // changing how other URDF consumers interpret the cylinder.
   const radius = Math.max(dimensions.x || 0, 0);
   const bodyLength = Math.max(dimensions.y || 0, 0);
-  return `        <cylinder radius="${formatShape(radius)}" length="${formatShape(bodyLength + radius * 2)}" />\n`;
+  return `        <cylinder radius="${formatShape(radius)}" length="${formatShape(bodyLength + radius * 2)}" data-urdf-studio-geometry="capsule" data-urdf-studio-capsule-length="${formatShape(bodyLength)}" />\n`;
 }
 
 function generateUrdfGeometryXml(
