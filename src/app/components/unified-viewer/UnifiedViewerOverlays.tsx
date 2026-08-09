@@ -1,18 +1,34 @@
 import React from 'react';
 
 import type { Language } from '@/shared/i18n';
-import type { ViewerController } from '@/features/editor';
+import type {
+  ViewerControllerJointsPanelSurface,
+  ViewerControllerLayoutSurface,
+  ViewerControllerMeasureToolSurface,
+  ViewerControllerOptionsPanelSurface,
+  ViewerControllerPaintToolSurface,
+  ViewerControllerToolbarSurface,
+} from '@/features/editor';
 
 import { FilePreviewBanner, FilePreviewError } from './FilePreviewOverlay';
 import { LazyViewerJointsPanel, LazyViewerPanels } from './modeModuleLoaders';
 import type { FilePreviewState } from './types';
 
+interface UnifiedViewerPanelSurfaces {
+  toolbar: ViewerControllerToolbarSurface;
+  layout: ViewerControllerLayoutSurface;
+  optionsPanel: ViewerControllerOptionsPanelSurface;
+  jointsPanel: ViewerControllerJointsPanelSurface;
+  measureTool: ViewerControllerMeasureToolSurface;
+  paintTool: ViewerControllerPaintToolSurface;
+}
+
 interface UnifiedViewerOverlaysProps {
   activePreview?: FilePreviewState;
   lang: Language;
   onClosePreview?: () => void;
-  viewerController: ViewerController;
-  onUpdate: (type: 'link' | 'joint', id: string, data: any) => void;
+  viewerPanels: UnifiedViewerPanelSurfaces;
+  onUpdate: (type: 'link' | 'joint', id: string, data: unknown) => void;
   showOptionsPanel?: boolean;
   setShowOptionsPanel?: (show: boolean) => void;
   showJointPanel?: boolean;
@@ -24,7 +40,7 @@ export function UnifiedViewerOverlays({
   activePreview,
   lang,
   onClosePreview,
-  viewerController,
+  viewerPanels,
   onUpdate,
   showOptionsPanel,
   setShowOptionsPanel,
@@ -50,7 +66,12 @@ export function UnifiedViewerOverlays({
       <React.Suspense fallback={null}>
         <LazyViewerPanels
           lang={lang}
-          controller={viewerController}
+          toolbar={viewerPanels.toolbar}
+          layout={viewerPanels.layout}
+          optionsPanel={viewerPanels.optionsPanel}
+          jointsPanel={viewerPanels.jointsPanel}
+          measureTool={viewerPanels.measureTool}
+          paintTool={viewerPanels.paintTool}
           onUpdate={onUpdate}
           showOptionsPanel={showOptionsPanel}
           setShowOptionsPanel={setShowOptionsPanel}
@@ -62,7 +83,8 @@ export function UnifiedViewerOverlays({
       {showJointPanel && (
         <React.Suspense fallback={null}>
           <LazyViewerJointsPanel
-            controller={viewerController}
+            layout={viewerPanels.layout}
+            jointsPanel={viewerPanels.jointsPanel}
             showJointPanel={true}
             setShowJointPanel={setShowJointPanel}
             lang={lang}

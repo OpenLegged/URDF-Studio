@@ -573,54 +573,6 @@ test('useFileExport rejects URDF export when the current robot contains closed-l
   }
 });
 
-test('useFileExport rejects legacy handleExportURDF when the current robot contains closed-loop constraints', async () => {
-  resetStoresToBaseline();
-  const domEnvironment = installDomEnvironment();
-  installExportTestRobot(createClosedLoopRobotData('closed_loop_robot'));
-
-  const downloadMocks = installDownloadMocks();
-  const rendered = renderHook();
-
-  try {
-    await assert.rejects(rendered.hook.handleExportURDF(), /closed-loop constraint/);
-
-    assert.equal(
-      downloadMocks.clicked,
-      false,
-      'legacy handleExportURDF should not download when closed-loop constraints exist',
-    );
-  } finally {
-    rendered.cleanup();
-    downloadMocks.restore();
-    await settleDomTasks();
-    domEnvironment.restore();
-  }
-});
-
-test('useFileExport rejects legacy handleExport package when the current robot contains closed-loop constraints', async () => {
-  resetStoresToBaseline();
-  const domEnvironment = installDomEnvironment();
-  installExportTestRobot(createClosedLoopRobotData('closed_loop_robot'));
-
-  const downloadMocks = installDownloadMocks();
-  const rendered = renderHook();
-
-  try {
-    await assert.rejects(rendered.hook.handleExport(), /closed-loop constraint/);
-
-    assert.equal(
-      downloadMocks.clicked,
-      false,
-      'legacy handleExport should not download when closed-loop constraints exist',
-    );
-  } finally {
-    rendered.cleanup();
-    downloadMocks.restore();
-    await settleDomTasks();
-    domEnvironment.restore();
-  }
-});
-
 test('useFileExport requires an explicit disconnected-workspace decision before exporting a single URDF', async () => {
   resetStoresToBaseline();
   const domEnvironment = installDomEnvironment();

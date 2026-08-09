@@ -13,7 +13,18 @@ export { ViewerPanels } from './components/ViewerPanels';
 
 export * from './types';
 export { useViewerController, useResponsivePanelLayout } from './hooks';
-export type { ViewerController } from './hooks';
+export type {
+  ViewerController,
+  ViewerControllerInteractionSurface,
+  ViewerControllerJointsPanelSurface,
+  ViewerControllerLayoutSurface,
+  ViewerControllerMeasureToolSurface,
+  ViewerControllerOptionsPanelSurface,
+  ViewerControllerPaintToolSurface,
+  ViewerControllerRuntimeSurface,
+  ViewerControllerToolbarSurface,
+  ViewerSceneController,
+} from './hooks';
 export { resolveDefaultViewerToolMode } from './utils/scopedToolMode';
 export type { ScopedToolModeState } from './utils/scopedToolMode';
 export { buildViewerSceneProps } from './utils/viewerSceneProps';

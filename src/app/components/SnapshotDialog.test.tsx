@@ -491,6 +491,91 @@ test('SnapshotDialog shows export progress and keeps the original dialog mounted
   }
 });
 
+test('SnapshotDialog gates window close during capture but keeps cancel available', async () => {
+  const dom = installDom();
+  const container = dom.window.document.getElementById('root');
+  assert.ok(container, 'root container should exist');
+
+  const root = createRoot(container);
+  let closeCount = 0;
+  let cancelCount = 0;
+
+  try {
+    await act(async () => {
+      root.render(
+        React.createElement(SnapshotDialog, {
+          isOpen: true,
+          isCapturing: true,
+          captureProgress: { phase: 'rendering', progress: 0.42 },
+          lang: 'en',
+          onClose: () => {
+            closeCount += 1;
+          },
+          onCapture: () => {},
+          onCancelCapture: () => {
+            cancelCount += 1;
+          },
+        }),
+      );
+    });
+
+    const headerCloseButton = container.querySelector(
+      'button[aria-label="Close"][data-window-control]',
+    ) as HTMLButtonElement | null;
+    assert.ok(headerCloseButton, 'snapshot dialog should render a window close button');
+
+    await act(async () => {
+      headerCloseButton.click();
+    });
+
+    assert.equal(closeCount, 0, 'window close should be ignored while capture is active');
+
+    const cancelButton = Array.from(container.querySelectorAll('button')).find(
+      (button) => button.textContent?.trim() === 'Cancel',
+    ) as HTMLButtonElement | undefined;
+    assert.ok(cancelButton, 'snapshot dialog should keep the capture cancel action available');
+
+    await act(async () => {
+      cancelButton.click();
+    });
+
+    assert.equal(cancelCount, 1);
+
+    await act(async () => {
+      root.render(
+        React.createElement(SnapshotDialog, {
+          isOpen: true,
+          isCapturing: false,
+          lang: 'en',
+          onClose: () => {
+            closeCount += 1;
+          },
+          onCapture: () => {},
+          onCancelCapture: () => {
+            cancelCount += 1;
+          },
+        }),
+      );
+    });
+
+    const reopenedCloseButton = container.querySelector(
+      'button[aria-label="Close"][data-window-control]',
+    ) as HTMLButtonElement | null;
+    assert.ok(reopenedCloseButton, 'snapshot dialog should still render the close button');
+
+    await act(async () => {
+      reopenedCloseButton.click();
+    });
+
+    assert.equal(closeCount, 1, 'window close should run again once capture has ended');
+  } finally {
+    await act(async () => {
+      root.unmount();
+    });
+    dom.window.close();
+  }
+});
+
 test('SnapshotDialog renders the live preview state without the frozen-view hint copy', async () => {
   const dom = installDom();
   const container = dom.window.document.getElementById('root');
@@ -534,6 +619,121 @@ test('SnapshotDialog renders the live preview state without the frozen-view hint
     await act(async () => {
       root.unmount();
     });
+    dom.window.close();
+  }
+});
+
+test('SnapshotDialog cleans up preview layout observers when it closes', async () => {
+  const dom = installDom();
+  const container = dom.window.document.getElementById('root');
+  assert.ok(container, 'root container should exist');
+
+  const root = createRoot(container);
+  const originalResizeObserver = (globalThis as { ResizeObserver?: typeof ResizeObserver })
+    .ResizeObserver;
+  const originalAddEventListener = dom.window.addEventListener.bind(dom.window);
+  const originalRemoveEventListener = dom.window.removeEventListener.bind(dom.window);
+  const resizeHandlers = new Set<EventListenerOrEventListenerObject>();
+  let observeCount = 0;
+  let disconnectCount = 0;
+
+  class MockResizeObserver implements ResizeObserver {
+    readonly callback: ResizeObserverCallback;
+
+    constructor(callback: ResizeObserverCallback) {
+      this.callback = callback;
+    }
+
+    observe() {
+      observeCount += 1;
+    }
+
+    unobserve() {}
+
+    disconnect() {
+      disconnectCount += 1;
+    }
+  }
+
+  (globalThis as { ResizeObserver?: typeof ResizeObserver }).ResizeObserver =
+    MockResizeObserver as unknown as typeof ResizeObserver;
+  type AddEventListenerArgs = Parameters<typeof dom.window.addEventListener>;
+  type RemoveEventListenerArgs = Parameters<typeof dom.window.removeEventListener>;
+  const addEventListenerOverride: typeof dom.window.addEventListener = (
+    ...args: AddEventListenerArgs
+  ) => {
+    const [type, listener] = args;
+    if (type === 'resize' && listener) {
+      resizeHandlers.add(listener);
+      originalAddEventListener(type as never, listener as never, args[2] as never);
+      return;
+    }
+  };
+  dom.window.addEventListener = addEventListenerOverride;
+  const removeEventListenerOverride: typeof dom.window.removeEventListener = (
+    ...args: RemoveEventListenerArgs
+  ) => {
+    const [type, listener] = args;
+    if (type === 'resize' && listener) {
+      resizeHandlers.delete(listener);
+      originalRemoveEventListener(type as never, listener as never, args[2] as never);
+      return;
+    }
+  };
+  dom.window.removeEventListener = removeEventListenerOverride;
+
+  try {
+    await act(async () => {
+      root.render(
+        React.createElement(SnapshotDialog, {
+          isOpen: true,
+          isCapturing: false,
+          lang: 'en',
+          onClose: () => {},
+          onCapture: () => {},
+          previewState: {
+            status: 'ready',
+            imageUrl: 'blob:preview',
+            aspectRatio: 16 / 9,
+          },
+        }),
+      );
+    });
+
+    assert.equal(observeCount, 1, 'preview layout should observe the preview frame area');
+    const activeResizeHandlerCount = resizeHandlers.size;
+    assert.ok(activeResizeHandlerCount >= 1, 'preview layout should subscribe to window resize');
+
+    await act(async () => {
+      root.render(
+        React.createElement(SnapshotDialog, {
+          isOpen: false,
+          isCapturing: false,
+          lang: 'en',
+          onClose: () => {},
+          onCapture: () => {},
+        }),
+      );
+    });
+
+    assert.equal(disconnectCount, 1, 'preview layout should disconnect its ResizeObserver');
+    assert.ok(
+      resizeHandlers.size < activeResizeHandlerCount,
+      'preview layout should remove its window resize listener',
+    );
+  } finally {
+    await act(async () => {
+      root.unmount();
+    });
+    if (originalResizeObserver) {
+      (globalThis as { ResizeObserver?: typeof ResizeObserver }).ResizeObserver =
+        originalResizeObserver;
+    } else {
+      delete (globalThis as { ResizeObserver?: typeof ResizeObserver }).ResizeObserver;
+    }
+    dom.window.addEventListener = originalAddEventListener as typeof dom.window.addEventListener;
+    dom.window.removeEventListener =
+      originalRemoveEventListener as typeof dom.window.removeEventListener;
     dom.window.close();
   }
 });

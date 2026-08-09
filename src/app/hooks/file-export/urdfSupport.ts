@@ -1,4 +1,8 @@
 import { analyzeAssemblyConnectivity } from '@/core/robot';
+import {
+  createUnsupportedUrdfJointError,
+  findUnsupportedUrdfJoint,
+} from '@/core/parsers/urdf/urdfExportSupport';
 import type { AssemblyState, RobotState } from '@/types';
 import type { ExportActionRequired, ExportTarget } from './types';
 
@@ -28,11 +32,18 @@ export function createBoxFaceTextureFallbackWarnings(
 }
 
 export function assertUrdfExportSupported(
-  robot: Pick<RobotState, 'name' | 'closedLoopConstraints'>,
+  robot: Pick<RobotState, 'name' | 'closedLoopConstraints'> & Partial<Pick<RobotState, 'joints'>>,
   exportName: string | undefined,
   replaceTemplate: (template: string, replacements: Record<string, string | number>) => string,
   unsupportedLabel: string,
 ): void {
+  const unsupportedJoint = findUnsupportedUrdfJoint(robot);
+  if (unsupportedJoint) {
+    throw createUnsupportedUrdfJointError(
+      unsupportedJoint.jointName,
+      unsupportedJoint.jointType,
+    );
+  }
   const closedLoopConstraintCount = robot.closedLoopConstraints?.length ?? 0;
   if (closedLoopConstraintCount === 0) {
     return;

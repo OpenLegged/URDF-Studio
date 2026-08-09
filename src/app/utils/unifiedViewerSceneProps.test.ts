@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import type { ViewerController, ViewerProps } from '@/features/editor';
+import type { ViewerProps, ViewerSceneController } from '@/features/editor';
 import type { ViewerResourceScope } from '@/features/editor';
 import { DEFAULT_JOINT, DEFAULT_LINK, type AssemblyState, type RobotState } from '@/types';
 import { createAssemblyScenePlacement, createAssemblySceneProjection } from '@/core/robot';
@@ -13,13 +13,21 @@ import {
   type UnifiedViewerSceneInteractionInput,
 } from './unifiedViewerSceneProps';
 
-function createControllerStub(overrides: Partial<ViewerController> = {}): ViewerController {
+function createControllerStub(
+  overrides: Partial<ViewerSceneController> = {},
+): ViewerSceneController {
   return {
-    groundPlaneOffset: 2,
-    toolMode: 'measure',
-    handleHoverWrapper: () => {},
+    optionsPanel: {
+      groundPlaneOffset: 2,
+    },
+    toolbar: {
+      toolMode: 'measure',
+    },
+    interaction: {
+      handleHoverWrapper: () => {},
+    },
     ...overrides,
-  } as ViewerController;
+  } as ViewerSceneController;
 }
 
 function createRobotStub(): RobotState {
@@ -93,7 +101,7 @@ function createSceneArgs({
   interaction,
   workspace,
 }: {
-  controller?: ViewerController;
+  controller?: ViewerSceneController;
   document?: Partial<UnifiedViewerSceneDocumentInput>;
   interaction?: Partial<UnifiedViewerSceneInteractionInput>;
   workspace?: Partial<UnifiedViewerSceneWorkspaceInput>;
@@ -162,7 +170,7 @@ test('buildUnifiedViewerSceneProps preserves live interaction wiring without pre
   assert.equal(sceneProps.hoveredSelection, hoveredSelection);
   assert.equal(sceneProps.interactionEnabled, true);
   assert.equal(sceneProps.hoverSelectionEnabled, true);
-  assert.equal(sceneProps.onHover, controller.handleHoverWrapper);
+  assert.equal(sceneProps.onHover, controller.interaction.handleHoverWrapper);
   assert.equal(sceneProps.onMeshSelect, onMeshSelect);
   assert.equal(sceneProps.onUpdate, onUpdate);
   assert.equal(sceneProps.allowUrdfXmlFallback, false);
@@ -184,9 +192,12 @@ test('buildUnifiedViewerSceneProps preserves live interaction wiring without pre
 
 test('buildUnifiedViewerSceneProps forwards snapshot display overrides without changing interaction rules', () => {
   const controller = createControllerStub({
-    showCollision: true,
-    showCollisionAlwaysOnTop: true,
-  } as Partial<ViewerController>);
+    optionsPanel: {
+      groundPlaneOffset: 2,
+      showCollision: true,
+      showCollisionAlwaysOnTop: true,
+    },
+  } as Partial<ViewerSceneController>);
 
   const sceneProps = buildUnifiedViewerSceneProps(createSceneArgs({
     controller,

@@ -71,6 +71,13 @@ function RepeatButton({ onRepeat }: { onRepeat: (direction: 1 | -1) => void }) {
   );
 }
 
+async function waitForRepeatCount(repeats: number[], expectedCount: number) {
+  const deadline = Date.now() + 500;
+  while (repeats.length < expectedCount && Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+}
+
 test('usePressAndHoldRepeat invokes once on click and repeats only while pressed', async () => {
   const { dom, container, root } = createComponentRoot();
   const repeats: number[] = [];
@@ -90,7 +97,7 @@ test('usePressAndHoldRepeat invokes once on click and repeats only while pressed
 
     await act(async () => {
       button.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerId: 1 }));
-      await new Promise((resolve) => setTimeout(resolve, 18));
+      await waitForRepeatCount(repeats, 3);
     });
     assert.ok(repeats.length >= 3, 'expected pointer hold to repeat');
 

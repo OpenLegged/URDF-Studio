@@ -1,4 +1,4 @@
-import { useCallback, useEffect, type MutableRefObject } from 'react';
+import { useCallback, useEffect, useRef, type MutableRefObject } from 'react';
 import { useJointInteractionPreviewStore } from '@/store';
 import { resolveClosedLoopDrivenJointMotion, resolveJointKey } from '@/core/robot';
 import type { ViewerJointChangeContext, ViewerJointMotionStateValue } from '@/features/editor';
@@ -6,6 +6,7 @@ import type { JointQuaternion, RobotData } from '@/types';
 
 const TREE_PANEL_JOINT_PREVIEW_SESSION_ID = 'tree-panel-joint-slider';
 const TREE_PANEL_JOINT_COMMIT_EPSILON = 1e-6;
+let nextTreePanelJointPreviewOwnerId = 0;
 
 export interface TreePanelJointCommitSnapshot {
   jointAngles: Record<string, number>;
@@ -31,6 +32,12 @@ export function useTreePanelJointPreview({
   pendingTreePanelJointCommitRef,
   handleCommittedJointChange,
 }: UseTreePanelJointPreviewParams) {
+  const ownerIdRef = useRef<string | null>(null);
+  if (ownerIdRef.current === null) {
+    nextTreePanelJointPreviewOwnerId += 1;
+    ownerIdRef.current = `tree-panel:${nextTreePanelJointPreviewOwnerId}`;
+  }
+
   const isTreePanelJointCommitVisible = useCallback(
     (commit: TreePanelJointCommitSnapshot) =>
       Object.entries(commit.jointAngles).every(([jointId, committedAngle]) => {
@@ -79,6 +86,7 @@ export function useTreePanelJointPreview({
   const clearTreePanelJointPreview = useCallback((deferToNextFrame = false) => {
     const clearPreview = () => {
       useJointInteractionPreviewStore.getState().clearPreview({
+        ownerId: ownerIdRef.current,
         source: 'tree-panel',
         dragSessionId: TREE_PANEL_JOINT_PREVIEW_SESSION_ID,
       });
@@ -105,6 +113,7 @@ export function useTreePanelJointPreview({
 
       const solution = resolveClosedLoopDrivenJointMotion(previewContextRobot, jointId, angle);
       const preview = {
+        ownerId: ownerIdRef.current,
         source: 'tree-panel',
         dragSessionId: TREE_PANEL_JOINT_PREVIEW_SESSION_ID,
         activeJointId: jointId,

@@ -17,7 +17,7 @@ function createWorkspace(
       [componentId]: {
         id: componentId,
         name: 'robot',
-        sourceFile: options.sourceFile,
+        sourceFile: options.sourceFile ?? null,
         transform: { position: { x: 0, y: 0, z: 0 }, rotation: { r: 0, p: 0, y: 0 } },
         visible: true,
         robot: {
