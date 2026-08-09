@@ -13,7 +13,6 @@ import {
   Button,
   CLOSE_BUTTON_DANGER_TERTIARY_CLASS,
   PanelSelect,
-  SegmentedControl,
   type SelectOption,
 } from '@/shared/components/ui';
 import { useDraggableWindow } from '@/shared/hooks/useDraggableWindow';
@@ -27,17 +26,20 @@ import { useWorkspaceStore } from '@/store/workspaceStore';
 import { filterSelectableBridgeComponents } from '../../utils/bridgeSelection';
 import { buildBridgeJointFromDraft, buildBridgePreview } from '../../utils/bridgePreview';
 import {
-  BridgeAxisSpinnerField,
   BridgeInlineFieldRow,
-  BridgeQuickRotateButtonGroup,
   BridgeSection,
-  BridgeSpinnerField,
 } from './BridgeCreateFields';
+import {
+  BridgeJointFields,
+  BridgeOriginFields,
+  BridgeRotationFields,
+  type BridgeRotationAxisField,
+} from './BridgeCreateAdvancedFields';
+import { BridgeIdentityFields } from './BridgeIdentityFields';
 import { BridgeEndpointChooser } from './BridgeEndpointInputs';
 import {
   BRIDGE_PANEL_SELECT_CLASS,
   BRIDGE_ROTATION_SHORTCUT_DEGREES,
-  BRIDGE_SELECT_CLASS,
 } from './bridgeCreateModalStyles';
 import type {
   BridgeCreateModalProps,
@@ -45,6 +47,7 @@ import type {
   BridgeEulerAxisKey,
 } from './bridgeCreateModalTypes';
 import {
+  buildBridgePreviewDraft,
   buildFlatBridgeLinkOptions,
   buildSuggestedBridgeName,
   getBridgeLinkDisplayName,
@@ -137,7 +140,6 @@ export const BridgeCreateModal: React.FC<BridgeCreateModalProps> = ({
           : 'grid-cols-[44px_minmax(0,1fr)_44px_minmax(0,1fr)]'
       }`
     : 'space-y-1.5';
-  const xyzStackClassName = 'space-y-1';
   const transformPanelClassName = usesCadInspectorLayout
     ? 'grid grid-cols-[minmax(0,0.68fr)_minmax(0,1fr)] gap-1.5'
     : 'space-y-1.5';
@@ -374,7 +376,7 @@ export const BridgeCreateModal: React.FC<BridgeCreateModalProps> = ({
           decrease: formatTemplateValue(t.decreaseValue, `${BRIDGE_ROTATION_SHORTCUT_DEGREES}°`),
           increase: formatTemplateValue(t.increaseValue, `${BRIDGE_ROTATION_SHORTCUT_DEGREES}°`),
         };
-  const rotationAxisFields = [
+  const rotationAxisFields: BridgeRotationAxisField[] = [
     {
       key: 'r' as const,
       label: t.roll,
@@ -410,25 +412,35 @@ export const BridgeCreateModal: React.FC<BridgeCreateModalProps> = ({
     },
   ];
 
-  const previewBridge = useMemo(
+  const draftInput = useMemo(
     () =>
-      buildBridgePreview({
+      buildBridgePreviewDraft({
         name: effectiveBridgeName,
         parentComponentId: parentCompId,
         parentLinkId,
         childComponentId: childCompId,
         childLinkId,
         jointType,
-        hardwareInterface: jointSupportsAxisAndLimits ? hardwareInterface : undefined,
-        originXyz: { x: originX, y: originY, z: originZ },
-        axis: { x: axisX, y: axisY, z: axisZ },
+        hardwareInterface,
+        jointSupportsAxisAndLimits,
+        originX,
+        originY,
+        originZ,
+        axisX,
+        axisY,
+        axisZ,
         limitLower,
         limitUpper,
         limitEffort,
         limitVelocity,
-        rotationMode: rotationDisplayMode === 'quaternion' ? 'quaternion' : 'euler_deg',
-        rotationEulerDeg: { r: rollDeg, p: pitchDeg, y: yawDeg },
-        rotationQuaternion: { x: quatX, y: quatY, z: quatZ, w: quatW },
+        rotationDisplayMode,
+        rollDeg,
+        pitchDeg,
+        yawDeg,
+        quatX,
+        quatY,
+        quatZ,
+        quatW,
       }),
     [
       axisX,
@@ -459,57 +471,10 @@ export const BridgeCreateModal: React.FC<BridgeCreateModalProps> = ({
       yawDeg,
     ],
   );
+  const previewBridge = useMemo(() => buildBridgePreview(draftInput), [draftInput]);
   const submitJoint = useMemo(
-    () =>
-      buildBridgeJointFromDraft(
-        {
-          name: effectiveBridgeName,
-          parentComponentId: parentCompId,
-          parentLinkId,
-          childComponentId: childCompId,
-          childLinkId,
-          jointType,
-          hardwareInterface: jointSupportsAxisAndLimits ? hardwareInterface : undefined,
-          originXyz: { x: originX, y: originY, z: originZ },
-          axis: { x: axisX, y: axisY, z: axisZ },
-          limitLower,
-          limitUpper,
-          limitEffort,
-          limitVelocity,
-          rotationMode: rotationDisplayMode === 'quaternion' ? 'quaternion' : 'euler_deg',
-          rotationEulerDeg: { r: rollDeg, p: pitchDeg, y: yawDeg },
-          rotationQuaternion: { x: quatX, y: quatY, z: quatZ, w: quatW },
-        },
-        effectiveBridgeName || 'bridge_joint',
-      ),
-    [
-      axisX,
-      axisY,
-      axisZ,
-      childCompId,
-      childLinkId,
-      hardwareInterface,
-      jointSupportsAxisAndLimits,
-      jointType,
-      limitLower,
-      limitUpper,
-      limitEffort,
-      limitVelocity,
-      effectiveBridgeName,
-      originX,
-      originY,
-      originZ,
-      parentCompId,
-      parentLinkId,
-      pitchDeg,
-      quatW,
-      quatX,
-      quatY,
-      quatZ,
-      rollDeg,
-      rotationDisplayMode,
-      yawDeg,
-    ],
+    () => buildBridgeJointFromDraft(draftInput, effectiveBridgeName || 'bridge_joint'),
+    [draftInput, effectiveBridgeName],
   );
   const isBridgeSelectionIncomplete =
     !parentCompId ||
@@ -819,45 +784,23 @@ export const BridgeCreateModal: React.FC<BridgeCreateModalProps> = ({
     >
       <div className="min-h-0 flex-1 overflow-y-auto px-2 py-2 custom-scrollbar">
         <div className="space-y-2">
-          {/* Identity row — always visible */}
-          <div data-bridge-row="identity" className={topFieldGridClassName}>
-            <BridgeInlineFieldRow
-              label={t.name}
-              htmlFor={nameInputId}
-              fieldKey="name"
-              className="min-w-0"
-              labelClassName={compactLabelWidthClassName}
-              layout={usesInlineIdentityRow ? 'contents' : 'row'}
-            >
-              <input
-                id={nameInputId}
-                type="text"
-                value={name}
-                onChange={(event) => handleNameChange(event.target.value)}
-                onBlur={() => handleNameBlur(suggestedBridgeName)}
-                placeholder={t.bridgeJointNamePlaceholder}
-                className={BRIDGE_SELECT_CLASS}
-              />
-            </BridgeInlineFieldRow>
-
-            <BridgeInlineFieldRow
-              label={t.type}
-              htmlFor={jointTypeSelectId}
-              fieldKey="type"
-              className="min-w-0"
-              labelClassName={compactLabelWidthClassName}
-              layout={usesInlineIdentityRow ? 'contents' : 'row'}
-            >
-              <PanelSelect
-                variant="property"
-                id={jointTypeSelectId}
-                options={jointTypeSelectOptions}
-                value={jointType}
-                onChange={(event) => setJointType(event.target.value as JointType)}
-                className={BRIDGE_PANEL_SELECT_CLASS}
-              />
-            </BridgeInlineFieldRow>
-          </div>
+          <BridgeIdentityFields
+            nameInputId={nameInputId}
+            jointTypeSelectId={jointTypeSelectId}
+            nameLabel={t.name}
+            typeLabel={t.type}
+            name={name}
+            namePlaceholder={t.bridgeJointNamePlaceholder}
+            suggestedName={suggestedBridgeName}
+            jointType={jointType}
+            jointTypeOptions={jointTypeSelectOptions}
+            compactLabelWidthClassName={compactLabelWidthClassName}
+            usesInlineIdentityRow={usesInlineIdentityRow}
+            topFieldGridClassName={topFieldGridClassName}
+            onNameChange={handleNameChange}
+            onNameBlur={handleNameBlur}
+            onJointTypeChange={setJointType}
+          />
 
           {validationMessages.length > 0 ? (
             <div
@@ -956,309 +899,59 @@ export const BridgeCreateModal: React.FC<BridgeCreateModalProps> = ({
               ) : null}
 
               <div data-bridge-section-panel="transform" className={transformPanelClassName}>
-                <BridgeSection title={t.originRelativeParent}>
-                  <div data-bridge-row="origin" className={xyzStackClassName}>
-                    <BridgeAxisSpinnerField
-                      axis="x"
-                      fieldKey="origin-x"
-                      label="X"
-                      value={originX}
-                      step={0.01}
-                      precision={4}
-                      onChange={handleOriginXChange}
-                      className="min-w-0"
-                    />
-                    <BridgeAxisSpinnerField
-                      axis="y"
-                      fieldKey="origin-y"
-                      label="Y"
-                      value={originY}
-                      step={0.01}
-                      precision={4}
-                      onChange={handleOriginYChange}
-                      className="min-w-0"
-                    />
-                    <BridgeAxisSpinnerField
-                      axis="z"
-                      fieldKey="origin-z"
-                      label="Z"
-                      value={originZ}
-                      step={0.01}
-                      precision={4}
-                      onChange={handleOriginZChange}
-                      className="min-w-0"
-                    />
-                  </div>
-                </BridgeSection>
+                <BridgeOriginFields
+                  title={t.originRelativeParent}
+                  originX={originX}
+                  originY={originY}
+                  originZ={originZ}
+                  onOriginXChange={handleOriginXChange}
+                  onOriginYChange={handleOriginYChange}
+                  onOriginZChange={handleOriginZChange}
+                />
 
-                <BridgeSection title={t.rotation}>
-                  <SegmentedControl
-                    options={[
-                      { value: 'euler_deg', label: t.eulerDegrees },
-                      { value: 'euler_rad', label: t.eulerRadians },
-                      { value: 'quaternion', label: t.quaternion },
-                    ]}
-                    value={rotationDisplayMode}
-                    onChange={(value) => setRotationDisplayMode(value)}
-                    size="xs"
-                    className="w-full [&>button]:min-h-6 [&>button]:flex-1 [&>button]:!gap-0.5 [&>button]:!px-1.5 [&>button]:!py-0 [&>button]:!text-[9px]"
-                  />
-
-                  {rotationDisplayMode === 'quaternion' ? (
-                    <div className={`mt-1.5 ${quaternionFieldGridClassName}`}>
-                      <BridgeSpinnerField
-                        fieldKey="quat-x"
-                        label="X"
-                        value={quatX}
-                        step={0.001}
-                        precision={4}
-                        onChange={(value) =>
-                          applyQuaternionRotation({ x: value, y: quatY, z: quatZ, w: quatW })
-                        }
-                        className="min-w-0"
-                      />
-                      <BridgeSpinnerField
-                        fieldKey="quat-y"
-                        label="Y"
-                        value={quatY}
-                        step={0.001}
-                        precision={4}
-                        onChange={(value) =>
-                          applyQuaternionRotation({ x: quatX, y: value, z: quatZ, w: quatW })
-                        }
-                        className="min-w-0"
-                      />
-                      <BridgeSpinnerField
-                        fieldKey="quat-z"
-                        label="Z"
-                        value={quatZ}
-                        step={0.001}
-                        precision={4}
-                        onChange={(value) =>
-                          applyQuaternionRotation({ x: quatX, y: quatY, z: value, w: quatW })
-                        }
-                        className="min-w-0"
-                      />
-                      <BridgeSpinnerField
-                        fieldKey="quat-w"
-                        label="W"
-                        value={quatW}
-                        step={0.001}
-                        precision={4}
-                        onChange={(value) =>
-                          applyQuaternionRotation({ x: quatX, y: quatY, z: quatZ, w: value })
-                        }
-                        className="min-w-0"
-                      />
-                    </div>
-                  ) : usesCadInspectorLayout ? (
-                    <div className={`mt-1.5 ${eulerFieldGridClassName}`}>
-                      {rotationAxisFields.map((field) => (
-                        <div key={field.key} className="min-w-0 space-y-1">
-                          <BridgeSpinnerField
-                            fieldKey={`rot-${field.key}`}
-                            label={field.label}
-                            value={field.value}
-                            step={rotationDisplayMode === 'euler_rad' ? 0.1 : 1}
-                            precision={rotationDisplayMode === 'euler_rad' ? 4 : 2}
-                            onChange={field.onChange}
-                            className="min-w-0"
-                          />
-                          <BridgeQuickRotateButtonGroup
-                            label={field.label}
-                            decreaseLabel={quickRotateAriaLabelSuffix.decrease}
-                            increaseLabel={quickRotateAriaLabelSuffix.increase}
-                            decreaseText={quickRotateButtonText.decrease}
-                            increaseText={quickRotateButtonText.increase}
-                            onDecrease={() => handleQuickRotate(field.key, -1)}
-                            onIncrease={() => handleQuickRotate(field.key, 1)}
-                          />
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <div className="mt-1.5 space-y-1">
-                      {rotationAxisFields.map((field) => (
-                        <div
-                          key={field.key}
-                          className="grid grid-cols-[minmax(0,1fr)_3.5rem] items-center gap-1"
-                        >
-                          <BridgeSpinnerField
-                            inline
-                            label={field.label}
-                            value={field.value}
-                            step={rotationDisplayMode === 'euler_rad' ? 0.1 : 1}
-                            precision={rotationDisplayMode === 'euler_rad' ? 4 : 2}
-                            onChange={field.onChange}
-                            className="gap-1.5"
-                            labelClassName="w-[34px]"
-                          />
-                          <BridgeQuickRotateButtonGroup
-                            label={field.label}
-                            decreaseLabel={quickRotateAriaLabelSuffix.decrease}
-                            increaseLabel={quickRotateAriaLabelSuffix.increase}
-                            decreaseText={quickRotateButtonText.decrease}
-                            increaseText={quickRotateButtonText.increase}
-                            onDecrease={() => handleQuickRotate(field.key, -1)}
-                            onIncrease={() => handleQuickRotate(field.key, 1)}
-                          />
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </BridgeSection>
+                <BridgeRotationFields
+                  t={t}
+                  rotationDisplayMode={rotationDisplayMode}
+                  setRotationDisplayMode={setRotationDisplayMode}
+                  usesCadInspectorLayout={usesCadInspectorLayout}
+                  quaternionFieldGridClassName={quaternionFieldGridClassName}
+                  eulerFieldGridClassName={eulerFieldGridClassName}
+                  quaternion={{ x: quatX, y: quatY, z: quatZ, w: quatW }}
+                  applyQuaternionRotation={applyQuaternionRotation}
+                  rotationAxisFields={rotationAxisFields}
+                  quickRotateAriaLabelSuffix={quickRotateAriaLabelSuffix}
+                  quickRotateButtonText={quickRotateButtonText}
+                  handleQuickRotate={handleQuickRotate}
+                />
               </div>
 
               {jointSupportsAxisAndLimits ? (
                 <div data-bridge-section-panel="joint" className={jointPanelClassName}>
-                  <BridgeSection
-                    title={t.axisRotation}
-                    collapsible
-                    collapsedSummary={`(${axisX}, ${axisY}, ${axisZ})`}
-                  >
-                    <div data-bridge-row="axis" className={xyzStackClassName}>
-                      <BridgeSpinnerField
-                        inline
-                        fieldKey="axis-x"
-                        label="X"
-                        value={axisX}
-                        step={0.01}
-                        precision={4}
-                        onChange={setAxisX}
-                        className="min-w-0"
-                        labelClassName={axisLabelWidthClassName}
-                      />
-                      <BridgeSpinnerField
-                        inline
-                        fieldKey="axis-y"
-                        label="Y"
-                        value={axisY}
-                        step={0.01}
-                        precision={4}
-                        onChange={setAxisY}
-                        className="min-w-0"
-                        labelClassName={axisLabelWidthClassName}
-                      />
-                      <BridgeSpinnerField
-                        inline
-                        fieldKey="axis-z"
-                        label="Z"
-                        value={axisZ}
-                        step={0.01}
-                        precision={4}
-                        onChange={setAxisZ}
-                        className="min-w-0"
-                        labelClassName={axisLabelWidthClassName}
-                      />
-                    </div>
-                  </BridgeSection>
-
-                  <BridgeSection
-                    title={t.limits}
-                    collapsible
-                    collapsedSummary={
-                      jointSupportsPositionLimits
-                        ? `[${limitLower}, ${limitUpper}]`
-                        : `E=${limitEffort} V=${limitVelocity}`
-                    }
-                  >
-                    <div className={limitsGridClassName}>
-                      {jointSupportsPositionLimits && usesCadInspectorLayout ? (
-                        <>
-                          <BridgeSpinnerField
-                            fieldKey="limit-lower"
-                            label={positionLowerLabel}
-                            value={limitLower}
-                            step={0.01}
-                            precision={4}
-                            onChange={setLimitLower}
-                            className="min-w-0"
-                          />
-                          <BridgeSpinnerField
-                            fieldKey="limit-upper"
-                            label={positionUpperLabel}
-                            value={limitUpper}
-                            step={0.01}
-                            precision={4}
-                            onChange={setLimitUpper}
-                            className="min-w-0"
-                          />
-                        </>
-                      ) : jointSupportsPositionLimits ? (
-                        <>
-                          <BridgeSpinnerField
-                            inline
-                            label={positionLowerLabel}
-                            value={limitLower}
-                            step={0.01}
-                            precision={4}
-                            onChange={setLimitLower}
-                            className="gap-1.5"
-                            labelClassName={compactPositionLimitLabelClassName}
-                          />
-                          <BridgeSpinnerField
-                            inline
-                            label={positionUpperLabel}
-                            value={limitUpper}
-                            step={0.01}
-                            precision={4}
-                            onChange={setLimitUpper}
-                            className="gap-1.5"
-                            labelClassName={compactPositionLimitLabelClassName}
-                          />
-                        </>
-                      ) : null}
-                      {usesCadInspectorLayout ? (
-                        <>
-                          <BridgeSpinnerField
-                            fieldKey="limit-effort"
-                            label={t.effort}
-                            value={limitEffort}
-                            step={1}
-                            precision={2}
-                            min={0}
-                            onChange={setLimitEffort}
-                            className="min-w-0"
-                          />
-                          <BridgeSpinnerField
-                            fieldKey="limit-velocity"
-                            label={t.velocity}
-                            value={limitVelocity}
-                            step={0.1}
-                            precision={3}
-                            min={0}
-                            onChange={setLimitVelocity}
-                            className="min-w-0"
-                          />
-                        </>
-                      ) : (
-                        <>
-                          <BridgeSpinnerField
-                            inline
-                            label={t.effort}
-                            value={limitEffort}
-                            step={1}
-                            precision={2}
-                            min={0}
-                            onChange={setLimitEffort}
-                            className="gap-1.5"
-                            labelClassName={compactLimitLabelClassName}
-                          />
-                          <BridgeSpinnerField
-                            inline
-                            label={t.velocity}
-                            value={limitVelocity}
-                            step={0.1}
-                            precision={3}
-                            min={0}
-                            onChange={setLimitVelocity}
-                            className="gap-1.5"
-                            labelClassName={compactLimitLabelClassName}
-                          />
-                        </>
-                      )}
-                    </div>
-                  </BridgeSection>
+                  <BridgeJointFields
+                    t={t}
+                    axisX={axisX}
+                    axisY={axisY}
+                    axisZ={axisZ}
+                    setAxisX={setAxisX}
+                    setAxisY={setAxisY}
+                    setAxisZ={setAxisZ}
+                    axisLabelWidthClassName={axisLabelWidthClassName}
+                    jointSupportsPositionLimits={jointSupportsPositionLimits}
+                    usesCadInspectorLayout={usesCadInspectorLayout}
+                    limitsGridClassName={limitsGridClassName}
+                    positionLowerLabel={positionLowerLabel}
+                    positionUpperLabel={positionUpperLabel}
+                    limitLower={limitLower}
+                    limitUpper={limitUpper}
+                    limitEffort={limitEffort}
+                    limitVelocity={limitVelocity}
+                    setLimitLower={setLimitLower}
+                    setLimitUpper={setLimitUpper}
+                    setLimitEffort={setLimitEffort}
+                    setLimitVelocity={setLimitVelocity}
+                    compactPositionLimitLabelClassName={compactPositionLimitLabelClassName}
+                    compactLimitLabelClassName={compactLimitLabelClassName}
+                  />
                 </div>
               ) : null}
             </div>

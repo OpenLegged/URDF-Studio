@@ -3,7 +3,7 @@
  * Extracted common panel patterns used across the unified editor viewers.
  */
 
-import React, { useRef, useState, useCallback, useEffect, ReactNode } from 'react';
+import React, { ReactNode, useState } from 'react';
 import { Paperclip } from 'lucide-react';
 import { ResizeCornerIndicator } from '@/shared/components/DraggableWindow/ResizeCornerIndicator';
 import {
@@ -13,6 +13,7 @@ import {
 } from '@/shared/components/DraggableWindow/floatingWindowStyles';
 import { Checkbox, IconButton, Slider as UiSlider } from '@/shared/components/ui';
 import { useOverlayHoverBlock } from '@/shared/hooks/useOverlayHoverBlock';
+import { usePanelResize } from '@/shared/hooks/usePanelResize';
 
 // Drag grip icon SVG path
 const DRAG_GRIP_PATH =
@@ -102,9 +103,7 @@ export const CheckboxOption: React.FC<CheckboxOptionProps> = ({
   const content = (
     <div className={`flex ${contentHeightClassName} items-center gap-2`}>
       {icon}
-      <span className={`text-ui-label ${textLineHeightClassName} ${labelClassName}`}>
-        {label}
-      </span>
+      <span className={`text-ui-label ${textLineHeightClassName} ${labelClassName}`}>{label}</span>
     </div>
   );
 
@@ -415,7 +414,7 @@ export const GroundPlaneControls: React.FC<GroundPlaneControlsProps> = ({
             type="button"
             onClick={onAutoFit}
             disabled={disabled}
-          className="flex flex-1 items-center justify-center gap-1 rounded-md border border-system-blue/20 bg-system-blue/10 px-2 py-1 text-ui-label font-medium text-system-blue transition-colors hover:bg-system-blue/15 focus:outline-none focus-visible:ring-2 focus-visible:ring-system-blue/30 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-system-blue/10 dark:border-system-blue/30 dark:bg-system-blue/20 dark:hover:bg-system-blue/25 dark:disabled:hover:bg-system-blue/20"
+            className="flex flex-1 items-center justify-center gap-1 rounded-md border border-system-blue/20 bg-system-blue/10 px-2 py-1 text-ui-label font-medium text-system-blue transition-colors hover:bg-system-blue/15 focus:outline-none focus-visible:ring-2 focus-visible:ring-system-blue/30 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-system-blue/10 dark:border-system-blue/30 dark:bg-system-blue/20 dark:hover:bg-system-blue/25 dark:disabled:hover:bg-system-blue/20"
           >
             {autoFitIcon}
             {autoFitLabel}
@@ -581,152 +580,14 @@ export const OptionsPanelContainer: React.FC<OptionsPanelContainerProps> = ({
   resizeTitle = 'Resize',
   showRightResizeHandle = true,
 }) => {
-  const [panelSize, setPanelSize] = useState<{ width: number | string; height: number | string }>({
+  const { panelSize, handleResizeStart } = usePanelResize({
     width,
-    height: height || 'auto',
+    height,
+    minWidth,
+    maxWidth,
+    minHeight,
+    maxHeight,
   });
-
-  const hasManualResizeRef = useRef(false);
-  const startSize = useRef<{ width: number; height: number }>({ width: 0, height: 0 });
-  const startPos = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
-  const resizeDirection = useRef<'right' | 'bottom' | 'corner' | null>(null);
-  const activePointerId = useRef<number | null>(null);
-  const bodyCursorRef = useRef('');
-  const bodyUserSelectRef = useRef('');
-
-  const captureBodyInteractionStyles = useCallback(() => {
-    bodyCursorRef.current = document.body.style.cursor;
-    bodyUserSelectRef.current = document.body.style.userSelect;
-  }, []);
-
-  const restoreBodyInteractionStyles = useCallback(() => {
-    document.body.style.cursor = bodyCursorRef.current;
-    document.body.style.userSelect = bodyUserSelectRef.current;
-  }, []);
-
-  const handleResizeMove = useCallback(
-    (e: PointerEvent) => {
-      if (!resizeDirection.current) return;
-      if (activePointerId.current !== null && e.pointerId !== activePointerId.current) return;
-
-      e.preventDefault();
-
-      const deltaX = e.clientX - startPos.current.x;
-      const deltaY = e.clientY - startPos.current.y;
-
-      let newWidth = startSize.current.width;
-      let newHeight = startSize.current.height;
-
-      if (resizeDirection.current === 'right' || resizeDirection.current === 'corner') {
-        newWidth += deltaX;
-        if (newWidth < minWidth) newWidth = minWidth;
-        if (newWidth > maxWidth) newWidth = maxWidth;
-      }
-
-      if (resizeDirection.current === 'bottom' || resizeDirection.current === 'corner') {
-        newHeight += deltaY;
-        if (newHeight < minHeight) newHeight = minHeight;
-        if (newHeight > maxHeight) newHeight = maxHeight;
-      }
-
-      hasManualResizeRef.current = true;
-      setPanelSize((prev) => ({
-        width:
-          resizeDirection.current === 'right' || resizeDirection.current === 'corner'
-            ? newWidth
-            : prev.width,
-        height:
-          resizeDirection.current === 'bottom' || resizeDirection.current === 'corner'
-            ? newHeight
-            : prev.height,
-      }));
-    },
-    [maxHeight, maxWidth, minHeight, minWidth],
-  );
-
-  const handleResizeEnd = useCallback(
-    (e?: PointerEvent | Event) => {
-      if (
-        e &&
-        'pointerId' in e &&
-        activePointerId.current !== null &&
-        e.pointerId !== activePointerId.current
-      ) {
-        return;
-      }
-
-      document.removeEventListener('pointermove', handleResizeMove);
-      document.removeEventListener('pointerup', handleResizeEnd);
-      document.removeEventListener('pointercancel', handleResizeEnd);
-      window.removeEventListener('blur', handleResizeEnd);
-
-      restoreBodyInteractionStyles();
-      resizeDirection.current = null;
-      activePointerId.current = null;
-    },
-    [handleResizeMove, restoreBodyInteractionStyles],
-  );
-
-  const handleResizeStart = useCallback(
-    (e: React.PointerEvent<HTMLElement>, direction: 'right' | 'bottom' | 'corner') => {
-      e.preventDefault();
-      e.stopPropagation();
-
-      const currentElement = e.currentTarget.parentElement;
-      if (!currentElement) return;
-
-      startSize.current = {
-        width: currentElement.offsetWidth,
-        height: currentElement.offsetHeight,
-      };
-      startPos.current = { x: e.clientX, y: e.clientY };
-      resizeDirection.current = direction;
-      activePointerId.current = e.pointerId;
-
-      if (e.currentTarget.setPointerCapture) {
-        try {
-          e.currentTarget.setPointerCapture(e.pointerId);
-        } catch {
-          // Ignore if pointer capture is not available for current environment.
-        }
-      }
-
-      document.addEventListener('pointermove', handleResizeMove);
-      document.addEventListener('pointerup', handleResizeEnd);
-      document.addEventListener('pointercancel', handleResizeEnd);
-      window.addEventListener('blur', handleResizeEnd);
-
-      const cursor =
-        direction === 'right' ? 'ew-resize' : direction === 'bottom' ? 'ns-resize' : 'nwse-resize';
-      captureBodyInteractionStyles();
-      document.body.style.cursor = cursor;
-      document.body.style.userSelect = 'none';
-    },
-    [captureBodyInteractionStyles, handleResizeEnd, handleResizeMove],
-  );
-
-  useEffect(() => {
-    return () => {
-      handleResizeEnd();
-    };
-  }, [handleResizeEnd]);
-
-  useEffect(() => {
-    if (hasManualResizeRef.current) {
-      return;
-    }
-
-    setPanelSize((previous) => {
-      const nextSize = {
-        width,
-        height: height || 'auto',
-      };
-
-      return previous.width === nextSize.width && previous.height === nextSize.height
-        ? previous
-        : nextSize;
-    });
-  }, [height, width]);
 
   const currentHeight = isCollapsed ? 'auto' : panelSize.height;
   // Prevent panel from expanding beyond its set height when collapsing (if height is not auto)
@@ -782,111 +643,6 @@ export const OptionsPanelContainer: React.FC<OptionsPanelContainerProps> = ({
     </div>
   );
 };
-
-// ============== Draggable Options Panel Hook ==============
-interface UseDraggablePanelReturn {
-  panelRef: React.RefObject<HTMLDivElement | null>;
-  position: { x: number; y: number } | null;
-  isCollapsed: boolean;
-  setPosition: (pos: { x: number; y: number } | null) => void;
-  toggleCollapsed: () => void;
-  handleMouseDown: (e: React.MouseEvent) => void;
-  handleMouseMove: (e: MouseEvent) => void;
-  handleMouseUp: () => void;
-}
-
-export function useDraggablePanel(initialCollapsed: boolean = false): UseDraggablePanelReturn {
-  const panelRef = useRef<HTMLDivElement>(null);
-  const [position, setPosition] = useState<{ x: number; y: number } | null>(null);
-  const [isCollapsed, setIsCollapsed] = useState(initialCollapsed);
-  const dragOffset = useRef({ x: 0, y: 0 });
-
-  const toggleCollapsed = useCallback(() => {
-    setIsCollapsed((prev) => !prev);
-  }, []);
-
-  const handleMouseMove = useCallback((e: MouseEvent) => {
-    if (panelRef.current) {
-      // Direct DOM manipulation for performance (avoids React re-renders during drag)
-      const newX = e.clientX - dragOffset.current.x;
-      const newY = e.clientY - dragOffset.current.y;
-
-      const rect = panelRef.current.getBoundingClientRect();
-      const headerHeight = 36; // Approximate header height to ensure title bar remains visible
-
-      // Clamp position to keep the title bar visible within viewport
-      const minX = -rect.width + headerHeight;
-      const maxX = window.innerWidth - headerHeight;
-      const minY = 0; // Top edge can't go above viewport
-      const maxY = window.innerHeight - headerHeight;
-
-      const clampedX = Math.max(minX, Math.min(maxX, newX));
-      const clampedY = Math.max(minY, Math.min(maxY, newY));
-
-      panelRef.current.style.left = `${clampedX}px`;
-      panelRef.current.style.top = `${clampedY}px`;
-    }
-  }, []);
-
-  const handleMouseUp = useCallback(() => {
-    document.removeEventListener('mousemove', handleMouseMove);
-    document.removeEventListener('mouseup', handleMouseUp);
-
-    // Sync final position to React state to persist it
-    if (panelRef.current) {
-      // We can read the style we just set, or recalculate.
-      // Recalculating from the last event would require the event object,
-      // but handleMouseUp usually doesn't need coordinates if we trust the DOM.
-      // However, we need to save the 'x' and 'y' numbers.
-      // Let's parse them from the style or bounding rect?
-      // Bounding rect is safest.
-      // NOTE: We need the position relative to the viewport/offset parent.
-      // Since OptionsPanel uses `fixed` or `absolute` positioning typically...
-      // The original logic used `clientX - offset`.
-      // We can't easily get `clientX` here if we don't accept the event.
-      // But wait, the previous interface had `handleMouseUp: () => void`.
-      // Let's change it to accept `MouseEvent` or just read from DOM.
-
-      const left = parseFloat(panelRef.current.style.left || '0');
-      const top = parseFloat(panelRef.current.style.top || '0');
-      setPosition({ x: left, y: top });
-    }
-  }, [handleMouseMove]);
-
-  const handleMouseDown = useCallback(
-    (e: React.MouseEvent) => {
-      if (panelRef.current) {
-        const rect = panelRef.current.getBoundingClientRect();
-        dragOffset.current = {
-          x: e.clientX - rect.left,
-          y: e.clientY - rect.top,
-        };
-
-        document.addEventListener('mousemove', handleMouseMove);
-        document.addEventListener('mouseup', handleMouseUp);
-      }
-    },
-    [handleMouseMove, handleMouseUp],
-  );
-
-  useEffect(() => {
-    return () => {
-      document.removeEventListener('mousemove', handleMouseMove);
-      document.removeEventListener('mouseup', handleMouseUp);
-    };
-  }, [handleMouseMove, handleMouseUp]);
-
-  return {
-    panelRef,
-    position,
-    isCollapsed,
-    setPosition,
-    toggleCollapsed,
-    handleMouseDown,
-    handleMouseMove,
-    handleMouseUp,
-  };
-}
 
 // ============== Complete Options Panel ==============
 interface OptionsPanelProps {

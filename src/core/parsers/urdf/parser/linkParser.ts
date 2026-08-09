@@ -146,6 +146,7 @@ export const parseLinks = (
     const linkEl = child;
     const linkName = linkEl.getAttribute('name');
     if (!linkName) return;
+
     const id = linkName; // Use name as ID for imported structure
     const linkType = linkEl.getAttribute('type')?.trim() || undefined;
 

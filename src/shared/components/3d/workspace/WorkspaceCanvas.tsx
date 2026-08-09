@@ -564,6 +564,7 @@ export const WorkspaceCanvas = ({
       data-interacting={isInteracting ? 'true' : 'false'}
       style={{
         touchAction: 'none',
+        overscrollBehavior: 'none',
         userSelect: 'none',
         backgroundColor: activeBackgroundColor,
       }}

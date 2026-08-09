@@ -24,24 +24,26 @@ import { resolveExportErrorMessage } from './utils/exportErrorMessage';
 import { useUIStore, useAssetsStore } from '@/store';
 import type { InspectionReport, RobotFile, RobotState } from '@/types';
 import { translations } from '@/shared/i18n';
-import type { ExportDialogConfig, ExportProgressState } from '@/features/file-io';
+import type { ExportDialogConfig, ExportFormat, ExportProgressState } from '@/features/file-io';
+import { EXPORT_FORMATS } from '@/features/file-io/components/ExportDialog/config';
 import type { ImportPreparationOverlayState } from './hooks/useFileImport';
 import { useAssetImportFromUrl } from './hooks/useAssetImportFromUrl';
 import {
   preloadAIConversationConnector,
   preloadAIInspectionConnector,
   preloadDisconnectedWorkspaceUrdfExportDialog,
+  loadExportDialogConnectorModule,
   preloadExportDialogConnector,
   preloadExportProgressDialog,
   preloadSettingsModal,
 } from './components/lazyAppOverlays';
+import { resolveCurrentAIRobotSnapshot } from '@/features/ai-assistant';
 import type {
   AIConversationFocusedIssue,
   AIConversationLaunchContext,
   AIConversationMode,
   AIConversationSelection,
 } from '@/features/ai-assistant';
-import { resolveCurrentAIRobotSnapshot } from '@/features/ai-assistant';
 import type { ExportTarget } from './hooks/file-export/types';
 import { createConversationLaunchContext } from './utils/aiConversationLaunch';
 import { applyAIUrdfModification } from './utils/applyAIUrdfModification';
@@ -69,6 +71,11 @@ export function AppContent({ extensions, onExposeActions }: AppContentProps = {}
   const [exportDialogTarget, setExportDialogTarget] = useState<ExportTarget>({
     type: 'current',
   });
+  // Initial export format to preselect (set by a `convertTo` handoff). Undefined
+  // → the connector falls back to its default ('mjcf').
+  const [exportDialogDefaultFormat, setExportDialogDefaultFormat] = useState<
+    ExportFormat | undefined
+  >(undefined);
   const [disconnectedWorkspaceUrdfDialog, setDisconnectedWorkspaceUrdfDialog] =
     useState<DisconnectedWorkspaceUrdfDialogState | null>(null);
   const [isDisconnectedWorkspaceUrdfExporting, setIsDisconnectedWorkspaceUrdfExporting] =
@@ -125,7 +132,7 @@ export function AppContent({ extensions, onExposeActions }: AppContentProps = {}
       onViewerReload: handleViewerReload,
       setAppMode,
       showToast,
-  });
+    });
 
   useEffect(() => scheduleUsdRuntimeStartupIdlePrewarm(), []);
 
@@ -146,6 +153,16 @@ export function AppContent({ extensions, onExposeActions }: AppContentProps = {}
       if (success) {
         showToast(t.addedFilesToAssetLibrary.replace('{count}', '1'), 'success');
       }
+    },
+    onConvertToRequest: ({ convertTo, success }) => {
+      // Asset was downloaded+imported; on success open the export dialog
+      // preselected to the requested format so the user can export/convert.
+      if (!success) return;
+      if (!EXPORT_FORMATS.includes(convertTo as (typeof EXPORT_FORMATS)[number])) return;
+      setExportDialogDefaultFormat(convertTo as ExportFormat);
+      setExportDialogTarget({ type: 'current' });
+      void loadExportDialogConnectorModule();
+      setIsExportDialogOpen(true);
     },
   });
   const {
@@ -344,6 +361,8 @@ export function AppContent({ extensions, onExposeActions }: AppContentProps = {}
 
   const handleOpenExportDialog = useCallback(() => {
     preloadOverlay('export dialog connector', preloadExportDialogConnector);
+    void loadExportDialogConnectorModule();
+    setExportDialogDefaultFormat(undefined);
     setExportDialogTarget({ type: 'current' });
     setIsExportDialogOpen(true);
   }, [setIsExportDialogOpen]);
@@ -355,6 +374,7 @@ export function AppContent({ extensions, onExposeActions }: AppContentProps = {}
   const handleOpenLibraryExportDialog = useCallback(
     (file: RobotFile) => {
       preloadOverlay('export dialog connector', preloadExportDialogConnector);
+      setExportDialogDefaultFormat(undefined);
       setExportDialogTarget({ type: 'library-file', file });
       setIsExportDialogOpen(true);
     },
@@ -561,6 +581,7 @@ export function AppContent({ extensions, onExposeActions }: AppContentProps = {}
         closeToast={closeToast}
         disconnectedWorkspaceUrdfDialog={disconnectedWorkspaceUrdfDialog}
         exportDialogTarget={exportDialogTarget}
+        exportDialogDefaultFormat={exportDialogDefaultFormat}
         extensions={extensions}
         handleConfirmDisconnectedWorkspaceUrdfExport={handleConfirmDisconnectedWorkspaceUrdfExport}
         handleExportDialogExport={handleExportDialogExport}

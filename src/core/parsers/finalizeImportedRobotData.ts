@@ -1,15 +1,9 @@
 import { salvageCanonicalRobotData } from '@/core/robot/canonicalRobotSalvage';
 import { validateCanonicalRobotData } from '@/core/robot/canonicalWorkspace';
 import { recoverImportedRobotData } from '@/core/robot/importedRobotRecovery';
-import type {
-  RobotData,
-  RobotFile,
-  RobotImportRecoveryDiagnostic,
-} from '@/types';
+import type { RobotData, RobotFile, RobotImportRecoveryDiagnostic } from '@/types';
 
-type RobotInspectionSourceFormat = NonNullable<
-  RobotData['inspectionContext']
->['sourceFormat'];
+type RobotInspectionSourceFormat = NonNullable<RobotData['inspectionContext']>['sourceFormat'];
 
 const CANONICAL_PATH = 'robot';
 const MAX_REPORTED_ISSUES = 12;
@@ -26,12 +20,12 @@ function isRobotInspectionSourceFormat(
   format: RobotFile['format'],
 ): format is RobotInspectionSourceFormat {
   return (
-    format === 'urdf'
-    || format === 'mjcf'
-    || format === 'usd'
-    || format === 'xacro'
-    || format === 'sdf'
-    || format === 'mesh'
+    format === 'urdf' ||
+    format === 'mjcf' ||
+    format === 'usd' ||
+    format === 'xacro' ||
+    format === 'sdf' ||
+    format === 'mesh'
   );
 }
 
@@ -63,6 +57,7 @@ export function finalizeImportedRobotData(
 
   const stampedRobotData = stampRobotDataSourceFormat(robotData, format);
   const allRecoveryDiagnostics = [
+    ...(stampedRobotData.inspectionContext?.recovery?.diagnostics ?? []),
     ...recoveryDiagnostics,
     ...collectAmbiguousIdentityDiagnostics(stampedRobotData),
   ];
@@ -119,8 +114,7 @@ function collectAmbiguousIdentityDiagnostics(
   return diagnostics
     .filter(
       (diagnostic) =>
-        diagnostic.code === 'duplicate_link_name'
-        || diagnostic.code === 'duplicate_joint_name',
+        diagnostic.code === 'duplicate_link_name' || diagnostic.code === 'duplicate_joint_name',
     )
     .map((diagnostic) => ({
       ...diagnostic,

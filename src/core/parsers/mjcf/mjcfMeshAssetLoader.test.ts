@@ -216,9 +216,7 @@ test('finalizeLoadedMJCFColladaScene strips embedded Collada lights so MJCF DAE 
   assert.ok(meshes.length > 0);
 });
 
-test('loadMJCFMeshObject rejects unsupported mesh formats instead of returning null placeholders', async () => {
-  await assert.rejects(
-    loadMJCFMeshObject('https://example.com/robot.ply', 'meshes/robot.ply', new Map()),
-    /Unsupported mesh format "ply"/,
-  );
+test('loadMJCFMeshObject warns and returns null for unsupported mesh formats instead of throwing', async () => {
+  const result = await loadMJCFMeshObject('https://example.com/robot.ply', 'meshes/robot.ply', new Map());
+  assert.equal(result, null);
 });

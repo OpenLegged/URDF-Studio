@@ -530,6 +530,19 @@ html[data-lang='zh'] {
   background-color: color-mix(in srgb, var(--color-panel-bg) 90%, transparent);
 }
 
+/*
+ * Edge/Chrome translate a horizontal trackpad two-finger swipe into a wheel
+ * event with dominant deltaX. When that wheel has no scroll target the
+ * document element overscrolls, which the browser turns into back/forward
+ * navigation — hijacking viewer zoom/pan/rotate mid-gesture. `overflow: hidden`
+ * on body does not prevent this; only an explicit `overscroll-behavior: none`
+ * on the scroll root stops the navigation.
+ */
+html,
+body {
+  overscroll-behavior: none;
+}
+
 body {
   font-family: var(--font-ui);
   @apply bg-google-light-bg text-text-primary;

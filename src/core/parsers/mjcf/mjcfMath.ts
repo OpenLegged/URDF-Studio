@@ -85,6 +85,17 @@ export function mjcfQuatTupleFromQuaternion(
   );
 }
 
+// MJCF stores quaternions as [w, x, y, z]; Three.js stores them as (x, y, z, w).
+// This is the canonical MJCF→Three.js conversion used by both the model parser
+// and the hierarchy builder.
+export function mjcfQuatToThreeQuat(quat?: [number, number, number, number]): THREE.Quaternion {
+  if (!quat) {
+    return new THREE.Quaternion();
+  }
+
+  return new THREE.Quaternion(quat[1], quat[2], quat[3], quat[0]);
+}
+
 export function createMuJoCoFromToQuaternion(direction: THREE.Vector3): THREE.Quaternion {
   if (direction.lengthSq() <= 1e-12) {
     return new THREE.Quaternion();

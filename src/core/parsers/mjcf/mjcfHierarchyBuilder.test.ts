@@ -548,7 +548,8 @@ test('does not block hierarchy completion on unresolved texture-backed materials
   ]);
 
   const findVisualMaterial = () => {
-    let nextVisualMaterial: THREE.MeshStandardMaterial | null = null as THREE.MeshStandardMaterial | null;
+    let nextVisualMaterial: THREE.MeshStandardMaterial | null =
+      null as THREE.MeshStandardMaterial | null;
     rootGroup.traverse((child) => {
       if (!('isMesh' in child) || !(child as any).isMesh) {
         return;
@@ -980,6 +981,55 @@ test('stops MJCF hierarchy work at abort boundaries without processing later geo
       },
     }),
     (error) => error instanceof MJCFLoadAbortedError,
+  );
+
+  assert.equal(processedGeoms, 1);
+});
+
+test('rejects hierarchy construction when a geom cannot be built', async () => {
+  const brokenGeom = {
+    name: 'broken_geom',
+    type: 'box',
+    size: [0.1, 0.1, 0.1],
+  };
+  Object.defineProperty(brokenGeom, 'pos', {
+    configurable: true,
+    get() {
+      throw new Error('geom transform failed');
+    },
+  });
+  let processedGeoms = 0;
+
+  await assert.rejects(
+    buildMJCFHierarchy({
+      bodies: [
+        {
+          name: 'base',
+          pos: [0, 0, 0],
+          geoms: [
+            brokenGeom,
+            {
+              name: 'unreachable_geom',
+              type: 'box',
+              size: [0.1, 0.1, 0.1],
+            },
+          ],
+          joints: [],
+          children: [],
+        },
+      ],
+      rootGroup: new THREE.Group(),
+      meshMap: new Map(),
+      assets: {},
+      meshCache: new Map(),
+      compilerSettings: createCompilerSettings(),
+      materialMap: new Map(),
+      textureMap: new Map(),
+      onProgress: ({ processedGeoms: nextProcessedGeoms }) => {
+        processedGeoms = nextProcessedGeoms;
+      },
+    }),
+    /geom transform failed/,
   );
 
   assert.equal(processedGeoms, 1);

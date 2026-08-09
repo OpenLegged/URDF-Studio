@@ -23,6 +23,7 @@ import {
 } from '@/shared/components/ui';
 import { useDraggableWindow } from '@/shared/hooks/useDraggableWindow';
 import { translations } from '@/shared/i18n';
+import { afterNextPaint } from '@/shared/utils/afterNextPaint';
 import { useManagedWindowLayer } from '@/store/useManagedWindowLayer';
 import { GeometryType, type InteractionSelection } from '@/types';
 import type {
@@ -52,6 +53,25 @@ import {
   getCandidateOverrideOptions,
 } from '../utils/collision-optimization/candidateOverrides';
 import {
+  buildCandidateListLabels,
+  buildCandidatePanelLabels,
+  buildCoaxialMergeStrategyOptions,
+  buildCollisionOptimizationCopy,
+  buildCylinderStrategyOptions,
+  buildGraphLabels,
+  buildMeshStrategyOptions,
+  buildRodBoxStrategyOptions,
+  formatGeometryTypeLabel,
+  getCandidateReasonLabel,
+  getCandidateStatusLabel,
+} from '../utils/collision-optimization/dialogLabels';
+import {
+  buildLinkRelationByDirection,
+  canCreateManualPair as canCreateManualPairForTargets,
+  createManualMergePairKey,
+  createRelationKey,
+} from '../utils/collision-optimization/manualMergeRelations';
+import {
   CollisionOptimizationCandidatesPanel,
   type CollisionOptimizationCandidatesViewMode,
 } from './CollisionOptimizationCandidatesPanel';
@@ -76,43 +96,6 @@ function isAbortError(error: unknown): boolean {
 
 function isCandidateAnalysisStage(stage: CollisionOptimizationWorkerStage): boolean {
   return stage === 'candidates' || stage === 'finalizing';
-}
-
-function afterNextPaint(callback: () => void): () => void {
-  if (typeof window === 'undefined' || typeof window.requestAnimationFrame !== 'function') {
-    const timeoutId = setTimeout(callback, 0);
-    return () => clearTimeout(timeoutId);
-  }
-
-  let cancelled = false;
-  let frameA = 0;
-  let frameB = 0;
-
-  frameA = window.requestAnimationFrame(() => {
-    frameB = window.requestAnimationFrame(() => {
-      if (!cancelled) {
-        callback();
-      }
-    });
-  });
-
-  return () => {
-    cancelled = true;
-    window.cancelAnimationFrame(frameA);
-    window.cancelAnimationFrame(frameB);
-  };
-}
-
-function createRelationKey(
-  componentId: string | undefined,
-  sourceLinkId: string,
-  targetLinkId: string,
-): string {
-  return `${componentId ?? 'robot'}::${sourceLinkId}::${targetLinkId}`;
-}
-
-function createManualMergePairKey(primaryTargetId: string, secondaryTargetId: string): string {
-  return `${primaryTargetId}::${secondaryTargetId}`;
 }
 
 function SectionLabel({ children }: { children: React.ReactNode }) {
@@ -196,84 +179,7 @@ export const CollisionOptimizationDialog: React.FC<CollisionOptimizationDialogPr
 }) => {
   const t = translations[lang];
   const collisionOptimizationWindowLayer = useManagedWindowLayer('collisionOptimization');
-  const copy = {
-    title: t.collisionOptimizerDialog,
-    scope: t.collisionOptimizerScope,
-    scopeAll: t.collisionOptimizerScopeAll,
-    scopeMesh: t.collisionOptimizerScopeMesh,
-    scopePrimitive: t.collisionOptimizerScopePrimitive,
-    scopeSelected: t.collisionOptimizerScopeSelected,
-    panelSettings: t.collisionOptimizerSettings,
-    strategySmart: t.collisionOptimizerStrategySmart,
-    strategyKeep: t.collisionOptimizerStrategyKeep,
-    strategyBox: t.box,
-    strategySphere: t.sphere,
-    strategyCylinder: t.cylinder,
-    strategyCapsule: t.capsule,
-    defaultStrategies: t.collisionOptimizerDefaultStrategies,
-    showDefaultStrategies: t.collisionOptimizerShowDefaultStrategies,
-    hideDefaultStrategies: t.collisionOptimizerHideDefaultStrategies,
-    selectCandidateHint: t.collisionOptimizerSelectCandidateHint,
-    selectedCandidate: t.collisionOptimizerSelectedCandidate,
-    includeCandidate: t.collisionOptimizerIncludeCandidate,
-    meshStrategyLabel: t.collisionOptimizerMeshStrategyLabel,
-    meshStrategyDesc: t.collisionOptimizerMeshStrategyDesc,
-    cylinderStrategyLabel: t.collisionOptimizerCylinderStrategyLabel,
-    cylinderStrategyDesc: t.collisionOptimizerCylinderStrategyDesc,
-    rodBoxStrategyLabel: t.collisionOptimizerRodBoxStrategyLabel,
-    rodBoxStrategyDesc: t.collisionOptimizerRodBoxStrategyDesc,
-    coaxialMergeStrategyLabel: t.collisionOptimizerCoaxialMergeStrategyLabel,
-    coaxialMergeStrategyDesc: t.collisionOptimizerCoaxialMergeStrategyDesc,
-    rules: t.collisionOptimizerRules,
-    avoidSiblingOverlap: t.collisionOptimizerAvoidSiblingOverlap,
-    avoidSiblingOverlapDesc: t.collisionOptimizerAvoidSiblingOverlapDesc,
-    candidates: t.collisionOptimizerCandidates,
-    selectAll: t.collisionOptimizerSelectAll,
-    clearAll: t.collisionOptimizerClearSelection,
-    selectedCount: t.selected,
-    noCandidates: t.collisionOptimizerNoSuggestion,
-    noSelectedCollision: t.collisionOptimizerNoSelectedCollision,
-    analyzing: t.collisionOptimizerLoading,
-    apply: t.collisionOptimizerApplyAction,
-    warningTitle: t.collisionOptimizerWarningTitle,
-    warningBefore: t.collisionOptimizerWarningBefore,
-    warningAfter: t.collisionOptimizerWarningAfter,
-    ready: t.collisionOptimizerReady,
-    disabled: t.collisionOptimizerDisabled,
-    missingMeshPath: t.collisionOptimizerMissingMeshPath,
-    meshAnalysisFailed: t.collisionOptimizerMeshAnalysisFailed,
-    noRuleMatch: t.collisionOptimizerNoRuleMatch,
-    reasonMeshSmart: t.collisionOptimizerReasonMeshSmart,
-    reasonMeshManual: t.collisionOptimizerReasonMeshManual,
-    reasonCylinder: t.collisionOptimizerReasonCylinder,
-    reasonRodBox: t.collisionOptimizerReasonRodBox,
-    reasonRodBoxCylinder: t.collisionOptimizerReasonRodBoxCylinder,
-    reasonCoaxialCapsule: t.collisionOptimizerReasonCoaxialCapsule,
-    reasonCoaxialCylinder: t.collisionOptimizerReasonCoaxialCylinder,
-    totalCollisions: t.collisionOptimizerStatsTotal,
-    meshCollisions: t.collisionOptimizerStatsMeshes,
-    eligible: t.collisionOptimizerStatsOptimizable,
-    warnings: t.collisionOptimizerStatsWarnings,
-    collisionIndex: t.collisionOptimizerCollisionIndex,
-    current: t.collisionOptimizerCurrent,
-    primary: t.collisionOptimizerPrimary,
-    component: t.collisionOptimizerComponent,
-    jointPair: t.collisionOptimizerJointPair,
-    suggested: t.collisionOptimizerSuggested,
-    viewList: t.collisionOptimizerViewList,
-    viewGraph: t.collisionOptimizerViewGraph,
-    frontView: t.collisionOptimizerFrontView,
-    graphHint: t.collisionOptimizerGraphHint,
-    clearManualPairs: t.collisionOptimizerClearManualPairs,
-    manualPair: t.collisionOptimizerManualPair,
-    autoPair: t.collisionOptimizerAutoPair,
-    mergeTo: t.collisionOptimizerMergeTo,
-    mergedInto: t.collisionOptimizerMergedInto,
-    connectTargets: t.collisionOptimizerConnectTargets,
-    zoomIn: t.collisionOptimizerZoomIn,
-    zoomOut: t.collisionOptimizerZoomOut,
-    resetView: t.collisionOptimizerResetView,
-  };
+  const copy = useMemo(() => buildCollisionOptimizationCopy(t), [t]);
 
   const [scope, setScope] = useState<CollisionOptimizationScope>('all');
   const [meshStrategy, setMeshStrategy] = useState<MeshOptimizationStrategy>('capsule');
@@ -357,59 +263,7 @@ export const CollisionOptimizationDialog: React.FC<CollisionOptimizationDialogPr
     [baseAnalysis?.targets],
   );
 
-  const linkRelationByDirection = useMemo(() => {
-    const relationMap = new Map<
-      string,
-      { componentId?: string; parentLinkId: string; childLinkId: string }
-    >();
-
-    if (source.kind === 'robot') {
-      Object.values(source.robot.joints).forEach((joint) => {
-        if (joint.type !== 'fixed' && joint.type !== 'revolute' && joint.type !== 'continuous') {
-          return;
-        }
-
-        const relation = {
-          componentId: undefined,
-          parentLinkId: joint.parentLinkId,
-          childLinkId: joint.childLinkId,
-        };
-        relationMap.set(
-          createRelationKey(undefined, joint.parentLinkId, joint.childLinkId),
-          relation,
-        );
-        relationMap.set(
-          createRelationKey(undefined, joint.childLinkId, joint.parentLinkId),
-          relation,
-        );
-      });
-      return relationMap;
-    }
-
-    Object.values(source.assembly.components).forEach((component) => {
-      Object.values(component.robot.joints).forEach((joint) => {
-        if (joint.type !== 'fixed' && joint.type !== 'revolute' && joint.type !== 'continuous') {
-          return;
-        }
-
-        const relation = {
-          componentId: component.id,
-          parentLinkId: joint.parentLinkId,
-          childLinkId: joint.childLinkId,
-        };
-        relationMap.set(
-          createRelationKey(component.id, joint.parentLinkId, joint.childLinkId),
-          relation,
-        );
-        relationMap.set(
-          createRelationKey(component.id, joint.childLinkId, joint.parentLinkId),
-          relation,
-        );
-      });
-    });
-
-    return relationMap;
-  }, [source]);
+  const linkRelationByDirection = useMemo(() => buildLinkRelationByDirection(source), [source]);
 
   const effectiveSelectedTargetId = scope === 'selected' ? selectedTargetId : null;
   const shouldIncludePrimitiveFits =
@@ -770,25 +624,13 @@ export const CollisionOptimizationDialog: React.FC<CollisionOptimizationDialogPr
   }, []);
 
   const canCreateManualPair = useCallback(
-    (sourceTargetId: string, targetTargetId: string) => {
-      if (sourceTargetId === targetTargetId) {
-        return false;
-      }
-
-      const sourceTarget = targetById.get(sourceTargetId);
-      const target = targetById.get(targetTargetId);
-      if (!sourceTarget || !target) {
-        return false;
-      }
-
-      if ((sourceTarget.componentId ?? 'robot') !== (target.componentId ?? 'robot')) {
-        return false;
-      }
-
-      return linkRelationByDirection.has(
-        createRelationKey(sourceTarget.componentId, sourceTarget.linkId, target.linkId),
-      );
-    },
+    (sourceTargetId: string, targetTargetId: string) =>
+      canCreateManualPairForTargets(
+        sourceTargetId,
+        targetTargetId,
+        targetById,
+        linkRelationByDirection,
+      ),
     [linkRelationByDirection, targetById],
   );
 
@@ -889,75 +731,17 @@ export const CollisionOptimizationDialog: React.FC<CollisionOptimizationDialogPr
   }, [activeOperations, onApply]);
 
   const formatGeometryType = useCallback(
-    (type: GeometryType | null | undefined) => {
-      switch (type) {
-        case GeometryType.BOX:
-          return t.box;
-        case GeometryType.PLANE:
-          return t.plane;
-        case GeometryType.SPHERE:
-          return t.sphere;
-        case GeometryType.ELLIPSOID:
-          return t.ellipsoid;
-        case GeometryType.CYLINDER:
-          return t.cylinder;
-        case GeometryType.CAPSULE:
-          return t.capsule;
-        case GeometryType.HFIELD:
-          return t.hfield;
-        case GeometryType.SDF:
-          return t.sdf;
-        case GeometryType.MESH:
-          return t.mesh;
-        default:
-          return t.none;
-      }
-    },
+    (type: GeometryType | null | undefined) => formatGeometryTypeLabel(type, t),
     [t],
   );
 
   const getStatusLabel = useCallback(
-    (candidate: CollisionOptimizationCandidate) => {
-      if (candidate.eligible) {
-        return copy.ready;
-      }
-
-      switch (candidate.status) {
-        case 'disabled':
-          return copy.disabled;
-        case 'missing-mesh-path':
-          return copy.missingMeshPath;
-        case 'mesh-analysis-failed':
-          return copy.meshAnalysisFailed;
-        case 'no-rule-match':
-        default:
-          return copy.noRuleMatch;
-      }
-    },
+    (candidate: CollisionOptimizationCandidate) => getCandidateStatusLabel(candidate, copy),
     [copy],
   );
 
   const getReasonLabel = useCallback(
-    (candidate: CollisionOptimizationCandidate) => {
-      switch (candidate.reason) {
-        case 'mesh-smart-fit':
-          return copy.reasonMeshSmart;
-        case 'mesh-manual-fit':
-          return copy.reasonMeshManual;
-        case 'cylinder-to-capsule':
-          return copy.reasonCylinder;
-        case 'rod-box-to-capsule':
-          return copy.reasonRodBox;
-        case 'rod-box-to-cylinder':
-          return copy.reasonRodBoxCylinder;
-        case 'coaxial-merge-to-capsule':
-          return copy.reasonCoaxialCapsule;
-        case 'coaxial-merge-to-cylinder':
-          return copy.reasonCoaxialCylinder;
-        default:
-          return null;
-      }
-    },
+    (candidate: CollisionOptimizationCandidate) => getCandidateReasonLabel(candidate, copy),
     [copy],
   );
 
@@ -1013,89 +797,19 @@ export const CollisionOptimizationDialog: React.FC<CollisionOptimizationDialogPr
 
   const footerLabel = `${copy.selectedCount} ${selectedCandidateCount} / ${eligibleCount}`;
   const hasOverlapWarnings = warningBefore > 0 || warningAfter > 0;
-  const candidatePanelLabels = useMemo(
-    () => ({
-      analyzing: copy.analyzing,
-      clearAll: copy.clearAll,
-      clearManualPairs: copy.clearManualPairs,
-      eligible: copy.eligible,
-      noCandidates: copy.noCandidates,
-      noSelectedCollision: copy.noSelectedCollision,
-      scopeAll: copy.scopeAll,
-      scopeMesh: copy.scopeMesh,
-      scopePrimitive: copy.scopePrimitive,
-      scopeSelected: copy.scopeSelected,
-      selectAll: copy.selectAll,
-      selectedCount: copy.selectedCount,
-      title: copy.candidates,
-      viewGraph: copy.viewGraph,
-      viewList: copy.viewList,
-    }),
-    [copy],
-  );
-  const candidateListLabels = useMemo(
-    () => ({
-      clearAll: copy.clearAll,
-      collisionIndex: copy.collisionIndex,
-      component: copy.component,
-      jointPair: copy.jointPair,
-      noCandidates: copy.noCandidates,
-      selectedCount: copy.selectedCount,
-    }),
-    [copy],
-  );
-  const graphLabels = useMemo(
-    () => ({
-      autoPair: copy.autoPair,
-      collisionIndex: copy.collisionIndex,
-      component: copy.component,
-      connectionHandle: copy.connectTargets,
-      dragHint: copy.graphHint,
-      empty: copy.noCandidates,
-      frontView: copy.frontView,
-      manualPair: copy.manualPair,
-      mergeTo: copy.mergeTo,
-      mergedInto: copy.mergedInto,
-      primary: copy.primary,
-      selectCandidate: copy.selectAll,
-      resetView: copy.resetView,
-      unselectCandidate: copy.clearAll,
-      zoomIn: copy.zoomIn,
-      zoomOut: copy.zoomOut,
-    }),
-    [copy],
-  );
+  const candidatePanelLabels = useMemo(() => buildCandidatePanelLabels(copy), [copy]);
+  const candidateListLabels = useMemo(() => buildCandidateListLabels(copy), [copy]);
+  const graphLabels = useMemo(() => buildGraphLabels(copy), [copy]);
   const statsGridClass = isDenseLayout ? 'grid-cols-2' : 'grid-cols-4';
   const settingsLayoutClass = isWideLayout
     ? 'grid grid-cols-[minmax(0,1.35fr)_minmax(280px,0.95fr)] items-start gap-2.5'
     : 'space-y-2.5';
   const strategyGridClass = isWideLayout ? 'grid-cols-2' : 'grid-cols-1';
 
-  const meshStrategyOptions: Array<{ value: MeshOptimizationStrategy; label: string }> = [
-    { value: 'capsule', label: copy.strategyCapsule },
-    { value: 'smart', label: copy.strategySmart },
-    { value: 'cylinder', label: copy.strategyCylinder },
-    { value: 'box', label: copy.strategyBox },
-    { value: 'sphere', label: copy.strategySphere },
-    { value: 'keep', label: copy.strategyKeep },
-  ];
-
-  const cylinderStrategyOptions: Array<{ value: CylinderOptimizationStrategy; label: string }> = [
-    { value: 'capsule', label: copy.strategyCapsule },
-    { value: 'keep', label: copy.strategyKeep },
-  ];
-
-  const rodBoxStrategyOptions: Array<{ value: RodBoxOptimizationStrategy; label: string }> = [
-    { value: 'capsule', label: copy.strategyCapsule },
-    { value: 'cylinder', label: copy.strategyCylinder },
-    { value: 'keep', label: copy.strategyKeep },
-  ];
-
-  const coaxialMergeStrategyOptions: Array<{ value: CoaxialJointMergeStrategy; label: string }> = [
-    { value: 'capsule', label: copy.strategyCapsule },
-    { value: 'cylinder', label: copy.strategyCylinder },
-    { value: 'keep', label: copy.strategyKeep },
-  ];
+  const meshStrategyOptions = useMemo(() => buildMeshStrategyOptions(copy), [copy]);
+  const cylinderStrategyOptions = useMemo(() => buildCylinderStrategyOptions(copy), [copy]);
+  const rodBoxStrategyOptions = useMemo(() => buildRodBoxStrategyOptions(copy), [copy]);
+  const coaxialMergeStrategyOptions = useMemo(() => buildCoaxialMergeStrategyOptions(copy), [copy]);
 
   return (
     <DraggableWindow

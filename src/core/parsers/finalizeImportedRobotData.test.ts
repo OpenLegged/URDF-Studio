@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { createDefaultWorkspace } from '@/core/robot/canonicalWorkspace';
-import type { RobotData } from '@/types';
+import type { RobotData, RobotImportRecoveryDiagnostic } from '@/types';
 
 import { finalizeImportedRobotData } from './finalizeImportedRobotData.ts';
 
@@ -57,4 +57,40 @@ test('a clean payload reports no recovery at all', () => {
   assert.equal(result.status, 'ready');
   if (result.status !== 'ready') return;
   assert.equal(result.robotData.inspectionContext?.recovery, undefined);
+});
+
+test('parser recovery diagnostics are preserved alongside workflow recovery diagnostics', () => {
+  const robot = createRobot('parser_recovery');
+  const parserDiagnostic: RobotImportRecoveryDiagnostic = {
+    code: 'parser_visual_omitted',
+    severity: 'warning',
+    category: 'geometry',
+    message: 'A malformed visual was omitted by the parser.',
+    action: 'omitted',
+  };
+  const workflowDiagnostic: RobotImportRecoveryDiagnostic = {
+    code: 'missing_mesh_asset_omitted',
+    severity: 'warning',
+    category: 'geometry',
+    message: 'A missing mesh asset was omitted by the import workflow.',
+    action: 'omitted',
+  };
+  robot.inspectionContext = {
+    sourceFormat: 'urdf',
+    recovery: {
+      diagnostics: [parserDiagnostic],
+      diagnosticCounts: { error: 0, warning: 1, info: 0 },
+      recoveredItemCount: 1,
+    },
+  };
+
+  const result = finalizeImportedRobotData(robot, 'urdf', [workflowDiagnostic]);
+
+  assert.equal(result.status, 'ready');
+  if (result.status !== 'ready') return;
+  assert.deepEqual(
+    result.robotData.inspectionContext?.recovery?.diagnostics.map((diagnostic) => diagnostic.code),
+    ['parser_visual_omitted', 'missing_mesh_asset_omitted'],
+  );
+  assert.equal(result.robotData.inspectionContext?.recovery?.recoveredItemCount, 2);
 });

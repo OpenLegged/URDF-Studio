@@ -232,6 +232,19 @@ test('processXacro evaluates boolean expressions and quoted string comparisons i
   assert.doesNotMatch(processed, /<link name="disabled_link"/);
 });
 
+test('processXacro evaluates unary operators around signed numeric properties', () => {
+  const processed = processXacro(`
+    <robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="signed_expression_fixture">
+      <xacro:property name="lower" value="-1.25" />
+      <link name="base" data-mirrored="\${-lower}" data-half-turn="\${-pi/2}" />
+    </robot>
+  `);
+
+  assert.match(processed, /data-mirrored="1\.25"/);
+  assert.match(processed, /data-half-turn="-1\.5707963267948966"/);
+  assert.doesNotMatch(processed, /\$\{/);
+});
+
 test('processXacro does not eagerly evaluate conditionals inside macro definitions before expansion', () => {
   const processed = processXacro(`
     <robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="macro_conditional_fixture">
@@ -263,18 +276,19 @@ test('processXacro expands xacro macros whose params attribute is omitted', () =
   assert.doesNotMatch(processed, /<xacro:chassis/);
 });
 
-test('processXacro treats unresolved debug arg conditionals as disabled instead of aborting parse', () => {
-  const processed = processXacro(`
-    <robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="missing_debug_arg_fixture">
-      <xacro:if value="$(arg DEBUG)">
-        <link name="debug_world" />
-      </xacro:if>
-      <link name="base" />
-    </robot>
-  `);
-
-  assert.match(processed, /<link name="base"/);
-  assert.doesNotMatch(processed, /debug_world/);
+test('processXacro fails fast when a conditional argument cannot be resolved', () => {
+  assert.throws(
+    () =>
+      processXacro(`
+        <robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="missing_debug_arg_fixture">
+          <xacro:if value="$(arg DEBUG)">
+            <link name="debug_world" />
+          </xacro:if>
+          <link name="base" />
+        </robot>
+      `),
+    /\[Xacro\] Unresolved conditional expression: \$\(arg DEBUG\)/,
+  );
 });
 
 test('processXacro fails fast when unresolved substitution arguments remain in emitted output', () => {
@@ -289,6 +303,44 @@ test('processXacro fails fast when unresolved substitution arguments remain in e
         </robot>
       `),
     /\[Xacro\] Unresolved substitution arguments remain after expansion/,
+  );
+});
+
+test('processXacro fails fast when unresolved expression substitutions remain', () => {
+  assert.throws(
+    () =>
+      processXacro(`
+        <robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="missing_expression_fixture">
+          <link name="\${missing_prefix}_base" />
+        </robot>
+      `),
+    /\[Xacro\] Unresolved substitution expressions remain after expansion.*missing_prefix/,
+  );
+});
+
+test('processXacro fails fast when an unexpanded xacro element remains', () => {
+  assert.throws(
+    () =>
+      processXacro(`
+        <robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="unknown_element_fixture">
+          <link name="base" />
+          <xacro:not_supported />
+        </robot>
+      `),
+    /\[Xacro\] Unresolved xacro elements remain after expansion.*not_supported/,
+  );
+});
+
+test('parseXacro propagates top-level processing failures', () => {
+  assert.throws(
+    () =>
+      parseXacro(`
+        <robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="missing_include_fixture">
+          <xacro:include filename="missing.xacro" />
+          <link name="base" />
+        </robot>
+      `),
+    /\[Xacro\] Include file not found: missing\.xacro/,
   );
 });
 
@@ -397,7 +449,12 @@ test('parseXacro can load the main Unitree robot.xacro fixtures without modifyin
 
   for (const packageName of fixturePackages) {
     const fixture = loadRobotFixture(packageName);
-    const robot = parseXacro(fixture.xacroContent, {}, unitreeRobotsFileMap, fixture.basePath);
+    const robot = parseXacro(
+      fixture.xacroContent,
+      { DEBUG: 'false' },
+      unitreeRobotsFileMap,
+      fixture.basePath,
+    );
 
     assert.ok(robot, `${packageName} should parse`);
     assert.ok(robot.rootLinkId, `${packageName} should resolve a root link`);

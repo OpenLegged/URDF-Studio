@@ -1,49 +1,29 @@
 import React, { memo, useRef, useState, useMemo, useEffect, useCallback } from 'react';
 import { useThree } from '@react-three/fiber';
-import { Box3, Matrix4, Vector3 as ThreeVector3, type Group, type Object3D } from 'three';
+import { type Group } from 'three';
 import {
   LinkIkTransformControls,
   SceneCompileWarmup,
-  shouldUseIndeterminateStreamingMeshProgress,
 } from '@/shared/components/3d';
 import { requestShadowMapRefresh } from '@/shared/components/3d/scene/shadowMapRefresh';
 import { VIEWER_RENDER_QUALITY_PROFILES } from '@/shared/utils/viewerRenderQuality';
 import {
-  resolveViewerJointAngleValue,
-  resolveViewerJointKey,
-} from '@/shared/utils/jointPanelState';
-import {
-  applyMeshMaterialPaintEdit,
-  getVisualGeometryByObjectIndex,
-  hasGeometryMeshMaterialGroups,
   isWorkspaceSelectionEditorLocked,
-  resolveDirectManipulableLinkIkDescriptor,
   resolveDirectManipulableLinkIkJointIds,
-  resolveLinkIkHandleDescriptor,
   resolveLinkKey,
-  resolveVisualMaterialOverride,
   updateVisualGeometryByObjectIndex,
 } from '@/core/robot';
 import { cloneAssemblyTransform } from '@/core/robot/assemblyTransformUtils';
-import {
-  captureRuntimeVisualMaterialDescriptor,
-  getBufferGeometryTriangleCount,
-  hasDistinctRuntimeBaseMaterialsWithinVisual,
-  resolveMeshFaceSelection,
-  resolveRuntimeMeshMaterialGroupKey,
-  resolveRuntimeMeshRootWithinVisual,
-} from '@/core/utils/meshMaterialGroups';
 import { GeometryTransformControls } from './CollisionTransformControls';
 import { JointInteraction } from './JointInteraction';
 import { OriginTransformControls } from './OriginTransformControls';
 import { AssemblyTransformControls } from './AssemblyTransformControls';
-import { ViewerLoadingHudOverlay } from './ViewerLoadingHudOverlay';
-import type { RobotModelProps, ViewerDocumentLoadEvent, ViewerPaintFaceHit } from '../types';
-import { buildViewerLoadingHudState } from '../utils/viewerLoadingHud';
+import { RobotModelLoadingHud } from './RobotModelLoadingHud';
+import type { RobotModelProps } from '../types';
 import { useSnapshotRenderActive } from '@/shared/components/3d/scene/SnapshotRenderContext';
 import { useSelectionStore, useUIStore } from '@/store';
 import type { HoverFreezeOwner } from '@/store/selectionStore';
-import { GeometryType, type RobotFile } from '@/types';
+import type { RobotData, RobotFile } from '@/types';
 
 import { useRendererBackend } from '../hooks/useRendererBackend';
 import { useHighlightManager } from '../hooks/useHighlightManager';
@@ -52,119 +32,22 @@ import { useMouseInteraction } from '../hooks/useMouseInteraction';
 import { useHoverDetection } from '../hooks/useHoverDetection';
 import { useVisualizationEffects } from '../hooks/useVisualizationEffects';
 import { useAssemblyComponentAutoGrounding } from '../hooks/useAssemblyComponentAutoGrounding';
+import { useRobotModelIkState } from '../hooks/useRobotModelIkState';
+import { useRobotModelPaintInteraction } from '../hooks/useRobotModelPaintInteraction';
+import { useExternalHoverHighlightSync } from '../hooks/useExternalHoverHighlightSync';
+import { useRobotModelRuntimeRegistration } from '../hooks/useRobotModelRuntimeRegistration';
 import { resolveCameraAutoFrameLoadScopeKey } from '../utils/cameraAutoFrame';
-import { isSingleDofJoint } from '@/shared/utils/jointTypes';
 import {
   createRuntimeSceneLinkMetadataState,
   resolveRuntimeSceneLinkMetadataState,
 } from '../utils/runtimeSceneMetadata';
-import { resolveSelectedIkDragLinkId } from '../utils/selectedIkDragLink';
 import { resolveViewerRobotSourceFormat } from '@/features/urdf-viewer/renderers/sourceFormat';
 import { shouldEnableViewerSceneCompileWarmup } from '../utils/sceneCompileWarmupPolicy';
 import { isWorkspaceTransformSelection } from '../utils/workspaceSceneProjection';
 import { canTransformGeometry } from '../utils/geometryTransformPolicy';
 import { isRegressionDebugEnabled } from '@/shared/debug/regressionDebugEnabled';
-import {
-  setRegressionPrimaryRuntimeRobot,
-  setRegressionRuntimeRobot,
-} from '@/shared/debug/regressionState';
 
 const EMPTY_ROBOT_FILES: RobotFile[] = [];
-const RUNTIME_IK_ANCHOR_EPSILON_SQ = 1e-12;
-const PAINTABLE_VISUAL_GEOMETRY_TYPES = new Set<GeometryType>([
-  GeometryType.MESH,
-  GeometryType.BOX,
-  GeometryType.PLANE,
-  GeometryType.SPHERE,
-  GeometryType.ELLIPSOID,
-  GeometryType.CYLINDER,
-  GeometryType.CAPSULE,
-]);
-const VIEWER_READY_DOCUMENT_LOAD_EVENT = {
-  status: 'ready',
-  phase: 'ready',
-  progressMode: null,
-  progressPercent: 100,
-  loadedCount: null,
-  totalCount: null,
-  message: null,
-  error: null,
-} satisfies ViewerDocumentLoadEvent;
-
-function resolveRuntimeLinkBoundsAnchorLocal(
-  linkObject: Object3D | null,
-): { x: number; y: number; z: number } | null {
-  if (!linkObject) {
-    return null;
-  }
-
-  linkObject.updateMatrixWorld(true);
-  const inverseLinkMatrix = new Matrix4().copy(linkObject.matrixWorld).invert();
-  const localBounds = new Box3();
-  const meshBounds = new Box3();
-  let hasBounds = false;
-
-  linkObject.traverse((object) => {
-    const mesh = object as Object3D & {
-      isMesh?: boolean;
-      geometry?: {
-        boundingBox?: Box3 | null;
-        computeBoundingBox?: () => void;
-      };
-    };
-    if (!mesh.isMesh || !mesh.geometry) {
-      return;
-    }
-
-    if (!mesh.geometry.boundingBox) {
-      mesh.geometry.computeBoundingBox?.();
-    }
-    if (!mesh.geometry.boundingBox) {
-      return;
-    }
-
-    object.updateMatrixWorld(true);
-    meshBounds
-      .copy(mesh.geometry.boundingBox)
-      .applyMatrix4(object.matrixWorld)
-      .applyMatrix4(inverseLinkMatrix);
-
-    if (meshBounds.isEmpty()) {
-      return;
-    }
-
-    if (!hasBounds) {
-      localBounds.copy(meshBounds);
-      hasBounds = true;
-      return;
-    }
-
-    localBounds.union(meshBounds);
-  });
-
-  if (!hasBounds || localBounds.isEmpty()) {
-    return null;
-  }
-
-  const center = localBounds.getCenter(new ThreeVector3());
-  if (center.lengthSq() > RUNTIME_IK_ANCHOR_EPSILON_SQ) {
-    return { x: center.x, y: center.y, z: center.z };
-  }
-
-  const farthestCorner = new ThreeVector3();
-  for (const x of [localBounds.min.x, localBounds.max.x]) {
-    for (const y of [localBounds.min.y, localBounds.max.y]) {
-      for (const z of [localBounds.min.z, localBounds.max.z]) {
-        const candidate = new ThreeVector3(x, y, z);
-        if (candidate.lengthSq() > farthestCorner.lengthSq()) {
-          farthestCorner.copy(candidate);
-        }
-      }
-    }
-  }
-
-  return { x: farthestCorner.x, y: farthestCorner.y, z: farthestCorner.z };
-}
 
 // Wrap with memo and custom comparison to prevent unnecessary re-renders
 export const RobotModel: React.FC<RobotModelProps> = memo(
@@ -274,7 +157,6 @@ export const RobotModel: React.FC<RobotModelProps> = memo(
     const autoFrameScopeFallbackRef = useRef<string | null>(null);
     const [assemblyRoot, setAssemblyRoot] = useState<Group | null>(null);
     const [directComponentRoot, setDirectComponentRoot] = useState<Group | null>(null);
-    const hasRenderedRobotRef = useRef(Boolean(initialRobot));
     const resolvedSourceFormat = useMemo(
       () => resolveViewerRobotSourceFormat(urdfContent, sourceFormat),
       [sourceFormat, urdfContent],
@@ -332,7 +214,7 @@ export const RobotModel: React.FC<RobotModelProps> = memo(
     useEffect(() => {
       setIsDraggingRef.current = setIsDragging;
     }, [setIsDragging]);
-    const backendRobotData = useMemo(() => {
+    const backendRobotData = useMemo<RobotData | null>(() => {
       const backendLinks = robotData?.links ?? robotLinks;
       const backendJoints = robotData?.joints ?? robotJoints;
 
@@ -357,28 +239,6 @@ export const RobotModel: React.FC<RobotModelProps> = memo(
         inspectionContext: robotData?.inspectionContext,
       };
     }, [robotData, robotJoints, robotLinks, sourceFileForBackend.name]);
-    type LinkIkHistorySnapshot = ReturnType<
-      NonNullable<React.ComponentProps<typeof LinkIkTransformControls>['createHistorySnapshot']>
-    >;
-    type LinkIkCommitArgs = Parameters<
-      NonNullable<
-        React.ComponentProps<typeof LinkIkTransformControls>['onCommitKinematicOverrides']
-      >
-    >;
-    const createIkHistorySnapshot = useCallback((): LinkIkHistorySnapshot => {
-      return backendRobotData ? structuredClone(backendRobotData) : null;
-    }, [backendRobotData]);
-    const commitIkKinematicOverrides = useCallback(
-      (...args: LinkIkCommitArgs) => {
-        const [overrides] = args;
-        onIkCommitKinematicOverrides?.(overrides.angles, overrides.quaternions);
-        onJointMotionCommit?.({
-          jointAngles: overrides.angles,
-          jointQuaternions: overrides.quaternions,
-        });
-      },
-      [onIkCommitKinematicOverrides, onJointMotionCommit],
-    );
     // ============================================================
     // HOOK: Robot Loading
     // ============================================================
@@ -413,37 +273,13 @@ export const RobotModel: React.FC<RobotModelProps> = memo(
       runtimeBridge,
       groundPlaneOffset,
     });
-    useEffect(() => {
-      if (!regressionRuntimeScopeKey) {
-        return;
-      }
-
-      return () => {
-        setRegressionPrimaryRuntimeRobot(null);
-        setRegressionRuntimeRobot(null);
-      };
-    }, [regressionRuntimeScopeKey]);
-
-    useEffect(() => {
-      if (!regressionRuntimeScopeKey || !robot) {
-        return;
-      }
-
-      setRegressionPrimaryRuntimeRobot(robot);
-      setRegressionRuntimeRobot(robot);
-    }, [regressionRuntimeScopeKey, robot]);
-    useEffect(() => {
-      if (!robot || isLoading) {
-        return;
-      }
-
-      onDocumentLoadEvent?.(VIEWER_READY_DOCUMENT_LOAD_EVENT);
-    }, [isLoading, onDocumentLoadEvent, robot]);
-    useEffect(() => {
-      if (robot) {
-        hasRenderedRobotRef.current = true;
-      }
-    }, [robot]);
+    const hasRenderedRobotRef = useRobotModelRuntimeRegistration({
+      initialRobotPresent: Boolean(initialRobot),
+      regressionRuntimeScopeKey,
+      robot,
+      isLoading,
+      onDocumentLoadEvent,
+    });
     const effectiveRobotLinks = useMemo(
       () => (Object.keys(loadedRobotLinks).length > 0 ? loadedRobotLinks : robotLinks),
       [loadedRobotLinks, robotLinks],
@@ -481,156 +317,30 @@ export const RobotModel: React.FC<RobotModelProps> = memo(
       const childLinkIds = new Set(Object.values(joints).map((joint) => joint.childLinkId));
       return linkIds.find((linkId) => !childLinkIds.has(linkId)) ?? linkIds[0] ?? null;
     }, [effectiveRobotJoints, loadedRootLinkId, runtimeRobotLinks]);
-    const selectedIkHandleLinkId = useMemo(
-      () =>
-        resolveSelectedIkDragLinkId({
-          selection,
-          ikDragActive,
-          robotLinks: runtimeRobotLinks,
-          robotJoints: effectiveRobotJoints,
-          rootLinkId: runtimeRobotRootLinkId,
-        }),
-      [effectiveRobotJoints, ikDragActive, runtimeRobotLinks, runtimeRobotRootLinkId, selection],
-    );
-    const selectedIkRuntimeLink = useMemo(() => {
-      if (!robot || !selectedIkHandleLinkId) {
-        return null;
-      }
-
-      const runtimeLinkMap = (
-        robot as Object3D & {
-          links?: Record<string, Object3D>;
-        }
-      ).links;
-      const resolvedLinkId =
-        resolveLinkKey(runtimeRobotLinks ?? {}, selectedIkHandleLinkId) ?? selectedIkHandleLinkId;
-
-      return runtimeLinkMap?.[resolvedLinkId] ?? runtimeLinkMap?.[selectedIkHandleLinkId] ?? null;
-    }, [robot, runtimeRobotLinks, selectedIkHandleLinkId]);
-    const selectedIkHandle = useMemo(
-      () =>
-        (
-          selectedIkRuntimeLink as
-            | (Object3D & {
-                userData?: { __ikHandle?: Object3D };
-              })
-            | null
-        )?.userData?.__ikHandle ?? null,
-      [selectedIkRuntimeLink],
-    );
-    const selectedPassiveIkHandleDescriptor = useMemo(() => {
-      if (
-        !selectedIkHandleLinkId ||
-        !runtimeRobotRootLinkId ||
-        !runtimeRobotLinks ||
-        !effectiveRobotJoints
-      ) {
-        return null;
-      }
-
-      return resolveLinkIkHandleDescriptor(
-        {
-          links: runtimeRobotLinks,
-          joints: effectiveRobotJoints,
-          rootLinkId: runtimeRobotRootLinkId,
-        },
-        selectedIkHandleLinkId,
-      );
-    }, [effectiveRobotJoints, runtimeRobotLinks, runtimeRobotRootLinkId, selectedIkHandleLinkId]);
-    const selectedDirectIkJointIds = useMemo(() => {
-      if (
-        !selectedIkHandleLinkId ||
-        !runtimeRobotRootLinkId ||
-        !runtimeRobotLinks ||
-        !effectiveRobotJoints
-      ) {
-        return null;
-      }
-
-      return resolveDirectManipulableLinkIkJointIds(
-        {
-          links: runtimeRobotLinks,
-          joints: effectiveRobotJoints,
-          rootLinkId: runtimeRobotRootLinkId,
-        },
-        selectedIkHandleLinkId,
-      );
-    }, [effectiveRobotJoints, runtimeRobotLinks, runtimeRobotRootLinkId, selectedIkHandleLinkId]);
-    const selectedDirectIkHandleDescriptor = useMemo(() => {
-      if (
-        !selectedIkHandleLinkId ||
-        !runtimeRobotRootLinkId ||
-        !runtimeRobotLinks ||
-        !effectiveRobotJoints
-      ) {
-        return null;
-      }
-
-      return resolveDirectManipulableLinkIkDescriptor(
-        {
-          links: runtimeRobotLinks,
-          joints: effectiveRobotJoints,
-          rootLinkId: runtimeRobotRootLinkId,
-        },
-        selectedIkHandleLinkId,
-      );
-    }, [effectiveRobotJoints, runtimeRobotLinks, runtimeRobotRootLinkId, selectedIkHandleLinkId]);
-    const selectedIkHandleDescriptor =
-      selectedDirectIkHandleDescriptor ?? selectedPassiveIkHandleDescriptor;
-    const selectedRuntimeIkAnchorLocal = useMemo(
-      () => resolveRuntimeLinkBoundsAnchorLocal(selectedIkRuntimeLink),
-      [robotVersion, selectedIkHandleLinkId, selectedIkRuntimeLink],
-    );
-    const selectedIkAnchorLocal =
-      selectedIkHandleDescriptor?.anchorLocal ?? selectedRuntimeIkAnchorLocal;
-    const selectedIkJointIds = selectedIkHandleDescriptor?.jointIds ?? selectedDirectIkJointIds;
-    const selectedJointEntry = useMemo(() => {
-      if (!robot || selection?.type !== 'joint' || !selection.id) {
-        return null;
-      }
-
-      const runtimeJoints = (robot as Object3D & { joints?: Record<string, any> }).joints;
-      const jointKey = resolveViewerJointKey(runtimeJoints, selection.id);
-      if (!jointKey) {
-        return null;
-      }
-
-      const joint = runtimeJoints?.[jointKey] ?? null;
-      if (!joint || !isSingleDofJoint(joint)) {
-        return null;
-      }
-
-      return {
-        jointKey,
-        joint,
-        jointName: joint.name || jointKey,
-      };
-    }, [robot, selection?.id, selection?.type]);
-    const selectedJointValue = useMemo(() => {
-      if (!selectedJointEntry) {
-        return 0;
-      }
-
-      return resolveViewerJointAngleValue(
-        undefined,
-        selectedJointEntry.jointKey,
-        selectedJointEntry.joint,
-        0,
-      );
-    }, [selectedJointEntry]);
-    const fallbackIkRobotState = useMemo(
-      () =>
-        runtimeRobotRootLinkId && runtimeRobotLinks && effectiveRobotJoints
-          ? {
-              links: runtimeRobotLinks,
-              joints: effectiveRobotJoints,
-              rootLinkId: runtimeRobotRootLinkId,
-              closedLoopConstraints: [],
-            }
-          : null,
-      [effectiveRobotJoints, runtimeRobotLinks, runtimeRobotRootLinkId],
-    );
-    const ikRobotState = providedIkRobotState ?? fallbackIkRobotState;
+    const {
+      commitIkKinematicOverrides,
+      createIkHistorySnapshot,
+      ikRobotState,
+      selectedIkAnchorLocal,
+      selectedIkHandle,
+      selectedIkHandleLinkId,
+      selectedIkJointIds,
+      selectedIkRuntimeLink,
+      selectedJointEntry,
+      selectedJointValue,
+    } = useRobotModelIkState({
+      robot,
+      robotVersion,
+      selection,
+      ikDragActive,
+      robotLinks: runtimeRobotLinks,
+      robotJoints: effectiveRobotJoints,
+      rootLinkId: runtimeRobotRootLinkId,
+      providedIkRobotState,
+      backendRobotData,
+      onIkCommitKinematicOverrides,
+      onJointMotionCommit,
+    });
     const workspaceTransformSelectionArmed = isWorkspaceTransformSelection(workspaceSelection);
     const workspaceSelectionEditorLocked = useMemo(
       () => Boolean(
@@ -670,151 +380,18 @@ export const RobotModel: React.FC<RobotModelProps> = memo(
       active,
     });
 
-    const handlePaintFace = useCallback(
-      async ({ linkId, objectIndex, mesh, faceIndex }: ViewerPaintFaceHit) => {
-        const activePaintColor = paintInteractionRef?.current.color ?? paintColor;
-        const activePaintOperation = paintInteractionRef?.current.operation ?? paintOperation;
-        const activePaintSelectionScope =
-          paintInteractionRef?.current.selectionScope ?? paintSelectionScope;
-        if (isMeshPreview) {
-          onPaintStatusChange?.({
-            tone: 'error',
-            message: t.paintUnsupportedRobotOnly,
-          });
-          return;
-        }
-
-        if (!Number.isInteger(faceIndex) || faceIndex < 0) {
-          onPaintStatusChange?.({
-            tone: 'error',
-            message: t.paintErrorFaceUnavailable,
-          });
-          return;
-        }
-
-        const link = effectiveRobotLinks?.[linkId];
-        const visualGeometry = link
-          ? getVisualGeometryByObjectIndex(link, objectIndex)?.geometry
-          : null;
-        if (!link || !visualGeometry || !PAINTABLE_VISUAL_GEOMETRY_TYPES.has(visualGeometry.type)) {
-          onPaintStatusChange?.({
-            tone: 'error',
-            message: t.paintErrorVisualMeshOnly,
-          });
-          return;
-        }
-
-        const robotMaterials = backendRobotData?.materials ?? {};
-        const resolvedMaterial = resolveVisualMaterialOverride(
-          { materials: robotMaterials },
-          link,
-          visualGeometry,
-          { isPrimaryVisual: objectIndex === 0 },
-        );
-        const hasCustomMeshGroups = hasGeometryMeshMaterialGroups(visualGeometry);
-        const builtInMultiMaterialTarget =
-          !hasCustomMeshGroups &&
-          (Array.isArray(mesh.material) || (visualGeometry.authoredMaterials?.length || 0) > 1);
-        if (builtInMultiMaterialTarget || hasDistinctRuntimeBaseMaterialsWithinVisual(mesh)) {
-          onPaintStatusChange?.({
-            tone: 'error',
-            message: t.paintErrorMultiMaterial,
-          });
-          return;
-        }
-
-        const triangleCount = getBufferGeometryTriangleCount(mesh.geometry);
-        if (!Number.isInteger(faceIndex) || faceIndex < 0 || faceIndex >= triangleCount) {
-          onPaintStatusChange?.({
-            tone: 'error',
-            message: t.paintErrorFaceUnavailable,
-          });
-          return;
-        }
-
-        const selectedFaceIndices = resolveMeshFaceSelection(
-          mesh.geometry,
-          faceIndex,
-          activePaintSelectionScope,
-        );
-        if (selectedFaceIndices.length === 0) {
-          onPaintStatusChange?.({
-            tone: 'error',
-            message: t.paintErrorSelectionUnavailable,
-          });
-          return;
-        }
-
-        const meshRoot = resolveRuntimeMeshRootWithinVisual(mesh);
-        const meshKey = resolveRuntimeMeshMaterialGroupKey(mesh, meshRoot);
-        const baseMaterial = captureRuntimeVisualMaterialDescriptor(
-          mesh,
-          visualGeometry.authoredMaterials?.[0],
-          {
-            name: `paint_base_${objectIndex}`,
-            color: resolvedMaterial.color,
-            colorRgba: resolvedMaterial.colorRgba,
-            texture: resolvedMaterial.texture,
-            textureRotation: resolvedMaterial.textureRotation,
-            opacity: resolvedMaterial.opacity,
-            roughness: resolvedMaterial.roughness,
-            metalness: resolvedMaterial.metalness,
-            emissive: resolvedMaterial.emissive,
-            emissiveIntensity: resolvedMaterial.emissiveIntensity,
-            alphaTest: resolvedMaterial.alphaTest,
-            passes: resolvedMaterial.passes,
-          },
-        );
-        const paintEdit = applyMeshMaterialPaintEdit({
-          geometry: visualGeometry,
-          meshKey,
-          triangleCount,
-          selectedFaceIndices,
-          paintColor: activePaintColor,
-          erase: activePaintOperation === 'erase',
-          baseMaterial,
-          materialNamePrefix: `paint_${linkId}_${objectIndex}`,
-        });
-        const { changed, ...geometryPatch } = paintEdit;
-        if (!onUpdate) {
-          onPaintStatusChange?.({
-            tone: 'error',
-            message: t.paintUnsupportedRobotOnly,
-          });
-          return;
-        }
-        if (!changed) {
-          if (activePaintOperation === 'erase') {
-            onPaintStatusChange?.({
-              tone: 'info',
-              message: t.paintStatusNothingToRestore,
-            });
-          }
-          return;
-        }
-        const nextLink = updateVisualGeometryByObjectIndex(link, objectIndex, {
-          ...geometryPatch,
-          color: undefined,
-        });
-        onUpdate('link', link.id, nextLink);
-        onPaintStatusChange?.({
-          tone: 'success',
-          message: activePaintOperation === 'erase' ? t.paintStatusRemoved : t.paintStatusApplied,
-        });
-      },
-      [
-        isMeshPreview,
-        backendRobotData?.materials,
-        onPaintStatusChange,
-        onUpdate,
-        paintColor,
-        paintInteractionRef,
-        paintOperation,
-        paintSelectionScope,
-        effectiveRobotLinks,
-        t,
-      ],
-    );
+    const handlePaintFace = useRobotModelPaintInteraction({
+      isMeshPreview,
+      robotMaterials: backendRobotData?.materials,
+      robotLinks: effectiveRobotLinks,
+      paintColor,
+      paintSelectionScope,
+      paintOperation,
+      paintInteractionRef,
+      onPaintStatusChange,
+      onUpdate,
+      t,
+    });
 
     // ============================================================
     // HOOK: Mouse Interaction
@@ -976,35 +553,11 @@ export const RobotModel: React.FC<RobotModelProps> = memo(
       sourceFormat: resolvedSourceFormat,
       showMjcfWorldLink,
     });
-    const usesExternalHoverSelection = hoveredSelection !== undefined;
-    const previousUsesExternalHoverSelectionRef = useRef(usesExternalHoverSelection);
-
-    useEffect(() => {
-      const usedExternalHoverSelection = previousUsesExternalHoverSelectionRef.current;
-      previousUsesExternalHoverSelectionRef.current = usesExternalHoverSelection;
-
-      if (!usesExternalHoverSelection && usedExternalHoverSelection) {
-        syncHoverHighlight(undefined);
-      }
-    }, [syncHoverHighlight, usesExternalHoverSelection]);
-
-    useEffect(() => {
-      if (!usesExternalHoverSelection) {
-        return;
-      }
-
-      syncHoverHighlight(hoverSelectionEnabled ? hoveredSelection : undefined);
-    }, [
+    useExternalHoverHighlightSync({
+      hoveredSelection,
       hoverSelectionEnabled,
-      hoveredSelection?.type,
-      hoveredSelection?.id,
-      hoveredSelection?.subType,
-      hoveredSelection?.objectIndex,
-      hoveredSelection?.helperKind,
-      hoveredSelection?.highlightObjectId,
       syncHoverHighlight,
-      usesExternalHoverSelection,
-    ]);
+    });
 
     // Default to a dirty-only matrixWorld walk (force=false). All upstream
     // mutation paths (setJointValue, transform writes) already flag the dirty
@@ -1052,33 +605,6 @@ export const RobotModel: React.FC<RobotModelProps> = memo(
     // ============================================================
     // RENDER
     // ============================================================
-    const useIndeterminateStreamingProgress = shouldUseIndeterminateStreamingMeshProgress({
-      phase: loadingProgress?.phase,
-      loadedCount: loadingProgress?.loadedCount,
-      totalCount: loadingProgress?.totalCount,
-    });
-    const loadingHudState = buildViewerLoadingHudState({
-      phase: loadingProgress?.phase,
-      progressMode: useIndeterminateStreamingProgress
-        ? 'indeterminate'
-        : loadingProgress?.progressMode,
-      loadedCount: useIndeterminateStreamingProgress ? null : loadingProgress?.loadedCount,
-      totalCount: useIndeterminateStreamingProgress ? null : loadingProgress?.totalCount,
-      progressPercent: loadingProgress?.progressPercent,
-      fallbackDetail: useIndeterminateStreamingProgress
-        ? t.loadingRobotParsingInitialMeshes
-        : t.loadingRobotPreparing,
-    });
-    const loadingStageLabel =
-      loadingProgress?.phase === 'preparing-scene'
-        ? t.loadingRobotPreparing
-        : loadingProgress?.phase === 'streaming-meshes'
-          ? t.loadingRobotStreamingMeshes
-          : loadingProgress?.phase === 'finalizing-scene'
-            ? t.loadingRobotFinalizingScene
-            : null;
-    const loadingDetail =
-      loadingHudState.detail === loadingStageLabel ? '' : loadingHudState.detail;
     const sceneCompileWarmupKey = [
       sourceFilePath ?? 'viewer-inline',
       String(robotVersion),
@@ -1141,17 +667,11 @@ export const RobotModel: React.FC<RobotModelProps> = memo(
             {robot ? <primitive object={robot} /> : null}
           </group>
         </group>
-        {shouldShowLoadingHud ? (
-          <ViewerLoadingHudOverlay
-            title={t.loadingRobot}
-            detail={loadingDetail}
-            progress={loadingHudState.progress}
-            progressMode={loadingHudState.progressMode}
-            statusLabel={loadingHudState.statusLabel}
-            stageLabel={loadingStageLabel}
-            delayMs={0}
-          />
-        ) : null}
+        <RobotModelLoadingHud
+          visible={shouldShowLoadingHud}
+          loadingProgress={loadingProgress}
+          t={t}
+        />
         {!snapshotRenderActive
         && interactionEnabled
         && !workspaceSelectionEditorLocked

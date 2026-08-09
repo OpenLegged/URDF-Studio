@@ -48,7 +48,7 @@ export function ConversationMessageMarkdown({
   return (
     <div
       className={[
-        'min-w-0 select-text break-words text-sm leading-relaxed',
+        'min-w-0 select-text break-words text-[11px] leading-relaxed',
         '[&_p:first-child]:mt-0',
         '[&_p:last-child]:mb-0',
         '[&_ul:last-child]:mb-0',
@@ -62,25 +62,25 @@ export function ConversationMessageMarkdown({
         remarkPlugins={[remarkGfm]}
         components={{
           h1: ({ children }) => (
-            <h1 className="mt-4 text-base font-semibold first:mt-0">{children}</h1>
+            <h1 className="mt-2 text-xs font-semibold first:mt-0">{children}</h1>
           ),
           h2: ({ children }) => (
-            <h2 className="mt-4 text-sm font-semibold first:mt-0">{children}</h2>
+            <h2 className="mt-2 text-[11px] font-semibold first:mt-0">{children}</h2>
           ),
           h3: ({ children }) => (
-            <h3 className="mt-4 text-sm font-semibold first:mt-0">{children}</h3>
+            <h3 className="mt-2 text-[11px] font-semibold first:mt-0">{children}</h3>
           ),
           h4: ({ children }) => (
-            <h4 className="mt-3 text-xs font-semibold uppercase tracking-wide first:mt-0">{children}</h4>
+            <h4 className="mt-2 text-[10px] font-semibold uppercase tracking-wide first:mt-0">{children}</h4>
           ),
           p: ({ children }) => (
-            <p className="mt-3 whitespace-pre-wrap leading-relaxed first:mt-0">{children}</p>
+            <p className="mt-2 whitespace-pre-wrap leading-relaxed first:mt-0">{children}</p>
           ),
           ul: ({ children }) => (
-            <ul className="mt-3 list-disc space-y-1 pl-5 first:mt-0">{children}</ul>
+            <ul className="mt-2 list-disc space-y-1 pl-5 first:mt-0">{children}</ul>
           ),
           ol: ({ children }) => (
-            <ol className="mt-3 list-decimal space-y-1 pl-5 first:mt-0">{children}</ol>
+            <ol className="mt-2 list-decimal space-y-1 pl-5 first:mt-0">{children}</ol>
           ),
           li: ({ children }) => <li className="pl-1">{children}</li>,
           a: ({ href, children }) => (
@@ -94,31 +94,31 @@ export function ConversationMessageMarkdown({
             </a>
           ),
           blockquote: ({ children }) => (
-            <blockquote className="mt-3 rounded-lg border-l-2 px-3 py-2 italic first:mt-0">
+            <blockquote className="mt-2 rounded-lg border-l-2 px-2 py-1.5 italic first:mt-0">
               {children}
             </blockquote>
           ),
-          hr: () => <hr className="my-3 border-t" />,
+          hr: () => <hr className="my-2 border-t" />,
           pre: ({ children }) => (
-            <pre className="mt-3 overflow-x-auto rounded-lg border px-3 py-3 text-xs shadow-sm first:mt-0 [&_code]:bg-transparent [&_code]:p-0 [&_code]:text-inherit">
+            <pre className="mt-2 overflow-x-auto rounded-lg border px-2 py-2 text-[11px] shadow-sm first:mt-0 [&_code]:bg-transparent [&_code]:p-0 [&_code]:text-inherit">
               {children}
             </pre>
           ),
           code: ({ children }) => (
-            <code className="rounded px-1.5 py-0.5 font-mono text-[12px] leading-relaxed">
+            <code className="rounded px-1 py-0.5 font-mono text-[10px] leading-relaxed">
               {children}
             </code>
           ),
           table: ({ children }) => (
-            <div className="mt-3 overflow-x-auto first:mt-0">
-              <table className="min-w-full border-collapse rounded-lg border text-xs">{children}</table>
+            <div className="mt-2 overflow-x-auto first:mt-0">
+              <table className="min-w-full border-collapse rounded-lg border text-[11px]">{children}</table>
             </div>
           ),
           thead: ({ children }) => <thead className="bg-black/5 dark:bg-white/5">{children}</thead>,
           th: ({ children }) => (
-            <th className="border px-2.5 py-2 text-left font-semibold">{children}</th>
+            <th className="border px-2 py-1.5 text-left font-semibold">{children}</th>
           ),
-          td: ({ children }) => <td className="border px-2.5 py-2 align-top">{children}</td>,
+          td: ({ children }) => <td className="border px-2 py-1.5 align-top">{children}</td>,
         }}
       >
         {content}

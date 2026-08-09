@@ -25,6 +25,7 @@ import {
   buildGeneratedMjcfGeomName,
   buildGeneratedMjcfSiteName,
 } from './mjcfGeneratedNames';
+import { convertMjcfAngle, mjcfQuatToThreeQuat } from './mjcfMath';
 
 export interface MJCFModelGeom {
   name?: string;
@@ -275,10 +276,6 @@ function toOptionalRangeTuple(values: number[]): [number, number] | undefined {
   return [values[0] ?? 0, values[1] ?? 0];
 }
 
-function convertAngularValue(value: number, settings: MJCFCompilerSettings): number {
-  return settings.angleUnit === 'degree' ? THREE.MathUtils.degToRad(value) : value;
-}
-
 function normalizeJointRange(
   range: [number, number] | undefined,
   jointType: string,
@@ -293,8 +290,8 @@ function normalizeJointRange(
   }
 
   return [
-    convertAngularValue(range[0] ?? 0, settings),
-    convertAngularValue(range[1] ?? 0, settings),
+    convertMjcfAngle(range[0] ?? 0, settings.angleUnit),
+    convertMjcfAngle(range[1] ?? 0, settings.angleUnit),
   ];
 }
 
@@ -373,7 +370,7 @@ function parseJointElement(
     joint.ref =
       joint.type.toLowerCase() === 'slide'
         ? parsedRef
-        : convertAngularValue(parsedRef, compilerSettings);
+        : convertMjcfAngle(parsedRef, compilerSettings.angleUnit);
   }
 
   const parsedActuatorForceRange = toOptionalRangeTuple(actuatorForceRange);
@@ -457,8 +454,7 @@ function parseActuatorData(
           tendonName ||
           actuatorType,
         type: actuatorType,
-        className:
-          actuatorClassQName?.split('/').pop() || child.getAttribute('class') || undefined,
+        className: actuatorClassQName?.split('/').pop() || child.getAttribute('class') || undefined,
         classQName: actuatorClassQName,
         joint: jointName,
         tendon: tendonName,
@@ -868,14 +864,6 @@ interface MJCFLocalTransform {
   quaternion: THREE.Quaternion;
 }
 
-function mjcfQuatToThreeQuat(quat?: [number, number, number, number]): THREE.Quaternion {
-  if (!quat) {
-    return new THREE.Quaternion();
-  }
-
-  return new THREE.Quaternion(quat[1], quat[2], quat[3], quat[0]);
-}
-
 function threeQuatToMJCFQuat(quaternion: THREE.Quaternion): [number, number, number, number] {
   return [quaternion.w, quaternion.x, quaternion.y, quaternion.z];
 }
@@ -1076,7 +1064,10 @@ function applyJointTransform(
     return joint;
   }
 
-  const composedTransform = composeTransforms(inheritedTransform, createLocalTransform(joint.pos, undefined));
+  const composedTransform = composeTransforms(
+    inheritedTransform,
+    createLocalTransform(joint.pos, undefined),
+  );
 
   return {
     ...joint,
@@ -1402,7 +1393,6 @@ function parseBody(
     bodyPath,
     { value: 0 },
   );
-
   const joints = collectJointsInBodyOrder(
     bodyElement,
     defaults,
@@ -1410,14 +1400,12 @@ function parseBody(
     bodyCompilerSettings,
     jointIndexRef,
   );
-
   const inertial = collectFirstInertialInBodyOrder(
     bodyElement,
     defaults,
     childDefaultsClassQName,
     bodyCompilerSettings,
   );
-
   const children = collectBodiesInBodyOrder(
     bodyElement,
     defaults,
@@ -1517,7 +1505,6 @@ export function parseMJCFModel(xmlContent: string): ParsedMJCFModel | null {
           { value: worldBody.sites.length },
         ),
       );
-
       worldBody.joints.push(
         ...collectJointsInBodyOrder(
           worldbodyElement,
@@ -1527,7 +1514,6 @@ export function parseMJCFModel(xmlContent: string): ParsedMJCFModel | null {
           jointIndexRef,
         ),
       );
-
       worldBody.children.push(
         ...collectBodiesInBodyOrder(
           worldbodyElement,

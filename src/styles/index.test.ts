@@ -91,3 +91,16 @@ test('Tailwind scans production sources without registering tests as CSS depende
 
   assert.match(css, /^@source '\.\.\/\.\.\/index\.html';/m);
 });
+
+test('document scroll root suppresses overscroll navigation from trackpad swipes', () => {
+  // Edge/Chrome turn a horizontal trackpad two-finger swipe into a wheel event
+  // with dominant deltaX; without overscroll-behavior the resulting document
+  // overscroll becomes back/forward navigation and hijacks viewer gestures.
+  // `overflow: hidden` on body is not enough — overscroll-behavior must be
+  // explicit on the scroll root.
+  assert.match(
+    css,
+    /html,\s*body\s*\{[^}]*overscroll-behavior:\s*none/,
+    'expected html and body to disable overscroll-driven navigation',
+  );
+});

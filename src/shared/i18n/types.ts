@@ -24,6 +24,11 @@ export interface TranslationKeys extends TranslationWorkflowKeys {
   aiModificationNoChange: string;
   aiModificationUnsupportedJoint: string;
   aiModificationFailed: string;
+  aiAutoApply: string;
+  aiAutoApplyDesc: string;
+  aiAutoAppliedSummary: string;
+  aiDiffCollapsedLines: string;
+  aiDiffCollapsedHint: string;
   feedback: string;
   file: string;
   import: string;
@@ -522,7 +527,6 @@ export interface TranslationKeys extends TranslationWorkflowKeys {
   trajectoryEditing: string;
   featureInDevelopment: string;
   transformMode: string;
-  visualTransformDisabledWithCollisions: string;
   translateMode: string;
   rotateMode: string;
   universalMode: string;

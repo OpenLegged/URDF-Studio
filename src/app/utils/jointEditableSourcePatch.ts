@@ -1,5 +1,12 @@
 import { MAX_PROPERTY_DECIMALS, formatNumberWithMaxDecimals } from '@/core/utils/numberPrecision';
 import { JointType, type UrdfJoint, type UrdfLink } from '@/types';
+import {
+  escapeRegex,
+  getPreferredNewline,
+  getLineStart,
+  getIndentAt,
+  replaceOrRemoveXmlAttribute,
+} from '@/core/utils/xmlSourceTextUtils';
 
 interface JointLimitSourcePatchOptions {
   sourceContent: string;
@@ -28,21 +35,9 @@ const XML_NAME_ATTR_RE = /\bname\s*=\s*(["'])(.*?)\1/i;
 const XML_TAG_OR_COMMENT_RE = /<!--[\s\S]*?-->|<\s*(\/?)([A-Za-z_][\w:.-]*)\b[^>]*>/g;
 const SDF_MANAGED_LIMIT_TAG_NAMES = ['lower', 'upper', 'effort', 'velocity'] as const;
 
-function escapeXmlAttribute(value: string): string {
-  return value
-    .replace(/&/g, '&amp;')
-    .replace(/"/g, '&quot;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;');
-}
-
-function escapeRegExp(value: string): string {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
-
 function buildXmlTagNamesRegExp(tagNames: string[]): RegExp {
   return new RegExp(
-    `<\\s*(\\/?)(${tagNames.map(escapeRegExp).join('|')})\\b[^>]*>`,
+    `<\\s*(\\/?)(${tagNames.map(escapeRegex).join('|')})\\b[^>]*>`,
     'gi',
   );
 }
@@ -187,22 +182,6 @@ function findFirstXmlElement(sourceContent: string, tagName: string): XmlElement
   return findFirstXmlElementByTagNames(sourceContent, [tagName]);
 }
 
-function getPreferredNewline(sourceContent: string): string {
-  return sourceContent.includes('\r\n') ? '\r\n' : '\n';
-}
-
-function getLineStart(sourceContent: string, index: number): number {
-  let cursor = index;
-  while (cursor > 0) {
-    const previousChar = sourceContent[cursor - 1];
-    if (previousChar === '\n' || previousChar === '\r') {
-      break;
-    }
-    cursor -= 1;
-  }
-  return cursor;
-}
-
 function getLineEndIncludingNewline(sourceContent: string, index: number): number {
   let cursor = index;
   while (cursor < sourceContent.length) {
@@ -216,12 +195,6 @@ function getLineEndIncludingNewline(sourceContent: string, index: number): numbe
     cursor += 1;
   }
   return cursor;
-}
-
-function getIndentAt(sourceContent: string, index: number): string {
-  const lineStart = getLineStart(sourceContent, index);
-  const match = sourceContent.slice(lineStart, index).match(/^[ \t]*/);
-  return match?.[0] ?? '';
 }
 
 function formatScalar(value: number): string {
@@ -244,27 +217,6 @@ function formatInertialXyz(inertial: NonNullable<UrdfLink['inertial']>): string 
 function formatInertialRpy(inertial: NonNullable<UrdfLink['inertial']>): string {
   const rpy = inertial.origin?.rpy;
   return formatVectorValues([rpy?.r ?? 0, rpy?.p ?? 0, rpy?.y ?? 0]);
-}
-
-function replaceOrRemoveXmlAttribute(
-  rawTag: string,
-  attributeName: string,
-  nextValue: string | null,
-): string {
-  const attrRe = new RegExp(`\\s+${escapeRegExp(attributeName)}\\s*=\\s*(["']).*?\\1`, 'i');
-  if (nextValue == null) {
-    return rawTag.replace(attrRe, '');
-  }
-
-  const escapedNextValue = escapeXmlAttribute(nextValue);
-  if (attrRe.test(rawTag)) {
-    return rawTag.replace(
-      new RegExp(`(\\s+${escapeRegExp(attributeName)}\\s*=\\s*)(["']).*?\\2`, 'i'),
-      (_match, prefix: string, quote: string) => `${prefix}${quote}${escapedNextValue}${quote}`,
-    );
-  }
-
-  return rawTag.replace(/(\s*\/?>)$/, ` ${attributeName}="${escapedNextValue}"$1`);
 }
 
 function shouldEmitUrdfPositionLimits(jointType: UrdfJoint['type']): boolean {

@@ -62,8 +62,8 @@ const parseJointHardware = (hardwareEl: Element | null): UrdfJoint['hardware'] =
     motorDirection: motorDirection === -1 ? -1 : 1,
     armature: parseFloatSafe(hardwareEl.querySelector('armature')?.textContent, 0),
     hardwareInterface:
-      (hardwareEl.querySelector('hardwareInterface')?.textContent as JointHardwareInterface | null) ||
-      undefined,
+      (hardwareEl.querySelector('hardwareInterface')
+        ?.textContent as JointHardwareInterface | null) || undefined,
   };
 };
 
@@ -170,6 +170,7 @@ export const parseJoints = (robotEl: Element): Record<string, UrdfJoint> => {
     const jointEl = child;
     const jointName = jointEl.getAttribute('name');
     if (!jointName) return;
+
     const id = jointName;
 
     const parentEl = jointEl.querySelector('parent');

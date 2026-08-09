@@ -11,6 +11,8 @@ const runtimeFiles = [
   'src/features/ai-assistant/components/InspectionSetupNormalView.tsx',
   'src/features/ai-assistant/components/InspectionSetupView.tsx',
   'src/features/ai-assistant/components/InspectionReport.tsx',
+  'src/features/ai-assistant/hooks/useInspectionExecution.ts',
+  'src/features/ai-assistant/hooks/useInspectionReport.ts',
   'src/features/ai-assistant/services/aiService.ts',
   'src/features/ai-assistant/utils/processInspectionResults.ts',
   'src/features/ai-assistant/utils/buildConversationContext.ts',

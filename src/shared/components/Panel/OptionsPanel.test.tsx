@@ -7,10 +7,59 @@ import { JSDOM } from 'jsdom';
 
 import {
   CheckboxOption,
+  CollapsibleSection,
   OptionsPanel,
+  OptionsPanelContainer,
   PanelOverlayToggleButton,
   ToggleSliderOption,
 } from './OptionsPanel';
+
+interface ListenerCall {
+  type: string;
+  listener: EventListenerOrEventListenerObject | null;
+}
+
+function trackEventListeners(target: EventTarget, trackedTypes: ReadonlySet<string>) {
+  const added: ListenerCall[] = [];
+  const removed: ListenerCall[] = [];
+  const originalAddEventListener = target.addEventListener.bind(target);
+  const originalRemoveEventListener = target.removeEventListener.bind(target);
+
+  target.addEventListener = (type, listener, options) => {
+    if (trackedTypes.has(type)) {
+      added.push({ type, listener });
+    }
+    originalAddEventListener(type, listener, options);
+  };
+  target.removeEventListener = (type, listener, options) => {
+    if (trackedTypes.has(type)) {
+      removed.push({ type, listener });
+    }
+    originalRemoveEventListener(type, listener, options);
+  };
+
+  return {
+    added,
+    removed,
+    restore() {
+      target.addEventListener = originalAddEventListener;
+      target.removeEventListener = originalRemoveEventListener;
+    },
+  };
+}
+
+function assertMatchingListenerRemoved(
+  added: ListenerCall[],
+  removed: ListenerCall[],
+  type: string,
+) {
+  const addedCall = added.find((call) => call.type === type);
+  assert.ok(addedCall, `${type} listener should be added`);
+  assert.ok(
+    removed.some((call) => call.type === type && call.listener === addedCall.listener),
+    `${type} listener should be removed with the same callback`,
+  );
+}
 
 function installDom() {
   const dom = new JSDOM('<!doctype html><html><body><div id="root"></div></body></html>', {
@@ -84,6 +133,112 @@ test('OptionsPanel can transition from hidden to visible without changing hook o
     await act(async () => {
       root.unmount();
     });
+    dom.window.close();
+  }
+});
+
+test('CollapsibleSection restores and persists its uncontrolled open state', async () => {
+  const dom = installDom();
+  const container = dom.window.document.getElementById('root');
+  assert.ok(container, 'root container should exist');
+  dom.window.localStorage.setItem('collapse_state_rendering', 'false');
+
+  const root = createRoot(container);
+
+  try {
+    await act(async () => {
+      root.render(
+        React.createElement(CollapsibleSection, {
+          title: 'Rendering',
+          storageKey: 'rendering',
+          children: React.createElement(
+            'div',
+            { 'data-testid': 'section-content' },
+            'section content',
+          ),
+        }),
+      );
+    });
+
+    const button = container.querySelector('button');
+    assert.ok(button instanceof dom.window.HTMLButtonElement);
+    const content = container.querySelector('[data-testid="section-content"]')?.parentElement
+      ?.parentElement;
+    assert.ok(content, 'collapsible content container should render');
+    assert.ok(content.className.split(/\s+/).includes('max-h-0'));
+
+    await act(async () => {
+      button.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
+    });
+
+    assert.ok(content.className.split(/\s+/).includes('max-h-[300px]'));
+    assert.equal(dom.window.localStorage.getItem('collapse_state_rendering'), 'true');
+  } finally {
+    await act(async () => {
+      root.unmount();
+    });
+    dom.window.close();
+  }
+});
+
+test('OptionsPanelContainer removes active resize listeners when unmounted', async () => {
+  const dom = installDom();
+  const container = dom.window.document.getElementById('root');
+  assert.ok(container, 'root container should exist');
+
+  const root = createRoot(container);
+  const documentListeners = trackEventListeners(
+    dom.window.document as unknown as EventTarget,
+    new Set(['pointermove', 'pointerup', 'pointercancel']),
+  );
+  const windowListeners = trackEventListeners(
+    dom.window as unknown as EventTarget,
+    new Set(['blur']),
+  );
+  let rootUnmounted = false;
+
+  try {
+    await act(async () => {
+      root.render(
+        React.createElement(OptionsPanelContainer, {
+          resizable: true,
+          children: React.createElement('div', null, 'content'),
+        }),
+      );
+    });
+
+    const resizeHandle = container.querySelector<HTMLButtonElement>(
+      '[data-testid="ui-options-panel-resize-corner"]',
+    );
+    assert.ok(resizeHandle, 'corner resize handle should render');
+    const pointerDown = new dom.window.MouseEvent('pointerdown', {
+      bubbles: true,
+      clientX: 40,
+      clientY: 50,
+    });
+    Object.defineProperty(pointerDown, 'pointerId', { value: 7 });
+
+    await act(async () => {
+      resizeHandle.dispatchEvent(pointerDown);
+    });
+
+    await act(async () => {
+      root.unmount();
+    });
+    rootUnmounted = true;
+
+    for (const type of ['pointermove', 'pointerup', 'pointercancel']) {
+      assertMatchingListenerRemoved(documentListeners.added, documentListeners.removed, type);
+    }
+    assertMatchingListenerRemoved(windowListeners.added, windowListeners.removed, 'blur');
+  } finally {
+    documentListeners.restore();
+    windowListeners.restore();
+    if (!rootUnmounted) {
+      await act(async () => {
+        root.unmount();
+      });
+    }
     dom.window.close();
   }
 });

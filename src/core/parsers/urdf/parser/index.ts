@@ -133,41 +133,61 @@ export const parseURDF = (xmlString: string): RobotState | null => {
   xmlString = preprocessXML(xmlString);
 
   const parser = new DOMParser();
-  const xmlDoc = parser.parseFromString(xmlString, "text/xml");
+  const xmlDoc = parser.parseFromString(xmlString, 'text/xml');
 
   // Check for XML parsing errors
-  const parseError = xmlDoc.querySelector("parsererror");
+  const parseError = xmlDoc.querySelector('parsererror');
   if (parseError) {
-      console.error("XML parsing error:", parseError.textContent);
-      return null;
+    console.error('XML parsing error:', parseError.textContent);
+    return null;
   }
 
-  const robotEl = xmlDoc.querySelector("robot");
+  const robotEl = xmlDoc.querySelector('robot');
   if (!robotEl) {
-      console.error("Invalid URDF: No <robot> tag found.");
-      return null;
+    console.error('Invalid URDF: No <robot> tag found.');
+    return null;
   }
 
-  const name = robotEl.getAttribute("name") || "imported_robot";
-  const version = robotEl.getAttribute("version")?.trim() || undefined;
+  const name = robotEl.getAttribute('name') || 'imported_robot';
+  const version = robotEl.getAttribute('version')?.trim() || undefined;
 
-  // Parse Materials
-  const { globalMaterials, linkGazeboMaterials } = parseMaterials(robotEl);
+  let globalMaterials: Record<
+    string,
+    { color?: string; colorRgba?: [number, number, number, number]; texture?: string }
+  >;
+  let linkGazeboMaterials: Record<string, string>;
+  let parsedLinks: Record<string, UrdfLink>;
+  let extraJoints: ReturnType<typeof parseLinks>['extraJoints'];
+  let linkMaterials: Record<
+    string,
+    { color?: string; colorRgba?: [number, number, number, number]; texture?: string }
+  >;
+  let joints: Record<string, UrdfJoint>;
 
-  // Parse Links
-  const { links: parsedLinks, extraJoints, linkMaterials } = parseLinks(robotEl, globalMaterials, linkGazeboMaterials);
+  try {
+    const materialResult = parseMaterials(robotEl);
+    globalMaterials = materialResult.globalMaterials;
+    linkGazeboMaterials = materialResult.linkGazeboMaterials;
+
+    const linkResult = parseLinks(robotEl, globalMaterials, linkGazeboMaterials);
+    parsedLinks = linkResult.links;
+    extraJoints = linkResult.extraJoints;
+    linkMaterials = linkResult.linkMaterials;
+
+    joints = parseJoints(robotEl);
+  } catch (error) {
+    console.error('[URDFParser] Failed to parse URDF document:', error);
+    return null;
+  }
 
   if (Object.keys(parsedLinks).length === 0) {
-      console.error("Invalid URDF: No <link> tags found.");
-      return null;
+    console.error('Invalid URDF: No <link> tags found.');
+    return null;
   }
 
-  // Parse Joints
-  const joints = parseJoints(robotEl);
-
   // Add virtual joints from multi-collision parsing
-  extraJoints.forEach(j => {
-      joints[j.id] = j;
+  extraJoints.forEach((j) => {
+    joints[j.id] = j;
   });
 
   const links = synthesizeMissingExternalParentLinks(parsedLinks, joints);
@@ -180,34 +200,34 @@ export const parseURDF = (xmlString: string): RobotState | null => {
   const rootId = resolveRootLinkId(links, joints);
 
   if (!rootId) {
-      console.error("Invalid URDF: Could not determine a unique root link.");
-      return null;
+    console.error('Invalid URDF: Could not determine a unique root link.');
+    return null;
   }
 
   const urdfInspectionContext = buildUrdfInspectionContext({
-      robotEl,
-      parsedLinks,
-      joints,
-      rootLinkId: rootId,
+    robotEl,
+    parsedLinks,
+    joints,
+    rootLinkId: rootId,
   });
 
   const materials = Object.fromEntries(
-      Object.entries(linkMaterials)
-          .filter(([, material]) => Boolean(material.color || material.colorRgba || material.texture))
-          .map(([linkId, material]) => [linkId, material]),
+    Object.entries(linkMaterials)
+      .filter(([, material]) => Boolean(material.color || material.colorRgba || material.texture))
+      .map(([linkId, material]) => [linkId, material]),
   );
 
   return {
-      name,
-      version,
-      links,
-      joints,
-      rootLinkId: rootId,
-      ...(Object.keys(materials).length > 0 ? { materials } : {}),
-      inspectionContext: {
-          sourceFormat: 'urdf',
-          urdf: urdfInspectionContext,
-      },
-      selection: { type: 'link', id: rootId }
+    name,
+    version,
+    links,
+    joints,
+    rootLinkId: rootId,
+    ...(Object.keys(materials).length > 0 ? { materials } : {}),
+    inspectionContext: {
+      sourceFormat: 'urdf',
+      urdf: urdfInspectionContext,
+    },
+    selection: { type: 'link', id: rootId },
   };
 };

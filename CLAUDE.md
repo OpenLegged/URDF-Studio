@@ -1,6 +1,6 @@
 # URDF Studio Agent Guide
 
-> 最后更新：2026-07-11 | 技术栈：React 19.2 + TypeScript 5.8 + Three.js/R3F + Vite 6.2 + Tailwind CSS 4.1 + Zustand 5
+> 最后更新：2026-08-04 | 技术栈：React 19.2 + TypeScript 5.8 + Three.js/R3F + Vite 6.2 + Tailwind CSS 4.1 + Zustand 5
 > 完整文档索引：[docs/CATALOG.md](docs/CATALOG.md)
 
 URDF Studio 是机器人设计、装配、可视化与导出工作台。核心能力：单模式 Editor 编辑、多 URDF 组装与桥接关节、多格式导入导出（URDF / MJCF / SDF / USD / Xacro / ZIP / .usp）、AI 生成与审阅、PDF/CSV 报告、可复用 react-robot-canvas 画布封装。
@@ -22,9 +22,9 @@ URDF Studio 是机器人设计、装配、可视化与导出工作台。核心�
 ```
 src/
 ├── app/            应用编排层：App shell、viewer 组合、导入导出、canonical source documents、USD hydration
-│   ├── components/ App 级 UI 编排与跨域入口（header/settings/snapshot-preview/unified-viewer/workspace）
-│   ├── hooks/      跨 store / viewer / source document hook（file-export/workspace-mutations）
-│   ├── utils/      App 层辅助逻辑与导入准备 wrapper
+│   ├── components/ App 级 UI 编排与跨域入口（header/settings/snapshot-preview/unified-viewer/workspace/ai/export/snapshot-dialog）
+│   ├── hooks/      跨 store / viewer / source document hook（file-export/workspace-mutations/workspace-source-sync）
+│   ├── utils/      App 层辅助逻辑与导入准备 wrapper（import-preparation/）
 │   └── workers/    App 编排使用的 worker
 ├── features/       业务功能模块
 │   ├── ai-assistant/     AI 生成与审阅
@@ -37,13 +37,14 @@ src/
 │   ├── robot-tree/       文件树与结构树（tree-editor/ + tree-node/）
 │   └── urdf-viewer/      Editor 实现：拓扑/几何/碰撞/测量 + renderer backend + USD runtime + workers
 ├── store/          Zustand 状态层
+│   └── workspace/  workspaceStore 内部模块：bridge/component/topology CRUD、runtime、helpers、types
 ├── shared/         共享组件、3D 基础设施、hooks、i18n、数据、调试桥接、utils、workers
-│   ├── components/ 共享 UI、3D 基础组件与纯 mesh renderer 组件
+│   ├── components/ 共享 UI（ui/）、3D 基础组件（3d/）、DraggableWindow、Panel、reports、纯 mesh renderer 组件
 │   ├── data/       静态数据与内置配置
 │   ├── debug/      调试桥接与验证辅助
 │   ├── hooks/      通用 React hooks
 │   ├── i18n/       本地化文案与类型
-│   ├── utils/      通用工具（含 THREE / DOM / PDF 等）
+│   ├── utils/      通用工具（assembly/ pdf/ reports/ robot/ three/ 等）
 │   └── workers/    共享 worker
 ├── core/           纯逻辑：解析器、robot core、mesh loaders、parse workers、runtime diagnostics
 │   ├── geometry/       几何计算
@@ -123,10 +124,15 @@ scripts/
 - 多 viewer 共享的 interaction/hover/selection lock 必须 owner-scoped 或 ref-counted，acquire/release 对称；read-only/offscreen/snapshot viewer 不得改 canonical selection 或全局 hover lock
 - 桥接弹窗对外入口保持 `features/assembly/components/BridgeCreateModal.tsx`，内部实现放 `components/bridge-create/`
 - 单元测试邻近源码放置（`src/**/*.test.*`）
-- **跨域 Handoff 接收端**：`src/app/hooks/useAssetImportFromUrl.ts`、`src/app/components/BotWorldImportOverlay.tsx` 为 BOT-World 资产导入核心文件；插件激活详见 [docs/file-io.md](docs/file-io.md) §6
+- **跨域 Handoff 接收端**：`src/app/hooks/useAssetImportFromUrl.ts`、`src/app/components/BotWorldImportOverlay.tsx` 为 BOT-World 资产导入核心文件（含 collection batch import）；插件激活详见 [docs/file-io.md](docs/file-io.md) §6
 - **调试接口默认关闭**：`window.__URDF_STUDIO_DEBUG__`、`window.__usdStageLoadDebug*`、`window.__visualizerCollisionLoadDebug*` 等回归调试接口只能在 URL 显式带 `?regressionDebug=1` 时启用；不要仅因 `DEV`、本地开发或普通预览环境暴露。Codex / Claude / 回归脚本需要调试时由脚本加该参数。
 - **修复用户上报的 bug 必须用浏览器实测**：拿到用户反馈的 bug 后，不能凭推理或读代码就判定已修好。必须通过 `npm run dev` 启动应用，并使用 Playwright（`playwright-cli` / `playwright-interactive` skill）走一遍用户复现路径，确认现象消失后才能回复"已修复"。typecheck / 单元测试通过 ≠ bug 修好
 - **浏览器自动化必须清理进程**：使用 Playwright / Puppeteer 或运行浏览器回归脚本后，必须关闭 page、context、browser 和由 agent 启动的 dev server；结束前运行 `node test/usd-viewer/scripts/cleanup-headless.cjs`。如仍有残留，只清理由本次自动化产生的 playwright/puppeteer 临时进程，禁止杀掉用户日常浏览器。
+- **密钥与本地凭据绝不进 git**：AI BYOK 的 `VITE_OPENAI_API_KEY` / `VITE_OPENAI_BASE_URL` / `VITE_OPENAI_MODEL` 及任何 provider key（如 `DIGUA_API_KEY`）只能写在被 `.gitignore` 忽略的 `.env` / `.env.local`；禁止把字面 key 写进源码、文档、`opencode.json`（须用 `{env:VAR}` 引用）、构建产物或任何被跟踪文件。`VITE_*` 会被 Vite 内联进浏览器 bundle（BYOK 设计），仅限本机 dev，且不得在 `URDF_STUDIO_DEV_HOST=0.0.0.0` 下暴露给不可信网络。提交/推送前必须扫描暂存区与未跟踪非忽略文件，命中明文 secret 立即中止本次提交：
+  ```bash
+  { git diff --cached --name-only --diff-filter=ACM; git ls-files --others --exclude-standard; } | sort -u | xargs -r grep -nE 'sk-[A-Za-z0-9]{12,}' 2>/dev/null
+  ```
+  无输出即安全；`.env.local` 被忽略故真实 key 不在扫描范围，若被命中说明 key 已误入跟踪文件，须立刻撤回。不得用 `git add -f .env.local` 强加被忽略文件。
 - **文件规模门禁，禁止为凑行数硬拆内聚逻辑**：单文件/函数长度、复杂度由 `google-style:check` 的 exact-count baseline ratchet 检查；存量 grandfather、禁止净新增，债务下降必须同步收紧 baseline。`file-name-snake-case` 是 retired 信息项，不再阻断当前项目约定。多数超长解析器/数值求解器是**真实领域内聚**，硬拆成互传 ref 的碎片只损害 debuggability；只对存在"可干净抽离附带膨胀"的文件定向重构。手写 C-ABI emscripten 源（`src/core/loaders/wasm/*.cpp`，单 TU 设计）、`public/wasm/**` 生成产物、`**/*.generated.*`、`third_party/**`、`urdf-viewer/runtime/**` 有意豁免，详见 [docs/architecture.md](docs/architecture.md) §13
 
 存量例外与设计哲学（debuggability first、Linux 哲学：简单数据流优于抽象层、规模门禁与豁免）详见 [docs/architecture.md](docs/architecture.md) §3、§9-10、§13。
@@ -144,7 +150,7 @@ scripts/
 - 循环依赖是边界错位信号：优先把双方共享 DTO/contract 下沉到中性模块，或让组合方注入实现，不新增 barrel/re-export 遮住环。
 - 拆分后必须能用一句话指出每个模块的 owner、输入输出、失败方式和 cleanup 责任；否则说明边界仍不成立。
 
-### 当前状态与债务地图（2026-07-11）
+### 当前状态与债务地图（2026-08-04）
 
 `npm run deps:check` 当前为 0 个分层违规、0 个 app feature deep import、0 个 import cycle，`dependency_boundaries_baseline.json` 两个清单均为空。已完成：
 
@@ -162,11 +168,11 @@ P0 内部的执行顺序是：可能导致错误 mutation/history 或多 viewer 
 
 - P0 `src/lib/components/RobotCanvas.tsx` / `packages/react-robot-canvas/`：当前还剩 `RobotModel` / `JointInteraction` 两条 feature allowlist；继续抽取 store-free renderer kernel 和通用 joint interaction primitive，将 camera projection、MJCF world visibility 与 selection 作为显式 props/ports，`urdf-viewer` 只保留 Zustand adapter。
 - P1 `src/features/urdf-viewer/hooks/useViewerController.ts`：闭环预览 scheduler 已抽离；继续按 selection/tool state、projection-derived state、camera/snapshot 等独立生命周期抽可测试 controller/纯派生，保留薄 facade，禁止重新散落 worker/RAF refs。
-- P1 `src/app/App.tsx` / `AppLayout.tsx`：document load/import、viewer derivation 与 snapshot workflow 已抽离，`AppContent` 当前约 453 代码行、`AppLayout` 约 613 代码行；下一步只抽有明确 owner 的 overlay/panel 组合，不把状态机切成互相捕获 ref 的碎 hook。
+- P1 `src/app/App.tsx` / `AppLayout.tsx`：document load/import、viewer derivation 与 snapshot workflow 已抽离，`AppContent` 当前约 594 代码行、`AppLayout` 约 731 代码行；下一步只抽有明确 owner 的 overlay/panel 组合，不把状态机切成互相捕获 ref 的碎 hook。
 - P1 `src/app/components/UnifiedViewer.tsx`：retained scene 生命周期已抽离；继续把 scene/view mode 派生和 overlays/panels render 分开，但 backend strategy 继续不得接触 mutation/selection/history。
 - P1 `src/features/urdf-viewer/workers/usdOffscreenViewer.worker.ts`：interaction state 与 deferred snapshot owner 已抽离；后续再按独立生命周期抽 stage/cache、picking 算法与 preload/load pipeline，entry 保留 dispatch 和统一销毁，不引入万能 manager/class。
-- P1 `SettingsModal.tsx` / `SnapshotDialog.tsx`：Snapshot capture config model 已抽离且主文件低于 800 代码行；继续分离 Settings pane model 与 Snapshot preview/layout render，让 UI 只消费窄 props 和稳定 command；共享是因为真实合约，不是因为 JSX 长得像。
-- P2 `src/store/workspace/runtime.ts`：`createWorkspaceRuntime` 约 433 行但共享 transaction/history/joint-motion 不变量；只在能以窄 command contract 分开且不复制可变闭包状态时拆分。
+- P1 `SnapshotDialog.tsx`：Settings pane model 与 Snapshot capture config model 已抽离；`SettingsModal.tsx` 已收敛至约 257 行，`SnapshotDialog.tsx` 约 730 行；继续分离 Snapshot preview/layout render，让 UI 只消费窄 props 和稳定 command；共享是因为真实合约，不是因为 JSX 长得像。
+- P2 `src/store/workspace/runtime.ts`：`createWorkspaceRuntime` 约 561 行但共享 transaction/history/joint-motion 不变量；只在能以窄 command contract 分开且不复制可变闭包状态时拆分。
 
 以上行数只是定位信号，不是验收条件。验收看依赖是否单向、数据是否单一所有、测试是否可稳定保护行为，以及调试时能否沿简单数据流定位失败。
 
@@ -182,16 +188,19 @@ P0 内部的执行顺序是：可能导致错误 mutation/history 或多 viewer 
 
 ## 状态管理
 
-| Store                          | 职责                                                                                       |
-| ------------------------------ | ------------------------------------------------------------------------------------------ |
-| `workspaceStore`               | 唯一可写 `AssemblyState`、component/bridge/entity CRUD、单一 history/activity、transaction |
-| `uiStore`                      | 主题、语言、侧栏、面板、显示选项（含持久化）                                               |
-| `selectionStore`               | 唯一 `WorkspaceSelection`，覆盖 assembly/component/bridge/link/joint/tendon 与 hover/focus |
-| `assetsStore`                  | mesh、texture、library templates、component source drafts、USD snapshot/export cache       |
-| `collisionTransformStore`      | 碰撞 gizmo 瞬时 pending transform                                                          |
-| `jointInteractionPreviewStore` | 跨 viewer 关节交互预览                                                                     |
+| Store                          | 职责                                                                                                  |
+| ------------------------------ | ----------------------------------------------------------------------------------------------------- |
+| `workspaceStore`               | 唯一可写 `AssemblyState`、component/bridge/entity CRUD、单一 history/activity、transaction            |
+| `uiStore`                      | 主题、语言、侧栏、面板、显示选项（含持久化）                                                          |
+| `selectionStore`               | 唯一 `WorkspaceSelection`，覆盖 assembly/component/bridge/link/joint/tendon 与 hover/focus            |
+| `assetsStore`                  | mesh、texture、library templates、component source drafts、USD snapshot/export cache                  |
+| `collisionTransformStore`      | 碰撞 gizmo 瞬时 pending transform                                                                     |
+| `jointInteractionPreviewStore` | 跨 viewer 关节交互预览                                                                                |
+| `jointPickSessionStore`        | 桥接关节创建时的拾取会话：side/mode/pending snap、feature sample、parent/child frame 与 relation 同步 |
 
 `RobotData` 只允许存在于 component 或只读 projection；不得在 Zustand 顶层恢复第二份可写 `name/links/joints/components`。`assetsStore` 拥有 draft/cache/blob 等持久或可订阅状态，`app/hooks` / `app/utils` 拥有 parse/validate/apply/invalidate 编排；状态存放不等于 store action 可以越过 app 拥有业务 workflow。跨 store 协调放 `app/hooks/*`；USD 中间态优先落在 `assetsStore` 或 `app/utils/*`。
+
+`jointPickSessionStore` 是会话级瞬态 store，不通过 `src/store/index.ts` barrel 导出，由 `features/assembly/` 和 `features/urdf-viewer/` 直接 import。
 
 ## 开发服务器访问
 

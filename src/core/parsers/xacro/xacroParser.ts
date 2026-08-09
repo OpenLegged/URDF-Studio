@@ -60,6 +60,7 @@ const EXPRESSION_KEYWORDS = new Map<string, string>([
   ['True', 'true'],
   ['False', 'false'],
   ['None', 'null'],
+  ['pi', String(Math.PI)],
 ]);
 
 function resolveContextValue(identifier: string, ctx: XacroContext): string | undefined {
@@ -81,7 +82,9 @@ function toJavaScriptLiteral(value: string): string {
   if (trimmed === 'None') return 'null';
 
   if (/^[+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?$/.test(trimmed)) {
-    return trimmed;
+    // Parentheses keep unary operators authored around a variable from merging
+    // with a signed property value (for example `-${negative_limit}`).
+    return `(${trimmed})`;
   }
 
   return JSON.stringify(trimmed);
@@ -205,9 +208,7 @@ function normalizeXacroRobotRootTags(content: string): string {
 }
 
 function stripRobotWrapperTags(content: string): string {
-  return content
-    .replace(ROBOT_WRAPPER_OPEN_TAG_RE, '')
-    .replace(ROBOT_WRAPPER_CLOSE_TAG_RE, '');
+  return content.replace(ROBOT_WRAPPER_OPEN_TAG_RE, '').replace(ROBOT_WRAPPER_CLOSE_TAG_RE, '');
 }
 
 /**
@@ -456,14 +457,13 @@ function findFileInMap(filename: string, ctx: XacroContext): string | null {
  */
 function processIncludes(content: string, ctx: XacroContext): string {
   // Match both self-closing and block-style include tags.
-  const includeRegex =
-    /<xacro:include\b([^>]*?)(?:\/>|>\s*<\/xacro:include>)/g;
+  const includeRegex = /<xacro:include\b([^>]*?)(?:\/>|>\s*<\/xacro:include>)/g;
 
   return content.replace(includeRegex, (_match, attrsStr) => {
     const attrs = parseXmlAttributeMap(attrsStr);
     const filename = attrs.get('filename');
     if (!filename) {
-      return '<!-- Include ignored: missing filename -->';
+      throw new Error('[Xacro] Include element is missing a filename attribute.');
     }
     const includeNamespace = attrs.get('ns')?.trim() ?? '';
     const resolvedFilename = substituteVariables(filename, ctx);
@@ -472,8 +472,7 @@ function processIncludes(content: string, ctx: XacroContext): string {
     if (foundPath && ctx.fileMap[foundPath]) {
       const normalizedFoundPath = normalizePath(foundPath);
       if (ctx.includeStack.includes(normalizedFoundPath)) {
-        console.error(`[Xacro] Circular include detected: ${resolvedFilename}`);
-        return `<!-- Circular include ignored: ${resolvedFilename} -->`;
+        throw new Error(`[Xacro] Circular include detected: ${resolvedFilename}`);
       }
 
       // Recursively process the included file
@@ -500,16 +499,13 @@ function processIncludes(content: string, ctx: XacroContext): string {
       }
 
       // Remove robot tags from included content to avoid nesting
-      includedContent = includedContent
-        .replace(/<\?xml[^?]*\?>/g, '');
+      includedContent = includedContent.replace(/<\?xml[^?]*\?>/g, '');
       includedContent = stripRobotWrapperTags(includedContent);
 
       return includedContent;
     }
 
-    // If file not found, return empty (or could return a comment)
-    console.error(`[Xacro] Include file not found: ${resolvedFilename}`);
-    return `<!-- Include not found: ${resolvedFilename} -->`;
+    throw new Error(`[Xacro] Include file not found: ${resolvedFilename}`);
   });
 }
 
@@ -636,7 +632,7 @@ function processConditionals(content: string, ctx: XacroContext): string {
 
     const unresolvedArgOnly = value.match(/^\$\(arg\s+([^)]+)\)$/);
     if (unresolvedArgOnly) {
-      return false;
+      throw new Error(`[Xacro] Unresolved conditional expression: ${rawCondition}`);
     }
 
     // Avoid silently taking a branch when the condition still contains unresolved
@@ -683,7 +679,7 @@ function cleanupXacroElements(content: string): string {
   // Remove xacro:macro definitions (they've been used for expansion)
   content = content.replace(/<xacro:macro[^>]*>[\s\S]*?<\/xacro:macro>/g, '');
 
-  const unresolvedXacroTags = Array.from(content.matchAll(/<xacro:([^\s/>]+)/g))
+  const unresolvedXacroTags = Array.from(content.matchAll(/<\s*\/?\s*xacro:([^\s/>]+)/g))
     .map((match) => match[1])
     .filter(Boolean);
   if (unresolvedXacroTags.length > 0) {
@@ -702,6 +698,28 @@ function cleanupXacroElements(content: string): string {
     const preview = uniqueUnresolvedArgs.slice(0, 5).join(', ');
     throw new Error(
       `[Xacro] Unresolved substitution arguments remain after expansion (${uniqueUnresolvedArgs.length}): ${preview}`,
+    );
+  }
+
+  const unresolvedExpressions = Array.from(content.matchAll(/\$\{([^}]*)\}/g)).map(
+    (match) => match[1]?.trim() || '<empty>',
+  );
+  if (unresolvedExpressions.length > 0) {
+    const uniqueUnresolvedExpressions = Array.from(new Set(unresolvedExpressions));
+    const preview = uniqueUnresolvedExpressions.slice(0, 5).join(', ');
+    throw new Error(
+      `[Xacro] Unresolved substitution expressions remain after expansion (${uniqueUnresolvedExpressions.length}): ${preview}`,
+    );
+  }
+
+  const unresolvedSubstitutions = Array.from(content.matchAll(/\$\(([^)]*)\)/g)).map(
+    (match) => match[1]?.trim() || '<empty>',
+  );
+  if (unresolvedSubstitutions.length > 0) {
+    const uniqueUnresolvedSubstitutions = Array.from(new Set(unresolvedSubstitutions));
+    const preview = uniqueUnresolvedSubstitutions.slice(0, 5).join(', ');
+    throw new Error(
+      `[Xacro] Unresolved substitutions remain after expansion (${uniqueUnresolvedSubstitutions.length}): ${preview}`,
     );
   }
 
@@ -835,13 +853,13 @@ export function parseXacro(
   fileMap: XacroFileMap = {},
   basePath: string = '',
 ): RobotState | null {
-  try {
-    const urdfContent = processXacro(content, args, fileMap, basePath);
-    return parseURDF(urdfContent);
-  } catch (error) {
-    console.error('[Xacro Parser] Failed to parse xacro:', error);
-    return null;
+  const urdfContent = processXacro(content, args, fileMap, basePath);
+  const robot = parseURDF(urdfContent);
+  if (!robot) {
+    throw new Error('[Xacro] Processed output is not valid URDF.');
   }
+
+  return robot;
 }
 
 /**

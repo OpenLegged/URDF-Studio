@@ -14,15 +14,8 @@ export function canTransformGeometry(
   }
 
   if (subType === 'visual') {
-    return visibility.showVisual && !visibility.showCollision;
+    return visibility.showVisual;
   }
 
   return false;
-}
-
-export function shouldNotifyVisualTransformLock(
-  wasShowingCollision: boolean,
-  isShowingCollision: boolean,
-): boolean {
-  return !wasShowingCollision && isShowingCollision;
 }
