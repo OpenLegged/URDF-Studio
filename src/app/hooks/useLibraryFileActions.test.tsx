@@ -31,10 +31,6 @@ function renderLibraryActions(
       availableFiles: assets.availableFiles,
       selectedFile: assets.selectedFile,
       assemblyState: useWorkspaceStore.getState().workspace,
-      removeRobotFile: assets.removeRobotFile,
-      removeRobotFolder: assets.removeRobotFolder,
-      renameRobotFolder: assets.renameRobotFolder,
-      clearRobotLibrary: assets.clearRobotLibrary,
       clearSelection: () => {},
       uploadAsset: () => {},
       openLibraryExportDialog: () => {},
@@ -198,26 +194,26 @@ test('folder rename rolls workspace source paths back when the asset rename fail
     format: 'urdf',
     content: '<robot name="robot" />',
   };
+  const conflict: RobotFile = {
+    name: 'library/existing/other.urdf',
+    format: 'urdf',
+    content: '<robot name="other" />',
+  };
   const workspace = createSingleComponentWorkspace(robot('robot'), {
     componentId: 'robot',
     sourceFile: target.name,
   });
   useWorkspaceStore.getState().replaceWorkspace(workspace, { resetHistory: true });
   useWorkspaceStore.setState({ history: { past: [], future: [], activity: [] } });
-  useAssetsStore.setState({ availableFiles: [target], selectedFile: target });
+  useAssetsStore.setState({ availableFiles: [target, conflict], selectedFile: target });
 
-  const result = renderLibraryActions({
-    renameRobotFolder: () => ({ ok: false, reason: 'conflict' }),
-  }).handleRenameLibraryFolder('library/old', 'new');
+  const result = renderLibraryActions().handleRenameLibraryFolder('library/old', 'existing');
 
   assert.deepEqual(result, { ok: false, reason: 'conflict' });
-  assert.equal(
-    useWorkspaceStore.getState().workspace.components.robot?.sourceFile,
-    target.name,
-  );
+  assert.equal(useWorkspaceStore.getState().workspace.components.robot?.sourceFile, target.name);
   assert.equal(useWorkspaceStore.getState().transaction, null);
   assert.equal(useWorkspaceStore.getState().history.past.length, 0);
-  assert.deepEqual(useAssetsStore.getState().availableFiles, [target]);
+  assert.deepEqual(useAssetsStore.getState().availableFiles, [target, conflict]);
 });
 
 test('folder rename rolls the asset store back when workspace commit is rejected', () => {
@@ -250,14 +246,61 @@ test('folder rename rolls the asset store back when workspace commit is rejected
     useWorkspaceStore.setState({ commitWorkspaceTransaction: originalCommit });
   }
 
-  assert.equal(
-    useWorkspaceStore.getState().workspace.components.robot?.sourceFile,
-    target.name,
-  );
+  assert.equal(useWorkspaceStore.getState().workspace.components.robot?.sourceFile, target.name);
   assert.equal(useWorkspaceStore.getState().transaction, null);
   assert.deepEqual(
     useAssetsStore.getState().availableFiles.map((file) => file.name),
     [target.name],
   );
   assert.deepEqual(Object.keys(useAssetsStore.getState().allFileContents), [target.name]);
+});
+
+test('library file deletion rolls assets back and does not revoke blobs when workspace commit is rejected', () => {
+  const target: RobotFile = {
+    name: 'library/owned.urdf',
+    format: 'urdf',
+    content: '<robot name="owned" />',
+  };
+  const workspace = createSingleComponentWorkspace(robot('owned'), {
+    componentId: 'owned',
+    sourceFile: target.name,
+  });
+  const store = useWorkspaceStore.getState();
+  store.replaceWorkspace(workspace, { resetHistory: true });
+  useWorkspaceStore.setState({ history: { past: [], future: [], activity: [] } });
+  useAssetsStore.setState({
+    availableFiles: [target],
+    selectedFile: target,
+    assets: { [target.name]: 'blob:owned-urdf' },
+  });
+
+  const revokedUrls: string[] = [];
+  const originalRevokeObjectUrl = URL.revokeObjectURL;
+  const originalCommit = store.commitWorkspaceTransaction;
+  Object.defineProperty(URL, 'revokeObjectURL', {
+    configurable: true,
+    value: (url: string) => {
+      revokedUrls.push(url);
+    },
+  });
+  useWorkspaceStore.setState({ commitWorkspaceTransaction: () => false });
+
+  try {
+    assert.throws(
+      () => renderLibraryActions().handleDeleteLibraryFile(target),
+      /Failed to commit library file removal/,
+    );
+  } finally {
+    useWorkspaceStore.setState({ commitWorkspaceTransaction: originalCommit });
+    Object.defineProperty(URL, 'revokeObjectURL', {
+      configurable: true,
+      value: originalRevokeObjectUrl,
+    });
+  }
+
+  assert.ok(useWorkspaceStore.getState().workspace.components.owned);
+  assert.equal(useWorkspaceStore.getState().transaction, null);
+  assert.deepEqual(useAssetsStore.getState().availableFiles, [target]);
+  assert.deepEqual(useAssetsStore.getState().assets, { [target.name]: 'blob:owned-urdf' });
+  assert.deepEqual(revokedUrls, []);
 });

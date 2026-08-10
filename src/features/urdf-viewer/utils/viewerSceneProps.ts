@@ -1,13 +1,13 @@
 import type { AssemblyState, RobotFile } from '@/types';
 import type { AssemblyScenePlacement, AssemblySceneProjection } from '@/core/robot';
 import type { WorkspaceSelection } from '@/types';
-import type { ViewerController } from '../hooks/useViewerController';
+import type { ViewerSceneController } from '../hooks/useViewerController';
 import type { ToolMode, ViewerProps, ViewerDocumentLoadEvent, ViewerSceneMode } from '../types';
 import type { RuntimeRobotObject } from '@/shared/components/3d/runtimeRobotTypes';
 
 interface BuildViewerScenePropsArgs {
   resolvedTheme?: 'light' | 'dark';
-  controller: ViewerController;
+  controller: ViewerSceneController;
   active?: boolean;
   sourceFile?: RobotFile | null;
   sourceFormat?: ViewerProps['sourceFormat'];
@@ -71,7 +71,7 @@ export function buildViewerSceneProps({
   retainedRobot,
   onRuntimeRobotLoaded,
   sourceFilePath,
-  groundPlaneOffset = controller.groundPlaneOffset,
+  groundPlaneOffset = controller.optionsPanel.groundPlaneOffset,
   mode,
   selection,
   hoveredSelection,
@@ -122,7 +122,7 @@ export function buildViewerSceneProps({
     hoveredSelection,
     interactionEnabled,
     hoverSelectionEnabled,
-    onHover: hoverSelectionEnabled ? controller.handleHoverWrapper : undefined,
+    onHover: hoverSelectionEnabled ? controller.interaction.handleHoverWrapper : undefined,
     onMeshSelect,
     onUpdate,
     onJointMotionCommit,
@@ -146,6 +146,6 @@ export function buildViewerSceneProps({
     onBridgeTransform,
     pendingAutoGroundComponentIds,
     onAssemblyComponentAutoGroundResolved,
-    toolMode: controller.toolMode,
+    toolMode: controller.toolbar.toolMode,
   };
 }

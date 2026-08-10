@@ -11,20 +11,20 @@
       "note": "src/** files over 800 code lines (blank/comment lines skipped). Exact count synchronized on 2026-08-08 after targeted editor, property, joint, and viewer lifecycle splits; --check rejects both increases and stale headroom. Avoid splitting cohesive parsers/solvers only to satisfy the counter."
     },
     "function-too-long": {
-      "max": 113,
-      "note": "Function bodies over 200 code lines in src/**. Exact count synchronized on 2026-07-16 (post-merge re-sync); ratchet down when a function has a clean ownership split."
+      "max": 112,
+      "note": "Function bodies over 200 code lines in src/**. Exact count tightened on 2026-08-09 after dialog and workflow splits; ratchet down when a function has a clean ownership split."
     },
     "function-too-complex": {
-      "max": 175,
-      "note": "Cyclomatic complexity over 20 in src/**. Parser/solver heavy; ratchet down only."
+      "max": 174,
+      "note": "Cyclomatic complexity over 20 in src/**. Exact count tightened on 2026-08-09 after viewer adapter simplification; ratchet down only."
     },
     "too-many-params": {
-      "max": 126,
-      "note": "Functions with more than 4 params in src/**. Exact count synchronized on 2026-08-08 after targeted lifecycle splits. Prefer an options object; ratchet down only."
+      "max": 123,
+      "note": "Functions with more than 4 params in src/**. Exact count synchronized on 2026-08-09 after export and viewer lifecycle ports moved to options objects. Prefer an options object; ratchet down only."
     },
     "too-deep": {
-      "max": 8,
-      "note": "Block nesting deeper than 4 in src/**. Ratchet down only."
+      "max": 7,
+      "note": "Block nesting deeper than 4 in src/**. Exact count tightened on 2026-08-09 after workflow extraction; ratchet down only."
     },
     "nullable-undefined-type-alias": {
       "max": 5,

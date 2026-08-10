@@ -65,46 +65,50 @@ function createComponentRoot() {
   return { dom, container, root };
 }
 
-function createController() {
+function createViewerJointsPanelProps() {
   return {
-    robot: {
-      joints: {
-        R_thigh_joint: {
-          id: 'R_thigh_joint',
-          name: 'R_thigh_joint',
-          jointType: 'revolute',
-          limit: { lower: -1.57, upper: 3.49, effort: 1, velocity: 1 },
+    layout: {
+      containerRef: createRef<HTMLDivElement>(),
+      optionsPanelRef: createRef<HTMLDivElement>(),
+      jointPanelRef: createRef<HTMLDivElement>(),
+      jointPanelPos: null,
+      handleMouseDown: () => {},
+    },
+    jointsPanel: {
+      robot: {
+        joints: {
+          R_thigh_joint: {
+            id: 'R_thigh_joint',
+            name: 'R_thigh_joint',
+            jointType: 'revolute',
+            limit: { lower: -1.57, upper: 3.49, effort: 1, velocity: 1 },
+          },
         },
       },
-    },
-    jointPanelRobot: {
-      joints: {
-        R_thigh_joint: {
-          id: 'R_thigh_joint',
-          name: 'R_thigh_joint',
-          jointType: 'revolute',
-          limit: { lower: -1.57, upper: 3.49, effort: 1, velocity: 1 },
+      jointPanelRobot: {
+        joints: {
+          R_thigh_joint: {
+            id: 'R_thigh_joint',
+            name: 'R_thigh_joint',
+            jointType: 'revolute',
+            limit: { lower: -1.57, upper: 3.49, effort: 1, velocity: 1 },
+          },
         },
       },
+      handleResetJoints: () => {},
+      angleUnit: 'rad' as const,
+      setAngleUnit: () => {},
+      isJointsCollapsed: false,
+      toggleJointsCollapsed: () => {},
+      jointPanelStore: createJointPanelStore({
+        jointAngles: { R_thigh_joint: 0 },
+      }),
+      setActiveJoint: () => {},
+      handleJointAngleChange: () => {},
+      handleJointChangeCommit: () => {},
+      handleSelectWrapper: () => {},
+      handleHoverWrapper: () => {},
     },
-    containerRef: createRef<HTMLDivElement>(),
-    optionsPanelRef: createRef<HTMLDivElement>(),
-    jointPanelRef: createRef<HTMLDivElement>(),
-    jointPanelPos: null,
-    handleMouseDown: () => {},
-    handleResetJoints: () => {},
-    angleUnit: 'rad' as const,
-    setAngleUnit: () => {},
-    isJointsCollapsed: false,
-    toggleJointsCollapsed: () => {},
-    jointPanelStore: createJointPanelStore({
-      jointAngles: { R_thigh_joint: 0 },
-    }),
-    setActiveJoint: () => {},
-    handleJointAngleChange: () => {},
-    handleJointChangeCommit: () => {},
-    handleSelectWrapper: () => {},
-    handleHoverWrapper: () => {},
   };
 }
 
@@ -115,7 +119,7 @@ function renderViewerJointsPanel(
   return act(async () => {
     root.render(
       React.createElement(ViewerJointsPanel as unknown as React.FC<any>, {
-        controller: createController(),
+        ...createViewerJointsPanelProps(),
         showJointPanel: true,
         setShowJointPanel: () => {},
         lang: 'en',

@@ -68,6 +68,7 @@ function createTarget(id: string, linkId: string, linkName: string): CollisionTa
     geometry: {
       type: GeometryType.CYLINDER,
       dimensions: { x: 0.1, y: 0.4, z: 0.1 },
+      color: '#ffffff',
       origin: { xyz: { x: 0, y: 0, z: 0 }, rpy: { r: 0, p: 0, y: 0 } },
     },
     isPrimary: true,

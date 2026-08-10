@@ -138,7 +138,8 @@ test('exportInspectionReportPdf renders and cleans up the shared report containe
   let capturedLogoSrc = '';
   let capturedLogoTransform = '';
   let capsuleCount = -1;
-  let issueMetaStyle: CSSStyleDeclaration | null = null;
+  let issueMetaBorderRadius = '';
+  let issueMetaBackgroundColor = '';
 
   __setPdfGenerationDepsLoaderForTests(async () => ({
     html2canvas: (async (element: HTMLElement) => {
@@ -157,10 +158,12 @@ test('exportInspectionReportPdf renders and cleans up the shared report containe
       assert.ok(issueCard);
       issueCard.getBoundingClientRect = () =>
         ({ top: 850, bottom: 1150, width: 700, height: 300 }) as DOMRect;
-      issueMetaStyle =
+      const issueMetaStyle =
         Array.from(element.querySelectorAll<HTMLElement>('div')).find(
           (node) => node.textContent === 'profile_a.item_a',
-        )?.style ?? null;
+        )?.style;
+      issueMetaBorderRadius = issueMetaStyle?.borderRadius ?? '';
+      issueMetaBackgroundColor = issueMetaStyle?.backgroundColor ?? '';
       return {
         width: 800,
         height: 1800,
@@ -239,8 +242,8 @@ test('exportInspectionReportPdf renders and cleans up the shared report containe
     assert.match(capturedLogoSrc, /\/logos\/logo\.png$/);
     assert.equal(capturedLogoTransform, 'translateY(4px)');
     assert.equal(capsuleCount, 0);
-    assert.equal(issueMetaStyle?.borderRadius, '');
-    assert.equal(issueMetaStyle?.backgroundColor, '');
+    assert.equal(issueMetaBorderRadius, '');
+    assert.equal(issueMetaBackgroundColor, '');
     assert.deepEqual(pageSlices, [
       { startY: 0, height: 850 },
       { startY: 850, height: 950 },

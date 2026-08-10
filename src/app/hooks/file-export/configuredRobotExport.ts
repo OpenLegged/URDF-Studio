@@ -54,14 +54,24 @@ function resolveRosGazeboProfile(config: ExportDialogConfig['xacro']): RosGazebo
   return config.gazeboBackend === 'gz' ? 'ros2_gz' : 'ros2';
 }
 
-type AddMeshesToZip = (
-  robot: RobotState,
-  zip: JSZip,
-  compressOptions?: { compressSTL: boolean; stlQuality: number },
-  extraMeshFiles?: Map<string, Blob>,
-  skipMeshPaths?: ReadonlySet<string>,
-  onProgress?: (progress: { completed: number; total: number; currentFile: string }) => void,
-) => Promise<AddRobotAssetsToZipResult>;
+interface AddMeshesToZipOptions {
+  compressOptions?: { compressSTL: boolean; stlQuality: number };
+  extraMeshFiles?: Map<string, Blob>;
+  onProgress?: (progress: { completed: number; total: number; currentFile: string }) => void;
+  robot: RobotState;
+  skipMeshPaths?: ReadonlySet<string>;
+  zip: JSZip;
+}
+
+type AddMeshesToZip = (options: AddMeshesToZipOptions) => Promise<AddRobotAssetsToZipResult>;
+
+interface BuildSourcePreservingExportContentOptions {
+  currentRobot: RobotState;
+  format: 'urdf' | 'mjcf' | 'sdf' | 'xacro';
+  generatedContent: string;
+  options?: { useRelativePaths?: boolean; preferSourceVisualMeshes?: boolean };
+  target: ExportTarget;
+}
 
 interface ExecuteConfiguredRobotExportParams {
   addMeshesToZip: AddMeshesToZip;
@@ -69,11 +79,7 @@ interface ExecuteConfiguredRobotExportParams {
   boxFaceFallbackWarningLabels: BoxFaceFallbackWarningLabels;
   buildBomCsv: (robot: RobotState) => string;
   buildSourcePreservingExportContent: (
-    format: 'urdf' | 'mjcf' | 'sdf' | 'xacro',
-    target: ExportTarget,
-    currentRobot: RobotState,
-    generatedContent: string,
-    options?: { useRelativePaths?: boolean; preferSourceVisualMeshes?: boolean },
+    options: BuildSourcePreservingExportContentOptions,
   ) => string | null;
   config: ExportDialogConfig;
   createProgressReporter: (
@@ -275,7 +281,12 @@ export async function executeConfiguredRobotExport({
     });
     archiveRoot.file(
       `${exportName}.xml`,
-      buildSourcePreservingExportContent('mjcf', target, robot, generatedMjcfContent) ??
+      buildSourcePreservingExportContent({
+        format: 'mjcf',
+        target,
+        currentRobot: robot,
+        generatedContent: generatedMjcfContent,
+      }) ??
         generatedMjcfContent,
     );
     if (includeMeshes) {
@@ -289,14 +300,14 @@ export async function executeConfiguredRobotExport({
         },
       );
 
-      const meshPackagingResult = await addMeshesToZip(
+      const meshPackagingResult = await addMeshesToZip({
         robot,
-        archiveRoot,
-        { compressSTL, stlQuality },
+        zip: archiveRoot,
+        compressOptions: { compressSTL, stlQuality },
         extraMeshFiles,
-        mjcfMeshExport.convertedSourceMeshPaths,
-        createAssetProgressCallback(reportProgress, t, 4),
-      );
+        skipMeshPaths: mjcfMeshExport.convertedSourceMeshPaths,
+        onProgress: createAssetProgressCallback(reportProgress, t, 4),
+      });
       assetPackagingFailures.push(...meshPackagingResult.failedAssets);
       addArchiveFilesToZip(archiveRoot, 'meshes', mjcfMeshExport.archiveFiles);
     }
@@ -344,16 +355,16 @@ export async function executeConfiguredRobotExport({
           const generatedUrdfContent = generateURDF(exportRobot, generatedUrdfOptions);
           return (
             (boxFaceFallbackCount === 0
-              ? buildSourcePreservingExportContent(
-                  'urdf',
+              ? buildSourcePreservingExportContent({
+                  format: 'urdf',
                   target,
-                  exportRobot,
-                  generatedUrdfContent,
-                  {
+                  currentRobot: exportRobot,
+                  generatedContent: generatedUrdfContent,
+                  options: {
                     useRelativePaths,
                     preferSourceVisualMeshes,
                   },
-                )
+                })
               : null) ?? generatedUrdfContent
           );
         })();
@@ -373,14 +384,13 @@ export async function executeConfiguredRobotExport({
         },
       );
 
-      const meshPackagingResult = await addMeshesToZip(
-        exportRobot,
-        archiveRoot,
-        { compressSTL, stlQuality },
+      const meshPackagingResult = await addMeshesToZip({
+        robot: exportRobot,
+        zip: archiveRoot,
+        compressOptions: { compressSTL, stlQuality },
         extraMeshFiles,
-        undefined,
-        createAssetProgressCallback(reportProgress, t, 3),
-      );
+        onProgress: createAssetProgressCallback(reportProgress, t, 3),
+      });
       assetPackagingFailures.push(...meshPackagingResult.failedAssets);
     }
     throwForAssetPackagingFailures(assetPackagingFailures);
@@ -413,7 +423,12 @@ export async function executeConfiguredRobotExport({
     });
     archiveRoot.file(
       'model.sdf',
-      buildSourcePreservingExportContent('sdf', target, sdfRobot, generatedSdfContent) ??
+      buildSourcePreservingExportContent({
+        format: 'sdf',
+        target,
+        currentRobot: sdfRobot,
+        generatedContent: generatedSdfContent,
+      }) ??
         generatedSdfContent,
     );
     archiveRoot.file(
@@ -431,14 +446,13 @@ export async function executeConfiguredRobotExport({
         },
       );
 
-      const meshPackagingResult = await addMeshesToZip(
-        sdfRobot,
-        archiveRoot,
-        { compressSTL, stlQuality },
+      const meshPackagingResult = await addMeshesToZip({
+        robot: sdfRobot,
+        zip: archiveRoot,
+        compressOptions: { compressSTL, stlQuality },
         extraMeshFiles,
-        undefined,
-        createAssetProgressCallback(reportProgress, t, 3),
-      );
+        onProgress: createAssetProgressCallback(reportProgress, t, 3),
+      });
       assetPackagingFailures.push(...meshPackagingResult.failedAssets);
     }
     throwForAssetPackagingFailures(assetPackagingFailures);
@@ -502,8 +516,14 @@ export async function executeConfiguredRobotExport({
       : ensureXacroNamespace(generatedXacroBaseUrdf);
     const xacroContent =
       (boxFaceFallbackCount === 0
-        ? buildSourcePreservingExportContent('xacro', target, exportRobot, generatedXacroContent, {
-            useRelativePaths,
+        ? buildSourcePreservingExportContent({
+            format: 'xacro',
+            target,
+            currentRobot: exportRobot,
+            generatedContent: generatedXacroContent,
+            options: {
+              useRelativePaths,
+            },
           })
         : null) ?? generatedXacroContent;
     archiveRoot.file(`${exportName}.urdf.xacro`, xacroContent);
@@ -518,14 +538,13 @@ export async function executeConfiguredRobotExport({
         },
       );
 
-      const meshPackagingResult = await addMeshesToZip(
-        exportRobot,
-        archiveRoot,
-        { compressSTL, stlQuality },
+      const meshPackagingResult = await addMeshesToZip({
+        robot: exportRobot,
+        zip: archiveRoot,
+        compressOptions: { compressSTL, stlQuality },
         extraMeshFiles,
-        undefined,
-        createAssetProgressCallback(reportProgress, t, 3),
-      );
+        onProgress: createAssetProgressCallback(reportProgress, t, 3),
+      });
       assetPackagingFailures.push(...meshPackagingResult.failedAssets);
     }
     throwForAssetPackagingFailures(assetPackagingFailures);

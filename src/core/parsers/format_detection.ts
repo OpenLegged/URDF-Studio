@@ -1,4 +1,4 @@
-import { isMJCF } from './mjcf';
+import { isMJCF } from './mjcf/mjcfParser';
 import { looksLikeMJCFSourceDocument } from './mjcf/mjcfXml';
 import { isSDF } from './sdf/sdfParser';
 import { isUSDA } from './usd';
@@ -7,14 +7,7 @@ import { isXacro } from './xacro';
 export type RobotDefinitionFormat = 'urdf' | 'mjcf' | 'usd' | 'xacro' | 'sdf';
 
 const USD_EXTENSIONS = ['.usd', '.usda', '.usdc', '.usdz'];
-const ROBOT_DEFINITION_EXTENSIONS = [
-  '.urdf',
-  '.sdf',
-  '.xml',
-  '.mjcf',
-  ...USD_EXTENSIONS,
-  '.xacro',
-];
+const ROBOT_DEFINITION_EXTENSIONS = ['.urdf', '.sdf', '.xml', '.mjcf', ...USD_EXTENSIONS, '.xacro'];
 
 function detectXmlRobotDefinitionFormat(content: string): RobotDefinitionFormat | null {
   if (isMJCF(content) || looksLikeMJCFSourceDocument(content)) return 'mjcf';
@@ -37,6 +30,7 @@ export function detectRobotDefinitionFormat(
 
   if (lowerName.endsWith('.xacro') || lowerName.endsWith('.urdf.xacro')) return 'xacro';
   if (lowerName.endsWith('.urdf')) return 'urdf';
+  if (lowerName.endsWith('.mjcf')) return 'mjcf';
   if (lowerName.endsWith('.sdf')) return 'sdf';
   if (USD_EXTENSIONS.some((extension) => lowerName.endsWith(extension))) {
     return 'usd';

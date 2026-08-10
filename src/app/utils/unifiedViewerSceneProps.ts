@@ -1,6 +1,6 @@
 import type { Object3D as ThreeObject3D } from 'three';
 import type { ViewerDocumentLoadEvent, ViewerProps } from '@/features/editor';
-import type { ViewerController } from '@/features/editor';
+import type { ViewerSceneController } from '@/features/editor';
 import { buildViewerSceneProps, type ViewerSceneBaseProps } from '@/features/editor';
 import type { ViewerResourceScope } from '@/features/editor';
 import type { AssemblyState, RobotData, RobotFile, WorkspaceSelection } from '@/types';
@@ -58,7 +58,7 @@ export interface UnifiedViewerSceneWorkspaceInput {
 }
 
 interface BuildUnifiedViewerScenePropsArgs {
-  controller: ViewerController;
+  controller: ViewerSceneController;
   document: UnifiedViewerSceneDocumentInput;
   interaction: UnifiedViewerSceneInteractionInput;
   workspace?: UnifiedViewerSceneWorkspaceInput;

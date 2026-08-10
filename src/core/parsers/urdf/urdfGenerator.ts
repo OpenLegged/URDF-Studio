@@ -49,24 +49,31 @@ const EXACT_URDF_GEOMETRY_TYPES = new Set([
 
 const hasExportableInertial = (link: UrdfLink): boolean => Boolean(link.inertial);
 
-// Bias each serialized color channel by a tiny positive epsilon before converting
+// Bias each serialized RGB channel by a tiny positive epsilon before converting
 // to floats. The importer currently floors `rgba * 255`, so a direct decimal
 // expansion of `channel / 255` can still fall just below the intended 8-bit value
 // after parsing. Keeping the bias far below one full color step preserves the
-// visual result while making roundtrips stable.
+// visual result while making roundtrips stable. Alpha is serialized exactly: it
+// is retained as a float by the importer instead of being quantized to RGB hex.
+const URDF_RGB_ROUNDTRIP_BIAS = 0.001;
+
+const serializeHexRgbChannel = (channelHex: string): string => {
+  const channel = parseInt(channelHex, 16);
+  return (Math.min(255, channel + URDF_RGB_ROUNDTRIP_BIAS) / 255).toFixed(8);
+};
+
+const serializeHexAlphaChannel = (channelHex: string): string => {
+  return (parseInt(channelHex, 16) / 255).toFixed(8);
+};
+
 const hexToRgba = (hex: string): string => {
   const normalized = String(hex || '').trim();
   const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})?$/i.exec(normalized);
   if (result) {
-    const serializeChannel = (channelHex: string) => {
-      const channel = parseInt(channelHex, 16);
-      return (channel / 255).toFixed(8);
-    };
-
-    const r = serializeChannel(result[1]);
-    const g = serializeChannel(result[2]);
-    const b = serializeChannel(result[3]);
-    const a = result[4] ? serializeChannel(result[4]) : '1.00000000';
+    const r = serializeHexRgbChannel(result[1]);
+    const g = serializeHexRgbChannel(result[2]);
+    const b = serializeHexRgbChannel(result[3]);
+    const a = result[4] ? serializeHexAlphaChannel(result[4]) : '1.00000000';
     return `${r} ${g} ${b} ${a}`;
   }
   return '0.5 0.5 0.5 1.0'; // fallback gray
@@ -133,18 +140,13 @@ const hexToRgbaWithOpacity = (hex: string, opacityOverride?: number): string => 
       : hexToRgba(hex);
   }
 
-  const serializeChannel = (channelHex: string) => {
-    const channel = parseInt(channelHex, 16);
-    return (channel / 255).toFixed(8);
-  };
-
-  const r = serializeChannel(result[1]);
-  const g = serializeChannel(result[2]);
-  const b = serializeChannel(result[3]);
+  const r = serializeHexRgbChannel(result[1]);
+  const g = serializeHexRgbChannel(result[2]);
+  const b = serializeHexRgbChannel(result[3]);
   const a = Number.isFinite(opacityOverride)
     ? formatUnitInterval(Number(opacityOverride))
     : result[4]
-      ? serializeChannel(result[4])
+      ? serializeHexAlphaChannel(result[4])
       : '1.00000000';
   return `${r} ${g} ${b} ${a}`;
 };
@@ -359,9 +361,11 @@ function generateCapsuleCompatibilityGeometryXml(
 ): string {
   // Standard URDF / urdfdom do not support <capsule>, so emit the closest
   // compatible primitive while preserving the capsule's end-to-end extent.
+  // The data attributes let URDF Studio restore the authored primitive without
+  // changing how other URDF consumers interpret the cylinder.
   const radius = Math.max(dimensions.x || 0, 0);
   const bodyLength = Math.max(dimensions.y || 0, 0);
-  return `        <cylinder radius="${formatShape(radius)}" length="${formatShape(bodyLength + radius * 2)}" />\n`;
+  return `        <cylinder radius="${formatShape(radius)}" length="${formatShape(bodyLength + radius * 2)}" data-urdf-studio-geometry="capsule" data-urdf-studio-capsule-length="${formatShape(bodyLength)}" />\n`;
 }
 
 function generateUrdfGeometryXml(

@@ -7,6 +7,7 @@ import type {
 import type { ViewerJointMotionStateValue } from '../../types';
 
 const APP_WIDE_JOINT_INTERACTION_PREVIEW_ENABLED = true;
+let nextViewerJointInteractionPreviewOwnerId = 0;
 
 interface UseJointInteractionPreviewPublisherOptions {
   projectJointInteractionPreview?: (
@@ -27,8 +28,13 @@ interface PublishJointInteractionPreviewInput {
 export function useJointInteractionPreviewPublisher({
   projectJointInteractionPreview,
 }: UseJointInteractionPreviewPublisherOptions) {
+  const ownerIdRef = useRef<string | null>(null);
   const sessionCounterRef = useRef(0);
   const activeSessionRef = useRef<string | null>(null);
+  if (ownerIdRef.current === null) {
+    nextViewerJointInteractionPreviewOwnerId += 1;
+    ownerIdRef.current = `viewer:${nextViewerJointInteractionPreviewOwnerId}`;
+  }
 
   const ensureSessionId = useCallback(() => {
     if (activeSessionRef.current !== null) {
@@ -58,6 +64,7 @@ export function useJointInteractionPreviewPublisher({
         jointOrigins: {},
       };
       useJointInteractionPreviewStore.getState().publishPreview({
+        ownerId: ownerIdRef.current,
         source: 'viewer',
         dragSessionId: ensureSessionId(),
         ...rendererPreview,
@@ -80,6 +87,7 @@ export function useJointInteractionPreviewPublisher({
     }
 
     useJointInteractionPreviewStore.getState().clearPreview({
+      ownerId: ownerIdRef.current,
       source: 'viewer',
       dragSessionId: activeSessionId,
     });

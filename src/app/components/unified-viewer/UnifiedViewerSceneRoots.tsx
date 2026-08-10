@@ -14,7 +14,7 @@ import type {
   ViewerHelperKind,
   ViewerRobotSourceFormat,
 } from '@/features/editor';
-import type { useViewerController } from '@/features/editor';
+import type { ViewerSceneController } from '@/features/editor';
 import type { ViewerResourceScope } from '@/features/editor';
 
 import { LazyViewerSceneConnector } from './modeModuleLoaders';
@@ -24,7 +24,7 @@ interface UnifiedViewerSceneRootsProps {
   shouldRenderViewerScene: boolean;
   viewerGroupRef: React.RefObject<ThreeGroup | null>;
   viewerVisible: boolean;
-  viewerController: ReturnType<typeof useViewerController>;
+  viewerController: ViewerSceneController;
   activePreview?: FilePreviewState;
   modelInteractionEnabled?: boolean;
   viewerResourceScope: ViewerResourceScope;

@@ -21,7 +21,9 @@ export interface ViewerSceneProps extends ViewerSceneBaseProps {
 }
 
 interface MeasureToolLayerProps {
-  controller: ViewerSceneProps['controller'];
+  runtime: ViewerSceneProps['controller']['runtime'];
+  toolbar: ViewerSceneProps['controller']['toolbar'];
+  measureTool: ViewerSceneProps['controller']['measureTool'];
   hidden: boolean;
   measureTargetResolverRef: NonNullable<MeasureToolProps['measureTargetResolverRef']>;
   robotLinks: MeasureToolProps['robotLinks'];
@@ -31,7 +33,9 @@ interface MeasureToolLayerProps {
 }
 
 const MeasureToolLayer = ({
-  controller,
+  runtime,
+  toolbar,
+  measureTool,
   hidden,
   measureTargetResolverRef,
   robotLinks,
@@ -45,13 +49,13 @@ const MeasureToolLayer = ({
 
   return (
     <MeasureTool
-      active={controller.toolMode === 'measure'}
-      robot={controller.robot}
+      active={toolbar.toolMode === 'measure'}
+      robot={runtime.robot}
       robotLinks={robotLinks}
-      measureState={controller.measureState}
-      setMeasureState={controller.setMeasureState}
-      measureAnchorMode={controller.measureAnchorMode}
-      showDecomposition={controller.showMeasureDecomposition}
+      measureState={measureTool.measureState}
+      setMeasureState={measureTool.setMeasureState}
+      measureAnchorMode={measureTool.measureAnchorMode}
+      showDecomposition={measureTool.showMeasureDecomposition}
       deleteTooltip={t.deleteMeasurement}
       measureTargetResolverRef={measureTargetResolverRef}
       selection={selection}
@@ -87,8 +91,8 @@ export const ViewerScene = ({
   robotLinks,
   robotJoints,
   robotData,
-  showCollision = controller.showCollision,
-  showCollisionAlwaysOnTop = controller.showCollisionAlwaysOnTop,
+  showCollision = controller.optionsPanel.showCollision,
+  showCollisionAlwaysOnTop = controller.optionsPanel.showCollisionAlwaysOnTop,
   focusTarget,
   onCollisionTransformPreview,
   onCollisionTransform,
@@ -120,16 +124,16 @@ export const ViewerScene = ({
 
   const runtimeBridge = useMemo<ViewerRuntimeStageBridge>(
     () => ({
-      onRobotResolved: controller.handleJointPanelRobotLoaded,
-      onSelectionChange: controller.handleSelectWrapper,
-      onActiveJointChange: controller.handleActiveJointChange,
-      onJointAnglesChange: controller.handleRuntimeJointAnglesChange,
+      onRobotResolved: controller.runtime.handleJointPanelRobotLoaded,
+      onSelectionChange: controller.interaction.handleSelectWrapper,
+      onActiveJointChange: controller.interaction.handleActiveJointChange,
+      onJointAnglesChange: controller.runtime.handleRuntimeJointAnglesChange,
     }),
     [
-      controller.handleActiveJointChange,
-      controller.handleJointPanelRobotLoaded,
-      controller.handleRuntimeJointAnglesChange,
-      controller.handleSelectWrapper,
+      controller.interaction.handleActiveJointChange,
+      controller.interaction.handleSelectWrapper,
+      controller.runtime.handleJointPanelRobotLoaded,
+      controller.runtime.handleRuntimeJointAnglesChange,
     ],
   );
 
@@ -192,8 +196,8 @@ export const ViewerScene = ({
     }
 
     const runtimeRobot = resolveRegressionRuntimeRobot({
-      robot: controller.robot,
-      jointPanelRobot: controller.jointPanelRobot,
+      robot: controller.runtime.robot,
+      jointPanelRobot: controller.runtime.jointPanelRobot,
       includePrimaryRobot: false,
     });
     if (!runtimeRobot) {
@@ -201,11 +205,11 @@ export const ViewerScene = ({
     }
 
     setRegressionRuntimeRobot(runtimeRobot);
-  }, [controller.jointPanelRobot, controller.robot, regressionRuntimeScopeKey]);
+  }, [controller.runtime.jointPanelRobot, controller.runtime.robot, regressionRuntimeScopeKey]);
 
   const handleRobotLoaded = useCallback(
     (robot: Parameters<NonNullable<RobotModelProps['onRobotLoaded']>>[0]) => {
-      controller.handleRobotLoaded(robot);
+      controller.runtime.handleRobotLoaded(robot);
       setRuntimeRobotRevision((revision) => revision + 1);
       if (regressionRuntimeEnabled && sourceFile) {
         setRegressionRuntimeRobot(
@@ -219,7 +223,7 @@ export const ViewerScene = ({
       scheduleSceneReadyForDisplay();
     },
     [
-      controller.handleRobotLoaded,
+      controller.runtime.handleRobotLoaded,
       onRuntimeRobotLoaded,
       regressionRuntimeEnabled,
       scheduleSceneReadyForDisplay,
@@ -230,7 +234,9 @@ export const ViewerScene = ({
   return (
     <>
       <MeasureToolLayer
-        controller={controller}
+        runtime={controller.runtime}
+        toolbar={controller.toolbar}
+        measureTool={controller.measureTool}
         hidden={snapshotRenderActive}
         measureTargetResolverRef={measureTargetResolverRef}
         robotLinks={robotLinks}
@@ -240,7 +246,7 @@ export const ViewerScene = ({
       />
 
       <AssemblyJointPickLayer
-        robot={controller.robot}
+        robot={controller.runtime.robot}
         runtimeRobotRevision={runtimeRobotRevision}
         workspace={workspace ?? null}
         sceneProjection={sceneProjection ?? null}
@@ -263,31 +269,31 @@ export const ViewerScene = ({
           onDocumentLoadEvent={onDocumentLoadEvent}
           runtimeBridge={runtimeBridge}
           showCollision={showCollision}
-          showVisual={controller.showVisual}
-          showIkHandles={controller.showIkHandles}
-          showIkHandlesAlwaysOnTop={controller.showIkHandlesAlwaysOnTop}
+          showVisual={controller.optionsPanel.showVisual}
+          showIkHandles={controller.optionsPanel.showIkHandles}
+          showIkHandlesAlwaysOnTop={controller.optionsPanel.showIkHandlesAlwaysOnTop}
           showCollisionAlwaysOnTop={showCollisionAlwaysOnTop}
-          onSelect={controller.handleSelectWrapper}
+          onSelect={controller.interaction.handleSelectWrapper}
           onHover={onHover}
           onMeshSelect={onMeshSelect}
           onUpdate={onUpdate}
-          paintColor={controller.paintColor}
-          paintSelectionScope={controller.paintSelectionScope}
-          paintOperation={controller.paintOperation}
-          paintInteractionRef={controller.paintInteractionRef}
-          onPaintStatusChange={controller.setPaintStatus}
-          onJointChange={controller.handleJointAngleChange}
-          onJointChangeCommit={controller.handleJointChangeCommit}
+          paintColor={controller.paintTool.paintColor}
+          paintSelectionScope={controller.paintTool.paintSelectionScope}
+          paintOperation={controller.paintTool.paintOperation}
+          paintInteractionRef={controller.paintTool.paintInteractionRef}
+          onPaintStatusChange={controller.paintTool.setPaintStatus}
+          onJointChange={controller.jointsPanel.handleJointAngleChange}
+          onJointChangeCommit={controller.jointsPanel.handleJointChangeCommit}
           onJointMotionCommit={onJointMotionCommit}
-          initialJointAngles={controller.getInitialJointAnglesForNextLoad()}
-          registerSceneRefresh={controller.registerSceneRefresh}
-          setIsDragging={controller.setIsDragging}
-          ikRobotState={controller.closedLoopRobotState}
-          onIkPreviewKinematicOverrides={controller.previewIkJointKinematics}
-          onIkCommitKinematicOverrides={controller.commitIkJointKinematics}
-          onClearIkPreviewKinematicOverrides={controller.clearIkJointKinematicsPreview}
-          setActiveJoint={controller.handleActiveJointChange}
-          justSelectedRef={controller.justSelectedRef}
+          initialJointAngles={controller.runtime.getInitialJointAnglesForNextLoad()}
+          registerSceneRefresh={controller.runtime.registerSceneRefresh}
+          setIsDragging={controller.interaction.setIsDragging}
+          ikRobotState={controller.runtime.closedLoopRobotState}
+          onIkPreviewKinematicOverrides={controller.runtime.previewIkJointKinematics}
+          onIkCommitKinematicOverrides={controller.runtime.commitIkJointKinematics}
+          onClearIkPreviewKinematicOverrides={controller.runtime.clearIkJointKinematicsPreview}
+          setActiveJoint={controller.interaction.handleActiveJointChange}
+          justSelectedRef={controller.interaction.justSelectedRef}
           t={t}
           mode={mode}
           selection={selection}
@@ -295,33 +301,33 @@ export const ViewerScene = ({
           interactionEnabled={interactionEnabled}
           hoverSelectionEnabled={effectiveHoverSelectionEnabled}
           groundPlaneOffset={groundPlaneOffset}
-          showInertia={controller.showInertia}
-          showInertiaOverlay={controller.showInertiaOverlay}
-          showCenterOfMass={controller.showCenterOfMass}
-          showCoMOverlay={controller.showCoMOverlay}
-          centerOfMassSize={controller.centerOfMassSize}
-          showOrigins={controller.showOrigins}
-          showOriginsOverlay={controller.showOriginsOverlay}
-          originSize={controller.originSize}
-          showMjcfSites={controller.showMjcfSites}
-          showJointAxes={controller.showJointAxes}
-          showJointAxesOverlay={controller.showJointAxesOverlay}
-          jointAxisSize={controller.jointAxisSize}
-          interactionLayerPriority={controller.interactionLayerPriority}
-          modelOpacity={controller.modelOpacity}
+          showInertia={controller.optionsPanel.showInertia}
+          showInertiaOverlay={controller.optionsPanel.showInertiaOverlay}
+          showCenterOfMass={controller.optionsPanel.showCenterOfMass}
+          showCoMOverlay={controller.optionsPanel.showCoMOverlay}
+          centerOfMassSize={controller.optionsPanel.centerOfMassSize}
+          showOrigins={controller.optionsPanel.showOrigins}
+          showOriginsOverlay={controller.optionsPanel.showOriginsOverlay}
+          originSize={controller.optionsPanel.originSize}
+          showMjcfSites={controller.optionsPanel.showMjcfSites}
+          showJointAxes={controller.optionsPanel.showJointAxes}
+          showJointAxesOverlay={controller.optionsPanel.showJointAxesOverlay}
+          jointAxisSize={controller.optionsPanel.jointAxisSize}
+          interactionLayerPriority={controller.interaction.interactionLayerPriority}
+          modelOpacity={controller.optionsPanel.modelOpacity}
           robotLinks={robotLinks}
           robotJoints={robotJoints}
           robotData={robotData}
           focusTarget={focusTarget}
-          transformMode={controller.transformMode}
+          transformMode={controller.interaction.transformMode}
           toolMode={toolMode}
-          measureMode={controller.measureState.mode}
+          measureMode={controller.measureTool.measureState.mode}
           ikDragActive={ikDragActive}
           onCollisionTransformPreview={onCollisionTransformPreview}
           onCollisionTransformEnd={onCollisionTransform}
-          isOrbitDragging={controller.isOrbitDragging}
-          onTransformPending={controller.handleTransformPending}
-          isSelectionLockedRef={controller.transformPendingRef}
+          isOrbitDragging={controller.interaction.isOrbitDragging}
+          onTransformPending={controller.interaction.handleTransformPending}
+          isSelectionLockedRef={controller.interaction.transformPendingRef}
           isMeshPreview={isMeshPreview}
           workspace={workspace}
           sceneProjection={sceneProjection}

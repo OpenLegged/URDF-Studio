@@ -1,18 +1,35 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import type { ViewerController } from '../hooks/useViewerController';
+import type { ViewerSceneController } from '../hooks/useViewerController';
 import { buildViewerSceneProps } from './viewerSceneProps';
 import type { AssemblyState } from '@/types';
 import { createAssemblyScenePlacement, createAssemblySceneProjection } from '@/core/robot';
 
-function createControllerStub(overrides: Partial<ViewerController> = {}): ViewerController {
+interface ViewerSceneControllerStubOverrides {
+  optionsPanel?: Partial<ViewerSceneController['optionsPanel']>;
+  toolbar?: Partial<ViewerSceneController['toolbar']>;
+  interaction?: Partial<ViewerSceneController['interaction']>;
+}
+
+function createControllerStub(
+  overrides: ViewerSceneControllerStubOverrides = {},
+): ViewerSceneController {
   return {
-    groundPlaneOffset: 1.25,
-    toolMode: 'measure',
-    handleHoverWrapper: () => {},
-    ...overrides,
-  } as ViewerController;
+    optionsPanel: {
+      groundPlaneOffset: 1.25,
+      ...overrides.optionsPanel,
+    },
+    toolbar: {
+      toolMode: 'measure',
+      handleToolModeChange: () => {},
+      ...overrides.toolbar,
+    },
+    interaction: {
+      handleHoverWrapper: () => {},
+      ...overrides.interaction,
+    },
+  } as ViewerSceneController;
 }
 
 function createAssemblyStateStub(): AssemblyState {
@@ -44,7 +61,7 @@ test('buildViewerSceneProps uses controller-owned defaults for viewer scene wiri
   assert.equal(sceneProps.active, true);
   assert.equal(sceneProps.interactionEnabled, true);
   assert.equal(sceneProps.hoverSelectionEnabled, true);
-  assert.equal(sceneProps.onHover, controller.handleHoverWrapper);
+  assert.equal(sceneProps.onHover, controller.interaction.handleHoverWrapper);
   assert.equal(sceneProps.allowUrdfXmlFallback, false);
   assert.equal(sceneProps.isMeshPreview, false);
   assert.equal(sceneProps.runtimeInstanceKey, 0);
@@ -52,8 +69,12 @@ test('buildViewerSceneProps uses controller-owned defaults for viewer scene wiri
 
 test('buildViewerSceneProps preserves explicit overrides for preview and handoff flows', () => {
   const controller = createControllerStub({
-    groundPlaneOffset: 0.5,
-    toolMode: 'select',
+    optionsPanel: {
+      groundPlaneOffset: 0.5,
+    },
+    toolbar: {
+      toolMode: 'select',
+    },
   });
   const onHover = () => {};
   const onMeshSelect = () => {};

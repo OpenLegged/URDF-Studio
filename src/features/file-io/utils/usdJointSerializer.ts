@@ -166,9 +166,10 @@ export const serializeJointDefinition = (
     driveInstanceName !== null &&
     Boolean(options.mimicReferenceJointPath);
   const mimicAxisInstance = `rot${axisToken}`;
+  // Only a resolved PhysX mimic binding replaces the independent drive. An invalid
+  // or omitted master must retain the normal drive so the joint stays controllable.
   const shouldEmitDrive =
     driveInstanceName !== null &&
-    !joint.mimic &&
     !shouldEmitPhysxMimic &&
     (driveStiffness !== null || driveDamping !== null || driveMaxForce !== null);
   const jointFriction =
