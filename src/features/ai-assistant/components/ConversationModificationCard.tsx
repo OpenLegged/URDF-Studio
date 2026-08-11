@@ -69,7 +69,7 @@ function collapseUnchangedRuns(lines: DiffLine[]): DiffLine[] {
       i += 1;
       continue;
     }
-    let runStart = i;
+    const runStart = i;
     while (i < lines.length && lines[i].type === 'unchanged') {
       i += 1;
     }
@@ -160,9 +160,10 @@ export function ConversationModificationCard({
           if (line.type === 'collapsed') {
             const isExpanded = expandedSections.has(index);
             return (
-              <div
+              <button
                 key={index}
-                className="flex cursor-pointer items-center gap-1 border-y border-border-black/30 bg-element-bg/50 px-1.5 py-0.5 text-text-tertiary hover:bg-element-hover"
+                type="button"
+                className="flex w-full cursor-pointer items-center gap-1 border-y border-border-black/30 bg-element-bg/50 px-1.5 py-0.5 text-left text-text-tertiary hover:bg-element-hover"
                 onClick={() => toggleSection(index)}
               >
                 {isExpanded ? (
@@ -171,9 +172,9 @@ export function ConversationModificationCard({
                   <ChevronRight className="h-2.5 w-2.5" />
                 )}
                 <span className="text-[9px]">
-                {t.aiDiffCollapsedLines.replace('{count}', String(line.collapsedCount))}
-              </span>
-              </div>
+                  {t.aiDiffCollapsedLines.replace('{count}', String(line.collapsedCount))}
+                </span>
+              </button>
             );
           }
 

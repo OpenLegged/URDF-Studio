@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-08-09",
+  "generatedAt": "2026-08-11",
   "rules": {
     "file-name-snake-case": {
       "max": 1534,
@@ -7,24 +7,24 @@
       "note": "DEAD RULE — count equals every PascalCase component + camelCase module in src/** (the project's real convention), so it grows with the codebase. Retired in Phase 5 in favor of @typescript-eslint/naming-convention; the audit runner reports it as informational only. NEVER rename a file to satisfy it. Count synchronized to the 2026-07-16 post-merge workspace snapshot for accurate reporting."
     },
     "file-too-long": {
-      "max": 34,
-      "note": "src/** files over 800 code lines (blank/comment lines skipped). Exact count synchronized on 2026-08-09 after merging dev into scene-gen; --check rejects both increases and stale headroom. Avoid splitting cohesive parsers/solvers only to satisfy the counter."
+      "max": 32,
+      "note": "src/** files over 800 code lines (blank/comment lines skipped). Exact count synchronized on 2026-08-11 after merging dev into scene-gen; --check rejects both increases and stale headroom. Avoid splitting cohesive parsers/solvers only to satisfy the counter."
     },
     "function-too-long": {
-      "max": 114,
-      "note": "Function bodies over 200 code lines in src/**. Exact count synchronized on 2026-08-09 after merging dev into scene-gen; ratchet down when a function has a clean ownership split."
+      "max": 112,
+      "note": "Function bodies over 200 code lines in src/**. Exact count tightened on 2026-08-09 after dialog and workflow splits; ratchet down when a function has a clean ownership split."
     },
     "function-too-complex": {
-      "max": 176,
-      "note": "Cyclomatic complexity over 20 in src/**. Exact count synchronized on 2026-08-09 after merging dev into scene-gen; parser/solver heavy, ratchet down only."
+      "max": 174,
+      "note": "Cyclomatic complexity over 20 in src/**. Exact count tightened on 2026-08-09 after viewer adapter simplification; ratchet down only."
     },
     "too-many-params": {
-      "max": 128,
-      "note": "Functions with more than 4 params in src/**. Exact count synchronized on 2026-08-09 after merging dev into scene-gen. Prefer an options object; ratchet down only."
+      "max": 123,
+      "note": "Functions with more than 4 params in src/**. Exact count synchronized on 2026-08-09 after export and viewer lifecycle ports moved to options objects. Prefer an options object; ratchet down only."
     },
     "too-deep": {
-      "max": 8,
-      "note": "Block nesting deeper than 4 in src/**. Ratchet down only."
+      "max": 7,
+      "note": "Block nesting deeper than 4 in src/**. Exact count tightened on 2026-08-09 after workflow extraction; ratchet down only."
     },
     "nullable-undefined-type-alias": {
       "max": 5,
@@ -37,8 +37,8 @@
       "max": 0
     },
     "dynamic-code-execution": {
-      "max": 6,
-      "note": "Historical browser test helper callbacks using new Function; exact count synchronized on 2026-08-09 after merging dev into scene-gen."
+      "max": 5,
+      "note": "Historical browser test helper callbacks using new Function; exact count synchronized on 2026-08-11 after merging dev into scene-gen."
     },
     "html-inline-style": {
       "max": 0

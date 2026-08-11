@@ -34,11 +34,21 @@ export const parseGeometry = (geoEl: Element | null, defaultGeo: any = DEFAULT_L
             dimensions: parseAuthoredDimensions(box.getAttribute("size")),
         };
     } else if (cylinder) {
+        const radius = parseAuthoredScalar(cylinder, "radius", 0.1);
+        const length = parseAuthoredScalar(cylinder, "length", 0.5);
+        const isUrdfStudioCapsule =
+            cylinder.getAttribute("data-urdf-studio-geometry") === "capsule";
         return {
-            type: GeometryType.CYLINDER,
+            type: isUrdfStudioCapsule ? GeometryType.CAPSULE : GeometryType.CYLINDER,
             dimensions: {
-                x: parseAuthoredScalar(cylinder, "radius", 0.1),
-                y: parseAuthoredScalar(cylinder, "length", 0.5),
+                x: radius,
+                y: isUrdfStudioCapsule
+                    ? parseAuthoredScalar(
+                        cylinder,
+                        "data-urdf-studio-capsule-length",
+                        Math.max(length - radius * 2, 0),
+                    )
+                    : length,
                 z: 0
             }
         };

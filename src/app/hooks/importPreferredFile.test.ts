@@ -263,6 +263,54 @@ test('pickPreferredMjcfImportFile prefers substantial terrain scenes over includ
   assert.equal(preferredFile?.name, 'a2/scene_terrain.xml');
 });
 
+test('pickPreferredImportFile compares URDF sidecars against the MJCF robot rather than its terrain scene', () => {
+  const robotFile = createRobotFile(
+    'demo/robot.xml',
+    'mjcf',
+    `<?xml version="1.0"?>
+<mujoco model="robot">
+  <worldbody>
+    <body name="base_link">
+      <geom name="base_geom" type="box" size="0.1 0.1 0.1" />
+    </body>
+  </worldbody>
+</mujoco>`,
+  );
+  const terrainGeoms = Array.from(
+    { length: 12 },
+    (_, index) =>
+      `<geom name="terrain_${index}" type="box" pos="${index} 0 0" size="0.1 0.1 0.1" />`,
+  ).join('\n    ');
+  const terrainSceneFile = createRobotFile(
+    'demo/environment.xml',
+    'mjcf',
+    `<?xml version="1.0"?>
+<mujoco model="environment">
+  <include file="robot.xml" />
+  <worldbody>
+    ${terrainGeoms}
+  </worldbody>
+</mujoco>`,
+  );
+  const exportSidecar = createRobotFile(
+    'demo/export.urdf',
+    'urdf',
+    `<?xml version="1.0"?>
+<robot name="export">
+  <link name="base_link">
+    <visual>
+      <geometry><mesh filename="meshes/missing.stl" /></geometry>
+    </visual>
+  </link>
+</robot>`,
+  );
+  const files = [terrainSceneFile, exportSidecar, robotFile];
+
+  const preferredFile = pickPreferredImportFile(files, files);
+
+  assert.equal(preferredFile?.name, 'demo/robot.xml');
+});
+
 test('pickPreferredImportFile does not prefer MJCF solely because the bundle path mentions mujoco', () => {
   const urdfFile = createRobotFile(
     'demo_mujoco/urdf/demo.urdf',

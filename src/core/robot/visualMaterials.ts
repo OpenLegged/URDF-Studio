@@ -194,12 +194,7 @@ export function getEffectiveGeometryAuthoredMaterials(
     ];
   }
 
-  return [
-    {
-      ...authoredMaterials[0],
-      color: inlineColor,
-    },
-  ];
+  return authoredMaterials;
 }
 
 export function hasMultipleAuthoredMaterials(

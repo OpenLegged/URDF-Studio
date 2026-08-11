@@ -477,21 +477,33 @@ export async function stabilizeDebugPage(page, timeoutMs = DEFAULT_OPERATION_TIM
  * @returns {Promise<unknown>} the debug API's load result (or null)
  */
 export async function triggerRobotLoad(page, fileName, timeoutMs = DEFAULT_OPERATION_TIMEOUT_MS) {
-  await page.waitForFunction(
-    () => typeof window.__URDF_STUDIO_DEBUG__?.loadRobotByName === 'function',
-    { timeout: timeoutMs },
-  );
   // Kick the load off WITHOUT awaiting its resolved promise. The debug bridge's
   // loadRobotByName internally awaits a "stable snapshot" that requires
   // documentLoadState.status === 'ready'; for the standard (non-USD) editor that
   // status stays at 'loading' even after the runtime robot is fully built, so
   // awaiting here would block until timeout. We fire it and let waitForReady()
   // poll for the built runtime instead (mirrors the menagerie regression).
-  try {
-    await page.evaluate((fn) => { void window.__URDF_STUDIO_DEBUG__?.loadRobotByName?.(fn); }, fileName);
-  } catch (error) {
-    if (!isTransientPageContextError(error)) throw error;
-  }
+  // Archive imports can recreate the page execution context immediately after
+  // file registration. Retry the dispatch on the new context instead of
+  // treating that navigation as a successful no-op.
+  await retryPageAction(
+    async () => {
+      await page.waitForFunction(
+        () => typeof window.__URDF_STUDIO_DEBUG__?.loadRobotByName === 'function',
+        { timeout: Math.min(timeoutMs, 5_000) },
+      );
+      return page.evaluate((fn) => {
+        const loadRobotByName = window.__URDF_STUDIO_DEBUG__?.loadRobotByName;
+        if (typeof loadRobotByName !== 'function') {
+          throw new Error('Regression robot loader is unavailable.');
+        }
+        void loadRobotByName(fn);
+        return true;
+      }, fileName);
+    },
+    timeoutMs,
+    `robot "${fileName}" load dispatch`,
+  );
 }
 
 /**
@@ -819,21 +831,5 @@ export async function getSelectionSnapshot(page) {
       }),
     10_000,
     'reading selection snapshot',
-  );
-}
-
-export async function waitForCondition(page, conditionFn, timeoutMs, label) {
-  await retryPageAction(
-    () =>
-      page.waitForFunction(
-        (fnSource) => {
-          const fn = new Function(`return (${fnSource})`);
-          return fn()();
-        },
-        { timeout: Math.min(timeoutMs, 5_000) },
-        conditionFn.toString(),
-      ),
-    timeoutMs,
-    label,
   );
 }

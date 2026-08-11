@@ -39,6 +39,8 @@ interface ComponentSourceTarget {
 
 type DraftPatcher = (draft: ComponentSourceDraft) => string | null;
 
+export type SourcePatchOutcome = 'patched' | 'unavailable' | 'invalidated';
+
 function asPatchableSourceFile(draft: ComponentSourceDraft) {
   return {
     name: `component-draft/${draft.componentId}`,
@@ -52,7 +54,7 @@ export function applyComponentEditableSourcePatch({
   componentId,
   expectedRobotSnapshotHash,
   patch,
-}: ComponentSourceTarget & { patch: DraftPatcher }): boolean {
+}: ComponentSourceTarget & { patch: DraftPatcher }): SourcePatchOutcome {
   const assets = useAssetsStore.getState();
   const resolved = resolveEditablePatchTarget({
     workspace: useWorkspaceStore.getState().workspace,
@@ -61,23 +63,22 @@ export function applyComponentEditableSourcePatch({
     expectedRobotSnapshotHash,
   });
   if (resolved.status === 'invalid') {
-    if (resolved.reason !== 'draft-missing') {
-      assets.removeComponentSourceDraft(componentId);
-    }
-    return false;
+    if (resolved.reason === 'draft-missing') return 'unavailable';
+    assets.removeComponentSourceDraft(componentId);
+    return 'invalidated';
   }
 
   const nextContent = patch(resolved.draft);
   if (nextContent === null) {
     assets.removeComponentSourceDraft(componentId);
-    return false;
+    return 'invalidated';
   }
   assets.setComponentSourceDraft(buildEditableSourcePatchState({
     draft: resolved.draft,
     nextContent,
     currentRobotSnapshotHash: resolved.currentRobotSnapshotHash,
   }));
-  return true;
+  return 'patched';
 }
 
 export function useEditableSourcePatches({ showToast }: UseEditableSourcePatchesParams) {
@@ -92,7 +93,7 @@ export function useEditableSourcePatches({ showToast }: UseEditableSourcePatches
       useAssetsStore.getState().removeComponentSourceDraft(target.componentId);
       console.error(errorLabel, error);
       showToast(errorLabel, 'info');
-      return false;
+      return 'invalidated' as const;
     }
   }, [showToast]);
 

@@ -6,6 +6,11 @@ import {
   normalizeComponentRobot,
 } from '@/core/robot';
 import { rewriteRobotMeshPathsForSource } from '@/core/parsers/meshPathUtils';
+import { applyEditableSourceIncrementalPatch } from '@/app/utils/editableSourceIncrementalPatch';
+import type {
+  ApplyEditableSourceChangeOptions,
+  ApplyEditableSourceChangeResult,
+} from '@/app/utils/applyEditableSourceChange';
 import type {
   ComponentSourceDraft,
   ComponentSourceFormat,
@@ -17,7 +22,8 @@ import type { SourceCodeEditorApplyRequest } from '@/features/code-editor';
 import { useAssetsStore } from '@/store/assetsStore';
 import { useWorkspaceStore, type WorkspaceMutationOptions } from '@/store/workspaceStore';
 import type { ComponentSourceCodeDocumentChangeTarget } from '@/app/utils/sourceCodeDocuments';
-import { parseEditableRobotSourceWithWorker } from './robotImportWorkerBridge';
+import { setRegressionEditableSourceApplyResult } from '@/shared/debug/regressionState';
+import { applyEditableSourceChangeWithWorker } from './robotImportWorkerBridge';
 
 export interface PreparedComponentSourceApply {
   componentId: string;
@@ -75,6 +81,22 @@ interface UseEditableSourceCodeApplyOptions {
   availableFiles: RobotFile[];
 }
 
+interface PreparedEditableSourceCodeChange {
+  allFileContents: Record<string, string>;
+  applyEditableSourceChange?: (
+    options: ApplyEditableSourceChangeOptions,
+  ) => Promise<ApplyEditableSourceChangeResult>;
+  applyRequest?: SourceCodeEditorApplyRequest;
+  availableFiles: RobotFile[];
+  componentId: string;
+  draft: ComponentSourceDraft;
+  expectedWorkspaceRevision: number;
+  isCurrentRequest?: () => boolean;
+  robot: RobotData;
+  sourceFileName: string | null;
+  newCode: string;
+}
+
 function toRobotData(state: RobotState): RobotData {
   const { selection: _selection, ...robot } = state;
   return robot;
@@ -111,6 +133,208 @@ function createParseInputs({
   };
 }
 
+function publishEditableSourceApplyRegressionResult(
+  result: ApplyEditableSourceChangeResult,
+): void {
+  const { diagnostics } = result;
+  setRegressionEditableSourceApplyResult({
+    mode: result.mode,
+    dirtyRangeCount: diagnostics.dirtyRangeCount,
+    dirtySpanBytes: diagnostics.dirtySpanBytes,
+    dirtySpanLimitBytes: diagnostics.dirtySpanLimitBytes,
+    patchKind: diagnostics.patchKind,
+    skipReason: diagnostics.skipReason,
+  });
+}
+
+function publishIncrementalPatchApplyFallbackRegressionResult(
+  result: ApplyEditableSourceChangeResult,
+): void {
+  const { diagnostics } = result;
+  setRegressionEditableSourceApplyResult({
+    mode: 'full-parse',
+    dirtyRangeCount: diagnostics.dirtyRangeCount,
+    dirtySpanBytes: diagnostics.dirtySpanBytes,
+    dirtySpanLimitBytes: diagnostics.dirtySpanLimitBytes,
+    patchKind: null,
+    skipReason: 'incremental-patch-apply-failed',
+  });
+}
+
+function createDraftForParsedRobot({
+  componentId,
+  content,
+  format,
+  robot,
+  sourceFileName,
+}: {
+  componentId: string;
+  content: string;
+  format: ComponentSourceFormat;
+  robot: RobotState;
+  sourceFileName: string;
+}): { draft: ComponentSourceDraft; robot: RobotData } {
+  const normalizedRobot = normalizeComponentRobot(
+    toRobotData(rewriteRobotMeshPathsForSource(robot, sourceFileName)),
+  );
+  return {
+    draft: createComponentSourceDraft({
+      componentId,
+      format,
+      content,
+      robot: normalizedRobot,
+    }),
+    robot: normalizedRobot,
+  };
+}
+
+async function parseFullEditableSourceChange({
+  applyEditableSourceChange,
+  applyRequest,
+  previousContent,
+  sourceFile,
+  nextAvailableFiles,
+  nextAllFileContents,
+  newCode,
+}: {
+  applyEditableSourceChange: (
+    options: ApplyEditableSourceChangeOptions,
+  ) => Promise<ApplyEditableSourceChangeResult>;
+  applyRequest?: SourceCodeEditorApplyRequest;
+  previousContent: string;
+  sourceFile: RobotFile;
+  nextAvailableFiles: RobotFile[];
+  nextAllFileContents: Record<string, string>;
+  newCode: string;
+}): Promise<ApplyEditableSourceChangeResult> {
+  return applyEditableSourceChange({
+    file: sourceFile,
+    content: newCode,
+    previousContent,
+    dirtyRanges: applyRequest?.dirtyRanges ?? [],
+    attemptIncrementalPatch: false,
+    availableFiles: nextAvailableFiles,
+    allFileContents: nextAllFileContents,
+  });
+}
+
+export async function applyPreparedEditableSourceCodeChange({
+  allFileContents,
+  applyEditableSourceChange = applyEditableSourceChangeWithWorker,
+  applyRequest,
+  availableFiles,
+  componentId,
+  draft: currentDraft,
+  expectedWorkspaceRevision,
+  isCurrentRequest = () => true,
+  robot: currentRobot,
+  sourceFileName,
+  newCode,
+}: PreparedEditableSourceCodeChange): Promise<boolean> {
+  const { sourceFile, nextAvailableFiles, nextAllFileContents } = createParseInputs({
+    componentId,
+    draft: currentDraft,
+    componentSourceFile: sourceFileName,
+    newCode,
+    availableFiles,
+    allFileContents,
+  });
+  const previousContent = currentDraft.content;
+  const result = await applyEditableSourceChange({
+    file: sourceFile,
+    content: newCode,
+    previousContent,
+    dirtyRanges: applyRequest?.dirtyRanges ?? [],
+    attemptIncrementalPatch: true,
+    availableFiles: nextAvailableFiles,
+    allFileContents: nextAllFileContents,
+  });
+  if (!isCurrentRequest()) return false;
+
+  if (result.mode === 'incremental-patch') {
+    const patched = applyEditableSourceIncrementalPatch({
+      patch: result.patch,
+      currentState: currentRobot,
+    });
+
+    if (patched) {
+      const prepared = createDraftForParsedRobot({
+        componentId,
+        content: newCode,
+        format: currentDraft.format as ComponentSourceFormat,
+        robot: patched,
+        sourceFileName: sourceFile.name,
+      });
+      const committed = commitPreparedComponentSourceApply({
+        componentId,
+        expectedWorkspaceRevision,
+        robot: prepared.robot,
+        draft: prepared.draft,
+      });
+      if (committed) {
+        publishEditableSourceApplyRegressionResult(result);
+      }
+      return committed;
+    }
+
+    const fullResult = await parseFullEditableSourceChange({
+      applyEditableSourceChange,
+      applyRequest,
+      previousContent,
+      sourceFile,
+      nextAvailableFiles,
+      nextAllFileContents,
+      newCode,
+    });
+    if (!isCurrentRequest()) return false;
+    if (fullResult.mode !== 'full-parse' || !fullResult.state) {
+      publishIncrementalPatchApplyFallbackRegressionResult(result);
+      return false;
+    }
+
+    const prepared = createDraftForParsedRobot({
+      componentId,
+      content: newCode,
+      format: currentDraft.format as ComponentSourceFormat,
+      robot: fullResult.state,
+      sourceFileName: sourceFile.name,
+    });
+    const committed = commitPreparedComponentSourceApply({
+      componentId,
+      expectedWorkspaceRevision,
+      robot: prepared.robot,
+      draft: prepared.draft,
+    });
+    if (committed) {
+      publishIncrementalPatchApplyFallbackRegressionResult(result);
+    }
+    return committed;
+  }
+
+  if (!result.state) {
+    publishEditableSourceApplyRegressionResult(result);
+    return false;
+  }
+
+  const prepared = createDraftForParsedRobot({
+    componentId,
+    content: newCode,
+    format: currentDraft.format as ComponentSourceFormat,
+    robot: result.state,
+    sourceFileName: sourceFile.name,
+  });
+  const committed = commitPreparedComponentSourceApply({
+    componentId,
+    expectedWorkspaceRevision,
+    robot: prepared.robot,
+    draft: prepared.draft,
+  });
+  if (committed) {
+    publishEditableSourceApplyRegressionResult(result);
+  }
+  return committed;
+}
+
 export function useEditableSourceCodeApply({
   allFileContents,
   availableFiles,
@@ -120,7 +344,7 @@ export function useEditableSourceCodeApply({
   const handleCodeChange = useCallback(async (
     newCode: string,
     target: ComponentSourceCodeDocumentChangeTarget | undefined = undefined,
-    _applyRequest: SourceCodeEditorApplyRequest | undefined = undefined,
+    applyRequest: SourceCodeEditorApplyRequest | undefined = undefined,
   ): Promise<boolean> => {
     if (target?.kind !== 'component') return false;
     const componentId = target.componentId;
@@ -138,39 +362,21 @@ export function useEditableSourceCodeApply({
     const requestId = (requestIdsRef.current.get(componentId) ?? 0) + 1;
     requestIdsRef.current.set(componentId, requestId);
     const expectedWorkspaceRevision = workspaceState.revision;
-    const { sourceFile, nextAvailableFiles, nextAllFileContents } = createParseInputs({
-      componentId,
-      draft: currentDraft,
-      componentSourceFile: component.sourceFile,
-      newCode,
-      availableFiles,
-      allFileContents,
-    });
 
     try {
-      const parsed = await parseEditableRobotSourceWithWorker({
-        file: sourceFile,
-        content: newCode,
-        availableFiles: nextAvailableFiles,
-        allFileContents: nextAllFileContents,
-      });
-      if (!parsed || requestIdsRef.current.get(componentId) !== requestId) return false;
-
-      const robot = normalizeComponentRobot(
-        toRobotData(rewriteRobotMeshPathsForSource(parsed, sourceFile.name)),
-      );
-      const draft = createComponentSourceDraft({
+      const applied = await applyPreparedEditableSourceCodeChange({
+        allFileContents,
+        applyRequest,
+        availableFiles,
         componentId,
-        format: currentDraft.format as ComponentSourceFormat,
-        content: newCode,
-        robot,
-      });
-      return commitPreparedComponentSourceApply({
-        componentId,
+        draft: currentDraft,
         expectedWorkspaceRevision,
-        robot,
-        draft,
+        isCurrentRequest: () => requestIdsRef.current.get(componentId) === requestId,
+        robot: component.robot,
+        sourceFileName: component.sourceFile,
+        newCode,
       });
+      return applied;
     } catch (error) {
       console.error(`Failed to apply source draft for component "${componentId}".`, error);
       return false;

@@ -69,8 +69,8 @@ test('collision selection updates highlight mode without auto-enabling collision
   });
 
   assert.ok(controller, 'viewer controller should mount');
-  assert.equal(controller.showCollision, false);
-  assert.equal(controller.highlightMode, 'collision');
+  assert.equal(controller.optionsPanel.showCollision, false);
+  assert.equal(controller.optionsPanel.highlightMode, 'collision');
 
   await act(async () => {
     root.unmount();

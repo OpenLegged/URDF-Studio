@@ -87,16 +87,17 @@ test('createBoxFaceTextureFallbackWarnings returns replacements and omits zero c
 test('assertUrdfExportSupported skips when no closed loops and throws when they exist', () => {
   assert.doesNotThrow(() =>
     assertUrdfExportSupported(
-      { name: 'robot', closedLoopConstraints: [] },
+      { name: 'robot', closedLoopConstraints: [], joints: {} },
       undefined,
       replaceTemplate,
       'Label {name} {count}',
     ),
   );
 
-  const robotWithConstraint: Pick<RobotState, 'name' | 'closedLoopConstraints'> = {
+  const robotWithConstraint: Pick<RobotState, 'name' | 'closedLoopConstraints' | 'joints'> = {
     name: 'robotA',
     closedLoopConstraints: [closedLoopConstraint],
+    joints: {},
   };
 
   assert.throws(

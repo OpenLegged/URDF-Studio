@@ -244,7 +244,9 @@ type ClosedLoopPreviewMockWorkerClass = new () => {
 };
 
 function renderHook() {
-  let hookValue: ReturnType<typeof useViewerController> | null = null as ReturnType<typeof useViewerController> | null;
+  let hookValue: ReturnType<typeof useViewerController> | null = null as ReturnType<
+    typeof useViewerController
+  > | null;
 
   function Probe() {
     hookValue = useViewerController({ active: false });
@@ -256,9 +258,7 @@ function renderHook() {
   return hookValue as ReturnType<typeof useViewerController>;
 }
 
-function installDom(
-  workerClass: ClosedLoopPreviewMockWorkerClass = ClosedLoopPreviewMockWorker,
-) {
+function installDom(workerClass: ClosedLoopPreviewMockWorkerClass = ClosedLoopPreviewMockWorker) {
   disposeClosedLoopMotionPreviewWorker();
   const dom = new JSDOM('<!doctype html><html><body><div id="root"></div></body></html>', {
     url: 'http://localhost/',
@@ -516,7 +516,9 @@ async function mountControllerWithDom(
   useJointInteractionPreviewStore.getState().clearPreview();
 
   const root = createRoot(container);
-  let hookValue: ReturnType<typeof useViewerController> | null = null as ReturnType<typeof useViewerController> | null;
+  let hookValue: ReturnType<typeof useViewerController> | null = null as ReturnType<
+    typeof useViewerController
+  > | null;
   let currentProps = props;
 
   function Probe() {
@@ -573,11 +575,11 @@ test('handleAutoFitGround delegates to the active runtime auto-fit handler when 
   const hook = renderHook();
   let callCount = 0;
 
-  hook.registerRuntimeAutoFitGroundHandler(() => {
+  hook.runtime.registerRuntimeAutoFitGroundHandler(() => {
     callCount += 1;
   });
 
-  hook.handleAutoFitGround();
+  hook.optionsPanel.handleAutoFitGround();
 
   assert.equal(callCount, 1);
 });
@@ -594,16 +596,16 @@ test('handleRobotLoaded derives origin axes size limits from robot bounds', asyn
   const { dom, root, getHook } = await mountControllerWithProps({ active: false });
 
   await act(async () => {
-    getHook().setOriginSize(0.4);
+    getHook().optionsPanel.setOriginSize(0.4);
   });
-  assert.equal(getHook().originSize, 0.4);
+  assert.equal(getHook().optionsPanel.originSize, 0.4);
 
   await act(async () => {
-    getHook().handleRobotLoaded(runtimeRobot);
+    getHook().runtime.handleRobotLoaded(runtimeRobot);
   });
 
-  assert.equal(getHook().originAxesSizeMax, 0.5);
-  assert.equal(getHook().originSize, 0.4);
+  assert.equal(getHook().optionsPanel.originAxesSizeMax, 0.5);
+  assert.equal(getHook().optionsPanel.originSize, 0.4);
 
   await act(async () => {
     root.unmount();
@@ -619,36 +621,36 @@ test('paint tool state switches back to select when the paint panel closes', asy
   });
 
   try {
-    assert.equal(getHook().paintColor, '#ff6c0a');
-    assert.equal(getHook().paintStatus, null);
-    assert.deepEqual(getHook().paintInteractionRef.current, {
+    assert.equal(getHook().paintTool.paintColor, '#ff6c0a');
+    assert.equal(getHook().paintTool.paintStatus, null);
+    assert.deepEqual(getHook().paintTool.paintInteractionRef.current, {
       color: '#ff6c0a',
       operation: 'paint',
       selectionScope: 'island',
     });
 
     await act(async () => {
-      getHook().handleToolModeChange('paint');
-      getHook().setPaintColor('#123456');
-      getHook().setPaintOperation('erase');
-      getHook().setPaintSelectionScope('face');
-      getHook().setPaintStatus({ tone: 'success', message: 'painted' });
+      getHook().toolbar.handleToolModeChange('paint');
+      getHook().paintTool.setPaintColor('#123456');
+      getHook().paintTool.setPaintOperation('erase');
+      getHook().paintTool.setPaintSelectionScope('face');
+      getHook().paintTool.setPaintStatus({ tone: 'success', message: 'painted' });
     });
 
-    assert.equal(getHook().toolMode, 'paint');
-    assert.deepEqual(getHook().paintInteractionRef.current, {
+    assert.equal(getHook().toolbar.toolMode, 'paint');
+    assert.deepEqual(getHook().paintTool.paintInteractionRef.current, {
       color: '#123456',
       operation: 'erase',
       selectionScope: 'face',
     });
-    assert.deepEqual(getHook().paintStatus, { tone: 'success', message: 'painted' });
+    assert.deepEqual(getHook().paintTool.paintStatus, { tone: 'success', message: 'painted' });
 
     await act(async () => {
-      getHook().handleClosePaintTool();
+      getHook().paintTool.handleClosePaintTool();
     });
 
-    assert.equal(getHook().toolMode, 'select');
-    assert.equal(getHook().paintStatus, null);
+    assert.equal(getHook().toolbar.toolMode, 'select');
+    assert.equal(getHook().paintTool.paintStatus, null);
   } finally {
     await act(async () => {
       root.unmount();
@@ -674,7 +676,7 @@ test('handleHoverWrapper forwards renderer hover without writing canonical selec
 
   try {
     await act(async () => {
-      getHook().handleHoverWrapper('link', 'base_link', 'visual', 2);
+      getHook().interaction.handleHoverWrapper('link', 'base_link', 'visual', 2);
     });
 
     assert.deepEqual(forwarded, [
@@ -689,7 +691,7 @@ test('handleHoverWrapper forwards renderer hover without writing canonical selec
     ]);
 
     await act(async () => {
-      getHook().handleHoverWrapper(null, null);
+      getHook().interaction.handleHoverWrapper(null, null);
     });
 
     assert.deepEqual(forwarded[1], {
@@ -726,15 +728,15 @@ test('handleRuntimeJointAngleChange publishes live closed-loop preview compensat
 
   try {
     await act(async () => {
-      getHook().handleRobotLoaded(runtimeRobot);
+      getHook().runtime.handleRobotLoaded(runtimeRobot);
     });
 
     await act(async () => {
-      getHook().handleRuntimeJointAngleChange('joint_a', 0.42);
+      getHook().runtime.handleRuntimeJointAngleChange('joint_a', 0.42);
       await nextAnimationFrame(dom);
     });
 
-    const panelAngles = getHook().jointPanelStore.getSnapshot().jointAngles;
+    const panelAngles = getHook().jointsPanel.jointPanelStore.getSnapshot().jointAngles;
     assertAlmostEqual(panelAngles.joint_a, 0.42);
     assertAlmostEqual(panelAngles.joint_b, 0.42);
     assertAlmostEqual(runtimeRobot.joints.joint_a?.angle, 0.42);
@@ -747,7 +749,7 @@ test('handleRuntimeJointAngleChange publishes live closed-loop preview compensat
     assertAlmostEqual(preview.jointAngles.joint_b, 0.42);
 
     await act(async () => {
-      await getHook().handleJointChangeCommit('joint_a', 0.42);
+      await getHook().jointsPanel.handleJointChangeCommit('joint_a', 0.42);
     });
 
     assert.deepEqual(
@@ -783,13 +785,13 @@ test('handleRuntimeJointChangeCommit emits the active joint after local closed-l
 
   try {
     await act(async () => {
-      getHook().handleRobotLoaded(runtimeRobot);
+      getHook().runtime.handleRobotLoaded(runtimeRobot);
     });
 
     runtimeRobot.joints.joint_a.setJointValue(0.55);
 
     await act(async () => {
-      await getHook().handleRuntimeJointChangeCommit('joint_a', 0.55);
+      await getHook().runtime.handleRuntimeJointChangeCommit('joint_a', 0.55);
     });
 
     assert.deepEqual(
@@ -806,20 +808,15 @@ test('handleRuntimeJointChangeCommit emits the active joint after local closed-l
 test('handleRobotLoaded sanitizes runtime Three.js quaternions before closed-loop preview cloning', async () => {
   const closedLoopRobotState = createClosedLoopRobotFixture();
   const runtimeRobot = createRuntimeRobotFixture(closedLoopRobotState);
-  runtimeRobot.joints.joint_a.quaternion = new THREE.Quaternion(
-    0,
-    0.5,
-    0,
-    0.8660254,
-  );
+  runtimeRobot.joints.joint_a.quaternion = new THREE.Quaternion(0, 0.5, 0, 0.8660254);
   const { dom, root, getHook } = await mountController(closedLoopRobotState);
 
   try {
     await act(async () => {
-      getHook().handleRobotLoaded(runtimeRobot);
+      getHook().runtime.handleRobotLoaded(runtimeRobot);
     });
 
-    const mergedQuaternion = getHook().closedLoopRobotState?.joints.joint_a?.quaternion;
+    const mergedQuaternion = getHook().runtime.closedLoopRobotState?.joints.joint_a?.quaternion;
     assert.deepEqual(mergedQuaternion, {
       x: 0,
       y: 0.5,
@@ -839,26 +836,16 @@ test('handleRobotLoaded sanitizes runtime Three.js quaternions before closed-loo
 test('handleRobotLoaded stores runtime ball joint motion quaternion in RobotState', async () => {
   const closedLoopRobotState = createClosedLoopRobotFixture();
   const runtimeRobot = createRuntimeRobotFixture(closedLoopRobotState);
-  runtimeRobot.joints.joint_a.jointQuaternion = new THREE.Quaternion(
-    0,
-    0.5,
-    0,
-    0.8660254,
-  );
-  runtimeRobot.joints.joint_a.quaternion = new THREE.Quaternion(
-    0.1,
-    0.6,
-    0.2,
-    0.7,
-  );
+  runtimeRobot.joints.joint_a.jointQuaternion = new THREE.Quaternion(0, 0.5, 0, 0.8660254);
+  runtimeRobot.joints.joint_a.quaternion = new THREE.Quaternion(0.1, 0.6, 0.2, 0.7);
   const { dom, root, getHook } = await mountController(closedLoopRobotState);
 
   try {
     await act(async () => {
-      getHook().handleRobotLoaded(runtimeRobot);
+      getHook().runtime.handleRobotLoaded(runtimeRobot);
     });
 
-    const mergedQuaternion = getHook().closedLoopRobotState?.joints.joint_a?.quaternion;
+    const mergedQuaternion = getHook().runtime.closedLoopRobotState?.joints.joint_a?.quaternion;
     assert.deepEqual(mergedQuaternion, {
       x: 0,
       y: 0.5,
@@ -897,7 +884,7 @@ test('closedLoopRobotState sanitizes runtime-shaped joints before preview sessio
   });
 
   try {
-    const previewRobotState = getHook().closedLoopRobotState;
+    const previewRobotState = getHook().runtime.closedLoopRobotState;
     assert.ok(previewRobotState);
     assert.doesNotThrow(() => structuredClone(previewRobotState));
     assert.deepEqual(previewRobotState.joints.joint_a?.quaternion, {
@@ -937,21 +924,21 @@ test('handleRuntimeJointAnglesChange keeps USD drag previews local until the dra
 
   try {
     await act(async () => {
-      getHook().handleJointPanelRobotLoaded(runtimeRobot);
+      getHook().runtime.handleJointPanelRobotLoaded(runtimeRobot);
     });
 
     await act(async () => {
-      getHook().setIsDragging(true);
-      getHook().handleRuntimeJointAnglesChange({ joint_a: 0.35 });
+      getHook().interaction.setIsDragging(true);
+      getHook().runtime.handleRuntimeJointAnglesChange({ joint_a: 0.35 });
     });
 
     assert.deepEqual(committedJointChanges, []);
     assertAlmostEqual(runtimeRobot.joints.joint_a?.angle, 0.35);
-    assertAlmostEqual(getHook().jointPanelStore.getSnapshot().jointAngles.joint_a, 0.35);
+    assertAlmostEqual(getHook().jointsPanel.jointPanelStore.getSnapshot().jointAngles.joint_a, 0.35);
 
     await act(async () => {
-      getHook().setIsDragging(false);
-      getHook().handleRuntimeJointAnglesChange({ joint_a: 0.45 });
+      getHook().interaction.setIsDragging(false);
+      getHook().runtime.handleRuntimeJointAnglesChange({ joint_a: 0.45 });
     });
 
     assert.deepEqual(committedJointChanges, [
@@ -962,7 +949,7 @@ test('handleRuntimeJointAnglesChange keeps USD drag previews local until the dra
       },
     ]);
     assertAlmostEqual(runtimeRobot.joints.joint_a?.angle, 0.45);
-    assertAlmostEqual(getHook().jointPanelStore.getSnapshot().jointAngles.joint_a, 0.45);
+    assertAlmostEqual(getHook().jointsPanel.jointPanelStore.getSnapshot().jointAngles.joint_a, 0.45);
   } finally {
     await act(async () => {
       root.unmount();
@@ -981,8 +968,8 @@ test('tree-panel joint preview updates the runtime immediately and does not snap
 
   try {
     await act(async () => {
-      getHook().handleJointPanelRobotLoaded(runtimeRobot);
-      getHook().registerSceneRefresh(() => {
+      getHook().runtime.handleJointPanelRobotLoaded(runtimeRobot);
+      getHook().runtime.registerSceneRefresh(() => {
         refreshCount += 1;
       });
     });
@@ -990,6 +977,7 @@ test('tree-panel joint preview updates the runtime immediately and does not snap
 
     await act(async () => {
       useJointInteractionPreviewStore.getState().publishPreview({
+        ownerId: 'tree-test-owner',
         source: 'tree-panel',
         dragSessionId: 'tree-test',
         activeJointId: 'joint_a',
@@ -1005,6 +993,7 @@ test('tree-panel joint preview updates the runtime immediately and does not snap
 
     await act(async () => {
       useJointInteractionPreviewStore.getState().clearPreview({
+        ownerId: 'tree-test-owner',
         source: 'tree-panel',
         dragSessionId: 'tree-test',
       });
@@ -1031,11 +1020,12 @@ test('tree-panel joint preview shields runtime from stale external joint motion 
 
   try {
     await act(async () => {
-      getHook().handleJointPanelRobotLoaded(runtimeRobot);
+      getHook().runtime.handleJointPanelRobotLoaded(runtimeRobot);
     });
 
     await act(async () => {
       useJointInteractionPreviewStore.getState().publishPreview({
+        ownerId: 'tree-test-owner',
         source: 'tree-panel',
         dragSessionId: 'tree-test',
         activeJointId: 'joint_a',
@@ -1054,7 +1044,7 @@ test('tree-panel joint preview shields runtime from stale external joint motion 
     });
 
     assertAlmostEqual(runtimeRobot.joints.joint_a?.angle, 0.62);
-    assertAlmostEqual(getHook().jointPanelStore.getSnapshot().jointAngles.joint_a, 0.62);
+    assertAlmostEqual(getHook().jointsPanel.jointPanelStore.getSnapshot().jointAngles.joint_a, 0.62);
   } finally {
     useJointInteractionPreviewStore.getState().clearPreview();
     await act(async () => {
@@ -1079,29 +1069,29 @@ test('handleRuntimeJointAnglesChange keeps closed-loop runtime drags local while
 
   try {
     await act(async () => {
-      getHook().handleRobotLoaded(runtimeRobot);
+      getHook().runtime.handleRobotLoaded(runtimeRobot);
     });
 
     await act(async () => {
-      getHook().setIsDragging(true);
-      getHook().handleRuntimeJointAnglesChange({ joint_a: 0.2 });
+      getHook().interaction.setIsDragging(true);
+      getHook().runtime.handleRuntimeJointAnglesChange({ joint_a: 0.2 });
       await nextAnimationFrame(dom);
     });
 
     assert.equal(ControlledClosedLoopPreviewMockWorker.requests.length, 1);
-    let panelAngles = getHook().jointPanelStore.getSnapshot().jointAngles;
+    let panelAngles = getHook().jointsPanel.jointPanelStore.getSnapshot().jointAngles;
     assertAlmostEqual(panelAngles.joint_a, 0.2);
     assertAlmostEqual(panelAngles.joint_b, 0);
     assertAlmostEqual(runtimeRobot.joints.joint_a?.angle, 0.2);
     assertAlmostEqual(runtimeRobot.joints.joint_b?.angle, 0);
 
     await act(async () => {
-      getHook().handleRuntimeJointAnglesChange({ joint_a: 0.42 });
+      getHook().runtime.handleRuntimeJointAnglesChange({ joint_a: 0.42 });
       await nextAnimationFrame(dom);
     });
 
     assert.equal(ControlledClosedLoopPreviewMockWorker.requests.length, 2);
-    panelAngles = getHook().jointPanelStore.getSnapshot().jointAngles;
+    panelAngles = getHook().jointsPanel.jointPanelStore.getSnapshot().jointAngles;
     assertAlmostEqual(panelAngles.joint_a, 0.42);
     assertAlmostEqual(panelAngles.joint_b, 0);
     assertAlmostEqual(runtimeRobot.joints.joint_a?.angle, 0.42);
@@ -1112,7 +1102,7 @@ test('handleRuntimeJointAnglesChange keeps closed-loop runtime drags local while
       await Promise.resolve();
     });
 
-    panelAngles = getHook().jointPanelStore.getSnapshot().jointAngles;
+    panelAngles = getHook().jointsPanel.jointPanelStore.getSnapshot().jointAngles;
     assertAlmostEqual(panelAngles.joint_a, 0.42);
     assertAlmostEqual(panelAngles.joint_b, 0.2);
     assertAlmostEqual(runtimeRobot.joints.joint_a?.angle, 0.42);
@@ -1123,7 +1113,7 @@ test('handleRuntimeJointAnglesChange keeps closed-loop runtime drags local while
       await Promise.resolve();
     });
 
-    panelAngles = getHook().jointPanelStore.getSnapshot().jointAngles;
+    panelAngles = getHook().jointsPanel.jointPanelStore.getSnapshot().jointAngles;
     assertAlmostEqual(panelAngles.joint_a, 0.42);
     assertAlmostEqual(panelAngles.joint_b, 0.42);
     assertAlmostEqual(runtimeRobot.joints.joint_a?.angle, 0.42);
@@ -1147,22 +1137,22 @@ test('previewIkJointKinematics keeps the IK drag preview out of the joint panel 
 
   try {
     await act(async () => {
-      getHook().handleJointPanelRobotLoaded(runtimeRobot);
+      getHook().runtime.handleJointPanelRobotLoaded(runtimeRobot);
     });
 
     await act(async () => {
-      getHook().previewIkJointKinematics({ joint_a: 0.35 }, {});
+      getHook().runtime.previewIkJointKinematics({ joint_a: 0.35 }, {});
     });
 
     assertAlmostEqual(runtimeRobot.joints.joint_a?.angle, 0.35);
-    assertAlmostEqual(getHook().jointPanelStore.getSnapshot().jointAngles.joint_a, 0);
+    assertAlmostEqual(getHook().jointsPanel.jointPanelStore.getSnapshot().jointAngles.joint_a, 0);
 
     await act(async () => {
-      getHook().clearIkJointKinematicsPreview();
+      getHook().runtime.clearIkJointKinematicsPreview();
     });
 
     assertAlmostEqual(runtimeRobot.joints.joint_a?.angle, 0);
-    assertAlmostEqual(getHook().jointPanelStore.getSnapshot().jointAngles.joint_a, 0);
+    assertAlmostEqual(getHook().jointsPanel.jointPanelStore.getSnapshot().jointAngles.joint_a, 0);
   } finally {
     await act(async () => {
       root.unmount();
@@ -1179,29 +1169,29 @@ test('clearIkJointKinematicsPreview restores the latest committed joint baseline
 
   try {
     await act(async () => {
-      getHook().handleJointPanelRobotLoaded(runtimeRobot);
+      getHook().runtime.handleJointPanelRobotLoaded(runtimeRobot);
     });
 
     await act(async () => {
-      await getHook().handleJointChangeCommit('joint_a', 0.3);
+      await getHook().jointsPanel.handleJointChangeCommit('joint_a', 0.3);
     });
 
     assertAlmostEqual(runtimeRobot.joints.joint_a?.angle, 0.3);
-    assertAlmostEqual(getHook().jointPanelStore.getSnapshot().jointAngles.joint_a, 0.3);
+    assertAlmostEqual(getHook().jointsPanel.jointPanelStore.getSnapshot().jointAngles.joint_a, 0.3);
 
     await act(async () => {
-      getHook().previewIkJointKinematics({ joint_a: 0.65 }, {});
+      getHook().runtime.previewIkJointKinematics({ joint_a: 0.65 }, {});
     });
 
     assertAlmostEqual(runtimeRobot.joints.joint_a?.angle, 0.65);
-    assertAlmostEqual(getHook().jointPanelStore.getSnapshot().jointAngles.joint_a, 0.3);
+    assertAlmostEqual(getHook().jointsPanel.jointPanelStore.getSnapshot().jointAngles.joint_a, 0.3);
 
     await act(async () => {
-      getHook().clearIkJointKinematicsPreview();
+      getHook().runtime.clearIkJointKinematicsPreview();
     });
 
     assertAlmostEqual(runtimeRobot.joints.joint_a?.angle, 0.3);
-    assertAlmostEqual(getHook().jointPanelStore.getSnapshot().jointAngles.joint_a, 0.3);
+    assertAlmostEqual(getHook().jointsPanel.jointPanelStore.getSnapshot().jointAngles.joint_a, 0.3);
   } finally {
     await act(async () => {
       root.unmount();
@@ -1219,27 +1209,27 @@ test('getInitialJointAnglesForNextLoad seeds same-scope reloads from the current
   });
 
   try {
-    assert.deepEqual(getHook().getInitialJointAnglesForNextLoad(), {});
+    assert.deepEqual(getHook().runtime.getInitialJointAnglesForNextLoad(), {});
 
     await act(async () => {
-      getHook().handleRobotLoaded(runtimeRobot);
+      getHook().runtime.handleRobotLoaded(runtimeRobot);
     });
 
-    assert.deepEqual(getHook().getInitialJointAnglesForNextLoad(), { joint_a: 0 });
+    assert.deepEqual(getHook().runtime.getInitialJointAnglesForNextLoad(), { joint_a: 0 });
 
     await act(async () => {
-      await getHook().handleJointChangeCommit('joint_a', 0.47);
+      await getHook().jointsPanel.handleJointChangeCommit('joint_a', 0.47);
     });
 
-    const initialAnglesForReload = getHook().getInitialJointAnglesForNextLoad();
+    const initialAnglesForReload = getHook().runtime.getInitialJointAnglesForNextLoad();
     assertAlmostEqual(initialAnglesForReload.joint_a, 0.47);
 
     await act(async () => {
-      getHook().handleRobotLoaded(reloadedRuntimeRobot);
+      getHook().runtime.handleRobotLoaded(reloadedRuntimeRobot);
     });
 
     assertAlmostEqual(reloadedRuntimeRobot.joints.joint_a?.angle, 0.47);
-    assertAlmostEqual(getHook().jointPanelStore.getSnapshot().jointAngles.joint_a, 0.47);
+    assertAlmostEqual(getHook().jointsPanel.jointPanelStore.getSnapshot().jointAngles.joint_a, 0.47);
   } finally {
     await act(async () => {
       root.unmount();
@@ -1257,34 +1247,34 @@ test('committed IK joint kinematics become the baseline restored after preview c
 
   try {
     await act(async () => {
-      getHook().handleJointPanelRobotLoaded(runtimeRobot);
+      getHook().runtime.handleJointPanelRobotLoaded(runtimeRobot);
     });
 
     await act(async () => {
-      getHook().previewIkJointKinematics({ joint_a: 0.35 }, {});
+      getHook().runtime.previewIkJointKinematics({ joint_a: 0.35 }, {});
     });
 
     assertAlmostEqual(runtimeRobot.joints.joint_a?.angle, 0.35);
-    assertAlmostEqual(getHook().jointPanelStore.getSnapshot().jointAngles.joint_a, 0);
+    assertAlmostEqual(getHook().jointsPanel.jointPanelStore.getSnapshot().jointAngles.joint_a, 0);
 
     await act(async () => {
-      getHook().commitIkJointKinematics({ joint_a: 0.35 }, {});
+      getHook().runtime.commitIkJointKinematics({ joint_a: 0.35 }, {});
     });
 
-    assertAlmostEqual(getHook().jointPanelStore.getSnapshot().jointAngles.joint_a, 0.35);
+    assertAlmostEqual(getHook().jointsPanel.jointPanelStore.getSnapshot().jointAngles.joint_a, 0.35);
 
     await act(async () => {
-      getHook().previewIkJointKinematics({ joint_a: 0.7 }, {});
+      getHook().runtime.previewIkJointKinematics({ joint_a: 0.7 }, {});
     });
 
     assertAlmostEqual(runtimeRobot.joints.joint_a?.angle, 0.7);
 
     await act(async () => {
-      getHook().clearIkJointKinematicsPreview();
+      getHook().runtime.clearIkJointKinematicsPreview();
     });
 
     assertAlmostEqual(runtimeRobot.joints.joint_a?.angle, 0.35);
-    assertAlmostEqual(getHook().jointPanelStore.getSnapshot().jointAngles.joint_a, 0.35);
+    assertAlmostEqual(getHook().jointsPanel.jointPanelStore.getSnapshot().jointAngles.joint_a, 0.35);
   } finally {
     await act(async () => {
       root.unmount();
@@ -1312,11 +1302,11 @@ test('local joint commits are not overwritten by stale external joint motion pro
 
   try {
     await act(async () => {
-      getHook().handleRobotLoaded(runtimeRobot);
+      getHook().runtime.handleRobotLoaded(runtimeRobot);
     });
 
     await act(async () => {
-      await getHook().handleJointChangeCommit('joint_a', 0.42);
+      await getHook().jointsPanel.handleJointChangeCommit('joint_a', 0.42);
     });
 
     assertAlmostEqual(runtimeRobot.joints.joint_a?.angle, 0.42);
@@ -1342,8 +1332,8 @@ test('local joint commits are not overwritten by stale external joint motion pro
 
     assertAlmostEqual(runtimeRobot.joints.joint_a?.angle, 0.42);
     assertAlmostEqual(runtimeRobot.joints.joint_b?.angle, 0.42);
-    assertAlmostEqual(getHook().jointPanelStore.getSnapshot().jointAngles.joint_a, 0.42);
-    assertAlmostEqual(getHook().jointPanelStore.getSnapshot().jointAngles.joint_b, 0.42);
+    assertAlmostEqual(getHook().jointsPanel.jointPanelStore.getSnapshot().jointAngles.joint_a, 0.42);
+    assertAlmostEqual(getHook().jointsPanel.jointPanelStore.getSnapshot().jointAngles.joint_b, 0.42);
 
     await rerender({
       active: false,
@@ -1381,10 +1371,10 @@ test('closedLoopRobotState keeps the runtime-loaded joint pose when external joi
 
   try {
     await act(async () => {
-      getHook().handleRobotLoaded(runtimeRobot);
+      getHook().runtime.handleRobotLoaded(runtimeRobot);
     });
 
-    const resolvedClosedLoopRobotState = getHook().closedLoopRobotState;
+    const resolvedClosedLoopRobotState = getHook().runtime.closedLoopRobotState;
     assert.ok(resolvedClosedLoopRobotState);
     assertAlmostEqual(resolvedClosedLoopRobotState.joints.joint_a?.angle, 0.25);
     assertAlmostEqual(resolvedClosedLoopRobotState.joints.joint_b?.angle, -0.85);
@@ -1409,10 +1399,10 @@ test('closedLoopRobotState converts runtime motion angles back to referenced act
 
   try {
     await act(async () => {
-      getHook().handleRobotLoaded(runtimeRobot);
+      getHook().runtime.handleRobotLoaded(runtimeRobot);
     });
 
-    const resolvedClosedLoopRobotState = getHook().closedLoopRobotState;
+    const resolvedClosedLoopRobotState = getHook().runtime.closedLoopRobotState;
     assert.ok(resolvedClosedLoopRobotState);
     assertAlmostEqual(resolvedClosedLoopRobotState.joints.joint_a?.angle, 0.6);
   } finally {
@@ -1434,24 +1424,24 @@ test('empty jointMotionState does not clear the runtime baseline used by IK prev
 
   try {
     await act(async () => {
-      getHook().handleJointPanelRobotLoaded(runtimeRobot);
+      getHook().runtime.handleJointPanelRobotLoaded(runtimeRobot);
     });
 
     assertAlmostEqual(runtimeRobot.joints.joint_a?.angle, 0.2);
-    assertAlmostEqual(getHook().jointPanelStore.getSnapshot().jointAngles.joint_a, 0.2);
+    assertAlmostEqual(getHook().jointsPanel.jointPanelStore.getSnapshot().jointAngles.joint_a, 0.2);
 
     await act(async () => {
-      getHook().previewIkJointKinematics({ joint_a: 0.65 }, {});
+      getHook().runtime.previewIkJointKinematics({ joint_a: 0.65 }, {});
     });
 
     assertAlmostEqual(runtimeRobot.joints.joint_a?.angle, 0.65);
 
     await act(async () => {
-      getHook().clearIkJointKinematicsPreview();
+      getHook().runtime.clearIkJointKinematicsPreview();
     });
 
     assertAlmostEqual(runtimeRobot.joints.joint_a?.angle, 0.2);
-    assertAlmostEqual(getHook().jointPanelStore.getSnapshot().jointAngles.joint_a, 0.2);
+    assertAlmostEqual(getHook().jointsPanel.jointPanelStore.getSnapshot().jointAngles.joint_a, 0.2);
   } finally {
     await act(async () => {
       root.unmount();
@@ -1478,24 +1468,24 @@ test('runtime joint drag handlers convert motion angles before applying referenc
 
   try {
     await act(async () => {
-      getHook().handleJointPanelRobotLoaded(runtimeRobot);
+      getHook().runtime.handleJointPanelRobotLoaded(runtimeRobot);
     });
 
     await act(async () => {
-      getHook().handleRuntimeJointAngleChange('joint_a', 0.2);
+      getHook().runtime.handleRuntimeJointAngleChange('joint_a', 0.2);
     });
 
     assertAlmostEqual(runtimeAngles.at(-1), 0.2);
     assertAlmostEqual(runtimeRobot.joints.joint_a?.angle, 0.2);
-    assertAlmostEqual(getHook().jointPanelStore.getSnapshot().jointAngles.joint_a, 0.6);
+    assertAlmostEqual(getHook().jointsPanel.jointPanelStore.getSnapshot().jointAngles.joint_a, 0.6);
 
     await act(async () => {
-      await getHook().handleRuntimeJointChangeCommit('joint_a', 0.2);
+      await getHook().runtime.handleRuntimeJointChangeCommit('joint_a', 0.2);
     });
 
     assertAlmostEqual(runtimeAngles.at(-1), 0.2);
     assertAlmostEqual(runtimeRobot.joints.joint_a?.angle, 0.2);
-    assertAlmostEqual(getHook().jointPanelStore.getSnapshot().jointAngles.joint_a, 0.6);
+    assertAlmostEqual(getHook().jointsPanel.jointPanelStore.getSnapshot().jointAngles.joint_a, 0.6);
   } finally {
     await act(async () => {
       root.unmount();
@@ -1522,24 +1512,24 @@ test('actual joint change handlers apply referenced joints in runtime motion spa
 
   try {
     await act(async () => {
-      getHook().handleJointPanelRobotLoaded(runtimeRobot);
+      getHook().runtime.handleJointPanelRobotLoaded(runtimeRobot);
     });
 
     await act(async () => {
-      getHook().handleJointAngleChange('joint_a', 0.6);
+      getHook().jointsPanel.handleJointAngleChange('joint_a', 0.6);
     });
 
     assertAlmostEqual(runtimeAngles.at(-1), 0.2);
     assertAlmostEqual(runtimeRobot.joints.joint_a?.angle, 0.2);
-    assertAlmostEqual(getHook().jointPanelStore.getSnapshot().jointAngles.joint_a, 0.6);
+    assertAlmostEqual(getHook().jointsPanel.jointPanelStore.getSnapshot().jointAngles.joint_a, 0.6);
 
     await act(async () => {
-      await getHook().handleJointChangeCommit('joint_a', 0.6);
+      await getHook().jointsPanel.handleJointChangeCommit('joint_a', 0.6);
     });
 
     assertAlmostEqual(runtimeAngles.at(-1), 0.2);
     assertAlmostEqual(runtimeRobot.joints.joint_a?.angle, 0.2);
-    assertAlmostEqual(getHook().jointPanelStore.getSnapshot().jointAngles.joint_a, 0.6);
+    assertAlmostEqual(getHook().jointsPanel.jointPanelStore.getSnapshot().jointAngles.joint_a, 0.6);
   } finally {
     await act(async () => {
       root.unmount();
@@ -1566,12 +1556,12 @@ test('external joint motion state is converted from actual angle to runtime moti
 
   try {
     await act(async () => {
-      getHook().handleRobotLoaded(runtimeRobot);
+      getHook().runtime.handleRobotLoaded(runtimeRobot);
     });
 
     assertAlmostEqual(runtimeAngles.at(-1), 0.5);
     assertAlmostEqual(runtimeRobot.joints.joint_a?.angle, 0.5);
-    assertAlmostEqual(getHook().jointPanelStore.getSnapshot().jointAngles.joint_a, 0.9);
+    assertAlmostEqual(getHook().jointsPanel.jointPanelStore.getSnapshot().jointAngles.joint_a, 0.9);
   } finally {
     await act(async () => {
       root.unmount();
@@ -1593,7 +1583,7 @@ test('setIsDragging freezes hover updates without clearing the visible hover for
     });
 
     await act(async () => {
-      getHook().setIsDragging(true);
+      getHook().interaction.setIsDragging(true);
     });
 
     let selectionState = useSelectionStore.getState();
@@ -1610,7 +1600,7 @@ test('setIsDragging freezes hover updates without clearing the visible hover for
     });
 
     await act(async () => {
-      getHook().setIsDragging(false);
+      getHook().interaction.setIsDragging(false);
     });
 
     selectionState = useSelectionStore.getState();
@@ -1652,16 +1642,16 @@ test('handleJointAngleChange batches closed-loop slider preview into one frame-a
 
   try {
     await act(async () => {
-      getHook().handleRobotLoaded(runtimeRobot);
+      getHook().runtime.handleRobotLoaded(runtimeRobot);
     });
 
     await act(async () => {
-      getHook().handleJointAngleChange('joint_a', 0.42);
+      getHook().jointsPanel.handleJointAngleChange('joint_a', 0.42);
     });
 
     assertAlmostEqual(runtimeRobot.joints.joint_a?.angle, 0.42);
     assertAlmostEqual(runtimeRobot.joints.joint_b?.angle, 0);
-    assert.deepEqual(getHook().jointPanelStore.getSnapshot().jointAngles, {
+    assert.deepEqual(getHook().jointsPanel.jointPanelStore.getSnapshot().jointAngles, {
       joint_a: 0,
       joint_b: 0,
     });
@@ -1670,7 +1660,7 @@ test('handleJointAngleChange batches closed-loop slider preview into one frame-a
       await nextAnimationFrame(dom);
     });
 
-    const panelAngles = getHook().jointPanelStore.getSnapshot().jointAngles;
+    const panelAngles = getHook().jointsPanel.jointPanelStore.getSnapshot().jointAngles;
     assertAlmostEqual(panelAngles.joint_a, 0.42);
     assertAlmostEqual(panelAngles.joint_b, 0.42);
     assertAlmostEqual(runtimeRobot.joints.joint_a?.angle, 0.42);
@@ -1710,17 +1700,17 @@ test('handleJointAngleChange keeps closed-loop direct drags local while worker p
 
   try {
     await act(async () => {
-      getHook().handleRobotLoaded(runtimeRobot);
+      getHook().runtime.handleRobotLoaded(runtimeRobot);
     });
 
     await act(async () => {
-      getHook().setIsDragging(true);
+      getHook().interaction.setIsDragging(true);
       runtimeRobot.joints.joint_a.setJointValue(0.42);
-      getHook().handleJointAngleChange('joint_a', 0.42);
+      getHook().jointsPanel.handleJointAngleChange('joint_a', 0.42);
       await nextAnimationFrame(dom);
     });
 
-    let panelAngles = getHook().jointPanelStore.getSnapshot().jointAngles;
+    let panelAngles = getHook().jointsPanel.jointPanelStore.getSnapshot().jointAngles;
     assert.equal(ControlledClosedLoopPreviewMockWorker.requests.length, 1);
     assertAlmostEqual(runtimeRobot.joints.joint_a?.angle, 0.42);
     assertAlmostEqual(runtimeRobot.joints.joint_b?.angle, 0);
@@ -1729,12 +1719,12 @@ test('handleJointAngleChange keeps closed-loop direct drags local while worker p
 
     await act(async () => {
       runtimeRobot.joints.joint_a.setJointValue(0.55);
-      getHook().handleJointAngleChange('joint_a', 0.55);
+      getHook().jointsPanel.handleJointAngleChange('joint_a', 0.55);
       await nextAnimationFrame(dom);
     });
 
     assert.equal(ControlledClosedLoopPreviewMockWorker.requests.length, 2);
-    panelAngles = getHook().jointPanelStore.getSnapshot().jointAngles;
+    panelAngles = getHook().jointsPanel.jointPanelStore.getSnapshot().jointAngles;
     assertAlmostEqual(runtimeRobot.joints.joint_a?.angle, 0.55);
     assertAlmostEqual(runtimeRobot.joints.joint_b?.angle, 0);
     assertAlmostEqual(panelAngles.joint_a, 0.55);
@@ -1742,12 +1732,12 @@ test('handleJointAngleChange keeps closed-loop direct drags local while worker p
 
     await act(async () => {
       runtimeRobot.joints.joint_a.setJointValue(0.7);
-      getHook().handleJointAngleChange('joint_a', 0.7);
+      getHook().jointsPanel.handleJointAngleChange('joint_a', 0.7);
       await nextAnimationFrame(dom);
     });
 
     assert.equal(ControlledClosedLoopPreviewMockWorker.requests.length, 2);
-    panelAngles = getHook().jointPanelStore.getSnapshot().jointAngles;
+    panelAngles = getHook().jointsPanel.jointPanelStore.getSnapshot().jointAngles;
     assertAlmostEqual(runtimeRobot.joints.joint_a?.angle, 0.7);
     assertAlmostEqual(runtimeRobot.joints.joint_b?.angle, 0);
     assertAlmostEqual(panelAngles.joint_a, 0.7);
@@ -1758,7 +1748,7 @@ test('handleJointAngleChange keeps closed-loop direct drags local while worker p
       await Promise.resolve();
     });
 
-    panelAngles = getHook().jointPanelStore.getSnapshot().jointAngles;
+    panelAngles = getHook().jointsPanel.jointPanelStore.getSnapshot().jointAngles;
     assertAlmostEqual(runtimeRobot.joints.joint_a?.angle, 0.7);
     assertAlmostEqual(runtimeRobot.joints.joint_b?.angle, 0.42);
     assertAlmostEqual(panelAngles.joint_a, 0.7);
@@ -1769,7 +1759,7 @@ test('handleJointAngleChange keeps closed-loop direct drags local while worker p
       await Promise.resolve();
     });
 
-    panelAngles = getHook().jointPanelStore.getSnapshot().jointAngles;
+    panelAngles = getHook().jointsPanel.jointPanelStore.getSnapshot().jointAngles;
     assertAlmostEqual(runtimeRobot.joints.joint_a?.angle, 0.7);
     assertAlmostEqual(runtimeRobot.joints.joint_b?.angle, 0.55);
     assertAlmostEqual(panelAngles.joint_a, 0.7);
@@ -1786,17 +1776,17 @@ test('handleJointAngleChange keeps closed-loop direct drags local while worker p
       await Promise.resolve();
     });
 
-    panelAngles = getHook().jointPanelStore.getSnapshot().jointAngles;
+    panelAngles = getHook().jointsPanel.jointPanelStore.getSnapshot().jointAngles;
     assertAlmostEqual(runtimeRobot.joints.joint_a?.angle, 0.7);
     assertAlmostEqual(runtimeRobot.joints.joint_b?.angle, 0.7);
     assertAlmostEqual(panelAngles.joint_a, 0.7);
     assertAlmostEqual(panelAngles.joint_b, 0.7);
 
     await act(async () => {
-      await getHook().handleJointChangeCommit('joint_a', 0.7);
+      await getHook().jointsPanel.handleJointChangeCommit('joint_a', 0.7);
     });
 
-    panelAngles = getHook().jointPanelStore.getSnapshot().jointAngles;
+    panelAngles = getHook().jointsPanel.jointPanelStore.getSnapshot().jointAngles;
     assertAlmostEqual(runtimeRobot.joints.joint_a?.angle, 0.7);
     assertAlmostEqual(runtimeRobot.joints.joint_b?.angle, 0.7);
     assertAlmostEqual(panelAngles.joint_a, 0.7);
@@ -1808,10 +1798,10 @@ test('handleJointAngleChange keeps closed-loop direct drags local while worker p
     assertAlmostEqual(emittedChanges[0]?.context?.jointAngles?.joint_b, 0.7);
 
     await act(async () => {
-      getHook().clearIkJointKinematicsPreview();
+      getHook().runtime.clearIkJointKinematicsPreview();
     });
 
-    panelAngles = getHook().jointPanelStore.getSnapshot().jointAngles;
+    panelAngles = getHook().jointsPanel.jointPanelStore.getSnapshot().jointAngles;
     assertAlmostEqual(runtimeRobot.joints.joint_a?.angle, 0.7);
     assertAlmostEqual(runtimeRobot.joints.joint_b?.angle, 0.7);
     assertAlmostEqual(panelAngles.joint_a, 0.7);
@@ -1854,12 +1844,14 @@ test('handleJointChangeCommit keeps local closed-loop state when worker commit s
 
   try {
     await act(async () => {
-      getHook().handleRobotLoaded(runtimeRobot);
+      getHook().runtime.handleRobotLoaded(runtimeRobot);
     });
 
     let commitPromise: Promise<void> | null = null as Promise<void> | null;
     await act(async () => {
-      commitPromise = getHook().handleJointChangeCommit('joint_a', 0.73);
+      commitPromise = Promise.resolve(
+        getHook().jointsPanel.handleJointChangeCommit('joint_a', 0.73),
+      );
       await Promise.resolve();
     });
 
@@ -1916,20 +1908,20 @@ test('handleJointAngleChange projects constrained closed-loop direct drags back 
 
   try {
     await act(async () => {
-      getHook().handleRobotLoaded(runtimeRobot);
+      getHook().runtime.handleRobotLoaded(runtimeRobot);
     });
 
     await act(async () => {
-      getHook().setIsDragging(true);
+      getHook().interaction.setIsDragging(true);
       runtimeRobot.joints.joint_a.setJointValue(1.2);
-      getHook().handleJointAngleChange('joint_a', 1.2);
+      getHook().jointsPanel.handleJointAngleChange('joint_a', 1.2);
       await nextAnimationFrame(dom);
     });
 
     assert.equal(ControlledClosedLoopPreviewMockWorker.requests.length, 1);
     assertAlmostEqual(runtimeRobot.joints.joint_a?.angle, 1.2, 1e-3);
     assertAlmostEqual(runtimeRobot.joints.joint_b?.angle, 0, 1e-3);
-    let panelAngles = getHook().jointPanelStore.getSnapshot().jointAngles;
+    let panelAngles = getHook().jointsPanel.jointPanelStore.getSnapshot().jointAngles;
     assertAlmostEqual(panelAngles.joint_a, 1.2, 1e-3);
     assertAlmostEqual(panelAngles.joint_b, 0, 1e-3);
 
@@ -1940,12 +1932,12 @@ test('handleJointAngleChange projects constrained closed-loop direct drags back 
 
     assertAlmostEqual(runtimeRobot.joints.joint_a?.angle, 0.5, 1e-3);
     assertAlmostEqual(runtimeRobot.joints.joint_b?.angle, 0.5, 1e-3);
-    panelAngles = getHook().jointPanelStore.getSnapshot().jointAngles;
+    panelAngles = getHook().jointsPanel.jointPanelStore.getSnapshot().jointAngles;
     assertAlmostEqual(panelAngles.joint_a, 0.5, 1e-3);
     assertAlmostEqual(panelAngles.joint_b, 0.5, 1e-3);
 
     await act(async () => {
-      await getHook().handleJointChangeCommit('joint_a', 1.2);
+      await getHook().jointsPanel.handleJointChangeCommit('joint_a', 1.2);
     });
 
     assert.equal(emittedChanges.length, 1);
@@ -1968,14 +1960,14 @@ test('handleJointAngleChange expands mimic-coupled joints before commit', async 
 
   try {
     await act(async () => {
-      getHook().handleRobotLoaded(runtimeRobot);
+      getHook().runtime.handleRobotLoaded(runtimeRobot);
     });
 
     await act(async () => {
-      getHook().handleJointAngleChange('follower_joint', 0.3);
+      getHook().jointsPanel.handleJointAngleChange('follower_joint', 0.3);
     });
 
-    const panelAngles = getHook().jointPanelStore.getSnapshot().jointAngles;
+    const panelAngles = getHook().jointsPanel.jointPanelStore.getSnapshot().jointAngles;
     assertAlmostEqual(panelAngles.leader_joint, -0.1);
     assertAlmostEqual(panelAngles.follower_joint, 0.3);
     assertAlmostEqual(runtimeRobot.joints.leader_joint?.angle, -0.1);
@@ -1988,10 +1980,10 @@ test('handleJointAngleChange expands mimic-coupled joints before commit', async 
     assertAlmostEqual(preview.jointAngles.follower_joint, 0.3);
 
     await act(async () => {
-      await getHook().handleJointChangeCommit('follower_joint', 0.3);
+      await getHook().jointsPanel.handleJointChangeCommit('follower_joint', 0.3);
     });
 
-    const committedAngles = getHook().jointPanelStore.getSnapshot().jointAngles;
+    const committedAngles = getHook().jointsPanel.jointPanelStore.getSnapshot().jointAngles;
     assertAlmostEqual(committedAngles.leader_joint, -0.1);
     assertAlmostEqual(committedAngles.follower_joint, 0.3);
     assert.deepEqual(

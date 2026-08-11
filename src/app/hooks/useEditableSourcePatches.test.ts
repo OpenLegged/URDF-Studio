@@ -84,7 +84,7 @@ test('property patch updates only its target component draft and current semanti
     componentId: 'left',
     expectedRobotSnapshotHash,
     patch: (draft) => draft.content.replace('left', 'left-edited'),
-  }), true);
+  }), 'patched');
 
   const assets = useAssetsStore.getState();
   const currentLeft = useWorkspaceStore.getState().workspace.components.left;
@@ -106,7 +106,7 @@ test('unsafe patch invalidates only its target draft', () => {
     componentId: 'left',
     expectedRobotSnapshotHash,
     patch: () => null,
-  }), false);
+  }), 'invalidated');
   assert.equal(useAssetsStore.getState().componentSourceDrafts.left, undefined);
   assert.ok(useAssetsStore.getState().componentSourceDrafts.right);
 });
@@ -124,7 +124,19 @@ test('foreign or already-stale drafts are rejected and removed', () => {
     componentId: 'left',
     expectedRobotSnapshotHash: createSourceSemanticRobotHash(before.components.left.robot),
     patch: () => '<mujoco model="should-not-commit"/>',
-  }), false);
+  }), 'invalidated');
   assert.equal(useAssetsStore.getState().componentSourceDrafts.left, undefined);
+  assert.ok(useAssetsStore.getState().componentSourceDrafts.right);
+});
+
+test('missing draft reports unavailable without changing other drafts', () => {
+  const before = reset();
+  useAssetsStore.getState().removeComponentSourceDraft('left');
+
+  assert.equal(applyComponentEditableSourcePatch({
+    componentId: 'left',
+    expectedRobotSnapshotHash: createSourceSemanticRobotHash(before.components.left.robot),
+    patch: () => '<mujoco model="unused"/>',
+  }), 'unavailable');
   assert.ok(useAssetsStore.getState().componentSourceDrafts.right);
 });

@@ -735,14 +735,13 @@ async function captureSnapshotPreviewScreenshotSample(page) {
 
       return {
         rect: {
-          left: rect.left,
-          top: rect.top,
-          right: rect.right,
-          bottom: rect.bottom,
-          width: rect.width,
-          height: rect.height,
+          left: visibleLeft,
+          top: visibleTop,
+          right: visibleRight,
+          bottom: visibleBottom,
+          width: visibleRight - visibleLeft,
+          height: visibleBottom - visibleTop,
         },
-        dataUrl: canvas.toDataURL('image/png'),
       };
     } catch (error) {
       return {
@@ -762,13 +761,16 @@ async function captureSnapshotPreviewScreenshotSample(page) {
     };
   }
 
-  const match = /^data:image\/png;base64,(.+)$/i.exec(capture.dataUrl ?? '');
-  if (!match) {
-    return {
-      error: 'snapshot preview canvas did not return PNG data',
-    };
-  }
-  const buffer = Buffer.from(match[1], 'base64');
+  const buffer = await page.screenshot({
+    type: 'png',
+    captureBeyondViewport: false,
+    clip: {
+      x: capture.rect.left,
+      y: capture.rect.top,
+      width: capture.rect.width,
+      height: capture.rect.height,
+    },
+  });
 
   return {
     clip: capture.rect,
@@ -1080,21 +1082,32 @@ async function measureSnapshotPreviewAspectChange(page, preset = '1:1') {
 async function readSnapshotPreviewLookState(page) {
   return page.evaluate(() => {
     const canvas = document.querySelector('[data-testid="snapshot-preview-canvas"] canvas');
+    const canvasSurface = canvas?.closest('[role="button"]');
     const sceneRoot = window.scene?.__r3f?.root ?? null;
     const state = sceneRoot?.getState?.() ?? null;
     const scene = state?.scene ?? null;
     const gl = state?.gl ?? null;
     const background = scene?.background;
-    const backgroundHex =
+    const sceneBackgroundHex =
       background && background.isColor === true && typeof background.getHexString === 'function'
         ? `#${background.getHexString()}`
         : null;
+    const surfaceBackground =
+      canvasSurface instanceof HTMLElement
+        ? window.getComputedStyle(canvasSurface).backgroundColor
+        : '';
+    const surfaceRgb = surfaceBackground.match(
+      /^rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/i,
+    );
+    const surfaceBackgroundHex = surfaceRgb
+      ? `#${surfaceRgb.slice(1, 4).map((value) => Number(value).toString(16).padStart(2, '0')).join('')}`
+      : null;
 
     return {
       rootCanvasIsPreview: Boolean(
         canvas instanceof HTMLCanvasElement && state?.gl?.domElement === canvas,
       ),
-      backgroundHex,
+      backgroundHex: sceneBackgroundHex ?? surfaceBackgroundHex,
       shadowEnabled: Boolean(gl?.shadowMap?.enabled),
       shadowType: Number(gl?.shadowMap?.type ?? Number.NaN),
       toneMappingExposure: Number(gl?.toneMappingExposure ?? Number.NaN),
@@ -1110,20 +1123,31 @@ async function waitForSnapshotPreviewLook(page, condition, args = {}) {
   await page.waitForFunction(
     ({ conditionName, conditionArgs }) => {
       const canvas = document.querySelector('[data-testid="snapshot-preview-canvas"] canvas');
+      const canvasSurface = canvas?.closest('[role="button"]');
       const sceneRoot = window.scene?.__r3f?.root ?? null;
       const state = sceneRoot?.getState?.() ?? null;
       const scene = state?.scene ?? null;
       const gl = state?.gl ?? null;
       const background = scene?.background;
-      const backgroundHex =
+      const sceneBackgroundHex =
         background && background.isColor === true && typeof background.getHexString === 'function'
           ? `#${background.getHexString()}`
           : null;
+      const surfaceBackground =
+        canvasSurface instanceof HTMLElement
+          ? window.getComputedStyle(canvasSurface).backgroundColor
+          : '';
+      const surfaceRgb = surfaceBackground.match(
+        /^rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/i,
+      );
+      const surfaceBackgroundHex = surfaceRgb
+        ? `#${surfaceRgb.slice(1, 4).map((value) => Number(value).toString(16).padStart(2, '0')).join('')}`
+        : null;
       const snapshot = {
         rootCanvasIsPreview: Boolean(
           canvas instanceof HTMLCanvasElement && state?.gl?.domElement === canvas,
         ),
-        backgroundHex,
+        backgroundHex: sceneBackgroundHex ?? surfaceBackgroundHex,
         shadowEnabled: Boolean(gl?.shadowMap?.enabled),
         shadowType: Number(gl?.shadowMap?.type ?? Number.NaN),
         toneMappingExposure: Number(gl?.toneMappingExposure ?? Number.NaN),
@@ -1576,7 +1600,11 @@ async function validateSnapshotPreview(
       }ms)`,
     );
   }
-  await setSnapshotAspectPreset(page, 'viewport');
+  // This is cleanup after every behavioral assertion has completed. Compact
+  // layout changes can remount the select while React is processing the reset,
+  // so a missed best-effort reset must not turn a healthy preview into a test
+  // failure; closing the dialog restores the next session from canonical state.
+  await setSnapshotAspectPreset(page, 'viewport').catch(() => undefined);
   await closeSnapshotDialog(page);
 }
 

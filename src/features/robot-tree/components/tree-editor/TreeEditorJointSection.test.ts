@@ -26,6 +26,7 @@ function createJoint(id: string, overrides: Partial<UrdfJoint> = {}): UrdfJoint 
 
 test('viewer joint preview isolates duplicate source-local IDs by component', () => {
   const preview: JointInteractionPreviewSnapshot = {
+    ownerId: 'viewer-owner',
     source: 'viewer',
     dragSessionId: 'drag-1',
     activeJointId: 'right__shared_joint',
@@ -59,6 +60,7 @@ test('viewer joint preview isolates duplicate source-local IDs by component', ()
 
 test('tree ignores renderer-global and non-viewer preview payloads', () => {
   const preview: JointInteractionPreviewSnapshot = {
+    ownerId: 'tree-owner',
     source: 'tree-panel',
     dragSessionId: 'tree-drag',
     activeJointId: 'left__shared_joint',

@@ -590,6 +590,12 @@ type ReadyMjcfCandidate = RankedMjcfCandidate & {
   richness: ResolvedRobotRichness;
 };
 
+type MjcfCandidateSelectionOptions = {
+  files: RobotFile[];
+  resolveRobotImport: RobotImportResolver;
+  mode: 'robot-definition' | 'scene';
+};
+
 function hasSubstantialMjcfSceneStructure(structure: MjcfCandidateStructure): boolean {
   return (
     structure.includeCount > 0 &&
@@ -658,11 +664,11 @@ function shouldEvaluateMjcfCandidateAfterReadyCandidate(candidate: RankedMjcfCan
   return hasSubstantialMjcfSceneStructure(candidate.structure);
 }
 
-export function pickPreferredMjcfImportFile(
-  files: RobotFile[],
-  filePool: RobotFile[] = files,
-  resolveRobotImport: RobotImportResolver = createMemoizedRobotImportResolver(filePool),
-): RobotFile | null {
+function pickPreferredMjcfCandidate({
+  files,
+  resolveRobotImport,
+  mode,
+}: MjcfCandidateSelectionOptions): RobotFile | null {
   const cachedResolveRobotImport = memoizeRobotImportResolver(resolveRobotImport);
   const mjcfFiles = files.filter((file) => file.format === 'mjcf');
   if (mjcfFiles.length === 0) return null;
@@ -704,6 +710,9 @@ export function pickPreferredMjcfImportFile(
         };
         firstReadyCandidate ??= readyCandidate;
         readyCandidates.push(readyCandidate);
+        if (mode === 'robot-definition') {
+          break;
+        }
       }
     } catch (error) {
       if (firstReadyCandidate) {
@@ -728,11 +737,27 @@ export function pickPreferredMjcfImportFile(
     return null;
   }
 
+  if (mode === 'robot-definition') {
+    return firstReadyCandidate.file;
+  }
+
   const substantialSceneCandidate = readyCandidates
     .filter((candidate) => isMateriallyRicherMjcfSceneCandidate(candidate, firstReadyCandidate))
     .sort(compareReadyMjcfSceneRichness)[0];
 
   return substantialSceneCandidate?.file ?? firstReadyCandidate.file;
+}
+
+export function pickPreferredMjcfImportFile(
+  files: RobotFile[],
+  filePool: RobotFile[] = files,
+  resolveRobotImport: RobotImportResolver = createMemoizedRobotImportResolver(filePool),
+): RobotFile | null {
+  return pickPreferredMjcfCandidate({
+    files,
+    resolveRobotImport,
+    mode: 'scene',
+  });
 }
 
 export function pickPreferredImportFile(
@@ -747,11 +772,15 @@ export function pickPreferredImportFile(
     filePool,
     cachedResolveRobotImport,
   );
-  const preferredMjcf = pickPreferredMjcfImportFile(
-    robotDefinitionFiles,
-    filePool,
-    cachedResolveRobotImport,
-  );
+  // When URDF and MJCF coexist, compare robot definitions across formats. A
+  // richer MJCF environment wrapper may still be the best entrypoint for a
+  // pure MJCF folder, but it should not replace the source robot model merely
+  // because it adds terrain or obstacle geometry around that model.
+  const preferredMjcf = pickPreferredMjcfCandidate({
+    files: robotDefinitionFiles,
+    resolveRobotImport: cachedResolveRobotImport,
+    mode: preferredUrdf ? 'robot-definition' : 'scene',
+  });
   const preferredUrdfIsSelfContained = preferredUrdf
     ? isUrdfSelfContainedInImportBundle(preferredUrdf, filePool)
     : false;

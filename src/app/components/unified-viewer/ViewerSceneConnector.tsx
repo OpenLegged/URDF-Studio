@@ -14,7 +14,7 @@ import type {
   ViewerHelperKind,
   ViewerRobotSourceFormat,
 } from '@/features/editor';
-import type { ViewerController } from '@/features/editor';
+import type { ViewerSceneController } from '@/features/editor';
 import type { ViewerResourceScope } from '@/features/editor';
 import { ViewerScene } from '@/features/editor';
 
@@ -22,7 +22,7 @@ import { buildUnifiedViewerSceneProps } from '@/app/utils/unifiedViewerSceneProp
 import type { FilePreviewState } from './types';
 
 interface ViewerSceneConnectorProps {
-  controller: ViewerController;
+  controller: ViewerSceneController;
   active: boolean;
   activePreview?: FilePreviewState;
   modelInteractionEnabled?: boolean;

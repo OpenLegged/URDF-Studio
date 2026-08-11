@@ -5,7 +5,14 @@ import { ViewerOptionsPanel } from './ViewerOptionsPanel';
 import { ViewerToolbar } from './ViewerToolbar';
 import { translations, type Language } from '@/shared/i18n';
 import { useManagedWindowLayer } from '@/store';
-import type { ViewerController } from '../hooks/useViewerController';
+import type {
+  ViewerControllerJointsPanelSurface,
+  ViewerControllerLayoutSurface,
+  ViewerControllerMeasureToolSurface,
+  ViewerControllerOptionsPanelSurface,
+  ViewerControllerPaintToolSurface,
+  ViewerControllerToolbarSurface,
+} from '../hooks/viewer-controller/viewerControllerSurfaces';
 import { useResponsivePanelLayout } from '../hooks/useResponsivePanelLayout';
 
 const LazyJointsPanel = React.lazy(async () => ({
@@ -14,7 +21,12 @@ const LazyJointsPanel = React.lazy(async () => ({
 
 interface ViewerPanelsProps {
   lang: Language;
-  controller: ViewerController;
+  toolbar: ViewerControllerToolbarSurface;
+  layout: ViewerControllerLayoutSurface;
+  optionsPanel: ViewerControllerOptionsPanelSurface;
+  jointsPanel: ViewerControllerJointsPanelSurface;
+  measureTool: ViewerControllerMeasureToolSurface;
+  paintTool: ViewerControllerPaintToolSurface;
   isMjcfSource?: boolean;
   onUpdate?: (type: 'link' | 'joint', id: string, data: unknown) => void;
   showOptionsPanel?: boolean;
@@ -28,7 +40,12 @@ interface ViewerPanelsProps {
 
 export const ViewerPanels = ({
   lang,
-  controller,
+  toolbar,
+  layout,
+  optionsPanel,
+  jointsPanel,
+  measureTool,
+  paintTool,
   isMjcfSource = false,
   onUpdate,
   showOptionsPanel = true,
@@ -46,9 +63,9 @@ export const ViewerPanels = ({
   const paintToolLayer = useManagedWindowLayer('paintTool');
   const { optionsDefaultPosition, jointsDefaultPosition, jointsPanelMaxHeight } =
     useResponsivePanelLayout({
-      containerRef: controller.containerRef,
-      optionsPanelRef: controller.optionsPanelRef,
-      jointPanelRef: controller.jointPanelRef,
+      containerRef: layout.containerRef,
+      optionsPanelRef: layout.optionsPanelRef,
+      jointPanelRef: layout.jointPanelRef,
       showOptionsPanel,
       showJointPanel,
       preferEdgeDockedOptionsPanel,
@@ -58,60 +75,60 @@ export const ViewerPanels = ({
     <>
       {showToolbar ? (
         <ViewerToolbar
-          activeMode={controller.toolMode}
-          setMode={controller.handleToolModeChange}
+          activeMode={toolbar.toolMode}
+          setMode={toolbar.handleToolModeChange}
           lang={lang}
         />
       ) : null}
 
       <ViewerOptionsPanel
         showOptionsPanel={showOptionsPanel}
-        optionsPanelRef={controller.optionsPanelRef}
-        optionsPanelPos={controller.optionsPanelPos}
+        optionsPanelRef={layout.optionsPanelRef}
+        optionsPanelPos={layout.optionsPanelPos}
         defaultPosition={optionsDefaultPosition}
-        onMouseDown={(event) => controller.handleMouseDown('options', event)}
+        onMouseDown={(event) => layout.handleMouseDown('options', event)}
         t={t}
-        isOptionsCollapsed={controller.isOptionsCollapsed}
-        toggleOptionsCollapsed={controller.toggleOptionsCollapsed}
+        isOptionsCollapsed={optionsPanel.isOptionsCollapsed}
+        toggleOptionsCollapsed={optionsPanel.toggleOptionsCollapsed}
         setShowOptionsPanel={setShowOptionsPanel}
-        showVisual={controller.showVisual}
-        setShowVisual={controller.setShowVisual}
-        showCollision={controller.showCollision}
-        setShowCollision={controller.setShowCollision}
-        showCollisionAlwaysOnTop={controller.showCollisionAlwaysOnTop}
-        setShowCollisionAlwaysOnTop={controller.setShowCollisionAlwaysOnTop}
-        modelOpacity={controller.modelOpacity}
-        setModelOpacity={controller.setModelOpacity}
-        showOrigins={controller.showOrigins}
-        setShowOrigins={controller.setShowOrigins}
-        showOriginsOverlay={controller.showOriginsOverlay}
-        setShowOriginsOverlay={controller.setShowOriginsOverlay}
-        originSize={controller.originSize}
-        setOriginSize={controller.setOriginSize}
-        originSizeMax={controller.originAxesSizeMax}
+        showVisual={optionsPanel.showVisual}
+        setShowVisual={optionsPanel.setShowVisual}
+        showCollision={optionsPanel.showCollision}
+        setShowCollision={optionsPanel.setShowCollision}
+        showCollisionAlwaysOnTop={optionsPanel.showCollisionAlwaysOnTop}
+        setShowCollisionAlwaysOnTop={optionsPanel.setShowCollisionAlwaysOnTop}
+        modelOpacity={optionsPanel.modelOpacity}
+        setModelOpacity={optionsPanel.setModelOpacity}
+        showOrigins={optionsPanel.showOrigins}
+        setShowOrigins={optionsPanel.setShowOrigins}
+        showOriginsOverlay={optionsPanel.showOriginsOverlay}
+        setShowOriginsOverlay={optionsPanel.setShowOriginsOverlay}
+        originSize={optionsPanel.originSize}
+        setOriginSize={optionsPanel.setOriginSize}
+        originSizeMax={optionsPanel.originAxesSizeMax}
         showMjcfSiteToggle={isMjcfSource}
-        showMjcfSites={controller.showMjcfSites}
-        setShowMjcfSites={controller.setShowMjcfSites}
-        showJointAxes={controller.showJointAxes}
-        setShowJointAxes={controller.setShowJointAxes}
-        showJointAxesOverlay={controller.showJointAxesOverlay}
-        setShowJointAxesOverlay={controller.setShowJointAxesOverlay}
-        jointAxisSize={controller.jointAxisSize}
-        setJointAxisSize={controller.setJointAxisSize}
-        showCenterOfMass={controller.showCenterOfMass}
-        setShowCenterOfMass={controller.setShowCenterOfMass}
-        showCoMOverlay={controller.showCoMOverlay}
-        setShowCoMOverlay={controller.setShowCoMOverlay}
-        centerOfMassSize={controller.centerOfMassSize}
-        setCenterOfMassSize={controller.setCenterOfMassSize}
-        showInertia={controller.showInertia}
-        setShowInertia={controller.setShowInertia}
-        showInertiaOverlay={controller.showInertiaOverlay}
-        setShowInertiaOverlay={controller.setShowInertiaOverlay}
-        onAutoFitGround={controller.handleAutoFitGround}
-        groundPlaneOffset={controller.groundPlaneOffset}
-        groundPlaneOffsetReadOnly={controller.groundPlaneOffsetReadOnly}
-        setGroundPlaneOffset={controller.setGroundPlaneOffset}
+        showMjcfSites={optionsPanel.showMjcfSites}
+        setShowMjcfSites={optionsPanel.setShowMjcfSites}
+        showJointAxes={optionsPanel.showJointAxes}
+        setShowJointAxes={optionsPanel.setShowJointAxes}
+        showJointAxesOverlay={optionsPanel.showJointAxesOverlay}
+        setShowJointAxesOverlay={optionsPanel.setShowJointAxesOverlay}
+        jointAxisSize={optionsPanel.jointAxisSize}
+        setJointAxisSize={optionsPanel.setJointAxisSize}
+        showCenterOfMass={optionsPanel.showCenterOfMass}
+        setShowCenterOfMass={optionsPanel.setShowCenterOfMass}
+        showCoMOverlay={optionsPanel.showCoMOverlay}
+        setShowCoMOverlay={optionsPanel.setShowCoMOverlay}
+        centerOfMassSize={optionsPanel.centerOfMassSize}
+        setCenterOfMassSize={optionsPanel.setCenterOfMassSize}
+        showInertia={optionsPanel.showInertia}
+        setShowInertia={optionsPanel.setShowInertia}
+        showInertiaOverlay={optionsPanel.showInertiaOverlay}
+        setShowInertiaOverlay={optionsPanel.setShowInertiaOverlay}
+        onAutoFitGround={optionsPanel.handleAutoFitGround}
+        groundPlaneOffset={optionsPanel.groundPlaneOffset}
+        groundPlaneOffsetReadOnly={optionsPanel.groundPlaneOffsetReadOnly}
+        setGroundPlaneOffset={optionsPanel.setGroundPlaneOffset}
         zIndex={viewerOptionsLayer.zIndex}
         onActivate={viewerOptionsLayer.onActivate}
       />
@@ -120,26 +137,26 @@ export const ViewerPanels = ({
         <React.Suspense fallback={null}>
           <LazyJointsPanel
             showJointPanel={showJointPanel}
-            robot={controller.jointPanelRobot ?? controller.robot}
-            jointPanelRef={controller.jointPanelRef}
-            jointPanelPos={controller.jointPanelPos}
+            robot={jointsPanel.jointPanelRobot ?? jointsPanel.robot}
+            jointPanelRef={layout.jointPanelRef}
+            jointPanelPos={layout.jointPanelPos}
             defaultPosition={jointsDefaultPosition}
             maxHeight={jointsPanelMaxHeight}
-            onMouseDown={(event) => controller.handleMouseDown('joints', event)}
+            onMouseDown={(event) => layout.handleMouseDown('joints', event)}
             t={t}
-            handleResetJoints={controller.handleResetJoints}
-            angleUnit={controller.angleUnit}
-            setAngleUnit={controller.setAngleUnit}
-            isJointsCollapsed={controller.isJointsCollapsed}
-            toggleJointsCollapsed={controller.toggleJointsCollapsed}
+            handleResetJoints={jointsPanel.handleResetJoints}
+            angleUnit={jointsPanel.angleUnit}
+            setAngleUnit={jointsPanel.setAngleUnit}
+            isJointsCollapsed={jointsPanel.isJointsCollapsed}
+            toggleJointsCollapsed={jointsPanel.toggleJointsCollapsed}
             setShowJointPanel={setShowJointPanel}
-            jointPanelStore={controller.jointPanelStore}
-            setActiveJoint={controller.setActiveJoint}
-            handleJointAngleChange={controller.handleJointAngleChange}
-            handleJointChangeCommit={controller.handleJointChangeCommit}
-            setIsDragging={controller.setIsDragging}
-            onSelect={controller.handleSelectWrapper}
-            onHover={controller.handleHoverWrapper}
+            jointPanelStore={jointsPanel.jointPanelStore}
+            setActiveJoint={jointsPanel.setActiveJoint}
+            handleJointAngleChange={jointsPanel.handleJointAngleChange}
+            handleJointChangeCommit={jointsPanel.handleJointChangeCommit}
+            setIsDragging={jointsPanel.setIsDragging}
+            onSelect={jointsPanel.handleSelectWrapper}
+            onHover={jointsPanel.handleHoverWrapper}
             onUpdate={onUpdate}
             zIndex={viewerJointsLayer.zIndex}
             onActivate={viewerJointsLayer.onActivate}
@@ -148,21 +165,21 @@ export const ViewerPanels = ({
       ) : null}
 
       <MeasurePanel
-        toolMode={controller.toolMode}
-        measurePanelRef={controller.measurePanelRef}
-        measurePanelPos={controller.measurePanelPos}
-        onMouseDown={(event) => controller.handleMouseDown('measure', event)}
-        onClose={controller.handleCloseMeasureTool}
-        measureState={controller.measureState}
-        setMeasureState={controller.setMeasureState}
-        measureMode={controller.measureState.mode}
-        setMeasureMode={controller.setMeasureMode}
-        measureAnchorMode={controller.measureAnchorMode}
-        setMeasureAnchorMode={controller.setMeasureAnchorMode}
-        showMeasureDecomposition={controller.showMeasureDecomposition}
-        setShowMeasureDecomposition={controller.setShowMeasureDecomposition}
-        measurePoseRepresentation={controller.measurePoseRepresentation}
-        setMeasurePoseRepresentation={controller.setMeasurePoseRepresentation}
+        toolMode={measureTool.toolMode}
+        measurePanelRef={layout.measurePanelRef}
+        measurePanelPos={layout.measurePanelPos}
+        onMouseDown={(event) => layout.handleMouseDown('measure', event)}
+        onClose={measureTool.handleCloseMeasureTool}
+        measureState={measureTool.measureState}
+        setMeasureState={measureTool.setMeasureState}
+        measureMode={measureTool.measureState.mode}
+        setMeasureMode={measureTool.setMeasureMode}
+        measureAnchorMode={measureTool.measureAnchorMode}
+        setMeasureAnchorMode={measureTool.setMeasureAnchorMode}
+        showMeasureDecomposition={measureTool.showMeasureDecomposition}
+        setShowMeasureDecomposition={measureTool.setShowMeasureDecomposition}
+        measurePoseRepresentation={measureTool.measurePoseRepresentation}
+        setMeasurePoseRepresentation={measureTool.setMeasurePoseRepresentation}
         lang={lang}
         zIndex={measureToolLayer.zIndex}
         onActivate={measureToolLayer.onActivate}
@@ -170,19 +187,19 @@ export const ViewerPanels = ({
 
       <PaintPanel
         lang={lang}
-        toolMode={controller.toolMode}
-        paintColor={controller.paintColor}
-        onPaintColorChange={controller.setPaintColor}
-        paintSelectionScope={controller.paintSelectionScope}
-        onPaintSelectionScopeChange={controller.setPaintSelectionScope}
-        paintOperation={controller.paintOperation}
-        onPaintOperationChange={controller.setPaintOperation}
-        paintStatus={controller.paintStatus}
+        toolMode={paintTool.toolMode}
+        paintColor={paintTool.paintColor}
+        onPaintColorChange={paintTool.setPaintColor}
+        paintSelectionScope={paintTool.paintSelectionScope}
+        onPaintSelectionScopeChange={paintTool.setPaintSelectionScope}
+        paintOperation={paintTool.paintOperation}
+        onPaintOperationChange={paintTool.setPaintOperation}
+        paintStatus={paintTool.paintStatus}
         supported={paintModeSupported}
-        onClose={controller.handleClosePaintTool}
-        paintPanelRef={controller.paintPanelRef}
-        paintPanelPos={controller.paintPanelPos}
-        onMouseDown={(event) => controller.handleMouseDown('paint', event)}
+        onClose={paintTool.handleClosePaintTool}
+        paintPanelRef={layout.paintPanelRef}
+        paintPanelPos={layout.paintPanelPos}
+        onMouseDown={(event) => layout.handleMouseDown('paint', event)}
         zIndex={paintToolLayer.zIndex}
         onActivate={paintToolLayer.onActivate}
       />

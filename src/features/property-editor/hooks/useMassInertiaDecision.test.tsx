@@ -174,13 +174,13 @@ test('useMassInertiaDecision clears its notice timer on unmount', async () => {
   );
   const originalSetTimeout = globalThis.setTimeout;
   const originalClearTimeout = globalThis.clearTimeout;
-  const timerHandle = { id: 'mass-inertia-notice' } as unknown as ReturnType<typeof setTimeout>;
-  const clearedHandles: Array<ReturnType<typeof setTimeout> | undefined> = [];
+  const timerHandle = { id: 'mass-inertia-notice' } as unknown as NodeJS.Timeout;
+  const clearedHandles: Array<NodeJS.Timeout | undefined> = [];
 
-  globalThis.setTimeout = (() => timerHandle) as typeof setTimeout;
-  globalThis.clearTimeout = ((handle) => {
+  globalThis.setTimeout = ((() => timerHandle) as unknown) as typeof setTimeout;
+  globalThis.clearTimeout = ((handle: NodeJS.Timeout | undefined) => {
     clearedHandles.push(handle);
-  }) as typeof clearTimeout;
+  }) as unknown as typeof clearTimeout;
 
   try {
     await act(async () => rendered.value.handleMassChange(2));

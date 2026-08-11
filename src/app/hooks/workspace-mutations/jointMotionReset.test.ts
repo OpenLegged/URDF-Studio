@@ -5,6 +5,7 @@ import {
   DEFAULT_JOINT,
   DEFAULT_LINK,
   JointType,
+  type JointQuaternion,
   type AssemblyState,
 } from '@/types';
 
@@ -102,7 +103,7 @@ function createRecordingStore() {
       setComponentJointMotion: (
         componentId: string,
         angles: Record<string, number>,
-        _quaternions?: Record<string, never>,
+        _quaternions?: Record<string, JointQuaternion>,
         options?: { operationId?: string },
       ) => {
         events.push(`set:${componentId}:${options?.operationId}`);

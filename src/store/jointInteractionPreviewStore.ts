@@ -12,6 +12,7 @@ export interface WorkspaceJointInteractionPreview {
 }
 
 export interface JointInteractionPreviewSnapshot {
+  ownerId: string | null;
   source: JointInteractionPreviewSource | null;
   dragSessionId: string | null;
   activeJointId: string | null;
@@ -23,11 +24,13 @@ export interface JointInteractionPreviewSnapshot {
 }
 
 export interface JointInteractionPreviewMatch {
+  ownerId?: string | null;
   source?: JointInteractionPreviewSource | null;
   dragSessionId?: string | null;
 }
 
 export const EMPTY_JOINT_INTERACTION_PREVIEW: JointInteractionPreviewSnapshot = {
+  ownerId: null,
   source: null,
   dragSessionId: null,
   activeJointId: null,
@@ -104,6 +107,7 @@ function previewsEqual(
   right: JointInteractionPreviewSnapshot,
 ): boolean {
   return (
+    left.ownerId === right.ownerId &&
     left.source === right.source &&
     left.dragSessionId === right.dragSessionId &&
     left.activeJointId === right.activeJointId &&
@@ -147,14 +151,14 @@ export function hasJointInteractionPreview(
   return (
     Object.keys(preview.jointAngles).length > 0 ||
     Object.keys(preview.jointQuaternions).length > 0 ||
-    Object.keys(preview.jointOrigins).length > 0
-    || Object.keys(preview.workspaceByComponent ?? {}).some((componentId) => {
+    Object.keys(preview.jointOrigins).length > 0 ||
+    Object.keys(preview.workspaceByComponent ?? {}).some((componentId) => {
       const componentPreview = preview.workspaceByComponent?.[componentId];
       return Boolean(
         componentPreview &&
-          (Object.keys(componentPreview.jointAngles).length > 0 ||
-            Object.keys(componentPreview.jointQuaternions).length > 0 ||
-            Object.keys(componentPreview.jointOrigins).length > 0),
+        (Object.keys(componentPreview.jointAngles).length > 0 ||
+          Object.keys(componentPreview.jointQuaternions).length > 0 ||
+          Object.keys(componentPreview.jointOrigins).length > 0),
       );
     })
   );
@@ -166,13 +170,17 @@ export const useJointInteractionPreviewStore = create<JointInteractionPreviewSta
     set((state) => (previewsEqual(state.preview, preview) ? state : { preview })),
   clearPreview: (match) =>
     set((state) => {
-      if (match?.source && state.preview.source && state.preview.source !== match.source) {
+      if (match && 'ownerId' in match && state.preview.ownerId !== match.ownerId) {
+        return state;
+      }
+
+      if (match && 'source' in match && state.preview.source !== match.source) {
         return state;
       }
 
       if (
-        match?.dragSessionId &&
-        state.preview.dragSessionId &&
+        match &&
+        'dragSessionId' in match &&
         state.preview.dragSessionId !== match.dragSessionId
       ) {
         return state;

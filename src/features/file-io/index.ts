@@ -102,5 +102,6 @@ export { collectRawFilesZip } from './utils/rawFilesExport';
 export { useSnapshot, usePdfExport } from './hooks';
 
 export { ExportDialog } from './components/ExportDialog';
+export { EXPORT_FORMATS } from './components/ExportDialog';
 export { ExportProgressDialog } from './components/ExportProgressDialog';
 export { DisconnectedWorkspaceUrdfExportDialog } from './components/DisconnectedWorkspaceUrdfExportDialog';

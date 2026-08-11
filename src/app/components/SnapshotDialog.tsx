@@ -1,12 +1,7 @@
-import React, { useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useLayoutEffect, useMemo, useState } from 'react';
 import { Camera, X } from 'lucide-react';
-import {
-  Button,
-  CLOSE_BUTTON_DANGER_TERTIARY_CLASS,
-  CompactSwitch,
-  PanelSegmentedControl,
-  PanelSelect,
-} from '@/shared/components/ui';
+
+import { Button, CLOSE_BUTTON_DANGER_TERTIARY_CLASS } from '@/shared/components/ui';
 import {
   DraggableWindow,
   FLOATING_WINDOW_HEADER_HEIGHT_CLASS,
@@ -15,84 +10,30 @@ import {
 } from '@/shared/components/DraggableWindow';
 import { useDraggableWindow } from '@/shared/hooks/useDraggableWindow';
 import {
-  resolveSnapshotAspectRatio,
   type SnapshotCaptureAction,
-  type SnapshotAspectRatioPreset,
   type SnapshotCaptureOptions,
   type SnapshotCaptureProgress,
 } from '@/shared/components/3d/scene/snapshotConfig';
 import { translations, type Language, type TranslationKeys } from '@/shared/i18n';
 import { useManagedWindowLayer } from '@/store';
-import { SnapshotPreviewRenderer } from './snapshot-preview/SnapshotPreviewRenderer';
+
 import type { SnapshotDialogPreviewState, SnapshotPreviewSession } from './snapshot-preview/types';
+import { SnapshotPreviewPane } from './snapshot-dialog/SnapshotPreviewPane';
+import { SnapshotProgressOverlay } from './snapshot-dialog/SnapshotProgressOverlay';
+import { SnapshotSettingsPane } from './snapshot-dialog/SnapshotSettingsPane';
 import {
   createSnapshotCaptureChoiceModel,
   resolveSnapshotCompressionControlValue,
   SNAPSHOT_RESOLUTION_OPTIONS,
   useSnapshotCaptureForm,
 } from './snapshot-dialog/snapshotCaptureForm.ts';
-
-const PANEL_SECTION_CLASS_NAME =
-  'rounded-lg border border-border-black bg-panel-bg px-2.5 py-1.5 shadow-sm';
-const FIELD_ROW_CLASS_NAME = 'grid grid-cols-[68px_minmax(0,1fr)] items-center gap-1.5';
-const FIELD_LABEL_CLASS_NAME = 'truncate text-[9px] font-medium text-text-secondary';
-const SNAPSHOT_SEGMENTED_CLASS_NAME = 'w-full !min-h-[24px] !rounded-md';
-const SNAPSHOT_SEGMENTED_ITEM_CLASS_NAME = '!h-[21px] px-1.5 text-[10px]';
-const SNAPSHOT_DIALOG_DEFAULT_SIZE = {
-  width: 520,
-  height: 590,
-} as const;
-const SNAPSHOT_DIALOG_MIN_SIZE = {
-  width: 320,
-  height: 420,
-} as const;
-const SNAPSHOT_DIALOG_VIEWPORT_MIN_SIZE = {
-  width: 320,
-  height: 320,
-} as const;
-const SNAPSHOT_DIALOG_HEADER_HEIGHT = 40;
-const SNAPSHOT_DIALOG_VIEWPORT_MARGIN = 24;
-const SNAPSHOT_DIALOG_VIEWPORT_MIN_HEIGHT = 320;
-const SNAPSHOT_DIALOG_DESKTOP_MAX_HEIGHT = 660;
-const SNAPSHOT_DIALOG_COMPACT_LAYOUT_WIDTH = 500;
-const SNAPSHOT_PREVIEW_MIN_WIDTH = 200;
-// Horizontal chrome around the preview frame (scroll body padding + preview card
-// padding + scrollbar slack). The frame fills the remaining card width instead of
-// being capped at a fixed max, so the preview reads as the hero element.
-const SNAPSHOT_PREVIEW_WIDTH_GUTTER = 52;
-// Upper bound on the preview height so portrait/tall aspect ratios don't push the
-// dialog past the viewport; landscape previews stay width-driven and fill the card.
-const SNAPSHOT_PREVIEW_MAX_HEIGHT = 300;
-const SNAPSHOT_PREVIEW_VIEWPORT_HEIGHT_RATIO = 0.38;
-
-const clamp = (value: number, min: number, max: number) => {
-  if (max < min) {
-    return min;
-  }
-  return Math.max(min, Math.min(max, value));
-};
-
-const resolveSnapshotDialogHeight = ({
-  scrollContentHeight,
-  footerHeight,
-  viewportHeight,
-}: {
-  scrollContentHeight: number;
-  footerHeight: number;
-  viewportHeight: number;
-}) => {
-  const viewportLimit = Math.max(
-    SNAPSHOT_DIALOG_VIEWPORT_MIN_HEIGHT,
-    viewportHeight - SNAPSHOT_DIALOG_VIEWPORT_MARGIN,
-  );
-  const adaptiveViewportLimit =
-    viewportHeight >= 720
-      ? Math.min(viewportLimit, SNAPSHOT_DIALOG_DESKTOP_MAX_HEIGHT)
-      : viewportLimit;
-  const minHeight = Math.min(SNAPSHOT_DIALOG_MIN_SIZE.height, adaptiveViewportLimit);
-  const naturalHeight = SNAPSHOT_DIALOG_HEADER_HEIGHT + footerHeight + scrollContentHeight;
-  return clamp(naturalHeight, minHeight, adaptiveViewportLimit);
-};
+import {
+  clampSnapshotDialogValue,
+  SNAPSHOT_DIALOG_DEFAULT_SIZE,
+  SNAPSHOT_DIALOG_MIN_SIZE,
+  SNAPSHOT_DIALOG_VIEWPORT_MIN_SIZE,
+  useSnapshotDialogLayout,
+} from './snapshot-dialog/useSnapshotDialogLayout';
 
 interface SnapshotDialogProps {
   isOpen: boolean;
@@ -130,24 +71,6 @@ function resolveSnapshotCaptureProgressLabel(
   }
 }
 
-function SnapshotSection({ title, children }: { title: string; children: React.ReactNode }) {
-  return (
-    <div className={PANEL_SECTION_CLASS_NAME}>
-      <div className="mb-1 text-[9px] font-semibold text-text-tertiary">{title}</div>
-      {children}
-    </div>
-  );
-}
-
-function SnapshotField({ label, children }: { label: string; children: React.ReactNode }) {
-  return (
-    <div className={FIELD_ROW_CLASS_NAME}>
-      <div className={FIELD_LABEL_CLASS_NAME}>{label}</div>
-      <div className="min-w-0">{children}</div>
-    </div>
-  );
-}
-
 export function SnapshotDialog({
   isOpen,
   isCapturing,
@@ -163,27 +86,13 @@ export function SnapshotDialog({
   const t = translations[lang];
   const snapshotWindowLayer = useManagedWindowLayer('snapshot');
   const { options: resolvedOptions, updateOptions } = useSnapshotCaptureForm(isOpen);
-  const {
-    aspectRatioPreset,
-    backgroundStyle,
-    detailLevel,
-    environmentPreset,
-    groundStyle,
-    hideGrid,
-    imageFormat,
-    longEdgePx,
-    shadowStyle,
-  } = resolvedOptions;
+  const { aspectRatioPreset, detailLevel, imageFormat, longEdgePx } = resolvedOptions;
   const resolutionPreset = String(longEdgePx);
   const [internalPreviewState, setInternalPreviewState] = useState<SnapshotDialogPreviewState>({
     status: 'idle',
     imageUrl: null,
     aspectRatio: previewSession?.viewportAspectRatio ?? 16 / 9,
   });
-  const scrollBodyRef = useRef<HTMLDivElement | null>(null);
-  const footerRef = useRef<HTMLDivElement | null>(null);
-  const previewFrameAreaRef = useRef<HTMLDivElement | null>(null);
-  const [previewFrameAreaWidth, setPreviewFrameAreaWidth] = useState<number | null>(null);
 
   const windowState = useDraggableWindow({
     isOpen,
@@ -214,94 +123,19 @@ export function SnapshotDialog({
     });
   }, [isOpen, previewSession?.viewportAspectRatio]);
 
-  useLayoutEffect(() => {
-    if (!isOpen) {
-      return;
-    }
-
-    const scrollBody = scrollBodyRef.current;
-    const footer = footerRef.current;
-
-    if (!scrollBody || !footer) {
-      return;
-    }
-
-    const nextHeight = resolveSnapshotDialogHeight({
-      scrollContentHeight: scrollBody.scrollHeight,
-      footerHeight: footer.offsetHeight,
-      viewportHeight: window.innerHeight,
-    });
-
-    windowState.setSize((currentSize) =>
-      currentSize.height === nextHeight ? currentSize : { ...currentSize, height: nextHeight },
-    );
-  }, [
-    aspectRatioPreset,
-    isOpen,
-    isCapturing,
-    lang,
-    internalPreviewState.aspectRatio,
-    internalPreviewState.imageUrl,
-    internalPreviewState.status,
-    previewState?.imageUrl,
-    previewState?.status,
-    previewSession?.viewportAspectRatio,
-    previewState?.aspectRatio,
-    windowState.setSize,
-  ]);
-
-  useLayoutEffect(() => {
-    if (!isOpen) {
-      setPreviewFrameAreaWidth(null);
-      return;
-    }
-
-    const previewFrameArea = previewFrameAreaRef.current;
-    if (!previewFrameArea) {
-      return;
-    }
-
-    const measurePreviewFrameArea = () => {
-      const rect = previewFrameArea.getBoundingClientRect();
-      const nextWidth = Math.floor(rect.width || previewFrameArea.clientWidth || 0);
-      setPreviewFrameAreaWidth((currentWidth) => {
-        const normalizedWidth = nextWidth > 0 ? nextWidth : null;
-        return currentWidth === normalizedWidth ? currentWidth : normalizedWidth;
-      });
-    };
-
-    measurePreviewFrameArea();
-    const resizeObserver =
-      typeof ResizeObserver !== 'undefined' ? new ResizeObserver(measurePreviewFrameArea) : null;
-    resizeObserver?.observe(previewFrameArea);
-    window.addEventListener('resize', measurePreviewFrameArea);
-
-    return () => {
-      resizeObserver?.disconnect();
-      window.removeEventListener('resize', measurePreviewFrameArea);
-    };
-  }, [isOpen, windowState.size.width]);
-
   const supportsLossyCompression = imageFormat !== 'png';
-  const {
-    antialiasOptions,
-    aspectRatioOptions,
-    backgroundOptions,
-    compactLabels,
-    compressionOptions,
-    environmentOptions,
-    formatOptions,
-    groundOptions,
-    resolutionOptions,
-    shadowOptions,
-  } = useMemo(() => createSnapshotCaptureChoiceModel(imageFormat, t), [imageFormat, t]);
+  const choiceModel = useMemo(
+    () => createSnapshotCaptureChoiceModel(imageFormat, t),
+    [imageFormat, t],
+  );
   const selectedAntialiasOption =
-    antialiasOptions.find((option) => option.value === detailLevel) ?? antialiasOptions[1];
+    choiceModel.antialiasOptions.find((option) => option.value === detailLevel) ??
+    choiceModel.antialiasOptions[1];
   const selectedResolutionLabel =
     SNAPSHOT_RESOLUTION_OPTIONS.find((option) => option.value === resolutionPreset)?.label ??
     `${resolutionPreset}px`;
   const selectedAspectRatioLabel =
-    aspectRatioOptions.find((option) => option.value === aspectRatioPreset)?.label ??
+    choiceModel.aspectRatioOptions.find((option) => option.value === aspectRatioPreset)?.label ??
     aspectRatioPreset;
   const captureSummary = [
     selectedResolutionLabel,
@@ -311,20 +145,30 @@ export function SnapshotDialog({
   ].join(' · ');
   const compressionControlValue = resolveSnapshotCompressionControlValue(resolvedOptions);
   const effectivePreviewState = previewState ?? internalPreviewState;
+  const {
+    scrollBodyRef,
+    footerRef,
+    previewFrameAreaRef,
+    isCompactLayout,
+    previewAspectRatio,
+    previewFrameMaxWidth,
+  } = useSnapshotDialogLayout({
+    isOpen,
+    isCapturing,
+    lang,
+    dialogWidth: windowState.size.width,
+    setDialogSize: windowState.setSize,
+    aspectRatioPreset,
+    previewSessionViewportAspectRatio: previewSession?.viewportAspectRatio ?? null,
+    effectivePreviewState,
+  });
   const captureProgressPhase = captureProgress?.phase ?? 'preparing';
-  const captureProgressPercent = clamp(
+  const captureProgressPercent = clampSnapshotDialogValue(
     Math.round((captureProgress?.progress ?? 0.02) * 100),
     2,
     100,
   );
   const captureProgressLabel = resolveSnapshotCaptureProgressLabel(captureProgressPhase, t);
-  const isCompactLayout = windowState.size.width <= SNAPSHOT_DIALOG_COMPACT_LAYOUT_WIDTH;
-  const settingsGridClassName = isCompactLayout
-    ? 'grid grid-cols-1 gap-y-1'
-    : 'grid grid-cols-2 gap-x-2.5 gap-y-1';
-  const previewCardClassName = `flex shrink-0 flex-col rounded-lg border border-border-black bg-element-bg px-2.5 py-1.5 shadow-sm ${
-    isCompactLayout ? 'min-h-[190px]' : 'min-h-[220px]'
-  }`;
   const previewStatusText =
     effectivePreviewState.status === 'loading' || effectivePreviewState.status === 'idle'
       ? t.snapshotPreviewLoading
@@ -333,38 +177,6 @@ export function SnapshotDialog({
         : effectivePreviewState.status === 'error'
           ? t.snapshotPreviewFailed
           : t.snapshotPreviewReady;
-  const selectedPreviewAspectRatio = previewSession
-    ? resolveSnapshotAspectRatio(aspectRatioPreset, previewSession.viewportAspectRatio)
-    : null;
-  const previewAspectRatio =
-    selectedPreviewAspectRatio ??
-    (effectivePreviewState.aspectRatio > 0 ? effectivePreviewState.aspectRatio : 16 / 9);
-  const fallbackPreviewAvailableWidth = Math.max(
-    SNAPSHOT_PREVIEW_MIN_WIDTH,
-    windowState.size.width - SNAPSHOT_PREVIEW_WIDTH_GUTTER,
-  );
-  const previewAvailableWidth = previewFrameAreaWidth ?? fallbackPreviewAvailableWidth;
-  const previewMaxHeight =
-    typeof window !== 'undefined'
-      ? clamp(
-          window.innerHeight * SNAPSHOT_PREVIEW_VIEWPORT_HEIGHT_RATIO,
-          200,
-          SNAPSHOT_PREVIEW_MAX_HEIGHT,
-        )
-      : SNAPSHOT_PREVIEW_MAX_HEIGHT;
-  // Fill the available card width, but never let a tall aspect ratio exceed the
-  // height ceiling — derive the width back from that ceiling when it would.
-  const previewHeightBoundedWidth = Math.max(1, Math.floor(previewMaxHeight * previewAspectRatio));
-  const previewFrameMinWidth = Math.min(
-    SNAPSHOT_PREVIEW_MIN_WIDTH,
-    previewAvailableWidth,
-    previewHeightBoundedWidth,
-  );
-  const previewFrameMaxWidth = clamp(
-    Math.min(previewAvailableWidth, previewHeightBoundedWidth),
-    previewFrameMinWidth,
-    previewAvailableWidth,
-  );
 
   if (!isOpen) {
     return null;
@@ -417,272 +229,41 @@ export function SnapshotDialog({
               isCapturing ? 'pointer-events-none opacity-30' : 'opacity-100'
             }`}
           >
-            <SnapshotSection title={compactLabels.output}>
-              <div className={settingsGridClassName}>
-                <SnapshotField label={compactLabels.resolution}>
-                  <PanelSelect
-                    variant="snapshot"
-                    value={resolutionPreset}
-                    options={resolutionOptions}
-                    disabled={isCapturing}
-                    onChange={(event) => updateOptions({ longEdgePx: Number(event.target.value) })}
-                  />
-                </SnapshotField>
-                <SnapshotField label={compactLabels.aspect}>
-                  <PanelSelect
-                    variant="snapshot"
-                    value={aspectRatioPreset}
-                    options={aspectRatioOptions}
-                    disabled={isCapturing}
-                    onChange={(event) =>
-                      updateOptions({
-                        aspectRatioPreset: event.target.value as SnapshotAspectRatioPreset,
-                      })
-                    }
-                  />
-                </SnapshotField>
-                <SnapshotField label={compactLabels.format}>
-                  <PanelSelect
-                    variant="snapshot"
-                    value={imageFormat}
-                    options={formatOptions}
-                    disabled={isCapturing}
-                    onChange={(event) =>
-                      updateOptions({
-                        imageFormat: event.target.value as SnapshotCaptureOptions['imageFormat'],
-                      })
-                    }
-                  />
-                </SnapshotField>
-                <SnapshotField label={compactLabels.aa}>
-                  <PanelSegmentedControl
-                    value={detailLevel}
-                    options={antialiasOptions}
-                    disabled={isCapturing}
-                    className={SNAPSHOT_SEGMENTED_CLASS_NAME}
-                    itemClassName={SNAPSHOT_SEGMENTED_ITEM_CLASS_NAME}
-                    stretch
-                    onChange={(value) =>
-                      updateOptions({
-                        detailLevel: value as SnapshotCaptureOptions['detailLevel'],
-                      })
-                    }
-                  />
-                </SnapshotField>
-                <SnapshotField label={compactLabels.quality}>
-                  <PanelSegmentedControl
-                    value={compressionControlValue}
-                    options={compressionOptions}
-                    disabled={isCapturing}
-                    className={SNAPSHOT_SEGMENTED_CLASS_NAME}
-                    itemClassName={SNAPSHOT_SEGMENTED_ITEM_CLASS_NAME}
-                    stretch
-                    onChange={(value) => {
-                      if (typeof value !== 'number') {
-                        return;
-                      }
-                      if (supportsLossyCompression) {
-                        updateOptions({ imageQuality: value });
-                      } else {
-                        updateOptions({
-                          pngOptimizeLevel: value as SnapshotCaptureOptions['pngOptimizeLevel'],
-                        });
-                      }
-                    }}
-                  />
-                </SnapshotField>
-              </div>
-            </SnapshotSection>
-
-            <SnapshotSection title={compactLabels.scene}>
-              <div className={settingsGridClassName}>
-                <SnapshotField label={compactLabels.lighting}>
-                  <PanelSelect
-                    variant="snapshot"
-                    value={environmentPreset}
-                    options={environmentOptions}
-                    disabled={isCapturing}
-                    onChange={(event) =>
-                      updateOptions({
-                        environmentPreset: event.target
-                          .value as SnapshotCaptureOptions['environmentPreset'],
-                      })
-                    }
-                  />
-                </SnapshotField>
-                <SnapshotField label={compactLabels.background}>
-                  <PanelSelect
-                    variant="snapshot"
-                    value={backgroundStyle}
-                    options={backgroundOptions}
-                    disabled={isCapturing}
-                    onChange={(event) =>
-                      updateOptions({
-                        backgroundStyle: event.target
-                          .value as SnapshotCaptureOptions['backgroundStyle'],
-                      })
-                    }
-                  />
-                </SnapshotField>
-                <SnapshotField label={compactLabels.shadow}>
-                  <PanelSelect
-                    variant="snapshot"
-                    value={shadowStyle}
-                    options={shadowOptions}
-                    disabled={isCapturing}
-                    onChange={(event) =>
-                      updateOptions({
-                        shadowStyle: event.target.value as SnapshotCaptureOptions['shadowStyle'],
-                      })
-                    }
-                  />
-                </SnapshotField>
-                <SnapshotField label={compactLabels.ground}>
-                  <PanelSelect
-                    variant="snapshot"
-                    value={groundStyle}
-                    options={groundOptions}
-                    disabled={isCapturing}
-                    onChange={(event) =>
-                      updateOptions({
-                        groundStyle: event.target.value as SnapshotCaptureOptions['groundStyle'],
-                      })
-                    }
-                  />
-                </SnapshotField>
-                <SnapshotField label={compactLabels.grid}>
-                  <CompactSwitch
-                    checked={!hideGrid}
-                    onChange={(checked) => updateOptions({ hideGrid: !checked })}
-                    disabled={isCapturing}
-                    ariaLabel={t.snapshotHideGrid}
-                    className="w-full justify-start"
-                  />
-                </SnapshotField>
-              </div>
-            </SnapshotSection>
-
-            <div data-testid="snapshot-preview-card" className={previewCardClassName}>
-              <div
-                className={`mb-1.5 flex shrink-0 gap-2 ${isCompactLayout ? 'flex-col items-start' : 'items-start justify-between'}`}
-              >
-                <div className="min-w-0">
-                  <div className="text-[9px] font-semibold text-text-primary">
-                    {t.snapshotPreviewTitle}
-                  </div>
-                </div>
-                <div className="shrink-0 rounded-md border border-border-black bg-panel-bg px-1.5 py-0.5 text-[8px] font-medium text-text-secondary">
-                  {previewStatusText}
-                </div>
-              </div>
-
-              {/* shrink-0 is essential: the frame's height is aspect-ratio driven, so
-                the wrapper must keep that exact height. Without it the default
-                flex-shrink:1 compresses this row below the frame, and items-center
-                then centers the oversized frame so it overflows onto the title and
-                summary rows. Keeping the real height also lets the dialog's
-                scrollHeight auto-sizing grow to fit instead of under-sizing. */}
-              <div
-                ref={previewFrameAreaRef}
-                className="flex min-h-[130px] shrink-0 items-center justify-center"
-              >
-                <div
-                  data-testid="snapshot-preview-frame-shell"
-                  className="w-full"
-                  style={{ maxWidth: `${previewFrameMaxWidth}px` }}
-                >
-                  <div
-                    data-testid="snapshot-preview-frame"
-                    className="w-full overflow-hidden rounded-lg border border-border-black bg-panel-bg"
-                    style={{ aspectRatio: String(previewAspectRatio) }}
-                  >
-                    {previewSession ? (
-                      <SnapshotPreviewRenderer
-                        isOpen={isOpen}
-                        lang={lang}
-                        session={previewSession}
-                        options={resolvedOptions}
-                        onStateChange={setInternalPreviewState}
-                        onCaptureActionChange={onPreviewCaptureActionChange}
-                        className="h-full w-full"
-                      />
-                    ) : effectivePreviewState.imageUrl ? (
-                      // The previous render stays visible while a new one is computed;
-                      // the top-right status chip already signals "refreshing", so no
-                      // on-image overlay is needed (it just clutters the preview).
-                      <img
-                        src={effectivePreviewState.imageUrl}
-                        alt={t.snapshotPreviewAlt}
-                        draggable={false}
-                        className="h-full w-full object-contain"
-                      />
-                    ) : (
-                      <div className="flex h-full min-h-[100px] items-center justify-center px-4 text-center text-[10px] text-text-secondary">
-                        {effectivePreviewState.status === 'error'
-                          ? t.snapshotPreviewFailed
-                          : t.snapshotPreviewLoading}
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </div>
-
-              <div
-                className={`mt-1.5 flex shrink-0 gap-2 text-[9px] text-text-secondary ${
-                  isCompactLayout ? 'flex-col items-start' : 'items-start justify-between'
-                }`}
-              >
-                <div className={`min-w-0 ${isCompactLayout ? 'break-words' : 'truncate'}`}>
-                  {captureSummary}
-                </div>
-                {effectivePreviewState.status === 'error' ? (
-                  <div
-                    className={`text-[9px] text-danger ${isCompactLayout ? '' : 'shrink-0 text-right'}`}
-                  >
-                    {t.snapshotPreviewRetryingHint}
-                  </div>
-                ) : null}
-              </div>
-            </div>
+            <SnapshotSettingsPane
+              t={t}
+              isCapturing={isCapturing}
+              isCompactLayout={isCompactLayout}
+              options={resolvedOptions}
+              resolutionPreset={resolutionPreset}
+              compressionControlValue={compressionControlValue}
+              supportsLossyCompression={supportsLossyCompression}
+              choiceModel={choiceModel}
+              updateOptions={updateOptions}
+            />
+            <SnapshotPreviewPane
+              isOpen={isOpen}
+              lang={lang}
+              t={t}
+              isCompactLayout={isCompactLayout}
+              previewFrameAreaRef={previewFrameAreaRef}
+              previewFrameMaxWidth={previewFrameMaxWidth}
+              previewAspectRatio={previewAspectRatio}
+              previewStatusText={previewStatusText}
+              captureSummary={captureSummary}
+              previewSession={previewSession}
+              effectivePreviewState={effectivePreviewState}
+              options={resolvedOptions}
+              onInternalPreviewStateChange={setInternalPreviewState}
+              onPreviewCaptureActionChange={onPreviewCaptureActionChange}
+            />
           </div>
 
           {isCapturing ? (
-            <div
-              data-testid="snapshot-export-progress"
-              className="absolute inset-0 z-10 flex items-center justify-center bg-panel-bg/95 px-4 py-6 backdrop-blur-sm"
-            >
-              <div className="w-full max-w-[360px] rounded-lg border border-border-black bg-element-bg p-3 shadow-sm">
-                <div className="mb-2 flex items-start justify-between gap-3">
-                  <div className="min-w-0">
-                    <div className="text-[11px] font-semibold text-text-primary">
-                      {t.snapshotProgressTitle}
-                    </div>
-                    <div className="mt-1 text-[10px] text-text-secondary">
-                      {captureProgressLabel}
-                    </div>
-                  </div>
-                  <div className="shrink-0 rounded-md border border-border-black bg-panel-bg px-1.5 py-0.5 text-[9px] font-medium text-text-secondary">
-                    {captureProgressPercent}%
-                  </div>
-                </div>
-                <div
-                  role="progressbar"
-                  aria-label={t.snapshotProgressTitle}
-                  aria-valuemin={0}
-                  aria-valuemax={100}
-                  aria-valuenow={captureProgressPercent}
-                  className="h-2 overflow-hidden rounded-full border border-border-black bg-panel-bg"
-                >
-                  <div
-                    className="h-full rounded-full bg-system-blue-solid transition-[width] duration-200"
-                    style={{ width: `${captureProgressPercent}%` }}
-                  />
-                </div>
-                <div className="mt-2 text-[9px] text-text-tertiary">
-                  {t.snapshotProgressCancelHint}
-                </div>
-              </div>
-            </div>
+            <SnapshotProgressOverlay
+              t={t}
+              label={captureProgressLabel}
+              percent={captureProgressPercent}
+            />
           ) : null}
         </div>
 

@@ -24,8 +24,12 @@ import { resolveExportErrorMessage } from './utils/exportErrorMessage';
 import { useUIStore, useAssetsStore } from '@/store';
 import type { InspectionReport, RobotFile, RobotState } from '@/types';
 import { translations } from '@/shared/i18n';
-import type { ExportDialogConfig, ExportFormat, ExportProgressState } from '@/features/file-io';
-import { EXPORT_FORMATS } from '@/features/file-io/components/ExportDialog/config';
+import {
+  EXPORT_FORMATS,
+  type ExportDialogConfig,
+  type ExportFormat,
+  type ExportProgressState,
+} from '@/features/file-io';
 import type { ImportPreparationOverlayState } from './hooks/useFileImport';
 import { useAssetImportFromUrl } from './hooks/useAssetImportFromUrl';
 import {
@@ -212,6 +216,7 @@ export function AppContent({ extensions, onExposeActions }: AppContentProps = {}
     setProjectExportProgress,
     showToast,
     t.exportFailedParse,
+    t.exportUrdfJointUnsupported,
     t.exportProgressPreparing,
     t.exportProgressPreparingDetail,
   ]);
@@ -417,7 +422,7 @@ export function AppContent({ extensions, onExposeActions }: AppContentProps = {}
         showToast(
           resolveExportErrorMessage(error, {
             exportFailedParse: t.exportFailedParse,
-            exportUrdfBallJointUnsupported: t.exportUrdfBallJointUnsupported,
+            exportUrdfJointUnsupported: t.exportUrdfJointUnsupported,
           }),
           'error',
         );
@@ -433,7 +438,7 @@ export function AppContent({ extensions, onExposeActions }: AppContentProps = {}
       setIsExporting,
       showToast,
       t.exportFailedParse,
-      t.exportUrdfBallJointUnsupported,
+      t.exportUrdfJointUnsupported,
     ],
   );
 
@@ -527,6 +532,7 @@ export function AppContent({ extensions, onExposeActions }: AppContentProps = {}
     handleExportDisconnectedWorkspaceUrdfBundle,
     showToast,
     t.exportFailedParse,
+    t.exportUrdfJointUnsupported,
   ]);
 
   const loadingLabel = t.loadingPanel;

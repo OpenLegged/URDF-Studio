@@ -4,17 +4,22 @@ import type { Language } from '@/shared/i18n';
 import { translations } from '@/shared/i18n';
 import { JointsPanel } from '@/shared/components/Panel/JointsPanel';
 import { useUIStore } from '@/store/uiStore';
-import type { ViewerController } from '@/features/editor';
+import type {
+  ViewerControllerJointsPanelSurface,
+  ViewerControllerLayoutSurface,
+} from '@/features/editor';
 import { useResponsivePanelLayout } from '@/features/editor';
 
 export function ViewerJointsPanel({
-  controller,
+  layout,
+  jointsPanel,
   showJointPanel,
   setShowJointPanel,
   lang,
   onUpdate,
 }: {
-  controller: ViewerController;
+  layout: ViewerControllerLayoutSurface;
+  jointsPanel: ViewerControllerJointsPanelSurface;
   showJointPanel: boolean;
   setShowJointPanel?: (show: boolean) => void;
   lang: Language;
@@ -24,9 +29,9 @@ export function ViewerJointsPanel({
   const ignoreJointLimits = useUIStore((state) => state.ignoreJointLimits);
   const setIgnoreJointLimits = useUIStore((state) => state.setIgnoreJointLimits);
   const { jointsDefaultPosition, jointsPanelMaxHeight } = useResponsivePanelLayout({
-    containerRef: controller.containerRef,
-    optionsPanelRef: controller.optionsPanelRef,
-    jointPanelRef: controller.jointPanelRef,
+    containerRef: layout.containerRef,
+    optionsPanelRef: layout.optionsPanelRef,
+    jointPanelRef: layout.jointPanelRef,
     showOptionsPanel: false,
     showJointPanel,
     preferEdgeDockedJointPanel: true,
@@ -35,27 +40,27 @@ export function ViewerJointsPanel({
   return (
     <JointsPanel
       showJointPanel={showJointPanel}
-      robot={controller.jointPanelRobot ?? controller.robot}
-      jointPanelRef={controller.jointPanelRef}
-      jointPanelPos={controller.jointPanelPos}
+      robot={jointsPanel.jointPanelRobot ?? jointsPanel.robot}
+      jointPanelRef={layout.jointPanelRef}
+      jointPanelPos={layout.jointPanelPos}
       defaultPosition={jointsDefaultPosition}
       maxHeight={jointsPanelMaxHeight}
-      onMouseDown={(event) => controller.handleMouseDown('joints', event)}
+      onMouseDown={(event) => layout.handleMouseDown('joints', event)}
       t={t}
-      handleResetJoints={controller.handleResetJoints}
+      handleResetJoints={jointsPanel.handleResetJoints}
       ignoreLimits={ignoreJointLimits}
       onToggleIgnoreLimits={setIgnoreJointLimits}
-      angleUnit={controller.angleUnit}
-      setAngleUnit={controller.setAngleUnit}
-      isJointsCollapsed={controller.isJointsCollapsed}
-      toggleJointsCollapsed={controller.toggleJointsCollapsed}
+      angleUnit={jointsPanel.angleUnit}
+      setAngleUnit={jointsPanel.setAngleUnit}
+      isJointsCollapsed={jointsPanel.isJointsCollapsed}
+      toggleJointsCollapsed={jointsPanel.toggleJointsCollapsed}
       setShowJointPanel={setShowJointPanel}
-      jointPanelStore={controller.jointPanelStore}
-      setActiveJoint={controller.setActiveJoint}
-      handleJointAngleChange={controller.handleJointAngleChange}
-      handleJointChangeCommit={controller.handleJointChangeCommit}
-      onSelect={controller.handleSelectWrapper}
-      onHover={controller.handleHoverWrapper}
+      jointPanelStore={jointsPanel.jointPanelStore}
+      setActiveJoint={jointsPanel.setActiveJoint}
+      handleJointAngleChange={jointsPanel.handleJointAngleChange}
+      handleJointChangeCommit={jointsPanel.handleJointChangeCommit}
+      onSelect={jointsPanel.handleSelectWrapper}
+      onHover={jointsPanel.handleHoverWrapper}
       onUpdate={onUpdate}
     />
   );

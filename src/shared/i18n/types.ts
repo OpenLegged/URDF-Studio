@@ -796,7 +796,7 @@ export interface TranslationKeys extends TranslationWorkflowKeys {
   onlyUrdfMjcfExport: string;
   exportFailedParse: string;
   exportClosedLoopUrdfUnsupported: string;
-  exportUrdfBallJointUnsupported: string;
+  exportUrdfJointUnsupported: string;
   exportLibraryParseFailed: string;
   exportLibraryUnsupportedFormat: string;
   usdExportRequiresLoadedStage: string;

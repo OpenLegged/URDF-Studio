@@ -9,6 +9,7 @@ import { useUIStore } from '@/store/uiStore';
 import { InlineInputGroup, NumberInput, ReadonlyVectorStatRow } from './FormControls.tsx';
 import { TransformFields } from './TransformFields.tsx';
 import type { EulerRadiansValue } from '../utils/rotationFormat.ts';
+import type { Vec3Value } from './FormControls.tsx';
 
 function installDom() {
   const dom = new JSDOM('<!doctype html><html><body><div id="root"></div></body></html>', {
@@ -540,7 +541,7 @@ test('TransformFields defaults to inline axis labels for position and rotation r
 test('TransformFields copies and pastes the complete position XYZ value', async () => {
   const { dom, container, root } = createComponentRoot();
   let clipboardText = '';
-  let pastedPosition: { x: number; y: number; z: number } | null = null;
+  let pastedPosition: Vec3Value | null = null;
   Object.defineProperty(dom.window.navigator, 'clipboard', {
     configurable: true,
     value: {
@@ -558,8 +559,8 @@ test('TransformFields copies and pastes the complete position XYZ value', async 
           lang: 'en',
           positionValue: { x: 1, y: 2, z: 3 },
           rotationValue: { r: 0, p: 0, y: 0 },
-          onPositionChange: (value: { x: number; y: number; z: number }) => {
-            pastedPosition = value;
+          onPositionChange: (value: Vec3Value) => {
+            pastedPosition = value as { x: number; y: number; z: number };
           },
           onRotationChange: () => {},
         }),
@@ -598,7 +599,7 @@ test('TransformFields copies and pastes the complete position XYZ value', async 
 
 test('TransformFields pastes an in-app position copy across separate panels', async () => {
   const { dom, container, root } = createComponentRoot();
-  let pastedPosition: { x: number; y: number; z: number } | null = null;
+  let pastedPosition: Vec3Value | null = null;
 
   try {
     await act(async () => {
@@ -617,8 +618,8 @@ test('TransformFields pastes an in-app position copy across separate panels', as
             lang: 'en',
             positionValue: { x: 0, y: 0, z: 0 },
             rotationValue: { r: 0, p: 0, y: 0 },
-            onPositionChange: (value: { x: number; y: number; z: number }) => {
-              pastedPosition = value;
+            onPositionChange: (value: Vec3Value) => {
+              pastedPosition = value as { x: number; y: number; z: number };
             },
             onRotationChange: () => {},
           }),

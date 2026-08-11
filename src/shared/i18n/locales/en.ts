@@ -868,8 +868,8 @@ export const en: TranslationKeys = {
   exportFailedParse: 'Export failed: file parse error',
   exportClosedLoopUrdfUnsupported:
     'URDF export is unavailable for {name}: detected {count} closed-loop constraint(s). Core URDF only supports tree topologies. Use MJCF, Xacro, SDF, or .usp instead.',
-  exportUrdfBallJointUnsupported:
-    'URDF export is unavailable for {name}: detected a ball joint. Core URDF does not support ball joints. Use MJCF, SDF, or Xacro instead, or replace it with an equivalent supported joint chain.',
+  exportUrdfJointUnsupported:
+    'URDF export is unavailable for {name}: detected an unsupported {type} joint. Use MJCF, SDF, or Xacro instead, or replace it with an equivalent supported joint chain.',
   exportLibraryParseFailed: 'Failed to parse library file: {file}',
   exportLibraryUnsupportedFormat: 'Library export does not support format: {format}',
   usdExportRequiresLoadedStage:
