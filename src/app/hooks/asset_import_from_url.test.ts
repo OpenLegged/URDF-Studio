@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 
 import {
   assertRemoteImportBlobWithinLimits,
+  assertCompletedRemoteImport,
   assertRemoteImportContentLengthWithinLimits,
   assertRemoteImportFileListWithinLimits,
   buildAssetDownloadRequestHeaders,
@@ -115,6 +116,18 @@ test('remote import size checks reject oversized content-length and blobs', () =
   assert.throws(
     () => assertRemoteImportBlobWithinLimits(oversizedBlob, 512 * 1024 * 1024 + 1),
     /Remote import is too large/i,
+  );
+});
+
+test('remote import only reports success for a completed core import', () => {
+  assert.doesNotThrow(() => assertCompletedRemoteImport({ status: 'completed' }));
+  assert.throws(
+    () => assertCompletedRemoteImport({ status: 'skipped' }),
+    /import was skipped/i,
+  );
+  assert.throws(
+    () => assertCompletedRemoteImport({ status: 'failed' }),
+    /could not be imported/i,
   );
 });
 

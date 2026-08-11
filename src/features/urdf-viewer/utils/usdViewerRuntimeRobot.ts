@@ -3,7 +3,7 @@ import {
   unwrapContinuousJointAngle,
   wrapContinuousJointAngle,
 } from '@/shared/utils/continuousJointAngle';
-import type { ViewerRobotDataResolution } from './viewerRobotData';
+import type { ViewerRobotDataResolution } from '@/lib/robot-parser/usd/viewerRobotData';
 import {
   degreesToRadians,
   resolveUsdRuntimeJointLimitsRadians,

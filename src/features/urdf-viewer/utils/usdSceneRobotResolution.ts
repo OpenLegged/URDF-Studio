@@ -3,9 +3,9 @@ import { createSyntheticUsdViewerRobotResolution } from './usdRuntimeMeshMapping
 import {
   adaptUsdViewerSnapshotToRobotData,
   type UsdViewerRobotSceneSnapshot,
-} from './usdViewerRobotAdapter';
-import type { ViewerRobotDataResolution } from './viewerRobotData';
-import { normalizeUsdSceneSnapshotToMeters } from './usdStageUnits';
+} from '@/lib/robot-parser/usd/usdViewerRobotAdapter';
+import type { ViewerRobotDataResolution } from '@/lib/robot-parser/usd/viewerRobotData';
+import { normalizeUsdSceneSnapshotToMeters } from '@/lib/robot-parser/usd/usdStageUnits';
 
 type UsdSceneSnapshotLike = UsdSceneSnapshot | null;
 

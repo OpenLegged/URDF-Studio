@@ -104,29 +104,40 @@ export function applyMeshAssetTransform(
   meshDef: MJCFMesh,
 ): THREE.Object3D {
   const normalizedScale = normalizeScale(meshDef.scale);
-  if (normalizedScale) {
-    meshObject.scale.set(normalizedScale[0], normalizedScale[1], normalizedScale[2]);
-  }
-
   if (!meshDef.refpos && !meshDef.refquat) {
+    if (normalizedScale) {
+      meshObject.scale.multiply(
+        new THREE.Vector3(normalizedScale[0], normalizedScale[1], normalizedScale[2]),
+      );
+    }
     return meshObject;
   }
 
-  const assetTransform = new THREE.Group();
-  assetTransform.add(meshObject);
+  const referenceTransform = new THREE.Group();
+  referenceTransform.add(meshObject);
 
   if (meshDef.refquat) {
-    assetTransform.quaternion.copy(mjcfQuatToThreeQuat(meshDef.refquat).conjugate());
+    referenceTransform.quaternion.copy(mjcfQuatToThreeQuat(meshDef.refquat).conjugate());
   }
 
   if (meshDef.refpos) {
-    assetTransform.position.set(-meshDef.refpos[0], -meshDef.refpos[1], -meshDef.refpos[2]);
+    referenceTransform.position.set(-meshDef.refpos[0], -meshDef.refpos[1], -meshDef.refpos[2]);
     if (meshDef.refquat) {
-      assetTransform.position.applyQuaternion(assetTransform.quaternion);
+      referenceTransform.position.applyQuaternion(referenceTransform.quaternion);
     }
   }
 
-  return assetTransform;
+  if (!normalizedScale) {
+    return referenceTransform;
+  }
+
+  // MuJoCo first moves vertices out of the authored reference frame and only
+  // then applies the mesh asset scale. Keeping scale on an outer wrapper is
+  // essential for non-uniform scale combined with refpos/refquat.
+  const scaleTransform = new THREE.Group();
+  scaleTransform.scale.set(normalizedScale[0], normalizedScale[1], normalizedScale[2]);
+  scaleTransform.add(referenceTransform);
+  return scaleTransform;
 }
 
 function normalizeLookupPath(path: string): string {

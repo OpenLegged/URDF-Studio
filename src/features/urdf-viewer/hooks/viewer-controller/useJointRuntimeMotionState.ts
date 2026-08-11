@@ -69,7 +69,6 @@ interface ApplyRuntimeJointMotionPreviewOptions {
 }
 
 export interface JointRuntimeMotionController {
-  applyImmediateClosedLoopActiveJointPreview: (activeJointId: string, activeAngle: number) => void;
   applyRuntimeJointMotionPreview: (
     nextJointAngles: Record<string, number>,
     nextJointQuaternions: Record<string, ViewerJointMotionStateValue['quaternion']>,
@@ -328,24 +327,6 @@ export function useJointRuntimeMotionState({
       requestSceneRefresh,
       resolveRuntimeMotionAngle,
     ],
-  );
-
-  const applyImmediateClosedLoopActiveJointPreview = useCallback(
-    (activeJointId: string, activeAngle: number) => {
-      const nextActiveAngle = { [activeJointId]: activeAngle };
-      patchJointPanelAngles(nextActiveAngle);
-      previewMotionAnglesRef.current = {
-        ...previewMotionAnglesRef.current,
-        ...nextActiveAngle,
-      };
-      publishJointInteractionPreview({
-        activeJointId,
-        jointAngles: previewMotionAnglesRef.current,
-        jointQuaternions: previewMotionQuaternionsRef.current,
-      });
-      requestSceneRefresh();
-    },
-    [patchJointPanelAngles, publishJointInteractionPreview, requestSceneRefresh],
   );
 
   const setPreviewMotionState = useCallback(
@@ -763,7 +744,6 @@ export function useJointRuntimeMotionState({
   ]);
 
   return {
-    applyImmediateClosedLoopActiveJointPreview,
     applyRuntimeJointMotionPreview,
     commitIkJointKinematics,
     effectiveClosedLoopRobotState,

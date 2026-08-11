@@ -116,7 +116,11 @@ test('resolveRobotFileData stamps source format onto ready RobotData', () => {
   assert.equal(urdfResult.status, 'ready');
   assert.equal(sdfResult.status, 'ready');
   assert.equal(usdResult.status, 'ready');
-  if (urdfResult.status !== 'ready' || sdfResult.status !== 'ready' || usdResult.status !== 'ready') {
+  if (
+    urdfResult.status !== 'ready' ||
+    sdfResult.status !== 'ready' ||
+    usdResult.status !== 'ready'
+  ) {
     assert.fail('Expected all import results to be ready');
   }
 
@@ -820,7 +824,7 @@ test('resolveRobotFileData classifies bare MJCF body fragments as source-only pr
   assert.equal(result.reason, 'source_only_fragment');
 });
 
-test('resolveRobotFileData surfaces missing MJCF include dependencies as parse errors', () => {
+test('resolveRobotFileData omits a missing MJCF include and keeps healthy bodies', () => {
   const file: RobotFile = {
     name: 'robots/demo/scene.xml',
     content: `<mujoco model="broken-include">
@@ -836,15 +840,19 @@ test('resolveRobotFileData surfaces missing MJCF include dependencies as parse e
     availableFiles: [file],
   });
 
-  assert.equal(result.status, 'error');
-  if (result.status !== 'error') {
-    assert.fail('Expected MJCF with a missing include to fail import');
+  assert.equal(result.status, 'ready');
+  if (result.status !== 'ready') {
+    assert.fail('Expected MJCF with a missing include to retain its healthy body');
   }
-  assert.equal(result.reason, 'parse_failed');
-  assert.match(result.message ?? '', /missing\.xml/);
+  assert.ok(result.robotData.links.base_link);
+  assert.equal(result.robotData.inspectionContext?.recovery?.recoveredItemCount, 1);
+  assert.match(
+    result.robotData.inspectionContext?.recovery?.diagnostics[0]?.message ?? '',
+    /missing\.xml/,
+  );
 });
 
-test('resolveRobotFileData surfaces unresolved MyoSuite OBJECT_NAME templates as actionable parse errors', () => {
+test('resolveRobotFileData omits unresolved MyoSuite OBJECT_NAME branches when healthy bodies remain', () => {
   const supportFiles = [
     'myosuite/envs/myo/assets/hand/myohand_object.xml',
     'myosuite/envs/myo/assets/hand/myohand_tabletop.xml',
@@ -865,16 +873,20 @@ test('resolveRobotFileData surfaces unresolved MyoSuite OBJECT_NAME templates as
     availableFiles: supportFiles,
   });
 
-  assert.equal(result.status, 'error');
-  if (result.status !== 'error') {
-    assert.fail('Expected unresolved OBJECT_NAME template import to fail');
+  assert.equal(result.status, 'ready');
+  if (result.status !== 'ready') {
+    assert.fail('Expected unresolved OBJECT_NAME branches to be omitted');
   }
-  assert.equal(result.reason, 'parse_failed');
-  assert.match(result.message ?? '', /OBJECT_NAME/);
-  assert.match(result.message ?? '', /concrete object directory/);
+  assert.ok(Object.keys(result.robotData.links).length > 0);
+  const recoveryMessage =
+    result.robotData.inspectionContext?.recovery?.diagnostics
+      .map((diagnostic) => diagnostic.message)
+      .join('\n') ?? '';
+  assert.match(recoveryMessage, /OBJECT_NAME/);
+  assert.match(recoveryMessage, /concrete object directory/);
 });
 
-test('describeRobotImportFailure preserves actionable MyoSuite MJCF placeholder guidance without duplicating the generic import prefix', () => {
+test('ready MyoSuite recovery diagnostics preserve actionable placeholder guidance', () => {
   const supportFiles = [
     'myosuite/envs/myo/assets/hand/myohand_object.xml',
     'myosuite/envs/myo/assets/hand/myohand_tabletop.xml',
@@ -893,12 +905,15 @@ test('describeRobotImportFailure preserves actionable MyoSuite MJCF placeholder 
     availableFiles: supportFiles,
   });
 
-  assert.equal(result.status, 'error');
-  if (result.status !== 'error') {
-    assert.fail('Expected unresolved MyoSuite MJCF import to fail');
+  assert.equal(result.status, 'ready');
+  if (result.status !== 'ready') {
+    assert.fail('Expected unresolved MyoSuite branches to be omitted');
   }
 
-  const detail = describeRobotImportFailure(result);
+  const detail =
+    result.robotData.inspectionContext?.recovery?.diagnostics
+      .map((diagnostic) => diagnostic.message)
+      .join('\n') ?? '';
   assert.match(detail, /OBJECT_NAME/);
   assert.match(detail, /concrete object directory/);
   assert.doesNotMatch(detail, /^Failed to import MJCF file/i);

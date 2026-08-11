@@ -6,7 +6,7 @@ import {
   buildCriticalUsdDependencyPaths,
   prepareUsdStageOpenDataCore,
   resolveUsdStageOpenPreparationConcurrency,
-} from './usdStageOpenPreparationCore.ts';
+} from '@/lib/robot-parser/usd/usdStageOpenPreparationCore';
 
 test.afterEach(() => {
   clearPreparedUsdStageOpenCache();

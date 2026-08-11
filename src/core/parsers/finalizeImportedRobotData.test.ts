@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { createDefaultWorkspace } from '@/core/robot/canonicalWorkspace';
-import type { RobotData, RobotImportRecoveryDiagnostic } from '@/types';
+import { JointType, type RobotData, type RobotImportRecoveryDiagnostic } from '@/types';
 
 import { finalizeImportedRobotData } from './finalizeImportedRobotData.ts';
 
@@ -93,4 +93,66 @@ test('parser recovery diagnostics are preserved alongside workflow recovery diag
     ['parser_visual_omitted', 'missing_mesh_asset_omitted'],
   );
   assert.equal(result.robotData.inspectionContext?.recovery?.recoveredItemCount, 2);
+});
+
+test('parser recovery keeps counts for diagnostics omitted from the retained detail list', () => {
+  const robot = createRobot('many_parser_repairs');
+  const retainedDiagnostic: RobotImportRecoveryDiagnostic = {
+    code: 'parser_visual_omitted',
+    severity: 'warning',
+    category: 'geometry',
+    message: 'A malformed visual was omitted by the parser.',
+    action: 'omitted',
+  };
+  robot.inspectionContext = {
+    sourceFormat: 'urdf',
+    recovery: {
+      diagnostics: [retainedDiagnostic],
+      diagnosticCounts: { error: 0, warning: 4, info: 0 },
+      recoveredItemCount: 4,
+      omittedDiagnosticCount: 3,
+    },
+  };
+
+  const result = finalizeImportedRobotData(robot, 'urdf');
+
+  assert.equal(result.status, 'ready');
+  if (result.status !== 'ready') return;
+  assert.equal(result.robotData.inspectionContext?.recovery?.recoveredItemCount, 4);
+  assert.equal(result.robotData.inspectionContext?.recovery?.diagnosticCounts.warning, 4);
+  assert.equal(result.robotData.inspectionContext?.recovery?.omittedDiagnosticCount, 3);
+});
+
+test('SDF world-parent joints produce canonical recovery diagnostics', () => {
+  const robot = createRobot('sdf_world_parent');
+  const rootLinkId = robot.rootLinkId;
+  robot.joints.world_mount = {
+    id: 'world_mount',
+    name: 'world_mount',
+    type: JointType.FIXED,
+    parentLinkId: '',
+    childLinkId: rootLinkId,
+    origin: {
+      xyz: { x: 0, y: 0, z: 0 },
+      rpy: { r: 0, p: 0, y: 0 },
+    },
+    dynamics: { damping: 0, friction: 0 },
+    hardware: {
+      armature: 0,
+      brand: '',
+      motorType: 'None',
+      motorId: '',
+      motorDirection: 1,
+    },
+  };
+
+  const result = finalizeImportedRobotData(robot, 'sdf');
+
+  assert.equal(result.status, 'ready');
+  if (result.status !== 'ready') return;
+  assert.equal(result.robotData.joints.world_mount, undefined);
+  assert.deepEqual(
+    result.robotData.inspectionContext?.recovery?.diagnostics[0]?.relatedIds,
+    ['world_mount', rootLinkId],
+  );
 });

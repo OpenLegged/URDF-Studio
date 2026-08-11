@@ -1,5 +1,5 @@
 import type { RobotFile } from '@/types';
-import type { PreparedUsdStageOpenData } from './usdStageOpenPreparation.ts';
+import type { PreparedUsdStageOpenData } from '@/lib/robot-parser/usd/usdStageOpenPreparation';
 import type {
   PrepareUsdStageOpenWorkerRequest,
   SyncUsdStageOpenWorkerContextRequest,

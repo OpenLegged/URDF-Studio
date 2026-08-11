@@ -1,4 +1,5 @@
 import {
+  disposeUsdOffscreenViewerStageInBackground,
   disposeUsdOffscreenViewerWorker,
   prepareSharedUsdOffscreenViewerStageOpenDispatch,
 } from '@/features/editor/usd_offscreen_runtime';
@@ -6,6 +7,7 @@ import {
   hydratePreparedUsdExportCacheFromWorker,
   prepareUsdPreparedExportCacheWithWorker,
   type UsdOffscreenViewerCompletionMode,
+  type UsdOffscreenViewerSessionId,
   type UsdOffscreenViewerWorkerResponse,
   type ViewerRobotDataResolution,
 } from '@/features/editor/usd_hydration';
@@ -21,11 +23,13 @@ export interface UsdRobotStateHydrationWorkerLike {
 }
 
 export interface UsdRobotStateHydrationWorkerClient {
+  disposeStage: (sessionId?: UsdOffscreenViewerSessionId) => void;
   prepareStageOpenDispatch: (
     sourceFile: Pick<RobotFile, 'name' | 'content' | 'blobUrl'>,
     availableFiles: Array<Pick<RobotFile, 'name' | 'content' | 'blobUrl' | 'format'>>,
     assets: Record<string, string>,
   ) => {
+    sessionId: UsdOffscreenViewerSessionId;
     worker: UsdRobotStateHydrationWorkerLike;
     sourceFile: Pick<RobotFile, 'name' | 'content' | 'blobUrl'>;
     stageOpenContextKey?: string;
@@ -62,6 +66,7 @@ export interface StartUsdRobotStateHydrationOptions {
     resolution: ViewerRobotDataResolution,
   ) => Promise<PreparedUsdExportCacheResult | null>;
   completionMode?: UsdOffscreenViewerCompletionMode;
+  forceHydraFullDraw?: boolean;
   resolveBeforePreparedCache?: boolean;
   onDeferredSceneSnapshot?: (snapshot: UsdSceneSnapshot, stageSourcePath: string | null) => void;
   onPreparedCache?: (
@@ -75,6 +80,7 @@ export interface StartUsdRobotStateHydrationOptions {
 }
 
 const defaultWorkerClient: UsdRobotStateHydrationWorkerClient = {
+  disposeStage: disposeUsdOffscreenViewerStageInBackground,
   prepareStageOpenDispatch: prepareSharedUsdOffscreenViewerStageOpenDispatch,
   shutdown: disposeUsdOffscreenViewerWorker,
 };
@@ -130,6 +136,7 @@ export function startUsdRobotStateHydration({
   workerClient = defaultWorkerClient,
   prepareExportCache = prepareUsdPreparedExportCacheWithWorker,
   completionMode = 'interactive',
+  forceHydraFullDraw = false,
   resolveBeforePreparedCache = false,
   onDeferredSceneSnapshot,
   onPreparedCache,
@@ -151,6 +158,7 @@ export function startUsdRobotStateHydration({
   let hydrationTimeoutTimer: ReturnType<typeof setTimeout> | null = null;
 
   const stageDispatch = workerClient.prepareStageOpenDispatch(sourceFile, availableFiles, assets);
+  const sessionId = stageDispatch.sessionId;
   const worker = stageDispatch.worker;
   const canvas = createCanvas();
 
@@ -180,7 +188,7 @@ export function startUsdRobotStateHydration({
     }
     clearHydrationTimeout();
     cleanupListeners();
-    workerClient.shutdown();
+    workerClient.disposeStage(sessionId);
   };
 
   const rejectOnce = (reason: unknown) => {
@@ -209,7 +217,7 @@ export function startUsdRobotStateHydration({
   const shouldKeepWorkerAliveAfterResolve = () =>
     Boolean(
       (preparedCachePending && onPreparedCache) ||
-        (deferredSceneSnapshotPending && onDeferredSceneSnapshot),
+      (deferredSceneSnapshotPending && onDeferredSceneSnapshot),
     );
 
   const schedulePostResolveShutdown = () => {
@@ -297,10 +305,10 @@ export function startUsdRobotStateHydration({
 
       const shouldWaitForDeferredSceneSnapshot = Boolean(
         workerPreparedCache &&
-          completionMode !== 'complete' &&
-          deferredSceneSnapshotPending &&
-          !sceneSnapshot &&
-          onDeferredSceneSnapshot,
+        completionMode !== 'complete' &&
+        deferredSceneSnapshotPending &&
+        !sceneSnapshot &&
+        onDeferredSceneSnapshot,
       );
 
       settled = true;
@@ -338,6 +346,10 @@ export function startUsdRobotStateHydration({
   function handleMessage(event: MessageEvent<UsdOffscreenViewerWorkerResponse | undefined>): void {
     const message = event.data;
     if (!message) {
+      return;
+    }
+
+    if (message.sessionId !== sessionId) {
       return;
     }
 
@@ -453,7 +465,10 @@ export function startUsdRobotStateHydration({
 
   function handleAbort(): void {
     rejectOnce(
-      toHydrationError(signal?.reason, `USD RobotState hydration for "${sourceFile.name}" was cancelled.`),
+      toHydrationError(
+        signal?.reason,
+        `USD RobotState hydration for "${sourceFile.name}" was cancelled.`,
+      ),
     );
   }
 
@@ -476,6 +491,7 @@ export function startUsdRobotStateHydration({
     worker.postMessage(
       {
         type: 'init',
+        sessionId,
         canvas,
         width: 1,
         height: 1,
@@ -491,6 +507,7 @@ export function startUsdRobotStateHydration({
         originSize: DEFAULT_ORIGIN_AXES_SIZE,
         sourceFile: stageDispatch.sourceFile,
         completionMode,
+        forceHydraFullDraw,
         stageOpenContextKey: stageDispatch.stageOpenContextKey,
         stageOpenContext: stageDispatch.stageOpenContext as never,
         stageOpenContextCacheHit: stageDispatch.stageOpenContextCacheHit,

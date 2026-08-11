@@ -10,13 +10,13 @@ import {
 } from '@/types';
 import { computeLinkWorldMatrices, createOriginMatrix } from '@/core/robot/kinematics';
 import type { UrdfVisual } from '@/types';
-import type { ViewerRobotDataResolution } from './viewerRobotData';
+import type { ViewerRobotDataResolution } from '@/lib/robot-parser/usd/viewerRobotData';
 import {
   getUsdDescriptorSectionChildToken,
   resolveUsdDescriptorTargetLinkPath,
-} from './usdDescriptorLinkResolution';
-import { resolveUsdPrimitiveGeometryFromDescriptor } from './usdPrimitiveGeometry';
-import { getUsdSourceMetersPerUnit } from './usdStageUnits';
+} from '@/lib/robot-parser/usd/usdDescriptorLinkResolution';
+import { resolveUsdPrimitiveGeometryFromDescriptor } from '@/lib/robot-parser/usd/usdPrimitiveGeometry';
+import { getUsdSourceMetersPerUnit } from '@/lib/robot-parser/usd/usdStageUnits';
 
 interface UsdRuntimeTransformInterface {
   getPreferredLinkWorldTransform?: (linkPath: string) => unknown;

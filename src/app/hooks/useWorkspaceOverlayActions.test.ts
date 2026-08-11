@@ -21,14 +21,6 @@ function renderHook(
       showAssemblyComponentPreparationOverlay: () => events.push('overlay:show'),
       clearAssemblyComponentPreparationOverlay: () => events.push('overlay:clear'),
       showToast: (message, type) => events.push(`toast:${type}:${message}`),
-      t: {
-        addedComponent: 'Added {name}',
-        addedComponentRecovered: 'Added {name} with {count} recovery item(s)',
-        loadingRobot: 'loading',
-        preparingAssemblyComponent: 'preparing',
-        addingAssemblyComponentToWorkspace: 'adding',
-        groundingAssemblyComponent: 'grounding',
-      },
       setBridgePreview: () => {},
       setShouldRenderBridgeModal: () => {},
       setIsBridgeModalOpen: () => {},
@@ -74,7 +66,7 @@ test('failed Add preserves the underlying error detail', async () => {
   ]);
 });
 
-test('successful recovered Add reports the ignored source item count', async () => {
+test('successful recovered Add clears preparation without a toast', async () => {
   const workspace = createDefaultWorkspace('recovered');
   const component = structuredClone(Object.values(workspace.components)[0]!);
   component.robot.inspectionContext = {
@@ -100,9 +92,5 @@ test('successful recovered Add reports the ignored source item count', async () 
   hook.handleAddComponent(file);
   await new Promise((resolve) => setTimeout(resolve, 0));
 
-  assert.deepEqual(events, [
-    'overlay:show',
-    'overlay:clear',
-    `toast:success:Added ${component.name} with 1 recovery item(s)`,
-  ]);
+  assert.deepEqual(events, ['overlay:show', 'overlay:clear']);
 });

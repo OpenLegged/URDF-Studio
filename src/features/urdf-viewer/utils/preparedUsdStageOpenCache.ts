@@ -1,14 +1,14 @@
 import type { RobotFile } from '@/types';
-import type { PreparedUsdStageOpenData } from './usdStageOpenPreparation';
-import { collectUsdStageOpenRelevantVirtualPaths, toVirtualUsdPath } from './usdPreloadSources.ts';
+import type { PreparedUsdStageOpenData } from '@/lib/robot-parser/usd/usdStageOpenPreparation';
+import { collectUsdStageOpenRelevantVirtualPaths, toVirtualUsdPath } from '@/lib/robot-parser/usd/usdPreloadSources';
 import {
   clearNormalizedUsdBlobCache,
   prepareUsdStageOpenDataCore,
-} from './usdStageOpenPreparationCore.ts';
+} from '@/lib/robot-parser/usd/usdStageOpenPreparationCore';
 import {
   buildBlobBackedLargeTextUsdSignature,
   isBlobBackedLargeTextUsd,
-} from './usdStageOpenLargeText.ts';
+} from '@/lib/robot-parser/usd/usdStageOpenLargeText';
 import { prepareUsdStageOpenWithWorker } from './usdStageOpenPreparationWorkerBridge.ts';
 
 type StageOpenSourceFile = Pick<RobotFile, 'name' | 'content' | 'blobUrl'>;

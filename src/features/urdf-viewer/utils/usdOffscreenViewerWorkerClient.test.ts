@@ -100,6 +100,7 @@ test('USD offscreen viewer worker client prepares stage-open context for init pa
     'robots/go2/textures/body.png': 'blob:go2-texture',
   });
   assert.equal(firstDispatch.worker, fakeWorker);
+  assert.equal(firstDispatch.sessionId, 1);
   assert.equal(firstDispatch.sourceFile.name, sourceFile.name);
   assert.ok(firstDispatch.stageOpenContextKey);
   assert.equal(firstDispatch.stageOpenContextCacheHit, false);
@@ -107,6 +108,7 @@ test('USD offscreen viewer worker client prepares stage-open context for init pa
   firstDispatch.commitStageOpenContext();
   const secondDispatch = client.prepareStageOpenDispatch(sourceFile, availableFiles, assets);
   assert.equal(fakeWorker.postedMessages.length, 0);
+  assert.equal(secondDispatch.sessionId, 2);
   assert.equal(secondDispatch.stageOpenContextKey, firstDispatch.stageOpenContextKey);
   assert.equal(secondDispatch.stageOpenContext, null);
   assert.equal(secondDispatch.stageOpenContextCacheHit, true);
@@ -146,6 +148,35 @@ test('USD offscreen viewer worker client strips blob-backed large USDA text befo
   );
   assert.equal(dispatch.sourceFile.blobUrl, 'blob:go2-root');
   assert.equal(dispatch.stageOpenContextCacheHit, false);
+});
+
+test('USD offscreen viewer worker client only disposes the active stage session', () => {
+  const fakeWorker = new FakeWorker();
+  const client = createUsdOffscreenViewerWorkerClient({
+    canUseWorker: () => true,
+    createWorker: () => fakeWorker as unknown as Worker,
+  });
+  const sourceFile = {
+    name: 'robots/demo/demo.usda',
+    content: '#usda 1.0',
+    blobUrl: undefined,
+  };
+
+  const firstDispatch = client.prepareStageOpenDispatch(sourceFile, [], {});
+  const secondDispatch = client.prepareStageOpenDispatch(sourceFile, [], {});
+
+  client.disposeStage(firstDispatch.sessionId);
+  assert.equal(fakeWorker.postedMessages.length, 0);
+
+  client.disposeStage(secondDispatch.sessionId);
+  assert.deepEqual(fakeWorker.postedMessages, [
+    { type: 'dispose-stage', sessionId: secondDispatch.sessionId },
+  ]);
+
+  client.disposeStage(secondDispatch.sessionId);
+  assert.deepEqual(fakeWorker.postedMessages, [
+    { type: 'dispose-stage', sessionId: secondDispatch.sessionId },
+  ]);
 });
 
 test('USD offscreen viewer worker client keeps rejected prewarm load-debug events off the main thread console', () => {
@@ -234,6 +265,7 @@ test('USD offscreen viewer worker client tears down shared worker after fatal re
     workers[0]!.dispatch('message', {
       data: {
         type: 'fatal-error',
+        sessionId: 1,
         error: 'runtime crashed',
       },
     });

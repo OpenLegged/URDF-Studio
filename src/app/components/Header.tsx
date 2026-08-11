@@ -9,17 +9,23 @@ import { translations } from '@/shared/i18n';
 import { attachContextMenuBlocker } from '@/shared/utils';
 import { useActiveHistory } from '../hooks/useActiveHistory';
 import { HeaderActions } from './header/HeaderActions';
+import { HeaderContextFileMenu } from './header/HeaderContextFileMenu';
 import { HeaderMenus } from './header/HeaderMenus';
+import { SurfaceModeSelector } from './header/SurfaceModeSelector';
 import { useHeaderResponsiveLayout } from './header/useHeaderResponsiveLayout';
 import type {
   HeaderAction,
+  HeaderContextFileMenuConfig,
   HeaderMenuKey,
+  HeaderSurfaceModeSelectorConfig,
   HeaderViewAvailability,
   HeaderViewConfig,
   ToolboxItem,
 } from './header/types';
 
-interface HeaderProps {
+export type { HeaderSurfaceModeSelectorConfig } from './header/types';
+
+export interface HeaderProps {
   // Import actions
   onImportFile: () => void;
   onImportFolder: () => void;
@@ -36,6 +42,8 @@ interface HeaderProps {
   onPrefetchSettings: () => void;
   quickAction?: HeaderAction;
   secondaryAction?: HeaderAction;
+  surfaceModeSelector?: HeaderSurfaceModeSelectorConfig;
+  contextFileMenu?: HeaderContextFileMenuConfig;
   // Snapshot
   onSnapshot: () => void;
   onPrefetchSnapshot: () => void;
@@ -63,6 +71,8 @@ export function Header({
   onPrefetchSettings,
   quickAction,
   secondaryAction,
+  surfaceModeSelector,
+  contextFileMenu,
   onSnapshot,
   onPrefetchSnapshot,
   viewConfig,
@@ -93,6 +103,24 @@ export function Header({
     [quickAction, secondaryAction],
   );
   const responsive = useHeaderResponsiveLayout(headerRef, responsiveOptions);
+  const isAlternateSurface = surfaceModeSelector?.current === 'alternate';
+  const actionResponsive = React.useMemo(
+    () => isAlternateSurface
+      ? {
+          ...responsive,
+          showQuickActionInline: false,
+          showQuickActionLabel: false,
+          showSnapshotInline: false,
+          showDesktopOverflow: false,
+          showLanguageInline: true,
+          showThemeInline: true,
+          showSettingsInline: true,
+          showSecondaryActionInline: true,
+          showSecondaryActionLabel: false,
+        }
+      : responsive,
+    [isAlternateSurface, responsive],
+  );
   const t = translations[lang];
   React.useEffect(() => {
     if (activeMenu === null) {
@@ -127,7 +155,27 @@ export function Header({
           />
         </div>
 
-        <HeaderMenus
+        {surfaceModeSelector ? (
+          <SurfaceModeSelector
+            config={surfaceModeSelector}
+            copy={surfaceModeSelector.translations[lang]}
+            closeLabel={t.close}
+            isOpen={activeMenu === 'surface'}
+            onOpenChange={(isOpen) => setActiveMenu(isOpen ? 'surface' : null)}
+          />
+        ) : null}
+
+        {isAlternateSurface && contextFileMenu ? (
+          <HeaderContextFileMenu
+            config={contextFileMenu}
+            closeLabel={t.close}
+            isOpen={activeMenu === 'file'}
+            showLabel={responsive.showMenuLabels}
+            onOpenChange={(isOpen) => setActiveMenu(isOpen ? 'file' : null)}
+          />
+        ) : null}
+
+        {!isAlternateSurface ? <HeaderMenus
           activeMenu={activeMenu}
           setActiveMenu={setActiveMenu}
           showMenuLabels={responsive.showMenuLabels}
@@ -151,16 +199,22 @@ export function Header({
           redo={redo}
           canUndo={canUndo}
           canRedo={canRedo}
+        /> : null}
+      </div>
+
+      <div className="pointer-events-none hidden h-full min-w-0 items-center justify-center justify-self-center px-2 sm:flex sm:px-3">
+        <div
+          id="viewer-toolbar-dock-slot"
+          className={isAlternateSurface ? 'hidden' : 'flex h-full items-center justify-center'}
+        />
+        <div
+          id="alternate-workspace-toolbar-dock-slot"
+          className={isAlternateSurface ? 'flex h-full items-center justify-center' : 'hidden'}
         />
       </div>
 
-      <div
-        id="viewer-toolbar-dock-slot"
-        className="pointer-events-none hidden h-full min-w-0 items-center justify-center justify-self-center px-2 sm:flex sm:px-3"
-      />
-
       <HeaderActions
-        responsive={responsive}
+        responsive={actionResponsive}
         lang={lang}
         theme={theme}
         canUndo={canUndo}
@@ -171,7 +225,7 @@ export function Header({
         setTheme={setTheme}
         undo={undo}
         redo={redo}
-        quickAction={quickAction}
+        quickAction={isAlternateSurface ? undefined : quickAction}
         secondaryAction={secondaryAction}
         onOpenCodeViewer={onOpenCodeViewer}
         onPrefetchCodeViewer={onPrefetchCodeViewer}

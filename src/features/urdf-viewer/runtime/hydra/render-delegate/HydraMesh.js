@@ -221,6 +221,11 @@ class HydraMesh {
         this._hasExplicitDoubleSided = true;
         this._applySurfaceState();
     }
+    setVisible(value) {
+        if (this._mesh) {
+            this._mesh.visible = value !== false && value !== 0;
+        }
+    }
     setCullStyle(value) {
         this._cullStyle = value ?? null;
         this._hasExplicitCullStyle = this._cullStyle !== null && String(this._cullStyle).trim() !== '';

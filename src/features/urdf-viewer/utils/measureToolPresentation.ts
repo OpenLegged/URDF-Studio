@@ -63,7 +63,6 @@ export const LABEL_OFFSET_PATTERN = [
 export function clamp(value: number, min: number, max: number): number {
   return Math.min(Math.max(value, min), max);
 }
-
 export function getSelectionSignature(selection?: ViewerProps['selection']): string {
   if (!selection?.type || !selection?.id) {
     return 'none';
@@ -126,4 +125,3 @@ export function areSameTarget(
     left.point.distanceToSquared(right.point) <= 1e-12
   );
 }
-

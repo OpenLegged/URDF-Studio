@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { normalizeUsdInstanceableVisualScopeVisibility } from './usdStageOpenTextNormalization.ts';
+import { normalizeUsdInstanceableVisualScopeVisibility } from '@/lib/robot-parser/usd/usdStageOpenTextNormalization';
 
 test('normalizes top-level invisible visuals scopes that are referenced through instanceable visuals', () => {
   const source = `#usda 1.0

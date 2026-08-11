@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import type { UsdSceneSnapshot } from '@/types';
-import { shouldAutoFrameUsdGenericSceneSnapshot } from './usdGenericScenePolicy.ts';
+import { shouldAutoFrameUsdGenericSceneSnapshot } from '@/lib/robot-parser/usd/usdGenericScenePolicy';
 
 test('auto-frames generic scene descriptors attached directly to the default prim', () => {
   assert.equal(

@@ -929,6 +929,29 @@ test('generated MJCF preserves fixed synthetic world root transforms through par
   assertMatricesClose(robot, roundtrip!, ['world', 'base', 'FR_thigh']);
 });
 
+test('generated MJCF preserves sites on an otherwise synthetic world root', () => {
+  installDomParser();
+
+  const robot = parseMJCF(`
+    <mujoco model="world-sites-only">
+      <worldbody>
+        <site name="actuation_center" pos="0 0 0.25" group="5" />
+      </worldbody>
+    </mujoco>
+  `);
+  const generated = generateMujocoXML(robot, {
+    includeSceneHelpers: false,
+    meshdir: 'meshes/',
+  });
+  const parsed = parseMJCFModel(generated);
+
+  assert.doesNotMatch(generated, /<body name="world_link"/);
+  assert.match(generated, /<site name="actuation_center"/);
+  assert.deepEqual(parsed.worldBody.sites.map((site) => site.name), [
+    'actuation_center',
+  ]);
+});
+
 test('generated MJCF avoids reserved world body names for payload-bearing scene roots', () => {
   installDomParser();
 

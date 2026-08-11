@@ -10,7 +10,8 @@ export type {
 export type {
   OffscreenViewerInteractionSelection,
   UsdOffscreenViewerCompletionMode,
+  UsdOffscreenViewerSessionId,
   UsdOffscreenViewerWorkerRequest,
   UsdOffscreenViewerWorkerResponse,
 } from '../urdf-viewer/utils/usdOffscreenViewerProtocol';
-export type { ViewerRobotDataResolution } from '../urdf-viewer/utils/viewerRobotData';
+export type { ViewerRobotDataResolution } from '@/lib/robot-parser/usd/viewerRobotData';

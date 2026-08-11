@@ -5,7 +5,7 @@ import {
   hydratePreparedUsdStageOpenDataFromWorker,
   serializePreparedUsdStageOpenDataForWorker,
 } from './usdStageOpenPreparationTransfer.ts';
-import type { PreparedUsdStageOpenData } from './usdStageOpenPreparation.ts';
+import type { PreparedUsdStageOpenData } from '@/lib/robot-parser/usd/usdStageOpenPreparation';
 
 test('usdStageOpenPreparation transfer serialization preserves preload blobs across worker boundaries', async () => {
   const payload: PreparedUsdStageOpenData = {

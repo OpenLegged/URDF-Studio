@@ -7,7 +7,7 @@ import {
   createEmbeddedUsdViewerLoadParams,
   resolveEmbeddedUsdViewerLoadProfile,
   shouldPreferSlicedEmbeddedUsdLoad,
-} from './usdViewerRenderParams.ts';
+} from '@/lib/robot-parser/usd/usdViewerRenderParams';
 
 test('createEmbeddedUsdViewerLoadParams keeps USD auto-fit aligned with the workspace camera defaults', () => {
   const params = createEmbeddedUsdViewerLoadParams(4);
@@ -63,7 +63,7 @@ test('createEmbeddedUsdViewerLoadParams keeps worker bootstrap strict while usin
   assert.equal(params.get('warmupRuntimeBridge'), '1');
   assert.equal(params.get('robotSceneSnapshotBeforeDraw'), '1');
   assert.equal(params.get('skipHydraFullDrawForRobotSceneSnapshot'), '1');
-  assert.equal(params.get('skipHydraPopulateForRobotSceneSnapshot'), '1');
+  assert.equal(params.get('skipHydraPopulateForRobotSceneSnapshot'), '0');
   assert.equal(params.get('disableStageLayerTextFallbacks'), '1');
   assert.equal(params.has('initialDrawBurst'), false);
 });
@@ -85,9 +85,22 @@ test('createEmbeddedUsdViewerLoadParams can relax only robot metadata for synthe
   assert.equal(params.get('warmupRuntimeBridge'), '1');
   assert.equal(params.get('robotSceneSnapshotBeforeDraw'), '1');
   assert.equal(params.get('skipHydraFullDrawForRobotSceneSnapshot'), '1');
-  assert.equal(params.get('skipHydraPopulateForRobotSceneSnapshot'), '1');
+  assert.equal(params.get('skipHydraPopulateForRobotSceneSnapshot'), '0');
   assert.equal(params.get('disableStageLayerTextFallbacks'), '1');
   assert.equal(params.has('initialDrawBurst'), false);
+});
+
+test('createEmbeddedUsdViewerLoadParams can force Hydra composition for generic stages', () => {
+  const params = createEmbeddedUsdViewerLoadParams(4, {
+    preferWorkerResolvedRobotData: true,
+    forceHydraFullDraw: true,
+  });
+
+  assert.equal(params.get('aggressiveInitialDraw'), '1');
+  assert.equal(params.get('robotSceneSnapshotBeforeDraw'), '0');
+  assert.equal(params.get('skipHydraFullDrawForRobotSceneSnapshot'), '0');
+  assert.equal(params.get('skipHydraPopulateForRobotSceneSnapshot'), '0');
+  assert.equal(params.get('allowPartialMeshHydration'), '1');
 });
 
 test('resolveEmbeddedUsdViewerLoadProfile keeps large pure .usd interactive loads distinct from worker bootstrap loads', () => {

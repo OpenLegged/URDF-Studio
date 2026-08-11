@@ -9,7 +9,7 @@ import {
   isSyntheticWorldRoot,
   isTransparentDisplayLink,
 } from '@/core/robot';
-import { GeometryType, IMPORTED_EXTERNAL_FRAME_LINK_TYPE } from '@/types';
+import { GeometryType, IMPORTED_EXTERNAL_FRAME_LINK_TYPE, JointType } from '@/types';
 import { parseURDF } from './index.ts';
 import { generateURDF } from '../urdfGenerator.ts';
 
@@ -30,6 +30,12 @@ const FLOATING_ROOT_URDF = `<?xml version="1.0"?>
     </inertial>
   </link>
 </robot>`;
+
+test('parseURDF rejects a nested robot when the document root is not robot', () => {
+  const robot = parseURDF('<wrapper><robot name="nested"><link name="base" /></robot></wrapper>');
+
+  assert.equal(robot, null);
+});
 
 test('parseURDF preserves missing inertial and floating joint optional fields', () => {
   const robot = parseURDF(FLOATING_ROOT_URDF);
@@ -54,6 +60,45 @@ test('parseURDF uses the URDF default axis for movable joints with omitted axis 
 
   assert.ok(robot);
   assert.deepEqual(robot.joints.wheel_joint?.axis, { x: 1, y: 0, z: 0 });
+});
+
+test('parseURDF preserves legacy fixed-joint tolerance when type is omitted', () => {
+  const robot = parseURDF(`<?xml version="1.0"?>
+<robot name="missing_joint_type">
+  <link name="base_link" />
+  <link name="camera_link" />
+  <joint name="camera_mount">
+    <parent link="base_link" />
+    <child link="camera_link" />
+  </joint>
+</robot>`);
+
+  assert.ok(robot);
+  assert.equal(robot.joints.camera_mount?.type, JointType.FIXED);
+  assert.equal(robot.joints.camera_mount?.axis, undefined);
+  assert.equal(
+    robot.inspectionContext?.recovery?.diagnostics.some(
+      (diagnostic) => diagnostic.code === 'urdf_joint_type_defaulted',
+    ),
+    true,
+  );
+});
+
+test('parseURDF normalizes native capsule total length to canonical body length', () => {
+  const robot = parseURDF(`<?xml version="1.0"?>
+<robot name="native_capsule">
+  <link name="base_link">
+    <visual>
+      <geometry><capsule radius="0.1" length="0.8" /></geometry>
+    </visual>
+  </link>
+</robot>`);
+
+  assert.ok(robot);
+  assert.equal(robot.links.base_link.visual.type, GeometryType.CAPSULE);
+  assert.equal(robot.links.base_link.visual.dimensions.x, 0.1);
+  assert.ok(Math.abs(robot.links.base_link.visual.dimensions.y - 0.6) < 1e-12);
+  assert.equal(robot.links.base_link.visual.dimensions.z, 0);
 });
 
 test('parseURDF synthesizes undeclared external world parents as transparent roots', () => {
@@ -117,7 +162,7 @@ test('parseURDF tolerates undeclared namespace-prefixed extension tags and attri
   assert.equal(robot.rootLinkId, 'base_link');
 });
 
-test('parseURDF fails instead of returning a partially parsed robot', (t) => {
+test('parseURDF isolates an unreadable visual and preserves sibling links', (t) => {
   const xml = `<?xml version="1.0"?>
 <robot name="parser_failure">
   <link name="base_link" />
@@ -126,12 +171,18 @@ test('parseURDF fails instead of returning a partially parsed robot', (t) => {
   </link>
 </robot>`;
   const documentWithBrokenLink = new dom.window.DOMParser().parseFromString(xml, 'text/xml');
-  const brokenLink = documentWithBrokenLink.querySelector('link[name="broken_link"]');
-  assert.ok(brokenLink);
-  Object.defineProperty(brokenLink, 'querySelector', {
+  const brokenGeometry = documentWithBrokenLink.querySelector('link[name="broken_link"] geometry');
+  assert.ok(brokenGeometry);
+  const originalGeometryQuerySelector = brokenGeometry.querySelector.bind(brokenGeometry);
+  let shouldThrow = true;
+  Object.defineProperty(brokenGeometry, 'querySelector', {
     configurable: true,
-    value() {
-      throw new Error('link traversal failed');
+    value(selector: string) {
+      if (shouldThrow) {
+        shouldThrow = false;
+        throw new Error('geometry traversal failed');
+      }
+      return originalGeometryQuerySelector(selector);
     },
   });
 
@@ -144,7 +195,47 @@ test('parseURDF fails instead of returning a partially parsed robot', (t) => {
     console.error = originalConsoleError;
   });
 
-  assert.equal(parseURDF(xml), null);
+  const robot = parseURDF(xml);
+  assert.ok(robot);
+  assert.ok(robot.links.base_link);
+  assert.ok(robot.links.broken_link);
+  assert.equal(robot.links.broken_link.visual.type, GeometryType.NONE);
+  assert.equal(
+    robot.inspectionContext?.recovery?.diagnostics.some(
+      (diagnostic) => diagnostic.code === 'urdf_visual_omitted',
+    ),
+    true,
+  );
+});
+
+test('parseURDF omits unusable links and joints while preserving healthy siblings', () => {
+  const robot = parseURDF(`<?xml version="1.0"?>
+<robot name="partial_entities">
+  <link name="base" />
+  <link />
+  <link name="tip" />
+  <joint name="healthy_joint" type="fixed">
+    <parent link="base" />
+    <child link="tip" />
+  </joint>
+  <joint name="bad_joint" type="not_a_joint">
+    <parent link="base" />
+    <child link="tip" />
+  </joint>
+</robot>`);
+
+  assert.ok(robot);
+  assert.deepEqual(Object.keys(robot.links), ['base', 'tip']);
+  assert.deepEqual(Object.keys(robot.joints), ['healthy_joint']);
+  const recoveryCodes = new Set(
+    robot.inspectionContext?.recovery?.diagnostics.map((diagnostic) => diagnostic.code),
+  );
+  assert.equal(recoveryCodes.has('urdf_unnamed_link_omitted'), true);
+  assert.equal(recoveryCodes.has('urdf_unsupported_joint_omitted'), true);
+});
+
+test('parseURDF keeps malformed top-level XML fatal', () => {
+  assert.equal(parseURDF('<robot name="broken"><link name="base"></robot>'), null);
 });
 
 test('parseURDF records URDF diagnostics for later AI inspection without blocking import', () => {
@@ -591,7 +682,7 @@ test('parseURDF does not flag continuous joints that omit <limit> entirely', () 
   assert.equal(missingLimitDiagnostics[0]?.severity, 'error');
 });
 
-test('parseURDF omits malformed joint metadata and preserves invalid geometry for import recovery', () => {
+test('parseURDF recovers malformed optional metadata and downgrades invalid geometry', () => {
   const robot = parseURDF(`<?xml version="1.0"?>
 <robot name="malformed_optional_numbers">
   <link name="base_link">
@@ -619,12 +710,8 @@ test('parseURDF omits malformed joint metadata and preserves invalid geometry fo
 </robot>`);
 
   assert.ok(robot);
-  assert.equal(Number.isFinite(robot.links.base_link.inertial?.mass), false);
-  assert.equal(Number.isFinite(robot.links.base_link.visual.dimensions.x), false);
-  assert.deepEqual(
-    { y: robot.links.base_link.visual.dimensions.y, z: robot.links.base_link.visual.dimensions.z },
-    { y: 0.5, z: 0 },
-  );
+  assert.equal(robot.links.base_link.inertial, undefined);
+  assert.equal(robot.links.base_link.visual.type, GeometryType.NONE);
   assert.deepEqual(robot.joints.bad_metadata_joint.origin.xyz, { x: 0, y: 2, z: 0 });
   assert.deepEqual(robot.joints.bad_metadata_joint.origin.rpy, { r: 0, p: 0, y: 0 });
   assert.deepEqual(robot.joints.bad_metadata_joint.limit, { upper: 1, velocity: 2 });
@@ -635,6 +722,12 @@ test('parseURDF omits malformed joint metadata and preserves invalid geometry fo
   });
   assert.equal(robot.joints.bad_metadata_joint.hardware.motorDirection, 1);
   assert.equal(robot.joints.bad_metadata_joint.hardware.armature, 0);
+  const recoveryCodes = new Set(
+    robot.inspectionContext?.recovery?.diagnostics.map((diagnostic) => diagnostic.code),
+  );
+  assert.equal(recoveryCodes.has('urdf_inertial_omitted'), true);
+  assert.equal(recoveryCodes.has('urdf_visual_geometry_downgraded'), true);
+  assert.equal(recoveryCodes.has('urdf_joint_limit_values_omitted'), true);
 });
 
 test('parseURDF and generateURDF preserve joint calibration reference_position', () => {
@@ -1160,6 +1253,43 @@ test('parseURDF preserves mimic joint metadata through export', () => {
   });
 
   assert.match(urdf, /<mimic joint="master_joint" multiplier="1\.5" offset="0\.25" \/>/);
+});
+
+test('parseURDF recovers exporter-style type="mimic" joints from their target type', () => {
+  const robot = parseURDF(`<?xml version="1.0"?>
+<robot name="malformed_mimic_parse">
+  <link name="base_link" />
+  <link name="master_link" />
+  <link name="tip_link" />
+  <joint name="master_joint" type="revolute">
+    <parent link="base_link" />
+    <child link="master_link" />
+    <axis xyz="0 1 0" />
+    <limit lower="-1" upper="1" effort="5" velocity="2" />
+  </joint>
+  <joint name="tip_joint" type="mimic">
+    <parent link="master_link" />
+    <child link="tip_link" />
+    <axis xyz="0 1 0" />
+    <limit lower="-1" upper="1" effort="5" velocity="2" />
+    <mimic joint="master_joint" multiplier="1" offset="0" />
+  </joint>
+</robot>`);
+
+  assert.ok(robot);
+  assert.equal(robot.joints.tip_joint?.type, JointType.REVOLUTE);
+  assert.deepEqual(robot.joints.tip_joint?.mimic, {
+    joint: 'master_joint',
+    multiplier: 1,
+    offset: 0,
+  });
+  assert.deepEqual(getTreeRenderRootLinkIds(robot), ['base_link']);
+  assert.equal(
+    robot.inspectionContext?.recovery?.diagnostics.some(
+      (diagnostic) => diagnostic.code === 'urdf_mimic_joint_type_recovered',
+    ),
+    true,
+  );
 });
 
 test('generateURDF only writes hardware brand in extended exports and parseURDF restores it', () => {

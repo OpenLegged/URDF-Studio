@@ -5,7 +5,7 @@ import type { UsdSceneSnapshot } from '@/types';
 import {
   getUsdSourceMetersPerUnit,
   normalizeUsdSceneSnapshotToMeters,
-} from './usdStageUnits';
+} from '@/lib/robot-parser/usd/usdStageUnits';
 
 test('normalizes USD geometry, transforms, primitives, joints, and dynamics to meters', () => {
   const snapshot: UsdSceneSnapshot = {

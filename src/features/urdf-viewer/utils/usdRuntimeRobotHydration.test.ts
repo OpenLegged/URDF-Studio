@@ -5,7 +5,7 @@ import * as THREE from 'three';
 
 import { DEFAULT_JOINT, DEFAULT_LINK, GeometryType, JointType } from '@/types';
 import { createOriginMatrix } from '@/core/robot/kinematics';
-import type { ViewerRobotDataResolution } from './viewerRobotData';
+import type { ViewerRobotDataResolution } from '@/lib/robot-parser/usd/viewerRobotData';
 import {
   hydrateUsdViewerRobotResolutionFromRuntime as hydrateNullableUsdViewerRobotResolutionFromRuntime,
 } from './usdRuntimeRobotHydration.ts';

@@ -18,7 +18,6 @@ import { buildGeneratedWorkspaceFileState } from './workspaceGeneratedSourceStat
 interface UseWorkspaceModeTransitionsTranslations {
   generateWorkspaceUrdfDisconnected: string;
   generateWorkspaceUrdfUnavailable: string;
-  generateWorkspaceUrdfSuccess: string;
 }
 
 interface UseWorkspaceModeTransitionsParams {
@@ -105,13 +104,6 @@ export function useWorkspaceModeTransitions({
       proModeRoundtripSessionRef.current = options.switchToStructure
         ? null
         : { baselineSnapshot: snapshot, generatedFileName: file.name };
-      showToast(
-        t.generateWorkspaceUrdfSuccess.replace(
-          '{name}',
-          file.name.split('/').pop() || file.name,
-        ),
-        'success',
-      );
       return true;
     },
     [handleClosePreview, proModeRoundtripSessionRef, showToast, t],

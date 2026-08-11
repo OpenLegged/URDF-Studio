@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import {
+  createClosedLoopMotionPreviewSession,
   createClosedLoopMotionPreviewWorkerSession,
   type AsyncClosedLoopMotionPreviewSession,
   type ClosedLoopMotionPreviewResult,
+  type ClosedLoopMotionPreviewSession,
 } from '@/shared/utils/robot/closedLoopMotionPreview';
 import type { RobotState } from '@/types';
 import { CLOSED_LOOP_PREVIEW_MAX_IN_FLIGHT } from './closedLoopJointPreview';
@@ -44,6 +46,9 @@ export function useClosedLoopPreviewScheduler(
   createSession: SessionFactory = createClosedLoopMotionPreviewWorkerSession,
 ) {
   const [session] = useState(createSession);
+  const [immediateSession] = useState<ClosedLoopMotionPreviewSession>(
+    createClosedLoopMotionPreviewSession,
+  );
   const baseRobotRef = useRef(baseRobot);
   const onResolvedRef = useRef(onResolved);
   const onRejectedRef = useRef(onRejected);
@@ -72,7 +77,17 @@ export function useClosedLoopPreviewScheduler(
     cancel();
     session.setBaseRobot(baseRobotRef.current);
     session.reset();
-  }, [cancel, session]);
+    immediateSession.setBaseRobot(baseRobotRef.current);
+    immediateSession.reset();
+  }, [cancel, immediateSession, session]);
+
+  const solveImmediately = useCallback(
+    (selectedJointId: string, resolvedAngle: number) => {
+      immediateSession.setBaseRobot(baseRobotRef.current);
+      return immediateSession.solve(selectedJointId, resolvedAngle);
+    },
+    [immediateSession],
+  );
 
   const solve = useCallback(
     async (selectedJointId: string, resolvedAngle: number) => {
@@ -187,8 +202,9 @@ export function useClosedLoopPreviewScheduler(
 
   useEffect(() => {
     session.setBaseRobot(baseRobot);
+    immediateSession.setBaseRobot(baseRobot);
     reset();
-  }, [baseRobot, reset, session]);
+  }, [baseRobot, immediateSession, reset, session]);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -198,5 +214,5 @@ export function useClosedLoopPreviewScheduler(
     };
   }, [reset]);
 
-  return { schedule, solve, cancel, reset };
+  return { schedule, solve, solveImmediately, cancel, reset };
 }

@@ -4,6 +4,7 @@ import type { TranslationKeys } from '@/shared/i18n/types';
 import { useEffectiveTheme } from '@/shared/hooks/useEffectiveTheme';
 import { isIkDragToolEnabled } from '@/shared/utils/ikDragFeatureGate';
 import type { ToolboxItem } from '../components/header/types';
+import type { AppToolboxItem } from '../appExtensions';
 
 interface UseToolItemsParams {
   t: TranslationKeys;
@@ -13,6 +14,7 @@ interface UseToolItemsParams {
   prefetchAIConversation: () => void;
   openIkTool: () => void;
   openCollisionOptimizer: () => void;
+  extensionItems?: readonly AppToolboxItem[];
   prefetchCollisionOptimizer: () => void;
 }
 
@@ -35,6 +37,7 @@ export function useToolItems(params: UseToolItemsParams): UseToolItemsReturn {
     openIkTool,
     openCollisionOptimizer,
     prefetchCollisionOptimizer,
+    extensionItems = [],
   } = params;
   const effectiveTheme = useEffectiveTheme();
   const motrixLogoSrc =
@@ -141,6 +144,7 @@ export function useToolItems(params: UseToolItemsParams): UseToolItemsReturn {
         external: true,
         tone: 'logo',
       },
+      ...extensionItems,
     ],
     [
       t,
@@ -152,12 +156,16 @@ export function useToolItems(params: UseToolItemsParams): UseToolItemsReturn {
       openCollisionOptimizer,
       prefetchCollisionOptimizer,
       motrixLogoSrc,
+      extensionItems,
     ],
   );
 
   const registry = useMemo(() => {
     const map = new Map<string, () => void>();
     for (const item of items) {
+      if (map.has(item.key)) {
+        throw new Error(`Duplicate toolbox item key: ${item.key}`);
+      }
       map.set(item.key, item.onClick);
     }
     return map;

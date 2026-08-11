@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 
 import { GeometryType } from '@/types';
 import type { RobotData } from '@/types';
-import type { ViewerRobotDataResolution } from './viewerRobotData';
+import type { ViewerRobotDataResolution } from '@/lib/robot-parser/usd/viewerRobotData';
 import {
   hydratePreparedUsdExportCacheFromWorker,
   serializePreparedUsdExportCacheForWorker,

@@ -8,7 +8,7 @@ import type {
   LoadUsdStageFn,
   UsdFsHelperInstance,
   UsdModule,
-} from '../runtime/viewer/usd-loader.types';
+} from '../../../features/urdf-viewer/runtime/viewer/usd-loader.types';
 import { USD_BINDINGS_CACHE_KEY } from './usdBindingsAssetPaths.ts';
 
 type LoadVirtualFileFn = (args: {
@@ -22,11 +22,29 @@ type LoadVirtualFileFn = (args: {
 }) => Promise<void>;
 
 type ApplyMeshVisibilityFiltersFn = (
-  renderInterface: any,
+  renderInterface: unknown,
   showVisualMeshes: boolean,
   showCollisionMeshes: boolean,
   collisionAlwaysOnTop?: boolean,
 ) => void;
+
+interface UsdModuleFactoryConfig {
+  mainScriptUrlOrBlob: string;
+  locateFile: (file: string) => string;
+  PTHREAD_POOL_LIMIT: number;
+  PTHREAD_POOL_SIZE: number;
+  PTHREAD_NUM_CORES: number;
+  PTHREAD_POOL_PREWARM: boolean;
+  print: (...args: unknown[]) => void;
+  printErr: (...args: unknown[]) => void;
+}
+
+type UsdModuleFactoryFn = (config: UsdModuleFactoryConfig) => Promise<UsdModule>;
+
+interface UsdDriverLifecycle {
+  isDeleted?: () => boolean;
+  delete?: () => void;
+}
 
 export interface UsdWasmRuntime {
   USD: UsdModule;
@@ -37,20 +55,30 @@ export interface UsdWasmRuntime {
   threadCount: number;
 }
 
+export interface UsdWasmRuntimeModules {
+  UsdFsHelper: new (
+    getUsdModule: () => UsdModule,
+    debugFileHandling: boolean,
+  ) => UsdFsHelperInstance;
+  loadVirtualFile: LoadVirtualFileFn;
+  loadUsdStage: LoadUsdStageFn;
+  applyMeshVisibilityFilters: ApplyMeshVisibilityFiltersFn;
+}
+
 function withCacheKey(resourcePath: string): string {
   return buildUsdBindingsAssetPath(resourcePath, { cacheKey: USD_BINDINGS_CACHE_KEY });
 }
 
-function resolveGetUsdModuleFn(): ((config: Record<string, any>) => Promise<UsdModule>) | null {
+function resolveGetUsdModuleFn(): UsdModuleFactoryFn | null {
   const globalUsd = globalThis as Record<string, unknown>;
   const needleGetter = globalUsd['NEEDLE:USD:GET'];
   if (typeof needleGetter === 'function') {
-    return needleGetter as (config: Record<string, any>) => Promise<UsdModule>;
+    return needleGetter as UsdModuleFactoryFn;
   }
 
   const exportedGetter = globalUsd.USD_WASM_MODULE;
   if (typeof exportedGetter === 'function') {
-    return exportedGetter as (config: Record<string, any>) => Promise<UsdModule>;
+    return exportedGetter as UsdModuleFactoryFn;
   }
 
   return null;
@@ -110,13 +138,10 @@ function assertUsdRuntimeEnvironment(): void {
   }
 }
 
-let getUsdModuleFnPromise: Promise<(config: Record<string, any>) => Promise<UsdModule>> | null =
-  null;
+let getUsdModuleFnPromise: Promise<UsdModuleFactoryFn> | null = null;
 let usdRuntimePromise: Promise<UsdWasmRuntime> | null = null;
 
-async function loadEmHdBindingsGetUsdModuleFn(): Promise<
-  (config: Record<string, any>) => Promise<UsdModule>
-> {
+async function loadEmHdBindingsGetUsdModuleFn(): Promise<UsdModuleFactoryFn> {
   const existingGetter = resolveGetUsdModuleFn();
   if (existingGetter) {
     return existingGetter;
@@ -142,28 +167,17 @@ async function loadEmHdBindingsGetUsdModuleFn(): Promise<
   return getUsdModuleFnPromise;
 }
 
-export async function ensureUsdWasmRuntime(): Promise<UsdWasmRuntime> {
+function ensureUsdWasmRuntimeWithLoader(
+  loadModules: () => Promise<UsdWasmRuntimeModules>,
+): Promise<UsdWasmRuntime> {
   if (!usdRuntimePromise) {
     usdRuntimePromise = (async () => {
       assertUsdRuntimeEnvironment();
 
-      const [getUsdModuleFn, usdFsModule, usdLoaderModule, uploadWorkflowModule, visibilityModule] =
-        await Promise.all([
-          loadEmHdBindingsGetUsdModuleFn(),
-          import('../runtime/viewer/usd-fs.js') as Promise<{
-            UsdFsHelper: new (
-              getUsdModule: () => UsdModule,
-              debugFileHandling: boolean,
-            ) => UsdFsHelperInstance;
-          }>,
-          import('../runtime/viewer/usd-loader-runtime.ts'),
-          import('../runtime/viewer/upload-workflow.js') as Promise<{
-            loadVirtualFile: LoadVirtualFileFn;
-          }>,
-          import('../runtime/viewer/visibility.js') as Promise<{
-            applyMeshVisibilityFilters: ApplyMeshVisibilityFiltersFn;
-          }>,
-        ]);
+      const [getUsdModuleFn, modules] = await Promise.all([
+        loadEmHdBindingsGetUsdModuleFn(),
+        loadModules(),
+      ]);
 
       const threadCount = resolvePreferredUsdThreadCount();
       const USD = await getUsdModuleFn({
@@ -186,10 +200,10 @@ export async function ensureUsdWasmRuntime(): Promise<UsdWasmRuntime> {
 
       return {
         USD,
-        usdFsHelper: new usdFsModule.UsdFsHelper(() => USD, false),
-        loadVirtualFile: uploadWorkflowModule.loadVirtualFile,
-        loadUsdStage: usdLoaderModule.loadUsdStage,
-        applyMeshVisibilityFilters: visibilityModule.applyMeshVisibilityFilters,
+        usdFsHelper: new modules.UsdFsHelper(() => USD, false),
+        loadVirtualFile: modules.loadVirtualFile,
+        loadUsdStage: modules.loadUsdStage,
+        applyMeshVisibilityFilters: modules.applyMeshVisibilityFilters,
         threadCount,
       };
     })().catch((error) => {
@@ -201,6 +215,37 @@ export async function ensureUsdWasmRuntime(): Promise<UsdWasmRuntime> {
   return usdRuntimePromise;
 }
 
+export async function ensureUsdWasmRuntime(): Promise<UsdWasmRuntime> {
+  return ensureUsdWasmRuntimeWithLoader(async () => {
+    const [usdFsModule, usdLoaderModule, uploadWorkflowModule, visibilityModule] =
+      await Promise.all([
+        import('../../../features/urdf-viewer/runtime/viewer/usd-fs.js') as Promise<
+          Pick<UsdWasmRuntimeModules, 'UsdFsHelper'>
+        >,
+        import('../../../features/urdf-viewer/runtime/viewer/usd-loader-runtime.ts'),
+        import('../../../features/urdf-viewer/runtime/viewer/upload-workflow.js') as Promise<
+          Pick<UsdWasmRuntimeModules, 'loadVirtualFile'>
+        >,
+        import('../../../features/urdf-viewer/runtime/viewer/visibility.js') as Promise<
+          Pick<UsdWasmRuntimeModules, 'applyMeshVisibilityFilters'>
+        >,
+      ]);
+    return {
+      UsdFsHelper: usdFsModule.UsdFsHelper,
+      loadVirtualFile: uploadWorkflowModule.loadVirtualFile,
+      loadUsdStage: usdLoaderModule.loadUsdStage,
+      applyMeshVisibilityFilters: visibilityModule.applyMeshVisibilityFilters,
+    };
+  });
+}
+
+/** Worker entrypoint with statically bundled support modules for portable URLs. */
+export function ensureUsdWasmRuntimeFromModules(
+  modules: UsdWasmRuntimeModules,
+): Promise<UsdWasmRuntime> {
+  return ensureUsdWasmRuntimeWithLoader(async () => modules);
+}
+
 export function prewarmUsdWasmRuntimeInBackground(
   loadRuntime: () => Promise<UsdWasmRuntime> = ensureUsdWasmRuntime,
 ): void {
@@ -209,11 +254,17 @@ export function prewarmUsdWasmRuntimeInBackground(
   });
 }
 
-export function disposeUsdDriver(runtime: Pick<UsdWasmRuntime, 'USD'>, driver: any): void {
+function hasUsdDriverLifecycle(driver: unknown): driver is UsdDriverLifecycle {
+  return (typeof driver === 'object' && driver !== null) || typeof driver === 'function';
+}
+
+export function disposeUsdDriver(runtime: Pick<UsdWasmRuntime, 'USD'>, driver: unknown): void {
   if (!driver) return;
 
+  const driverLifecycle = hasUsdDriverLifecycle(driver) ? driver : null;
+
   try {
-    if (typeof driver.isDeleted === 'function' && driver.isDeleted()) {
+    if (typeof driverLifecycle?.isDeleted === 'function' && driverLifecycle.isDeleted()) {
       return;
     }
   } catch {
@@ -221,8 +272,8 @@ export function disposeUsdDriver(runtime: Pick<UsdWasmRuntime, 'USD'>, driver: a
   }
 
   try {
-    if (typeof driver.delete === 'function') {
-      driver.delete();
+    if (typeof driverLifecycle?.delete === 'function') {
+      driverLifecycle.delete();
     }
   } catch (error) {
     console.error('Failed to dispose USD driver.', error);

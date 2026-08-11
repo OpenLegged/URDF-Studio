@@ -1,5 +1,5 @@
 import type { UsdSceneSnapshot } from '@/types';
-import type { ViewerRobotDataResolution } from './viewerRobotData.ts';
+import type { ViewerRobotDataResolution } from '@/lib/robot-parser/usd/viewerRobotData';
 import type { PreparedUsdExportCacheWorkerPayload } from './usdPreparedExportCacheWorkerTransfer.ts';
 
 export interface PrepareUsdPreparedExportCacheWorkerRequest {

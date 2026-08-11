@@ -1,12 +1,17 @@
 import type React from 'react';
 
-import type { HeaderAction } from './components/header/types';
+import type {
+  HeaderAction,
+  HeaderContextFileMenuConfig,
+  HeaderSurfaceModeSelectorConfig,
+} from './components/header/types';
 import type { ImportPreparationOverlayState } from './hooks/useFileImport';
 import type {
   CommitResolvedRobotLoadOutcome,
   WorkspaceLoadIntent,
 } from './utils/commitResolvedRobotLoad';
 import type { RobotFile } from '@/types';
+import type { AppToolboxItem } from './appExtensions';
 
 export interface ProModeRoundtripSession {
   baselineSnapshot: string;
@@ -45,6 +50,9 @@ export interface AppLayoutProps {
   onPrefetchSettings: () => void;
   headerQuickAction?: HeaderAction;
   headerSecondaryAction?: HeaderAction;
+  surfaceModeSelector?: HeaderSurfaceModeSelectorConfig;
+  contextFileMenu?: HeaderContextFileMenuConfig;
+  extensionToolboxItems?: readonly AppToolboxItem[];
   viewConfig: AppLayoutViewConfig;
   setViewConfig: React.Dispatch<React.SetStateAction<AppLayoutViewConfig>>;
   onLoadRobot: (

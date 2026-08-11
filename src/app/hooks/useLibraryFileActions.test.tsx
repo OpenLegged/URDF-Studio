@@ -85,7 +85,10 @@ test('deleting a shared library file batches component removal and clears only o
     ),
   });
 
-  const renderedActions = renderLibraryActions();
+  const toastMessages: string[] = [];
+  const renderedActions = renderLibraryActions({
+    showToast: (message) => toastMessages.push(message),
+  });
   renderedActions.handleDeleteLibraryFile(target);
 
   assert.deepEqual(Object.keys(useWorkspaceStore.getState().workspace.components), ['survivor']);
@@ -95,6 +98,7 @@ test('deleting a shared library file batches component removal and clears only o
     useAssetsStore.getState().availableFiles.map((file) => file.name),
     [survivorFile.name],
   );
+  assert.deepEqual(toastMessages, []);
 });
 
 test('library deletion flushes a pending edit before its discrete asset mutation', () => {
@@ -171,7 +175,10 @@ test('folder rename updates asset paths and component sources as one non-histori
     allFileContents: { [target.name]: target.content },
   });
 
-  const result = renderLibraryActions().handleRenameLibraryFolder('library/old', 'new');
+  const toastMessages: string[] = [];
+  const result = renderLibraryActions({
+    showToast: (message) => toastMessages.push(message),
+  }).handleRenameLibraryFolder('library/old', 'new');
 
   assert.deepEqual(result, { ok: true, nextPath: 'library/new' });
   assert.equal(
@@ -186,6 +193,7 @@ test('folder rename updates asset paths and component sources as one non-histori
   assert.deepEqual(Object.keys(useAssetsStore.getState().allFileContents), [
     'library/new/robot.urdf',
   ]);
+  assert.deepEqual(toastMessages, []);
 });
 
 test('folder rename rolls workspace source paths back when the asset rename fails', () => {

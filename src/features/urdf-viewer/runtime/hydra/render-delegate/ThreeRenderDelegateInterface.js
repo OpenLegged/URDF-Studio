@@ -956,7 +956,12 @@ export class ThreeRenderDelegateInterface extends ThreeRenderDelegateMaterialOps
         const texturePath = this.resolveMaterialTexturePath(shaderPrim, attributeNames);
         if (!texturePath)
             return false;
-        this.registry.getTexture(texturePath).then((texture) => {
+        const texturePromise = typeof this.loadMaterialTexture === 'function'
+            ? this.loadMaterialTexture(texturePath, {
+                stageSourcePath: this.getStageSourcePath?.(),
+            })
+            : this.registry.getTexture(texturePath);
+        texturePromise.then((texture) => {
             const nextTexture = texture?.clone ? texture.clone() : texture;
             if (!nextTexture)
                 return;
@@ -973,6 +978,9 @@ export class ThreeRenderDelegateInterface extends ThreeRenderDelegateMaterialOps
                 texturePath,
                 materialProperty,
                 materialName: String(material?.name || ''),
+                textureCandidates: Array.isArray(error?.usdTextureCandidates)
+                    ? error.usdTextureCandidates
+                    : [texturePath],
                 error: error instanceof Error ? error.message : String(error || 'unknown-error'),
             });
         });
@@ -3493,6 +3501,51 @@ export class ThreeRenderDelegateInterface extends ThreeRenderDelegateMaterialOps
                     bufferRangesByMeshId[meshId] = normalizedRanges;
                 }
             }
+            const descriptorMeshIds = new Set(rawMeshDescriptors
+                .map((rawDescriptor) => normalizeHydraPath(rawDescriptor?.meshId || ''))
+                .filter(Boolean));
+            const packedRuntimeCandidateMeshIds = new Set([
+                ...Object.keys(bufferRangesByMeshId),
+                ...Object.keys(this.meshes || {}).map((meshId) => normalizeHydraPath(meshId || '')).filter(Boolean),
+            ]);
+            for (const meshId of Array.from(packedRuntimeCandidateMeshIds).sort((left, right) => left.localeCompare(right))) {
+                if (!meshId || descriptorMeshIds.has(meshId))
+                    continue;
+                const syntheticDescriptor = synthesizeRawMeshDescriptorFromRuntime(meshId, new Map());
+                if (!syntheticDescriptor)
+                    continue;
+                let ranges = normalizeMeshRanges(bufferRangesByMeshId[meshId]) || null;
+                const livePackedEntry = extractPackedProtoPayloadEntryFromLiveMesh(meshId);
+                if (!ranges?.positions && livePackedEntry) {
+                    ranges = appendReferencedPayloadEntryToSnapshotBuffers(meshId, livePackedEntry)?.ranges || ranges;
+                }
+                const normalizedPrimType = String(syntheticDescriptor.primType || '').trim().toLowerCase();
+                if (normalizedPrimType === 'mesh' && Number(ranges?.positions?.count || 0) < 9)
+                    continue;
+                const liveGeometry = livePackedEntry?.payload || null;
+                const rangeVertexCount = Number(ranges?.positions?.count || 0) / Math.max(1, Number(ranges?.positions?.stride || 3));
+                const rangeNormalCount = Number(ranges?.normals?.count || 0) / Math.max(1, Number(ranges?.normals?.stride || 3));
+                const rangeUvCount = Number(ranges?.uvs?.count || 0) / Math.max(1, Number(ranges?.uvs?.stride || 2));
+                rawMeshDescriptors.push({
+                    ...syntheticDescriptor,
+                    ranges,
+                    geometry: liveGeometry
+                        ? normalizeGeometrySummary(null, liveGeometry)
+                        : {
+                            numVertices: Math.max(0, Math.floor(rangeVertexCount)),
+                            numIndices: Math.max(0, Math.floor(Number(ranges?.indices?.count || 0))),
+                            numNormals: Math.max(0, Math.floor(rangeNormalCount)),
+                            numUVs: Math.max(0, Math.floor(rangeUvCount)),
+                            normalsDimension: Math.max(1, Number(ranges?.normals?.stride || 3)),
+                            uvDimension: Math.max(1, Number(ranges?.uvs?.stride || 2)),
+                            renderReady: true,
+                            topologyMode: Number(ranges?.indices?.count || 0) > 0 ? 'indexed' : 'nonIndexed',
+                            materialId: normalizeHydraPath(this.meshes?.[meshId]?._pendingMaterialId || '') || null,
+                            geomSubsetSections: normalizeGeomSubsetSections(this.meshes?.[meshId]?._pendingGeomSubsetSections),
+                        },
+                });
+                descriptorMeshIds.add(meshId);
+            }
             normalizedMeshDescriptors = rawMeshDescriptors.map((rawDescriptor) => {
                 const meshId = normalizeHydraPath(rawDescriptor?.meshId || '');
                 const resolvedPrimPath = normalizeHydraPath(rawDescriptor?.resolvedPrimPath || '');
@@ -4118,6 +4171,7 @@ export class ThreeRenderDelegateInterface extends ThreeRenderDelegateMaterialOps
 
         // Extract authoredXformOps and layerInfo for USD-free rendering
         const authoredXformOpsByPrimPath = {};
+        const primDescriptors = [];
         const layerInfo = {
             rootLayerPath: null,
             usedLayerPaths: [],
@@ -4187,6 +4241,242 @@ export class ThreeRenderDelegateInterface extends ThreeRenderDelegateMaterialOps
                     }
                 }
             } catch {}
+
+            // Publish the composed Prim hierarchy separately from render mesh
+            // descriptors. The scene editor must never infer source semantics
+            // from a Hydra mesh projection.
+            const transformableTypeNames = new Set([
+                'xform',
+                'mesh',
+                'cube',
+                'sphere',
+                'cylinder',
+                'capsule',
+                'cone',
+                'plane',
+                'basiscurves',
+                'points',
+                'camera',
+                'distantlight',
+                'disklight',
+                'rectlight',
+                'spherelight',
+                'cylinderlight',
+            ]);
+            const hierarchyPrimPaths = new Set(
+                this._knownPrimPathSet instanceof Set ? this._knownPrimPathSet : [],
+            );
+            for (const descriptor of normalizedMeshDescriptors) {
+                const meshPrimPath = normalizeHydraPath(
+                    descriptor.resolvedPrimPath || descriptor.primPath || descriptor.meshId || '',
+                );
+                if (meshPrimPath?.startsWith('/')) hierarchyPrimPaths.add(meshPrimPath);
+            }
+            for (const path of Array.from(hierarchyPrimPaths)) {
+                let ancestorPath = normalizeHydraPath(path);
+                while (ancestorPath?.startsWith('/') && ancestorPath !== '/') {
+                    hierarchyPrimPaths.add(ancestorPath);
+                    ancestorPath = ancestorPath.slice(0, ancestorPath.lastIndexOf('/')) || '/';
+                }
+            }
+            const traversalQueue = [];
+            try {
+                const pseudoRoot = typeof stage.GetPseudoRoot === 'function'
+                    ? stage.GetPseudoRoot()
+                    : null;
+                const rawRootChildren = pseudoRoot?.GetChildren?.() || null;
+                const rootChildren = Array.isArray(rawRootChildren)
+                    ? rawRootChildren
+                    : (rawRootChildren && typeof rawRootChildren[Symbol.iterator] === 'function'
+                        ? Array.from(rawRootChildren)
+                        : []);
+                for (const childPrim of rootChildren) {
+                    const childName = String(childPrim?.GetName?.() || '').trim();
+                    if (childName) traversalQueue.push(`/${childName}`);
+                }
+            }
+            catch {}
+            for (const path of hierarchyPrimPaths) {
+                if (path.split('/').filter(Boolean).length === 1) traversalQueue.push(path);
+            }
+            const traversedPaths = new Set();
+            while (traversalQueue.length > 0 && traversedPaths.size < 10000) {
+                const primPath = normalizeHydraPath(traversalQueue.shift());
+                if (!primPath || primPath === '/' || traversedPaths.has(primPath)) continue;
+                traversedPaths.add(primPath);
+                hierarchyPrimPaths.add(primPath);
+                try {
+                    const prim = stage.GetPrimAtPath(primPath);
+                    const rawChildren = prim?.GetChildren?.() || null;
+                    const children = Array.isArray(rawChildren)
+                        ? rawChildren
+                        : (rawChildren && typeof rawChildren[Symbol.iterator] === 'function'
+                            ? Array.from(rawChildren)
+                            : []);
+                    for (const childPrim of children) {
+                        const childName = String(childPrim?.GetName?.() || '').trim();
+                        if (childName) traversalQueue.push(`${primPath}/${childName}`);
+                    }
+                }
+                catch {}
+            }
+            for (const primPath of Array.from(hierarchyPrimPaths).sort()) {
+                if (!primPath || primPath === '/' || !primPath.startsWith('/')) continue;
+                try {
+                    const prim = stage.GetPrimAtPath(primPath);
+                    if (!prim) continue;
+                    const typeName = typeof prim.GetTypeName === 'function'
+                        ? String(prim.GetTypeName() || '').trim()
+                        : '';
+                    const parentSlash = primPath.lastIndexOf('/');
+                    const parentPath = parentSlash > 0 ? primPath.slice(0, parentSlash) : null;
+                    const name = typeof prim.GetName === 'function'
+                        ? String(prim.GetName() || '').trim()
+                        : primPath.slice(parentSlash + 1);
+                    const readFlag = (methodName, fallback) => {
+                        try {
+                            return typeof prim[methodName] === 'function'
+                                ? prim[methodName]() === true
+                                : fallback;
+                        }
+                        catch {
+                            return fallback;
+                        }
+                    };
+                    const active = readFlag('IsActive', true);
+                    const loaded = readFlag('IsLoaded', true);
+                    const defined = readFlag('IsDefined', true);
+                    const instance = readFlag('IsInstance', false);
+                    const instanceProxy = readFlag('IsInstanceProxy', false);
+                    const prototype = readFlag('IsPrototype', false);
+                    const hasPayload = readFlag('HasPayload', false);
+                    const hasAuthoredReferences = readFlag('HasAuthoredReferences', false);
+                    let visible = true;
+                    try {
+                        const visibilityAttribute = typeof prim.GetAttribute === 'function'
+                            ? prim.GetAttribute('visibility')
+                            : null;
+                        const visibility = visibilityAttribute && typeof visibilityAttribute.Get === 'function'
+                            ? String(visibilityAttribute.Get() || '')
+                            : '';
+                        visible = visibility !== 'invisible';
+                    }
+                    catch {}
+                    const hasAuthoredXformOps = this.hasAuthoredLocalXformOpsForPrimPath(
+                        stage,
+                        primPath,
+                    ) === true;
+                    const resetsXformStack = this.getLocalTransformResetsXformStack(
+                        stage,
+                        primPath,
+                    ) === true;
+                    const localTransform = this.getLocalTransformForPrimPath(stage, primPath, {
+                        clone: false,
+                        allowStageFallback: true,
+                    });
+                    const worldTransform = this.getWorldTransformForPrimPath(primPath, {
+                        clone: false,
+                    });
+                    const normalizedTypeName = typeName.toLowerCase();
+                    const transformable = active
+                        && loaded
+                        && !instanceProxy
+                        && !prototype
+                        && (hasAuthoredXformOps || transformableTypeNames.has(normalizedTypeName));
+                    primDescriptors.push({
+                        semanticSource: 'stage',
+                        path: primPath,
+                        parentPath,
+                        name: name || primPath.slice(parentSlash + 1),
+                        typeName: typeName || null,
+                        active,
+                        loaded,
+                        defined,
+                        instance,
+                        instanceProxy,
+                        prototype,
+                        hasPayload,
+                        hasAuthoredReferences,
+                        visible,
+                        transformable,
+                        hasAuthoredXformOps,
+                        resetsXformStack,
+                        localTransform: localTransform?.elements
+                            ? Array.from(localTransform.elements, (value) => Number(value))
+                            : null,
+                        worldTransform: worldTransform?.elements
+                            ? Array.from(worldTransform.elements, (value) => Number(value))
+                            : null,
+                    });
+                }
+                catch {
+                    // A single unsupported Prim binding must not discard the
+                    // rest of the composed hierarchy.
+                }
+            }
+        }
+
+        // Some one-shot WASM drivers release the stage before snapshot
+        // normalization. Keep the driver's native Prim path set as a semantic
+        // fallback instead of collapsing the document to render meshes.
+        if (primDescriptors.length === 0) {
+            const fallbackPaths = new Set(
+                this._knownPrimPathSet instanceof Set ? this._knownPrimPathSet : [],
+            );
+            const meshTypeByPath = new Map();
+            for (const descriptor of normalizedMeshDescriptors) {
+                const path = normalizeHydraPath(
+                    descriptor.resolvedPrimPath || descriptor.primPath || descriptor.meshId || '',
+                );
+                if (!path?.startsWith('/')) continue;
+                fallbackPaths.add(path);
+                meshTypeByPath.set(path, String(descriptor.primType || 'Mesh'));
+            }
+            for (const path of Array.from(fallbackPaths)) {
+                let ancestorPath = normalizeHydraPath(path);
+                while (ancestorPath?.startsWith('/') && ancestorPath !== '/') {
+                    fallbackPaths.add(ancestorPath);
+                    ancestorPath = ancestorPath.slice(0, ancestorPath.lastIndexOf('/')) || '/';
+                }
+            }
+            const fallbackPathList = Array.from(fallbackPaths).sort();
+            for (const primPath of fallbackPathList) {
+                if (!primPath || primPath === '/' || !primPath.startsWith('/')) continue;
+                const parentSlash = primPath.lastIndexOf('/');
+                const parentPath = parentSlash > 0 ? primPath.slice(0, parentSlash) : null;
+                const typeName = meshTypeByPath.get(primPath)
+                    || (fallbackPathList.some((path) => path.startsWith(`${primPath}/`))
+                        ? 'Xform'
+                        : null);
+                const localTransform = this._localXformCache?.get?.(primPath) || null;
+                const worldTransform = this._worldXformCache?.get?.(primPath) || null;
+                const hasAuthoredXformOps = authoredXformOpsByPrimPath[primPath]?.hasAuthoredOps === true;
+                primDescriptors.push({
+                    semanticSource: 'driver-path-set',
+                    path: primPath,
+                    parentPath,
+                    name: primPath.slice(parentSlash + 1),
+                    typeName,
+                    active: true,
+                    loaded: true,
+                    defined: true,
+                    instance: false,
+                    instanceProxy: false,
+                    prototype: false,
+                    hasPayload: false,
+                    hasAuthoredReferences: parentPath === null,
+                    visible: true,
+                    transformable: typeName === 'Xform' || hasAuthoredXformOps,
+                    hasAuthoredXformOps,
+                    resetsXformStack: authoredXformOpsByPrimPath[primPath]?.resetsXformStack === true,
+                    localTransform: localTransform?.elements
+                        ? Array.from(localTransform.elements, (value) => Number(value))
+                        : null,
+                    worldTransform: worldTransform?.elements
+                        ? Array.from(worldTransform.elements, (value) => Number(value))
+                        : null,
+                });
+            }
         }
 
         const preferredVisualMaterialsByLinkPath = {};
@@ -4220,7 +4510,10 @@ export class ThreeRenderDelegateInterface extends ThreeRenderDelegateMaterialOps
                 ? rawSnapshot.driverInitProfile
                 : null,
             stageSourcePath: resolvedStageSourcePath || null,
-            stage: normalizedStage,
+            stage: {
+                ...normalizedStage,
+                primDescriptors,
+            },
             robotTree: {
                 linkParentPairs: Array.isArray(normalizedRobotMetadataSnapshot.linkParentPairs)
                     ? normalizedRobotMetadataSnapshot.linkParentPairs

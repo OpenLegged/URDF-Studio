@@ -856,12 +856,18 @@ export const FusionTransformControls = forwardRef<unknown, FusionTransformContro
       clearActiveHandle();
     }, [clearActiveHandle, enabled, finishDrag]);
 
+    const finishDragOnUnmountRef = useRef(finishDrag);
+    const restoreDefaultControlsOnUnmountRef = useRef(restoreDefaultControls);
+
     useEffect(() => {
-      return () => {
-        finishDrag();
-        restoreDefaultControls();
-      };
+      finishDragOnUnmountRef.current = finishDrag;
+      restoreDefaultControlsOnUnmountRef.current = restoreDefaultControls;
     }, [finishDrag, restoreDefaultControls]);
+
+    useEffect(() => () => {
+      finishDragOnUnmountRef.current();
+      restoreDefaultControlsOnUnmountRef.current();
+    }, []);
 
     const applyControlLayout = useCallback(() => {
       const root = rootRef.current as

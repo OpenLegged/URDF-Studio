@@ -17,15 +17,6 @@ function preloadWorkspaceOverlay(label: string, preload: () => Promise<unknown>)
   });
 }
 
-interface UseWorkspaceOverlayActionsTranslations {
-  addedComponent: string;
-  addedComponentRecovered: string;
-  loadingRobot: string;
-  preparingAssemblyComponent: string;
-  addingAssemblyComponentToWorkspace: string;
-  groundingAssemblyComponent: string;
-}
-
 interface UseWorkspaceOverlayActionsParams {
   onLoadRobot: (
     file: RobotFile,
@@ -37,7 +28,6 @@ interface UseWorkspaceOverlayActionsParams {
   ) => void;
   clearAssemblyComponentPreparationOverlay: () => void;
   showToast: (message: string, type?: 'info' | 'success' | 'error') => void;
-  t: UseWorkspaceOverlayActionsTranslations;
   setBridgePreview: (value: BridgeJoint | null) => void;
   setShouldRenderBridgeModal: (value: boolean) => void;
   setIsBridgeModalOpen: (value: boolean) => void;
@@ -57,7 +47,6 @@ export function useWorkspaceOverlayActions({
   showAssemblyComponentPreparationOverlay,
   clearAssemblyComponentPreparationOverlay,
   showToast,
-  t,
   setBridgePreview,
   setShouldRenderBridgeModal,
   setIsBridgeModalOpen,
@@ -73,18 +62,6 @@ export function useWorkspaceOverlayActions({
             return;
           }
           clearAssemblyComponentPreparationOverlay();
-          if (outcome?.status === 'committed') {
-            const recoveredItemCount =
-              outcome.component.robot.inspectionContext?.recovery?.recoveredItemCount ?? 0;
-            showToast(
-              (recoveredItemCount > 0
-                ? t.addedComponentRecovered
-                    .replace('{name}', outcome.component.name)
-                    .replace('{count}', String(recoveredItemCount))
-                : t.addedComponent.replace('{name}', outcome.component.name)),
-              'success',
-            );
-          }
         })
         .catch((error: unknown) => {
           clearAssemblyComponentPreparationOverlay();
@@ -99,7 +76,6 @@ export function useWorkspaceOverlayActions({
       onLoadRobot,
       showAssemblyComponentPreparationOverlay,
       showToast,
-      t,
     ],
   );
 

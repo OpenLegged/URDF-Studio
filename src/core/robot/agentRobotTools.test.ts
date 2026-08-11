@@ -116,8 +116,10 @@ test('updateLinkInertial patches origin and inertia together', () => {
     originXyz: [0, 0, 0.25],
     inertia: { ixx: 0.5, ixy: 0, ixz: 0, iyy: 0.5, iyz: 0, izz: 0.5 },
   });
-  assert.equal(robot.links.base_link.inertial!.origin.xyz.z, 0.25);
-  assert.equal(robot.links.base_link.inertial!.inertia.ixx, 0.5);
+  const inertial = robot.links.base_link.inertial!;
+  assert.ok(inertial.origin);
+  assert.equal(inertial.origin.xyz.z, 0.25);
+  assert.equal(inertial.inertia.ixx, 0.5);
 });
 
 test('updateLinkInertial fails for unknown link', () => {

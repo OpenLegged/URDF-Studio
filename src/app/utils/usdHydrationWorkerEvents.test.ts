@@ -61,22 +61,26 @@ test('handleUsdHydrationWorkerEvent records worker load-debug entries', () => {
 test('handleUsdHydrationWorkerEvent forwards document-load events to the provided callback', () => {
   const committedEvents: unknown[] = [];
 
-  handleUsdHydrationWorkerEvent({
-    type: 'document-load',
-    event: {
-      status: 'loading',
-      phase: 'checking-path',
-      message: null,
-      progressMode: 'indeterminate',
-      progressPercent: null,
-      loadedCount: null,
-      totalCount: null,
+  handleUsdHydrationWorkerEvent(
+    {
+      type: 'document-load',
+      sessionId: 1,
+      event: {
+        status: 'loading',
+        phase: 'checking-path',
+        message: null,
+        progressMode: 'indeterminate',
+        progressPercent: null,
+        loadedCount: null,
+        totalCount: null,
+      },
+    } satisfies UsdOffscreenViewerWorkerResponse,
+    {
+      commitHydrationLoadEvent: (event) => {
+        committedEvents.push(event);
+      },
     },
-  } satisfies UsdOffscreenViewerWorkerResponse, {
-    commitHydrationLoadEvent: (event) => {
-      committedEvents.push(event);
-    },
-  });
+  );
 
   assert.equal(committedEvents.length, 1);
 });

@@ -1,6 +1,4 @@
 import { useCallback, useMemo } from 'react';
-import { GeometryType } from '@/types';
-import type { TranslationKeys } from '@/shared/i18n';
 import type { AssemblyState, EntityRef, RobotData, WorkspaceSelection } from '@/types';
 import { useAssetsStore } from '@/store/assetsStore';
 import { useWorkspaceStore } from '@/store/workspaceStore';
@@ -16,8 +14,6 @@ interface UseCollisionOptimizationWorkflowParams {
   focusOn: (ref: EntityRef) => void;
   pulseSelection: (selection: WorkspaceSelection) => void;
   setSelection: (selection: WorkspaceSelection) => void;
-  showToast: (message: string, type?: 'info' | 'success') => void;
-  t: TranslationKeys;
 }
 
 export function useCollisionOptimizationWorkflow({
@@ -25,8 +21,6 @@ export function useCollisionOptimizationWorkflow({
   focusOn,
   pulseSelection,
   setSelection,
-  showToast,
-  t,
 }: UseCollisionOptimizationWorkflowParams) {
   const collisionOptimizationSource = useMemo<CollisionOptimizationSource>(() => ({
     kind: 'assembly',
@@ -57,7 +51,6 @@ export function useCollisionOptimizationWorkflow({
   const handleApplyCollisionOptimization = useCallback(
     async (operations: CollisionOptimizationOperation[]) => {
       if (operations.length === 0) {
-        showToast(t.noCollisionOptimizationApplied, 'info');
         return;
       }
 
@@ -109,23 +102,8 @@ export function useCollisionOptimizationWorkflow({
         const assets = useAssetsStore.getState();
         replacements.forEach(([componentId]) => assets.removeComponentSourceDraft(componentId));
       }
-
-      const meshConvertedCount = operations.filter((operation) =>
-        operation.fromTypes.includes(GeometryType.MESH),
-      ).length;
-      const primitiveConvertedCount = operations.length - meshConvertedCount;
-
-      const message = t.collisionOptimizationApplied
-        .replace('{count}', String(operations.length))
-        .replace('{meshCount}', String(meshConvertedCount))
-        .replace('{primitiveCount}', String(primitiveConvertedCount));
-
-      showToast(message, 'success');
     },
-    [
-      showToast,
-      t,
-    ],
+    [],
   );
 
   return {

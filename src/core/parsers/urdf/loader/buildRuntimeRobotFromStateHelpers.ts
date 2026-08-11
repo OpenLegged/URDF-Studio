@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { stackCoincidentVisualRoots } from '@/core/loaders/visualMeshStacking';
+import { applyMeshAssetTransform } from '@/core/parsers/mjcf/mjcfGeometry';
 import { GENERATED_OBJ_MATERIAL_USER_DATA_KEY } from '@/core/loaders/objModelData';
 import { hasExplicitGeometryMaterialOverride } from '@/core/utils/visualMaterialOverrides';
 import {
@@ -30,7 +31,7 @@ import {
 } from './primitiveGeometry';
 import type { VisualMaterialOverride } from '@/core/utils/visualMaterialOverrides';
 
-export const DEFAULT_COLOR = '#808080';
+export const DEFAULT_COLOR = '#ffffff';
 
 export const DEFAULT_ORIGIN = {
   xyz: { x: 0, y: 0, z: 0 },
@@ -339,6 +340,7 @@ export function createPrimitiveMaterial(color?: string): THREE.MeshStandardMater
   return createMatteMaterial({
     color: color || DEFAULT_COLOR,
     preserveExactColor: Boolean(color),
+    side: THREE.FrontSide,
   });
 }
 
@@ -366,6 +368,10 @@ export function resolveStateVisualMaterialOverride({
   const override: VisualMaterialOverride = {
     ...(color ? { color } : {}),
     ...(resolved.texture ? { texture: resolved.texture } : {}),
+    ...(resolved.textureRepeat ? { textureRepeat: [...resolved.textureRepeat] } : {}),
+    ...(resolved.mjcfBuiltinTexture
+      ? { mjcfBuiltinTexture: { ...resolved.mjcfBuiltinTexture } }
+      : {}),
     ...(opacity !== undefined ? { opacity } : {}),
     ...(resolved.roughness !== undefined ? { roughness: resolved.roughness } : {}),
     ...(resolved.metalness !== undefined ? { metalness: resolved.metalness } : {}),
@@ -386,12 +392,44 @@ export function applyMeshScale(group: THREE.Object3D, geometry: RobotLink['visua
     return;
   }
 
+  // MJCF scale belongs inside the asset reference transform. Applying it to
+  // the outer geom group changes the order for non-uniform scale + refquat.
+  if (geometry.mjcfMesh) {
+    return;
+  }
+
   const scale = geometry.dimensions;
   group.scale.set(
     Number.isFinite(scale?.x) ? scale.x : 1,
     Number.isFinite(scale?.y) ? scale.y : 1,
     Number.isFinite(scale?.z) ? scale.z : 1,
   );
+}
+
+export function applyRuntimeMeshAssetTransform(
+  object: THREE.Object3D,
+  geometry: RobotLink['visual'],
+): THREE.Object3D {
+  const meshAsset = geometry.mjcfMesh;
+  if (!meshAsset) {
+    return object;
+  }
+
+  const dimensions = geometry.dimensions;
+  return applyMeshAssetTransform(object, {
+    ...meshAsset,
+    name: meshAsset.name || geometry.assetRef || geometry.name || 'mjcf_mesh',
+    // RobotData dimensions are editable and are the canonical runtime scale.
+    ...(geometry.type === GeometryType.MESH
+      ? {
+          scale: [
+            Number.isFinite(dimensions.x) ? dimensions.x : 1,
+            Number.isFinite(dimensions.y) ? dimensions.y : 1,
+            Number.isFinite(dimensions.z) ? dimensions.z : 1,
+          ] as [number, number, number],
+        }
+      : {}),
+  });
 }
 
 export function hasMirroredMeshScale(geometry: RobotLink['visual']): boolean {
@@ -668,8 +706,9 @@ export function createPrimitiveMesh(
 
   if (geometry.type === GeometryType.CAPSULE) {
     const radius = Math.max(dimensions.x || 0.05, 1e-5);
-    const totalLength = Math.max(dimensions.y || 0.5, radius * 2);
-    const bodyLength = Math.max(totalLength - 2 * radius, 0);
+    // Canonical RobotData stores the straight cylindrical span. The rendered
+    // end-to-end extent is this body length plus both hemispherical caps.
+    const bodyLength = Math.max(dimensions.y || 0.5, 0);
     const mesh = new THREE.Mesh(
       createRobotCapsuleGeometry(radius, bodyLength, primitiveGeometryDetail),
       material,

@@ -1,4 +1,5 @@
-import { toVirtualUsdPath } from '../usdPreloadSources.ts';
+import { toVirtualUsdPath } from '@/lib/robot-parser/usd/usdPreloadSources';
+import { inferUsdDescriptorOwningLinkPath } from '@/lib/robot-parser/usd/usdDescriptorLinkResolution';
 
 import type { DescriptorRole, SnapshotMeshDescriptor } from './internalTypes.ts';
 
@@ -97,7 +98,7 @@ export function getDescriptorSemanticName(descriptor: SnapshotMeshDescriptor): s
     return candidate;
   }
 
-  return '';
+  return inferUsdDescriptorOwningLinkPath(descriptor);
 }
 
 export function getDescriptorLinkPath(descriptor: SnapshotMeshDescriptor): string {
@@ -135,7 +136,7 @@ export function getDescriptorLinkPath(descriptor: SnapshotMeshDescriptor): strin
     }
   }
 
-  return '';
+  return inferUsdDescriptorOwningLinkPath(descriptor);
 }
 
 export function getDescriptorRole(descriptor: SnapshotMeshDescriptor): DescriptorRole {

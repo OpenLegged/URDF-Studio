@@ -23,7 +23,6 @@ import { shouldApplyUsdStageHydration } from '../utils/usdStageHydration';
 import { markUnsavedChangesBaselineSaved } from '../utils/unsavedChangesBaseline';
 
 interface UseUsdDocumentLifecycleLabels {
-  addedComponent: string;
   failedToParseFormat: string;
 }
 
@@ -278,11 +277,6 @@ export function useUsdDocumentLifecycle({
         });
         if (operation.intent === 'replace') {
           markUnsavedChangesBaselineSaved();
-        } else {
-          showToast(
-            labels.addedComponent.replace('{name}', completion.component.name),
-            'success',
-          );
         }
         updateProModeRoundtripBaseline(null);
         clearAssemblyComponentPreparationOverlay();
@@ -325,7 +319,6 @@ export function useUsdDocumentLifecycle({
   }, [
     clearAssemblyComponentPreparationOverlay,
     isSelectedUsdHydrating,
-    labels.addedComponent,
     labels.failedToParseFormat,
     selectedFile,
     setDocumentLoadState,

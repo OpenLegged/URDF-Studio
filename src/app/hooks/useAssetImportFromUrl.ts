@@ -9,7 +9,11 @@ import {
   stripImportParamsFromUrl,
 } from '@/shared/utils/popupHandoffProtocol';
 import { getRuntimeLanguageTranslations } from '@/shared/i18n';
-import { getAssetDownloadAuthToken, resolveAssetDownloadEndpoint } from './assetDownloadEndpoint';
+import type { AppImportResult } from '../appExtensions';
+import {
+  getAssetDownloadAuthToken,
+  resolveAssetDownloadEndpoint,
+} from './assetDownloadEndpoint';
 
 export {
   resolveAssetDownloadEndpoint,
@@ -143,7 +147,7 @@ type UseAssetImportFromUrlOptions = {
   handleImport: (
     files: readonly File[],
     options?: { forceLoadRobot?: boolean },
-  ) => Promise<{ status: 'completed' | 'skipped' | 'failed' }>;
+  ) => Promise<AppImportResult>;
   onImportComplete?: (success: boolean) => void;
   /** Invoked after a `convertTo` handoff import resolves (success or fail).
    *  On success the caller typically opens the export dialog preselected to
@@ -205,6 +209,19 @@ export function assertRemoteImportBlobWithinLimits(blob: Blob, nextTotalBytes: n
         `Maximum: ${MAX_REMOTE_IMPORT_TOTAL_BYTES} bytes.`,
     );
   }
+}
+
+/** Converts the core import outcome into the success/failure contract used by remote handoffs. */
+export function assertCompletedRemoteImport(result: AppImportResult): void {
+  if (result.status === 'completed') {
+    return;
+  }
+
+  throw new Error(
+    result.status === 'failed'
+      ? 'The downloaded files could not be imported.'
+      : 'The downloaded file import was skipped.',
+  );
 }
 
 /**
@@ -354,7 +371,8 @@ export function useAssetImportFromUrl(options: UseAssetImportFromUrlOptions) {
           phase: 'importing',
           progress: { current: files.length, total: files.length },
         });
-        await handleImportRef.current(downloadedFiles, { forceLoadRobot });
+        const importResult = await handleImportRef.current(downloadedFiles, { forceLoadRobot });
+        assertCompletedRemoteImport(importResult);
 
         setState({ isImporting: false, error: null, phase: 'complete', progress: null });
 

@@ -103,3 +103,20 @@ test('HdWebSyncDriver persists non-empty Points and tessellated BasisCurves in s
   assert.match(source, /kCurveSubdivisions\s*=\s*12/);
   assert.match(source, /primType == "points" \|\| primType == "basiscurves"/);
 });
+
+test('HdWebSyncDriver projects common OmniPBR texture aliases into snapshot materials', () => {
+  const source = readFileSync(webSyncDriverPath, 'utf8');
+
+  assert.match(
+    source,
+    /setTexture\("mapPath",\s*\{[\s\S]*?"inputs:diffuse_texture"[\s\S]*?\}\);/,
+  );
+  assert.match(
+    source,
+    /setTexture\("roughnessMapPath",\s*\{[\s\S]*?"inputs:reflectionroughness_texture"[\s\S]*?\}\);/,
+  );
+  assert.match(
+    source,
+    /_PrimHasAuthoredTexturePath[\s\S]*?"inputs:diffuse_texture"[\s\S]*?"inputs:reflectionroughness_texture"/,
+  );
+});

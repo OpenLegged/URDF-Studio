@@ -4,7 +4,7 @@ import * as THREE from 'three';
 
 import { DEFAULT_LINK, JointType, type InteractionSelection, type RobotData } from '@/types';
 import { createOriginMatrix } from '@/core/robot/kinematics';
-import type { ViewerRobotDataResolution } from './viewerRobotData';
+import type { ViewerRobotDataResolution } from '@/lib/robot-parser/usd/viewerRobotData';
 import {
   buildUsdOriginPreviewLinkWorldOverrides,
   resolveUsdOriginTransformTarget,

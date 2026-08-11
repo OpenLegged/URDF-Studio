@@ -185,15 +185,17 @@ export function buildResolveRobotImportWorkerDispatch(
           new Set<RobotFile['format']>(['mjcf']),
           file,
         ),
+        assets: options.assets ?? {},
         allFileContents: options.allFileContents ?? {},
       };
       return {
         options: {},
         contextCacheKey: hasContextSnapshotContent(contextSnapshot)
           ? buildContextCacheKey('resolve', file, {
-              availableFiles: options.availableFiles,
-              allFileContents: options.allFileContents,
-            })
+            availableFiles: options.availableFiles,
+            assets: options.assets,
+            allFileContents: options.allFileContents,
+          })
           : null,
         contextSnapshot: hasContextSnapshotContent(contextSnapshot) ? contextSnapshot : null,
       };
@@ -329,16 +331,19 @@ export function buildEditableRobotSourceWorkerDispatch(
           new Set<RobotFile['format']>(['mjcf']),
           options.file,
         ),
+        assets: options.assets ?? {},
       };
       return {
         options: {
           ...options,
           availableFiles: undefined,
+          assets: undefined,
           allFileContents: undefined,
         },
         contextCacheKey: hasContextSnapshotContent(contextSnapshot)
           ? buildContextCacheKey('parse', options.file, {
               availableFiles: options.availableFiles,
+              assets: options.assets,
             })
           : null,
         contextSnapshot: hasContextSnapshotContent(contextSnapshot) ? contextSnapshot : null,

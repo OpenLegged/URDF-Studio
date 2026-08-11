@@ -1,9 +1,5 @@
-import { normalizeLibraryPathKey, normalizeVirtualUsdPath } from '@/core/utils/pathKeys';
+import { normalizeVirtualUsdPath } from '@/core/utils/pathKeys';
 import { inferUsdDependencyStemForPath } from './usdDependencyPathRules.js';
-
-function normalizeUsdAssetPath(path: string): string {
-  return normalizeLibraryPathKey(path);
-}
 
 function toVirtualUsdPath(path: string): string {
   return normalizeVirtualUsdPath(path);
@@ -40,18 +36,25 @@ export function buildCriticalUsdDependencyPaths(stagePath: string): string[] {
   const dependencyStem = inferUsdDependencyStem(normalizedStagePath);
   if (!dependencyStem) return [];
   const dependencyExtension = getUsdDependencyExtension(normalizedStagePath);
-  const rootFileStem = normalizedStagePath.split('/').pop()?.replace(/\.usd[a-z]?$/i, '') || '';
+  const rootFileStem =
+    normalizedStagePath
+      .split('/')
+      .pop()
+      ?.replace(/\.usd[a-z]?$/i, '') || '';
 
   const rootDirectory = getVirtualUsdDirectory(normalizedStagePath);
   const configurationDirectory = rootDirectory.toLowerCase().endsWith('/configuration/')
     ? rootDirectory
     : `${rootDirectory}configuration/`;
 
-  const suffixes = dependencyStem === 'h1_2_handless'
-    ? ['base', 'physics', 'robot']
-    : rootFileStem === dependencyStem && dependencyStem.endsWith('_description')
-      ? ['base', 'physics', 'sensor', 'robot']
-      : ['base', 'physics', 'sensor'];
+  const suffixes =
+    dependencyStem === 'h1_2_handless'
+      ? ['base', 'physics', 'robot']
+      : rootFileStem === dependencyStem && dependencyStem.endsWith('_description')
+        ? ['base', 'physics', 'sensor', 'robot']
+        : ['base', 'physics', 'sensor'];
 
-  return suffixes.map((suffix) => `${configurationDirectory}${dependencyStem}_${suffix}${dependencyExtension}`);
+  return suffixes.map(
+    (suffix) => `${configurationDirectory}${dependencyStem}_${suffix}${dependencyExtension}`,
+  );
 }

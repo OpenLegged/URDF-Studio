@@ -5,6 +5,7 @@
 
 // Components
 export { PropertyEditor } from './components/PropertyEditor';
+export { TransformFields } from './components/TransformFields';
 export { CollisionOptimizationDialog } from './components/CollisionOptimizationDialog';
 
 // Types

@@ -62,10 +62,8 @@ test('parseSDF resolves joint axis xyz expressed_in frames into the joint frame'
   assert.ok(Math.abs(axis.z) < 1e-9);
 });
 
-test('parseSDF fails fast when a pose references an unknown frame', () => {
-  assert.throws(
-    () =>
-      parseSDF(`<?xml version="1.0"?>
+test('parseSDF omits a visual with an unknown frame and keeps its link', () => {
+  const robot = parseSDF(`<?xml version="1.0"?>
 <sdf version="1.12">
   <model name="unknown_frame_demo">
     <link name="base">
@@ -75,32 +73,41 @@ test('parseSDF fails fast when a pose references an unknown frame', () => {
       </visual>
     </link>
   </model>
-</sdf>`),
-    /Unknown SDF frame reference: "missing_frame"/,
+</sdf>`);
+
+  assert.ok(robot);
+  assert.ok(robot.links.base);
+  assert.equal(robot.links.base.visual.type, GeometryType.NONE);
+  assert.deepEqual(
+    robot.inspectionContext?.recovery?.diagnostics.map((diagnostic) => diagnostic.code),
+    ['sdf_visual_omitted'],
   );
 });
 
-test('parseSDF fails fast when the frame graph contains a cycle', () => {
-  assert.throws(
-    () =>
-      parseSDF(`<?xml version="1.0"?>
+test('parseSDF omits a link whose frame graph cycles and keeps a healthy sibling', () => {
+  const robot = parseSDF(`<?xml version="1.0"?>
 <sdf version="1.12">
   <model name="frame_cycle_demo">
     <frame name="frame_a" attached_to="frame_b" />
     <frame name="frame_b" attached_to="frame_a" />
+    <link name="healthy" />
     <link name="base">
       <pose relative_to="frame_a">0 0 0 0 0 0</pose>
     </link>
   </model>
-</sdf>`),
-    /Frame resolution cycle detected: .*frame_a.*frame_b.*frame_a/,
+</sdf>`);
+
+  assert.ok(robot);
+  assert.deepEqual(Object.keys(robot.links), ['healthy']);
+  assert.equal(robot.inspectionContext?.recovery?.diagnostics[0]?.code, 'sdf_link_omitted');
+  assert.match(
+    robot.inspectionContext?.recovery?.diagnostics[0]?.message ?? '',
+    /Frame resolution cycle detected/,
   );
 });
 
-test('parseSDF fails fast when a joint references an unknown link', () => {
-  assert.throws(
-    () =>
-      parseSDF(`<?xml version="1.0"?>
+test('parseSDF omits a joint that references an unknown link', () => {
+  const robot = parseSDF(`<?xml version="1.0"?>
 <sdf version="1.12">
   <model name="unknown_joint_link_demo">
     <link name="base" />
@@ -109,15 +116,16 @@ test('parseSDF fails fast when a joint references an unknown link', () => {
       <child>missing_child</child>
     </joint>
   </model>
-</sdf>`),
-    /Joint references unknown child link "missing_child"/,
-  );
+</sdf>`);
+
+  assert.ok(robot);
+  assert.ok(robot.links.base);
+  assert.deepEqual(robot.joints, {});
+  assert.equal(robot.inspectionContext?.recovery?.diagnostics[0]?.code, 'sdf_joint_omitted');
 });
 
-test('parseSDF fails fast instead of coercing an unknown joint type', () => {
-  assert.throws(
-    () =>
-      parseSDF(`<?xml version="1.0"?>
+test('parseSDF omits an unknown joint type without hiding its links', () => {
+  const robot = parseSDF(`<?xml version="1.0"?>
 <sdf version="1.12">
   <model name="unknown_joint_type_demo">
     <link name="base" />
@@ -127,23 +135,143 @@ test('parseSDF fails fast instead of coercing an unknown joint type', () => {
       <child>tip</child>
     </joint>
   </model>
-</sdf>`),
-    /Unrecognized joint type "mystery"/,
-  );
+</sdf>`);
+
+  assert.ok(robot);
+  assert.deepEqual(Object.keys(robot.links), ['base', 'tip']);
+  assert.deepEqual(robot.joints, {});
+  assert.equal(robot.inspectionContext?.recovery?.diagnostics[0]?.code, 'sdf_joint_omitted');
 });
 
-test('parseSDF fails instead of returning a partial model when an include cannot be resolved', () => {
-  assert.throws(
-    () =>
-      parseSDF(`<?xml version="1.0"?>
+test('parseSDF omits an unresolved include and keeps local links', () => {
+  const robot = parseSDF(`<?xml version="1.0"?>
 <sdf version="1.12">
   <model name="missing_include_demo">
     <link name="base" />
     <include><uri>model://missing_child</uri></include>
   </model>
-</sdf>`),
-    /Included model could not be resolved: "model:\/\/missing_child"/,
+</sdf>`);
+
+  assert.ok(robot);
+  assert.ok(robot.links.base);
+  assert.equal(robot.inspectionContext?.recovery?.diagnostics[0]?.code, 'sdf_include_omitted');
+});
+
+test('parseSDF isolates malformed visual, collision, and inertial siblings on one link', () => {
+  const robot = parseSDF(`<?xml version="1.0"?>
+<sdf version="1.12">
+  <model name="local_geometry_recovery">
+    <link name="base">
+      <visual name="broken_visual">
+        <pose relative_to="missing_visual_frame">0 0 0 0 0 0</pose>
+        <geometry><sphere><radius>1</radius></sphere></geometry>
+      </visual>
+      <visual name="healthy_visual">
+        <geometry><box><size>1 2 3</size></box></geometry>
+      </visual>
+      <collision name="broken_collision"><geometry /></collision>
+      <collision name="healthy_collision">
+        <geometry><sphere><radius>0.5</radius></sphere></geometry>
+      </collision>
+      <inertial>
+        <pose relative_to="missing_inertial_frame">0 0 0 0 0 0</pose>
+        <mass>5</mass>
+      </inertial>
+    </link>
+  </model>
+</sdf>`);
+
+  assert.ok(robot);
+  assert.equal(robot.links.base.visual.type, GeometryType.BOX);
+  assert.deepEqual(robot.links.base.visual.dimensions, { x: 1, y: 2, z: 3 });
+  assert.equal(robot.links.base.collision.type, GeometryType.SPHERE);
+  assert.equal(robot.links.base.inertial.mass, 0);
+  assert.deepEqual(
+    robot.inspectionContext?.recovery?.diagnostics.map((diagnostic) => diagnostic.code),
+    ['sdf_visual_omitted', 'sdf_collision_omitted', 'sdf_inertial_omitted'],
   );
+});
+
+test('parseSDF omits an unusable nested model branch and keeps parent siblings', () => {
+  const robot = parseSDF(`<?xml version="1.0"?>
+<sdf version="1.12">
+  <model name="nested_recovery">
+    <link name="base" />
+    <model name="broken_child">
+      <link name="child">
+        <pose relative_to="missing_frame">0 0 0 0 0 0</pose>
+      </link>
+    </model>
+  </model>
+</sdf>`);
+
+  assert.ok(robot);
+  assert.deepEqual(Object.keys(robot.links), ['base']);
+  const codes = new Set(
+    robot.inspectionContext?.recovery?.diagnostics.map((diagnostic) => diagnostic.code),
+  );
+  assert.ok(codes.has('sdf_nested_model_omitted'));
+  assert.ok(codes.has('sdf_link_omitted'));
+});
+
+test('parseSDF skips locally owned missing and duplicate entity names', () => {
+  const robot = parseSDF(`<?xml version="1.0"?>
+<sdf version="1.12">
+  <model name="name_recovery">
+    <link />
+    <link name="base"><visual name="first"><geometry><box /></geometry></visual></link>
+    <link name="base"><visual name="duplicate"><geometry><sphere /></geometry></visual></link>
+    <joint type="fixed"><parent>world</parent><child>base</child></joint>
+    <joint name="mount" type="fixed"><parent>world</parent><child>base</child></joint>
+    <joint name="mount" type="fixed"><parent>world</parent><child>base</child></joint>
+    <frame />
+    <frame name="mount_frame" />
+    <frame name="mount_frame" />
+  </model>
+</sdf>`);
+
+  assert.ok(robot);
+  assert.equal(robot.links.base.visual.type, GeometryType.BOX);
+  assert.ok(robot.joints.mount);
+  assert.deepEqual(
+    robot.inspectionContext?.recovery?.diagnostics.map((diagnostic) => diagnostic.code),
+    [
+      'sdf_link_missing_name_omitted',
+      'sdf_duplicate_link_omitted',
+      'sdf_joint_missing_name_omitted',
+      'sdf_duplicate_joint_omitted',
+      'sdf_frame_missing_name_omitted',
+      'sdf_duplicate_frame_omitted',
+    ],
+  );
+});
+
+test('parseSDF keeps structural XML, root, model, and usable-link failures fatal', () => {
+  assert.equal(parseSDF('<sdf><model name="broken"><link name="base"></model></sdf>'), null);
+  assert.equal(parseSDF('<model name="missing_sdf"><link name="base" /></model>'), null);
+  assert.equal(parseSDF('<sdf version="1.12"><world name="default" /></sdf>'), null);
+  assert.equal(
+    parseSDF(`<sdf version="1.12">
+  <model name="no_usable_link">
+    <frame name="cycle_a" attached_to="cycle_b" />
+    <frame name="cycle_b" attached_to="cycle_a" />
+    <link name="broken"><pose relative_to="cycle_a" /></link>
+  </model>
+</sdf>`),
+    null,
+  );
+});
+
+test('parseSDF loads a model contained by a valid world document', () => {
+  const robot = parseSDF(`<sdf version="1.12">
+  <world name="default">
+    <plugin name="untouched" filename="libuntouched.so" />
+    <model name="world_robot"><link name="base" /></model>
+  </world>
+</sdf>`);
+
+  assert.ok(robot?.links.base);
+  assert.equal(robot?.name, 'world_robot');
 });
 
 test('parseSDF preserves tuple positions when an authored token is malformed', () => {
@@ -993,17 +1121,13 @@ test('parseSDF tolerates Gazebo fixture XML quirks that browsers reject by defau
   });
 });
 
-test('parseSDF imports standalone Gazebo light definitions as empty placeholder models', () => {
+test('parseSDF rejects standalone Gazebo light definitions without a model', () => {
   const source = fs.readFileSync('test/gazebo_models/sun/model.sdf', 'utf8');
   const robot = parseSDF(source, {
     sourcePath: 'sun/model.sdf',
   });
 
-  assert.ok(robot);
-  assert.equal(robot?.name, 'sun');
-  assert.ok(robot?.links.sun__light_anchor);
-  assert.equal(robot?.links.sun__light_anchor.visual.type, GeometryType.NONE);
-  assert.equal(Object.keys(robot?.joints ?? {}).length, 0);
+  assert.equal(robot, null);
 });
 
 test('parseSDF converts revolute joints without <limit> into continuous joints', () => {

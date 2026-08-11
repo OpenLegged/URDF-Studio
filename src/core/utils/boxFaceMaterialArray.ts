@@ -1,5 +1,9 @@
 import * as THREE from 'three';
 
+import {
+  applyMjcfTextureRepeat,
+  createCanonicalMjcfBuiltinTexture,
+} from '@/core/parsers/mjcf/mjcfBuiltinTextures';
 import { createMatteMaterial } from './materialFactory';
 import { colorRgbaTupleToOpacity } from './color.ts';
 import type { UrdfVisualMaterial } from '@/types';
@@ -15,6 +19,8 @@ export interface BoxFaceMaterialDescriptor extends Pick<
   | 'metalness'
   | 'emissive'
   | 'emissiveIntensity'
+  | 'textureRepeat'
+  | 'mjcfBuiltinTexture'
 > {}
 
 export interface CreateBoxFaceMaterialArrayOptions {
@@ -57,15 +63,32 @@ export function createBoxFaceMaterialArray(
   }: CreateBoxFaceMaterialArrayOptions = {},
 ): THREE.MeshStandardMaterial[] {
   const textureLoader = manager ? new THREE.TextureLoader(manager) : null;
-  const materialByTexturePath = new Map<string, THREE.MeshStandardMaterial[]>();
+  const textureRequests = new Map<
+    string,
+    {
+      path: string;
+      repeat?: [number, number];
+      materials: THREE.MeshStandardMaterial[];
+    }
+  >();
 
   const materials = descriptors.map((descriptor, index) => {
     const texturePath = normalizeMaterialValue(descriptor.texture);
+    const textureRepeat =
+      descriptor.textureRepeat?.length === 2 &&
+      descriptor.textureRepeat.every((entry) => Number.isFinite(entry))
+        ? ([Number(descriptor.textureRepeat[0]), Number(descriptor.textureRepeat[1])] as [
+            number,
+            number,
+          ])
+        : undefined;
+    const mjcfBuiltinTexture = !texturePath ? descriptor.mjcfBuiltinTexture : undefined;
     const authoredColor = normalizeMaterialValue(descriptor.color);
     const authoredOpacity =
       normalizeUnitIntervalValue(descriptor.opacity) ??
       colorRgbaTupleToOpacity(descriptor.colorRgba);
-    const baseColor = authoredColor || (texturePath ? '#ffffff' : fallbackColor);
+    const baseColor =
+      authoredColor || (texturePath || mjcfBuiltinTexture ? '#ffffff' : fallbackColor);
     const effectiveOpacity = authoredOpacity ?? opacity;
     const material = createMatteMaterial({
       color: baseColor,
@@ -81,26 +104,38 @@ export function createBoxFaceMaterialArray(
     });
 
     if (texturePath) {
-      const textureUsers = materialByTexturePath.get(texturePath);
-      if (textureUsers) {
-        textureUsers.push(material);
+      const requestKey = `${texturePath}|repeat=${textureRepeat?.join(',') || '1,1'}`;
+      const request = textureRequests.get(requestKey);
+      if (request) {
+        request.materials.push(material);
       } else {
-        materialByTexturePath.set(texturePath, [material]);
+        textureRequests.set(requestKey, {
+          path: texturePath,
+          repeat: textureRepeat,
+          materials: [material],
+        });
       }
+    } else if (mjcfBuiltinTexture) {
+      material.map = createCanonicalMjcfBuiltinTexture(mjcfBuiltinTexture, textureRepeat);
+      material.userData.mjcfBuiltinTextureApplied = true;
+      material.userData.mjcfBuiltinTexture = { ...mjcfBuiltinTexture };
+      material.userData.mjcfTextureRepeat = textureRepeat ? [...textureRepeat] : [1, 1];
+      material.needsUpdate = true;
     }
 
     return material;
   });
 
-  if (!textureLoader || materialByTexturePath.size === 0) {
+  if (!textureLoader || textureRequests.size === 0) {
     return materials;
   }
 
-  materialByTexturePath.forEach((materialUsers, texturePath) => {
+  textureRequests.forEach(({ path: texturePath, repeat, materials: materialUsers }) => {
     textureLoader.load(
       texturePath,
       (texture) => {
         texture.colorSpace = THREE.SRGBColorSpace;
+        applyMjcfTextureRepeat(texture, repeat);
         materialUsers.forEach((material) => {
           material.map = texture;
           material.needsUpdate = true;

@@ -42,6 +42,7 @@ import {
   useWorkspaceCanvasTheme,
 } from './workspaceCanvasConfig';
 import type { WorkspaceCameraSnapshot } from './workspaceCameraSnapshot';
+import { attachLateralWheelBlocker } from './lateralWheelBlocker';
 import { WorkspaceCanvasErrorBoundary } from './WorkspaceCanvasErrorBoundary';
 import {
   getWorkspaceCanvasErrorDetail,
@@ -200,7 +201,6 @@ export const WorkspaceCanvas = ({
   gizmoMargin = DEFAULT_WORKSPACE_OVERLAY_GIZMO_MARGIN,
 }: WorkspaceCanvasProps) => {
   const effectiveTheme = useWorkspaceCanvasTheme(theme);
-  const [contextEpoch, setContextEpoch] = useState(0);
   const [canvasFailure, setCanvasFailure] = useState(false);
   const [layoutResizeActive, setLayoutResizeActive] = useState(false);
   const [webglSupport, setWebglSupport] = useState<WorkspaceCanvasWebglSupportState | null>(null);
@@ -222,16 +222,12 @@ export const WorkspaceCanvas = ({
       minRenderDpr: minDpr,
     });
 
-  // Render content changes should only invalidate the current frame. Only a real WebGL context
-  // loss should force a full canvas/renderer rebuild. A change in camera projection also
-  // forces a remount because R3F's <Canvas> only reads the `camera` prop at init — switching
+  // Render content changes should only invalidate the current frame. A change in camera
+  // projection forces a remount because R3F's <Canvas> only reads the `camera` prop at init — switching
   // between PerspectiveCamera and OrthographicCamera requires a fresh canvas, which also
   // resets the view (intended: ortho three-views should start from a neutral framing).
-  const canvasResetKey = useMemo(
-    () => `context:${contextEpoch}:proj:${cameraProjection}`,
-    [contextEpoch, cameraProjection],
-  );
-  const failureResetKey = useMemo(() => `${renderKey}:${contextEpoch}`, [renderKey, contextEpoch]);
+  const canvasResetKey = useMemo(() => `proj:${cameraProjection}`, [cameraProjection]);
+  const failureResetKey = renderKey;
   const activeBackgroundColor = effectiveTheme === 'light' ? background.light : background.dark;
   const cameraFollowLightingStyle = resolveCameraFollowLightingStyle(effectiveTheme);
 
@@ -369,17 +365,16 @@ export const WorkspaceCanvas = ({
 
       const handleContextLost = (event: Event) => {
         event.preventDefault();
-        console.error('[WorkspaceCanvas] WebGL context lost; rebuilding 3D canvas renderer.');
+        console.error('[WorkspaceCanvas] WebGL context lost; waiting for browser restoration.');
         if (!contextLossInFlightRef.current) {
           contextLossInFlightRef.current = true;
-          // Force a full renderer rebuild instead of leaving the canvas in a stale state.
-          setContextEpoch((value) => value + 1);
         }
       };
 
       const handleContextRestored = () => {
-        // If the browser restored the context without us remounting, schedule a redraw.
-        // In practice, the epoch-based remount above is the more reliable recovery path.
+        // THREE.WebGLRenderer rebuilds its GPU resources on this event. Keep the same canvas
+        // alive and redraw it; synchronously remounting here creates a fresh context while the
+        // browser is still recovering the old one and can trigger Chrome's context-loss block.
         contextLossInFlightRef.current = false;
         state.invalidate();
       };
@@ -562,6 +557,20 @@ export const WorkspaceCanvas = ({
     const frameId = scheduleWorkspaceCanvasResizeEvent(window);
     return () => window.cancelAnimationFrame(frameId);
   }, [canvasResetKey, shouldRenderCanvas]);
+
+  // Block horizontal trackpad swipes from bubbling out of the viewer into the
+  // document and triggering back/forward navigation on macOS Edge/Chrome
+  // (Chromium issue 745137 — `overscroll-behavior: none` is not honored for
+  // trackpad navigation on macOS, so choke the wheel at the container). The
+  // listener is non-passive so `preventDefault` actually takes effect; React's
+  // synthetic `onWheelCapture` is passive and cannot block it.
+  useEffect(() => {
+    const el = containerRef?.current;
+    if (!el) {
+      return undefined;
+    }
+    return attachLateralWheelBlocker(el);
+  }, [containerRef]);
 
   return (
     <div

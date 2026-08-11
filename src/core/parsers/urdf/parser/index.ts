@@ -4,9 +4,11 @@ import {
   GeometryType,
   IMPORTED_EXTERNAL_FRAME_LINK_TYPE,
   type RobotState,
+  type RobotImportRecoveryDiagnostic,
   type UrdfJoint,
   type UrdfLink,
 } from '@/types';
+import { attachParserRecoveryDiagnostics } from '@/core/parsers/recoveryDiagnostics';
 import { preprocessXML } from './utils';
 import { parseMaterials } from './materialParser';
 import { parseLinks } from './linkParser';
@@ -142,14 +144,20 @@ export const parseURDF = (xmlString: string): RobotState | null => {
     return null;
   }
 
-  const robotEl = xmlDoc.querySelector('robot');
-  if (!robotEl) {
-    console.error('Invalid URDF: No <robot> tag found.');
+  const robotEl = xmlDoc.documentElement;
+  if (robotEl?.tagName !== 'robot') {
+    console.error('Invalid URDF: The document root must be <robot>.');
     return null;
   }
 
   const name = robotEl.getAttribute('name') || 'imported_robot';
   const version = robotEl.getAttribute('version')?.trim() || undefined;
+  const declaredLinkNames = new Set(
+    Array.from(robotEl.children)
+      .filter((child) => child.tagName === 'link')
+      .map((linkEl) => linkEl.getAttribute('name')?.trim())
+      .filter((linkName): linkName is string => Boolean(linkName)),
+  );
 
   let globalMaterials: Record<
     string,
@@ -163,18 +171,24 @@ export const parseURDF = (xmlString: string): RobotState | null => {
     { color?: string; colorRgba?: [number, number, number, number]; texture?: string }
   >;
   let joints: Record<string, UrdfJoint>;
+  const recoveryDiagnostics: RobotImportRecoveryDiagnostic[] = [];
 
   try {
-    const materialResult = parseMaterials(robotEl);
+    const materialResult = parseMaterials(robotEl, recoveryDiagnostics);
     globalMaterials = materialResult.globalMaterials;
     linkGazeboMaterials = materialResult.linkGazeboMaterials;
 
-    const linkResult = parseLinks(robotEl, globalMaterials, linkGazeboMaterials);
+    const linkResult = parseLinks(
+      robotEl,
+      globalMaterials,
+      linkGazeboMaterials,
+      recoveryDiagnostics,
+    );
     parsedLinks = linkResult.links;
     extraJoints = linkResult.extraJoints;
     linkMaterials = linkResult.linkMaterials;
 
-    joints = parseJoints(robotEl);
+    joints = parseJoints(robotEl, recoveryDiagnostics);
   } catch (error) {
     console.error('[URDFParser] Failed to parse URDF document:', error);
     return null;
@@ -188,6 +202,43 @@ export const parseURDF = (xmlString: string): RobotState | null => {
   // Add virtual joints from multi-collision parsing
   extraJoints.forEach((j) => {
     joints[j.id] = j;
+  });
+
+  Object.entries(joints).forEach(([jointId, joint]) => {
+    const declaredParentWasOmitted =
+      declaredLinkNames.has(joint.parentLinkId) && !parsedLinks[joint.parentLinkId];
+    if (
+      !joint.parentLinkId ||
+      !joint.childLinkId ||
+      !parsedLinks[joint.childLinkId] ||
+      declaredParentWasOmitted
+    ) {
+      delete joints[jointId];
+      recoveryDiagnostics.push({
+        code: 'urdf_joint_endpoint_missing_omitted',
+        severity: 'warning',
+        category: 'topology',
+        message: `Joint "${joint.name}" referenced an unusable endpoint and was omitted.`,
+        relatedIds: [joint.id, joint.parentLinkId, joint.childLinkId].filter(Boolean),
+        source: { tag: 'joint', name: joint.name },
+        action: 'omitted',
+      });
+    }
+  });
+
+  Object.values(joints).forEach((joint) => {
+    if (!joint.mimic?.joint || joints[joint.mimic.joint]) return;
+    const missingTarget = joint.mimic.joint;
+    delete joint.mimic;
+    recoveryDiagnostics.push({
+      code: 'urdf_joint_mimic_omitted',
+      severity: 'warning',
+      category: 'joint',
+      message: `Joint "${joint.name}" referenced missing mimic target "${missingTarget}", so only its mimic metadata was omitted.`,
+      relatedIds: [joint.id, missingTarget],
+      source: { tag: 'mimic', name: joint.name, attribute: 'joint' },
+      action: 'omitted',
+    });
   });
 
   const links = synthesizeMissingExternalParentLinks(parsedLinks, joints);
@@ -217,7 +268,7 @@ export const parseURDF = (xmlString: string): RobotState | null => {
       .map(([linkId, material]) => [linkId, material]),
   );
 
-  return {
+  const robot: RobotState = {
     name,
     version,
     links,
@@ -230,4 +281,6 @@ export const parseURDF = (xmlString: string): RobotState | null => {
     },
     selection: { type: 'link', id: rootId },
   };
+
+  return attachParserRecoveryDiagnostics(robot, recoveryDiagnostics);
 };

@@ -23,6 +23,11 @@ const TEST_ROBOT: RobotState = {
         type: GeometryType.MESH,
         meshPath: 'meshes/base_visual.STL',
         dimensions: { x: 1, y: 1, z: 1 },
+        mjcfMesh: {
+          name: 'base_visual',
+          file: 'meshes/base_visual.STL',
+          scale: [1, 1, 1],
+        },
         color: '#ffffff',
         origin: { xyz: { x: 0, y: 0, z: 0 }, rpy: { r: 0, p: 0, y: 0 } },
       },
@@ -38,6 +43,18 @@ const TEST_ROBOT: RobotState = {
           type: GeometryType.MESH,
           meshPath: 'package://demo_description/meshes/foot_collision.STL',
           dimensions: { x: 0.5, y: 0.5, z: 0.5 },
+          color: '#ffffff',
+          origin: { xyz: { x: 0, y: 0, z: 0 }, rpy: { r: 0, p: 0, y: 0 } },
+        },
+        {
+          type: GeometryType.SDF,
+          meshPath: 'meshes/implicit_surface.STL',
+          dimensions: { x: 1, y: 1, z: 1 },
+          mjcfMesh: {
+            name: 'implicit_surface',
+            file: 'meshes/implicit_surface.STL',
+            scale: [1, 1, 1],
+          },
           color: '#ffffff',
           origin: { xyz: { x: 0, y: 0, z: 0 }, rpy: { r: 0, p: 0, y: 0 } },
         },
@@ -58,13 +75,15 @@ const TEST_ROBOT: RobotState = {
   },
 };
 
-test('collectExplicitlyScaledMeshPaths keeps only non-identity mesh scales', () => {
+test('collectExplicitlyScaledMeshPaths keeps non-identity and MJCF-authored mesh scales', () => {
   const scaledPaths = collectExplicitlyScaledMeshPaths(TEST_ROBOT);
 
   assert.deepEqual(
     Array.from(scaledPaths).sort(),
     [
       '../meshes/base_collision.STL',
+      'meshes/base_visual.STL',
+      'meshes/implicit_surface.STL',
       'package://demo_description/meshes/foot_collision.STL',
     ],
   );
@@ -77,6 +96,8 @@ test('collectExplicitlyScaledMeshPathsFromLinks reuses the same extraction logic
     Array.from(scaledPaths).sort(),
     [
       '../meshes/base_collision.STL',
+      'meshes/base_visual.STL',
+      'meshes/implicit_surface.STL',
       'package://demo_description/meshes/foot_collision.STL',
     ],
   );

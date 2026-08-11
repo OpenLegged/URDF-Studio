@@ -110,7 +110,6 @@ function renderLifecycle({
       clearAssemblyComponentPreparationOverlay: onClearOverlay,
       isSelectedUsdHydrating: true,
       labels: {
-        addedComponent: 'Added {name}',
         failedToParseFormat: 'Failed {format}',
       },
       previewFile: null,

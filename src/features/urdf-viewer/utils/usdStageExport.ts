@@ -1,5 +1,5 @@
 import type { ViewerRoundtripExportResult } from '../runtime/embed/usd-viewer-api';
-import { toVirtualUsdPath } from './usdPreloadSources.ts';
+import { toVirtualUsdPath } from '@/lib/robot-parser/usd/usdPreloadSources';
 
 type ExportLoadedStageSnapshotResult = ViewerRoundtripExportResult & {
   content?: string | null;

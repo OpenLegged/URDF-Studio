@@ -17,6 +17,7 @@ import {
 import { createMatteMaterial } from '@/core/utils/materialFactory';
 import { applyVisualMeshMaterialGroupsToObject } from '@/core/utils/meshMaterialGroups';
 import { createMainThreadYieldController } from '@/core/utils/yieldToMainThread';
+import { createInlineMJCFMeshObject } from '@/core/parsers/mjcf/mjcfGeometry';
 import { getJointMotionAngleFromActualAngle } from '@/core/robot/kinematics';
 import { normalizeJointLimitOrder } from '@/core/robot/jointLimits';
 import {
@@ -48,6 +49,7 @@ import {
   restackRobotVisualRoots,
   resolveStateVisualMaterialOverride,
   applyMeshScale,
+  applyRuntimeMeshAssetTransform,
   applyVisualMaterialSidePolicy,
   createImagePreviewMesh,
   createHeightfieldMesh,
@@ -113,6 +115,8 @@ export async function buildRuntimeRobotFromState({
   const jointMap: Record<string, URDFJoint> = {};
   const colliderMap: Record<string, URDFCollider> = {};
   const visualMap: Record<string, URDFVisual> = {};
+  const authoredColliderFrameMap: Record<string, URDFCollider> = {};
+  const authoredVisualFrameMap: Record<string, URDFVisual> = {};
   // Shares the resulting MeshStandardMaterial across geoms that resolve to the
   // same visual material override + source-material profile, so each robot
   // load only allocates one material per distinct profile instead of one per
@@ -180,8 +184,67 @@ export async function buildRuntimeRobotFromState({
 
     applyOrigin(group, geometry.origin);
     applyMeshScale(group, geometry);
+    const isRuntimeMeshAsset =
+      geometry.type === GeometryType.MESH || geometry.type === GeometryType.SDF;
 
-    if (geometry.type === GeometryType.MESH && geometry.meshPath) {
+    const attachMeshObject = (object: THREE.Object3D): boolean => {
+      if (!shouldAttachLoadedMeshObject(object, isCollision)) {
+        return false;
+      }
+
+      // Apply SDF submesh filtering: extract only the named child node from
+      // the loaded Collada scene when the geometry specifies one.
+      let meshObject = object;
+      if (geometry.submeshName) {
+        const submesh = extractSubmesh(
+          object,
+          geometry.submeshName,
+          geometry.submeshCenter === true,
+        );
+        if (submesh) {
+          meshObject = submesh;
+        } else {
+          console.warn(
+            `[EditorViewer] Submesh "${geometry.submeshName}" not found in "${geometry.meshPath}", using full mesh.`,
+          );
+        }
+      }
+
+      const effectiveVisualMaterialOverride =
+        visualMaterialOverride ??
+        (!isCollision && !hasBoxFacePalette && loadedObjectHasSingleMaterialSlot(meshObject)
+          ? // A multi-material palette left `visualMaterialOverride` null, but this
+            // mesh has a single material slot, so no slot mapping can happen and the
+            // mesh would otherwise render with the loader's own material.
+            resolvePrimaryAuthoredVisualMaterialOverride(geometry)
+          : null);
+
+      if (
+        !isCollision &&
+        effectiveVisualMaterialOverride &&
+        (hasExplicitMaterialOverride || !loadedObjectShouldPreserveEmbeddedMaterials(meshObject))
+      ) {
+        applyVisualMaterialOverrideToObject(
+          meshObject,
+          effectiveVisualMaterialOverride,
+          manager,
+          visualMaterialOverrideCache,
+        );
+      }
+
+      if (!isCollision && hasGeometryMeshMaterialGroups(geometry)) {
+        applyVisualMeshMaterialGroupsToObject(meshObject, geometry, { manager });
+      }
+
+      applyVisualMaterialSidePolicy(meshObject, geometry, isCollision);
+      group.add(applyRuntimeMeshAssetTransform(meshObject, geometry));
+      if (group.parent && !isCollision) {
+        restackLinkVisualRoots(group.parent);
+      }
+      return !isCollision;
+    };
+
+    if (isRuntimeMeshAsset && geometry.meshPath) {
       if (isImageAssetPath(geometry.meshPath)) {
         group.add(createImagePreviewMesh(geometry, manager, isCollision));
       } else {
@@ -200,65 +263,26 @@ export async function buildRuntimeRobotFromState({
               );
             }
 
-            if (!object || !shouldAttachLoadedMeshObject(object, isCollision)) {
+            if (!object) {
               return;
             }
-
-            // Apply SDF submesh filtering: extract only the named child node
-            // from the loaded Collada scene when the geometry specifies one.
-            let meshObject = object;
-            if (geometry.submeshName) {
-              const submesh = extractSubmesh(
-                object,
-                geometry.submeshName,
-                geometry.submeshCenter === true,
-              );
-              if (submesh) {
-                meshObject = submesh;
-              } else {
-                console.warn(
-                  `[EditorViewer] Submesh "${geometry.submeshName}" not found in "${geometry.meshPath}", using full mesh.`,
-                );
-              }
-            }
-
-            const effectiveVisualMaterialOverride =
-              visualMaterialOverride ??
-              (!isCollision && !hasBoxFacePalette && loadedObjectHasSingleMaterialSlot(meshObject)
-                ? // A multi-material palette left `visualMaterialOverride` null, but this
-                  // mesh has a single material slot, so no slot mapping can happen and the
-                  // mesh would otherwise render with the loader's own material.
-                  resolvePrimaryAuthoredVisualMaterialOverride(geometry)
-                : null);
-
-            if (
-              !isCollision &&
-              effectiveVisualMaterialOverride &&
-              (hasExplicitMaterialOverride ||
-                !loadedObjectShouldPreserveEmbeddedMaterials(meshObject))
-            ) {
-              applyVisualMaterialOverrideToObject(
-                meshObject,
-                effectiveVisualMaterialOverride,
-                manager,
-                visualMaterialOverrideCache,
-              );
-            }
-
-            if (!isCollision && hasGeometryMeshMaterialGroups(geometry)) {
-              applyVisualMeshMaterialGroupsToObject(meshObject, geometry, { manager });
-            }
-
-            applyVisualMaterialSidePolicy(meshObject, geometry, isCollision);
-            group.add(meshObject);
-            didAttachVisualMesh = !isCollision;
-            if (group.parent && !isCollision) {
-              restackLinkVisualRoots(group.parent);
-            }
+            didAttachVisualMesh = attachMeshObject(object);
           } finally {
             completeVisualMeshLoad?.(didAttachVisualMesh);
           }
         });
+      }
+    } else if (
+      isRuntimeMeshAsset &&
+      geometry.mjcfMesh?.vertices &&
+      geometry.mjcfMesh.vertices.length >= 9
+    ) {
+      const inlineMesh = createInlineMJCFMeshObject({
+        ...geometry.mjcfMesh,
+        name: geometry.mjcfMesh.name || geometry.assetRef || geometry.name || 'mjcf_mesh',
+      });
+      if (inlineMesh) {
+        attachMeshObject(inlineMesh);
       }
     } else if (geometry.type === GeometryType.HFIELD && geometry.sdfHeightmap) {
       const hfieldMesh = createHeightfieldMesh(geometry, isCollision, manager);
@@ -351,8 +375,14 @@ export async function buildRuntimeRobotFromState({
 
     if (isCollision) {
       colliderMap[runtimeKey] = group as URDFCollider;
+      if (geometry.name?.trim()) {
+        authoredColliderFrameMap[geometry.name.trim()] = group as URDFCollider;
+      }
     } else {
       visualMap[runtimeKey] = group as URDFVisual;
+      if (geometry.name?.trim()) {
+        authoredVisualFrameMap[geometry.name.trim()] = group as URDFVisual;
+      }
     }
   };
 
@@ -555,7 +585,9 @@ export async function buildRuntimeRobotFromState({
   robot.visuals = visualMap;
   robot.frames = {
     ...colliderMap,
+    ...authoredColliderFrameMap,
     ...visualMap,
+    ...authoredVisualFrameMap,
     ...linkMap,
     ...jointMap,
   };

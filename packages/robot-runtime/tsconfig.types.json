@@ -1,0 +1,1 @@
+{"extends": "../../tsconfig.base.json", "compilerOptions": {"noEmit": false, "emitDeclarationOnly": true, "declaration": true, "declarationMap": false, "outDir": "./dist/types", "rootDir": "../../src", "types": ["node", "vite/client"]}, "include": ["../../src/lib/robot-parser/**/*"], "exclude": ["../../src/lib/robot-parser/**/*.test.*", "../../src/lib/robot-parser/**/*.spec.*"]}

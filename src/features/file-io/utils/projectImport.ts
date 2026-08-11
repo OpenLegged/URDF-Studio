@@ -26,17 +26,17 @@ import {
   buildLibraryArchivePath,
   PROJECT_MANIFEST_FILE,
 } from './projectArchive';
+import {
+  DEFAULT_PROJECT_ARCHIVE_LIMITS,
+  getProjectArchiveEntryUncompressedSize,
+  loadProjectArchiveZip,
+} from './projectArchiveZip';
 import type {
   ProjectAssetsManifest,
   ProjectDerivedCaches,
   ProjectManifest,
 } from './projectExportTypes';
 import { readUsdPreparedExportCaches } from './projectUsdPreparedExportCaches';
-
-const MAX_PROJECT_ARCHIVE_BYTES = 512 * 1024 * 1024;
-const MAX_PROJECT_ARCHIVE_ENTRIES = 10_000;
-const MAX_PROJECT_ARCHIVE_EXTRACTED_BYTES = 1024 * 1024 * 1024;
-const MAX_PROJECT_ARCHIVE_SINGLE_ENTRY_BYTES = 512 * 1024 * 1024;
 
 export interface ImportedProjectLibraryFile extends Omit<RobotFile, 'blobUrl'> {
   blobPath?: string | null;
@@ -90,56 +90,6 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-function resolveInputByteLength(file: File | Blob | ArrayBuffer | Uint8Array): number {
-  if (file instanceof Blob) {
-    return file.size;
-  }
-  return file.byteLength;
-}
-
-function resolveZipEntrySize(entry: JSZip.JSZipObject): number {
-  const metadata = entry as JSZip.JSZipObject & {
-    _data?: { uncompressedSize?: number };
-  };
-  return Number(metadata._data?.uncompressedSize ?? 0);
-}
-
-function assertProjectArchiveWithinLimits(
-  file: File | Blob | ArrayBuffer | Uint8Array,
-  zip?: JSZip,
-): void {
-  const inputBytes = resolveInputByteLength(file);
-  if (inputBytes > MAX_PROJECT_ARCHIVE_BYTES) {
-    throw new Error(
-      `Project archive is too large (${inputBytes} bytes). Maximum: ${MAX_PROJECT_ARCHIVE_BYTES} bytes.`,
-    );
-  }
-  if (!zip) return;
-
-  const entries = Object.values(zip.files).filter((entry) => !entry.dir);
-  if (entries.length > MAX_PROJECT_ARCHIVE_ENTRIES) {
-    throw new Error(
-      `Project archive contains too many files (${entries.length}). Maximum: ${MAX_PROJECT_ARCHIVE_ENTRIES}.`,
-    );
-  }
-
-  let extractedBytes = 0;
-  entries.forEach((entry) => {
-    const entrySize = resolveZipEntrySize(entry);
-    extractedBytes += entrySize;
-    if (entrySize > MAX_PROJECT_ARCHIVE_SINGLE_ENTRY_BYTES) {
-      throw new Error(
-        `Project archive entry "${entry.name}" is too large (${entrySize} bytes). Maximum: ${MAX_PROJECT_ARCHIVE_SINGLE_ENTRY_BYTES} bytes.`,
-      );
-    }
-  });
-  if (extractedBytes > MAX_PROJECT_ARCHIVE_EXTRACTED_BYTES) {
-    throw new Error(
-      `Project archive expands to too much data (${extractedBytes} bytes). Maximum: ${MAX_PROJECT_ARCHIVE_EXTRACTED_BYTES} bytes.`,
-    );
-  }
-}
-
 function getRequiredArchiveEntry(zip: JSZip, path: string, label: string): JSZip.JSZipObject {
   const entry = zip.file(path);
   if (!entry) {
@@ -183,7 +133,7 @@ function assertAllFileContents(
     throw new Error('Invalid project file: all file contents must be an object');
   }
   const entries = Object.entries(value);
-  if (entries.length > MAX_PROJECT_ARCHIVE_ENTRIES) {
+  if (entries.length > DEFAULT_PROJECT_ARCHIVE_LIMITS.maxEntries) {
     throw new Error('Invalid project file: all file contents contains too many entries');
   }
   entries.forEach(([path, content]) => {
@@ -200,7 +150,7 @@ function assertMotorLibrary(
   if (!isRecord(value)) {
     throw new Error('Invalid project file: motor library must be an object');
   }
-  if (Object.keys(value).length > MAX_PROJECT_ARCHIVE_ENTRIES) {
+  if (Object.keys(value).length > DEFAULT_PROJECT_ARCHIVE_LIMITS.maxEntries) {
     throw new Error('Invalid project file: motor library contains too many entries');
   }
   Object.entries(value).forEach(([brand, motors]) => {
@@ -242,10 +192,10 @@ async function loadPackedAssetFiles(
       entry.archivePath,
       `packed asset "${entry.logicalPath}"`,
     );
-    const entrySize = resolveZipEntrySize(archiveEntry);
-    if (entrySize > MAX_PROJECT_ARCHIVE_SINGLE_ENTRY_BYTES) {
+    const entrySize = getProjectArchiveEntryUncompressedSize(archiveEntry);
+    if (entrySize > DEFAULT_PROJECT_ARCHIVE_LIMITS.maxSingleEntryBytes) {
       throw new Error(
-        `Project archive asset "${entry.logicalPath}" is too large (${entrySize} bytes). Maximum: ${MAX_PROJECT_ARCHIVE_SINGLE_ENTRY_BYTES} bytes.`,
+        `Project archive asset "${entry.logicalPath}" is too large (${entrySize} bytes). Maximum: ${DEFAULT_PROJECT_ARCHIVE_LIMITS.maxSingleEntryBytes} bytes.`,
       );
     }
     assetFiles.push({
@@ -474,9 +424,7 @@ export async function readImportedProjectArchive(
   file: File | Blob | ArrayBuffer | Uint8Array,
   _lang: Language = 'en',
 ): Promise<ImportedProjectArchiveData> {
-  assertProjectArchiveWithinLimits(file);
-  const zip = await JSZip.loadAsync(file);
-  assertProjectArchiveWithinLimits(file, zip);
+  const zip = await loadProjectArchiveZip(file);
 
   const manifestValue = await loadRequiredJson(
     zip,

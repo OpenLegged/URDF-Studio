@@ -2,7 +2,13 @@
 
 import * as THREE from 'three';
 import { getCollisionGeometryEntries } from '@/core/robot';
-import type { RobotFile } from '@/types';
+import type {
+  RobotFile,
+  UsdMeshDescriptorRanges,
+  UsdSceneMaterialRecord,
+  UsdSceneMeshDescriptor,
+  UsdSceneSnapshot,
+} from '@/types';
 import { normalizeLoadingProgress } from '@/shared/components/3d/loadingHudState';
 import {
   createSemanticOutlineComposer,
@@ -20,27 +26,29 @@ import {
 } from '@/shared/components/3d/scene/workspaceOrbitPan.ts';
 import { LinkAxesController } from '../runtime/viewer/link-axes.js';
 import { LinkRotationController } from '../runtime/viewer/link-rotation.js';
-import type { PreparedUsdPreloadFile } from '../utils/usdStageOpenPreparation.ts';
+import type { PreparedUsdPreloadFile } from '@/lib/robot-parser/usd/usdStageOpenPreparation';
 import { preloadUsdStageEntries } from '../utils/usdStagePreloadExecution.ts';
-import { shouldUseUsdCollisionVisualProxy } from '../utils/usdCollisionVisualProxy.ts';
+import { shouldUseUsdCollisionVisualProxy } from '@/lib/robot-parser/usd/usdCollisionVisualProxy';
 import {
   buildPreparedUsdStageOpenCacheKey,
   clearPreparedUsdStageOpenCache,
   loadPreparedUsdStageOpenDataInline,
 } from '../utils/preparedUsdStageOpenCache.ts';
+import { prepareUsdStageOpenDataCore } from '@/lib/robot-parser/usd/usdStageOpenPreparationCore';
 import type { ViewerDocumentLoadEvent, UsdLoadingProgress } from '../types';
 import { hydrateUsdViewerRobotResolutionFromRuntime } from '../utils/usdRuntimeRobotHydration.ts';
 import { resolveUsdSceneRobotResolution } from '../utils/usdSceneRobotResolution.ts';
-import { toVirtualUsdPath } from '../utils/usdPreloadSources.ts';
+import { resolveUsdSceneSnapshot } from '../utils/usdSceneSnapshotResolution.ts';
+import { toVirtualUsdPath } from '@/lib/robot-parser/usd/usdPreloadSources';
 import { resolveUsdGroundAlignmentSettleDelaysMs } from '../utils/usdGroundAlignmentDelays.ts';
 import { alignUsdSceneRootToGround } from '../utils/usdGroundAlignment.ts';
 import { shouldSettleUsdGroundAlignmentAfterInitialLoad } from '../utils/usdGroundAlignmentPolicy.ts';
-import { shouldAutoFrameUsdGenericSceneSnapshot } from '../utils/usdGenericScenePolicy.ts';
+import { shouldAutoFrameUsdGenericSceneSnapshot } from '@/lib/robot-parser/usd/usdGenericScenePolicy';
 import {
   disposeUsdDriver,
   ensureUsdWasmRuntime,
   type UsdWasmRuntime,
-} from '../utils/usdWasmRuntime.ts';
+} from '@/lib/robot-parser/usd/usdWasmRuntime';
 import { createHighlightOverrideMaterial, disposeMaterial } from '../utils/materials.ts';
 import {
   hasPickableMaterial,
@@ -60,7 +68,7 @@ import { resolveScreenSpaceUsdHelperHit } from '../utils/usdScreenSpaceHelperInt
 import { resolveUsdRuntimeLinkPathForMesh } from '../utils/usdRuntimeMeshMapping.ts';
 import { resolveUsdVisualMeshObjectOrder } from '../utils/usdRuntimeMeshObjectOrder.ts';
 import { prepareUsdVisualMesh } from '../utils/usdVisualRendering.ts';
-import { createEmbeddedUsdViewerLoadParams } from '../utils/usdViewerRenderParams.ts';
+import { createEmbeddedUsdViewerLoadParams } from '@/lib/robot-parser/usd/usdViewerRenderParams';
 import { prepareUsdExportCacheFromResolvedSnapshot } from '../utils/usdExportBundle.ts';
 import { serializePreparedUsdExportCacheForWorker } from '../utils/usdPreparedExportCacheWorkerTransfer.ts';
 import {
@@ -106,6 +114,7 @@ import type {
   OffscreenViewerInteractionSelection,
   UsdOffscreenViewerCompletionMode,
   UsdOffscreenViewerLoadDebugEntry,
+  UsdOffscreenViewerSessionId,
   UsdOffscreenViewerWorkerRequest,
   UsdOffscreenViewerWorkerResponse,
 } from '../utils/usdOffscreenViewerProtocol.ts';
@@ -116,12 +125,44 @@ import {
   type UsdOffscreenMeshRole,
   type UsdOffscreenRuntimeMeshMeta,
 } from '../utils/usdOffscreenInteractionState.ts';
-import type { ViewerRobotDataResolution } from '../utils/viewerRobotData.ts';
+import type { ViewerRobotDataResolution } from '@/lib/robot-parser/usd/viewerRobotData';
 import type { ToolMode, ViewerInteractiveLayer } from '../types.ts';
 
 type WorkerControls = {
   target: THREE.Vector3;
   update: () => boolean;
+};
+
+type UsdWorkerRenderInterface = {
+  dispose?: () => void;
+  getCachedRobotSceneSnapshot?: (stageSourcePath?: string | null) => unknown;
+  getLastRobotSceneWarmupSummary?: () => unknown;
+  getResolvedPrimPathForMeshId?: (meshId: string) => string | null | undefined;
+  getResolvedVisualTransformPrimPathForMeshId?: (meshId: string) => string | null | undefined;
+  getPreferredLinkWorldTransform?: (linkPath: string) => unknown;
+  getJointInfoForLink?: (linkPath: string) => { angleDeg?: number | null } | null | undefined;
+  getUrdfCollisionEntryForMeshId?: (meshId: string) => unknown;
+  getUrdfTruthLinkContextForMeshId?: (
+    meshId: string,
+    sectionName?: string,
+  ) => { proto?: { protoIndex?: number } | null } | null | undefined;
+  getUrdfTruthForCurrentStage?: () => {
+    collisionsByLinkName?: {
+      get?: (linkName: string) => { all?: unknown[] } | null | undefined;
+    };
+  } | null;
+  getWorldTransformForPrimPath?: (primPath: string) => unknown;
+  warmupRobotSceneSnapshotFromDriver?: (
+    driver: unknown,
+    options?: Record<string, unknown>,
+  ) => unknown;
+  meshes?: Record<string, { _mesh?: THREE.Mesh } | null | undefined>;
+};
+
+type HighlightableMaterial = THREE.Material & {
+  color?: THREE.Color;
+  emissive?: THREE.Color;
+  emissiveIntensity?: number;
 };
 
 type RuntimeWindow = typeof globalThis & {
@@ -135,11 +176,16 @@ type RuntimeWindow = typeof globalThis & {
   camera?: THREE.PerspectiveCamera;
   renderer?: THREE.WebGLRenderer;
   usdRoot?: THREE.Group;
-  renderInterface?: any;
-  driver?: any;
+  renderInterface?: UsdWorkerRenderInterface;
+  driver?: unknown;
   usdStage?: unknown;
   _controls?: WorkerControls;
 };
+
+type LiveMeshRenderInterface = Pick<
+  UsdWorkerRenderInterface,
+  'meshes' | 'getResolvedVisualTransformPrimPathForMeshId' | 'getResolvedPrimPathForMeshId'
+>;
 
 interface ActivePointerState {
   pointerId: number;
@@ -150,6 +196,11 @@ interface ActivePointerState {
 
 type UsdMeshRole = UsdOffscreenMeshRole;
 type RuntimeMeshMeta = UsdOffscreenRuntimeMeshMeta;
+type UsdOffscreenViewerWorkerResponsePayload = UsdOffscreenViewerWorkerResponse extends infer T
+  ? T extends { sessionId: UsdOffscreenViewerSessionId }
+    ? Omit<T, 'sessionId'> & { sessionId?: UsdOffscreenViewerSessionId }
+    : T
+  : never;
 
 type RuntimeInteractionTarget =
   | {
@@ -178,6 +229,12 @@ type HighlightedMeshSnapshot = {
   activeRole: UsdMeshRole | null;
 };
 
+type WorkerStageGlobals = {
+  driver: unknown;
+  renderInterface: UsdWorkerRenderInterface | null;
+  usdStage: unknown;
+};
+
 const USD_VISUAL_SEGMENT_PATTERN = /(?:^|\/)visuals?(?:$|[/.])/i;
 const USD_COLLISION_SEGMENT_PATTERN = /(?:^|\/)coll(?:isions?|iders?)(?:$|[/.])/i;
 
@@ -197,7 +254,10 @@ let offscreenStudioEnvironment: UsdOffscreenStudioEnvironmentHandle | null = nul
 let offscreenGroundShadowPlane: THREE.Mesh | null = null;
 let offscreenSemanticOutline: SemanticOutlineComposer | null = null;
 let currentDriver: unknown = null;
+let currentRenderInterface: UsdWorkerRenderInterface | null = null;
+let currentUsdStage: unknown = undefined;
 let activePointer: ActivePointerState | null = null;
+let activeSessionId: UsdOffscreenViewerSessionId | null = null;
 let lastInteractionAt = 0;
 let currentLoadGeneration = 0;
 let disposed = false;
@@ -305,15 +365,20 @@ function scheduleGroundAlignmentSettlePasses(
 }
 
 function postWorkerMessage(
-  message: UsdOffscreenViewerWorkerResponse,
+  message: UsdOffscreenViewerWorkerResponsePayload,
   transferables?: Transferable[],
+  sessionId: UsdOffscreenViewerSessionId | null = activeSessionId,
 ): void {
+  const messageWithSession =
+    sessionId === null || sessionId === undefined
+      ? message
+      : ({ ...message, sessionId } as UsdOffscreenViewerWorkerResponse);
   if (transferables && transferables.length > 0) {
-    workerScope.postMessage(message, transferables);
+    workerScope.postMessage(messageWithSession, transferables);
     return;
   }
 
-  workerScope.postMessage(message);
+  workerScope.postMessage(messageWithSession);
 }
 
 function cacheStageOpenContext(
@@ -402,18 +467,23 @@ function emitLoadDebugEntry(
   entry: Omit<UsdOffscreenViewerLoadDebugEntry, 'sourceFileName'> & {
     sourceFileName?: string;
   },
+  sessionId: UsdOffscreenViewerSessionId | null = activeSessionId,
 ): void {
-  postWorkerMessage({
-    type: 'load-debug',
-    entry: {
-      sourceFileName: entry.sourceFileName || currentSourceFileName,
-      step: entry.step,
-      status: entry.status,
-      timestamp: entry.timestamp,
-      durationMs: entry.durationMs,
-      detail: entry.detail ?? null,
+  postWorkerMessage(
+    {
+      type: 'load-debug',
+      entry: {
+        sourceFileName: entry.sourceFileName || currentSourceFileName,
+        step: entry.step,
+        status: entry.status,
+        timestamp: entry.timestamp,
+        durationMs: entry.durationMs,
+        detail: entry.detail ?? null,
+      },
     },
-  });
+    undefined,
+    sessionId,
+  );
 }
 
 async function trackWorkerLoadDebugStep<T>({
@@ -422,80 +492,94 @@ async function trackWorkerLoadDebugStep<T>({
   run,
   pendingDetail,
   resolveDetail,
+  sessionId = activeSessionId,
 }: {
   sourceFileName?: string;
   step: string;
   run: () => Promise<T>;
   pendingDetail?: Record<string, unknown> | null;
   resolveDetail?: (value: T) => Record<string, unknown> | null | undefined;
+  sessionId?: UsdOffscreenViewerSessionId | null;
 }): Promise<T> {
   const startedAt = Date.now();
-  emitLoadDebugEntry({
-    sourceFileName,
-    step,
-    status: 'pending',
-    timestamp: startedAt,
-    detail: pendingDetail ?? null,
-  });
+  emitLoadDebugEntry(
+    {
+      sourceFileName,
+      step,
+      status: 'pending',
+      timestamp: startedAt,
+      detail: pendingDetail ?? null,
+    },
+    sessionId,
+  );
 
   try {
     const result = await run();
-    emitLoadDebugEntry({
-      sourceFileName,
-      step,
-      status: 'resolved',
-      timestamp: Date.now(),
-      durationMs: Date.now() - startedAt,
-      detail: resolveDetail?.(result) ?? pendingDetail ?? null,
-    });
+    emitLoadDebugEntry(
+      {
+        sourceFileName,
+        step,
+        status: 'resolved',
+        timestamp: Date.now(),
+        durationMs: Date.now() - startedAt,
+        detail: resolveDetail?.(result) ?? pendingDetail ?? null,
+      },
+      sessionId,
+    );
     return result;
   } catch (error) {
-    emitLoadDebugEntry({
-      sourceFileName,
-      step,
-      status: 'rejected',
-      timestamp: Date.now(),
-      durationMs: Date.now() - startedAt,
-      detail: {
-        ...(pendingDetail ?? {}),
-        error: error instanceof Error ? error.message : String(error),
+    emitLoadDebugEntry(
+      {
+        sourceFileName,
+        step,
+        status: 'rejected',
+        timestamp: Date.now(),
+        durationMs: Date.now() - startedAt,
+        detail: {
+          ...(pendingDetail ?? {}),
+          error: error instanceof Error ? error.message : String(error),
+        },
       },
-    });
+      sessionId,
+    );
     throw error;
   }
 }
 
-function getRuntimeWarmupDebugDetail(renderInterface: any): Record<string, unknown> | null {
+function getRuntimeWarmupDebugDetail(
+  renderInterface: UsdWorkerRenderInterface | null | undefined,
+): Record<string, unknown> | null {
   const rawSummary = renderInterface?.getLastRobotSceneWarmupSummary?.();
   if (!rawSummary || typeof rawSummary !== 'object') {
     return null;
   }
+  const summary = rawSummary as Record<string, unknown>;
 
   const subsetFailureCount = Math.max(
     0,
-    Number(rawSummary.snapshotMaterialSubsetFailureCount ?? 0),
+    Number(summary.snapshotMaterialSubsetFailureCount ?? 0),
   );
   const inheritFailureCount = Math.max(
     0,
-    Number(rawSummary.snapshotMaterialInheritFailureCount ?? 0),
+    Number(summary.snapshotMaterialInheritFailureCount ?? 0),
   );
-  const textureFailureCount = Math.max(0, Number(rawSummary.snapshotTextureFailureCount ?? 0));
+  const textureFailureCount = Math.max(0, Number(summary.snapshotTextureFailureCount ?? 0));
   const materialFailureCount = subsetFailureCount + inheritFailureCount + textureFailureCount;
-  const driverStageResolveStatus = String(rawSummary.driverStageResolveStatus || '').trim() || null;
-  const driverStageResolveSource = String(rawSummary.driverStageResolveSource || '').trim() || null;
-  const driverStageResolveError = String(rawSummary.driverStageResolveError || '').trim() || null;
-  const runtimeWarmupSource = String(rawSummary.source || '').trim() || null;
+  const driverStageResolveStatus = String(summary.driverStageResolveStatus || '').trim() || null;
+  const driverStageResolveSource = String(summary.driverStageResolveSource || '').trim() || null;
+  const driverStageResolveError = String(summary.driverStageResolveError || '').trim() || null;
+  const runtimeWarmupSource = String(summary.source || '').trim() || null;
   const runtimeWarmupDriverSnapshotSource =
-    String(rawSummary.driverSnapshotSource || '').trim() || null;
+    String(summary.driverSnapshotSource || '').trim() || null;
 
   return {
     runtimeWarmupSource,
     runtimeWarmupDriverSnapshotSource,
-    runtimeWarmupSceneSnapshotReady: rawSummary.sceneSnapshotReady === true,
+    runtimeWarmupSceneSnapshotReady: summary.sceneSnapshotReady === true,
     driverStageResolveStatus,
     driverStageResolveSource,
     driverStageResolveError,
-    driverStageResolvePending: rawSummary.driverStageResolvePending === true,
+    driverStageResolvePending: summary.driverStageResolvePending === true,
     snapshotMaterialFailureCount: materialFailureCount,
     snapshotMaterialSubsetFailureCount: subsetFailureCount,
     snapshotMaterialInheritFailureCount: inheritFailureCount,
@@ -568,14 +652,24 @@ function isLoadGenerationActive(loadGeneration: number): boolean {
   return !disposed && loadGeneration === currentLoadGeneration;
 }
 
-function emitDocumentLoadEvent(event: ViewerDocumentLoadEvent): void {
-  postWorkerMessage({
-    type: 'document-load',
-    event,
-  });
+function emitDocumentLoadEvent(
+  event: ViewerDocumentLoadEvent,
+  sessionId: UsdOffscreenViewerSessionId | null = activeSessionId,
+): void {
+  postWorkerMessage(
+    {
+      type: 'document-load',
+      event,
+    },
+    undefined,
+    sessionId,
+  );
 }
 
-function emitLoadingProgress(progress: UsdLoadingProgress): void {
+function emitLoadingProgress(
+  progress: UsdLoadingProgress,
+  sessionId: UsdOffscreenViewerSessionId | null = activeSessionId,
+): void {
   const normalizedProgress =
     progress.phase === 'ready'
       ? normalizeLoadingProgress<UsdLoadingProgress>({
@@ -587,10 +681,14 @@ function emitLoadingProgress(progress: UsdLoadingProgress): void {
           totalCount: null,
         })
       : normalizeLoadingProgress<UsdLoadingProgress>(progress);
-  postWorkerMessage({
-    type: 'progress',
-    progress: normalizedProgress,
-  });
+  postWorkerMessage(
+    {
+      type: 'progress',
+      progress: normalizedProgress,
+    },
+    undefined,
+    sessionId,
+  );
   emitDocumentLoadEvent(
     normalizeLoadingProgress<ViewerDocumentLoadEvent>({
       status: 'loading',
@@ -601,6 +699,7 @@ function emitLoadingProgress(progress: UsdLoadingProgress): void {
       loadedCount: normalizedProgress.loadedCount ?? null,
       totalCount: normalizedProgress.totalCount ?? null,
     }),
+    sessionId,
   );
 }
 
@@ -608,14 +707,18 @@ function emitWorkerLoadingStep(
   phase: UsdLoadingProgress['phase'],
   message: string,
   progressPercent: number | null = null,
+  sessionId: UsdOffscreenViewerSessionId | null = activeSessionId,
 ): void {
-  emitLoadingProgress({
-    phase,
-    message,
-    progressPercent,
-    loadedCount: null,
-    totalCount: null,
-  });
+  emitLoadingProgress(
+    {
+      phase,
+      message,
+      progressPercent,
+      loadedCount: null,
+      totalCount: null,
+    },
+    sessionId,
+  );
 }
 
 function syncViewportMetrics(width: number, height: number, devicePixelRatio: number): void {
@@ -639,9 +742,7 @@ function renderScene(): void {
 
   if (offscreenSemanticOutline && interactionState.highlightedMeshes.length > 0) {
     offscreenSemanticOutline.setCamera(camera);
-    offscreenSemanticOutline.setIntent(
-      interactionState.hoveredSelection ? 'hover' : 'selection',
-    );
+    offscreenSemanticOutline.setIntent(interactionState.hoveredSelection ? 'hover' : 'selection');
     offscreenSemanticOutline.setTargets(interactionState.highlightedMeshes);
     offscreenSemanticOutline.render();
     return;
@@ -730,19 +831,24 @@ function captureHighlightedMeshSnapshot(mesh: THREE.Mesh): HighlightedMeshSnapsh
   return {
     material: mesh.material,
     renderOrder: mesh.renderOrder,
-    materialStates: materials.map((material) => ({
-      transparent: material?.transparent ?? false,
-      opacity: material?.opacity ?? 1,
-      depthTest: material?.depthTest ?? true,
-      depthWrite: material?.depthWrite ?? true,
-      colorHex: (material as any)?.color?.isColor ? (material as any).color.getHex() : undefined,
-      emissiveHex: (material as any)?.emissive?.isColor
-        ? (material as any).emissive.getHex()
-        : undefined,
-      emissiveIntensity: Number.isFinite((material as any)?.emissiveIntensity)
-        ? Number((material as any).emissiveIntensity)
-        : undefined,
-    })),
+    materialStates: materials.map((material) => {
+      const highlightableMaterial = material as HighlightableMaterial | null;
+      const color = highlightableMaterial?.color;
+      const emissive = highlightableMaterial?.emissive;
+      const emissiveIntensity = highlightableMaterial?.emissiveIntensity;
+
+      return {
+        transparent: material?.transparent ?? false,
+        opacity: material?.opacity ?? 1,
+        depthTest: material?.depthTest ?? true,
+        depthWrite: material?.depthWrite ?? true,
+        colorHex: color?.isColor ? color.getHex() : undefined,
+        emissiveHex: emissive?.isColor ? emissive.getHex() : undefined,
+        emissiveIntensity: Number.isFinite(emissiveIntensity)
+          ? Number(emissiveIntensity)
+          : undefined,
+      };
+    }),
     activeRole: null,
   };
 }
@@ -753,7 +859,7 @@ function disposeHighlightOverrideMaterials(material: THREE.Material | THREE.Mate
     if (!entry) {
       return;
     }
-    if ((entry as any).userData?.isHighlightOverrideMaterial !== true) {
+    if (entry.userData?.isHighlightOverrideMaterial !== true) {
       return;
     }
     disposeMaterial(entry, false);
@@ -780,14 +886,18 @@ function restoreHighlightedMeshSnapshot(mesh: THREE.Mesh, snapshot: HighlightedM
     material.opacity = materialState.opacity;
     material.depthTest = materialState.depthTest;
     material.depthWrite = materialState.depthWrite;
-    if (materialState.colorHex !== undefined && (material as any).color?.isColor) {
-      (material as any).color.setHex(materialState.colorHex);
+    const highlightableMaterial = material as HighlightableMaterial;
+    if (materialState.colorHex !== undefined && highlightableMaterial.color?.isColor) {
+      highlightableMaterial.color.setHex(materialState.colorHex);
     }
-    if (materialState.emissiveHex !== undefined && (material as any).emissive?.isColor) {
-      (material as any).emissive.setHex(materialState.emissiveHex);
+    if (materialState.emissiveHex !== undefined && highlightableMaterial.emissive?.isColor) {
+      highlightableMaterial.emissive.setHex(materialState.emissiveHex);
     }
-    if (materialState.emissiveIntensity !== undefined && 'emissiveIntensity' in (material as any)) {
-      (material as any).emissiveIntensity = materialState.emissiveIntensity;
+    if (
+      materialState.emissiveIntensity !== undefined &&
+      'emissiveIntensity' in highlightableMaterial
+    ) {
+      highlightableMaterial.emissiveIntensity = materialState.emissiveIntensity;
     }
     material.needsUpdate = true;
   });
@@ -817,7 +927,7 @@ function resolveUsdCollisionMeshAuthoredOrder({
   meshId,
   fallbackOrder,
 }: {
-  renderInterface: any;
+  renderInterface: UsdWorkerRenderInterface | null | undefined;
   linkPath: string;
   meshId: string;
   fallbackOrder: number;
@@ -873,16 +983,16 @@ function rebuildRuntimeMeshIndex(): void {
   const collisionMeshFallbackOrderByLinkPath = new Map<string, number>();
   const visualMeshFallbackOrderByLinkPath = new Map<string, number>();
 
-  for (const [meshId, hydraMesh] of Object.entries((renderInterface as any)?.meshes || {})) {
-    const meshRecord = hydraMesh as { _mesh?: THREE.Mesh } | null;
+  for (const [meshId, hydraMesh] of Object.entries(renderInterface?.meshes || {})) {
+    const meshRecord = hydraMesh ?? null;
     const mesh = meshRecord?._mesh;
     if (!mesh) {
       continue;
     }
 
     const resolvedPrimPath =
-      (renderInterface as any)?.getResolvedVisualTransformPrimPathForMeshId?.(meshId) ||
-      (renderInterface as any)?.getResolvedPrimPathForMeshId?.(meshId) ||
+      renderInterface?.getResolvedVisualTransformPrimPathForMeshId?.(meshId) ||
+      renderInterface?.getResolvedPrimPathForMeshId?.(meshId) ||
       null;
     const linkPath = resolveUsdRuntimeLinkPathForMesh({
       meshId,
@@ -1284,6 +1394,47 @@ function disposeUsdRootChildren(rootGroup: THREE.Group): void {
   });
 }
 
+function captureWorkerStageGlobals(): WorkerStageGlobals {
+  return {
+    driver: runtimeWindow.driver ?? null,
+    renderInterface: runtimeWindow.renderInterface ?? null,
+    usdStage: runtimeWindow.usdStage,
+  };
+}
+
+function restoreCommittedWorkerStageGlobals(): void {
+  if (currentDriver) {
+    runtimeWindow.driver = currentDriver;
+  } else {
+    runtimeWindow.driver = undefined;
+  }
+
+  if (currentRenderInterface) {
+    runtimeWindow.renderInterface = currentRenderInterface;
+  } else {
+    runtimeWindow.renderInterface = undefined;
+  }
+
+  runtimeWindow.usdStage = currentUsdStage;
+}
+
+function disposeAbandonedWorkerStageGlobals(resources: WorkerStageGlobals): void {
+  if (runtime && resources.driver && resources.driver !== currentDriver) {
+    disposeUsdDriver(runtime, resources.driver);
+  }
+
+  if (resources.renderInterface && resources.renderInterface !== currentRenderInterface) {
+    resources.renderInterface?.dispose?.();
+  }
+}
+
+function commitCurrentWorkerStageGlobals(driver: unknown): void {
+  currentDriver = driver ?? null;
+  currentRenderInterface = runtimeWindow.renderInterface ?? null;
+  currentUsdStage = runtimeWindow.usdStage;
+  runtimeWindow.driver = currentDriver;
+}
+
 function disposeStageResources(): void {
   clearScheduledAutoFrame();
   clearScheduledGroundAlignmentPasses();
@@ -1303,8 +1454,11 @@ function disposeStageResources(): void {
     disposeUsdDriver(runtime, currentDriver);
   }
 
-  runtimeWindow.renderInterface?.dispose?.();
+  const renderInterfaceToDispose = currentRenderInterface ?? runtimeWindow.renderInterface;
+  renderInterfaceToDispose?.dispose?.();
   currentDriver = null;
+  currentRenderInterface = null;
+  currentUsdStage = undefined;
   runtimeWindow.driver = undefined;
   runtimeWindow.renderInterface = undefined;
   runtimeWindow.usdStage = undefined;
@@ -1515,6 +1669,209 @@ function summarizeWorkerRenderedScene() {
         }
       : null,
   };
+}
+
+function buildLiveMeshSceneSnapshotFallback(
+  snapshot: UsdSceneSnapshot,
+  renderInterface: LiveMeshRenderInterface | null | undefined,
+  preferLiveMeshes = false,
+): UsdSceneSnapshot {
+  const nativeMeshDescriptors = Array.from(snapshot.render?.meshDescriptors ?? []);
+  if (!preferLiveMeshes && nativeMeshDescriptors.length > 0) {
+    return snapshot;
+  }
+
+  const positionPool: number[] = [];
+  const indexPool: number[] = [];
+  const normalPool: number[] = [];
+  const uvPool: number[] = [];
+  const transformPool: number[] = [];
+  const rangesByMeshId: Record<string, UsdMeshDescriptorRanges> = {};
+  const meshDescriptors: UsdSceneMeshDescriptor[] = [];
+  const materials: UsdSceneMaterialRecord[] = [];
+  const materialIds = new Map<THREE.Material, string>();
+  const liveVisibilityByPrimPath = new Map<string, boolean>();
+
+  const copyAttribute = (attribute: THREE.BufferAttribute | THREE.InterleavedBufferAttribute | null) => {
+    if (!attribute || attribute.count <= 0) return [];
+    const values: number[] = [];
+    for (let index = 0; index < attribute.count; index += 1) {
+      values.push(attribute.getX(index));
+      if (attribute.itemSize > 1) values.push(attribute.getY(index));
+      if (attribute.itemSize > 2) values.push(attribute.getZ(index));
+      if (attribute.itemSize > 3) values.push(attribute.getW(index));
+    }
+    return values;
+  };
+
+  const getMaterialId = (material: THREE.Material | null | undefined) => {
+    if (!material) return null;
+    const existing = materialIds.get(material);
+    if (existing) return existing;
+    const materialId = `/__ScenePreviewMaterials/material_${materialIds.size}`;
+    materialIds.set(material, materialId);
+    const source = material as THREE.MeshStandardMaterial & {
+      emissive?: THREE.Color;
+      emissiveIntensity?: number;
+      map?: THREE.Texture | null;
+      normalMap?: THREE.Texture | null;
+      roughnessMap?: THREE.Texture | null;
+      metalnessMap?: THREE.Texture | null;
+      aoMap?: THREE.Texture | null;
+      alphaMap?: THREE.Texture | null;
+      transmission?: number;
+      thickness?: number;
+      ior?: number;
+      clearcoat?: number;
+      clearcoatRoughness?: number;
+    };
+    const texturePath = (texture: THREE.Texture | null | undefined) => String(
+      texture?.userData?.usdSourcePath || texture?.name || '',
+    ).trim() || null;
+    materials.push({
+      materialId,
+      name: material.name || `material_${materialIds.size - 1}`,
+      color: source.color ? [source.color.r, source.color.g, source.color.b] : null,
+      emissive: source.emissive
+        ? [source.emissive.r, source.emissive.g, source.emissive.b]
+        : null,
+      emissiveIntensity: Number.isFinite(source.emissiveIntensity)
+        ? source.emissiveIntensity
+        : null,
+      opacity: Number.isFinite(material.opacity) ? material.opacity : null,
+      roughness: Number.isFinite(source.roughness) ? source.roughness : null,
+      metalness: Number.isFinite(source.metalness) ? source.metalness : null,
+      transmission: Number.isFinite(source.transmission) ? source.transmission : null,
+      thickness: Number.isFinite(source.thickness) ? source.thickness : null,
+      ior: Number.isFinite(source.ior) ? source.ior : null,
+      clearcoat: Number.isFinite(source.clearcoat) ? source.clearcoat : null,
+      clearcoatRoughness: Number.isFinite(source.clearcoatRoughness)
+        ? source.clearcoatRoughness
+        : null,
+      opacityEnabled: material.transparent || material.opacity < 1,
+      mapPath: texturePath(source.map),
+      normalMapPath: texturePath(source.normalMap),
+      roughnessMapPath: texturePath(source.roughnessMap),
+      metalnessMapPath: texturePath(source.metalnessMap),
+      aoMapPath: texturePath(source.aoMap),
+      alphaMapPath: texturePath(source.alphaMap),
+    });
+    return materialId;
+  };
+
+  Object.entries(renderInterface?.meshes ?? {}).forEach(([rawMeshId, hydraMesh], ordinal) => {
+    const mesh = hydraMesh?._mesh;
+    const geometry = mesh?.geometry;
+    const positions = copyAttribute(geometry?.getAttribute('position') ?? null);
+    if (!mesh || !geometry || positions.length === 0) return;
+
+    const meshId = String(rawMeshId || `/ScenePreview/mesh_${ordinal}`).trim();
+    const resolvedPrimPath = String(
+      renderInterface?.getResolvedVisualTransformPrimPathForMeshId?.(meshId)
+        || renderInterface?.getResolvedPrimPathForMeshId?.(meshId)
+        || meshId,
+    ).trim();
+    const visible = isVisibleInHierarchy(mesh);
+    liveVisibilityByPrimPath.set(resolvedPrimPath, visible);
+    if (!visible) return;
+
+    const normals = copyAttribute(geometry.getAttribute('normal') ?? null);
+    const uvs = copyAttribute(geometry.getAttribute('uv') ?? null);
+    const rawIndices = geometry.getIndex();
+    const indices = rawIndices
+      ? Array.from(rawIndices.array, (value) => Number(value))
+      : Array.from({ length: Math.floor(positions.length / 3) }, (_, index) => index);
+    mesh.updateWorldMatrix(true, false);
+    const transform = Array.from(mesh.matrixWorld.elements, (value) => Number(value));
+    const meshMaterials = (Array.isArray(mesh.material) ? mesh.material : [mesh.material])
+      .filter((material): material is THREE.Material => Boolean(material));
+    const directMaterialId = getMaterialId(meshMaterials[0]);
+    const geomSubsetSections = geometry.groups
+      .map((group) => ({
+        start: group.start,
+        length: group.count,
+        materialId: getMaterialId(meshMaterials[group.materialIndex ?? 0]),
+      }))
+      .filter((section) => section.length > 0 && section.materialId);
+    const ranges = {
+      positions: { offset: positionPool.length, count: positions.length, stride: 3 },
+      indices: { offset: indexPool.length, count: indices.length, stride: 1 },
+      normals: normals.length > 0
+        ? { offset: normalPool.length, count: normals.length, stride: 3 }
+        : null,
+      uvs: uvs.length > 0
+        ? { offset: uvPool.length, count: uvs.length, stride: 2 }
+        : null,
+      transform: { offset: transformPool.length, count: transform.length, stride: 16 },
+    };
+    positionPool.push(...positions);
+    indexPool.push(...indices);
+    normalPool.push(...normals);
+    uvPool.push(...uvs);
+    transformPool.push(...transform);
+    rangesByMeshId[meshId] = ranges;
+    meshDescriptors.push({
+      meshId,
+      sectionName: 'visuals',
+      resolvedPrimPath,
+      primType: 'mesh',
+      materialId: directMaterialId,
+      doubleSided: meshMaterials.some((material) => material.side === THREE.DoubleSide),
+      renderReady: true,
+      topologyMode: 'indexed',
+      ranges,
+      geometry: {
+        materialId: directMaterialId,
+        renderReady: true,
+        topologyMode: 'indexed',
+        geomSubsetSections,
+      },
+    });
+  });
+
+  if (meshDescriptors.length === 0) {
+    return snapshot;
+  }
+
+  const liveSnapshot: UsdSceneSnapshot = {
+    ...snapshot,
+    render: {
+      ...snapshot.render,
+      meshDescriptors,
+      materials: materials.length > 0 ? materials : snapshot.render?.materials,
+    },
+    buffers: {
+      positions: Float32Array.from(positionPool),
+      indices: Uint32Array.from(indexPool),
+      normals: Float32Array.from(normalPool),
+      uvs: Float32Array.from(uvPool),
+      transforms: Float32Array.from(transformPool),
+      rangesByMeshId,
+    },
+  };
+  if (preferLiveMeshes && nativeMeshDescriptors.length >= meshDescriptors.length) {
+    const liveByPrimPath = new Map(
+      meshDescriptors
+        .filter((descriptor) => descriptor.resolvedPrimPath)
+        .map((descriptor) => [descriptor.resolvedPrimPath, descriptor]),
+    );
+    return {
+      ...snapshot,
+      render: {
+        ...snapshot.render,
+        meshDescriptors: nativeMeshDescriptors.map((descriptor) => ({
+          ...descriptor,
+          visible: liveVisibilityByPrimPath.get(descriptor.resolvedPrimPath ?? '')
+            ?? descriptor.visible
+            ?? true,
+          doubleSided: liveByPrimPath.get(descriptor.resolvedPrimPath ?? '')?.doubleSided
+            ?? descriptor.doubleSided
+            ?? false,
+        })),
+      },
+    };
+  }
+  return liveSnapshot;
 }
 
 async function waitForWorkerSceneSettle(loadGeneration: number, delayMs = 80): Promise<boolean> {
@@ -1850,13 +2207,12 @@ async function ensureCriticalUsdDependenciesLoaded(
   }
 }
 
-function publishDeferredSceneSnapshot(
+function publishSceneSnapshot(
   snapshot: ViewerRobotDataResolution['usdSceneSnapshot'],
   sourceFileName: string,
+  sessionId: UsdOffscreenViewerSessionId | null = activeSessionId,
 ): boolean {
-  if (!snapshot || !hasUsdSceneSnapshotHeavyBuffers(snapshot)) {
-    return true;
-  }
+  if (!snapshot) return false;
 
   const transferables = collectUsdSceneSnapshotTransferables(snapshot);
   const stageSourcePath = snapshot.stageSourcePath ?? currentSourceFileName ?? null;
@@ -1870,6 +2226,7 @@ function publishDeferredSceneSnapshot(
         snapshot,
       },
       transferables,
+      sessionId,
     );
     emitLoadDebugEntry({
       sourceFileName,
@@ -1898,6 +2255,18 @@ function publishDeferredSceneSnapshot(
   }
 }
 
+function publishDeferredSceneSnapshot(
+  snapshot: ViewerRobotDataResolution['usdSceneSnapshot'],
+  sourceFileName: string,
+  sessionId: UsdOffscreenViewerSessionId | null = activeSessionId,
+): boolean {
+  if (!snapshot || !hasUsdSceneSnapshotHeavyBuffers(snapshot)) {
+    return true;
+  }
+
+  return publishSceneSnapshot(snapshot, sourceFileName, sessionId);
+}
+
 function scheduleDeferredSceneSnapshotPublish(
   snapshot: ViewerRobotDataResolution['usdSceneSnapshot'],
   sourceFileName: string,
@@ -1922,12 +2291,14 @@ async function prepareAndPublishWorkerPreparedCache({
   resolution,
   sourceFileName,
   isActive,
+  sessionId,
   failOnError = false,
 }: {
   snapshot: NonNullable<ViewerRobotDataResolution['usdSceneSnapshot']>;
   resolution: ViewerRobotDataResolution;
   sourceFileName: string;
   isActive: () => boolean;
+  sessionId: UsdOffscreenViewerSessionId;
   failOnError?: boolean;
 }): Promise<void> {
   try {
@@ -1963,18 +2334,23 @@ async function prepareAndPublishWorkerPreparedCache({
         preparedCache: serializedPreparedCache.payload,
       },
       serializedPreparedCache.transferables,
+      sessionId,
     );
   } catch (error) {
     if (!isActive()) {
       return;
     }
 
-    postWorkerMessage({
-      type: 'prepared-cache',
-      stageSourcePath: snapshot.stageSourcePath || resolution.stageSourcePath || null,
-      preparedCache: null,
-      error: error instanceof Error ? error.message : String(error),
-    });
+    postWorkerMessage(
+      {
+        type: 'prepared-cache',
+        stageSourcePath: snapshot.stageSourcePath || resolution.stageSourcePath || null,
+        preparedCache: null,
+        error: error instanceof Error ? error.message : String(error),
+      },
+      undefined,
+      sessionId,
+    );
     if (failOnError) {
       throw error;
     }
@@ -1983,7 +2359,10 @@ async function prepareAndPublishWorkerPreparedCache({
 
 async function publishResolvedRobotData(
   loadGeneration: number,
-  options: { completionMode?: UsdOffscreenViewerCompletionMode } = {},
+  options: {
+    completionMode?: UsdOffscreenViewerCompletionMode;
+    sessionId: UsdOffscreenViewerSessionId;
+  },
 ): Promise<PublishedWorkerRobotData> {
   if (!runtimeWindow.renderInterface) {
     throw new Error(
@@ -1991,13 +2370,16 @@ async function publishResolvedRobotData(
     );
   }
 
-  const { snapshot, resolution: initialRobotResolution } = resolveUsdSceneRobotResolution({
+  const { snapshot: resolvedSnapshot, resolution: initialRobotResolution } = resolveUsdSceneRobotResolution({
     renderInterface: runtimeWindow.renderInterface,
     driver: currentDriver,
     stageSourcePath: currentSourceFileName,
     fileName: currentSourceFileName,
     allowWarmup: true,
   });
+  const snapshot = resolvedSnapshot
+    ? buildLiveMeshSceneSnapshotFallback(resolvedSnapshot, runtimeWindow.renderInterface)
+    : resolvedSnapshot;
 
   const resolvedViewerRobotData =
     hydrateUsdViewerRobotResolutionFromRuntime(
@@ -2022,14 +2404,18 @@ async function publishResolvedRobotData(
   refreshRuntimeHelperTargets();
   syncInteractionHighlights();
 
-  postWorkerMessage({
-    type: 'robot-data',
-    resolution: resolutionWithSnapshot,
-    robotData: resolvedViewerRobotData.robotData,
-    preparedCache: null,
-    preparedCachePending: Boolean(snapshot),
-    deferredSceneSnapshotPending: hasUsdSceneSnapshotHeavyBuffers(snapshot),
-  });
+  postWorkerMessage(
+    {
+      type: 'robot-data',
+      resolution: resolutionWithSnapshot,
+      robotData: resolvedViewerRobotData.robotData,
+      preparedCache: null,
+      preparedCachePending: Boolean(snapshot),
+      deferredSceneSnapshotPending: hasUsdSceneSnapshotHeavyBuffers(snapshot),
+    },
+    undefined,
+    options.sessionId,
+  );
 
   const preparedCacheCompletion = snapshot
     ? prepareAndPublishWorkerPreparedCache({
@@ -2037,6 +2423,7 @@ async function publishResolvedRobotData(
         resolution: resolutionWithSnapshot,
         sourceFileName: currentSourceFileName,
         isActive: () => isLoadGenerationActive(loadGeneration),
+        sessionId: options.sessionId,
         failOnError: options.completionMode === 'complete',
       })
     : Promise.resolve();
@@ -2051,8 +2438,10 @@ async function publishResolvedRobotData(
 }
 
 async function loadUsdStageIntoWorker(message: UsdOffscreenViewerInitRequest): Promise<void> {
+  const sessionId = message.sessionId;
   const loadGeneration = ++currentLoadGeneration;
   const completionMode = resolveWorkerCompletionMode(message.completionMode);
+  let loadedStageGlobals: WorkerStageGlobals | null = null;
   currentSourceFileName = message.sourceFile.name;
   viewerActive = message.active;
   showVisual = message.showVisual;
@@ -2063,18 +2452,21 @@ async function loadUsdStageIntoWorker(message: UsdOffscreenViewerInitRequest): P
   originSize = message.originSize;
   groundPlaneOffset = message.groundPlaneOffset;
 
-  emitDocumentLoadEvent({
-    status: 'loading',
-    phase: 'checking-path',
-    message: null,
-    progressMode: 'indeterminate',
-    progressPercent: null,
-    loadedCount: null,
-    totalCount: null,
-  });
+  emitDocumentLoadEvent(
+    {
+      status: 'loading',
+      phase: 'checking-path',
+      message: null,
+      progressMode: 'indeterminate',
+      progressPercent: null,
+      loadedCount: null,
+      totalCount: null,
+    },
+    sessionId,
+  );
 
   try {
-    emitWorkerLoadingStep('checking-path', 'Initializing USD runtime...', 1);
+    emitWorkerLoadingStep('checking-path', 'Initializing USD runtime...', 1, sessionId);
     const runtimeCacheHit = Boolean(runtime);
     runtime = await trackWorkerLoadDebugStep({
       sourceFileName: message.sourceFile.name,
@@ -2089,6 +2481,7 @@ async function loadUsdStageIntoWorker(message: UsdOffscreenViewerInitRequest): P
         runtimeCacheHit,
         threadCount: resolvedRuntime.threadCount,
       }),
+      sessionId,
     });
     if (!isLoadGenerationActive(loadGeneration)) {
       return;
@@ -2100,7 +2493,12 @@ async function loadUsdStageIntoWorker(message: UsdOffscreenViewerInitRequest): P
       throw new Error('USD runtime initialization returned no runtime.');
     }
 
-    emitWorkerLoadingStep('preloading-dependencies', 'Preparing USD preload bundle...', 4);
+    emitWorkerLoadingStep(
+      'preloading-dependencies',
+      'Preparing USD preload bundle...',
+      4,
+      sessionId,
+    );
     disposeStageResources();
 
     const stageOpenContext = resolveStageOpenContext(message);
@@ -2128,6 +2526,14 @@ async function loadUsdStageIntoWorker(message: UsdOffscreenViewerInitRequest): P
           message.sourceFile,
           stageOpenContext.availableFiles,
           stageOpenContext.assets,
+          message.projectionMode === 'scene'
+            ? (sourceFile, availableFiles, assets) => prepareUsdStageOpenDataCore(
+                sourceFile,
+                availableFiles,
+                assets,
+                { includeAllAvailableFiles: true },
+              )
+            : undefined,
         ),
       resolveDetail: (result) => ({
         stagePreparationMode: 'worker',
@@ -2142,6 +2548,7 @@ async function loadUsdStageIntoWorker(message: UsdOffscreenViewerInitRequest): P
         stageSourcePath: result.stageSourcePath,
         ...(result.metrics ?? {}),
       }),
+      sessionId,
     });
     recordPreparedStageOpenCacheKey(preparedStageOpenCacheKey);
     if (!isLoadGenerationActive(loadGeneration)) {
@@ -2152,6 +2559,7 @@ async function loadUsdStageIntoWorker(message: UsdOffscreenViewerInitRequest): P
       'preloading-dependencies',
       'Writing USD preload files into WASM FS...',
       8,
+      sessionId,
     );
     await trackWorkerLoadDebugStep({
       sourceFileName: message.sourceFile.name,
@@ -2172,6 +2580,7 @@ async function loadUsdStageIntoWorker(message: UsdOffscreenViewerInitRequest): P
           'preloading-dependencies',
           'Verifying critical USD dependencies...',
           12,
+          sessionId,
         );
         await ensureCriticalUsdDependenciesLoaded(
           activeRuntime,
@@ -2188,12 +2597,14 @@ async function loadUsdStageIntoWorker(message: UsdOffscreenViewerInitRequest): P
         criticalDependencyCount: preparedStageOpenData.criticalDependencyPaths.length,
         ...(preparedStageOpenData.metrics ?? {}),
       }),
+      sessionId,
     });
 
     emitWorkerLoadingStep(
       'initializing-renderer',
       'Opening USD stage inside worker renderer...',
       18,
+      sessionId,
     );
     const params = createEmbeddedUsdViewerLoadParams(activeRuntime.threadCount, {
       preferWorkerResolvedRobotData: true,
@@ -2202,6 +2613,7 @@ async function loadUsdStageIntoWorker(message: UsdOffscreenViewerInitRequest): P
       // joint/dynamics metadata. Keep the one-shot render drain strict, but do
       // not fail the worker after the scene is visually complete.
       allowIncompleteWorkerRobotMetadata: true,
+      forceHydraFullDraw: message.forceHydraFullDraw === true,
     });
 
     const loadState = await trackWorkerLoadDebugStep({
@@ -2228,7 +2640,9 @@ async function loadUsdStageIntoWorker(message: UsdOffscreenViewerInitRequest): P
           pathToLoad: preparedStageOpenData.stageSourcePath,
           isLoadActive: () => isLoadGenerationActive(loadGeneration),
           onResolvedFilename: (normalizedPath: string) => {
-            currentSourceFileName = normalizedPath;
+            if (isLoadGenerationActive(loadGeneration)) {
+              currentSourceFileName = normalizedPath;
+            }
           },
           applyMeshFilters: () => {
             applyRuntimeVisibility();
@@ -2241,7 +2655,7 @@ async function loadUsdStageIntoWorker(message: UsdOffscreenViewerInitRequest): P
             if (!isLoadGenerationActive(loadGeneration)) {
               return;
             }
-            emitLoadingProgress(progress);
+            emitLoadingProgress(progress, sessionId);
           },
         }),
       resolveDetail: (result) => {
@@ -2296,12 +2710,16 @@ async function loadUsdStageIntoWorker(message: UsdOffscreenViewerInitRequest): P
           robotSceneSnapshotProfile,
         };
       },
+      sessionId,
     });
 
-    currentDriver = loadState?.driver ?? null;
-    runtimeWindow.driver = currentDriver;
+    loadedStageGlobals = {
+      ...captureWorkerStageGlobals(),
+      driver: loadState?.driver ?? runtimeWindow.driver ?? null,
+    };
     if (!isLoadGenerationActive(loadGeneration)) {
-      disposeStageResources();
+      disposeAbandonedWorkerStageGlobals(loadedStageGlobals);
+      restoreCommittedWorkerStageGlobals();
       return;
     }
 
@@ -2311,6 +2729,8 @@ async function loadUsdStageIntoWorker(message: UsdOffscreenViewerInitRequest): P
           `(${preparedStageOpenData.stageSourcePath}).`,
       );
     }
+
+    commitCurrentWorkerStageGlobals(loadState.driver);
 
     if (loadState.drawFailed) {
       const reason = String(loadState.drawFailureReason || '').trim();
@@ -2329,6 +2749,65 @@ async function loadUsdStageIntoWorker(message: UsdOffscreenViewerInitRequest): P
       (loadState as { drawSkippedForRobotSceneSnapshot?: boolean } | null | undefined)
         ?.drawSkippedForRobotSceneSnapshot,
     );
+
+    if (message.projectionMode === 'scene') {
+      if (!runtimeWindow.renderInterface) {
+        throw new Error(
+          `USD scene projection has no render interface for "${message.sourceFile.name}".`,
+        );
+      }
+      const resolved = resolveUsdSceneSnapshot({
+        renderInterface: runtimeWindow.renderInterface,
+        driver: currentDriver,
+        stageSourcePath: currentSourceFileName || preparedStageOpenData.stageSourcePath,
+      });
+      const sceneSnapshot = resolved.snapshot
+        ? buildLiveMeshSceneSnapshotFallback(
+            resolved.snapshot,
+            runtimeWindow.renderInterface,
+            true,
+          )
+        : null;
+      if (!sceneSnapshot) {
+        throw new Error(
+          `USD scene projection did not produce a Stage snapshot for "${message.sourceFile.name}".`,
+        );
+      }
+      if (!publishSceneSnapshot(sceneSnapshot, message.sourceFile.name, sessionId)) {
+        throw new Error(
+          `USD scene projection could not publish the Stage snapshot for "${message.sourceFile.name}".`,
+        );
+      }
+      emitLoadDebugEntry(
+        {
+          sourceFileName: message.sourceFile.name,
+          step: 'ready',
+          status: 'resolved',
+          timestamp: Date.now(),
+          detail: {
+            rendererMode: 'offscreen-worker',
+            projectionMode: 'scene',
+            stageSourcePath: sceneSnapshot.stageSourcePath ?? null,
+            meshCount: Array.from(sceneSnapshot.render?.meshDescriptors ?? []).length,
+            usedWarmup: resolved.usedWarmup,
+          },
+        },
+        sessionId,
+      );
+      emitDocumentLoadEvent(
+        normalizeLoadingProgress<ViewerDocumentLoadEvent>({
+          status: 'ready',
+          phase: 'ready',
+          progressMode: 'percent',
+          message: null,
+          progressPercent: 100,
+          loadedCount: null,
+          totalCount: null,
+        }),
+        sessionId,
+      );
+      return;
+    }
 
     if (!robotSceneSnapshotOnlyLoad) {
       const nextLinkRotationController = ensureLinkRotationController();
@@ -2363,7 +2842,8 @@ async function loadUsdStageIntoWorker(message: UsdOffscreenViewerInitRequest): P
         resolutionSource: 'worker-bootstrap',
         rendererMode: 'offscreen-worker',
       },
-      run: async () => await publishResolvedRobotData(loadGeneration, { completionMode }),
+      run: async () =>
+        await publishResolvedRobotData(loadGeneration, { completionMode, sessionId }),
       resolveDetail: (result) => ({
         resolutionSource: 'worker-bootstrap',
         rendererMode: 'offscreen-worker',
@@ -2379,13 +2859,14 @@ async function loadUsdStageIntoWorker(message: UsdOffscreenViewerInitRequest): P
         robotSceneSnapshotOnly: robotSceneSnapshotOnlyLoad,
         ...(getRuntimeWarmupDebugDetail(runtimeWindow.renderInterface) ?? {}),
       }),
+      sessionId,
     });
     const shouldAutoFrameGenericScene =
-      robotSceneSnapshotOnlyLoad
-      && shouldAutoFrameUsdGenericSceneSnapshot(workerResolvedRobotData.fullSceneSnapshot);
+      robotSceneSnapshotOnlyLoad &&
+      shouldAutoFrameUsdGenericSceneSnapshot(workerResolvedRobotData.fullSceneSnapshot);
     if (
-      (!robotSceneSnapshotOnlyLoad && useCollisionVisualProxyMode)
-      || shouldAutoFrameGenericScene
+      (!robotSceneSnapshotOnlyLoad && useCollisionVisualProxyMode) ||
+      shouldAutoFrameGenericScene
     ) {
       applyRuntimeVisibility();
       applyGroundAlignment();
@@ -2401,7 +2882,12 @@ async function loadUsdStageIntoWorker(message: UsdOffscreenViewerInitRequest): P
     }
 
     if (completionMode === 'complete') {
-      emitWorkerLoadingStep('finalizing-scene', 'Completing USD hydration artifacts...', 99);
+      emitWorkerLoadingStep(
+        'finalizing-scene',
+        'Completing USD hydration artifacts...',
+        99,
+        sessionId,
+      );
       await workerResolvedRobotData.preparedCacheCompletion;
       if (!isLoadGenerationActive(loadGeneration)) {
         return;
@@ -2410,6 +2896,7 @@ async function loadUsdStageIntoWorker(message: UsdOffscreenViewerInitRequest): P
       const sceneSnapshotPublished = publishDeferredSceneSnapshot(
         workerResolvedRobotData.fullSceneSnapshot,
         message.sourceFile.name,
+        sessionId,
       );
       if (!sceneSnapshotPublished) {
         throw new Error(
@@ -2418,31 +2905,34 @@ async function loadUsdStageIntoWorker(message: UsdOffscreenViewerInitRequest): P
       }
     }
 
-    emitLoadDebugEntry({
-      sourceFileName: message.sourceFile.name,
-      step: 'ready',
-      status: 'resolved',
-      timestamp: Date.now(),
-      detail: {
-        rendererMode: 'offscreen-worker',
-        stageSourcePath: workerResolvedRobotData.resolution.stageSourcePath,
-        metadataSource:
-          workerResolvedRobotData.resolution.usdBakedScene?.robotMetadataSnapshot?.source ??
-          workerResolvedRobotData.resolution.usdSceneSnapshot?.robotMetadataSnapshot?.source ??
-          null,
-        rootChildrenCount: usdRoot?.children.length ?? 0,
-        linkCount: Object.keys(workerResolvedRobotData.resolution.robotData.links || {}).length,
-        jointCount: Object.keys(workerResolvedRobotData.resolution.robotData.joints || {}).length,
-        stageOpenSource,
-        stageOpenCacheHit: stageOpenContext.cacheHit,
-        stageOpenContextCacheHit: stageOpenContext.cacheHit,
-        preparedStageOpenCacheHit,
-        collisionVisualProxyMode: useCollisionVisualProxyMode,
-        robotSceneSnapshotOnly: robotSceneSnapshotOnlyLoad,
-        completionMode,
-        ...(getRuntimeWarmupDebugDetail(runtimeWindow.renderInterface) ?? {}),
+    emitLoadDebugEntry(
+      {
+        sourceFileName: message.sourceFile.name,
+        step: 'ready',
+        status: 'resolved',
+        timestamp: Date.now(),
+        detail: {
+          rendererMode: 'offscreen-worker',
+          stageSourcePath: workerResolvedRobotData.resolution.stageSourcePath,
+          metadataSource:
+            workerResolvedRobotData.resolution.usdBakedScene?.robotMetadataSnapshot?.source ??
+            workerResolvedRobotData.resolution.usdSceneSnapshot?.robotMetadataSnapshot?.source ??
+            null,
+          rootChildrenCount: usdRoot?.children.length ?? 0,
+          linkCount: Object.keys(workerResolvedRobotData.resolution.robotData.links || {}).length,
+          jointCount: Object.keys(workerResolvedRobotData.resolution.robotData.joints || {}).length,
+          stageOpenSource,
+          stageOpenCacheHit: stageOpenContext.cacheHit,
+          stageOpenContextCacheHit: stageOpenContext.cacheHit,
+          preparedStageOpenCacheHit,
+          collisionVisualProxyMode: useCollisionVisualProxyMode,
+          robotSceneSnapshotOnly: robotSceneSnapshotOnlyLoad,
+          completionMode,
+          ...(getRuntimeWarmupDebugDetail(runtimeWindow.renderInterface) ?? {}),
+        },
       },
-    });
+      sessionId,
+    );
 
     emitDocumentLoadEvent(
       normalizeLoadingProgress<ViewerDocumentLoadEvent>({
@@ -2454,6 +2944,7 @@ async function loadUsdStageIntoWorker(message: UsdOffscreenViewerInitRequest): P
         loadedCount: null,
         totalCount: null,
       }),
+      sessionId,
     );
 
     if (completionMode !== 'complete') {
@@ -2464,37 +2955,49 @@ async function loadUsdStageIntoWorker(message: UsdOffscreenViewerInitRequest): P
       );
     }
   } catch (error) {
-    disposeStageResources();
     if (!isLoadGenerationActive(loadGeneration)) {
+      disposeAbandonedWorkerStageGlobals(loadedStageGlobals ?? captureWorkerStageGlobals());
+      restoreCommittedWorkerStageGlobals();
       return;
     }
+    disposeStageResources();
 
     const errorMessage =
       error instanceof Error ? error.message : 'Failed to load USD stage in offscreen worker';
-    emitLoadDebugEntry({
-      sourceFileName: message.sourceFile.name,
-      step: 'load-failed',
-      status: 'rejected',
-      timestamp: Date.now(),
-      detail: {
-        rendererMode: 'offscreen-worker',
-        error: errorMessage,
-        stageSourcePath: currentSourceFileName || null,
+    emitLoadDebugEntry(
+      {
+        sourceFileName: message.sourceFile.name,
+        step: 'load-failed',
+        status: 'rejected',
+        timestamp: Date.now(),
+        detail: {
+          rendererMode: 'offscreen-worker',
+          error: errorMessage,
+          stageSourcePath: currentSourceFileName || null,
+        },
       },
-    });
-    postWorkerMessage({
-      type: 'fatal-error',
-      error: errorMessage,
-    });
-    emitDocumentLoadEvent({
-      status: 'error',
-      phase: null,
-      message: null,
-      progressPercent: null,
-      loadedCount: null,
-      totalCount: null,
-      error: errorMessage,
-    });
+      sessionId,
+    );
+    postWorkerMessage(
+      {
+        type: 'fatal-error',
+        error: errorMessage,
+      },
+      undefined,
+      sessionId,
+    );
+    emitDocumentLoadEvent(
+      {
+        status: 'error',
+        phase: null,
+        message: null,
+        progressPercent: null,
+        loadedCount: null,
+        totalCount: null,
+        error: errorMessage,
+      },
+      sessionId,
+    );
   }
 }
 
@@ -2680,6 +3183,7 @@ function handleSetInteractionState(
 
 function applyInitialInteractionState(
   interactionState: UsdOffscreenViewerInitRequest['initialInteractionState'],
+  sessionId: UsdOffscreenViewerSessionId,
 ): void {
   if (!interactionState) {
     return;
@@ -2687,6 +3191,7 @@ function applyInitialInteractionState(
 
   handleSetInteractionState({
     type: 'set-interaction-state',
+    sessionId,
     toolMode: interactionState.toolMode,
     selection: interactionState.selection,
     hoveredSelection: interactionState.hoveredSelection,
@@ -2791,18 +3296,30 @@ async function prewarmWorkerRuntime(): Promise<void> {
   const runtimeCacheHit = Boolean(runtime);
   runtime = await ensureUsdWasmRuntime();
   if (!runtimeCacheHit) {
-    emitLoadDebugEntry({
-      step: 'ensure-runtime',
-      status: 'resolved',
-      timestamp: Date.now(),
-      detail: {
-        rendererMode: 'offscreen-worker',
-        runtimeCacheHit,
-        threadCount: runtime.threadCount,
-        prewarmOnly: true,
+    emitLoadDebugEntry(
+      {
+        step: 'ensure-runtime',
+        status: 'resolved',
+        timestamp: Date.now(),
+        detail: {
+          rendererMode: 'offscreen-worker',
+          runtimeCacheHit,
+          threadCount: runtime.threadCount,
+          prewarmOnly: true,
+        },
       },
-    });
+      null,
+    );
   }
+}
+
+function isActiveStageRequest(
+  message: Exclude<
+    UsdOffscreenViewerWorkerRequest,
+    { type: 'init' } | { type: 'prewarm-runtime' } | { type: 'dispose' }
+  >,
+): boolean {
+  return activeSessionId !== null && message.sessionId === activeSessionId;
 }
 
 installWorkerViewerGlobals();
@@ -2815,6 +3332,10 @@ workerScope.addEventListener('message', (event: MessageEvent<UsdOffscreenViewerW
 
   switch (message.type) {
     case 'init': {
+      if (activeSessionId !== null && activeSessionId !== message.sessionId) {
+        disposeWorkerStage();
+      }
+      activeSessionId = message.sessionId;
       emitDocumentLoadEvent(
         normalizeLoadingProgress<ViewerDocumentLoadEvent>({
           status: 'loading',
@@ -2825,10 +3346,11 @@ workerScope.addEventListener('message', (event: MessageEvent<UsdOffscreenViewerW
           loadedCount: null,
           totalCount: null,
         }),
+        message.sessionId,
       );
       syncViewportMetrics(message.width, message.height, message.devicePixelRatio);
       initializeSceneGraph(message.canvas, message.theme);
-      applyInitialInteractionState(message.initialInteractionState);
+      applyInitialInteractionState(message.initialInteractionState, message.sessionId);
       emitDocumentLoadEvent(
         normalizeLoadingProgress<ViewerDocumentLoadEvent>({
           status: 'loading',
@@ -2839,35 +3361,57 @@ workerScope.addEventListener('message', (event: MessageEvent<UsdOffscreenViewerW
           loadedCount: null,
           totalCount: null,
         }),
+        message.sessionId,
       );
       void loadUsdStageIntoWorker(message);
       return;
     }
     case 'resize': {
+      if (!isActiveStageRequest(message)) {
+        return;
+      }
       resizeViewer(message.width, message.height, message.devicePixelRatio);
       return;
     }
     case 'pointer-down': {
+      if (!isActiveStageRequest(message)) {
+        return;
+      }
       handlePointerDown(message);
       return;
     }
     case 'pointer-move': {
+      if (!isActiveStageRequest(message)) {
+        return;
+      }
       handlePointerMove(message);
       return;
     }
     case 'pointer-up': {
+      if (!isActiveStageRequest(message)) {
+        return;
+      }
       handlePointerUp(message);
       return;
     }
     case 'pointer-leave': {
+      if (!isActiveStageRequest(message)) {
+        return;
+      }
       handlePointerLeave();
       return;
     }
     case 'wheel': {
+      if (!isActiveStageRequest(message)) {
+        return;
+      }
       handleWheel(message);
       return;
     }
     case 'set-visibility': {
+      if (!isActiveStageRequest(message)) {
+        return;
+      }
       showVisual = message.showVisual;
       showCollision = message.showCollision;
       showCollisionAlwaysOnTop = message.showCollisionAlwaysOnTop;
@@ -2876,10 +3420,16 @@ workerScope.addEventListener('message', (event: MessageEvent<UsdOffscreenViewerW
       return;
     }
     case 'set-decoration-state': {
+      if (!isActiveStageRequest(message)) {
+        return;
+      }
       handleSetDecorationState(message);
       return;
     }
     case 'set-ground-offset': {
+      if (!isActiveStageRequest(message)) {
+        return;
+      }
       groundPlaneOffset = message.groundPlaneOffset;
       syncUsdOffscreenGroundShadowPlane(offscreenGroundShadowPlane, groundPlaneOffset);
       if (shouldSettleGroundAlignmentAfterLoad) {
@@ -2890,6 +3440,9 @@ workerScope.addEventListener('message', (event: MessageEvent<UsdOffscreenViewerW
       return;
     }
     case 'auto-fit-ground': {
+      if (!isActiveStageRequest(message)) {
+        return;
+      }
       applyGroundAlignment();
       renderScene();
       if (shouldSettleGroundAlignmentAfterLoad) {
@@ -2898,6 +3451,9 @@ workerScope.addEventListener('message', (event: MessageEvent<UsdOffscreenViewerW
       return;
     }
     case 'set-active': {
+      if (!isActiveStageRequest(message)) {
+        return;
+      }
       viewerActive = message.active;
       if (!viewerActive) {
         handlePointerLeave();
@@ -2905,35 +3461,51 @@ workerScope.addEventListener('message', (event: MessageEvent<UsdOffscreenViewerW
       return;
     }
     case 'set-interaction-state': {
+      if (!isActiveStageRequest(message)) {
+        return;
+      }
       handleSetInteractionState(message);
       return;
     }
     case 'set-joint-angle': {
+      if (!isActiveStageRequest(message)) {
+        return;
+      }
       handleSetJointAngle(message);
       return;
     }
     case 'set-camera-state': {
+      if (!isActiveStageRequest(message)) {
+        return;
+      }
       applyMainThreadCameraState(message.cameraState);
       return;
     }
     case 'prewarm-runtime': {
       void prewarmWorkerRuntime().catch((error) => {
         const detail = error instanceof Error ? error.message : String(error || 'unknown-error');
-        emitLoadDebugEntry({
-          step: 'ensure-runtime',
-          status: 'rejected',
-          timestamp: Date.now(),
-          detail: {
-            rendererMode: 'offscreen-worker',
-            prewarmOnly: true,
-            error: detail,
+        emitLoadDebugEntry(
+          {
+            step: 'ensure-runtime',
+            status: 'rejected',
+            timestamp: Date.now(),
+            detail: {
+              rendererMode: 'offscreen-worker',
+              prewarmOnly: true,
+              error: detail,
+            },
           },
-        });
+          null,
+        );
       });
       return;
     }
     case 'dispose-stage': {
+      if (!isActiveStageRequest(message)) {
+        return;
+      }
       disposeWorkerStage();
+      activeSessionId = null;
       return;
     }
     case 'dispose': {

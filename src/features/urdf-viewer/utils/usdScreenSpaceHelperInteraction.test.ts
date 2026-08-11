@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as THREE from 'three';
 
-import type { ViewerRobotDataResolution } from './viewerRobotData.ts';
+import type { ViewerRobotDataResolution } from '@/lib/robot-parser/usd/viewerRobotData';
 import { resolveScreenSpaceUsdHelperHit } from './usdScreenSpaceHelperInteraction.ts';
 
 function createResolution(): ViewerRobotDataResolution {

@@ -8,6 +8,7 @@ import {
 } from './editableSourceIncrementalPatchDetection';
 import {
   parseEditableRobotSource,
+  parseEditableRobotSourceAsync,
   type ParseEditableRobotSourceOptions,
 } from './parseEditableRobotSource';
 
@@ -68,6 +69,48 @@ export function applyEditableSourceChange(
   return {
     mode: 'full-parse',
     state: parseEditableRobotSource(options),
+    diagnostics: defaultDiagnostics,
+  };
+}
+
+/** Async production counterpart that resolves asset-dependent MJCF physics. */
+export async function applyEditableSourceChangeAsync(
+  options: ApplyEditableSourceChangeOptions,
+): Promise<ApplyEditableSourceChangeResult> {
+  const defaultDiagnostics = buildEditableSourceIncrementalPatchDiagnostics({
+    previousContent: options.previousContent,
+    nextContent: options.content,
+    dirtyRanges: options.dirtyRanges ?? [],
+    attempted: false,
+    skipReason: options.attemptIncrementalPatch ? null : 'incremental-patch-not-requested',
+  });
+
+  if (options.attemptIncrementalPatch) {
+    const detectionResult = detectEditableSourceIncrementalPatchWithDiagnostics({
+      file: options.file,
+      previousContent: options.previousContent,
+      nextContent: options.content,
+      dirtyRanges: options.dirtyRanges ?? [],
+      skipMjcfPatch: options.skipMjcfIncrementalPatch,
+    });
+    if (detectionResult.patch) {
+      return {
+        mode: 'incremental-patch',
+        patch: detectionResult.patch,
+        diagnostics: detectionResult.diagnostics,
+      };
+    }
+
+    return {
+      mode: 'full-parse',
+      state: await parseEditableRobotSourceAsync(options),
+      diagnostics: detectionResult.diagnostics,
+    };
+  }
+
+  return {
+    mode: 'full-parse',
+    state: await parseEditableRobotSourceAsync(options),
     diagnostics: defaultDiagnostics,
   };
 }

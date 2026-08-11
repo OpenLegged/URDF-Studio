@@ -784,7 +784,7 @@ export interface TranslationKeys extends TranslationWorkflowKeys {
   motorType: string;
   addedComponent: string;
   addedComponentRecovered: string;
-  importedRobotRecovered: string;
+  appliedSourceRecovered: string;
   noCollisionOptimizationApplied: string;
   collisionOptimizationApplied: string;
   renamedFolder: string;

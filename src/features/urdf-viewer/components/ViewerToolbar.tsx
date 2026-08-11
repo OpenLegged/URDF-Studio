@@ -2,64 +2,12 @@ import React, { useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { Move, MousePointer2, View as ViewIcon, Scan, Ruler, Palette } from 'lucide-react';
 import { translations } from '@/shared/i18n';
-import { IconButton } from '@/shared/components/ui';
+import { ToolbarToggleGroup, type ToolbarToggleItem } from '@/shared/components/ui';
 import { useOverlayHoverBlock } from '@/shared/hooks/useOverlayHoverBlock';
 import type { ViewerToolbarProps, ToolMode } from '../types';
 
 const HEADER_DOCK_SLOT_ID = 'viewer-toolbar-dock-slot';
 const BOTTOM_DOCK_SLOT_ID = 'viewer-toolbar-bottom-dock';
-
-interface ViewerTool {
-  id: string;
-  icon: React.ComponentType<{ className?: string }>;
-  label: string;
-}
-
-interface ToolbarClusterProps {
-  tools: ViewerTool[];
-  activeMode: string;
-  setMode: (mode: ToolMode) => void;
-  /** Compact = header toolbar sizing; false = touch-friendly bottom bar sizing. */
-  compact: boolean;
-}
-
-function ToolbarCluster({
-  tools,
-  activeMode,
-  setMode,
-  compact,
-}: ToolbarClusterProps) {
-  const buttonClassName = compact
-    ? 'h-7 w-7 rounded-md'
-    : 'h-10 w-12 min-w-12 snap-center rounded-full transition-[background-color,box-shadow,color] duration-200';
-  const iconClassName = compact ? 'h-4 w-4' : 'h-5 w-5';
-
-  return (
-    <>
-      {tools.map((tool) => {
-        const isActive = activeMode === tool.id;
-        const Icon = tool.icon;
-        return (
-          <IconButton
-            key={tool.id}
-            variant="toolbar"
-            size="sm"
-            isActive={isActive}
-            aria-label={tool.label}
-            title={tool.label}
-            data-viewer-tool={tool.id}
-            className={buttonClassName}
-            onClick={() => {
-              setMode(tool.id as ToolMode);
-            }}
-          >
-            <Icon className={iconClassName} />
-          </IconButton>
-        );
-      })}
-    </>
-  );
-}
 
 export const ViewerToolbar: React.FC<ViewerToolbarProps> = ({
   activeMode,
@@ -70,13 +18,13 @@ export const ViewerToolbar: React.FC<ViewerToolbarProps> = ({
   const t = translations[lang];
   const bottomToolbarRef = useRef<HTMLDivElement>(null);
 
-  const tools: ViewerTool[] = [
-    { id: 'view', icon: ViewIcon, label: t.viewMode },
-    { id: 'select', icon: MousePointer2, label: t.selectMode },
-    { id: 'universal', icon: Move, label: t.transformMode },
-    { id: 'paint', icon: Palette, label: t.paintMode },
-    { id: 'face', icon: Scan, label: t.faceMode },
-    { id: 'measure', icon: Ruler, label: t.measureMode },
+  const tools: ToolbarToggleItem<ToolMode>[] = [
+    { value: 'view', icon: ViewIcon, label: t.viewMode },
+    { value: 'select', icon: MousePointer2, label: t.selectMode },
+    { value: 'universal', icon: Move, label: t.transformMode },
+    { value: 'paint', icon: Palette, label: t.paintMode },
+    { value: 'face', icon: Scan, label: t.faceMode },
+    { value: 'measure', icon: Ruler, label: t.measureMode },
   ];
 
   const headerDockSlot =
@@ -86,7 +34,7 @@ export const ViewerToolbar: React.FC<ViewerToolbarProps> = ({
 
   useEffect(() => {
     const activeButton = bottomToolbarRef.current?.querySelector<HTMLElement>(
-      `[data-viewer-tool="${activeMode}"]`,
+      `[data-toolbar-value="${activeMode}"]`,
     );
     if (activeButton && typeof activeButton.scrollIntoView === 'function') {
       activeButton.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'nearest' });
@@ -97,33 +45,31 @@ export const ViewerToolbar: React.FC<ViewerToolbarProps> = ({
   // dock slot's own className, so this portal renders nothing visible there).
   const headerToolbar = headerDockSlot ? (
     createPortal(
-      <div
-        className="urdf-toolbar pointer-events-auto flex max-w-full items-center gap-0.5 border-x border-border-black/35 px-1.5 dark:border-border-black"
+      <ToolbarToggleGroup
+        className="urdf-toolbar pointer-events-auto max-w-full border-x border-border-black/35 px-1.5 dark:border-border-black"
+        items={tools}
+        value={activeMode}
+        onValueChange={setMode}
+        ariaLabel={t.toolbar}
+        itemDataAttribute="data-viewer-tool"
+        compact
         onMouseEnter={activateHoverBlock}
         onMouseLeave={deactivateHoverBlock}
-      >
-        <ToolbarCluster
-          tools={tools}
-          activeMode={activeMode}
-          setMode={setMode}
-          compact
-        />
-      </div>,
+      />,
       headerDockSlot,
     )
   ) : (
-    <div
-      className="urdf-toolbar pointer-events-auto flex max-w-full items-center gap-0.5 border-x border-border-black/35 px-1.5 dark:border-border-black"
+    <ToolbarToggleGroup
+      className="urdf-toolbar pointer-events-auto max-w-full border-x border-border-black/35 px-1.5 dark:border-border-black"
+      items={tools}
+      value={activeMode}
+      onValueChange={setMode}
+      ariaLabel={t.toolbar}
+      itemDataAttribute="data-viewer-tool"
+      compact
       onMouseEnter={activateHoverBlock}
       onMouseLeave={deactivateHoverBlock}
-    >
-      <ToolbarCluster
-        tools={tools}
-        activeMode={activeMode}
-        setMode={setMode}
-        compact
-      />
-    </div>
+    />
   );
 
   // Narrow screens (phones): a touch-friendly bottom bar. The bottom dock slot
@@ -143,16 +89,19 @@ export const ViewerToolbar: React.FC<ViewerToolbarProps> = ({
               ref={bottomToolbarRef}
               className="urdf-toolbar-scroll flex min-w-0 items-center gap-0.5 overflow-x-auto overscroll-x-contain [touch-action:pan-x]"
               role="toolbar"
-              aria-label="Viewer tools"
+              aria-label={t.toolbar}
             >
-              <div className="flex w-max min-w-full shrink-0 items-center justify-center gap-0.5">
-                <ToolbarCluster
-                  tools={tools}
-                  activeMode={activeMode}
-                  setMode={setMode}
-                  compact={false}
-                />
-              </div>
+              <ToolbarToggleGroup
+                className="w-max min-w-full shrink-0 justify-center"
+                items={tools}
+                value={activeMode}
+                onValueChange={setMode}
+                ariaLabel={t.toolbar}
+                role="group"
+                itemDataAttribute="data-viewer-tool"
+                compact={false}
+                itemClassName="h-10 w-12 min-w-12 snap-center rounded-full transition-[background-color,box-shadow,color] duration-200"
+              />
             </div>
           </div>
         </div>,

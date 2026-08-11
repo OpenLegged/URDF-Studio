@@ -874,7 +874,9 @@ export function resolveRobotFileDataWithWorker(
   callbacks?: { onProgress?: (progress: RobotImportProgress) => void },
 ): Promise<RobotImportResult> {
   const preResolvedImportResult = consumePreResolvedRobotImport(file);
-  if (preResolvedImportResult) {
+  // MJCF pre-resolution is synchronous and cannot fit asset-backed physical
+  // primitives. Always route MJCF through the async canonical worker boundary.
+  if (preResolvedImportResult && file.format !== 'mjcf') {
     callbacks?.onProgress?.({
       progressPercent: 100,
       message: 'Using cached robot document',

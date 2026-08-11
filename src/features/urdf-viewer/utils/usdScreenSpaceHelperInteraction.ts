@@ -2,7 +2,7 @@ import type * as THREE from 'three';
 
 import type { ViewerInteractiveLayer } from '../types';
 import type { ResolvedUsdHelperHit } from './usdInteractionPicking';
-import type { ViewerRobotDataResolution } from './viewerRobotData';
+import type { ViewerRobotDataResolution } from '@/lib/robot-parser/usd/viewerRobotData';
 import {
   collectProjectedInteractionCandidateMatches,
   type RegressionProjectionCanvasRect,

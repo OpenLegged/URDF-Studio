@@ -2,6 +2,7 @@ import * as THREE from 'three';
 
 import { resolveObjAuthoredMaterialsFromAssets } from '@/core/loaders/objMaterialMetadata';
 import { resolveImportedAssetPath } from '@/core/parsers/meshPathUtils';
+import { attachParserRecoveryDiagnostics } from '@/core/parsers/recoveryDiagnostics';
 import {
   DEFAULT_JOINT,
   DEFAULT_LINK,
@@ -10,6 +11,7 @@ import {
   type RobotClosedLoopConstraint,
   type Euler,
   type RobotMaterialState,
+  type RobotImportRecoveryDiagnostic,
   type RobotState,
   type UrdfJoint,
   type UrdfLink,
@@ -138,6 +140,7 @@ interface ParseSdfModelOptions extends ParseSDFOptions {
    * and nested models stay relative to the (now overridden) model frame.
    */
   modelPoseOverride?: ParsedPose;
+  recoveryDiagnostics?: RobotImportRecoveryDiagnostic[];
 }
 
 const AXIS_IMPORT_TYPES = new Set<JointType>([
@@ -179,6 +182,17 @@ function getDirectChildElements(parent: Element, tagName?: string): Element[] {
 
 function getFirstDirectChild(parent: Element, tagName: string): Element | null {
   return getDirectChildElements(parent, tagName)[0] ?? null;
+}
+
+function recordSdfOmission(
+  diagnostics: RobotImportRecoveryDiagnostic[],
+  diagnostic: Omit<RobotImportRecoveryDiagnostic, 'severity' | 'action'>,
+): void {
+  diagnostics.push({
+    ...diagnostic,
+    severity: 'warning',
+    action: 'omitted',
+  });
 }
 
 function parseFloatSafe(value: string | null | undefined, fallback = 0): number {
@@ -709,43 +723,6 @@ function createEmptyLink(id: string, name = id): UrdfLink {
   };
 }
 
-function deriveSdfFallbackName(sourcePath?: string | null): string {
-  const normalized = String(sourcePath || '')
-    .trim()
-    .split('/')
-    .filter(Boolean)
-    .pop()
-    ?.replace(/\.[^.]+$/, '');
-  return normalized || 'imported_sdf_model';
-}
-
-function sanitizeSdfSyntheticId(value: string): string {
-  const trimmed = value.trim();
-  if (!trimmed) {
-    return 'imported_sdf_model';
-  }
-
-  return trimmed.replace(/[^A-Za-z0-9_.:-]+/g, '_');
-}
-
-function createPlaceholderRobotFromLight(
-  lightEl: Element,
-  { sourcePath }: ParseSDFOptions = {},
-): RobotState {
-  const lightName = lightEl.getAttribute('name')?.trim() || deriveSdfFallbackName(sourcePath);
-  const rootLinkId = `${sanitizeSdfSyntheticId(lightName)}__light_anchor`;
-
-  return {
-    name: lightName,
-    links: {
-      [rootLinkId]: createEmptyLink(rootLinkId, lightName),
-    },
-    joints: {},
-    rootLinkId,
-    selection: { type: 'link', id: rootLinkId },
-  };
-}
-
 function createFixedJoint(
   id: string,
   parentLinkId: string,
@@ -1224,6 +1201,7 @@ function parseIncludedModelGraph(
     namespacePrefix,
     includeStack = new Set<string>(),
     includeResolutionContext = createSdfIncludeResolutionContext(allFileContents),
+    recoveryDiagnostics = [],
   }: ParseSdfModelOptions,
 ): void {
   const includeUri = getFirstDirectChild(includeEl, 'uri')?.textContent?.trim() || '';
@@ -1240,11 +1218,11 @@ function parseIncludedModelGraph(
   }
 
   const includeDoc = parseSdfXmlDocument(resolvedInclude.content);
-  if (!includeDoc) {
+  if (!includeDoc || includeDoc.documentElement.tagName !== 'sdf') {
     throw new Error(`[SDFParser] Included model is not valid XML: "${resolvedInclude.path}".`);
   }
 
-  const includeModelEl = includeDoc.querySelector('sdf > model, model');
+  const includeModelEl = getFirstDirectChild(includeDoc.documentElement, 'model');
   if (!includeModelEl) {
     throw new Error(`[SDFParser] Included file has no model: "${resolvedInclude.path}".`);
   }
@@ -1272,6 +1250,7 @@ function parseIncludedModelGraph(
     namespacePrefix: qualifyScopedName(includeName, namespacePrefix),
     includeStack: nextIncludeStack,
     includeResolutionContext,
+    recoveryDiagnostics,
     ...(includePose.specified ? { modelPoseOverride: includePose } : {}),
   });
 
@@ -1293,6 +1272,7 @@ function parseNestedModelGraph(
     includeStack = new Set<string>(),
     includeResolutionContext = createSdfIncludeResolutionContext(allFileContents),
     sdfVersion,
+    recoveryDiagnostics = [],
   }: ParseSdfModelOptions,
 ): void {
   const nestedModelName = nestedModelEl.getAttribute('name')?.trim() || 'nested_model';
@@ -1308,6 +1288,7 @@ function parseNestedModelGraph(
     includeStack,
     includeResolutionContext,
     sdfVersion,
+    recoveryDiagnostics,
   });
 
   if (!nestedGraph) {
@@ -1328,6 +1309,7 @@ function parseSdfModel(
     includeResolutionContext = createSdfIncludeResolutionContext(allFileContents),
     sdfVersion,
     modelPoseOverride,
+    recoveryDiagnostics = [],
   }: ParseSdfModelOptions = {},
 ): ParsedSdfGraph | null {
   const modelPose = modelPoseOverride ?? parsePoseElement(modelEl);
@@ -1347,10 +1329,23 @@ function parseSdfModel(
   for (const linkEl of getDirectChildElements(modelEl, 'link')) {
     const linkId = qualifyScopedName(linkEl.getAttribute('name')?.trim(), namespacePrefix);
     if (!linkId) {
-      throw new Error('[SDFParser] Link element is missing a name.');
+      recordSdfOmission(recoveryDiagnostics, {
+        code: 'sdf_link_missing_name_omitted',
+        category: 'topology',
+        message: 'An SDF <link> without a name was omitted.',
+        source: { tag: 'link', attribute: 'name' },
+      });
+      continue;
     }
     if (linkElements.has(linkId)) {
-      throw new Error(`[SDFParser] Duplicate link name: "${linkId}".`);
+      recordSdfOmission(recoveryDiagnostics, {
+        code: 'sdf_duplicate_link_omitted',
+        category: 'topology',
+        message: `A duplicate SDF link named "${linkId}" was omitted.`,
+        relatedIds: [linkId],
+        source: { tag: 'link', name: linkId, attribute: 'name' },
+      });
+      continue;
     }
     linkElements.set(linkId, linkEl);
   }
@@ -1358,10 +1353,23 @@ function parseSdfModel(
   for (const jointEl of getDirectChildElements(modelEl, 'joint')) {
     const jointId = qualifyScopedName(jointEl.getAttribute('name')?.trim(), namespacePrefix);
     if (!jointId) {
-      throw new Error('[SDFParser] Joint element is missing a name.');
+      recordSdfOmission(recoveryDiagnostics, {
+        code: 'sdf_joint_missing_name_omitted',
+        category: 'topology',
+        message: 'An SDF <joint> without a name was omitted.',
+        source: { tag: 'joint', attribute: 'name' },
+      });
+      continue;
     }
     if (jointElements.has(jointId)) {
-      throw new Error(`[SDFParser] Duplicate joint name: "${jointId}".`);
+      recordSdfOmission(recoveryDiagnostics, {
+        code: 'sdf_duplicate_joint_omitted',
+        category: 'topology',
+        message: `A duplicate SDF joint named "${jointId}" was omitted.`,
+        relatedIds: [jointId],
+        source: { tag: 'joint', name: jointId, attribute: 'name' },
+      });
+      continue;
     }
     jointElements.set(jointId, jointEl);
   }
@@ -1369,10 +1377,23 @@ function parseSdfModel(
   for (const frameEl of getDirectChildElements(modelEl, 'frame')) {
     const frameId = qualifyScopedName(frameEl.getAttribute('name')?.trim(), namespacePrefix);
     if (!frameId) {
-      throw new Error('[SDFParser] Frame element is missing a name.');
+      recordSdfOmission(recoveryDiagnostics, {
+        code: 'sdf_frame_missing_name_omitted',
+        category: 'geometry',
+        message: 'An SDF <frame> without a name was omitted.',
+        source: { tag: 'frame', attribute: 'name' },
+      });
+      continue;
     }
     if (frameElements.has(frameId)) {
-      throw new Error(`[SDFParser] Duplicate frame name: "${frameId}".`);
+      recordSdfOmission(recoveryDiagnostics, {
+        code: 'sdf_duplicate_frame_omitted',
+        category: 'geometry',
+        message: `A duplicate SDF frame named "${frameId}" was omitted.`,
+        relatedIds: [frameId],
+        source: { tag: 'frame', name: frameId, attribute: 'name' },
+      });
+      continue;
     }
     frameElements.set(frameId, frameEl);
   }
@@ -1400,49 +1421,50 @@ function parseSdfModel(
     }
 
     resolvingFrames.add(normalizedFrame);
-
     let resolvedFrame: THREE.Matrix4 | null = null;
 
-    const linkEl = linkElements.get(normalizedFrame);
-    if (linkEl) {
-      resolvedFrame = resolvePoseWorldMatrix(
-        parsePoseElement(linkEl),
-        MODEL_FRAME,
-        resolveFrameWorldMatrix,
-      );
-    }
-
-    if (!resolvedFrame) {
-      const jointEl = jointElements.get(normalizedFrame);
-      if (jointEl) {
-        const childLinkId =
-          qualifyScopedReference(
-            getFirstDirectChild(jointEl, 'child')?.textContent?.trim(),
-            namespacePrefix,
-          ) || MODEL_FRAME;
+    try {
+      const linkEl = linkElements.get(normalizedFrame);
+      if (linkEl) {
         resolvedFrame = resolvePoseWorldMatrix(
-          parsePoseElement(jointEl),
-          childLinkId,
+          parsePoseElement(linkEl),
+          MODEL_FRAME,
           resolveFrameWorldMatrix,
         );
       }
-    }
 
-    if (!resolvedFrame) {
-      const frameEl = frameElements.get(normalizedFrame);
-      if (frameEl) {
-        const attachedTo =
-          qualifyScopedReference(frameEl.getAttribute('attached_to')?.trim(), namespacePrefix) ||
-          MODEL_FRAME;
-        resolvedFrame = resolvePoseWorldMatrix(
-          parsePoseElement(frameEl),
-          attachedTo,
-          resolveFrameWorldMatrix,
-        );
+      if (!resolvedFrame) {
+        const jointEl = jointElements.get(normalizedFrame);
+        if (jointEl) {
+          const childLinkId =
+            qualifyScopedReference(
+              getFirstDirectChild(jointEl, 'child')?.textContent?.trim(),
+              namespacePrefix,
+            ) || MODEL_FRAME;
+          resolvedFrame = resolvePoseWorldMatrix(
+            parsePoseElement(jointEl),
+            childLinkId,
+            resolveFrameWorldMatrix,
+          );
+        }
       }
-    }
 
-    resolvingFrames.delete(normalizedFrame);
+      if (!resolvedFrame) {
+        const frameEl = frameElements.get(normalizedFrame);
+        if (frameEl) {
+          const attachedTo =
+            qualifyScopedReference(frameEl.getAttribute('attached_to')?.trim(), namespacePrefix) ||
+            MODEL_FRAME;
+          resolvedFrame = resolvePoseWorldMatrix(
+            parsePoseElement(frameEl),
+            attachedTo,
+            resolveFrameWorldMatrix,
+          );
+        }
+      }
+    } finally {
+      resolvingFrames.delete(normalizedFrame);
+    }
 
     if (!resolvedFrame) {
       throw new Error(`[SDFParser] Unknown SDF frame reference: "${normalizedFrame}".`);
@@ -1452,24 +1474,24 @@ function parseSdfModel(
     return resolvedFrame;
   };
 
-  for (const linkEl of getDirectChildElements(modelEl, 'link')) {
-    const linkName = linkEl.getAttribute('name')?.trim();
-    const linkId = qualifyScopedName(linkName, namespacePrefix);
-    if (!linkId) {
-      continue;
-    }
-
+  for (const [linkId, linkEl] of linkElements) {
     try {
       const baseLink = createEmptyLink(linkId, linkId);
       const linkPose = parsePoseElement(linkEl);
       const linkWorldMatrix = resolveFrameWorldMatrix(linkId);
 
-      const visuals = getDirectChildElements(linkEl, 'visual').map(
-        (visualEl, index): ParsedSdfVisual => {
-          const geometry = parseSdfGeometry(
-            getFirstDirectChild(visualEl, 'geometry'),
-            DEFAULT_LINK.visual,
-          );
+      const visuals: ParsedSdfVisual[] = [];
+      getDirectChildElements(linkEl, 'visual').forEach((visualEl, index) => {
+        const visualName = visualEl.getAttribute('name')?.trim() || `${linkId}_visual_${index}`;
+        try {
+          const geometryEl = getFirstDirectChild(visualEl, 'geometry');
+          if (!geometryEl) {
+            throw new Error('Visual is missing its geometry element.');
+          }
+          const geometry = parseSdfGeometry(geometryEl, DEFAULT_LINK.visual);
+          if (geometry.type === GeometryType.NONE) {
+            throw new Error('Visual has no supported geometry element.');
+          }
           const explicitMaterial = parseSdfMaterial(visualEl, {
             allFileContents,
             availableFiles,
@@ -1504,8 +1526,8 @@ function parseSdfModel(
               )
             : explicitMaterial.authoredMaterials;
 
-          return {
-            name: visualEl.getAttribute('name')?.trim() || `${linkId}_visual_${index}`,
+          visuals.push({
+            name: visualName,
             geometry,
             pose: resolvePoseRelativeToFrame(
               parsePoseElement(visualEl),
@@ -1517,26 +1539,68 @@ function parseSdfModel(
             ...meshMaterial,
             ...explicitMaterial,
             ...(authoredMaterials ? { authoredMaterials } : {}),
-          };
-        },
-      );
+          });
+        } catch (error) {
+          const detail = error instanceof Error ? error.message : String(error);
+          recordSdfOmission(recoveryDiagnostics, {
+            code: 'sdf_visual_omitted',
+            category: 'geometry',
+            message: `SDF visual "${visualName}" on link "${linkId}" was omitted: ${detail}`,
+            relatedIds: [linkId],
+            source: { tag: 'visual', name: visualName },
+          });
+        }
+      });
 
-      const collisions = getDirectChildElements(linkEl, 'collision').map(
-        (collisionEl): ParsedSdfCollision => ({
-          geometry: parseSdfGeometry(
-            getFirstDirectChild(collisionEl, 'geometry'),
-            DEFAULT_LINK.collision,
-          ),
-          pose: resolvePoseRelativeToFrame(
-            parsePoseElement(collisionEl),
-            linkId,
-            linkId,
-            resolveFrameWorldMatrix,
-          ),
-        }),
-      );
+      const collisions: ParsedSdfCollision[] = [];
+      getDirectChildElements(linkEl, 'collision').forEach((collisionEl, index) => {
+        const collisionName =
+          collisionEl.getAttribute('name')?.trim() || `${linkId}_collision_${index}`;
+        try {
+          const geometryEl = getFirstDirectChild(collisionEl, 'geometry');
+          if (!geometryEl) {
+            throw new Error('Collision is missing its geometry element.');
+          }
+          const geometry = parseSdfGeometry(geometryEl, DEFAULT_LINK.collision);
+          if (geometry.type === GeometryType.NONE) {
+            throw new Error('Collision has no supported geometry element.');
+          }
+          collisions.push({
+            geometry,
+            pose: resolvePoseRelativeToFrame(
+              parsePoseElement(collisionEl),
+              linkId,
+              linkId,
+              resolveFrameWorldMatrix,
+            ),
+          });
+        } catch (error) {
+          const detail = error instanceof Error ? error.message : String(error);
+          recordSdfOmission(recoveryDiagnostics, {
+            code: 'sdf_collision_omitted',
+            category: 'geometry',
+            message: `SDF collision "${collisionName}" on link "${linkId}" was omitted: ${detail}`,
+            relatedIds: [linkId],
+            source: { tag: 'collision', name: collisionName },
+          });
+        }
+      });
 
-      const inertial = parseLinkInertial(linkEl, linkId, resolveFrameWorldMatrix);
+      let inertial: UrdfLink['inertial'] | undefined;
+      if (getFirstDirectChild(linkEl, 'inertial')) {
+        try {
+          inertial = parseLinkInertial(linkEl, linkId, resolveFrameWorldMatrix);
+        } catch (error) {
+          const detail = error instanceof Error ? error.message : String(error);
+          recordSdfOmission(recoveryDiagnostics, {
+            code: 'sdf_inertial_omitted',
+            category: 'physical',
+            message: `SDF inertial data on link "${linkId}" was omitted: ${detail}`,
+            relatedIds: [linkId],
+            source: { tag: 'inertial', name: linkId },
+          });
+        }
+      }
       let nextLink: UrdfLink = {
         ...baseLink,
         ...(inertial ? { inertial } : {}),
@@ -1582,8 +1646,15 @@ function parseSdfModel(
       });
     } catch (error) {
       const detail = error instanceof Error ? error.message : String(error);
-      throw new Error(`[SDFParser] Failed to parse link "${linkName || '<unnamed>'}": ${detail}`, {
-        cause: error,
+      graph.linkRecords.delete(linkId);
+      delete graph.links[linkId];
+      delete graph.materials[linkId];
+      recordSdfOmission(recoveryDiagnostics, {
+        code: 'sdf_link_omitted',
+        category: 'topology',
+        message: `SDF link "${linkId}" was omitted: ${detail}`,
+        relatedIds: [linkId],
+        source: { tag: 'link', name: linkId },
       });
     }
   }
@@ -1598,12 +1669,16 @@ function parseSdfModel(
         namespacePrefix,
         includeStack,
         includeResolutionContext,
+        recoveryDiagnostics,
       });
     } catch (error) {
       const includeUri = includeEl.querySelector('uri')?.textContent?.trim() || '<unnamed>';
       const detail = error instanceof Error ? error.message : String(error);
-      throw new Error(`[SDFParser] Failed to parse included model "${includeUri}": ${detail}`, {
-        cause: error,
+      recordSdfOmission(recoveryDiagnostics, {
+        code: 'sdf_include_omitted',
+        category: 'source',
+        message: `SDF include "${includeUri}" was omitted: ${detail}`,
+        source: { tag: 'include', name: includeUri },
       });
     }
   }
@@ -1619,23 +1694,21 @@ function parseSdfModel(
         includeStack,
         includeResolutionContext,
         sdfVersion,
+        recoveryDiagnostics,
       });
     } catch (error) {
       const nestedName = nestedModelEl.getAttribute('name')?.trim() || '<unnamed>';
       const detail = error instanceof Error ? error.message : String(error);
-      throw new Error(`[SDFParser] Failed to parse nested model "${nestedName}": ${detail}`, {
-        cause: error,
+      recordSdfOmission(recoveryDiagnostics, {
+        code: 'sdf_nested_model_omitted',
+        category: 'source',
+        message: `Nested SDF model "${nestedName}" was omitted: ${detail}`,
+        source: { tag: 'model', name: nestedName },
       });
     }
   }
 
-  for (const jointEl of getDirectChildElements(modelEl, 'joint')) {
-    const jointName = jointEl.getAttribute('name')?.trim();
-    const jointId = qualifyScopedName(jointName, namespacePrefix);
-    if (!jointId) {
-      continue;
-    }
-
+  for (const [jointId, jointEl] of jointElements) {
     try {
       const rawChildLinkId = getFirstDirectChild(jointEl, 'child')?.textContent?.trim() || '';
       const rawParentLinkId = getFirstDirectChild(jointEl, 'parent')?.textContent?.trim() || '';
@@ -1819,10 +1892,15 @@ function parseSdfModel(
       });
     } catch (error) {
       const detail = error instanceof Error ? error.message : String(error);
-      throw new Error(
-        `[SDFParser] Failed to parse joint "${jointName || '<unnamed>'}": ${detail}`,
-        { cause: error },
-      );
+      delete graph.joints[jointId];
+      graph.jointRecords.delete(jointId);
+      recordSdfOmission(recoveryDiagnostics, {
+        code: 'sdf_joint_omitted',
+        category: 'joint',
+        message: `SDF joint "${jointId}" was omitted: ${detail}`,
+        relatedIds: [jointId],
+        source: { tag: 'joint', name: jointId },
+      });
     }
   }
 
@@ -1892,18 +1970,18 @@ export function isSDF(content: string): boolean {
 
 export function parseSDF(xmlString: string, options: ParseSDFOptions = {}): RobotState | null {
   const xmlDoc = parseSdfXmlDocument(xmlString);
-  if (!xmlDoc) {
+  if (!xmlDoc || xmlDoc.documentElement.tagName !== 'sdf') {
     return null;
   }
 
-  const modelEl = xmlDoc.querySelector('sdf > model, model');
+  const directModelEl = getFirstDirectChild(xmlDoc.documentElement, 'model');
+  const worldEl = getFirstDirectChild(xmlDoc.documentElement, 'world');
+  const modelEl = directModelEl ?? (worldEl ? getFirstDirectChild(worldEl, 'model') : null);
   if (!modelEl) {
-    const lightEl = xmlDoc.querySelector('sdf > light, light');
-    return lightEl ? createPlaceholderRobotFromLight(lightEl, options) : null;
+    return null;
   }
 
-  const sdfEl = xmlDoc.querySelector('sdf');
-  const sdfVersion = sdfEl?.getAttribute('version') || undefined;
+  const sdfVersion = xmlDoc.documentElement.getAttribute('version') || undefined;
 
   const modelName = modelEl.getAttribute('name')?.trim() || 'imported_sdf_model';
   const includeAllFileContents = mergeSdfRobotFileContentsInto(
@@ -1911,11 +1989,13 @@ export function parseSDF(xmlString: string, options: ParseSDFOptions = {}): Robo
     options.availableFiles ?? [],
   );
   const includeResolutionContext = createSdfIncludeResolutionContext(includeAllFileContents);
+  const recoveryDiagnostics: RobotImportRecoveryDiagnostic[] = [];
   const parsedGraph = parseSdfModel(modelEl, {
     ...options,
     allFileContents: includeAllFileContents,
     sdfVersion,
     includeResolutionContext,
+    recoveryDiagnostics,
   });
   if (!parsedGraph) {
     return null;
@@ -1954,7 +2034,7 @@ export function parseSDF(xmlString: string, options: ParseSDFOptions = {}): Robo
     Object.keys(links)[0] ||
     '';
 
-  return {
+  const robot: RobotState = {
     name: modelName,
     links,
     joints,
@@ -1963,4 +2043,5 @@ export function parseSDF(xmlString: string, options: ParseSDFOptions = {}): Robo
     ...(closedLoopConstraints ? { closedLoopConstraints } : {}),
     selection: { type: 'link', id: rootLinkId },
   };
+  return attachParserRecoveryDiagnostics(robot, recoveryDiagnostics);
 }

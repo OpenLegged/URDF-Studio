@@ -28,6 +28,23 @@ export interface GazeboMaterialPass {
   lighting?: boolean;
 }
 
+export type MjcfBuiltinTextureKind = 'checker' | 'flat' | 'gradient';
+
+export type MjcfBuiltinCubeFace = 'right' | 'left' | 'up' | 'down' | 'front' | 'back';
+
+/** Serializable MuJoCo-generated texture metadata retained by canonical RobotData. */
+export interface MjcfBuiltinTexture {
+  builtin: MjcfBuiltinTextureKind;
+  type?: string;
+  rgb1?: [number, number, number];
+  rgb2?: [number, number, number];
+  mark?: string;
+  markrgb?: [number, number, number];
+  width?: number;
+  height?: number;
+  cubeFace?: MjcfBuiltinCubeFace;
+}
+
 export interface UrdfVisualMaterial {
   name?: string;
   color?: string;
@@ -41,6 +58,8 @@ export interface UrdfVisualMaterial {
   emissiveIntensity?: number;
   alphaTest?: number;
   passes?: GazeboMaterialPass[];
+  textureRepeat?: [number, number];
+  mjcfBuiltinTexture?: MjcfBuiltinTexture;
 }
 
 export interface UrdfVisualMeshMaterialGroup {

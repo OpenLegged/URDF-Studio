@@ -1,7 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { buildUsdBindingsAssetPath, buildUsdBindingsScriptUrl } from './usdBindingsAssetPaths.ts';
+import {
+  buildUsdBindingsAssetPath,
+  buildUsdBindingsScriptUrl,
+  setUsdBindingsBaseUrl,
+} from '@/lib/robot-parser/usd/usdBindingsAssetPaths';
 
 test('buildUsdBindingsScriptUrl keeps the root public path by default', () => {
   assert.equal(
@@ -25,4 +29,16 @@ test('buildUsdBindingsAssetPath normalizes already-prefixed binding asset paths'
     }),
     '/urdf-studio/usd/bindings/emHdBindings.wasm?v=20260318a',
   );
+});
+
+test('configured WASM URL is the bindings directory without a repeated suffix', () => {
+  setUsdBindingsBaseUrl('/usd/bindings');
+  try {
+    assert.equal(
+      buildUsdBindingsAssetPath('emHdBindings.wasm', { cacheKey: '20260318a' }),
+      '/usd/bindings/emHdBindings.wasm?v=20260318a',
+    );
+  } finally {
+    setUsdBindingsBaseUrl(null);
+  }
 });

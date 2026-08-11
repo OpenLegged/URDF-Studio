@@ -1,7 +1,7 @@
 /// <reference lib="webworker" />
 
 import type { RobotFile } from '@/types';
-import { prepareUsdStageOpenDataCore } from '../utils/usdStageOpenPreparationCore.ts';
+import { prepareUsdStageOpenDataCore } from '@/lib/robot-parser/usd/usdStageOpenPreparationCore';
 import type {
   PrepareUsdStageOpenWorkerResponse,
   UsdStageOpenPreparationWorkerRequest,

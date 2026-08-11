@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { getCollisionGeometryByObjectIndex, getVisualGeometryByObjectIndex } from '@/core/robot';
 import { GeometryType, type UrdfLink, type UrdfVisual } from '@/types';
-import type { ViewerRobotDataResolution } from './viewerRobotData';
+import type { ViewerRobotDataResolution } from '@/lib/robot-parser/usd/viewerRobotData';
 
 const DEFAULT_POSITION = { x: 0, y: 0, z: 0 };
 const DEFAULT_ROTATION = { r: 0, p: 0, y: 0 };

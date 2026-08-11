@@ -1,6 +1,7 @@
 // Builtin texture generation extracted from mjcfHierarchyBuilder.ts
 import * as THREE from 'three';
 import { BOX_FACE_MATERIAL_ORDER } from '@/core/robot';
+import type { MjcfBuiltinTexture } from '@/types';
 import type { MJCFTexture } from './mjcfUtils';
 
 export type MJCFTextureLoadCache = Map<string, Promise<THREE.Texture | null>>;
@@ -153,6 +154,69 @@ export function createBuiltinTexture(textureDef: MJCFTexture): THREE.Texture | n
       );
       return null;
   }
+}
+
+function toRuntimeTextureDefinition(texture: MjcfBuiltinTexture): MJCFTexture {
+  return {
+    name: '__canonical_mjcf_builtin_texture__',
+    builtin: texture.builtin,
+    type: texture.type,
+    rgb1: texture.rgb1 ? [...texture.rgb1] : undefined,
+    rgb2: texture.rgb2 ? [...texture.rgb2] : undefined,
+    mark: texture.mark,
+    markrgb: texture.markrgb ? [...texture.markrgb] : undefined,
+    width: texture.width,
+    height: texture.height,
+  };
+}
+
+export function applyMjcfTextureRepeat(
+  texture: THREE.Texture,
+  repeat: [number, number] | undefined,
+): THREE.Texture {
+  const repeatX = Number.isFinite(repeat?.[0]) ? Number(repeat?.[0]) : 1;
+  const repeatY = Number.isFinite(repeat?.[1]) ? Number(repeat?.[1]) : 1;
+  texture.wrapS = THREE.RepeatWrapping;
+  texture.wrapT = THREE.RepeatWrapping;
+  texture.repeat.set(repeatX, repeatY);
+  texture.needsUpdate = true;
+  return texture;
+}
+
+/** Regenerates a serializable canonical MJCF builtin descriptor for Three.js runtime use. */
+export function createCanonicalMjcfBuiltinTexture(
+  descriptor: MjcfBuiltinTexture,
+  repeat?: [number, number],
+): THREE.Texture {
+  const textureDef = toRuntimeTextureDefinition(descriptor);
+  let texture: THREE.Texture;
+
+  if (descriptor.cubeFace && descriptor.builtin === 'flat') {
+    texture = createBuiltinFlatTexture(
+      descriptor.cubeFace === 'down' && descriptor.rgb2
+        ? { ...textureDef, rgb1: [...descriptor.rgb2] }
+        : textureDef,
+    );
+  } else if (descriptor.cubeFace && descriptor.builtin === 'gradient') {
+    const topColor = resolveBuiltinTextureColor(textureDef.rgb1, [0.3, 0.5, 0.7]);
+    const bottomColor = resolveBuiltinTextureColor(textureDef.rgb2, [0, 0, 0]);
+    if (descriptor.cubeFace === 'up') {
+      texture = createBuiltinFlatTexture({ ...textureDef, rgb1: topColor });
+    } else if (descriptor.cubeFace === 'down') {
+      texture = createBuiltinFlatTexture({ ...textureDef, rgb1: bottomColor });
+    } else {
+      texture = createBuiltinGradientTexture(textureDef);
+    }
+  } else {
+    texture =
+      descriptor.builtin === 'checker'
+        ? createBuiltinCheckerTexture(textureDef)
+        : descriptor.builtin === 'flat'
+          ? createBuiltinFlatTexture(textureDef)
+          : createBuiltinGradientTexture(textureDef);
+  }
+
+  return applyMjcfTextureRepeat(texture, repeat);
 }
 
 export function createBuiltinCubeFaceTextures(textureDef: MJCFTexture): THREE.Texture[] | null {

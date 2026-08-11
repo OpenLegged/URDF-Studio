@@ -14,7 +14,7 @@ import {
   parseColladaSceneData,
 } from '@/core/loaders/colladaWorkerSceneData';
 import type { RobotData, RobotState } from '@/types';
-import { adaptUsdViewerSnapshotToRobotData } from '@/features/urdf-viewer/utils/usdViewerRobotAdapter';
+import { adaptUsdViewerSnapshotToRobotData } from '@/lib/robot-parser/usd';
 import { ThreeRenderDelegateCore } from '@/features/urdf-viewer/runtime/hydra/render-delegate/ThreeRenderDelegateCore.js';
 import { createUsdAssetRegistry } from './usdAssetRegistry';
 import { exportRobotToUsd } from './usdExport';

@@ -1,0 +1,66 @@
+{
+  "name": "@urdf-studio/robot-runtime",
+  "version": "0.1.0",
+  "description": "URDF Studio Three.js robot runtime and definition loading for URDF, MJCF, SDF, Xacro, and USD.",
+  "type": "module",
+  "license": "Apache-2.0",
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/types/lib/robot-parser/runtime/index.d.ts",
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "types": "./dist/types/lib/robot-parser/runtime/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    },
+    "./mesh": {
+      "types": "./dist/types/lib/robot-parser/mesh/index.d.ts",
+      "import": "./dist/mesh.js",
+      "default": "./dist/mesh.js"
+    },
+    "./parser": {
+      "types": "./dist/types/lib/robot-parser/index.d.ts",
+      "import": "./dist/parser.js",
+      "default": "./dist/parser.js"
+    },
+    "./motion-studio": {
+      "types": "./dist/types/lib/robot-parser/motion-studio/index.d.ts",
+      "import": "./dist/motion-studio.js",
+      "default": "./dist/motion-studio.js"
+    },
+    "./usd": {
+      "types": "./dist/types/lib/robot-parser/usd/index.d.ts",
+      "import": "./dist/usd.js",
+      "default": "./dist/usd.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "keywords": [
+    "urdf",
+    "mjcf",
+    "sdf",
+    "usd",
+    "xacro",
+    "robotics",
+    "parser",
+    "threejs",
+    "runtime",
+    "motion-studio"
+  ],
+  "peerDependencies": {
+    "three": ">=0.181.0 <0.185.0"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "vite build -c ./vite.config.ts && tsc -p ./tsconfig.types.json && node ../../scripts/tools/dts/rewrite_dts_aliases.mjs ./dist/types && node ./scripts/postbuild.mjs",
+    "prepack": "npm run build",
+    "pack:dry-run": "npm pack --dry-run"
+  }
+}

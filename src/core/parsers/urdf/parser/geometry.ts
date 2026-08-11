@@ -61,11 +61,13 @@ export const parseGeometry = (geoEl: Element | null, defaultGeo: any = DEFAULT_L
             }
         };
     } else if (capsule) {
+        const radius = parseAuthoredScalar(capsule, "radius", 0.1);
+        const totalLength = parseAuthoredScalar(capsule, "length", 0.5);
         return {
             type: GeometryType.CAPSULE,
             dimensions: {
-                x: parseAuthoredScalar(capsule, "radius", 0.1),
-                y: parseAuthoredScalar(capsule, "length", 0.5),
+                x: radius,
+                y: Math.max(totalLength - radius * 2, 0),
                 z: 0
             }
         };

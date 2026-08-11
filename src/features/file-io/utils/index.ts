@@ -34,6 +34,23 @@ export { createImportPathCollisionMap, remapImportedPath } from './libraryImport
 export { exportProject, exportProjectWithWorker } from './projectExport';
 export { importProject } from './projectImport';
 export { disposeProjectImportWorker, importProjectWithWorker } from './projectImportWorkerBridge';
+export {
+  assertProjectArchiveWithinLimits,
+  buildProjectArchiveBlob,
+  DEFAULT_PROJECT_ARCHIVE_LIMITS,
+  getProjectArchiveEntryUncompressedSize,
+  loadProjectArchiveZip,
+} from './projectArchiveZip';
+export { assertProjectArchiveEntryPath } from './projectArchivePath';
+export {
+  buildProjectArchiveBlobWithWorker,
+  disposeProjectArchiveWorker,
+} from './projectArchiveWorkerBridge';
+export type {
+  BuildProjectArchiveBlobOptions,
+  ProjectArchiveLimits,
+} from './projectArchiveZip';
+export type { ProjectArchiveEntryData } from './projectArchiveWorkerTransfer';
 export { prepareMjcfMeshExportAssets } from './mjcfMeshExport';
 export {
   disposeUsdExportWorker,

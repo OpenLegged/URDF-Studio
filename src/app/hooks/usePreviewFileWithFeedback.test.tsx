@@ -141,14 +141,15 @@ function renderHook(options: {
   labels: {
     failedToParseFormat: string;
     importPackageAssetBundleHint: string;
-    importPrimitiveGeometryHint: string;
     usdPreviewRequiresOpen: string;
     xacroSourceOnlyPreviewHint: string;
   };
   setDocumentLoadState: (state: DocumentLoadState) => void;
   showToast: (message: string, type?: 'info' | 'success') => void;
 }) {
-  let hookValue: ReturnType<typeof usePreviewFileWithFeedback> | null = null as ReturnType<typeof usePreviewFileWithFeedback> | null;
+  let hookValue: ReturnType<typeof usePreviewFileWithFeedback> | null = null as ReturnType<
+    typeof usePreviewFileWithFeedback
+  > | null;
   const container = document.createElement('div');
   document.body.appendChild(container);
 
@@ -183,16 +184,33 @@ test('usePreviewFileWithFeedback hands the preview loading overlay off to the vi
   const robotFile = createRobotFile();
   const documentLoadStates: DocumentLoadState[] = [];
   const previewRequests: string[] = [];
+  const toastMessages: string[] = [];
 
   useAssetsStore.getState().resetDocumentLoadState();
   clearPreResolvedRobotImportCache();
+
+  const resolved = resolveRobotFileData(robotFile);
+  assert.equal(resolved.status, 'ready');
+  if (resolved.status !== 'ready') {
+    assert.fail('Expected preview fixture to parse');
+  }
+  resolved.robotData.inspectionContext = {
+    ...resolved.robotData.inspectionContext,
+    sourceFormat: 'urdf',
+    recovery: {
+      diagnostics: [],
+      diagnosticCounts: { error: 0, warning: 2, info: 0 },
+      recoveredItemCount: 2,
+      omittedDiagnosticCount: 2,
+    },
+  };
 
   primePreResolvedRobotImports([
     {
       fileName: robotFile.name,
       format: robotFile.format,
       contentSignature: buildPreResolvedImportContentSignature(robotFile.content),
-      result: resolveRobotFileData(robotFile),
+      result: resolved,
     },
   ]);
 
@@ -209,7 +227,6 @@ test('usePreviewFileWithFeedback hands the preview loading overlay off to the vi
     labels: {
       failedToParseFormat: 'Failed to parse {format}',
       importPackageAssetBundleHint: 'Missing assets: {assets}',
-      importPrimitiveGeometryHint: 'Primitive geometry: {assets}',
       usdPreviewRequiresOpen: 'Open the USD file first',
       xacroSourceOnlyPreviewHint: 'Source-only preview unavailable',
     },
@@ -217,7 +234,9 @@ test('usePreviewFileWithFeedback hands the preview loading overlay off to the vi
       documentLoadStates.push(state);
       useAssetsStore.getState().setDocumentLoadState(state);
     },
-    showToast: () => {},
+    showToast: (message) => {
+      toastMessages.push(message);
+    },
   });
 
   try {
@@ -227,6 +246,7 @@ test('usePreviewFileWithFeedback hands the preview loading overlay off to the vi
     });
 
     assert.deepEqual(previewRequests, [robotFile.name]);
+    assert.deepEqual(toastMessages, []);
     assert.equal(documentLoadStates.length >= 3, true);
     // After import resolves, the overlay stays in 'loading' at the import-complete
     // percentage (40% for non-USD). The viewer's mesh-streaming + onLoad events
@@ -299,7 +319,6 @@ test('usePreviewFileWithFeedback suppresses asset warning when file is already a
     labels: {
       failedToParseFormat: 'Failed to parse {format}',
       importPackageAssetBundleHint: 'Missing assets: {assets}',
-      importPrimitiveGeometryHint: 'Primitive geometry: {assets}',
       usdPreviewRequiresOpen: 'Open the USD file first',
       xacroSourceOnlyPreviewHint: 'Source-only preview unavailable',
     },

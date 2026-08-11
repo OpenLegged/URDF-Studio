@@ -69,6 +69,9 @@ export function AppLayout({
   onPrefetchSettings,
   headerQuickAction,
   headerSecondaryAction,
+  surfaceModeSelector,
+  contextFileMenu,
+  extensionToolboxItems,
   viewConfig,
   setViewConfig,
   onLoadRobot,
@@ -209,7 +212,6 @@ export function AppLayout({
     clearAssemblyComponentPreparationOverlay,
     isSelectedUsdHydrating: isUsdHydrationPending,
     labels: {
-      addedComponent: t.addedComponent,
       failedToParseFormat: t.failedToParseFormat,
     },
     previewFile: activePreviewFile,
@@ -338,7 +340,6 @@ export function AppLayout({
     showAssemblyComponentPreparationOverlay,
     clearAssemblyComponentPreparationOverlay,
     showToast,
-    t,
     setBridgePreview,
     setShouldRenderBridgeModal,
     setIsBridgeModalOpen,
@@ -354,10 +355,7 @@ export function AppLayout({
     focusOn,
     pulseSelection,
     setSelection,
-    showToast,
-    t,
   });
-
   const { handleCodeChange: handleComponentCodeChange } = useEditableSourceCodeApply({
     allFileContents,
     availableFiles,
@@ -444,6 +442,7 @@ export function AppLayout({
     prefetchAIConversation: onPrefetchAIConversation,
     openIkTool: handleOpenIkTool,
     openCollisionOptimizer: handleOpenCollisionOptimizer,
+    extensionItems: extensionToolboxItems,
     prefetchCollisionOptimizer: handlePrefetchCollisionOptimizer,
   });
   useEffect(() => {
@@ -502,7 +501,6 @@ export function AppLayout({
     labels: {
       failedToParseFormat: t.failedToParseFormat,
       importPackageAssetBundleHint: t.importPackageAssetBundleHint,
-      importPrimitiveGeometryHint: t.importPrimitiveGeometryHint,
       usdPreviewRequiresOpen: t.usdPreviewRequiresOpen,
       xacroSourceOnlyPreviewHint: t.xacroSourceOnlyPreviewHint,
     },
@@ -556,6 +554,8 @@ export function AppLayout({
         onPrefetchSettings,
         headerQuickAction,
         headerSecondaryAction,
+        surfaceModeSelector,
+        contextFileMenu,
         viewConfig,
         setViewConfig,
         toolboxItems,

@@ -8,7 +8,7 @@ import {
   buildUsdBindingsScriptUrl,
   ensureClassicScriptLoaded,
   resetClassicScriptLoaderForTests,
-} from './usdBindingsScriptLoader.ts';
+} from '@/lib/robot-parser/usd/usdBindingsScriptLoader';
 
 test('builds the USD bindings script URL with the cache key on the raw public path', () => {
   assert.equal(

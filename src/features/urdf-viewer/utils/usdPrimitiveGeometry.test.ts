@@ -10,7 +10,7 @@ import {
 import {
   getUsdDescriptorTransformScale,
   resolveUsdPrimitiveGeometryFromDescriptor,
-} from './usdPrimitiveGeometry';
+} from '@/lib/robot-parser/usd/usdPrimitiveGeometry';
 
 test('extracts mesh scale while leaving descriptor translation out of geometry dimensions', () => {
   const descriptor: UsdSceneMeshDescriptor = {

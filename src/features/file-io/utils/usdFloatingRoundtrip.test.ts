@@ -5,7 +5,7 @@ import { JSDOM } from 'jsdom';
 import { parseMJCF } from '@/core/parsers/mjcf/mjcfParser';
 import { computeLinkWorldMatrices } from '@/core/robot/kinematics';
 import { JointType, type RobotData, type RobotState } from '@/types';
-import { adaptUsdViewerSnapshotToRobotData } from '@/features/urdf-viewer/utils/usdViewerRobotAdapter';
+import { adaptUsdViewerSnapshotToRobotData } from '@/lib/robot-parser/usd';
 import { ThreeRenderDelegateCore } from '@/features/urdf-viewer/runtime/hydra/render-delegate/ThreeRenderDelegateCore.js';
 import { exportRobotToUsd } from './usdExport';
 
@@ -245,7 +245,9 @@ test('USD roundtrip preserves floating-root joint semantics for MJCF free joints
     return;
   }
 
-  const floatingJoint = Object.values(adapted.robotData.joints).find(
+  const floatingJoint = Object.values(
+    adapted.robotData.joints as Record<string, { name: string; type: JointType }>,
+  ).find(
     (joint) => joint.name === 'floating_base_joint',
   );
   assert.ok(floatingJoint, 'expected floating_base_joint to survive USD reload');
@@ -328,7 +330,12 @@ test('USD roundtrip preserves official drive damping and maxForce for supported 
     return;
   }
 
-  const childJoint = Object.values(adapted.robotData.joints).find(
+  const childJoint = Object.values(
+    adapted.robotData.joints as Record<
+      string,
+      { name: string; dynamics: { damping?: number }; limit?: { effort?: number } }
+    >,
+  ).find(
     (joint) => joint.name === 'child_joint',
   );
   assert.ok(childJoint, 'expected child_joint to survive USD reload');

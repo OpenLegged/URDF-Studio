@@ -13,8 +13,8 @@ import { getVisualGeometryEntries } from '@/core/robot';
 import {
   getUsdDescriptorTransformScale,
   resolveUsdPrimitiveGeometryFromDescriptor as resolvePrimitiveGeometryFromDescriptor,
-} from '../usdPrimitiveGeometry.ts';
-import type { ViewerRobotDataResolution } from '../viewerRobotData.ts';
+} from '@/lib/robot-parser/usd/usdPrimitiveGeometry';
+import type { ViewerRobotDataResolution } from '@/lib/robot-parser/usd/viewerRobotData';
 
 import {
   cloneRobotState,

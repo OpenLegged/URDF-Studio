@@ -920,6 +920,11 @@ export const generateMujocoXML = (robot: RobotState, options: MujocoExportOption
     );
   });
 
+  const getExportedSites = (linkId: string, link: UrdfLink): ExportedMjcfSite[] => [
+    ...(link.mjcfSites || []).map(convertMjcfSite),
+    ...(generatedSitesByLink.get(linkId) || []),
+  ];
+
   let xml = `<mujoco model="${name}">\n`;
   const compilerAttrs = [`angle="radian"`, `meshdir="${meshdir}"`];
   if (textureAssets.size > 0) {
@@ -1038,6 +1043,12 @@ export const generateMujocoXML = (robot: RobotState, options: MujocoExportOption
     xml += `    <light pos="0 0 10" dir="0 0 -1" diffuse="1 1 1"/>\n`;
     xml += `    <geom type="plane" size="5 5 0.1" rgba=".9 .9 .9 1"/>\n`;
   }
+  const syntheticWorldRoot = isSyntheticWorldRoot(rootLinkId) ? links[rootLinkId] : undefined;
+  if (syntheticWorldRoot) {
+    getExportedSites(rootLinkId, syntheticWorldRoot).forEach((site) => {
+      xml += renderMjcfSite(site, '    ');
+    });
+  }
 
   // Recursive Body Builder
   const buildBody = (linkId: string, indent: string, path = new Set<string>()) => {
@@ -1148,10 +1159,7 @@ export const generateMujocoXML = (robot: RobotState, options: MujocoExportOption
       bodyXml += `${indent}  <inertial pos="${vecStr(inertialOrigin.xyz || { x: 0, y: 0, z: 0 })}" mass="${formatScalar(link.inertial.mass)}"${inertialQuatAttr} ${inertialTensorAttr}/>\n`;
     }
 
-    const exportedSites = [
-      ...(link.mjcfSites || []).map(convertMjcfSite),
-      ...(generatedSitesByLink.get(linkId) || []),
-    ];
+    const exportedSites = getExportedSites(linkId, link);
     exportedSites.forEach((site) => {
       bodyXml += renderMjcfSite(site, `${indent}  `);
     });

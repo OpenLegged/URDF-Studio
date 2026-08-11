@@ -28,6 +28,9 @@ export interface UsdSceneMeshDescriptor {
   height?: number | null;
   extentSize?: ArrayLike<number> | null;
   materialId?: string | null;
+  /** Composed Hydra visibility for this render descriptor. */
+  visible?: boolean | null;
+  doubleSided?: boolean | null;
   renderReady?: boolean | null;
   topologyMode?: 'indexed' | 'nonIndexed' | string | null;
   geometry?: {
@@ -63,6 +66,35 @@ export interface UsdLayerInfo {
   rootLayerPath: string | null;
   usedLayerPaths: string[];
   layerTextByPath?: Record<string, string>;
+}
+
+/**
+ * A composed-stage semantic node published by the USD runtime.
+ *
+ * This is intentionally separate from mesh descriptors: meshes are a derived
+ * render projection, while these records identify the native Prim hierarchy
+ * used by scene browsing, selection, and capability-gated authoring.
+ */
+export interface UsdScenePrimDescriptor {
+  semanticSource?: 'stage' | 'driver-path-set';
+  path: string;
+  parentPath: string | null;
+  name: string;
+  typeName: string | null;
+  active: boolean;
+  loaded: boolean;
+  defined: boolean;
+  instance: boolean;
+  instanceProxy: boolean;
+  prototype: boolean;
+  hasPayload: boolean;
+  hasAuthoredReferences: boolean;
+  visible?: boolean;
+  transformable: boolean;
+  hasAuthoredXformOps: boolean;
+  resetsXformStack: boolean;
+  localTransform?: ArrayLike<number> | null;
+  worldTransform?: ArrayLike<number> | null;
 }
 
 export interface UsdMeshCountsEntry {
@@ -157,9 +189,16 @@ export interface UsdSceneBuffers {
 export interface UsdSceneSnapshot {
   stageSourcePath?: string | null;
   stage?: {
+    stageSourcePath?: string | null;
+    rootLayerIdentifier?: string | null;
     defaultPrimPath?: string | null;
     upAxis?: string | null;
     metersPerUnit?: number | null;
+    startTimeCode?: number | null;
+    endTimeCode?: number | null;
+    timeCodesPerSecond?: number | null;
+    framesPerSecond?: number | null;
+    primDescriptors?: ArrayLike<UsdScenePrimDescriptor>;
     sourceMetersPerUnit?: number | null;
   } | null;
   robotTree?: {

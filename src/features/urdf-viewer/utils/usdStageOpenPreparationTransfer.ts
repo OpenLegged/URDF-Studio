@@ -2,7 +2,7 @@ import type {
   PreparedUsdPreloadFile,
   PreparedUsdStageOpenMetrics,
   PreparedUsdStageOpenData,
-} from './usdStageOpenPreparation.ts';
+} from '@/lib/robot-parser/usd/usdStageOpenPreparation';
 
 export interface PreparedUsdPreloadTransferFile {
   path: string;

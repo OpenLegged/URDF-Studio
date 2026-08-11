@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { shouldUseUsdCollisionVisualProxy } from './usdCollisionVisualProxy';
+import { shouldUseUsdCollisionVisualProxy } from '@/lib/robot-parser/usd/usdCollisionVisualProxy';
 
 test('detects collision-only USD snapshots as visual proxy candidates', () => {
   assert.equal(

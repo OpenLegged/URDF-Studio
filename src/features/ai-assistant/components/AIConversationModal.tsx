@@ -1,8 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Check,
-  ChevronDown,
-  ChevronRight,
   Copy,
   Loader2,
   MessageCircle,
@@ -111,7 +109,6 @@ export function AIConversationModal({
   const [messages, setMessages] = useState<AIConversationMessage[]>([]);
   const [input, setInput] = useState('');
   const [isSending, setIsSending] = useState(false);
-  const [thinkingExpanded, setThinkingExpanded] = useState(true);
   const [copiedMessageKey, setCopiedMessageKey] = useState<string | null>(null);
   const [lastSubmittedTurn, setLastSubmittedTurn] = useState<{ userMessage: string } | null>(
     null,

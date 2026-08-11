@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { createCanonicalMjcfBuiltinTexture } from '@/core/parsers/mjcf/mjcfBuiltinTextures';
 import { createMatteMaterial } from './materialFactory';
 import { isProtectedMaterial } from './three/materialProtection';
 import {
@@ -6,7 +7,7 @@ import {
   colorRgbaTupleToOpacity,
   parseThreeColorWithOpacity,
 } from './color.ts';
-import type { UrdfVisual } from '@/types';
+import type { MjcfBuiltinTexture, UrdfVisual } from '@/types';
 
 export interface VisualMaterialOverride {
   color?: string;
@@ -18,6 +19,8 @@ export interface VisualMaterialOverride {
   emissive?: string;
   emissiveIntensity?: number;
   alphaTest?: number;
+  textureRepeat?: [number, number];
+  mjcfBuiltinTexture?: MjcfBuiltinTexture;
 }
 
 function normalizeMaterialValue(value: string | null | undefined): string | undefined {
@@ -39,6 +42,22 @@ function normalizeNonNegativeValue(value: number | undefined): number | undefine
   }
 
   return Math.max(0, Number(value));
+}
+
+function normalizeTextureRepeat(
+  value: readonly number[] | undefined,
+): [number, number] | undefined {
+  if (!value || value.length !== 2 || value.some((entry) => !Number.isFinite(entry))) {
+    return undefined;
+  }
+
+  return [Number(value[0]), Number(value[1])];
+}
+
+function isSupportedMjcfBuiltinTexture(
+  value: MjcfBuiltinTexture | undefined,
+): value is MjcfBuiltinTexture {
+  return Boolean(value && ['checker', 'flat', 'gradient'].includes(value.builtin));
 }
 
 function isImplicitDefaultVisualColor(value: string | undefined): boolean {
@@ -79,7 +98,9 @@ export function hasExplicitGeometryMaterialOverride(
         normalizeUnitIntervalValue(material?.metalness) !== undefined ||
         Boolean(normalizeMaterialValue(material?.emissive)) ||
         normalizeNonNegativeValue(material?.emissiveIntensity) !== undefined ||
-        normalizeUnitIntervalValue(material?.alphaTest) !== undefined,
+        normalizeUnitIntervalValue(material?.alphaTest) !== undefined ||
+        normalizeTextureRepeat(material?.textureRepeat) !== undefined ||
+        isSupportedMjcfBuiltinTexture(material?.mjcfBuiltinTexture),
     ) ?? [];
 
   if (authoredMaterials.length > 1) {
@@ -103,7 +124,9 @@ export function resolveVisualMaterialOverrideFromGeometry(
         normalizeUnitIntervalValue(material?.metalness) !== undefined ||
         Boolean(normalizeMaterialValue(material?.emissive)) ||
         normalizeNonNegativeValue(material?.emissiveIntensity) !== undefined ||
-        normalizeUnitIntervalValue(material?.alphaTest) !== undefined,
+        normalizeUnitIntervalValue(material?.alphaTest) !== undefined ||
+        normalizeTextureRepeat(material?.textureRepeat) !== undefined ||
+        isSupportedMjcfBuiltinTexture(material?.mjcfBuiltinTexture),
     ) ?? [];
 
   // A single VisualMaterialOverride can only represent one uniform override.
@@ -114,14 +137,17 @@ export function resolveVisualMaterialOverrideFromGeometry(
 
   const authoredMaterial = authoredMaterials[0];
   const texture = normalizeMaterialValue(authoredMaterial?.texture);
+  const mjcfBuiltinTexture = isSupportedMjcfBuiltinTexture(authoredMaterial?.mjcfBuiltinTexture)
+    ? { ...authoredMaterial.mjcfBuiltinTexture }
+    : undefined;
   const geometryColor = normalizeMaterialValue(geometry?.color);
-  const colorRgba = authoredMaterial
-    ? colorRgbaTupleToHex(authoredMaterial.colorRgba)
-    : null;
+  const colorRgba = authoredMaterial ? colorRgbaTupleToHex(authoredMaterial.colorRgba) : null;
   const color =
     normalizeMaterialValue(authoredMaterial?.color) ??
     colorRgba ??
-    (texture && isImplicitDefaultVisualColor(geometryColor) ? undefined : geometryColor);
+    ((texture || mjcfBuiltinTexture) && isImplicitDefaultVisualColor(geometryColor)
+      ? undefined
+      : geometryColor);
   const textureRotation = authoredMaterial?.textureRotation;
   const opacity =
     normalizeUnitIntervalValue(authoredMaterial?.opacity) ??
@@ -131,6 +157,7 @@ export function resolveVisualMaterialOverrideFromGeometry(
   const emissive = normalizeMaterialValue(authoredMaterial?.emissive);
   const emissiveIntensity = normalizeNonNegativeValue(authoredMaterial?.emissiveIntensity);
   const alphaTest = normalizeUnitIntervalValue(authoredMaterial?.alphaTest);
+  const textureRepeat = normalizeTextureRepeat(authoredMaterial?.textureRepeat);
 
   if (
     !color &&
@@ -140,7 +167,9 @@ export function resolveVisualMaterialOverrideFromGeometry(
     metalness === undefined &&
     !emissive &&
     emissiveIntensity === undefined &&
-    alphaTest === undefined
+    alphaTest === undefined &&
+    textureRepeat === undefined &&
+    !mjcfBuiltinTexture
   ) {
     return null;
   }
@@ -155,6 +184,8 @@ export function resolveVisualMaterialOverrideFromGeometry(
     ...(emissive ? { emissive } : {}),
     ...(emissiveIntensity !== undefined ? { emissiveIntensity } : {}),
     ...(alphaTest !== undefined ? { alphaTest } : {}),
+    ...(textureRepeat ? { textureRepeat } : {}),
+    ...(mjcfBuiltinTexture ? { mjcfBuiltinTexture } : {}),
   };
 }
 
@@ -222,6 +253,27 @@ function collectOverrideTargetMaterials(
   return Array.from(targets);
 }
 
+function applyMjcfBuiltinTextureToMaterials(
+  materials: readonly THREE.MeshStandardMaterial[],
+  descriptor: MjcfBuiltinTexture | undefined,
+  repeat: [number, number] | undefined,
+): void {
+  if (!descriptor) {
+    return;
+  }
+
+  const targets = Array.from(new Set(materials)).filter((material) => !material.map);
+  if (targets.length === 0) {
+    return;
+  }
+
+  const texture = createCanonicalMjcfBuiltinTexture(descriptor, repeat);
+  targets.forEach((material) => {
+    material.map = texture;
+    material.needsUpdate = true;
+  });
+}
+
 export function applyVisualMaterialOverrideToObject(
   object: THREE.Object3D,
   override: VisualMaterialOverride | null | undefined,
@@ -236,11 +288,16 @@ export function applyVisualMaterialOverrideToObject(
   const emissiveOverride = normalizeMaterialValue(override?.emissive);
   const emissiveIntensityOverride = normalizeNonNegativeValue(override?.emissiveIntensity);
   const alphaTestOverride = normalizeUnitIntervalValue(override?.alphaTest);
+  const textureRepeat = normalizeTextureRepeat(override?.textureRepeat);
+  const mjcfBuiltinTexture = isSupportedMjcfBuiltinTexture(override?.mjcfBuiltinTexture)
+    ? override.mjcfBuiltinTexture
+    : undefined;
+  const hasTextureOverride = Boolean(texturePath || mjcfBuiltinTexture);
   const parsedColor = parseThreeColorWithOpacity(colorOverride);
   const parsedEmissive = parseThreeColorWithOpacity(emissiveOverride);
   const hasExplicitColor = Boolean(parsedColor);
   const hasExplicitEmissive = Boolean(parsedEmissive);
-  const nextColor = parsedColor?.color ?? (texturePath ? new THREE.Color('#ffffff') : null);
+  const nextColor = parsedColor?.color ?? (hasTextureOverride ? new THREE.Color('#ffffff') : null);
   const nextOpacity = opacityOverride ?? parsedColor?.opacity;
   const nextEmissive = parsedEmissive?.color;
   const replacementMaterials: THREE.MeshStandardMaterial[] = [];
@@ -253,7 +310,8 @@ export function applyVisualMaterialOverrideToObject(
     metalnessOverride === undefined &&
     !nextEmissive &&
     emissiveIntensityOverride === undefined &&
-    alphaTestOverride === undefined
+    alphaTestOverride === undefined &&
+    !hasTextureOverride
   ) {
     return;
   }
@@ -265,8 +323,10 @@ export function applyVisualMaterialOverrideToObject(
   // distinct named materials, and the cost compounded on every assembly add.
   const hasExplicitOverrideColor = Boolean(parsedColor);
   const cacheKeyBase =
-    cache && (hasExplicitOverrideColor || texturePath)
-      ? `${nextColor ? nextColor.getHexString() : ''}|tx=${texturePath || ''}|op=${
+    cache && (hasExplicitOverrideColor || hasTextureOverride)
+      ? `${nextColor ? nextColor.getHexString() : ''}|tx=${texturePath || ''}|mj=${
+          mjcfBuiltinTexture ? JSON.stringify(mjcfBuiltinTexture) : ''
+        }|rp=${textureRepeat?.join(',') || ''}|op=${
           nextOpacity ?? 'src'
         }|rg=${roughnessOverride ?? 'src'}|mt=${metalnessOverride ?? 'src'}|em=${
           nextEmissive ? nextEmissive.getHexString() : ''
@@ -283,7 +343,7 @@ export function applyVisualMaterialOverrideToObject(
     const nextMaterials = currentMaterials.map((material) => {
       const sourceSide = material.side;
       const sourceTransparent = material.transparent || (nextOpacity ?? 1) < 1;
-      const sourceMapKey = texturePath ? 'override' : (material as any).map?.uuid || 'none';
+      const sourceMapKey = hasTextureOverride ? 'override' : (material as any).map?.uuid || 'none';
       const fullCacheKey =
         cacheKeyBase && cache
           ? `${cacheKeyBase}|side=${sourceSide}|tr=${sourceTransparent ? 1 : 0}|src=${sourceMapKey}|nm=${material.name || ''}`
@@ -298,24 +358,27 @@ export function applyVisualMaterialOverrideToObject(
 
       const nextMaterial = createMatteMaterial({
         color: nextColor ?? ((material as any).color?.clone?.() || '#ffffff'),
-        opacity: nextOpacity ?? material.opacity ?? 1,
+        // A canonical texture override without authored opacity is opaque by
+        // default. Do not inherit a derived loader material's placeholder
+        // opacity (MDL render networks can surface an unevaluated zero here).
+        opacity: nextOpacity ?? (texturePath ? 1 : (material.opacity ?? 1)),
         transparent: sourceTransparent,
         side: sourceSide,
-        map: texturePath ? null : (material as any).map || null,
+        map: hasTextureOverride ? null : (material as any).map || null,
         roughness: roughnessOverride,
         metalness: metalnessOverride,
         emissive: nextEmissive ?? undefined,
         emissiveIntensity: emissiveIntensityOverride,
         alphaTest: alphaTestOverride,
         name: material.name,
-        preserveExactColor: hasExplicitColor || Boolean(texturePath) || hasExplicitEmissive,
+        preserveExactColor: hasExplicitColor || hasTextureOverride || hasExplicitEmissive,
       });
 
-      if (texturePath && !hasExplicitColor) {
+      if (hasTextureOverride && !hasExplicitColor) {
         nextMaterial.color.set('#ffffff');
         nextMaterial.userData.originalColor = new THREE.Color('#ffffff');
         nextMaterial.toneMapped = false;
-      } else if (texturePath && isNearWhiteTextureBaseColor(nextColor)) {
+      } else if (hasTextureOverride && isNearWhiteTextureBaseColor(nextColor)) {
         nextMaterial.color.copy(nextColor!);
         nextMaterial.userData.originalColor = nextMaterial.color.clone();
       }
@@ -328,6 +391,11 @@ export function applyVisualMaterialOverrideToObject(
       if (texturePath) {
         nextMaterial.userData.urdfTextureApplied = true;
         nextMaterial.userData.urdfTexturePath = texturePath;
+      }
+      if (mjcfBuiltinTexture) {
+        nextMaterial.userData.mjcfBuiltinTextureApplied = true;
+        nextMaterial.userData.mjcfBuiltinTexture = { ...mjcfBuiltinTexture };
+        nextMaterial.userData.mjcfTextureRepeat = textureRepeat ? [...textureRepeat] : [1, 1];
       }
       if (opacityOverride !== undefined) {
         nextMaterial.userData.urdfOpacityApplied = true;
@@ -362,6 +430,8 @@ export function applyVisualMaterialOverrideToObject(
     replacementMaterials.push(...nextMaterials);
   });
 
+  applyMjcfBuiltinTextureToMaterials(replacementMaterials, mjcfBuiltinTexture, textureRepeat);
+
   if (!texturePath || replacementMaterials.length === 0) {
     if (texturePath && replacementMaterials.length === 0) {
       console.warn(
@@ -377,6 +447,11 @@ export function applyVisualMaterialOverrideToObject(
     texturePath,
     (texture) => {
       texture.colorSpace = THREE.SRGBColorSpace;
+      if (textureRepeat) {
+        texture.wrapS = THREE.RepeatWrapping;
+        texture.wrapT = THREE.RepeatWrapping;
+        texture.repeat.set(textureRepeat[0], textureRepeat[1]);
+      }
       const rotation = override?.textureRotation;
       if (rotation !== undefined && rotation !== 0) {
         texture.rotation = rotation;
