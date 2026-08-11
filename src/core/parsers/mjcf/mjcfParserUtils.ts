@@ -33,6 +33,7 @@ export interface MJCFGeom {
   size?: number[];
   mass?: number;
   mesh?: string;
+  fittedFromMesh?: string;
   hfield?: string;
   material?: string;
   rgba?: number[];
@@ -441,6 +442,7 @@ export function toParserBody(sharedBody: MJCFModelBody, settings: MJCFCompilerSe
       size: geom.size,
       mass: typeof geom.mass === 'number' ? geom.mass : undefined,
       mesh: geom.mesh,
+      fittedFromMesh: geom.fittedFromMesh,
       hfield: geom.hfield,
       material: geom.material,
       rgba: geom.rgba,

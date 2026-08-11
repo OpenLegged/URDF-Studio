@@ -5,7 +5,7 @@ import { JSDOM } from 'jsdom';
 
 import { parseMJCF } from '@/core/parsers/mjcf/mjcfParser';
 import type { RobotClosedLoopConstraint, RobotData, RobotState } from '@/types';
-import { adaptUsdViewerSnapshotToRobotData } from '@/features/urdf-viewer/utils/usdViewerRobotAdapter';
+import { adaptUsdViewerSnapshotToRobotData } from '@/lib/robot-parser/usd';
 import { ThreeRenderDelegateCore } from '@/features/urdf-viewer/runtime/hydra/render-delegate/ThreeRenderDelegateCore.js';
 import { exportRobotToUsd } from './usdExport';
 

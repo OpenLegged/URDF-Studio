@@ -1,9 +1,9 @@
 import { type RobotState, type UsdPreparedExportCache } from '../../../types/index.ts';
 import { assertCanonicalRobotData } from '@/core/robot/canonicalWorkspace';
-import { adaptUsdViewerSnapshotToRobotData } from './usdViewerRobotAdapter.ts';
-import { resolveUsdPrimitiveGeometryFromDescriptor as resolvePrimitiveGeometryFromDescriptor } from './usdPrimitiveGeometry.ts';
+import { adaptUsdViewerSnapshotToRobotData } from '@/lib/robot-parser/usd/usdViewerRobotAdapter';
+import { resolveUsdPrimitiveGeometryFromDescriptor as resolvePrimitiveGeometryFromDescriptor } from '@/lib/robot-parser/usd/usdPrimitiveGeometry';
 import { hydrateUsdViewerRobotResolutionFromRuntime } from './usdRuntimeRobotHydration.ts';
-import type { ViewerRobotDataResolution } from './viewerRobotData.ts';
+import type { ViewerRobotDataResolution } from '@/lib/robot-parser/usd/viewerRobotData';
 
 import type {
   PreparedUsdExportCacheTransferBytesCarrier,

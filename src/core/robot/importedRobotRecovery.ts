@@ -608,12 +608,15 @@ export function recoverImportedRobotData(
     }
     if (!recovered.links[joint.parentLinkId] || !recovered.links[joint.childLinkId]) {
       delete recovered.joints[jointId];
+      const endpointIds = [joint.parentLinkId, joint.childLinkId].filter(
+        (linkId) => linkId.length > 0,
+      );
       collector.add({
         code: 'dangling_joint_omitted',
         severity: 'warning',
         category: 'topology',
         message: `Joint "${jointId}" referenced a missing endpoint and was omitted.`,
-        relatedIds: [jointId, joint.parentLinkId, joint.childLinkId],
+        relatedIds: [jointId, ...endpointIds],
         action: 'omitted',
       });
       continue;

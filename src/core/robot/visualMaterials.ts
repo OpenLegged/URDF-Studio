@@ -4,6 +4,7 @@ import {
   type UrdfLink,
   type UrdfVisual,
   type UrdfVisualMaterial,
+  type MjcfBuiltinTexture,
 } from '@/types';
 import { getVisualGeometryByObjectIndex, updateVisualGeometryByObjectIndex } from './visualBodies';
 
@@ -41,6 +42,8 @@ export interface ResolvedVisualMaterialOverride {
   emissiveIntensity?: number;
   alphaTest?: number;
   passes?: UrdfVisualMaterial['passes'];
+  textureRepeat?: [number, number];
+  mjcfBuiltinTexture?: MjcfBuiltinTexture;
   source: 'authored' | 'legacy-link' | 'none';
   isMultiMaterial: boolean;
 }
@@ -64,6 +67,53 @@ function normalizeNonNegativeValue(value?: number | null): number | undefined {
   }
 
   return Math.max(0, Number(value));
+}
+
+function normalizeFinitePair(value: readonly number[] | undefined): [number, number] | undefined {
+  if (!value || value.length !== 2 || value.some((entry) => !Number.isFinite(entry))) {
+    return undefined;
+  }
+
+  return [Number(value[0]), Number(value[1])];
+}
+
+function normalizeFiniteRgb(
+  value: readonly number[] | undefined,
+): [number, number, number] | undefined {
+  if (!value || value.length !== 3 || value.some((entry) => !Number.isFinite(entry))) {
+    return undefined;
+  }
+
+  return [Number(value[0]), Number(value[1]), Number(value[2])];
+}
+
+function normalizeMjcfBuiltinTexture(
+  value: MjcfBuiltinTexture | undefined,
+): MjcfBuiltinTexture | undefined {
+  if (!value || !['checker', 'flat', 'gradient'].includes(value.builtin)) {
+    return undefined;
+  }
+
+  const type = normalizeMaterialValue(value.type);
+  const rgb1 = normalizeFiniteRgb(value.rgb1);
+  const rgb2 = normalizeFiniteRgb(value.rgb2);
+  const mark = normalizeMaterialValue(value.mark);
+  const markrgb = normalizeFiniteRgb(value.markrgb);
+  const cubeFace = ['right', 'left', 'up', 'down', 'front', 'back'].includes(value.cubeFace || '')
+    ? value.cubeFace
+    : undefined;
+
+  return {
+    builtin: value.builtin,
+    ...(type ? { type } : {}),
+    ...(rgb1 ? { rgb1 } : {}),
+    ...(rgb2 ? { rgb2 } : {}),
+    ...(mark ? { mark } : {}),
+    ...(markrgb ? { markrgb } : {}),
+    ...(Number.isFinite(value.width) ? { width: Number(value.width) } : {}),
+    ...(Number.isFinite(value.height) ? { height: Number(value.height) } : {}),
+    ...(cubeFace ? { cubeFace } : {}),
+  };
 }
 
 export function normalizeAuthoredMaterialEntry(
@@ -96,6 +146,8 @@ export function normalizeAuthoredMaterialEntry(
   const emissive = normalizeMaterialValue(material.emissive);
   const emissiveIntensity = normalizeNonNegativeValue(material.emissiveIntensity);
   const alphaTest = normalizeUnitIntervalValue(material.alphaTest);
+  const textureRepeat = normalizeFinitePair(material.textureRepeat);
+  const mjcfBuiltinTexture = normalizeMjcfBuiltinTexture(material.mjcfBuiltinTexture);
   const passes = Array.isArray(material.passes)
     ? material.passes.map((pass) => ({
         ...(normalizeMaterialValue(pass.texture)
@@ -123,7 +175,9 @@ export function normalizeAuthoredMaterialEntry(
     !emissive &&
     emissiveIntensity === undefined &&
     alphaTest === undefined &&
-    passes === undefined
+    passes === undefined &&
+    textureRepeat === undefined &&
+    !mjcfBuiltinTexture
   ) {
     return null;
   }
@@ -141,6 +195,8 @@ export function normalizeAuthoredMaterialEntry(
     ...(emissiveIntensity !== undefined ? { emissiveIntensity } : {}),
     ...(alphaTest !== undefined ? { alphaTest } : {}),
     ...(passes !== undefined ? { passes } : {}),
+    ...(textureRepeat ? { textureRepeat } : {}),
+    ...(mjcfBuiltinTexture ? { mjcfBuiltinTexture } : {}),
   };
 }
 
@@ -277,6 +333,12 @@ export function resolveVisualMaterialOverride(
       emissiveIntensity: primaryMaterial?.emissiveIntensity,
       alphaTest: primaryMaterial?.alphaTest,
       passes: primaryMaterial?.passes?.map((pass) => ({ ...pass })),
+      textureRepeat: primaryMaterial?.textureRepeat
+        ? [...primaryMaterial.textureRepeat]
+        : undefined,
+      mjcfBuiltinTexture: primaryMaterial?.mjcfBuiltinTexture
+        ? { ...primaryMaterial.mjcfBuiltinTexture }
+        : undefined,
       source: 'authored',
       isMultiMaterial: authoredMaterials.length > 1,
     };

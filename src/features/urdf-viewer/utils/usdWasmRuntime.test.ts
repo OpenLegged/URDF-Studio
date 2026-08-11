@@ -6,7 +6,7 @@ import {
   getUsdRuntimeEnvironmentError,
   prewarmUsdWasmRuntimeInBackground,
   resolvePreferredUsdThreadCount,
-} from './usdWasmRuntime.ts';
+} from '@/lib/robot-parser/usd/usdWasmRuntime';
 
 test('resolvePreferredUsdThreadCount caps browser USD runtime concurrency at 4 threads', () => {
   const previousNavigator = globalThis.navigator;

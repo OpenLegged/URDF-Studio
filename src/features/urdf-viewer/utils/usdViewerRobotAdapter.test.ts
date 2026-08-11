@@ -4,7 +4,7 @@ import * as THREE from 'three';
 
 import { computeLinkWorldMatrices } from '@/core/robot/kinematics';
 import { DEFAULT_LINK, GeometryType, JointType } from '../../../types/index.ts';
-import { adaptUsdViewerSnapshotToRobotData } from './usdViewerRobotAdapter';
+import { adaptUsdViewerSnapshotToRobotData } from '@/lib/robot-parser/usd/usdViewerRobotAdapter';
 
 test('adapts usd-viewer robot scene snapshot into URDF Studio RobotData', () => {
   const jointYawRadians = Math.PI / 2;

@@ -1,5 +1,5 @@
 import { getDirectoryFromVirtualPath, normalizeUsdPath } from "./path-utils.js";
-import { inferUsdDependencyStemForPath } from "../../utils/usdDependencyPathRules.js";
+import { inferUsdDependencyStemForPath } from "../../../../lib/robot-parser/usd/usdDependencyPathRules.js";
 
 export function inferDependencyStemForUsdPath(stagePath, fileName) {
     return inferUsdDependencyStemForPath(stagePath, fileName);

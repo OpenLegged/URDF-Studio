@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import type { ViewerRobotDataResolution } from './viewerRobotData.ts';
+import type { ViewerRobotDataResolution } from '@/lib/robot-parser/usd/viewerRobotData';
 import { createUsdDeferredSceneSnapshotLifecycle } from './usdDeferredSceneSnapshotLifecycle.ts';
 
 type ScheduledTask = {

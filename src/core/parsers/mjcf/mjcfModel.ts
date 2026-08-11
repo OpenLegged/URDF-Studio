@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import type { RobotImportRecoveryDiagnostic } from '@/types';
 import {
   parseCompilerSettings,
   parseHfieldAssets,
@@ -36,6 +37,7 @@ export interface MJCFModelGeom {
   size?: number[];
   mass?: number;
   mesh?: string;
+  fittedFromMesh?: string;
   hfield?: string;
   material?: string;
   rgba?: [number, number, number, number];
@@ -171,6 +173,7 @@ export interface ParsedMJCFModel {
   jointEqualityConstraints: MJCFModelJointEqualityConstraint[];
   keyframes: MJCFModelKeyframe[];
   worldBody: MJCFModelBody;
+  recoveryDiagnostics: RobotImportRecoveryDiagnostic[];
 }
 
 interface CachedParsedMJCFModelEntry {
@@ -237,6 +240,187 @@ function directChildrenByTagNames(element: Element, tagNames: string[]): Element
   return Array.from(element.children).filter((child) =>
     normalized.has(child.tagName.toLowerCase()),
   );
+}
+
+type RecoverableMJCFElementKind = 'body' | 'frame' | 'geom' | 'inertial' | 'joint' | 'site';
+
+interface MJCFModelRecoveryCollector {
+  diagnostics: RobotImportRecoveryDiagnostic[];
+  add: (diagnostic: RobotImportRecoveryDiagnostic) => void;
+  omit: (
+    kind: RecoverableMJCFElementKind,
+    element: Element,
+    detail: string,
+    bodyPath?: string,
+  ) => void;
+}
+
+const NUMERIC_ATTRIBUTE_ARITIES: Readonly<Record<string, readonly [number, number]>> = {
+  actuatorfrcrange: [2, 2],
+  axis: [3, 3],
+  axisangle: [4, 4],
+  diaginertia: [3, 3],
+  euler: [3, 3],
+  fromto: [6, 6],
+  fullinertia: [6, 6],
+  pos: [3, 3],
+  quat: [4, 4],
+  range: [2, 2],
+  rgba: [3, 4],
+  size: [1, Number.POSITIVE_INFINITY],
+  xyaxes: [6, 6],
+  zaxis: [3, 3],
+};
+
+const SCALAR_NUMERIC_ATTRIBUTES = new Set([
+  'armature',
+  'conaffinity',
+  'contype',
+  'damping',
+  'frictionloss',
+  'group',
+  'mass',
+  'ref',
+  'stiffness',
+]);
+
+const ORIENTATION_ATTRIBUTES = ['quat', 'axisangle', 'xyaxes', 'zaxis', 'euler'] as const;
+const SUPPORTED_GEOM_TYPES = new Set([
+  'box',
+  'capsule',
+  'cylinder',
+  'ellipsoid',
+  'hfield',
+  'mesh',
+  'plane',
+  'sdf',
+  'sphere',
+]);
+const SUPPORTED_SITE_TYPES = new Set(['box', 'capsule', 'cylinder', 'ellipsoid', 'sphere']);
+const SUPPORTED_JOINT_TYPES = new Set(['ball', 'free', 'hinge', 'slide']);
+
+function createMJCFModelRecoveryCollector(): MJCFModelRecoveryCollector {
+  const diagnostics: RobotImportRecoveryDiagnostic[] = [];
+  const seen = new Set<string>();
+  const add = (diagnostic: RobotImportRecoveryDiagnostic): void => {
+    const key = [
+      diagnostic.code,
+      diagnostic.action,
+      diagnostic.message,
+      diagnostic.source?.tag ?? '',
+      diagnostic.source?.name ?? '',
+    ].join('\0');
+    if (seen.has(key)) {
+      return;
+    }
+    seen.add(key);
+    diagnostics.push(diagnostic);
+  };
+
+  return {
+    diagnostics,
+    add,
+    omit(kind, element, detail, bodyPath) {
+      let sourceName: string | undefined;
+      try {
+        sourceName = element.getAttribute('name')?.trim() || undefined;
+      } catch {
+        sourceName = undefined;
+      }
+      const displayName = sourceName || bodyPath;
+      const code = kind === 'body' ? 'mjcf_body_subtree_omitted' : `mjcf_${kind}_omitted`;
+      add({
+        code,
+        severity: 'warning',
+        category:
+          kind === 'body' || kind === 'frame'
+            ? 'topology'
+            : kind === 'joint'
+              ? 'joint'
+              : kind === 'inertial'
+                ? 'physical'
+                : 'geometry',
+        message: `MJCF <${kind}>${displayName ? ` "${displayName}"` : ''} was omitted: ${detail}`,
+        ...(displayName ? { relatedIds: [displayName] } : {}),
+        source: {
+          tag: kind,
+          ...(sourceName ? { name: sourceName } : {}),
+        },
+        action: 'omitted',
+      });
+    },
+  };
+}
+
+function parseFiniteNumberList(value: string): number[] | null {
+  const normalized = value.trim();
+  if (!normalized) {
+    return null;
+  }
+
+  const values = normalized.split(/\s+/).map(Number);
+  return values.every(Number.isFinite) ? values : null;
+}
+
+function validateNumericAttributes(
+  attributes: Record<string, string>,
+  attributeNames: readonly string[],
+): string | null {
+  for (const attributeName of attributeNames) {
+    const value = attributes[attributeName];
+    if (value == null) {
+      continue;
+    }
+
+    // MuJoCo accepts an explicitly blank optional rgba as an unset color.
+    // Some upstream models use it to avoid inheriting a visual color on a
+    // collision geom, so omitting the whole geom would lose physical data.
+    if (attributeName === 'rgba' && value.trim() === '') {
+      continue;
+    }
+
+    const values = parseFiniteNumberList(value);
+    if (!values) {
+      return `attribute "${attributeName}" does not contain finite numbers`;
+    }
+
+    const arity = NUMERIC_ATTRIBUTE_ARITIES[attributeName];
+    if (arity && (values.length < arity[0] || values.length > arity[1])) {
+      const expected = arity[0] === arity[1] ? `${arity[0]}` : `${arity[0]}-${arity[1]}`;
+      return `attribute "${attributeName}" requires ${expected} numbers`;
+    }
+
+    if (SCALAR_NUMERIC_ATTRIBUTES.has(attributeName) && values.length !== 1) {
+      return `attribute "${attributeName}" requires 1 number`;
+    }
+  }
+
+  return null;
+}
+
+function describeError(error: unknown): string {
+  return error instanceof Error && error.message
+    ? error.message
+    : String(error ?? 'unknown parse failure');
+}
+
+function requireValidNumericAttributes(
+  attributes: Record<string, string>,
+  attributeNames: readonly string[],
+): void {
+  const validationError = validateNumericAttributes(attributes, attributeNames);
+  if (validationError) {
+    throw new Error(validationError);
+  }
+}
+
+function requireSingleExplicitOrientation(element: Element): void {
+  const orientationCount = ORIENTATION_ATTRIBUTES.filter((attributeName) =>
+    element.hasAttribute(attributeName),
+  ).length;
+  if (orientationCount > 1) {
+    throw new Error('multiple orientation attributes are ambiguous');
+  }
 }
 
 function parseEulerAsTuple(str: string | null): [number, number, number] | undefined {
@@ -309,6 +493,21 @@ function parseJointElement(
         type: 'free',
       }
     : resolveElementAttributes(defaults, 'joint', jointElement, activeClassQName);
+  requireValidNumericAttributes(jointAttrs, [
+    'actuatorfrcrange',
+    'armature',
+    'axis',
+    'damping',
+    'frictionloss',
+    'pos',
+    'range',
+    'ref',
+    'stiffness',
+  ]);
+  const jointType = isFreeJoint ? 'free' : (jointAttrs.type || 'hinge').trim().toLowerCase();
+  if (!SUPPORTED_JOINT_TYPES.has(jointType)) {
+    throw new Error(`unsupported joint type "${jointAttrs.type}"`);
+  }
   const sourceJointName = jointElement.getAttribute('name') || jointAttrs.name || undefined;
   const generatedJointName = buildGeneratedJointName(jointIndexRef.value++);
   const axisNums = !isFreeJoint && jointAttrs.axis ? parseNumbers(jointAttrs.axis) : [];
@@ -615,6 +814,8 @@ function walkFrameExpandedChildren(
     },
   ) => void,
   inheritedTransform?: MJCFLocalTransform,
+  recovery?: MJCFModelRecoveryCollector,
+  bodyPath?: string,
 ): void {
   const deferredFrames: Array<{
     frame: Element;
@@ -624,11 +825,27 @@ function walkFrameExpandedChildren(
 
   Array.from(container.children).forEach((child) => {
     if (child.tagName.toLowerCase() === 'frame') {
-      deferredFrames.push({
-        frame: child,
-        activeClassQName: resolveChildDefaultsClassQName(defaults, child, activeClassQName),
-        inheritedTransform: resolveFrameTransform(child, compilerSettings, inheritedTransform),
-      });
+      try {
+        const frameAttributes = Object.fromEntries(
+          Array.from(child.attributes).map((attribute) => [attribute.name, attribute.value]),
+        );
+        requireValidNumericAttributes(frameAttributes, [
+          'axisangle',
+          'euler',
+          'pos',
+          'quat',
+          'xyaxes',
+          'zaxis',
+        ]);
+        requireSingleExplicitOrientation(child);
+        deferredFrames.push({
+          frame: child,
+          activeClassQName: resolveChildDefaultsClassQName(defaults, child, activeClassQName),
+          inheritedTransform: resolveFrameTransform(child, compilerSettings, inheritedTransform),
+        });
+      } catch (error) {
+        recovery?.omit('frame', child, describeError(error), bodyPath);
+      }
       return;
     }
 
@@ -643,6 +860,8 @@ function walkFrameExpandedChildren(
       compilerSettings,
       visitor,
       entry.inheritedTransform,
+      recovery,
+      bodyPath,
     );
   });
 }
@@ -657,6 +876,22 @@ function parseSiteElement(
   inheritedTransform?: MJCFLocalTransform,
 ): MJCFModelSite {
   const siteAttrs = resolveElementAttributes(defaults, 'site', siteElement, activeClassQName);
+  requireSingleExplicitOrientation(siteElement);
+  requireValidNumericAttributes(siteAttrs, [
+    'axisangle',
+    'euler',
+    'group',
+    'pos',
+    'quat',
+    'rgba',
+    'size',
+    'xyaxes',
+    'zaxis',
+  ]);
+  const siteType = (siteAttrs.type || 'sphere').trim().toLowerCase();
+  if (!SUPPORTED_SITE_TYPES.has(siteType)) {
+    throw new Error(`unsupported site type "${siteAttrs.type}"`);
+  }
   const siteCompilerSettings = resolveCompilerSettingsForElement(siteElement, compilerSettings);
   const siteClassQName = resolveDefaultClassQName(
     defaults,
@@ -715,6 +950,7 @@ function collectSitesInBodyOrder(
   compilerSettings: MJCFCompilerSettings,
   bodyPath: string,
   siteIndexRef: { value: number },
+  recovery: MJCFModelRecoveryCollector,
   inheritedTransform?: MJCFLocalTransform,
 ): MJCFModelSite[] {
   const sites: MJCFModelSite[] = [];
@@ -728,20 +964,26 @@ function collectSitesInBodyOrder(
         return;
       }
 
-      sites.push(
-        parseSiteElement(
-          child,
-          defaults,
-          context.activeClassQName,
-          compilerSettings,
-          bodyPath,
-          siteIndexRef.value,
-          context.inheritedTransform,
-        ),
-      );
+      try {
+        sites.push(
+          parseSiteElement(
+            child,
+            defaults,
+            context.activeClassQName,
+            compilerSettings,
+            bodyPath,
+            siteIndexRef.value,
+            context.inheritedTransform,
+          ),
+        );
+      } catch (error) {
+        recovery.omit('site', child, describeError(error), bodyPath);
+      }
       siteIndexRef.value += 1;
     },
     inheritedTransform,
+    recovery,
+    bodyPath,
   );
 
   return sites;
@@ -940,6 +1182,22 @@ function parseGeomElement(
   inheritedTransform?: MJCFLocalTransform,
 ): MJCFModelGeom {
   const geomAttrs = resolveElementAttributes(defaults, 'geom', geomElement, activeClassQName);
+  requireSingleExplicitOrientation(geomElement);
+  requireValidNumericAttributes(geomAttrs, [
+    'axisangle',
+    'conaffinity',
+    'contype',
+    'euler',
+    'fromto',
+    'group',
+    'mass',
+    'pos',
+    'quat',
+    'rgba',
+    'size',
+    'xyaxes',
+    'zaxis',
+  ]);
   const geomCompilerSettings = resolveCompilerSettingsForElement(geomElement, compilerSettings);
   const geomClassQName = resolveDefaultClassQName(
     defaults,
@@ -962,6 +1220,10 @@ function parseGeomElement(
   );
   const geomPos = geomAttrs.pos ? parsePosAsTuple(geomAttrs.pos) : undefined;
   const rawFromTo = parseNumbers(geomAttrs.fromto || null);
+  const geomType = inferGeomType(geomAttrs.type, meshName, rawFromTo);
+  if (!SUPPORTED_GEOM_TYPES.has(geomType.trim().toLowerCase())) {
+    throw new Error(`unsupported geom type "${geomType}"`);
+  }
   const hasInheritedTransform = !isIdentityTransform(inheritedTransform);
 
   let resolvedPos = geomPos;
@@ -985,7 +1247,7 @@ function parseGeomElement(
     sourceName: sourceGeomName,
     className: geomClassQName?.split('/').pop() || geomElement.getAttribute('class') || undefined,
     classQName: geomClassQName,
-    type: inferGeomType(geomAttrs.type, meshName, resolvedFromTo),
+    type: geomType,
     size,
     mesh: meshName,
     hfield: hfieldName,
@@ -1024,6 +1286,7 @@ function collectGeomsInBodyOrder(
   compilerSettings: MJCFCompilerSettings,
   bodyPath: string,
   geomIndexRef: { value: number },
+  recovery: MJCFModelRecoveryCollector,
   inheritedTransform?: MJCFLocalTransform,
 ): MJCFModelGeom[] {
   const geoms: MJCFModelGeom[] = [];
@@ -1037,20 +1300,26 @@ function collectGeomsInBodyOrder(
         return;
       }
 
-      geoms.push(
-        parseGeomElement(
-          child,
-          defaults,
-          context.activeClassQName,
-          compilerSettings,
-          bodyPath,
-          geomIndexRef.value,
-          context.inheritedTransform,
-        ),
-      );
+      try {
+        geoms.push(
+          parseGeomElement(
+            child,
+            defaults,
+            context.activeClassQName,
+            compilerSettings,
+            bodyPath,
+            geomIndexRef.value,
+            context.inheritedTransform,
+          ),
+        );
+      } catch (error) {
+        recovery.omit('geom', child, describeError(error), bodyPath);
+      }
       geomIndexRef.value += 1;
     },
     inheritedTransform,
+    recovery,
+    bodyPath,
   );
 
   return geoms;
@@ -1085,6 +1354,8 @@ function collectJointsInBodyOrder(
   activeClassQName: string | undefined,
   compilerSettings: MJCFCompilerSettings,
   jointIndexRef: { value: number },
+  recovery: MJCFModelRecoveryCollector,
+  bodyPath: string,
   inheritedTransform?: MJCFLocalTransform,
 ): MJCFModelJoint[] {
   const joints: MJCFModelJoint[] = [];
@@ -1100,16 +1371,23 @@ function collectJointsInBodyOrder(
         return;
       }
 
-      const joint = parseJointElement(
-        child,
-        defaults,
-        context.activeClassQName,
-        resolveCompilerSettingsForElement(child, compilerSettings),
-        jointIndexRef,
-      );
-      joints.push(applyJointTransform(joint, context.inheritedTransform));
+      try {
+        const joint = parseJointElement(
+          child,
+          defaults,
+          context.activeClassQName,
+          resolveCompilerSettingsForElement(child, compilerSettings),
+          jointIndexRef,
+        );
+        joints.push(applyJointTransform(joint, context.inheritedTransform));
+      } catch (error) {
+        recovery.omit('joint', child, describeError(error), bodyPath);
+        jointIndexRef.value += 1;
+      }
     },
     inheritedTransform,
+    recovery,
+    bodyPath,
   );
 
   return joints;
@@ -1128,6 +1406,24 @@ function parseInertialElement(
     inertialElement,
     activeClassQName,
   );
+  requireSingleExplicitOrientation(inertialElement);
+  requireValidNumericAttributes(inertialAttrs, [
+    'axisangle',
+    'diaginertia',
+    'euler',
+    'fullinertia',
+    'mass',
+    'pos',
+    'quat',
+    'xyaxes',
+    'zaxis',
+  ]);
+  if (!inertialAttrs.mass || !inertialAttrs.pos) {
+    throw new Error('required attributes "mass" and "pos" are missing');
+  }
+  if (!inertialAttrs.diaginertia && !inertialAttrs.fullinertia) {
+    throw new Error('either "diaginertia" or "fullinertia" is required');
+  }
   const diaginertia = parseNumbers(inertialAttrs.diaginertia || null);
   const fullinertia = parseNumbers(inertialAttrs.fullinertia || null);
   const localQuat = parseOrientationAsQuat(
@@ -1173,13 +1469,24 @@ function parseInertialElement(
   };
 }
 
-function collectFirstInertialInBodyOrder(
-  container: Element,
-  defaults: MJCFDefaultsRegistry,
-  activeClassQName: string | undefined,
-  compilerSettings: MJCFCompilerSettings,
-  inheritedTransform?: MJCFLocalTransform,
-): MJCFModelInertial | undefined {
+function collectFirstInertialInBodyOrder(options: {
+  container: Element;
+  defaults: MJCFDefaultsRegistry;
+  activeClassQName: string | undefined;
+  compilerSettings: MJCFCompilerSettings;
+  recovery: MJCFModelRecoveryCollector;
+  bodyPath: string;
+  inheritedTransform?: MJCFLocalTransform;
+}): MJCFModelInertial | undefined {
+  const {
+    container,
+    defaults,
+    activeClassQName,
+    compilerSettings,
+    recovery,
+    bodyPath,
+    inheritedTransform,
+  } = options;
   let inertial: MJCFModelInertial | undefined;
 
   walkFrameExpandedChildren(
@@ -1192,15 +1499,21 @@ function collectFirstInertialInBodyOrder(
         return;
       }
 
-      inertial = parseInertialElement(
-        child,
-        defaults,
-        context.activeClassQName,
-        compilerSettings,
-        context.inheritedTransform,
-      );
+      try {
+        inertial = parseInertialElement(
+          child,
+          defaults,
+          context.activeClassQName,
+          compilerSettings,
+          context.inheritedTransform,
+        );
+      } catch (error) {
+        recovery.omit('inertial', child, describeError(error), bodyPath);
+      }
     },
     inheritedTransform,
+    recovery,
+    bodyPath,
   );
 
   return inertial;
@@ -1214,6 +1527,7 @@ function collectBodiesInBodyOrder(
   parentPath: string,
   jointIndexRef: { value: number },
   bodyIndexRef: { value: number },
+  recovery: MJCFModelRecoveryCollector,
   inheritedTransform?: MJCFLocalTransform,
 ): MJCFModelBody[] {
   const bodies: MJCFModelBody[] = [];
@@ -1228,21 +1542,30 @@ function collectBodiesInBodyOrder(
         return;
       }
 
-      bodies.push(
-        parseBody(
-          child,
-          defaults,
-          compilerSettings,
-          parentPath,
-          bodyIndexRef.value,
-          jointIndexRef,
-          context.activeClassQName,
-          context.inheritedTransform,
-        ),
-      );
+      const bodyPath =
+        child.getAttribute('name') || buildGeneratedMjcfBodyPath(parentPath, bodyIndexRef.value);
+      try {
+        bodies.push(
+          parseBody(
+            child,
+            defaults,
+            compilerSettings,
+            parentPath,
+            bodyIndexRef.value,
+            jointIndexRef,
+            recovery,
+            context.activeClassQName,
+            context.inheritedTransform,
+          ),
+        );
+      } catch (error) {
+        recovery.omit('body', child, describeError(error), bodyPath);
+      }
       bodyIndexRef.value += 1;
     },
     inheritedTransform,
+    recovery,
+    parentPath,
   );
 
   return bodies;
@@ -1340,10 +1663,20 @@ function parseBody(
   parentPath: string,
   siblingIndex: number,
   jointIndexRef: { value: number },
+  recovery: MJCFModelRecoveryCollector,
   activeClassQName?: string,
   inheritedTransform?: MJCFLocalTransform,
 ): MJCFModelBody {
   const bodyAttrs = resolveElementAttributes(defaults, 'body', bodyElement, activeClassQName);
+  requireSingleExplicitOrientation(bodyElement);
+  requireValidNumericAttributes(bodyAttrs, [
+    'axisangle',
+    'euler',
+    'pos',
+    'quat',
+    'xyaxes',
+    'zaxis',
+  ]);
   const bodyCompilerSettings = resolveCompilerSettingsForElement(bodyElement, compilerSettings);
   const sourceName = bodyElement.getAttribute('name') || bodyAttrs.name || undefined;
   const bodyPath = sourceName || buildGeneratedMjcfBodyPath(parentPath, siblingIndex);
@@ -1384,6 +1717,7 @@ function parseBody(
     bodyCompilerSettings,
     bodyPath,
     { value: 0 },
+    recovery,
   );
   const sites = collectSitesInBodyOrder(
     bodyElement,
@@ -1392,6 +1726,7 @@ function parseBody(
     bodyCompilerSettings,
     bodyPath,
     { value: 0 },
+    recovery,
   );
   const joints = collectJointsInBodyOrder(
     bodyElement,
@@ -1399,13 +1734,17 @@ function parseBody(
     childDefaultsClassQName,
     bodyCompilerSettings,
     jointIndexRef,
+    recovery,
+    bodyPath,
   );
-  const inertial = collectFirstInertialInBodyOrder(
-    bodyElement,
+  const inertial = collectFirstInertialInBodyOrder({
+    container: bodyElement,
     defaults,
-    childDefaultsClassQName,
-    bodyCompilerSettings,
-  );
+    activeClassQName: childDefaultsClassQName,
+    compilerSettings: bodyCompilerSettings,
+    recovery,
+    bodyPath,
+  });
   const children = collectBodiesInBodyOrder(
     bodyElement,
     defaults,
@@ -1414,6 +1753,7 @@ function parseBody(
     bodyPath,
     jointIndexRef,
     { value: 0 },
+    recovery,
   );
 
   return {
@@ -1430,13 +1770,129 @@ function parseBody(
   };
 }
 
+function omitUnresolvableGeomReferences(options: {
+  body: MJCFModelBody;
+  meshMap: Map<string, MJCFMesh>;
+  hfieldMap: Map<string, MJCFHfield>;
+  materialMap: Map<string, MJCFMaterial>;
+  recovery: MJCFModelRecoveryCollector;
+}): void {
+  const { body, meshMap, hfieldMap, materialMap, recovery } = options;
+  body.geoms = body.geoms.filter((geom) => {
+    const geomName = geom.sourceName || geom.name;
+    if (geom.mesh && !meshMap.has(geom.mesh)) {
+      recovery.add({
+        code: 'mjcf_geom_omitted',
+        severity: 'warning',
+        category: 'geometry',
+        message: `MJCF <geom>${geomName ? ` "${geomName}"` : ''} was omitted: mesh asset "${geom.mesh}" is not defined.`,
+        ...(geomName ? { relatedIds: [geomName] } : {}),
+        source: { tag: 'geom', ...(geomName ? { name: geomName } : {}), attribute: 'mesh' },
+        action: 'omitted',
+      });
+      return false;
+    }
+
+    if (geom.hfield && !hfieldMap.has(geom.hfield)) {
+      recovery.add({
+        code: 'mjcf_geom_omitted',
+        severity: 'warning',
+        category: 'geometry',
+        message: `MJCF <geom>${geomName ? ` "${geomName}"` : ''} was omitted: height field asset "${geom.hfield}" is not defined.`,
+        ...(geomName ? { relatedIds: [geomName] } : {}),
+        source: { tag: 'geom', ...(geomName ? { name: geomName } : {}), attribute: 'hfield' },
+        action: 'omitted',
+      });
+      return false;
+    }
+
+    if (geom.material && !materialMap.has(geom.material)) {
+      recovery.add({
+        code: 'mjcf_material_reference_downgraded',
+        severity: 'warning',
+        category: 'material',
+        message: `MJCF <geom>${geomName ? ` "${geomName}"` : ''} references undefined material "${geom.material}"; default rendering material was used.`,
+        ...(geomName ? { relatedIds: [geomName] } : {}),
+        source: { tag: 'geom', ...(geomName ? { name: geomName } : {}), attribute: 'material' },
+        action: 'downgraded',
+      });
+      geom.material = undefined;
+    }
+
+    return true;
+  });
+
+  body.children.forEach((child) =>
+    omitUnresolvableGeomReferences({
+      body: child,
+      meshMap,
+      hfieldMap,
+      materialMap,
+      recovery,
+    }),
+  );
+}
+
+function omitDuplicateTopologyNames(
+  worldBody: MJCFModelBody,
+  recovery: MJCFModelRecoveryCollector,
+): void {
+  const bodyNames = new Set<string>([worldBody.name]);
+  const jointNames = new Set<string>();
+
+  const visit = (body: MJCFModelBody): void => {
+    body.joints = body.joints.filter((joint) => {
+      if (!jointNames.has(joint.name)) {
+        jointNames.add(joint.name);
+        return true;
+      }
+
+      recovery.add({
+        code: 'mjcf_joint_omitted',
+        severity: 'warning',
+        category: 'joint',
+        message: `Duplicate MJCF joint "${joint.name}" was omitted to preserve an unambiguous topology.`,
+        relatedIds: [joint.name],
+        source: { tag: 'joint', name: joint.name },
+        action: 'omitted',
+      });
+      return false;
+    });
+
+    body.children = body.children.filter((child) => {
+      if (!bodyNames.has(child.name)) {
+        bodyNames.add(child.name);
+        visit(child);
+        return true;
+      }
+
+      recovery.add({
+        code: 'mjcf_body_subtree_omitted',
+        severity: 'warning',
+        category: 'topology',
+        message: `Duplicate MJCF body "${child.name}" and its subtree were omitted to preserve an unambiguous topology.`,
+        relatedIds: [child.name],
+        source: { tag: 'body', name: child.name },
+        action: 'omitted',
+      });
+      return false;
+    });
+  };
+
+  visit(worldBody);
+}
+
+function hasUsableMJCFBody(worldBody: MJCFModelBody): boolean {
+  return worldBody.children.length > 0 || worldBody.geoms.length > 0 || worldBody.sites.length > 0;
+}
+
 export function parseMJCFModel(xmlContent: string): ParsedMJCFModel | null {
   if (parsedModelCache.has(xmlContent)) {
     return parsedModelCache.get(xmlContent)?.model ?? null;
   }
 
   try {
-    const { doc, parseErrorText } = parseMJCFXmlDocument(xmlContent);
+    const { doc, parseErrorText, recovered } = parseMJCFXmlDocument(xmlContent);
     if (!doc) {
       console.error('[MJCF] XML parsing error:', parseErrorText ?? 'unknown parse error');
       return rememberParsedModel(
@@ -1446,10 +1902,23 @@ export function parseMJCFModel(xmlContent: string): ParsedMJCFModel | null {
       );
     }
 
-    const mujocoElement = doc.querySelector('mujoco');
+    const mujocoElement =
+      doc.documentElement?.tagName.toLowerCase() === 'mujoco' ? doc.documentElement : null;
     if (!mujocoElement) {
       console.error('[MJCF] No <mujoco> root element found');
       return rememberParsedModel(xmlContent, null, 'No <mujoco> root element found.');
+    }
+
+    const recovery = createMJCFModelRecoveryCollector();
+    if (recovered) {
+      recovery.add({
+        code: 'mjcf_xml_attribute_spacing_repaired',
+        severity: 'warning',
+        category: 'topology',
+        message: 'MJCF attribute spacing was repaired before parsing.',
+        source: { tag: 'mujoco' },
+        action: 'downgraded',
+      });
     }
 
     const compilerSettings = parseCompilerSettings(doc);
@@ -1493,6 +1962,7 @@ export function parseMJCFModel(xmlContent: string): ParsedMJCFModel | null {
           compilerSettings,
           'world',
           { value: worldBody.geoms.length },
+          recovery,
         ),
       );
       worldBody.sites.push(
@@ -1503,6 +1973,7 @@ export function parseMJCFModel(xmlContent: string): ParsedMJCFModel | null {
           compilerSettings,
           'world',
           { value: worldBody.sites.length },
+          recovery,
         ),
       );
       worldBody.joints.push(
@@ -1512,6 +1983,8 @@ export function parseMJCFModel(xmlContent: string): ParsedMJCFModel | null {
           undefined,
           compilerSettings,
           jointIndexRef,
+          recovery,
+          'world',
         ),
       );
       worldBody.children.push(
@@ -1523,9 +1996,22 @@ export function parseMJCFModel(xmlContent: string): ParsedMJCFModel | null {
           'world',
           jointIndexRef,
           { value: worldBody.children.length },
+          recovery,
         ),
       );
     });
+
+    omitUnresolvableGeomReferences({
+      body: worldBody,
+      meshMap,
+      hfieldMap,
+      materialMap,
+      recovery,
+    });
+    omitDuplicateTopologyNames(worldBody, recovery);
+    if (!hasUsableMJCFBody(worldBody)) {
+      return rememberParsedModel(xmlContent, null, 'No usable MJCF body or world geometry found.');
+    }
 
     return rememberParsedModel(
       xmlContent,
@@ -1544,6 +2030,7 @@ export function parseMJCFModel(xmlContent: string): ParsedMJCFModel | null {
         jointEqualityConstraints,
         keyframes,
         worldBody,
+        recoveryDiagnostics: recovery.diagnostics,
       },
       null,
     );

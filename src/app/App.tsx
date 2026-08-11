@@ -129,7 +129,6 @@ export function AppContent({ extensions, onExposeActions }: AppContentProps = {}
     useRobotLoadWorkflow({
       labels: {
         failedToParseFormat: t.failedToParseFormat,
-        importedRobotRecovered: t.importedRobotRecovered,
         importPackageAssetBundleHint: t.importPackageAssetBundleHint,
         xacroSourceOnlyPreviewHint: t.xacroSourceOnlyPreviewHint,
       },
@@ -153,11 +152,6 @@ export function AppContent({ extensions, onExposeActions }: AppContentProps = {}
   });
   const { importAssetFromBotWorld, ...botWorldImportState } = useAssetImportFromUrl({
     handleImport,
-    onImportComplete: (success) => {
-      if (success) {
-        showToast(t.addedFilesToAssetLibrary.replace('{count}', '1'), 'success');
-      }
-    },
     onConvertToRequest: ({ convertTo, success }) => {
       // Asset was downloaded+imported; on success open the export dialog
       // preselected to the requested format so the user can export/convert.

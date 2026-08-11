@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { DEFAULT_JOINT, JointType } from '@/types';
-import type { ViewerRobotDataResolution } from './viewerRobotData';
+import type { ViewerRobotDataResolution } from '@/lib/robot-parser/usd/viewerRobotData';
 import { createUsdViewerRuntimeRobot } from './usdViewerRuntimeRobot.ts';
 
 function createResolution(): ViewerRobotDataResolution {

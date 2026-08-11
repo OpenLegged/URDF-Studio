@@ -10,6 +10,9 @@ const { window } = new JSDOM();
 if (!globalThis.DOMParser) {
   globalThis.DOMParser = window.DOMParser;
 }
+if (!globalThis.XMLSerializer) {
+  globalThis.XMLSerializer = window.XMLSerializer;
+}
 
 function createXacroFile(
   name = 'robots/demo/demo.urdf.xacro',
@@ -68,6 +71,27 @@ test('parseEditableRobotSource resolves xacro includes from all file contents', 
 
   assert.ok(parsed);
   assert.ok(parsed?.links.base_link);
+});
+
+test('parseEditableRobotSource omits a broken MJCF include and keeps healthy bodies', () => {
+  const file: RobotFile = {
+    name: 'robots/demo/scene.xml',
+    format: 'mjcf',
+    content: `<mujoco model="partial">
+  <include file="missing.xml" />
+  <worldbody><body name="base_link" /></worldbody>
+</mujoco>`,
+  };
+
+  const parsed = parseEditableRobotSource({
+    file,
+    content: file.content,
+    availableFiles: [file],
+  });
+
+  assert.ok(parsed?.links.base_link);
+  assert.equal(parsed?.inspectionContext?.recovery?.recoveredItemCount, 1);
+  assert.match(parsed?.inspectionContext?.recovery?.diagnostics[0]?.message ?? '', /missing\.xml/);
 });
 
 test('parseEditableRobotSource parses sdf source using sdf semantics', () => {
@@ -154,7 +178,7 @@ test('parseEditableRobotSource resolves gazebo material scripts from all file co
   assert.equal(parsed?.materials?.base_link?.texture, 'demo/materials/textures/demo.png');
 });
 
-test('parseEditableRobotSource throws when editable source content is invalid', () => {
+test('parseEditableRobotSource returns null when recovery leaves no usable entity', () => {
   const file = {
     name: 'robots/demo/broken.sdf',
     format: 'sdf' as unknown as RobotFile['format'],
@@ -168,12 +192,12 @@ test('parseEditableRobotSource throws when editable source content is invalid', 
 </sdf>`,
   };
 
-  assert.throws(
-    () => parseEditableRobotSource({
+  assert.equal(
+    parseEditableRobotSource({
       file,
       content: file.content,
       availableFiles: [file],
     }),
-    /Failed to parse editable source for "robots\/demo\/broken\.sdf" \(sdf\)/,
+    null,
   );
 });

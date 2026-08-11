@@ -532,7 +532,7 @@ function expandIncludesRecursive(
 
     const templatePlaceholder = detectMJCFTemplatePlaceholder(includePath);
     if (templatePlaceholder) {
-      console.error(`[MJCF] Include file still contains template placeholder: ${includePath}`);
+      console.warn(`[MJCF] Include file still contains template placeholder: ${includePath}`);
       pushResolutionIssue(issues, {
         kind: 'unresolved_template_placeholder',
         sourceFilePath: currentFilePath,
@@ -545,7 +545,7 @@ function expandIncludesRecursive(
 
     const resolvedPath = resolveFileInMap(includePath, indexedFileMap, basePath);
     if (!resolvedPath) {
-      console.error(`[MJCF] Include file not found: ${includePath}`);
+      console.warn(`[MJCF] Include file not found: ${includePath}`);
       pushResolutionIssue(issues, {
         kind: 'missing_include',
         sourceFilePath: currentFilePath,
@@ -558,7 +558,7 @@ function expandIncludesRecursive(
 
     const normalizedResolvedPath = normalizePath(resolvedPath);
     if (includeStack.includes(normalizedResolvedPath)) {
-      console.error(`[MJCF] Circular include detected: ${normalizedResolvedPath}`);
+      console.warn(`[MJCF] Circular include detected: ${normalizedResolvedPath}`);
       pushResolutionIssue(issues, {
         kind: 'circular_include',
         sourceFilePath: currentFilePath,
@@ -658,7 +658,7 @@ function expandAttachedModelsRecursive(
 
     const modelFile = modelAssetByName.get(modelName);
     if (!modelFile) {
-      console.error(`[MJCF] Attached model asset not found: ${modelName}`);
+      console.warn(`[MJCF] Attached model asset not found: ${modelName}`);
       pushResolutionIssue(issues, {
         kind: 'missing_attached_model_asset',
         sourceFilePath: currentFilePath,
@@ -671,7 +671,7 @@ function expandAttachedModelsRecursive(
 
     const resolvedPath = resolveFileInMap(modelFile, indexedFileMap, basePath);
     if (!resolvedPath) {
-      console.error(`[MJCF] Attached model file not found: ${modelFile}`);
+      console.warn(`[MJCF] Attached model file not found: ${modelFile}`);
       pushResolutionIssue(issues, {
         kind: 'missing_attached_model_file',
         sourceFilePath: currentFilePath,
@@ -684,7 +684,7 @@ function expandAttachedModelsRecursive(
 
     const normalizedResolvedPath = normalizePath(resolvedPath);
     if (attachStack.includes(normalizedResolvedPath)) {
-      console.error(`[MJCF] Circular attach detected: ${normalizedResolvedPath}`);
+      console.warn(`[MJCF] Circular attach detected: ${normalizedResolvedPath}`);
       pushResolutionIssue(issues, {
         kind: 'circular_attach',
         sourceFilePath: currentFilePath,
@@ -723,7 +723,7 @@ function expandAttachedModelsRecursive(
     );
 
     if (!attachedRootBody) {
-      console.error(`[MJCF] Attached body not found: ${bodyName} in ${resolvedPath}`);
+      console.warn(`[MJCF] Attached body not found: ${bodyName} in ${resolvedPath}`);
       pushResolutionIssue(issues, {
         kind: 'missing_attached_body',
         sourceFilePath: resolvedPath,

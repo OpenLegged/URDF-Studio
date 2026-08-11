@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import type { ViewerRobotDataResolution } from './viewerRobotData';
+import type { ViewerRobotDataResolution } from '@/lib/robot-parser/usd/viewerRobotData';
 import { createJointAxisViz } from './visualizationFactories';
 
 type RenderInterfaceLike = {

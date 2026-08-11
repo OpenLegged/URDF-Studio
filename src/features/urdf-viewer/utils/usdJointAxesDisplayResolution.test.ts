@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { DEFAULT_JOINT, DEFAULT_LINK, JointType } from '@/types';
-import type { ViewerRobotDataResolution } from './viewerRobotData';
+import type { ViewerRobotDataResolution } from '@/lib/robot-parser/usd/viewerRobotData';
 import { createUsdJointAxesDisplayResolution } from './usdJointAxesDisplayResolution.ts';
 
 function createResolution(originX: number): ViewerRobotDataResolution {

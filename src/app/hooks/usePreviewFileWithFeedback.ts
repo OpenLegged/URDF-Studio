@@ -5,7 +5,6 @@ import { classifyLibraryFileKind } from '@/shared/utils/robotFileSupport';
 import type { RobotData, RobotFile } from '@/types';
 import {
   buildStandaloneImportAssetWarning,
-  buildStandalonePrimitiveGeometryHint,
   canProceedWithStandaloneImportAssetWarning,
   collectStandaloneImportSupportAssetPaths,
 } from '../utils/importPackageAssetReferences';
@@ -19,7 +18,6 @@ import { resolveRobotFileDataWithWorker } from './robotImportWorkerBridge';
 interface PreviewFeedbackLabels {
   failedToParseFormat: string;
   importPackageAssetBundleHint: string;
-  importPrimitiveGeometryHint: string;
   usdPreviewRequiresOpen: string;
   xacroSourceOnlyPreviewHint: string;
 }
@@ -75,15 +73,11 @@ export function usePreviewFileWithFeedback({
       const importedAssetPaths = collectStandaloneImportSupportAssetPaths(assets, availableFiles);
       const standaloneImportAssetWarning = isAlreadyAssemblyComponent
         ? null
-        : buildStandaloneImportAssetWarning(
-            file,
-            importedAssetPaths,
-            {
-              allFileContents,
-              availableFiles,
-              sourcePath: file.name,
-            },
-          );
+        : buildStandaloneImportAssetWarning(file, importedAssetPaths, {
+            allFileContents,
+            availableFiles,
+            sourcePath: file.name,
+          });
       if (standaloneImportAssetWarning) {
         const assetLabel =
           standaloneImportAssetWarning.missingAssetPaths.length > 3
@@ -108,21 +102,6 @@ export function usePreviewFileWithFeedback({
           });
           return;
         }
-      }
-
-      const primitiveGeometryHint = isAlreadyAssemblyComponent
-        ? null
-        : buildStandalonePrimitiveGeometryHint(file, importedAssetPaths, {
-            allFileContents,
-            sourcePath: file.name,
-          });
-      if (primitiveGeometryHint) {
-        const assetLabel =
-          primitiveGeometryHint.siblingMeshAssetCount >
-          primitiveGeometryHint.siblingMeshAssetPaths.length
-            ? `${primitiveGeometryHint.siblingMeshAssetPaths.join(', ')}, ...`
-            : primitiveGeometryHint.siblingMeshAssetPaths.join(', ');
-        showToast(labels.importPrimitiveGeometryHint.replace('{assets}', assetLabel), 'info');
       }
 
       setDocumentLoadState({
@@ -228,7 +207,6 @@ export function usePreviewFileWithFeedback({
               loadedCount: null,
               totalCount: null,
             });
-            showToast(labels.usdPreviewRequiresOpen, 'info');
             return;
           }
 
@@ -245,7 +223,6 @@ export function usePreviewFileWithFeedback({
               loadedCount: null,
               totalCount: null,
             });
-            showToast(labels.xacroSourceOnlyPreviewHint, 'info');
             return;
           }
 
@@ -292,7 +269,6 @@ export function usePreviewFileWithFeedback({
       handlePreviewFile,
       labels.failedToParseFormat,
       labels.importPackageAssetBundleHint,
-      labels.importPrimitiveGeometryHint,
       labels.usdPreviewRequiresOpen,
       labels.xacroSourceOnlyPreviewHint,
       setDocumentLoadState,

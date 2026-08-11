@@ -854,7 +854,7 @@ export const en: TranslationKeys = {
   motorType: 'Motor Type',
   addedComponent: 'Added component: {name}',
   addedComponentRecovered: 'Added component: {name} ({count} source issue(s) ignored)',
-  importedRobotRecovered: 'Imported {name} with {count} source issue(s) skipped; the rest is shown.',
+  appliedSourceRecovered: 'Applied {name} with {count} source issue(s) skipped; the rest is shown.',
   noCollisionOptimizationApplied: 'No collision optimization was applied.',
   collisionOptimizationApplied:
     'Applied {count} collision optimizations (Mesh {meshCount}, Primitive {primitiveCount})',

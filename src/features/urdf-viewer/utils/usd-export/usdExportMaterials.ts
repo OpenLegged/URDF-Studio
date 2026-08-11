@@ -14,7 +14,7 @@ import {
   getDescriptorRole,
   normalizeUsdPath,
 } from './usdExportPaths.ts';
-import { resolveSnapshotAuthoredMaterial } from '../usdViewerRobotAdapter/usdAdapterConversions.ts';
+import { resolveSnapshotAuthoredMaterial } from '@/lib/robot-parser/usd/usdViewerRobotAdapter/usdAdapterConversions';
 
 import type {
   ExportDescriptor,
@@ -202,6 +202,28 @@ export function hasNonEmptyTexturePath(value: unknown): boolean {
   return Boolean(normalizeTextureMaterialPath(value));
 }
 
+const SNAPSHOT_TEXTURE_PATH_KEYS = [
+  'mapPath',
+  'emissiveMapPath',
+  'roughnessMapPath',
+  'metalnessMapPath',
+  'normalMapPath',
+  'aoMapPath',
+  'alphaMapPath',
+  'clearcoatMapPath',
+  'clearcoatRoughnessMapPath',
+  'clearcoatNormalMapPath',
+  'specularColorMapPath',
+  'specularIntensityMapPath',
+  'transmissionMapPath',
+  'thicknessMapPath',
+  'sheenColorMapPath',
+  'sheenRoughnessMapPath',
+  'anisotropyMapPath',
+  'iridescenceMapPath',
+  'iridescenceThicknessMapPath',
+] as const satisfies readonly (keyof SnapshotMaterialRecord)[];
+
 export function snapshotMaterialUsesTextureCoordinates(
   material: SnapshotMaterialRecord | null | undefined,
 ): boolean {
@@ -209,27 +231,7 @@ export function snapshotMaterialUsesTextureCoordinates(
     return false;
   }
 
-  return (
-    hasNonEmptyTexturePath(material.mapPath) ||
-    hasNonEmptyTexturePath(material.emissiveMapPath) ||
-    hasNonEmptyTexturePath(material.roughnessMapPath) ||
-    hasNonEmptyTexturePath(material.metalnessMapPath) ||
-    hasNonEmptyTexturePath(material.normalMapPath) ||
-    hasNonEmptyTexturePath(material.aoMapPath) ||
-    hasNonEmptyTexturePath(material.alphaMapPath) ||
-    hasNonEmptyTexturePath(material.clearcoatMapPath) ||
-    hasNonEmptyTexturePath(material.clearcoatRoughnessMapPath) ||
-    hasNonEmptyTexturePath(material.clearcoatNormalMapPath) ||
-    hasNonEmptyTexturePath(material.specularColorMapPath) ||
-    hasNonEmptyTexturePath(material.specularIntensityMapPath) ||
-    hasNonEmptyTexturePath(material.transmissionMapPath) ||
-    hasNonEmptyTexturePath(material.thicknessMapPath) ||
-    hasNonEmptyTexturePath(material.sheenColorMapPath) ||
-    hasNonEmptyTexturePath(material.sheenRoughnessMapPath) ||
-    hasNonEmptyTexturePath(material.anisotropyMapPath) ||
-    hasNonEmptyTexturePath(material.iridescenceMapPath) ||
-    hasNonEmptyTexturePath(material.iridescenceThicknessMapPath)
-  );
+  return SNAPSHOT_TEXTURE_PATH_KEYS.some((key) => hasNonEmptyTexturePath(material[key]));
 }
 
 function authoredMaterialUsesTextureCoordinates(

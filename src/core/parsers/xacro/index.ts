@@ -6,8 +6,9 @@
 export {
     isXacro,
     processXacro,
+    processXacroWithDiagnostics,
     parseXacro,
     getXacroArgs
 } from './xacroParser';
 
-export type { XacroArgs, XacroFileMap } from './xacroParser';
+export type { ProcessedXacroResult, XacroArgs, XacroFileMap } from './xacroParser';

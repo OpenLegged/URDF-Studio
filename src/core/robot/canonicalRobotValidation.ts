@@ -13,9 +13,13 @@ const VISUAL_KEYS = new Set([
 ]);
 const AUTHORED_MATERIAL_KEYS = new Set([
   'name', 'color', 'colorRgba', 'texture', 'textureRotation', 'opacity', 'roughness',
-  'metalness', 'emissive', 'emissiveIntensity', 'alphaTest', 'passes',
+  'metalness', 'emissive', 'emissiveIntensity', 'alphaTest', 'passes', 'textureRepeat',
+  'mjcfBuiltinTexture',
 ]);
 const MATERIAL_PASS_KEYS = new Set(['texture', 'sceneBlend', 'depthWrite', 'lighting']);
+const MJCF_BUILTIN_TEXTURE_KEYS = new Set([
+  'builtin', 'type', 'rgb1', 'rgb2', 'mark', 'markrgb', 'width', 'height', 'cubeFace',
+]);
 const MESH_GROUP_KEYS = new Set(['meshKey', 'start', 'count', 'materialIndex']);
 const USD_DESCRIPTOR_KEYS = new Set([
   'meshId', 'sectionName', 'resolvedPrimPath', 'primType', 'materialId',
@@ -271,6 +275,34 @@ function validateAuthoredMaterial(value: unknown, path: string, issues: Issues):
     'textureRotation', 'opacity', 'roughness', 'metalness', 'emissiveIntensity', 'alphaTest',
   ] as const) {
     optionalFinite(value[field], `${path}.${field}`, issues);
+  }
+  if (value.textureRepeat !== undefined) {
+    finiteArray({ value: value.textureRepeat, path: `${path}.textureRepeat`, issues, expectedLength: 2 });
+  }
+  if (value.mjcfBuiltinTexture !== undefined) {
+    const texturePath = `${path}.mjcfBuiltinTexture`;
+    if (!isRecord(value.mjcfBuiltinTexture)) {
+      issue(issues, texturePath, 'must be an MJCF builtin texture object');
+    } else {
+      const texture = value.mjcfBuiltinTexture;
+      allowed(texture, MJCF_BUILTIN_TEXTURE_KEYS, texturePath, issues);
+      if (!['checker', 'flat', 'gradient'].includes(String(texture.builtin))) {
+        issue(issues, `${texturePath}.builtin`, 'must be checker, flat, or gradient');
+      }
+      optionalString(texture.type, `${texturePath}.type`, issues);
+      optionalString(texture.mark, `${texturePath}.mark`, issues);
+      for (const field of ['rgb1', 'rgb2', 'markrgb'] as const) {
+        if (texture[field] !== undefined) {
+          finiteArray({ value: texture[field], path: `${texturePath}.${field}`, issues, expectedLength: 3 });
+        }
+      }
+      optionalFinite(texture.width, `${texturePath}.width`, issues);
+      optionalFinite(texture.height, `${texturePath}.height`, issues);
+      if (texture.cubeFace !== undefined
+        && !['right', 'left', 'up', 'down', 'front', 'back'].includes(String(texture.cubeFace))) {
+        issue(issues, `${texturePath}.cubeFace`, 'must be right, left, up, down, front, or back');
+      }
+    }
   }
   if (value.passes === undefined) return;
   if (!Array.isArray(value.passes)) {

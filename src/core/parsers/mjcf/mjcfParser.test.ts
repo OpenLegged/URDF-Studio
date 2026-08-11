@@ -73,6 +73,39 @@ test('parseMJCF represents unbounded joints without infinite limit values', () =
   assert.deepEqual(robot.joints.spin.limit, undefined);
 });
 
+test('parseMJCF canonicalizes fromto primitive pose and straight segment length', () => {
+  installDomGlobals();
+  const robot = parseMJCF(`
+    <mujoco model="fromto_robot_data">
+      <worldbody>
+        <body name="base">
+          <inertial pos="0 0 0" mass="1" diaginertia="1 1 1" />
+          <geom name="finger_visual" type="capsule" size="0.08"
+                contype="0" conaffinity="0"
+                fromto="0 0 -0.05 0.12 0 -0.05" />
+        </body>
+      </worldbody>
+    </mujoco>
+  `);
+
+  const geometry = robot.links.base?.visual;
+  assert.ok(geometry);
+  assert.equal(geometry.type, GeometryType.CAPSULE);
+  assert.deepEqual(geometry.dimensions, { x: 0.08, y: 0.12, z: 0 });
+  assert.deepEqual(geometry.origin.xyz, { x: 0.06, y: 0, z: -0.05 });
+
+  const runtimeQuaternion = new THREE.Quaternion().setFromEuler(
+    new THREE.Euler(
+      geometry.origin.rpy.r,
+      geometry.origin.rpy.p,
+      geometry.origin.rpy.y,
+      'ZYX',
+    ),
+  );
+  const expectedQuaternion = new THREE.Quaternion(0, -Math.SQRT1_2, 0, Math.SQRT1_2);
+  assert.ok(runtimeQuaternion.angleTo(expectedQuaternion) < 1e-6);
+});
+
 const MYOSUITE_FIXTURE_ROOT = path.resolve('test/myosuite-main');
 let myosuiteMjcfFilesCache: RobotFile[] | null = null as RobotFile[] | null;
 const CASSIE_MUJOCO_HOME_CONNECT_ANCHOR_TOLERANCE = 0.0025;
@@ -185,15 +218,18 @@ test('loadMJCFToThreeJS surfaces the MJCF parse failure reason', async () => {
   );
 });
 
-test('parseMJCFModel fails instead of returning a model with a silently dropped body', (t) => {
+test('parseMJCFModel omits a broken body subtree and preserves its healthy sibling', (t) => {
   installDomGlobals();
   clearParsedMJCFModelCache();
 
   const xml = `
     <mujoco model="body-parse-failure">
       <worldbody>
-        <body name="base_link">
+        <body name="broken_link">
           <geom type="box" size="0.1 0.1 0.1" />
+        </body>
+        <body name="healthy_link">
+          <geom type="sphere" size="0.2" />
         </body>
       </worldbody>
     </mujoco>
@@ -219,8 +255,84 @@ test('parseMJCFModel fails instead of returning a model with a silently dropped 
     clearParsedMJCFModelCache(xml);
   });
 
-  assert.equal(parseMJCFModel(xml), null);
-  assert.equal(getParsedMJCFModelError(xml), 'body child traversal failed');
+  const model = parseMJCFModel(xml);
+  assert.ok(model);
+  assert.deepEqual(
+    model.worldBody.children.map((body) => body.name),
+    ['healthy_link'],
+  );
+  assert.equal(model.recoveryDiagnostics[0]?.code, 'mjcf_body_subtree_omitted');
+  assert.match(model.recoveryDiagnostics[0]?.message ?? '', /body child traversal failed/);
+});
+
+test('parseMJCF omits invalid body items independently and reports recovery diagnostics', () => {
+  installDomGlobals();
+
+  const robot = parseMJCF(`
+    <mujoco model="partial-recovery">
+      <worldbody>
+        <body name="base_link">
+          <geom name="healthy_geom" type="box" size="0.1 0.2 0.3" />
+          <geom name="bad_geom" type="not-a-shape" size="0.2" />
+          <site name="bad_site" pos="zero 0 0" />
+          <joint name="bad_joint" type="hinge" axis="0 broken 1" />
+          <inertial mass="heavy" pos="0 0 0" diaginertia="1 1 1" />
+          <body name="bad_child" pos="not 0 0">
+            <geom type="sphere" size="0.1" />
+          </body>
+          <body name="healthy_child" pos="0 0 1">
+            <geom type="sphere" size="0.1" />
+          </body>
+        </body>
+      </worldbody>
+    </mujoco>
+  `);
+
+  assert.ok(robot.links.base_link);
+  assert.ok(robot.links.healthy_child);
+  assert.equal(robot.links.bad_child, undefined);
+  assert.equal(robot.joints.bad_joint, undefined);
+  assert.equal(robot.links.base_link.visual.name, 'healthy_geom');
+  assert.deepEqual(
+    new Set(robot.inspectionContext?.recovery?.diagnostics.map((diagnostic) => diagnostic.code)),
+    new Set([
+      'mjcf_body_subtree_omitted',
+      'mjcf_geom_omitted',
+      'mjcf_inertial_omitted',
+      'mjcf_joint_omitted',
+      'mjcf_site_omitted',
+    ]),
+  );
+  assert.equal(robot.inspectionContext?.recovery?.recoveredItemCount, 5);
+});
+
+test('parseMJCFModel treats a blank optional rgba as unset without omitting the geom', () => {
+  installDomGlobals();
+
+  const model = parseMJCFModel(`
+    <mujoco model="blank-rgba">
+      <worldbody>
+        <body name="base_link">
+          <geom name="collision_box" type="box" size="0.1 0.2 0.3" rgba="" />
+        </body>
+      </worldbody>
+    </mujoco>
+  `);
+
+  assert.equal(model.worldBody.children[0]?.geoms.length, 1);
+  assert.equal(model.worldBody.children[0]?.geoms[0]?.rgba, undefined);
+  assert.deepEqual(model.recoveryDiagnostics, []);
+});
+
+test('parseMJCF keeps structurally unusable documents fatal', () => {
+  installDomGlobals();
+
+  assert.equal(parseNullableMJCF('<mujoco><worldbody /></mujoco>'), null);
+  assert.equal(
+    parseNullableMJCF('<wrapper><mujoco><worldbody><body /></worldbody></mujoco></wrapper>'),
+    null,
+  );
+  assert.equal(parseNullableMJCF('<mujoco><worldbody><body></worldbody></mujoco>'), null);
 });
 
 test('parseMJCF releases parsed model cache after import completes', () => {

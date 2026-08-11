@@ -25,19 +25,21 @@ const addPathHintCandidates = (target: Set<string>, meshPath?: string, urdfDir: 
 
 const collectMeshGeometries = (link: UrdfLink): UrdfVisual[] => {
   const geometries: UrdfVisual[] = [];
+  const isMeshAssetGeometry = (geometry: UrdfVisual): boolean =>
+    geometry.type === GeometryType.MESH || geometry.type === GeometryType.SDF;
 
   getVisualGeometryEntries(link).forEach((entry) => {
-    if (entry.geometry.type === GeometryType.MESH) {
+    if (isMeshAssetGeometry(entry.geometry)) {
       geometries.push(entry.geometry);
     }
   });
 
-  if (link.collision?.type === GeometryType.MESH) {
+  if (link.collision && isMeshAssetGeometry(link.collision)) {
     geometries.push(link.collision);
   }
 
   (link.collisionBodies || []).forEach((body) => {
-    if (body.type === GeometryType.MESH) {
+    if (isMeshAssetGeometry(body)) {
       geometries.push(body);
     }
   });
@@ -56,7 +58,10 @@ export const collectExplicitlyScaledMeshPathsFromLinks = (
 
   Object.values(links).forEach((link) => {
     collectMeshGeometries(link).forEach((geometry) => {
-      if (!geometry.meshPath || isIdentityMeshScale(geometry.dimensions)) {
+      if (
+        !geometry.meshPath ||
+        (!geometry.mjcfMesh && isIdentityMeshScale(geometry.dimensions))
+      ) {
         return;
       }
 

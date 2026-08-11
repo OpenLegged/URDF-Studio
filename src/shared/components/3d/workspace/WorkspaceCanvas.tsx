@@ -42,6 +42,7 @@ import {
   useWorkspaceCanvasTheme,
 } from './workspaceCanvasConfig';
 import type { WorkspaceCameraSnapshot } from './workspaceCameraSnapshot';
+import { attachLateralWheelBlocker } from './lateralWheelBlocker';
 import { WorkspaceCanvasErrorBoundary } from './WorkspaceCanvasErrorBoundary';
 import {
   getWorkspaceCanvasErrorDetail,
@@ -562,6 +563,20 @@ export const WorkspaceCanvas = ({
     const frameId = scheduleWorkspaceCanvasResizeEvent(window);
     return () => window.cancelAnimationFrame(frameId);
   }, [canvasResetKey, shouldRenderCanvas]);
+
+  // Block horizontal trackpad swipes from bubbling out of the viewer into the
+  // document and triggering back/forward navigation on macOS Edge/Chrome
+  // (Chromium issue 745137 — `overscroll-behavior: none` is not honored for
+  // trackpad navigation on macOS, so choke the wheel at the container). The
+  // listener is non-passive so `preventDefault` actually takes effect; React's
+  // synthetic `onWheelCapture` is passive and cannot block it.
+  useEffect(() => {
+    const el = containerRef?.current;
+    if (!el) {
+      return undefined;
+    }
+    return attachLateralWheelBlocker(el);
+  }, [containerRef]);
 
   return (
     <div

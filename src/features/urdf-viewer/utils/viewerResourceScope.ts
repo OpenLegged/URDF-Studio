@@ -8,7 +8,7 @@ import { isAssetLibraryOnlyFormat } from '@/shared/utils/robotFileSupport';
 import {
   inferUsdBundleVirtualDirectory,
   isUsdPathWithinBundleDirectory,
-} from './usdPreloadSources';
+} from '@/lib/robot-parser/usd/usdPreloadSources';
 
 const KNOWN_BUNDLE_SEGMENTS = new Set([
   'urdf',

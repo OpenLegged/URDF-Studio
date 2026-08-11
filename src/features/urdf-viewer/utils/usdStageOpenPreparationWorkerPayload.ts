@@ -4,8 +4,8 @@ import {
   isUsdPathWithinBundleDirectory,
   isUsdRuntimeTexturePath,
 } from '@/core/parsers/usd/usdAssetPaths';
-import { compactBlobBackedLargeTextUsdForWorker } from './usdStageOpenLargeText.ts';
-import { collectUsdStageOpenRelevantVirtualPaths, toVirtualUsdPath } from './usdPreloadSources.ts';
+import { compactBlobBackedLargeTextUsdForWorker } from '@/lib/robot-parser/usd/usdStageOpenLargeText';
+import { collectUsdStageOpenRelevantVirtualPaths, toVirtualUsdPath } from '@/lib/robot-parser/usd/usdPreloadSources';
 
 type StageOpenSourceFile = Pick<RobotFile, 'name' | 'content' | 'blobUrl'>;
 type StageOpenAvailableFile = Pick<RobotFile, 'name' | 'content' | 'blobUrl' | 'format'>;

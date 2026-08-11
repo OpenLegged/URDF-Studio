@@ -50,7 +50,6 @@ export function useRobotLoadWorkflow({
   const loadRobotFileRef = useRef<LoadRobotFile | null>(null);
   const {
     failedToParseFormat,
-    importedRobotRecovered,
     importPackageAssetBundleHint,
     xacroSourceOnlyPreviewHint,
   } = labels;
@@ -59,7 +58,6 @@ export function useRobotLoadWorkflow({
       runRobotLoadWorkflow({
         labels: {
           failedToParseFormat,
-          importedRobotRecovered,
           importPackageAssetBundleHint,
           xacroSourceOnlyPreviewHint,
         },
@@ -85,7 +83,6 @@ export function useRobotLoadWorkflow({
       }),
     [
       failedToParseFormat,
-      importedRobotRecovered,
       importPackageAssetBundleHint,
       onViewerReload,
       setAppMode,

@@ -9,17 +9,31 @@ import {
 } from '@/types';
 import { parseURDF } from './urdf/parser';
 import { parseMJCF } from './mjcf/mjcfParser';
+import { parseCanonicalPhysicalMJCF } from './mjcf/mjcfCanonicalPhysicalImport';
 import { syncMjcfMeshTextMaterialColors } from './mjcf/mjcfMeshTextColorSync';
 import { resolveMJCFSource } from './mjcf/mjcfSourceResolver';
 import { parseSDF } from './sdf/sdfParser';
 import { syncRobotMeshTextMaterialMetadata } from './meshTextMaterialSync';
-import { processXacro } from './xacro/xacroParser';
+import {
+  isSourceOnlyXacroFragmentDocument,
+  processXacroWithDiagnostics,
+} from './xacro/xacroParser';
 import { rewriteRobotMeshPathsForSource } from './meshPathUtils';
 import { syncRobotVisualColorsFromMaterials } from '@/core/robot/materials';
 import { isImageAssetPath } from '@/core/utils/assetFileTypes';
 import { isSourceOnlyMJCFDocument } from './mjcf/mjcfXml';
 import { inspectMJCFImportExternalAssets } from './mjcf/mjcfImportValidation';
 import { finalizeImportedRobotData } from './finalizeImportedRobotData';
+import { createMJCFSourceResolutionRecoveryDiagnostics } from './recoveryDiagnostics';
+import {
+  buildImportAssetPaths,
+  buildMeshTextMaterialAssetPaths,
+  getRobotImportFileName,
+  hasRobotImportSourceContent,
+  hasTextMeshMaterialInputs,
+  normalizeRobotImportFilePath,
+  normalizeRobotImportSourceLookupPath,
+} from './robotImportSourcePaths';
 
 export interface ResolveRobotFileDataOptions {
   availableFiles?: RobotFile[];
@@ -219,11 +233,7 @@ function createReadyImportResult(
       ? syncMjcfMeshTextMaterialColors(rewrittenRobotData, allFileContents)
       : meshTextMaterialSyncedRobotData;
   const syncedRobotData = syncRobotVisualColorsFromMaterials(mjcfMeshColorSyncedRobotData);
-  const finalized = finalizeImportedRobotData(
-    syncedRobotData,
-    file.format,
-    recoveryDiagnostics,
-  );
+  const finalized = finalizeImportedRobotData(syncedRobotData, file.format, recoveryDiagnostics);
   if (finalized.status === 'error') {
     return createErrorImportResult(
       file,
@@ -311,98 +321,20 @@ export function describeRobotImportFailure(
   return 'Source parsing failed.';
 }
 
-function normalizeFilePath(filePath: string): string {
-  return filePath.replace(/\\/g, '/');
-}
-
-function normalizeSourceLookupPath(filePath: string): string {
-  return normalizeFilePath(filePath).trim().replace(/^\/+/, '').split('?')[0];
-}
-
-function getFileName(filePath: string): string {
-  const normalized = normalizeFilePath(filePath);
-  const segments = normalized.split('/');
-  return segments[segments.length - 1] || normalized;
-}
-
-function hasSourceContent(value: string | null | undefined): value is string {
-  return typeof value === 'string' && value.trim().length > 0;
-}
-
-function hasTextMeshMaterialInputs(allFileContents: Record<string, string>): boolean {
-  for (const assetPath in allFileContents) {
-    if (!Object.prototype.hasOwnProperty.call(allFileContents, assetPath)) {
-      continue;
-    }
-
-    const lowerPath = assetPath.toLowerCase();
-    if (lowerPath.endsWith('.dae') || lowerPath.endsWith('.obj')) {
-      return true;
-    }
-  }
-
-  return false;
-}
-
-function buildMeshTextMaterialAssetPaths(options: {
-  availableFiles: RobotFile[];
-  assets: Record<string, string>;
-  allFileContents: Record<string, string>;
-}): Set<string> {
-  const paths = new Set<string>();
-
-  Object.keys(options.allFileContents).forEach((assetPath) => {
-    paths.add(assetPath);
-  });
-
-  Object.keys(options.assets).forEach((assetPath) => {
-    if (isImageAssetPath(assetPath)) {
-      paths.add(assetPath);
-    }
-  });
-
-  options.availableFiles.forEach((file) => {
-    if (isImageAssetPath(file.name)) {
-      paths.add(file.name);
-    }
-  });
-
-  return paths;
-}
-
-function buildImportAssetPaths(options: {
-  availableFiles: RobotFile[];
-  assets: Record<string, string>;
-  allFileContents: Record<string, string>;
-}): Set<string> {
-  const paths = new Set<string>();
-
-  options.availableFiles.forEach((file) => {
-    paths.add(file.name);
-  });
-
-  Object.keys(options.assets).forEach((assetPath) => {
-    paths.add(assetPath);
-  });
-
-  Object.keys(options.allFileContents).forEach((contentPath) => {
-    paths.add(contentPath);
-  });
-
-  return paths;
-}
-
 function findContextFileContent(
   file: RobotFile,
   options: Pick<ResolveRobotFileDataOptions, 'availableFiles' | 'allFileContents'>,
 ): { content: string; sourceFilePath: string } | null {
-  const normalizedTargetPath = normalizeSourceLookupPath(file.name);
+  const normalizedTargetPath = normalizeRobotImportSourceLookupPath(file.name);
   if (!normalizedTargetPath) {
     return null;
   }
 
   for (const [path, content] of Object.entries(options.allFileContents ?? {})) {
-    if (hasSourceContent(content) && normalizeSourceLookupPath(path) === normalizedTargetPath) {
+    if (
+      hasRobotImportSourceContent(content) &&
+      normalizeRobotImportSourceLookupPath(path) === normalizedTargetPath
+    ) {
       return {
         content,
         sourceFilePath: path,
@@ -413,8 +345,8 @@ function findContextFileContent(
   for (const candidate of options.availableFiles ?? []) {
     if (
       candidate.format === file.format &&
-      hasSourceContent(candidate.content) &&
-      normalizeSourceLookupPath(candidate.name) === normalizedTargetPath
+      hasRobotImportSourceContent(candidate.content) &&
+      normalizeRobotImportSourceLookupPath(candidate.name) === normalizedTargetPath
     ) {
       return {
         content: candidate.content,
@@ -430,7 +362,7 @@ function resolveUrdfSourceContent(
   file: RobotFile,
   options: Pick<ResolveRobotFileDataOptions, 'availableFiles' | 'allFileContents'>,
 ): { content: string; sourceFilePath: string | null; fromContext: boolean } {
-  if (hasSourceContent(file.content)) {
+  if (hasRobotImportSourceContent(file.content)) {
     return {
       content: file.content,
       sourceFilePath: null,
@@ -455,7 +387,7 @@ function resolveUrdfSourceContent(
 }
 
 export function isStandaloneXacroEntry(file: RobotFile): boolean {
-  const lowerName = getFileName(file.name).toLowerCase();
+  const lowerName = getRobotImportFileName(file.name).toLowerCase();
   return lowerName === 'robot.xacro' || lowerName.endsWith('.urdf.xacro');
 }
 
@@ -467,7 +399,7 @@ export function findStandaloneXacroTruthFile(
     return null;
   }
 
-  const normalizedFileName = normalizeFilePath(file.name);
+  const normalizedFileName = normalizeRobotImportFilePath(file.name);
   const pathParts = normalizedFileName.split('/');
   if (pathParts.length < 3) {
     return null;
@@ -482,7 +414,7 @@ export function findStandaloneXacroTruthFile(
       return false;
     }
 
-    return normalizeFilePath(candidate.name).startsWith(urdfDir);
+    return normalizeRobotImportFilePath(candidate.name).startsWith(urdfDir);
   });
 
   if (candidateTruthFiles.length === 0) {
@@ -492,12 +424,12 @@ export function findStandaloneXacroTruthFile(
   const preferredFileNames = [
     `${packageName}.urdf`,
     `${packageName.replace(/_description$/i, '')}.urdf`,
-    `${getFileName(normalizedFileName).replace(/\.xacro$/i, '')}.urdf`,
+    `${getRobotImportFileName(normalizedFileName).replace(/\.xacro$/i, '')}.urdf`,
   ];
 
   for (const preferredFileName of preferredFileNames) {
     const match = candidateTruthFiles.find(
-      (candidate) => getFileName(candidate.name) === preferredFileName,
+      (candidate) => getRobotImportFileName(candidate.name) === preferredFileName,
     );
     if (match) {
       return match;
@@ -529,7 +461,7 @@ export function isSourceOnlyRobotDocument(urdfContent: string): boolean {
 }
 
 export function isSourceOnlyXacroDocument(urdfContent: string): boolean {
-  return isSourceOnlyRobotDocument(urdfContent);
+  return isSourceOnlyRobotDocument(urdfContent) || isSourceOnlyXacroFragmentDocument(urdfContent);
 }
 
 function shouldValidateMJCFExternalAssets(
@@ -547,10 +479,11 @@ function shouldValidateMJCFExternalAssets(
   return resolvedAssetCount > 0;
 }
 
-export function resolveRobotFileData(
+function resolveRobotFileDataInternal(
   file: RobotFile,
   options: ResolveRobotFileDataOptions = {},
   reportProgress?: RobotImportProgressReporter,
+  preparedMjcfState?: RobotState | null,
 ): RobotImportResult {
   const {
     availableFiles = [],
@@ -634,16 +567,6 @@ export function resolveRobotFileData(
           phase: 'resolving-source',
         });
         const resolved = resolveMJCFSource(file, availableFiles);
-        if (resolved.issues.length > 0) {
-          return createErrorImportResult(
-            file,
-            'parse_failed',
-            buildImportFailureMessage(
-              file,
-              buildImportFailureDetail(file, parsePhase, resolved.issues[0]?.detail),
-            ),
-          );
-        }
 
         if (isSourceOnlyMJCFDocument(resolved.content)) {
           return createErrorImportResult(file, 'source_only_fragment');
@@ -653,7 +576,8 @@ export function resolveRobotFileData(
         emitRobotImportProgress(reportProgress, 45, 'Checking MJCF external assets', {
           phase: 'checking-assets',
         });
-        let recoveryDiagnostics: RobotImportRecoveryDiagnostic[] = [];
+        const recoveryDiagnostics: RobotImportRecoveryDiagnostic[] =
+          createMJCFSourceResolutionRecoveryDiagnostics(resolved.issues);
         if (mjcfExternalAssetValidation !== 'never') {
           const assetValidation = inspectMJCFImportExternalAssets(
             resolved.sourceFile.name,
@@ -661,17 +585,14 @@ export function resolveRobotFileData(
             availableFiles,
             assets,
           );
-          const shouldApplyAssetValidation =
-            shouldValidateMJCFExternalAssets(
-              mjcfExternalAssetValidation,
-              assetValidation.resolvedAssetCount,
-            );
-          const fatalAssetIssues = shouldApplyAssetValidation
-            ? assetValidation.issues.filter((issue) =>
-                mjcfExternalAssetValidation === 'always'
-                || issue.referenceKind === 'include'
-                || issue.referenceKind === 'model')
-            : [];
+          const shouldApplyAssetValidation = shouldValidateMJCFExternalAssets(
+            mjcfExternalAssetValidation,
+            assetValidation.resolvedAssetCount,
+          );
+          const fatalAssetIssues =
+            shouldApplyAssetValidation && mjcfExternalAssetValidation === 'always'
+              ? assetValidation.issues
+              : [];
           if (fatalAssetIssues.length > 0) {
             return createErrorImportResult(
               file,
@@ -683,21 +604,37 @@ export function resolveRobotFileData(
             );
           }
           if (shouldApplyAssetValidation) {
-            recoveryDiagnostics = assetValidation.issues
-              .filter((issue) => !fatalAssetIssues.includes(issue))
-              .map((issue) => ({
-                code: 'missing_render_asset_placeholder',
-                severity: 'warning',
-                category: issue.referenceKind === 'texture' ? 'material' : 'geometry',
-                message: `${issue.detail} A placeholder will be used.`,
-                relatedIds: issue.elementName ? [issue.elementName] : undefined,
-                source: {
-                  tag: issue.referenceKind,
-                  name: issue.elementName ?? undefined,
-                  attribute: issue.attributeName,
-                },
-                action: 'downgraded',
-              }));
+            recoveryDiagnostics.push(
+              ...assetValidation.issues
+                .filter((issue) => !fatalAssetIssues.includes(issue))
+                .map<RobotImportRecoveryDiagnostic>((issue) => ({
+                  code:
+                    issue.referenceKind === 'include' || issue.referenceKind === 'model'
+                      ? 'missing_mjcf_source_branch_omitted'
+                      : 'missing_render_asset_placeholder',
+                  severity: 'warning',
+                  category:
+                    issue.referenceKind === 'include' || issue.referenceKind === 'model'
+                      ? 'source'
+                      : issue.referenceKind === 'texture'
+                        ? 'material'
+                        : 'geometry',
+                  message:
+                    issue.referenceKind === 'include' || issue.referenceKind === 'model'
+                      ? `${issue.detail} The unresolved branch was omitted.`
+                      : `${issue.detail} A placeholder will be used.`,
+                  relatedIds: issue.elementName ? [issue.elementName] : undefined,
+                  source: {
+                    tag: issue.referenceKind,
+                    name: issue.elementName ?? undefined,
+                    attribute: issue.attributeName,
+                  },
+                  action:
+                    issue.referenceKind === 'include' || issue.referenceKind === 'model'
+                      ? 'omitted'
+                      : 'downgraded',
+                })),
+            );
           }
         }
 
@@ -706,12 +643,15 @@ export function resolveRobotFileData(
           progressMode: 'indeterminate',
           phase: 'parsing-source',
         });
-        const parsed = parseMJCF(resolved.content);
+        const parsed = preparedMjcfState ?? parseMJCF(resolved.content);
         if (!parsed) {
           return createErrorImportResult(
             file,
             'parse_failed',
-            buildImportFailureMessage(file, buildImportFailureDetail(file, parsePhase)),
+            buildImportFailureMessage(
+              file,
+              buildImportFailureDetail(file, parsePhase, resolved.issues[0]?.detail),
+            ),
           );
         }
 
@@ -797,6 +737,13 @@ export function resolveRobotFileData(
           }
         }
 
+        // A linkless <robot> can still be a valid Xacro entry point when its includes or
+        // macro calls emit the robot topology. Only reject non-robot sidecar fragments
+        // before expansion; classify linkless robot documents after Xacro processing.
+        if (isSourceOnlyXacroFragmentDocument(file.content)) {
+          return createErrorImportResult(file, 'source_only_fragment');
+        }
+
         const fileMap: Record<string, string> = {};
         availableFiles.forEach((candidate) => {
           fileMap[candidate.name] = candidate.content;
@@ -815,7 +762,13 @@ export function resolveRobotFileData(
         pathParts.pop();
         parsePhase = 'expanding Xacro';
         emitRobotImportProgress(reportProgress, 55, 'Expanding Xacro');
-        const urdfContent = processXacro(file.content, {}, fileMap, pathParts.join('/'));
+        const processedXacro = processXacroWithDiagnostics(
+          file.content,
+          {},
+          fileMap,
+          pathParts.join('/'),
+        );
+        const urdfContent = processedXacro.content;
         parsePhase = 'parsing generated URDF';
         emitRobotImportProgress(reportProgress, 80, 'Parsing generated URDF');
         const parsed = parseURDF(urdfContent);
@@ -824,6 +777,7 @@ export function resolveRobotFileData(
           return createReady(file, toRobotData(parsed), {
             resolvedUrdfContent: urdfContent,
             allFileContents,
+            recoveryDiagnostics: processedXacro.recoveryDiagnostics,
             ...(meshTextMaterialAssetPaths ? { assetPaths: meshTextMaterialAssetPaths } : {}),
           });
         }
@@ -865,4 +819,40 @@ export function resolveRobotFileData(
       ),
     );
   }
+}
+
+export function resolveRobotFileData(
+  file: RobotFile,
+  options: ResolveRobotFileDataOptions = {},
+  reportProgress?: RobotImportProgressReporter,
+): RobotImportResult {
+  return resolveRobotFileDataInternal(file, options, reportProgress);
+}
+
+/**
+ * Production import boundary for formats with asset-dependent canonical semantics.
+ * MJCF mesh-backed primitives are fitted before final RobotData validation so
+ * collision/export consumers receive primitive physics rather than viewer-only meshes.
+ */
+export async function resolveRobotFileDataAsync(
+  file: RobotFile,
+  options: ResolveRobotFileDataOptions = {},
+  reportProgress?: RobotImportProgressReporter,
+): Promise<RobotImportResult> {
+  if (file.format !== 'mjcf') {
+    return resolveRobotFileDataInternal(file, options, reportProgress);
+  }
+
+  const availableFiles = options.availableFiles ?? [];
+  const resolved = resolveMJCFSource(file, availableFiles);
+  emitRobotImportProgress(reportProgress, null, 'Fitting MJCF physical geometry', {
+    progressMode: 'indeterminate',
+    phase: 'parsing-source',
+  });
+  const preparedMjcfState = await parseCanonicalPhysicalMJCF(resolved.content, {
+    assets: options.assets,
+    sourceFileDir: resolved.basePath,
+  });
+
+  return resolveRobotFileDataInternal(file, options, reportProgress, preparedMjcfState);
 }

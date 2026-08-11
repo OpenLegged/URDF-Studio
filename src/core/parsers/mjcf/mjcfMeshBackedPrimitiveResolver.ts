@@ -40,6 +40,11 @@ interface ResolveMJCFMeshBackedPrimitiveOptions {
   fitPrimitiveFromMeshAsset?: (
     params: FitPrimitiveFromMeshAssetParams,
   ) => Promise<MJCFFittedPrimitive | null>;
+  onUnresolvedPrimitive?: (
+    geom: MJCFModelGeom,
+    reason: 'missing-mesh-asset' | 'fit-produced-no-primitive' | 'fit-error',
+    error?: unknown,
+  ) => void;
 }
 
 async function fitPrimitiveFromMeshAssetViaUrl(
@@ -167,6 +172,7 @@ function applyFittedPrimitiveToGeom(geom: MJCFModelGeom, fit: MJCFFittedPrimitiv
 
   geom.size = [fit.radius];
   geom.fromto = [from.x, from.y, from.z, to.x, to.y, to.z];
+  geom.fittedFromMesh = geom.mesh;
   geom.mesh = undefined;
   geom.pos = undefined;
   geom.quat = undefined;
@@ -223,6 +229,7 @@ async function resolveBodyMeshBackedPrimitives(
   fitPrimitiveFromMeshAsset: (
     params: FitPrimitiveFromMeshAssetParams,
   ) => Promise<MJCFFittedPrimitive | null>,
+  onUnresolvedPrimitive?: ResolveMJCFMeshBackedPrimitiveOptions['onUnresolvedPrimitive'],
 ): Promise<number> {
   let resolvedCount = 0;
 
@@ -236,16 +243,29 @@ async function resolveBodyMeshBackedPrimitives(
 
     const meshDef = parsedModel.meshMap.get(geom.mesh);
     if (!meshDef) {
+      onUnresolvedPrimitive?.(geom, 'missing-mesh-asset');
       continue;
     }
 
-    const fit = await fitPrimitiveFromMeshAsset({
-      geomType: geom.type,
-      fitStrategy: parsedModel.compilerSettings.fitaabb ? 'aabb' : 'inertia-box',
-      meshDef,
-    });
+    let fit: MJCFFittedPrimitive | null;
+    try {
+      fit = await fitPrimitiveFromMeshAsset({
+        geomType: geom.type,
+        fitStrategy: parsedModel.compilerSettings.fitaabb ? 'aabb' : 'inertia-box',
+        meshDef,
+      });
+    } catch (error) {
+      throwIfMJCFLoadAborted(abortSignal);
+      if (!onUnresolvedPrimitive) {
+        throw error;
+      }
+      onUnresolvedPrimitive(geom, 'fit-error', error);
+      await yieldIfNeeded();
+      continue;
+    }
 
     if (!fit) {
+      onUnresolvedPrimitive?.(geom, 'fit-produced-no-primitive');
       await yieldIfNeeded();
       continue;
     }
@@ -263,6 +283,7 @@ async function resolveBodyMeshBackedPrimitives(
       yieldIfNeeded,
       abortSignal,
       fitPrimitiveFromMeshAsset,
+      onUnresolvedPrimitive,
     );
     await yieldIfNeeded();
   }
@@ -284,6 +305,7 @@ export async function resolveMJCFMeshBackedPrimitiveGeoms(
       meshCache,
       abortSignal,
     ),
+    onUnresolvedPrimitive,
   }: ResolveMJCFMeshBackedPrimitiveOptions,
 ): Promise<number> {
   return await resolveBodyMeshBackedPrimitives(
@@ -292,5 +314,6 @@ export async function resolveMJCFMeshBackedPrimitiveGeoms(
     yieldIfNeeded,
     abortSignal,
     fitPrimitiveFromMeshAsset,
+    onUnresolvedPrimitive,
   );
 }

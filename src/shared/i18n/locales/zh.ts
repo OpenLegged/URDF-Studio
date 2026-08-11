@@ -825,7 +825,7 @@ export const zh: TranslationKeys = {
   motorType: '电机型号',
   addedComponent: '已添加组件: {name}',
   addedComponentRecovered: '已添加组件: {name}（已忽略 {count} 项源数据问题）',
-  importedRobotRecovered: '已导入 {name}，跳过 {count} 项源数据问题，其余内容已显示。',
+  appliedSourceRecovered: '已应用 {name}，跳过 {count} 项源数据问题，其余内容已显示。',
   noCollisionOptimizationApplied: '未应用任何碰撞体优化。',
   collisionOptimizationApplied:
     '已应用 {count} 项碰撞体优化（Mesh {meshCount}，基础体 {primitiveCount}）',

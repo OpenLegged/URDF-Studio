@@ -7,7 +7,7 @@ import {
   createEmbeddedUsdViewerLoadParams,
   resolveEmbeddedUsdViewerLoadProfile,
   shouldPreferSlicedEmbeddedUsdLoad,
-} from './usdViewerRenderParams.ts';
+} from '@/lib/robot-parser/usd/usdViewerRenderParams';
 
 test('createEmbeddedUsdViewerLoadParams keeps USD auto-fit aligned with the workspace camera defaults', () => {
   const params = createEmbeddedUsdViewerLoadParams(4);

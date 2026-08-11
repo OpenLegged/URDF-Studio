@@ -40,6 +40,8 @@
     "build:robot-canvas-lib:types": "node ./node_modules/typescript/bin/tsc -p tsconfig.lib.json && node ./scripts/tools/dts/rewrite_dts_aliases.mjs ./dist/lib-types",
     "build:package:react-robot-canvas": "npm run -w @urdf-studio/react-robot-canvas build",
     "pack:package:react-robot-canvas": "npm run -w @urdf-studio/react-robot-canvas pack:dry-run",
+    "build:package:robot-runtime": "npm run -w @urdf-studio/robot-runtime build",
+    "pack:package:robot-runtime": "npm run -w @urdf-studio/robot-runtime pack:dry-run",
     "version:show": "node scripts/release/show.mjs",
     "version:bump": "node scripts/release/bump.mjs",
     "preview": "vite preview",

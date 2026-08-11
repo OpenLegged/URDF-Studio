@@ -6,7 +6,6 @@ import { renderToStaticMarkup } from 'react-dom/server';
 
 import { createComponentSourceDraft, createSingleComponentWorkspace } from '@/core/robot';
 import type { CollisionOptimizationOperation } from '@/features/property-editor';
-import { translations } from '@/shared/i18n';
 import { useAssetsStore } from '@/store/assetsStore';
 import { useWorkspaceStore } from '@/store/workspaceStore';
 import { DEFAULT_LINK, GeometryType, type RobotData } from '@/types';
@@ -57,8 +56,6 @@ function renderWorkflow(): ReturnType<typeof useCollisionOptimizationWorkflow> {
       focusOn: () => {},
       pulseSelection: () => {},
       setSelection: () => {},
-      showToast: () => {},
-      t: translations.en,
     });
     return null;
   }

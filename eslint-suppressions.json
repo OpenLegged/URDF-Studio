@@ -62,11 +62,6 @@
       "count": 1
     }
   },
-  "src/app/components/SnapshotDialog.tsx": {
-    "react-hooks/exhaustive-deps": {
-      "count": 1
-    }
-  },
   "src/app/components/UnifiedViewer.tsx": {
     "react-hooks/exhaustive-deps": {
       "count": 4
@@ -74,11 +69,6 @@
   },
   "src/app/components/header/types.ts": {
     "@typescript-eslint/no-unused-vars": {
-      "count": 1
-    }
-  },
-  "src/app/components/unified-viewer/UnifiedViewerOverlays.tsx": {
-    "@typescript-eslint/no-explicit-any": {
       "count": 1
     }
   },
@@ -267,7 +257,7 @@
   },
   "src/core/parsers/urdf/parser/linkParser.ts": {
     "@typescript-eslint/no-explicit-any": {
-      "count": 2
+      "count": 1
     }
   },
   "src/core/parsers/urdf/urdfGenerator.ts": {
@@ -588,11 +578,6 @@
       "count": 3
     }
   },
-  "src/features/urdf-viewer/utils/usdCriticalDependencyPaths.ts": {
-    "@typescript-eslint/no-unused-vars": {
-      "count": 1
-    }
-  },
   "src/features/urdf-viewer/utils/usdExportBundle.test.ts": {
     "@typescript-eslint/no-explicit-any": {
       "count": 1
@@ -611,11 +596,6 @@
   "src/features/urdf-viewer/utils/usdRuntimeRobotHydration.ts": {
     "@typescript-eslint/no-unused-vars": {
       "count": 1
-    }
-  },
-  "src/features/urdf-viewer/utils/usdWasmRuntime.ts": {
-    "@typescript-eslint/no-explicit-any": {
-      "count": 7
     }
   },
   "src/features/urdf-viewer/utils/visualizationFactories.ts": {
@@ -651,11 +631,6 @@
   "src/features/urdf-viewer/utils/visualizationSync/structuralHelperSync.ts": {
     "@typescript-eslint/no-explicit-any": {
       "count": 17
-    }
-  },
-  "src/features/urdf-viewer/workers/usdOffscreenViewer.worker.ts": {
-    "@typescript-eslint/no-explicit-any": {
-      "count": 20
     }
   },
   "src/shared/components/3d/LinkIkTransformControls.tsx": {

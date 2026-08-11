@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import path from 'node:path';
 import type { ParsedMJCFModel } from './mjcfModel';
 import {
+  canonicalizeMjcfFromToGeom,
   createMuJoCoFromToQuaternion,
   diagonalizeMjcfSymmetric3x3,
   mjcfQuatTupleFromQuaternion,
@@ -184,29 +185,7 @@ export function canonicalizeFromToGeom(
   quat: [number, number, number, number];
   size: number[];
 } | null {
-  if (!geom.fromto || geom.fromto.length < 6) {
-    return null;
-  }
-
-  if (geom.type !== 'capsule' && geom.type !== 'cylinder') {
-    return null;
-  }
-
-  const radius = geom.size?.[0];
-  if (radius == null) {
-    return null;
-  }
-
-  const from = new THREE.Vector3(geom.fromto[0] ?? 0, geom.fromto[1] ?? 0, geom.fromto[2] ?? 0);
-  const to = new THREE.Vector3(geom.fromto[3] ?? 0, geom.fromto[4] ?? 0, geom.fromto[5] ?? 0);
-  const direction = new THREE.Vector3().subVectors(to, from);
-  const center = new THREE.Vector3().addVectors(from, to).multiplyScalar(0.5);
-
-  return {
-    pos: [roundNumber(center.x), roundNumber(center.y), roundNumber(center.z)],
-    quat: normalizeQuaternionFromDirection(direction),
-    size: [roundNumber(radius), roundNumber(direction.length() / 2)],
-  };
+  return canonicalizeMjcfFromToGeom(geom, { precision: NUMBER_PRECISION });
 }
 
 export function diagonalizeFullInertia(

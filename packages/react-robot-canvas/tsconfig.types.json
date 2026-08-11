@@ -9,5 +9,6 @@
     "rootDir": "../../src",
     "types": ["node", "vite/client"]
   },
-  "include": ["../../src/lib/**/*"]
+  "include": ["../../src/lib/**/*"],
+  "exclude": ["../../src/lib/**/*.test.*", "../../src/lib/**/*.spec.*"]
 }

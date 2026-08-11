@@ -45,16 +45,6 @@ const ALLOWLIST = [
     resolved: 'src/features/urdf-viewer/hooks/useViewerController.ts',
   },
   {
-    importer: 'src/features/editor/usd_bindings.ts',
-    specifier: '../urdf-viewer/utils/usdBindingsAssetPaths',
-    resolved: 'src/features/urdf-viewer/utils/usdBindingsAssetPaths.ts',
-  },
-  {
-    importer: 'src/features/editor/usd_documents.ts',
-    specifier: '../urdf-viewer/utils/usdPreloadSources',
-    resolved: 'src/features/urdf-viewer/utils/usdPreloadSources.ts',
-  },
-  {
     importer: 'src/features/editor/usd_export.ts',
     specifier: '../urdf-viewer/utils/usdExportBundle',
     resolved: 'src/features/urdf-viewer/utils/usdExportBundle.ts',
@@ -75,11 +65,6 @@ const ALLOWLIST = [
     resolved: 'src/features/urdf-viewer/utils/usdPreparedExportCacheWorkerTransfer.ts',
   },
   {
-    importer: 'src/features/editor/usd_hydration.ts',
-    specifier: '../urdf-viewer/utils/viewerRobotData',
-    resolved: 'src/features/urdf-viewer/utils/viewerRobotData.ts',
-  },
-  {
     importer: 'src/features/editor/usd_offscreen_runtime.ts',
     specifier: '../urdf-viewer/utils/usdOffscreenViewerWorkerClient',
     resolved: 'src/features/urdf-viewer/utils/usdOffscreenViewerWorkerClient.ts',
@@ -93,11 +78,6 @@ const ALLOWLIST = [
     importer: 'src/features/editor/usd_prewarm.ts',
     specifier: '../urdf-viewer/utils/usdBlobBackedUsda',
     resolved: 'src/features/urdf-viewer/utils/usdBlobBackedUsda.ts',
-  },
-  {
-    importer: 'src/features/editor/usd_runtime.ts',
-    specifier: '../urdf-viewer/utils/usdWasmRuntime',
-    resolved: 'src/features/urdf-viewer/utils/usdWasmRuntime.ts',
   },
   {
     importer: 'src/lib/components/RobotCanvas.tsx',

@@ -1,11 +1,12 @@
 import { logRuntimeFailure } from '@/core/utils/runtimeDiagnostics';
 import type { RobotFile } from '@/types';
-import { getUsdRuntimeEnvironmentError } from './usdWasmRuntime.ts';
+import { getUsdRuntimeEnvironmentError } from '@/lib/robot-parser/usd/usdWasmRuntime';
 import {
   buildUsdStageOpenPreparationWorkerDispatch,
   type PreparedUsdStageOpenWorkerDispatch,
 } from './usdStageOpenPreparationWorkerPayload.ts';
 import type {
+  UsdOffscreenViewerSessionId,
   UsdOffscreenViewerWorkerRequest,
   UsdOffscreenViewerWorkerResponse,
 } from './usdOffscreenViewerProtocol';
@@ -27,13 +28,14 @@ type WorkerResponseMessageEvent = MessageEvent<UsdOffscreenViewerWorkerResponse 
 type WorkerFailureEvent = ErrorEvent | MessageEvent<unknown> | Event;
 
 export interface UsdOffscreenViewerWorkerClient {
-  disposeStage: () => void;
+  disposeStage: (sessionId?: UsdOffscreenViewerSessionId) => void;
   getWorker: () => WorkerLike;
   prepareStageOpenDispatch: (
     sourceFile: Pick<RobotFile, 'name' | 'content' | 'blobUrl'>,
     availableFiles: Array<Pick<RobotFile, 'name' | 'content' | 'blobUrl' | 'format'>>,
     assets: Record<string, string>,
   ) => {
+    sessionId: UsdOffscreenViewerSessionId;
     worker: WorkerLike;
     sourceFile: PreparedUsdStageOpenWorkerDispatch['sourceFile'];
     stageOpenContextKey?: string;
@@ -54,6 +56,8 @@ export function createUsdOffscreenViewerWorkerClient({
   getRuntimeEnvironmentError: resolveRuntimeEnvironmentError = getUsdRuntimeEnvironmentError,
 }: CreateUsdOffscreenViewerWorkerClientOptions = {}): UsdOffscreenViewerWorkerClient {
   let sharedWorker: WorkerLike | null = null;
+  let nextSessionId = 0;
+  let activeSessionId: UsdOffscreenViewerSessionId | null = null;
   const syncedContextKeys = new Set<string>();
   const syncedContextKeyOrder: string[] = [];
   const CONTEXT_CACHE_LIMIT = 24;
@@ -71,7 +75,10 @@ export function createUsdOffscreenViewerWorkerClient({
       return;
     }
 
-    if (message.type === 'fatal-error') {
+    if (
+      message.type === 'fatal-error' &&
+      (activeSessionId === null || message.sessionId === activeSessionId)
+    ) {
       logRuntimeFailure(
         'usdOffscreenViewerWorker',
         new Error(message.error || 'USD offscreen viewer worker reported a fatal error.'),
@@ -124,6 +131,7 @@ export function createUsdOffscreenViewerWorkerClient({
 
     sharedWorker.terminate();
     sharedWorker = null;
+    activeSessionId = null;
     clearSyncedContextCache();
   };
 
@@ -180,6 +188,8 @@ export function createUsdOffscreenViewerWorkerClient({
     getWorker,
     prepareStageOpenDispatch: (sourceFile, availableFiles, assets) => {
       const worker = getWorker();
+      nextSessionId += 1;
+      activeSessionId = nextSessionId;
       const preparedDispatch = buildUsdStageOpenPreparationWorkerDispatch(
         sourceFile,
         availableFiles,
@@ -199,6 +209,7 @@ export function createUsdOffscreenViewerWorkerClient({
           });
 
       return {
+        sessionId: activeSessionId,
         worker,
         sourceFile: preparedDispatch.sourceFile,
         stageOpenContextKey,
@@ -214,11 +225,7 @@ export function createUsdOffscreenViewerWorkerClient({
     prewarmRuntime: () => {
       const runtimeEnvironmentError = resolveRuntimeEnvironmentError();
       if (runtimeEnvironmentError) {
-        logRuntimeFailure(
-          'prewarmUsdOffscreenViewerRuntime',
-          runtimeEnvironmentError,
-          'warn',
-        );
+        logRuntimeFailure('prewarmUsdOffscreenViewerRuntime', runtimeEnvironmentError, 'warn');
         return;
       }
 
@@ -234,13 +241,22 @@ export function createUsdOffscreenViewerWorkerClient({
         );
       }
     },
-    disposeStage: () => {
+    disposeStage: (sessionId) => {
       if (!sharedWorker) {
         return;
       }
 
+      const sessionIdToDispose = sessionId ?? activeSessionId;
+      if (sessionIdToDispose === null || sessionIdToDispose === undefined) {
+        return;
+      }
+
+      if (activeSessionId !== sessionIdToDispose) {
+        return;
+      }
+
       try {
-        sharedWorker.postMessage({ type: 'dispose-stage' });
+        sharedWorker.postMessage({ type: 'dispose-stage', sessionId: sessionIdToDispose });
       } catch (error) {
         logRuntimeFailure(
           'disposeUsdOffscreenViewerStageInBackground',
@@ -249,11 +265,13 @@ export function createUsdOffscreenViewerWorkerClient({
             : new Error('Failed to dispose the shared USD offscreen viewer stage.'),
           'warn',
         );
+      } finally {
+        if (activeSessionId === sessionIdToDispose) {
+          activeSessionId = null;
+        }
       }
     },
-    shutdown: () => {
-      shutdownSharedWorker();
-    },
+    shutdown: shutdownSharedWorker,
   };
 }
 
@@ -279,8 +297,10 @@ export function prewarmUsdOffscreenViewerRuntimeInBackground(): void {
   sharedUsdOffscreenViewerWorkerClient.prewarmRuntime();
 }
 
-export function disposeUsdOffscreenViewerStageInBackground(): void {
-  sharedUsdOffscreenViewerWorkerClient.disposeStage();
+export function disposeUsdOffscreenViewerStageInBackground(
+  sessionId?: UsdOffscreenViewerSessionId,
+): void {
+  sharedUsdOffscreenViewerWorkerClient.disposeStage(sessionId);
 }
 
 export function disposeUsdOffscreenViewerWorker(): void {

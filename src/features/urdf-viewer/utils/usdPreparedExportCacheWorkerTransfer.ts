@@ -1,5 +1,5 @@
 import type { RobotData } from '@/types';
-import type { ViewerRobotDataResolution } from './viewerRobotData.ts';
+import type { ViewerRobotDataResolution } from '@/lib/robot-parser/usd/viewerRobotData';
 import type { PreparedUsdExportCacheResult } from './usdExportBundle.ts';
 
 export interface PreparedUsdExportCacheTransferFile {

@@ -2,7 +2,7 @@ import * as THREE from 'three';
 
 import { createOriginMatrix, getChildJointsByParentLink } from '@/core/robot/kinematics';
 import type { InteractionSelection, UrdfJoint } from '@/types';
-import type { ViewerRobotDataResolution } from './viewerRobotData';
+import type { ViewerRobotDataResolution } from '@/lib/robot-parser/usd/viewerRobotData';
 import { resolveOriginTransformJointId } from './originTransformControlsShared';
 
 export interface ResolvedUsdOriginTransformTarget {

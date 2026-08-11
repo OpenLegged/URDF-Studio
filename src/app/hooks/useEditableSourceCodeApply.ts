@@ -43,8 +43,8 @@ export function commitPreparedComponentSourceApply({
 }: PreparedComponentSourceApply): boolean {
   const normalizedRobot = normalizeComponentRobot(robot);
   if (
-    draft.componentId !== componentId
-    || draft.robotSnapshotHash !== createSourceSemanticRobotHash(normalizedRobot)
+    draft.componentId !== componentId ||
+    draft.robotSnapshotHash !== createSourceSemanticRobotHash(normalizedRobot)
   ) {
     return false;
   }
@@ -52,10 +52,7 @@ export function commitPreparedComponentSourceApply({
   const before = useWorkspaceStore.getState();
   const component = before.workspace.components[componentId];
   if (!component || before.revision !== expectedWorkspaceRevision) return false;
-  if (
-    (before.transaction?.id ?? null)
-    !== (workspaceMutationOptions?.operationId ?? null)
-  ) {
+  if ((before.transaction?.id ?? null) !== (workspaceMutationOptions?.operationId ?? null)) {
     return false;
   }
 
@@ -79,6 +76,7 @@ export function commitPreparedComponentSourceApply({
 interface UseEditableSourceCodeApplyOptions {
   allFileContents: Record<string, string>;
   availableFiles: RobotFile[];
+  onRecoveredSourceApply?: (fileName: string, recoveredItemCount: number) => void;
 }
 
 interface PreparedEditableSourceCodeChange {
@@ -124,7 +122,7 @@ function createParseInputs({
     content: newCode,
   };
   const nextAvailableFiles = availableFiles.some((file) => file.name === sourceName)
-    ? availableFiles.map((file) => file.name === sourceName ? sourceFile : file)
+    ? availableFiles.map((file) => (file.name === sourceName ? sourceFile : file))
     : [...availableFiles, sourceFile];
   return {
     sourceFile,
@@ -133,9 +131,7 @@ function createParseInputs({
   };
 }
 
-function publishEditableSourceApplyRegressionResult(
-  result: ApplyEditableSourceChangeResult,
-): void {
+function publishEditableSourceApplyRegressionResult(result: ApplyEditableSourceChangeResult): void {
   const { diagnostics } = result;
   setRegressionEditableSourceApplyResult({
     mode: result.mode,
@@ -214,6 +210,7 @@ async function parseFullEditableSourceChange({
     dirtyRanges: applyRequest?.dirtyRanges ?? [],
     attemptIncrementalPatch: false,
     availableFiles: nextAvailableFiles,
+    assets: useAssetsStore.getState().assets,
     allFileContents: nextAllFileContents,
   });
 }
@@ -247,6 +244,7 @@ export async function applyPreparedEditableSourceCodeChange({
     dirtyRanges: applyRequest?.dirtyRanges ?? [],
     attemptIncrementalPatch: true,
     availableFiles: nextAvailableFiles,
+    assets: useAssetsStore.getState().assets,
     allFileContents: nextAllFileContents,
   });
   if (!isCurrentRequest()) return false;
@@ -338,50 +336,80 @@ export async function applyPreparedEditableSourceCodeChange({
 export function useEditableSourceCodeApply({
   allFileContents,
   availableFiles,
+  onRecoveredSourceApply,
 }: UseEditableSourceCodeApplyOptions) {
   const requestIdsRef = useRef(new Map<string, number>());
+  const reportedRecoverySignaturesRef = useRef(new Map<string, string>());
 
-  const handleCodeChange = useCallback(async (
-    newCode: string,
-    target: ComponentSourceCodeDocumentChangeTarget | undefined = undefined,
-    applyRequest: SourceCodeEditorApplyRequest | undefined = undefined,
-  ): Promise<boolean> => {
-    if (target?.kind !== 'component') return false;
-    const componentId = target.componentId;
+  const handleCodeChange = useCallback(
+    async (
+      newCode: string,
+      target: ComponentSourceCodeDocumentChangeTarget | undefined = undefined,
+      applyRequest: SourceCodeEditorApplyRequest | undefined = undefined,
+    ): Promise<boolean> => {
+      if (target?.kind !== 'component') return false;
+      const componentId = target.componentId;
 
-    const workspaceState = useWorkspaceStore.getState();
-    const component = workspaceState.workspace.components[componentId];
-    const currentDraft = useAssetsStore.getState().componentSourceDrafts[componentId];
-    if (!component || !currentDraft || target.format !== currentDraft.format) return false;
-    if (currentDraft.format === 'usd') return false;
+      const workspaceState = useWorkspaceStore.getState();
+      const component = workspaceState.workspace.components[componentId];
+      const currentDraft = useAssetsStore.getState().componentSourceDrafts[componentId];
+      if (!component || !currentDraft || target.format !== currentDraft.format) return false;
+      if (currentDraft.format === 'usd') return false;
 
-    // Owned stale drafts remain editable so post-import normalization cannot
-    // strand the source editor in read-only mode. The revision captured below
-    // is checked again by commitPreparedComponentSourceApply after parsing, so
-    // a concurrent workspace edit still prevents the source from overwriting it.
-    const requestId = (requestIdsRef.current.get(componentId) ?? 0) + 1;
-    requestIdsRef.current.set(componentId, requestId);
-    const expectedWorkspaceRevision = workspaceState.revision;
+      // Owned stale drafts remain editable so post-import normalization cannot
+      // strand the source editor in read-only mode. The revision captured below
+      // is checked again by commitPreparedComponentSourceApply after parsing, so
+      // a concurrent workspace edit still prevents the source from overwriting it.
+      const requestId = (requestIdsRef.current.get(componentId) ?? 0) + 1;
+      requestIdsRef.current.set(componentId, requestId);
+      const expectedWorkspaceRevision = workspaceState.revision;
 
-    try {
-      const applied = await applyPreparedEditableSourceCodeChange({
-        allFileContents,
-        applyRequest,
-        availableFiles,
-        componentId,
-        draft: currentDraft,
-        expectedWorkspaceRevision,
-        isCurrentRequest: () => requestIdsRef.current.get(componentId) === requestId,
-        robot: component.robot,
-        sourceFileName: component.sourceFile,
-        newCode,
-      });
-      return applied;
-    } catch (error) {
-      console.error(`Failed to apply source draft for component "${componentId}".`, error);
-      return false;
-    }
-  }, [allFileContents, availableFiles]);
+      try {
+        const applied = await applyPreparedEditableSourceCodeChange({
+          allFileContents,
+          applyRequest,
+          availableFiles,
+          componentId,
+          draft: currentDraft,
+          expectedWorkspaceRevision,
+          isCurrentRequest: () => requestIdsRef.current.get(componentId) === requestId,
+          robot: component.robot,
+          sourceFileName: component.sourceFile,
+          newCode,
+        });
+        if (applied) {
+          const recovery =
+            useWorkspaceStore.getState().workspace.components[componentId]?.robot.inspectionContext
+              ?.recovery;
+          const recoveredItemCount = recovery?.recoveredItemCount ?? 0;
+          if (recoveredItemCount > 0) {
+            const signature = [
+              recoveredItemCount,
+              ...(recovery?.diagnostics ?? []).map((diagnostic) =>
+                [
+                  diagnostic.code,
+                  diagnostic.action,
+                  diagnostic.source?.tag ?? '',
+                  diagnostic.source?.name ?? '',
+                ].join(':'),
+              ),
+            ].join('|');
+            if (reportedRecoverySignaturesRef.current.get(componentId) !== signature) {
+              reportedRecoverySignaturesRef.current.set(componentId, signature);
+              onRecoveredSourceApply?.(component.sourceFile ?? target.name, recoveredItemCount);
+            }
+          } else {
+            reportedRecoverySignaturesRef.current.delete(componentId);
+          }
+        }
+        return applied;
+      } catch (error) {
+        console.error(`Failed to apply source draft for component "${componentId}".`, error);
+        return false;
+      }
+    },
+    [allFileContents, availableFiles, onRecoveredSourceApply],
+  );
 
   return { handleCodeChange };
 }

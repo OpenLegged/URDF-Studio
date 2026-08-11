@@ -1,7 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { DEFAULT_LINK, GeometryType, type RobotData, type RobotFile, type UsdSceneSnapshot } from '@/types';
+import {
+  DEFAULT_LINK,
+  GeometryType,
+  type RobotData,
+  type RobotFile,
+  type UsdSceneSnapshot,
+} from '@/types';
 import type { PreparedUsdExportCacheResult } from '@/features/editor/usd_export';
 import {
   serializePreparedUsdExportCacheForWorker,
@@ -15,7 +21,11 @@ import {
   type UsdRobotStateHydrationWorkerClient,
 } from './usdRobotStateHydration.ts';
 
-type WorkerEventHandler = (event: { data?: UsdOffscreenViewerWorkerResponse; error?: unknown; message?: string }) => void;
+type WorkerEventHandler = (event: {
+  data?: UsdOffscreenViewerWorkerResponse;
+  error?: unknown;
+  message?: string;
+}) => void;
 
 class FakeHydrationWorker {
   private readonly listeners = new Map<string, Set<WorkerEventHandler>>();
@@ -57,20 +67,29 @@ class FakeHydrationWorker {
 
 interface FakeHydrationClient extends UsdRobotStateHydrationWorkerClient {
   readonly commitCalls: number;
+  readonly disposedSessionIds: Array<number | undefined>;
   readonly shutdownCalls: number;
 }
 
 function createFakeHydrationClient(worker: FakeHydrationWorker): FakeHydrationClient {
   let commitCalls = 0;
+  const disposedSessionIds: Array<number | undefined> = [];
   let shutdownCalls = 0;
   return {
     get commitCalls() {
       return commitCalls;
     },
+    get disposedSessionIds() {
+      return disposedSessionIds;
+    },
     get shutdownCalls() {
       return shutdownCalls;
     },
+    disposeStage: (sessionId) => {
+      disposedSessionIds.push(sessionId);
+    },
     prepareStageOpenDispatch: (sourceFile) => ({
+      sessionId: 1,
       worker: worker as unknown as ReturnType<
         UsdRobotStateHydrationWorkerClient['prepareStageOpenDispatch']
       >['worker'],
@@ -211,6 +230,7 @@ test('startUsdRobotStateHydration sends a 1x1 offscreen init request and forward
   assert.equal(worker.postedMessages.length, 1);
   const posted = worker.postedMessages[0];
   assert.equal(posted.message.type, 'init');
+  assert.equal(posted.message.sessionId, 1);
   assert.equal(posted.message.width, 1);
   assert.equal(posted.message.height, 1);
   assert.equal(posted.message.devicePixelRatio, 1);
@@ -222,6 +242,7 @@ test('startUsdRobotStateHydration sends a 1x1 offscreen init request and forward
 
   worker.emitMessage({
     type: 'progress',
+    sessionId: 1,
     progress: {
       message: 'Loading USD',
       phase: 'checking-path',
@@ -230,6 +251,7 @@ test('startUsdRobotStateHydration sends a 1x1 offscreen init request and forward
   });
   worker.emitMessage({
     type: 'document-load',
+    sessionId: 1,
     event: {
       status: 'loading',
       phase: 'checking-path',
@@ -245,6 +267,8 @@ test('startUsdRobotStateHydration sends a 1x1 offscreen init request and forward
 
   hydration.cleanup();
   await assert.rejects(hydration.promise, /cancelled/i);
+  assert.deepEqual(client.disposedSessionIds, [1]);
+  assert.equal(client.shutdownCalls, 0);
 });
 
 test('startUsdRobotStateHydration resolves a prepared cache after robot-data and scene-snapshot arrive', async () => {
@@ -269,10 +293,12 @@ test('startUsdRobotStateHydration resolves a prepared cache after robot-data and
 
   worker.emitMessage({
     type: 'robot-data',
+    sessionId: 1,
     resolution: workerResolution,
   });
   worker.emitMessage({
     type: 'scene-snapshot',
+    sessionId: 1,
     stageSourcePath: '/robots/demo/demo.usda',
     snapshot: sceneSnapshot,
   });
@@ -288,7 +314,8 @@ test('startUsdRobotStateHydration resolves a prepared cache after robot-data and
   assert.equal(result.robotData.links.base_link.visual.meshPath, 'base_link_visual_0.obj');
   assert.equal(Object.keys(result.preparedCache.meshFiles).length, 1);
   assert.equal(worker.listenerCount('message'), 0);
-  assert.equal(client.shutdownCalls, 1);
+  assert.deepEqual(client.disposedSessionIds, [1]);
+  assert.equal(client.shutdownCalls, 0);
 });
 
 test('startUsdRobotStateHydration resolves from worker-prepared cache without waiting for full scene snapshot', async () => {
@@ -315,6 +342,7 @@ test('startUsdRobotStateHydration resolves from worker-prepared cache without wa
 
   worker.emitMessage({
     type: 'robot-data',
+    sessionId: 1,
     resolution: {
       ...workerResolution,
       usdSceneSnapshot: sceneSnapshot,
@@ -334,16 +362,19 @@ test('startUsdRobotStateHydration resolves from worker-prepared cache without wa
   assert.equal(result.robotData.links.base_link.visual.meshPath, 'base_link_visual_0.obj');
   assert.equal(result.bakedScene, sceneSnapshot);
   assert.equal(result.sceneSnapshot, sceneSnapshot);
+  assert.deepEqual(client.disposedSessionIds, []);
   assert.equal(client.shutdownCalls, 0);
 
   worker.emitMessage({
     type: 'scene-snapshot',
+    sessionId: 1,
     stageSourcePath: '/robots/demo/demo.usda',
     snapshot: sceneSnapshot,
   });
 
   assert.deepEqual(deferredSnapshots, [sceneSnapshot]);
-  assert.equal(client.shutdownCalls, 1);
+  assert.deepEqual(client.disposedSessionIds, [1]);
+  assert.equal(client.shutdownCalls, 0);
 });
 
 test('startUsdRobotStateHydration abort removes listeners and ignores later worker messages', async () => {
@@ -377,14 +408,17 @@ test('startUsdRobotStateHydration abort removes listeners and ignores later work
 
   await assert.rejects(hydration.promise, /stale USD hydration/);
   assert.equal(worker.listenerCount('message'), 0);
-  assert.equal(client.shutdownCalls, 1);
+  assert.deepEqual(client.disposedSessionIds, [1]);
+  assert.equal(client.shutdownCalls, 0);
 
   worker.emitMessage({
     type: 'robot-data',
+    sessionId: 1,
     resolution: workerResolution,
   });
   worker.emitMessage({
     type: 'scene-snapshot',
+    sessionId: 1,
     stageSourcePath: '/robots/demo/demo.usda',
     snapshot: sceneSnapshot,
   });
@@ -411,6 +445,7 @@ test('startUsdRobotStateHydration cleanup shuts down a resolved hydration that i
 
   worker.emitMessage({
     type: 'robot-data',
+    sessionId: 1,
     resolution: {
       ...workerResolution,
       usdSceneSnapshot: sceneSnapshot,
@@ -419,11 +454,13 @@ test('startUsdRobotStateHydration cleanup shuts down a resolved hydration that i
   } as unknown as UsdOffscreenViewerWorkerResponse);
 
   await hydration.promise;
+  assert.deepEqual(client.disposedSessionIds, []);
   assert.equal(client.shutdownCalls, 0);
 
   hydration.cleanup();
 
-  assert.equal(client.shutdownCalls, 1);
+  assert.deepEqual(client.disposedSessionIds, [1]);
+  assert.equal(client.shutdownCalls, 0);
   assert.equal(worker.listenerCount('message'), 0);
 });
 
@@ -456,6 +493,7 @@ test('startUsdRobotStateHydration can resolve RobotData before the prepared expo
 
   worker.emitMessage({
     type: 'robot-data',
+    sessionId: 1,
     resolution: {
       ...workerResolution,
       usdSceneSnapshot: sceneSnapshot,
@@ -476,11 +514,13 @@ test('startUsdRobotStateHydration can resolve RobotData before the prepared expo
   assert.equal(result.robotData.name, 'prepared_demo');
   assert.equal(result.robotData.links.base_link.visual.meshPath, 'base_link_visual_0.obj');
   assert.equal(fallbackPrepareCallCount, 0);
+  assert.deepEqual(client.disposedSessionIds, []);
   assert.equal(client.shutdownCalls, 0);
 
   const eventCountAtResolve = postResolveEvents.length;
   worker.emitMessage({
     type: 'load-debug',
+    sessionId: 1,
     entry: {
       sourceFileName: 'robots/demo/demo.usda',
       step: 'prepare-worker-export-cache',
@@ -495,13 +535,15 @@ test('startUsdRobotStateHydration can resolve RobotData before the prepared expo
 
   worker.emitMessage({
     type: 'prepared-cache',
+    sessionId: 1,
     stageSourcePath: '/robots/demo/demo.usda',
     preparedCache: serializedPreparedCache.payload,
   } as UsdOffscreenViewerWorkerResponse);
 
   assert.equal(preparedCacheCallbacks.length, 1);
   assert.equal(preparedCacheCallbacks[0].stageSourcePath, preparedCache.stageSourcePath);
-  assert.equal(client.shutdownCalls, 1);
+  assert.deepEqual(client.disposedSessionIds, [1]);
+  assert.equal(client.shutdownCalls, 0);
 });
 
 test('startUsdRobotStateHydration waits for worker prepared cache when early resolve is disabled', async () => {
@@ -528,6 +570,7 @@ test('startUsdRobotStateHydration waits for worker prepared cache when early res
 
   worker.emitMessage({
     type: 'robot-data',
+    sessionId: 1,
     resolution: {
       ...workerResolution,
       usdSceneSnapshot: sceneSnapshot,
@@ -544,10 +587,12 @@ test('startUsdRobotStateHydration waits for worker prepared cache when early res
 
   assert.equal(pendingResult, null);
   assert.equal(fallbackPrepareCallCount, 0);
+  assert.deepEqual(client.disposedSessionIds, []);
   assert.equal(client.shutdownCalls, 0);
 
   worker.emitMessage({
     type: 'prepared-cache',
+    sessionId: 1,
     stageSourcePath: '/robots/demo/demo.usda',
     preparedCache: serializedPreparedCache.payload,
   } as UsdOffscreenViewerWorkerResponse);
@@ -556,7 +601,8 @@ test('startUsdRobotStateHydration waits for worker prepared cache when early res
   assert.equal(result.preparedCache?.stageSourcePath, preparedCache.stageSourcePath);
   assert.deepEqual(Object.keys(result.preparedCache?.meshFiles || {}), ['base_link_visual_0.obj']);
   assert.equal(fallbackPrepareCallCount, 0);
-  assert.equal(client.shutdownCalls, 1);
+  assert.deepEqual(client.disposedSessionIds, [1]);
+  assert.equal(client.shutdownCalls, 0);
 });
 
 test('startUsdRobotStateHydration complete mode waits for worker cache and scene snapshot', async () => {
@@ -586,6 +632,7 @@ test('startUsdRobotStateHydration complete mode waits for worker cache and scene
 
   worker.emitMessage({
     type: 'robot-data',
+    sessionId: 1,
     resolution: {
       ...workerResolution,
       usdSceneSnapshot: sceneSnapshot,
@@ -604,6 +651,7 @@ test('startUsdRobotStateHydration complete mode waits for worker cache and scene
 
   worker.emitMessage({
     type: 'prepared-cache',
+    sessionId: 1,
     stageSourcePath: '/robots/demo/demo.usda',
     preparedCache: serializedPreparedCache.payload,
   } as UsdOffscreenViewerWorkerResponse);
@@ -618,6 +666,7 @@ test('startUsdRobotStateHydration complete mode waits for worker cache and scene
 
   worker.emitMessage({
     type: 'scene-snapshot',
+    sessionId: 1,
     stageSourcePath: '/robots/demo/demo.usda',
     snapshot: sceneSnapshot,
   });
@@ -627,7 +676,56 @@ test('startUsdRobotStateHydration complete mode waits for worker cache and scene
   assert.equal(result.bakedScene, sceneSnapshot);
   assert.equal(result.sceneSnapshot, sceneSnapshot);
   assert.deepEqual(deferredSnapshots, [sceneSnapshot]);
-  assert.equal(client.shutdownCalls, 1);
+  assert.deepEqual(client.disposedSessionIds, [1]);
+  assert.equal(client.shutdownCalls, 0);
+});
+
+test('startUsdRobotStateHydration ignores mismatched worker session responses and fatal errors', async () => {
+  const worker = new FakeHydrationWorker();
+  const client = createFakeHydrationClient(worker);
+
+  const hydration = startUsdRobotStateHydration({
+    sourceFile,
+    availableFiles,
+    assets: {},
+    createCanvas: fakeCanvas,
+    workerClient: client,
+    prepareExportCache: async () => preparedCache,
+  });
+
+  worker.emitMessage({
+    type: 'fatal-error',
+    sessionId: 2,
+    error: 'stale session failed',
+  });
+  worker.emitMessage({
+    type: 'robot-data',
+    sessionId: 2,
+    resolution: workerResolution,
+  });
+
+  const pendingResult = await Promise.race([
+    hydration.promise,
+    new Promise<null>((resolve) => setTimeout(() => resolve(null), 0)),
+  ]);
+  assert.equal(pendingResult, null);
+  assert.deepEqual(client.disposedSessionIds, []);
+
+  worker.emitMessage({
+    type: 'robot-data',
+    sessionId: 1,
+    resolution: workerResolution,
+  });
+  worker.emitMessage({
+    type: 'scene-snapshot',
+    sessionId: 1,
+    stageSourcePath: '/robots/demo/demo.usda',
+    snapshot: sceneSnapshot,
+  });
+
+  const result = await hydration.promise;
+  assert.equal(result.robotData.name, 'prepared_demo');
+  assert.deepEqual(client.disposedSessionIds, [1]);
 });
 
 test('startUsdRobotStateHydration rejects and cleans up when the worker stays silent', async () => {
@@ -645,7 +743,8 @@ test('startUsdRobotStateHydration rejects and cleans up when the worker stays si
 
   await assert.rejects(hydration.promise, /did not respond within 10 ms/i);
   assert.equal(worker.listenerCount('message'), 0);
-  assert.equal(client.shutdownCalls, 1);
+  assert.deepEqual(client.disposedSessionIds, [1]);
+  assert.equal(client.shutdownCalls, 0);
 });
 
 test('startUsdRobotStateHydration rejects init transfer failures without committing context', async () => {
@@ -666,5 +765,6 @@ test('startUsdRobotStateHydration rejects init transfer failures without committ
   assert.equal(worker.postedMessages.length, 0);
   assert.equal(client.commitCalls, 0);
   assert.equal(worker.listenerCount('message'), 0);
-  assert.equal(client.shutdownCalls, 1);
+  assert.deepEqual(client.disposedSessionIds, [1]);
+  assert.equal(client.shutdownCalls, 0);
 });

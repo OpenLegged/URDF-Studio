@@ -130,8 +130,6 @@ export function useLibraryFileActions({
         clearLoadedModel();
       }
 
-      const fileLabel = file.name.split('/').pop() ?? file.name;
-      showToast(t.removedFromAssetLibrary.replace('{name}', fileLabel), 'success');
     },
     [
       assemblyState,
@@ -140,8 +138,6 @@ export function useLibraryFileActions({
       removeComponentDrafts,
       removeWorkspaceComponents,
       selectedFile?.name,
-      showToast,
-      t,
     ],
   );
 
@@ -181,7 +177,6 @@ export function useLibraryFileActions({
         clearLoadedModel();
       }
 
-      showToast(t.removedFolder.replace('{path}', normalizedFolder), 'success');
     },
     [
       assemblyState,
@@ -192,8 +187,6 @@ export function useLibraryFileActions({
       removeComponentDrafts,
       removeWorkspaceComponents,
       selectedFile?.name,
-      showToast,
-      t,
     ],
   );
 
@@ -263,13 +256,6 @@ export function useLibraryFileActions({
       });
       useAssetsStore.getState().revokeLibraryMutationPlanOrphans(plan);
 
-      if (normalizedFolder !== result.nextPath) {
-        showToast(
-          t.renamedFolder.replace('{from}', normalizedFolder).replace('{to}', result.nextPath),
-          'success',
-        );
-      }
-
       return result;
     },
     [commitLibraryMutation, isPathInFolder, showToast, t],
@@ -308,10 +294,6 @@ export function useLibraryFileActions({
       clearPreparedUsdStageOpenCache();
     }
 
-    showToast(
-      t.deletedAllLibraryFiles.replace('{count}', String(availableFiles.length)),
-      'success',
-    );
   }, [
     assemblyState,
     availableFiles,
@@ -320,8 +302,6 @@ export function useLibraryFileActions({
     removeComponentDrafts,
     removeWorkspaceComponents,
     selectedFile?.name,
-    showToast,
-    t,
   ]);
 
   const handleExportLibraryFile = useCallback(

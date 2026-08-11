@@ -22,8 +22,11 @@ globalThis.Document = dom.window.Document as typeof Document;
 globalThis.Element = dom.window.Element as typeof Element;
 
 function createNoopMeshLoadCb() {
-  return (_path: string, _manager: THREE.LoadingManager, done: (object: THREE.Object3D | null) => void) =>
-    done(null);
+  return (
+    _path: string,
+    _manager: THREE.LoadingManager,
+    done: (object: THREE.Object3D | null) => void,
+  ) => done(null);
 }
 
 function isUrdfColliderGroup(child: THREE.Object3D): child is RuntimeUrdfGroup {
@@ -75,10 +78,22 @@ function assertQuaternionClose(
   message: string,
 ): void {
   assert.ok(actual, `${message}: expected quaternion`);
-  assert.ok(Math.abs(actual.x - expected.x) <= tolerance, `${message}.x expected ${expected.x}, got ${actual.x}`);
-  assert.ok(Math.abs(actual.y - expected.y) <= tolerance, `${message}.y expected ${expected.y}, got ${actual.y}`);
-  assert.ok(Math.abs(actual.z - expected.z) <= tolerance, `${message}.z expected ${expected.z}, got ${actual.z}`);
-  assert.ok(Math.abs(actual.w - expected.w) <= tolerance, `${message}.w expected ${expected.w}, got ${actual.w}`);
+  assert.ok(
+    Math.abs(actual.x - expected.x) <= tolerance,
+    `${message}.x expected ${expected.x}, got ${actual.x}`,
+  );
+  assert.ok(
+    Math.abs(actual.y - expected.y) <= tolerance,
+    `${message}.y expected ${expected.y}, got ${actual.y}`,
+  );
+  assert.ok(
+    Math.abs(actual.z - expected.z) <= tolerance,
+    `${message}.z expected ${expected.z}, got ${actual.z}`,
+  );
+  assert.ok(
+    Math.abs(actual.w - expected.w) <= tolerance,
+    `${message}.w expected ${expected.w}, got ${actual.w}`,
+  );
 }
 
 test('buildRuntimeRobotFromState preserves link and joint hierarchy from parsed robot state', async () => {
@@ -201,6 +216,37 @@ test('buildRuntimeRobotFromState preserves authored joint names when runtime ids
   assert.equal(joint.urdfName, 'joint_1');
   assert.equal(joint.userData.displayName, 'joint_1');
   assert.equal(joint.userData.jointId, 'joint_1743499999999');
+});
+
+test('buildRuntimeRobotFromState keeps authored geometry names as frame aliases', async () => {
+  const robot = await buildRuntimeRobotFromState({
+    robotName: 'named_geometry_frames',
+    links: {
+      base_link: {
+        ...DEFAULT_LINK,
+        id: 'base_link',
+        name: 'base_link',
+        visual: {
+          ...DEFAULT_LINK.visual,
+          name: 'body_visual',
+          type: GeometryType.BOX,
+          dimensions: { x: 1, y: 1, z: 1 },
+        },
+        collision: {
+          ...DEFAULT_LINK.collision,
+          name: 'body_collision',
+          type: GeometryType.BOX,
+          dimensions: { x: 1, y: 1, z: 1 },
+        },
+      },
+    },
+    joints: {},
+    manager: new THREE.LoadingManager(),
+    loadMeshCb: createNoopMeshLoadCb(),
+  });
+
+  assert.equal(robot.getFrame('body_visual'), robot.visual['base_link::visual::0']);
+  assert.equal(robot.getFrame('body_collision'), robot.colliders['base_link::collision::0']);
 });
 
 test('buildRuntimeRobotFromState exposes MJCF sites and tendons from RobotState metadata', async () => {
@@ -480,7 +526,7 @@ test('buildRuntimeRobotFromState keeps scalar joints unbounded without finite bo
   joint.setJointValue(4);
   assert.equal(joint.jointValue?.[0], 4);
 
-  const clonedJoint = (robot.joints.wheel_joint.clone() as typeof joint);
+  const clonedJoint = robot.joints.wheel_joint.clone() as typeof joint;
   assert.equal(clonedJoint.ignoreLimits, true);
   clonedJoint.setJointValue(5);
   assert.equal(clonedJoint.jointValue?.[0], 5);
@@ -700,6 +746,212 @@ test('buildRuntimeRobotFromState renders mirrored MJCF mesh visuals double-sided
   assert.equal((loadedMesh.material as THREE.Material).side, THREE.DoubleSide);
 });
 
+test('buildRuntimeRobotFromState applies MJCF mesh asset scale before inverse ref transform', async () => {
+  const loadedMesh = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshBasicMaterial());
+  const robot = await buildRuntimeRobotFromState({
+    robotName: 'mjcf_mesh_asset_frame_robot',
+    links: {
+      base_link: {
+        ...DEFAULT_LINK,
+        id: 'base_link',
+        name: 'base_link',
+        visual: {
+          ...DEFAULT_LINK.visual,
+          type: GeometryType.MESH,
+          meshPath: 'finger.stl',
+          dimensions: { x: 2, y: 3, z: 4 },
+          mjcfMesh: {
+            name: 'finger',
+            file: 'finger.stl',
+            scale: [2, 3, 4],
+            refpos: [1, 2, 3],
+            refquat: [Math.SQRT1_2, -Math.SQRT1_2, 0, 0],
+          },
+        },
+      },
+    },
+    joints: {},
+    manager: new THREE.LoadingManager(),
+    loadMeshCb: (_path, _manager, done) => done(loadedMesh),
+  });
+
+  const visualGroup = robot.links.base_link.children.find(isUrdfVisualGroup);
+  assert.ok(visualGroup, 'expected visual group');
+  assert.deepEqual(visualGroup.scale.toArray(), [1, 1, 1]);
+  assert.equal(visualGroup.children.length, 1);
+
+  const assetScale = visualGroup.children[0];
+  assert.ok(assetScale, 'expected MJCF asset scale wrapper');
+  assert.deepEqual(assetScale.scale.toArray(), [2, 3, 4]);
+  assert.equal(assetScale.children.length, 1);
+
+  const assetTransform = assetScale.children[0];
+  assert.ok(assetTransform, 'expected inverse MJCF asset frame wrapper');
+  assertQuaternionClose(
+    assetTransform.quaternion,
+    new THREE.Quaternion(Math.SQRT1_2, 0, 0, Math.SQRT1_2),
+    1e-9,
+    'asset transform quaternion',
+  );
+  assertTupleClose(
+    assetTransform.position.toArray(),
+    [-1, 3, -2],
+    1e-9,
+    'asset transform position',
+  );
+  assert.deepEqual(assetTransform.children[0]?.scale.toArray(), [1, 1, 1]);
+});
+
+test('buildRuntimeRobotFromState renders inline MJCF vertices through the canonical path', async () => {
+  let loadCount = 0;
+  const robot = await buildRuntimeRobotFromState({
+    robotName: 'inline_mjcf_mesh_robot',
+    links: {
+      base_link: {
+        ...DEFAULT_LINK,
+        id: 'base_link',
+        name: 'base_link',
+        visual: {
+          ...DEFAULT_LINK.visual,
+          type: GeometryType.MESH,
+          dimensions: { x: 2, y: 3, z: 4 },
+          assetRef: 'inline_triangle',
+          mjcfMesh: {
+            name: 'inline_triangle',
+            vertices: [0, 0, 0, 1, 0, 0, 0, 1, 0],
+            scale: [2, 3, 4],
+          },
+        },
+      },
+    },
+    joints: {},
+    manager: new THREE.LoadingManager(),
+    loadMeshCb: (_path, _manager, done) => {
+      loadCount += 1;
+      done(null);
+    },
+  });
+
+  assert.equal(loadCount, 0);
+  const visualGroup = robot.links.base_link.children.find(isUrdfVisualGroup);
+  assert.ok(visualGroup, 'expected visual group');
+  const mesh = visualGroup.getObjectByProperty('isMesh', true) as THREE.Mesh | undefined;
+  assert.ok(mesh?.isMesh, 'expected inline MJCF mesh');
+  assert.deepEqual(mesh.scale.toArray(), [2, 3, 4]);
+});
+
+test('buildRuntimeRobotFromState loads MJCF SDF mesh assets through the canonical path', async () => {
+  let requestedPath = '';
+  const robot = await buildRuntimeRobotFromState({
+    robotName: 'mjcf_sdf_mesh_robot',
+    links: {
+      base_link: {
+        ...DEFAULT_LINK,
+        id: 'base_link',
+        name: 'base_link',
+        visual: {
+          ...DEFAULT_LINK.visual,
+          type: GeometryType.SDF,
+          meshPath: 'sdf_shape.stl',
+          assetRef: 'sdf_shape',
+          dimensions: { x: 1, y: 1, z: 1 },
+          mjcfMesh: {
+            name: 'sdf_shape',
+            file: 'sdf_shape.stl',
+            scale: [2, 3, 4],
+          },
+        },
+      },
+    },
+    joints: {},
+    manager: new THREE.LoadingManager(),
+    loadMeshCb: (path, _manager, done) => {
+      requestedPath = path;
+      done(new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshBasicMaterial()));
+    },
+  });
+
+  assert.equal(requestedPath, 'sdf_shape.stl');
+  const mesh = robot.links.base_link.getObjectByProperty('isMesh', true) as THREE.Mesh | undefined;
+  assert.ok(mesh?.isMesh, 'expected SDF mesh asset');
+  assert.deepEqual(mesh.scale.toArray(), [2, 3, 4]);
+});
+
+test('buildRuntimeRobotFromState treats capsule dimensions.y as straight body length', async () => {
+  const robot = await buildRuntimeRobotFromState({
+    robotName: 'capsule_length_robot',
+    links: {
+      base_link: {
+        ...DEFAULT_LINK,
+        id: 'base_link',
+        name: 'base_link',
+        visual: {
+          ...DEFAULT_LINK.visual,
+          type: GeometryType.CAPSULE,
+          dimensions: { x: 0.08, y: 0.12, z: 0 },
+        },
+      },
+    },
+    joints: {},
+    manager: new THREE.LoadingManager(),
+    loadMeshCb: createNoopMeshLoadCb(),
+  });
+
+  const capsule = robot.links.base_link.getObjectByProperty('isMesh', true) as THREE.Mesh;
+  assert.ok(capsule.geometry instanceof THREE.CapsuleGeometry);
+  assert.equal(capsule.geometry.parameters.height, 0.12);
+});
+
+test('parseURDF to runtime preserves native capsule end-to-end length', async () => {
+  const state = parseURDF(`
+    <robot name="native_capsule_runtime">
+      <link name="base_link">
+        <visual><geometry><capsule radius="0.1" length="0.8" /></geometry></visual>
+      </link>
+    </robot>
+  `);
+  assert.ok(state);
+
+  const robot = await buildRuntimeRobotFromState({
+    robotName: state.name,
+    links: state.links,
+    joints: state.joints,
+    manager: new THREE.LoadingManager(),
+    loadMeshCb: createNoopMeshLoadCb(),
+  });
+
+  const capsule = robot.links.base_link.getObjectByProperty('isMesh', true) as THREE.Mesh;
+  assert.ok(capsule.geometry instanceof THREE.CapsuleGeometry);
+  capsule.geometry.computeBoundingBox();
+  const bounds = capsule.geometry.boundingBox;
+  assert.ok(bounds);
+  assert.ok(Math.abs(bounds.max.y - bounds.min.y - 0.8) < 1e-6);
+});
+
+test('parseURDF to runtime preserves the legacy unmaterialed primitive appearance', async () => {
+  const state = parseURDF(`
+    <robot name="unmaterialed_primitive">
+      <link name="base_link">
+        <visual><geometry><box size="1 1 1" /></geometry></visual>
+      </link>
+    </robot>
+  `);
+  assert.ok(state);
+
+  const robot = await buildRuntimeRobotFromState({
+    robotName: state.name,
+    links: state.links,
+    joints: state.joints,
+    manager: new THREE.LoadingManager(),
+    loadMeshCb: createNoopMeshLoadCb(),
+  });
+
+  const mesh = robot.links.base_link.getObjectByProperty('isMesh', true) as THREE.Mesh;
+  const material = mesh.material as THREE.MeshStandardMaterial;
+  assert.equal(material.color.getHexString(), 'f7f7f7');
+  assert.equal(material.side, THREE.FrontSide);
+});
+
 test('buildRuntimeRobotFromState renders collision boxes as boxes', async () => {
   const robot = await buildRuntimeRobotFromState({
     robotName: 'collision_box_display_robot',
@@ -771,7 +1023,9 @@ test('buildRuntimeRobotFromState applies mesh scale and visual color overrides o
     joints: {},
   };
 
-  let robot: Awaited<ReturnType<typeof buildRuntimeRobotFromState>> | null = null as Awaited<ReturnType<typeof buildRuntimeRobotFromState>> | null;
+  let robot: Awaited<ReturnType<typeof buildRuntimeRobotFromState>> | null = null as Awaited<
+    ReturnType<typeof buildRuntimeRobotFromState>
+  > | null;
   const ready = new Promise<void>((resolve) => {
     manager.onLoad = () => resolve();
   });
@@ -986,7 +1240,9 @@ test('buildRuntimeRobotFromState applies double-sided rendering to marked visual
     joints: {},
   };
 
-  let robot: Awaited<ReturnType<typeof buildRuntimeRobotFromState>> | null = null as Awaited<ReturnType<typeof buildRuntimeRobotFromState>> | null;
+  let robot: Awaited<ReturnType<typeof buildRuntimeRobotFromState>> | null = null as Awaited<
+    ReturnType<typeof buildRuntimeRobotFromState>
+  > | null;
   const ready = new Promise<void>((resolve) => {
     manager.onLoad = () => resolve();
   });
@@ -1064,7 +1320,9 @@ test('buildRuntimeRobotFromState applies authored texture overrides onto loaded 
       joints: {},
     };
 
-    let robot: Awaited<ReturnType<typeof buildRuntimeRobotFromState>> | null = null as Awaited<ReturnType<typeof buildRuntimeRobotFromState>> | null;
+    let robot: Awaited<ReturnType<typeof buildRuntimeRobotFromState>> | null = null as Awaited<
+      ReturnType<typeof buildRuntimeRobotFromState>
+    > | null;
     const ready = new Promise<void>((resolve) => {
       manager.onLoad = () => resolve();
     });
@@ -1165,7 +1423,9 @@ test('buildRuntimeRobotFromState applies link-level RobotData materials to state
       },
     };
 
-    let robot: Awaited<ReturnType<typeof buildRuntimeRobotFromState>> | null = null as Awaited<ReturnType<typeof buildRuntimeRobotFromState>> | null;
+    let robot: Awaited<ReturnType<typeof buildRuntimeRobotFromState>> | null = null as Awaited<
+      ReturnType<typeof buildRuntimeRobotFromState>
+    > | null;
     const ready = new Promise<void>((resolve) => {
       manager.onLoad = () => resolve();
     });
@@ -1238,7 +1498,9 @@ test('buildRuntimeRobotFromState keeps Cassie MJCF texture-only materials neutra
     assert.ok(cassiePelvisLink, 'expected Cassie pelvis link');
 
     const manager = new THREE.LoadingManager();
-    let robot: Awaited<ReturnType<typeof buildRuntimeRobotFromState>> | null = null as Awaited<ReturnType<typeof buildRuntimeRobotFromState>> | null;
+    let robot: Awaited<ReturnType<typeof buildRuntimeRobotFromState>> | null = null as Awaited<
+      ReturnType<typeof buildRuntimeRobotFromState>
+    > | null;
     const ready = new Promise<void>((resolve) => {
       manager.onLoad = () => resolve();
     });
@@ -1277,10 +1539,9 @@ test('buildRuntimeRobotFromState keeps Cassie MJCF texture-only materials neutra
 
     await ready;
 
-    const visualMesh = robot?.links['cassie-pelvis'].getObjectByProperty(
-      'isMesh',
-      true,
-    ) as THREE.Mesh | undefined;
+    const visualMesh = robot?.links['cassie-pelvis'].getObjectByProperty('isMesh', true) as
+      | THREE.Mesh
+      | undefined;
     assert.ok(visualMesh, 'expected Cassie pelvis visual mesh');
     assert.ok(
       visualMesh.material instanceof THREE.MeshStandardMaterial,
@@ -1323,7 +1584,9 @@ test('buildRuntimeRobotFromState preserves embedded multi-material mesh slots fo
     joints: {},
   };
 
-  let robot: Awaited<ReturnType<typeof buildRuntimeRobotFromState>> | null = null as Awaited<ReturnType<typeof buildRuntimeRobotFromState>> | null;
+  let robot: Awaited<ReturnType<typeof buildRuntimeRobotFromState>> | null = null as Awaited<
+    ReturnType<typeof buildRuntimeRobotFromState>
+  > | null;
   const ready = new Promise<void>((resolve) => {
     manager.onLoad = () => resolve();
   });
@@ -1494,7 +1757,9 @@ test('buildRuntimeRobotFromState falls back to prefix match when submesh name is
   };
 
   const manager = new THREE.LoadingManager();
-  let robot: Awaited<ReturnType<typeof buildRuntimeRobotFromState>> | null = null as Awaited<ReturnType<typeof buildRuntimeRobotFromState>> | null;
+  let robot: Awaited<ReturnType<typeof buildRuntimeRobotFromState>> | null = null as Awaited<
+    ReturnType<typeof buildRuntimeRobotFromState>
+  > | null;
   const ready = new Promise<void>((resolve) => {
     manager.onLoad = () => resolve();
   });

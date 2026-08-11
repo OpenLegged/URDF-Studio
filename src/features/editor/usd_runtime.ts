@@ -4,5 +4,5 @@ export {
   getUsdRuntimeEnvironmentError,
   prewarmUsdWasmRuntimeInBackground,
   resolvePreferredUsdThreadCount,
-} from '../urdf-viewer/utils/usdWasmRuntime';
-export type { UsdWasmRuntime } from '../urdf-viewer/utils/usdWasmRuntime';
+} from '@/lib/robot-parser/usd/usdWasmRuntime';
+export type { UsdWasmRuntime } from '@/lib/robot-parser/usd/usdWasmRuntime';

@@ -22,17 +22,23 @@ import {
   type MJCFTexture,
 } from './mjcfUtils';
 import { assignMJCFBodyGeomRoles, classifyMJCFGeom } from './mjcfGeomClassification';
-import { buildMjcfCubeAuthoredMaterials, getMjcfCubeTextureFaceRecord } from './mjcfCubeTextures';
+import { buildCanonicalMjcfAuthoredMaterials } from './mjcfCanonicalMaterials';
 import { buildClosedLoopConstraints } from './mjcfClosedLoops';
 import { createEmptyLinkInertial, deriveGeomMassInertial } from './mjcfInertial';
 import { applyInitialPoseKeyframe } from './mjcfKeyframePose';
 import {
+  canonicalizeMjcfFromToGeom,
   isNonZeroPosition,
   rotateLocalOffsetToParentFrame,
   subtractLocalOffset,
   toRPYObjectFromQuat,
 } from './mjcfMath';
-import { clearParsedMJCFModelCache, normalizeMultiJointBodies, parseMJCFModel } from './mjcfModel';
+import {
+  clearParsedMJCFModelCache,
+  normalizeMultiJointBodies,
+  parseMJCFModel,
+  type ParsedMJCFModel,
+} from './mjcfModel';
 import {
   MJCFBody,
   MJCFGeom,
@@ -56,6 +62,7 @@ import {
   refreshClosedLoopAnchorWorlds,
   buildMjcfInspectionContext,
 } from './mjcfParserUtils';
+import { attachParserRecoveryDiagnostics } from '@/core/parsers/recoveryDiagnostics';
 
 // Convert parsed MJCF to RobotState
 function mjcfToRobotState(
@@ -108,8 +115,6 @@ function mjcfToRobotState(
   function resolveGeomAuthoredMaterials(geom: MJCFGeom): UrdfVisual['authoredMaterials'] {
     const materialDef = geom.material ? materialMap.get(geom.material) : undefined;
     const textureDef = materialDef?.texture ? textureMap.get(materialDef.texture) : undefined;
-    const cubeFaceRecord =
-      geom.type?.toLowerCase() === 'box' ? getMjcfCubeTextureFaceRecord(textureDef) : null;
 
     const explicitGeomRgba =
       geom.hasExplicitRgba && geom.rgba && geom.rgba.length >= 3 ? geom.rgba : undefined;
@@ -120,35 +125,14 @@ function mjcfToRobotState(
     const sharedColor = resolvedRgba ? rgbaToHexColor(resolvedRgba) || undefined : undefined;
     const sharedColorRgba = rgbaToColorRgbaTuple(resolvedRgba);
 
-    if (cubeFaceRecord) {
-      return buildMjcfCubeAuthoredMaterials(cubeFaceRecord, sharedColor, sharedColorRgba);
-    }
-
-    const texturePath = textureDef?.file;
-    if (!sharedColor && !texturePath) {
-      return undefined;
-    }
-
-    return [
-      {
-        ...(geom.material ? { name: geom.material } : {}),
-        ...(sharedColor ? { color: sharedColor } : {}),
-        ...(sharedColorRgba ? { colorRgba: sharedColorRgba } : {}),
-        ...(texturePath ? { texture: texturePath } : {}),
-        ...(Number.isFinite(materialDef?.shininess)
-          ? { roughness: Math.max(0, Math.min(1, 1 - Number(materialDef!.shininess))) }
-          : {}),
-        ...(Number.isFinite(materialDef?.reflectance)
-          ? { metalness: Math.max(0, Math.min(1, Number(materialDef!.reflectance))) }
-          : {}),
-        ...(Number.isFinite(materialDef?.emission) && sharedColor
-          ? {
-              emissive: sharedColor,
-              emissiveIntensity: Math.max(0, Number(materialDef!.emission)),
-            }
-          : {}),
-      },
-    ];
+    return buildCanonicalMjcfAuthoredMaterials({
+      geomType: geom.type,
+      materialName: geom.material,
+      material: materialDef,
+      sharedColor,
+      sharedColorRgba,
+      texture: textureDef,
+    });
   }
 
   function assignLinkMaterial(linkId: string, geom: MJCFGeom | null | undefined): void {
@@ -181,6 +165,23 @@ function mjcfToRobotState(
     linkFrameOffsetLocal: { x: number; y: number; z: number } | null = null,
   ): UrdfVisual {
     const result: UrdfVisual = { ...DEFAULT_LINK.visual };
+    const canonicalFromTo = canonicalizeMjcfFromToGeom(geom);
+    const effectiveSize = canonicalFromTo?.size ?? geom.size;
+    const effectivePosition = canonicalFromTo
+      ? {
+          x: canonicalFromTo.pos[0],
+          y: canonicalFromTo.pos[1],
+          z: canonicalFromTo.pos[2],
+        }
+      : geom.pos;
+    const effectiveQuaternion = canonicalFromTo
+      ? {
+          w: canonicalFromTo.quat[0],
+          x: canonicalFromTo.quat[1],
+          y: canonicalFromTo.quat[2],
+          z: canonicalFromTo.quat[3],
+        }
+      : geom.quat;
     if (geom.name?.trim()) {
       result.name = geom.name.trim();
     }
@@ -249,56 +250,56 @@ function mjcfToRobotState(
       result.assetRef = geom.mesh;
     }
 
-    if (geom.size && geom.size.length > 0) {
+    if (effectiveSize && effectiveSize.length > 0) {
       const geomType = geom.type?.toLowerCase() || 'sphere';
       switch (geomType) {
         case 'box':
           result.dimensions = {
-            x: (geom.size[0] || 0.1) * 2,
-            y: ((geom.size[1] ?? geom.size[0]) || 0.1) * 2,
-            z: ((geom.size[2] ?? geom.size[0]) || 0.1) * 2,
+            x: (effectiveSize[0] || 0.1) * 2,
+            y: ((effectiveSize[1] ?? effectiveSize[0]) || 0.1) * 2,
+            z: ((effectiveSize[2] ?? effectiveSize[0]) || 0.1) * 2,
           };
           break;
         case 'sphere':
-          result.dimensions = { x: geom.size[0] || 0.1, y: 0, z: 0 };
+          result.dimensions = { x: effectiveSize[0] || 0.1, y: 0, z: 0 };
           break;
         case 'plane':
           result.dimensions = {
-            x: ((geom.size[0] ?? 1) || 1) * 2,
-            y: ((geom.size[1] ?? geom.size[0] ?? 1) || 1) * 2,
+            x: ((effectiveSize[0] ?? 1) || 1) * 2,
+            y: ((effectiveSize[1] ?? effectiveSize[0] ?? 1) || 1) * 2,
             z: 0,
           };
           break;
         case 'ellipsoid':
           result.dimensions = {
-            x: geom.size[0] || 0.1,
-            y: (geom.size[1] ?? geom.size[0]) || 0.1,
-            z: (geom.size[2] ?? geom.size[0]) || 0.1,
+            x: effectiveSize[0] || 0.1,
+            y: (effectiveSize[1] ?? effectiveSize[0]) || 0.1,
+            z: (effectiveSize[2] ?? effectiveSize[0]) || 0.1,
           };
           break;
         case 'cylinder':
         case 'capsule':
           result.dimensions = {
-            x: geom.size[0] || 0.1,
-            y: (geom.size[1] || 0.1) * 2,
+            x: effectiveSize[0] || 0.1,
+            y: (effectiveSize[1] || 0.1) * 2,
             z: 0,
           };
           break;
         case 'hfield':
           result.dimensions = buildHfieldDimensions(
             geom.hfield ? hfieldMap.get(geom.hfield) : undefined,
-            geom.size,
+            effectiveSize,
           );
           break;
         case 'sdf':
           result.dimensions = {
-            x: geom.size[0] || 1,
-            y: (geom.size[1] ?? geom.size[0]) || 1,
-            z: (geom.size[2] ?? 0) || 0,
+            x: effectiveSize[0] || 1,
+            y: (effectiveSize[1] ?? effectiveSize[0]) || 1,
+            z: (effectiveSize[2] ?? 0) || 0,
           };
           break;
         default:
-          result.dimensions = { x: geom.size[0] || 0.1, y: 0, z: 0 };
+          result.dimensions = { x: effectiveSize[0] || 0.1, y: 0, z: 0 };
           break;
       }
     } else if (!geom.mesh) {
@@ -330,13 +331,13 @@ function mjcfToRobotState(
       result.authoredMaterials = authoredMaterials;
     }
 
-    const geomRotation = toRPYObjectFromQuat(geom.quat);
+    const geomRotation = toRPYObjectFromQuat(effectiveQuaternion);
     const hasMeaningfulRotation =
       !!geomRotation &&
       (Math.abs(geomRotation.r) > 1e-9 ||
         Math.abs(geomRotation.p) > 1e-9 ||
         Math.abs(geomRotation.y) > 1e-9);
-    const geomPosition = subtractLocalOffset(geom.pos, linkFrameOffsetLocal);
+    const geomPosition = subtractLocalOffset(effectivePosition, linkFrameOffsetLocal);
 
     if (geomPosition || hasMeaningfulRotation) {
       result.origin = {
@@ -398,8 +399,13 @@ function mjcfToRobotState(
       }
 
       let matchIndex = -1;
-      if (vis.mesh) {
-        matchIndex = collisions.findIndex((c) => c.mesh === vis.mesh && !usedCollisions.has(c));
+      const visualMeshKey = vis.mesh || vis.fittedFromMesh;
+      if (visualMeshKey) {
+        matchIndex = collisions.findIndex(
+          (collision) =>
+            (collision.mesh || collision.fittedFromMesh) === visualMeshKey &&
+            !usedCollisions.has(collision),
+        );
       } else if (vis.name) {
         matchIndex = collisions.findIndex((c) => c.name === vis.name && !usedCollisions.has(c));
       }
@@ -693,41 +699,42 @@ function mjcfToRobotState(
   };
 }
 
+/** Convert an already-prepared MJCF model into canonical RobotState. */
+export function convertParsedMJCFModelToRobotState(parsedModel: ParsedMJCFModel): RobotState {
+  const parserModelWorldBody = normalizeMultiJointBodies(parsedModel.worldBody);
+  const worldBody = toParserBody(parserModelWorldBody, parsedModel.compilerSettings);
+  const rootBodies = shouldPreserveSyntheticWorldRoot(worldBody)
+    ? [worldBody]
+    : worldBody.children;
+
+  const robot = mjcfToRobotState(
+    parsedModel.modelName,
+    rootBodies,
+    parsedModel.meshMap,
+    parsedModel.hfieldMap,
+    parsedModel.materialMap,
+    parsedModel.textureMap,
+    toParserActuatorMap(parsedModel.actuatorMap),
+  );
+
+  applyJointEqualityMimics(robot, parsedModel.jointEqualityConstraints);
+  robot.closedLoopConstraints = buildClosedLoopConstraints(
+    robot,
+    parsedModel.connectConstraints,
+    parsedModel.tendonMap,
+    parserModelWorldBody,
+  );
+  applyInitialPoseKeyframe(robot, worldBody, parsedModel.keyframes);
+  applySolvedClosedLoopInitialPose(robot, parsedModel.actuatorMap);
+  refreshClosedLoopAnchorWorlds(robot);
+  robot.inspectionContext = buildMjcfInspectionContext(parsedModel);
+  return attachParserRecoveryDiagnostics(robot, parsedModel.recoveryDiagnostics);
+}
+
 export function parseMJCF(xmlContent: string): RobotState | null {
   try {
     const parsedModel = parseMJCFModel(xmlContent);
-    if (!parsedModel) {
-      return null;
-    }
-
-    const parserModelWorldBody = normalizeMultiJointBodies(parsedModel.worldBody);
-    const worldBody = toParserBody(parserModelWorldBody, parsedModel.compilerSettings);
-    const rootBodies = shouldPreserveSyntheticWorldRoot(worldBody)
-      ? [worldBody]
-      : worldBody.children;
-
-    const robot = mjcfToRobotState(
-      parsedModel.modelName,
-      rootBodies,
-      parsedModel.meshMap,
-      parsedModel.hfieldMap,
-      parsedModel.materialMap,
-      parsedModel.textureMap,
-      toParserActuatorMap(parsedModel.actuatorMap),
-    );
-
-    applyJointEqualityMimics(robot, parsedModel.jointEqualityConstraints);
-    robot.closedLoopConstraints = buildClosedLoopConstraints(
-      robot,
-      parsedModel.connectConstraints,
-      parsedModel.tendonMap,
-      parserModelWorldBody,
-    );
-    applyInitialPoseKeyframe(robot, worldBody, parsedModel.keyframes);
-    applySolvedClosedLoopInitialPose(robot, parsedModel.actuatorMap);
-    refreshClosedLoopAnchorWorlds(robot);
-    robot.inspectionContext = buildMjcfInspectionContext(parsedModel);
-    return robot;
+    return parsedModel ? convertParsedMJCFModelToRobotState(parsedModel) : null;
   } catch (error) {
     console.warn('[MJCFParser] Failed to parse MJCF:', error);
     return null;

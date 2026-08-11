@@ -1,6 +1,5 @@
 import JSZip from 'jszip';
 import {
-  parseMJCF,
   parseSDF,
   parseURDF,
   generateMujocoXML,
@@ -10,9 +9,11 @@ import {
 } from '@/core/parsers';
 import {
   normalizeMeshPathForExport,
+  getSourceFileDirectory,
   resolveMeshAssetUrl,
   rewriteUrdfAssetPathsForExport,
 } from '@/core/parsers/meshPathUtils';
+import { parseCanonicalPhysicalMJCF } from '@/core/parsers/mjcf/mjcfCanonicalPhysicalImport';
 import { getVisualGeometryEntries } from '@/core/robot';
 import { GeometryType, type RobotFile, type RobotState } from '@/types';
 import { downloadBlob } from './assetUtils';
@@ -33,13 +34,19 @@ export interface ExportLibraryRobotFileResult {
   reason?: 'unsupported-file-format' | 'parse-failed' | 'missing-mesh-assets';
 }
 
-function toRobotState(file: RobotFile): RobotState | null {
+async function toRobotState(
+  file: RobotFile,
+  assets: Record<string, string>,
+): Promise<RobotState | null> {
   try {
     switch (file.format) {
       case 'urdf':
         return parseURDF(file.content);
       case 'mjcf':
-        return parseMJCF(file.content);
+        return await parseCanonicalPhysicalMJCF(file.content, {
+          assets,
+          sourceFileDir: getSourceFileDirectory(file.name),
+        });
       case 'sdf':
         return parseSDF(file.content, { sourcePath: file.name });
       default:
@@ -124,7 +131,7 @@ export async function exportLibraryRobotFile(
   options: ExportLibraryRobotFileOptions,
 ): Promise<ExportLibraryRobotFileResult> {
   const { file, targetFormat, assets } = options;
-  const robotState = toRobotState(file);
+  const robotState = await toRobotState(file, assets);
 
   if (file.format !== 'urdf' && file.format !== 'mjcf' && file.format !== 'sdf') {
     return {

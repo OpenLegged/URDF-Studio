@@ -10,7 +10,7 @@ import {
   isUsdPathWithinBundleDirectory,
   resolveUsdLayerReferencePath,
   resolveUsdBlobUrl,
-} from './usdPreloadSources.ts';
+} from '@/lib/robot-parser/usd/usdPreloadSources';
 
 test('resolveUsdBlobUrl falls back to the assets map when binary USD placeholders lose blobUrl', () => {
   const resolved = resolveUsdBlobUrl('Go2/usd/configuration/go2_description_base.usd', undefined, {

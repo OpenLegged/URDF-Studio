@@ -30,7 +30,6 @@ test('mode switching derives from workspace projection without reseeding or muta
       t: {
         generateWorkspaceUrdfDisconnected: 'disconnected',
         generateWorkspaceUrdfUnavailable: 'unavailable',
-        generateWorkspaceUrdfSuccess: 'generated {name}',
       },
       handleClosePreview: () => {},
       proModeRoundtripSessionRef: sessionRef,

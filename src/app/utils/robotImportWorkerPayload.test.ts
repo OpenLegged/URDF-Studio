@@ -112,6 +112,9 @@ test('buildResolveRobotImportWorkerDispatch moves mjcf context into a reusable w
     },
     {
       availableFiles: [...availableFiles],
+      assets: {
+        'robots/demo/meshes/base.stl': 'blob:base',
+      },
       allFileContents: {
         'robots/demo/meshes/base.obj': 'o Mesh',
       },
@@ -129,6 +132,9 @@ test('buildResolveRobotImportWorkerDispatch moves mjcf context into a reusable w
   );
   assert.deepEqual(result.contextSnapshot?.allFileContents, {
     'robots/demo/meshes/base.obj': 'o Mesh',
+  });
+  assert.deepEqual(result.contextSnapshot?.assets, {
+    'robots/demo/meshes/base.stl': 'blob:base',
   });
 });
 

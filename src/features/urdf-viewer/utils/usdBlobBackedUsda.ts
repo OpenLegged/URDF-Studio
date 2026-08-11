@@ -1,5 +1,5 @@
 import type { RobotFile } from '@/types';
-import { collectUsdStageOpenRelevantVirtualPaths, toVirtualUsdPath } from './usdPreloadSources.ts';
+import { collectUsdStageOpenRelevantVirtualPaths, toVirtualUsdPath } from '@/lib/robot-parser/usd/usdPreloadSources';
 
 type BlobBackedUsdaFileLike = Pick<RobotFile, 'name' | 'content' | 'blobUrl' | 'format'>;
 

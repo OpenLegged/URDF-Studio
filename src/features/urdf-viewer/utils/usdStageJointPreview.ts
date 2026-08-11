@@ -1,4 +1,4 @@
-import type { ViewerRobotDataResolution } from './viewerRobotData';
+import type { ViewerRobotDataResolution } from '@/lib/robot-parser/usd/viewerRobotData';
 import type { UsdRuntimeJointInfoLike } from './usdRuntimeJointInfo';
 
 export type UsdStageJointInfoLike = UsdRuntimeJointInfoLike;

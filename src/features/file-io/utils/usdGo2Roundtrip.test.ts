@@ -13,7 +13,7 @@ import { parseURDF } from '@/core/parsers/urdf/parser';
 import { generateURDF } from '@/core/parsers/urdf/urdfGenerator';
 import { computeLinkWorldMatrices } from '@/core/robot/kinematics';
 import { GeometryType, type RobotData, type RobotState } from '@/types';
-import { adaptUsdViewerSnapshotToRobotData } from '@/features/urdf-viewer/utils/usdViewerRobotAdapter';
+import { adaptUsdViewerSnapshotToRobotData } from '@/lib/robot-parser/usd';
 import { ThreeRenderDelegateCore } from '@/features/urdf-viewer/runtime/hydra/render-delegate/ThreeRenderDelegateCore.js';
 import { exportRobotToUsd } from './usdExport';
 

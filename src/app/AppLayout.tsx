@@ -209,7 +209,6 @@ export function AppLayout({
     clearAssemblyComponentPreparationOverlay,
     isSelectedUsdHydrating: isUsdHydrationPending,
     labels: {
-      addedComponent: t.addedComponent,
       failedToParseFormat: t.failedToParseFormat,
     },
     previewFile: activePreviewFile,
@@ -338,7 +337,6 @@ export function AppLayout({
     showAssemblyComponentPreparationOverlay,
     clearAssemblyComponentPreparationOverlay,
     showToast,
-    t,
     setBridgePreview,
     setShouldRenderBridgeModal,
     setIsBridgeModalOpen,
@@ -354,10 +352,7 @@ export function AppLayout({
     focusOn,
     pulseSelection,
     setSelection,
-    showToast,
-    t,
   });
-
   const { handleCodeChange: handleComponentCodeChange } = useEditableSourceCodeApply({
     allFileContents,
     availableFiles,
@@ -502,7 +497,6 @@ export function AppLayout({
     labels: {
       failedToParseFormat: t.failedToParseFormat,
       importPackageAssetBundleHint: t.importPackageAssetBundleHint,
-      importPrimitiveGeometryHint: t.importPrimitiveGeometryHint,
       usdPreviewRequiresOpen: t.usdPreviewRequiresOpen,
       xacroSourceOnlyPreviewHint: t.xacroSourceOnlyPreviewHint,
     },

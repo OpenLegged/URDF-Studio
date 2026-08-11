@@ -1,4 +1,9 @@
-import type { UrdfJoint, UrdfLink, UrdfVisual as LinkGeometry } from '@/types';
+import type {
+  MjcfBuiltinTexture,
+  UrdfJoint,
+  UrdfLink,
+  UrdfVisual as LinkGeometry,
+} from '@/types';
 
 export interface GeometryPatchCandidate {
   linkName: string;
@@ -47,6 +52,29 @@ function sameOptionalNumber(a: number | undefined, b: number | undefined): boole
   return a === b;
 }
 
+function sameNumberTuple(a: readonly number[] | undefined, b: readonly number[] | undefined): boolean {
+  if (!a && !b) return true;
+  if (!a || !b || a.length !== b.length) return false;
+  return a.every((value, index) => value === b[index]);
+}
+
+function sameMjcfBuiltinTexture(
+  a: MjcfBuiltinTexture | undefined,
+  b: MjcfBuiltinTexture | undefined,
+): boolean {
+  if (!a && !b) return true;
+  if (!a || !b) return false;
+  return a.builtin === b.builtin
+    && (a.type || '') === (b.type || '')
+    && sameNumberTuple(a.rgb1, b.rgb1)
+    && sameNumberTuple(a.rgb2, b.rgb2)
+    && (a.mark || '') === (b.mark || '')
+    && sameNumberTuple(a.markrgb, b.markrgb)
+    && sameOptionalNumber(a.width, b.width)
+    && sameOptionalNumber(a.height, b.height)
+    && (a.cubeFace || '') === (b.cubeFace || '');
+}
+
 function sameAuthoredMaterials(
   a: LinkGeometry['authoredMaterials'] | undefined,
   b: LinkGeometry['authoredMaterials'] | undefined,
@@ -63,7 +91,9 @@ function sameAuthoredMaterials(
         normalizeMaterialField(material?.color) === normalizeMaterialField(target?.color) &&
         sameRgba(material?.colorRgba, target?.colorRgba) &&
         sameOptionalNumber(material?.opacity, target?.opacity) &&
-        normalizeMaterialField(material?.texture) === normalizeMaterialField(target?.texture)
+        normalizeMaterialField(material?.texture) === normalizeMaterialField(target?.texture) &&
+        sameNumberTuple(material?.textureRepeat, target?.textureRepeat) &&
+        sameMjcfBuiltinTexture(material?.mjcfBuiltinTexture, target?.mjcfBuiltinTexture)
       );
     })
   );

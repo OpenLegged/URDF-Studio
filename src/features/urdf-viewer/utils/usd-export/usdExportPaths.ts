@@ -1,4 +1,4 @@
-import { toVirtualUsdPath } from '../usdPreloadSources.ts';
+import { toVirtualUsdPath } from '@/lib/robot-parser/usd/usdPreloadSources';
 
 import type { DescriptorRole, SnapshotMeshDescriptor } from './internalTypes.ts';
 

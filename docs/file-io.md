@@ -31,7 +31,8 @@
 - component mutation 放到 `workspace-mutations/*` 并显式携带 `EntityRef`/`componentId`；`workspaceSourceSyncUtils.ts` 仅保留从 canonical workspace 生成 source/preview 的纯函数
 - 导入是**尽力而为**而不是全有或全无：`core/robot/importedRobotRecovery.ts` 负责把解析结果修成可表达的模型（丢弃自环 / 重复父关节 / 成环关节，必要时重挂 root），
   `core/robot/canonicalRobotSalvage.ts` 在 canonical 校验仍失败时按 issue 归属丢弃 link/joint/material 后重试；只有连一个可显示的 link 都不剩才返回 `parse_failed`。
-  被丢弃的内容通过 `inspectionContext.recovery` 上报，`app/hooks/robotLoadWorkflow.ts` 在主加载路径弹出 `importedRobotRecovered` 提示，不允许静默地把残缺模型当成完整模型
+  URDF / Xacro / MJCF / SDF 的解析阶段也按实体边界跳过损坏的 link、joint、body、model 或 include/attach 分支；XML 结构本身损坏、根标签无效或没有任何可显示实体仍然失败，不做猜测式 XML 修复。
+  被丢弃的内容通过 `inspectionContext.recovery` 上报，主导入、文件预览、添加组件和源码应用入口都提示恢复数量，不允许静默地把残缺模型当成完整模型
 - URDF `<limit>` 只对 revolute / prismatic 必需；`continuous`（轮子、被动转动关节）缺 `<limit>` 不产生诊断，也不合成上下限位
 - `.usp 3.0` project import/export、USD prepared export cache、live USD roundtrip archive 已进入主工作流
 - `projectArchive.worker.ts`、`usdExport.worker.ts`、`usdBinaryArchive.worker.ts` 已进入主导出链路；大型归档或序列化任务优先走 worker/transfer

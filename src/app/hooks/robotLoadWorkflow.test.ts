@@ -63,7 +63,6 @@ async function runReadyLoad(
     requestedFile: file,
     labels: {
       failedToParseFormat: 'Failed to parse {format}',
-      importedRobotRecovered: 'Imported {name} with {count} issue(s) skipped',
       importPackageAssetBundleHint: 'Missing assets: {assets}',
       xacroSourceOnlyPreviewHint: 'Source-only preview unavailable',
     },
@@ -134,8 +133,8 @@ test('a fully recovered load stays silent about source issues', async () => {
   assert.deepEqual(loaded.toasts, []);
 });
 
-test('a partially recovered load tells the user what was skipped', async () => {
+test('a partially recovered load stays silent about source issues', async () => {
   const loaded = await runReadyLoad('worker', 3);
 
-  assert.deepEqual(loaded.toasts, ['Imported robots/demo.urdf with 3 issue(s) skipped']);
+  assert.deepEqual(loaded.toasts, []);
 });

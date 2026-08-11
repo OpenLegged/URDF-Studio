@@ -12,7 +12,7 @@ import {
   getObjectWorldCenter,
   getPoseMatrixFromPointAndObjectOrientation,
 } from './measurements.ts';
-import type { ViewerRobotDataResolution } from './viewerRobotData.ts';
+import type { ViewerRobotDataResolution } from '@/lib/robot-parser/usd/viewerRobotData';
 import { getSyntheticGeomParentName, resolveRuntimeGeometryRoot } from './runtimeGeometrySelection';
 
 export interface MeasureSelectionLike {

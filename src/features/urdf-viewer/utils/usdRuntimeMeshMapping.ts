@@ -1,6 +1,6 @@
 import { DEFAULT_LINK, GeometryType, type RobotData, type UsdSceneSnapshot } from '@/types';
 import { getLinkPathFromMeshId } from '../runtime/viewer/link-rotation/shared.js';
-import type { ViewerRobotDataResolution } from './viewerRobotData';
+import type { ViewerRobotDataResolution } from '@/lib/robot-parser/usd/viewerRobotData';
 
 const USD_SYNTHETIC_ROOT_LINK_ID = 'usd_scene_root';
 const USD_FALLBACK_ROOT_LINK_PATH = '/usd_scene_root';

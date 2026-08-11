@@ -36,5 +36,6 @@ export {
   createUsdPlaceholderRobotData,
   describeRobotImportFailure,
   resolveRobotFileData,
+  resolveRobotFileDataAsync,
 } from './importRobotFile';
 export type { RobotImportErrorReason, RobotImportResult } from './importRobotFile';

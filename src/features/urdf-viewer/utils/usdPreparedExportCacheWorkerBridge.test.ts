@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 import { GeometryType } from '@/types';
 import type { RobotData, UsdSceneSnapshot } from '@/types';
 import type { UsdPreparedExportCacheWorkerResponse } from './usdPreparedExportCacheWorker.ts';
-import type { ViewerRobotDataResolution } from './viewerRobotData';
+import type { ViewerRobotDataResolution } from '@/lib/robot-parser/usd/viewerRobotData';
 import { serializePreparedUsdExportCacheForWorker } from './usdPreparedExportCacheWorkerTransfer.ts';
 import { createUsdPreparedExportCacheWorkerClient } from './usdPreparedExportCacheWorkerBridge.ts';
 

@@ -112,6 +112,67 @@ export function createMuJoCoFromToQuaternion(direction: THREE.Vector3): THREE.Qu
   return new THREE.Quaternion().setFromUnitVectors(localNegativeZ, normalizedDirection).normalize();
 }
 
+/**
+ * Converts MuJoCo's endpoint form into the equivalent canonical primitive pose.
+ *
+ * MuJoCo ignores an authored `pos`/orientation when `fromto` is present. The
+ * returned size keeps MuJoCo's half-length convention so format adapters can
+ * map it to their own geometry representation without reimplementing the pose
+ * math.
+ */
+export function canonicalizeMjcfFromToGeom(
+  geom: {
+    type: string;
+    size?: readonly number[];
+    fromto?: readonly number[];
+  },
+  options: MJCFPrecisionOptions = {},
+): {
+  pos: [number, number, number];
+  quat: MJCFQuatTuple;
+  size: [number, number];
+} | null {
+  if (!geom.fromto || geom.fromto.length < 6) {
+    return null;
+  }
+
+  const normalizedType = geom.type.trim().toLowerCase();
+  if (normalizedType !== 'capsule' && normalizedType !== 'cylinder') {
+    return null;
+  }
+
+  const radius = geom.size?.[0];
+  if (radius == null || !Number.isFinite(radius)) {
+    return null;
+  }
+
+  const from = new THREE.Vector3(
+    geom.fromto[0] ?? 0,
+    geom.fromto[1] ?? 0,
+    geom.fromto[2] ?? 0,
+  );
+  const to = new THREE.Vector3(
+    geom.fromto[3] ?? 0,
+    geom.fromto[4] ?? 0,
+    geom.fromto[5] ?? 0,
+  );
+  const direction = new THREE.Vector3().subVectors(to, from);
+  const center = new THREE.Vector3().addVectors(from, to).multiplyScalar(0.5);
+
+  return {
+    pos: [
+      roundNumber(center.x, options.precision),
+      roundNumber(center.y, options.precision),
+      roundNumber(center.z, options.precision),
+    ],
+    quat: mjcfQuatTupleFromQuaternion(createMuJoCoFromToQuaternion(direction), options),
+    size: [
+      roundNumber(radius, options.precision),
+      roundNumber(direction.length() / 2, options.precision),
+    ],
+  };
+}
+
 function sortEigenvectorsByDescendingValues(
   eigenvalues: [number, number, number],
   eigenvectors: [THREE.Vector3, THREE.Vector3, THREE.Vector3],

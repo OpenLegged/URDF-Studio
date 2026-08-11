@@ -1,12 +1,17 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as THREE from 'three';
+import { JSDOM } from 'jsdom';
 
 import {
   fitPrimitiveFromPoints,
   fitPrimitiveFromObject3D,
   resolveMJCFMeshBackedPrimitiveGeoms,
 } from './mjcfMeshBackedPrimitiveResolver.ts';
+import { parseMJCFModel } from './mjcfModel.ts';
+
+const dom = new JSDOM('<!doctype html><html><body></body></html>');
+globalThis.DOMParser = dom.window.DOMParser as typeof DOMParser;
 
 function createBasis(axis: THREE.Vector3): { u: THREE.Vector3; v: THREE.Vector3 } {
   const reference =
@@ -309,4 +314,74 @@ test('resolves mesh-backed primitive geoms into fromto capsules in body space', 
   assert.deepEqual(geom.size, [0.2]);
   assert.ok(geom.fromto);
   assertVectorClose(geom.fromto!, [0.5, 2, 3.5, 0.5, 2, 2.5], 1e-6);
+});
+
+test('matches MuJoCo mesh scale, refpos, and refquat ordering when fitting a primitive center', async () => {
+  const parsedModel = parseMJCFModel(`
+    <mujoco model="mesh-transform-truth">
+      <compiler fitaabb="true" />
+      <asset>
+        <mesh
+          name="fit_mesh"
+          vertex="-0.1 -0.2 -0.5  -0.1 -0.2 0.5  -0.1 0.2 -0.5  -0.1 0.2 0.5
+                  0.1 -0.2 -0.5   0.1 -0.2 0.5   0.1 0.2 -0.5   0.1 0.2 0.5"
+          scale="2 3 4"
+          refpos="1 2 3"
+          refquat="0 0 0 1"
+        />
+      </asset>
+      <worldbody>
+        <body name="base">
+          <geom name="fitted" type="cylinder" mesh="fit_mesh" />
+        </body>
+      </worldbody>
+    </mujoco>
+  `);
+  assert.ok(parsedModel);
+
+  const resolvedCount = await resolveMJCFMeshBackedPrimitiveGeoms(parsedModel, { assets: {} });
+
+  assert.equal(resolvedCount, 1);
+  const geom = parsedModel.worldBody.children[0]?.geoms[0];
+  assert.ok(geom?.fromto);
+  const fittedCenter = [
+    (geom.fromto[0] + geom.fromto[3]) / 2,
+    (geom.fromto[1] + geom.fromto[4]) / 2,
+    (geom.fromto[2] + geom.fromto[5]) / 2,
+  ];
+
+  // MuJoCo 3.8 compiles this exact mesh to geom_pos/mesh_pos = [2, 6, -12].
+  // The equivalent authored-frame operation is S * (Q^-1 * (center - refpos)).
+  assertVectorClose(fittedCenter, [2, 6, -12], 1e-6);
+  assertVectorClose(geom.size, [0.6], 1e-6);
+  assert.ok(
+    Math.abs(
+      new THREE.Vector3(...geom.fromto.slice(3)).distanceTo(
+        new THREE.Vector3(...geom.fromto.slice(0, 3)),
+      ) - 4,
+    ) <= 1e-6,
+  );
+});
+
+test('aborts mesh-backed primitive fitting before mutating canonical source geoms', async () => {
+  const parsedModel = parseMJCFModel(`
+    <mujoco model="aborted-fit">
+      <asset><mesh name="fit_mesh" vertex="0 0 0  1 0 0  0 1 0" /></asset>
+      <worldbody><body name="base"><geom type="capsule" mesh="fit_mesh" /></body></worldbody>
+    </mujoco>
+  `);
+  assert.ok(parsedModel);
+  const geom = parsedModel.worldBody.children[0]?.geoms[0];
+  assert.ok(geom);
+
+  await assert.rejects(
+    resolveMJCFMeshBackedPrimitiveGeoms(parsedModel, {
+      assets: {},
+      abortSignal: { aborted: true },
+    }),
+    { name: 'MJCFLoadAbortedError' },
+  );
+  assert.equal(geom.mesh, 'fit_mesh');
+  assert.equal(geom.fromto, undefined);
+  assert.deepEqual(geom.size, []);
 });

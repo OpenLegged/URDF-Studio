@@ -77,7 +77,6 @@ export function useJointInteractionController({
 }: UseJointInteractionControllerOptions) {
   const { emitJointChangeToApp, requestSceneRefresh } = events;
   const {
-    applyImmediateClosedLoopActiveJointPreview,
     applyRuntimeJointMotionPreview,
     commitIkJointKinematics,
     effectiveClosedLoopRobotState,
@@ -192,6 +191,7 @@ export function useJointInteractionController({
   const {
     schedule: scheduleClosedLoopPreview,
     solve: solveClosedLoopPreview,
+    solveImmediately: solveClosedLoopPreviewImmediately,
     cancel: cancelClosedLoopPreviewScheduler,
     reset: resetClosedLoopPreviewScheduler,
   } = useClosedLoopPreviewScheduler({
@@ -231,15 +231,51 @@ export function useJointInteractionController({
 
   const scheduleClosedLoopDragPreview = useCallback(
     (selectedJointId: string, resolvedAngle: number) => {
-      applyImmediateClosedLoopActiveJointPreview(selectedJointId, resolvedAngle);
-      scheduleClosedLoopPreviewWorkerSolve(
-        selectedJointId,
-        resolvedAngle,
-        'Closed-loop drag preview',
-        { preserveActiveJointRuntime: true },
-      );
+      // A worker result from a previous non-drag preview must not overtake the
+      // synchronous drag projection and put the follower back on an old pose.
+      cancelClosedLoopPreviewScheduler();
+
+      try {
+        const compensation = solveClosedLoopPreviewImmediately(selectedJointId, resolvedAngle);
+        const resolvedPreview = resolveClosedLoopPreviewAngles(
+          selectedJointId,
+          resolvedAngle,
+          compensation,
+        );
+        rememberClosedLoopPreviewCommit(
+          selectedJointId,
+          resolvedAngle,
+          resolvedPreview.angles,
+          compensation.quaternions,
+        );
+        applyRuntimeJointMotionPreview(
+          resolvedPreview.angles,
+          compensation.quaternions,
+          selectedJointId,
+        );
+      } catch (error) {
+        logRuntimeFailure(
+          'useViewerController:scheduleClosedLoopDragPreview',
+          new Error('Synchronous closed-loop drag solve failed; falling back to worker.', {
+            cause: error,
+          }),
+          'warn',
+        );
+        scheduleClosedLoopPreviewWorkerSolve(
+          selectedJointId,
+          resolvedAngle,
+          'Closed-loop drag preview fallback',
+          { preserveActiveJointRuntime: true },
+        );
+      }
     },
-    [applyImmediateClosedLoopActiveJointPreview, scheduleClosedLoopPreviewWorkerSolve],
+    [
+      applyRuntimeJointMotionPreview,
+      cancelClosedLoopPreviewScheduler,
+      rememberClosedLoopPreviewCommit,
+      scheduleClosedLoopPreviewWorkerSolve,
+      solveClosedLoopPreviewImmediately,
+    ],
   );
 
   useEffect(() => {
