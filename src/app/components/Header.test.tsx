@@ -11,18 +11,18 @@ import { Header } from './Header.tsx';
 const noopToolboxItems: import('./header/types').ToolboxItem[] = [];
 
 const surfaceModeSelector: import('./header/types').HeaderSurfaceModeSelectorConfig = {
-  current: 'model',
+  current: 'primary',
   onChange: () => {},
   translations: {
     en: {
       ariaLabel: 'Workspace mode',
-      model: { label: 'Model', description: 'Edit individual assets' },
-      scene: { label: 'Scene', description: 'Arrange environment assets' },
+      primary: { label: 'Primary', description: 'Use the primary workspace' },
+      alternate: { label: 'Alternate', description: 'Use the host workspace' },
     },
     zh: {
       ariaLabel: '工作模式',
-      model: { label: '模型', description: '编辑独立资产' },
-      scene: { label: '场景', description: '布置环境资产' },
+      primary: { label: '默认', description: '使用默认工作区' },
+      alternate: { label: '扩展', description: '使用宿主工作区' },
     },
   },
 };
@@ -77,7 +77,7 @@ test('Header does not reserve empty center dock width when no toolbar is mounted
   const markup = renderHeader();
 
   assert.match(markup, /id="viewer-toolbar-dock-slot"/);
-  assert.match(markup, /id="scene-toolbar-dock-slot"/);
+  assert.match(markup, /id="alternate-workspace-toolbar-dock-slot"/);
   assert.match(markup, /min-w-0/);
   assert.doesNotMatch(markup, /min-w-\[240px\]/);
 });
@@ -124,7 +124,7 @@ test('Header places the optional surface mode selector after the logo and before
   assert.ok(fileIndex > selectorIndex, 'File should follow the surface mode selector');
 });
 
-test('Header renders host-owned file actions for the scene surface', () => {
+test('Header renders host-owned file actions for the alternate surface', () => {
   const markup = renderToStaticMarkup(
     React.createElement(Header, {
       onImportFile: () => {},
@@ -141,13 +141,13 @@ test('Header renders host-owned file actions for the scene surface', () => {
       onPrefetchSnapshot: () => {},
       surfaceModeSelector: {
         ...surfaceModeSelector,
-        current: 'scene',
+        current: 'alternate',
       },
       contextFileMenu: {
-        label: 'Scene file',
+        label: 'Host file',
         items: [{
-          key: 'open-scene',
-          label: 'Open scene project',
+          key: 'open-host-project',
+          label: 'Open host project',
           onSelect: () => {},
         }],
       },
@@ -160,7 +160,7 @@ test('Header renders host-owned file actions for the scene surface', () => {
     }),
   );
 
-  assert.match(markup, /aria-label="Scene file"/);
+  assert.match(markup, /aria-label="Host file"/);
   assert.doesNotMatch(markup, /aria-label="File"/);
 });
 

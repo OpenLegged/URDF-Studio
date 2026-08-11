@@ -20,7 +20,7 @@ interface AppLayoutViewContentProps extends AppLayoutViewProps {
 
 export function AppLayoutViewContent(props: AppLayoutViewContentProps) {
   const { drag, workspaceChrome } = props;
-  const modelWorkspaceActive = props.header.surfaceModeSelector?.current !== 'scene';
+  const primaryWorkspaceActive = props.header.surfaceModeSelector?.current !== 'alternate';
 
   return (
     <div
@@ -36,7 +36,7 @@ export function AppLayoutViewContent(props: AppLayoutViewContentProps) {
       <AppLayoutIkPanelSection ikPanel={props.ikPanel} />
 
       <div className={workspaceChrome.classNames.root}>
-        {modelWorkspaceActive ? (
+        {primaryWorkspaceActive ? (
           <>
             <WorkspaceViewerSection
               workspaceChrome={props.workspaceChrome}
@@ -55,12 +55,12 @@ export function AppLayoutViewContent(props: AppLayoutViewContentProps) {
       <AssemblyPreparationOverlaySection assemblyPreparation={props.assemblyPreparation} />
       <AppLayoutOverlaysSection overlays={props.overlays} />
 
-      {/* Narrow-screen model-editor dock (phones, <640px). Scene mode owns its
-          separate bottom toolbar, so keep the underlying model controls hidden. */}
+      {/* Narrow-screen primary-workspace dock (phones, <640px). A host-provided
+          alternate workspace owns its own controls. */}
       <div
         id="viewer-toolbar-bottom-dock"
         className={`pointer-events-none fixed inset-x-0 bottom-0 z-30 ${
-          props.header.surfaceModeSelector?.current === 'scene' ? 'hidden' : 'sm:hidden'
+          props.header.surfaceModeSelector?.current === 'alternate' ? 'hidden' : 'sm:hidden'
         }`}
       />
     </div>

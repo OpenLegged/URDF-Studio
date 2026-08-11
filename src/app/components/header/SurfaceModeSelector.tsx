@@ -7,7 +7,7 @@ import type {
   HeaderSurfaceModeSelectorCopy,
 } from './types';
 
-const SURFACE_MODES: readonly HeaderSurfaceMode[] = ['model', 'scene'];
+const SURFACE_MODES: readonly HeaderSurfaceMode[] = ['primary', 'alternate'];
 
 export interface SurfaceModeSelectorProps {
   config: HeaderSurfaceModeSelectorConfig;
@@ -26,8 +26,8 @@ export function SurfaceModeSelector({
 }: SurfaceModeSelectorProps) {
   const triggerRef = React.useRef<HTMLButtonElement | null>(null);
   const optionRefs = React.useRef<Record<HeaderSurfaceMode, HTMLButtonElement | null>>({
-    model: null,
-    scene: null,
+    primary: null,
+    alternate: null,
   });
   const menuId = React.useId();
   const currentMode = config.current;

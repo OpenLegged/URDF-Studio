@@ -19,7 +19,13 @@ export interface ToolboxItem {
 }
 export type HeaderMenuKey = 'surface' | 'file' | 'ai' | 'toolbox' | 'view' | 'more' | null;
 
-export type HeaderSurfaceMode = 'model' | 'scene';
+/**
+ * Presentation state for a host-provided alternate workspace.
+ *
+ * Core deliberately does not assign product meaning to either value. Hosts
+ * map their own domain modes onto the primary and alternate surfaces.
+ */
+export type HeaderSurfaceMode = 'primary' | 'alternate';
 
 export interface HeaderSurfaceModeOptionCopy {
   label: string;
@@ -28,8 +34,8 @@ export interface HeaderSurfaceModeOptionCopy {
 
 export interface HeaderSurfaceModeSelectorCopy {
   ariaLabel: string;
-  model: HeaderSurfaceModeOptionCopy;
-  scene: HeaderSurfaceModeOptionCopy;
+  primary: HeaderSurfaceModeOptionCopy;
+  alternate: HeaderSurfaceModeOptionCopy;
 }
 
 export interface HeaderSurfaceModeSelectorConfig {

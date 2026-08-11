@@ -103,9 +103,9 @@ export function Header({
     [quickAction, secondaryAction],
   );
   const responsive = useHeaderResponsiveLayout(headerRef, responsiveOptions);
-  const isSceneSurface = surfaceModeSelector?.current === 'scene';
+  const isAlternateSurface = surfaceModeSelector?.current === 'alternate';
   const actionResponsive = React.useMemo(
-    () => isSceneSurface
+    () => isAlternateSurface
       ? {
           ...responsive,
           showQuickActionInline: false,
@@ -119,7 +119,7 @@ export function Header({
           showSecondaryActionLabel: false,
         }
       : responsive,
-    [isSceneSurface, responsive],
+    [isAlternateSurface, responsive],
   );
   const t = translations[lang];
   React.useEffect(() => {
@@ -165,7 +165,7 @@ export function Header({
           />
         ) : null}
 
-        {isSceneSurface && contextFileMenu ? (
+        {isAlternateSurface && contextFileMenu ? (
           <HeaderContextFileMenu
             config={contextFileMenu}
             closeLabel={t.close}
@@ -175,7 +175,7 @@ export function Header({
           />
         ) : null}
 
-        {!isSceneSurface ? <HeaderMenus
+        {!isAlternateSurface ? <HeaderMenus
           activeMenu={activeMenu}
           setActiveMenu={setActiveMenu}
           showMenuLabels={responsive.showMenuLabels}
@@ -205,11 +205,11 @@ export function Header({
       <div className="pointer-events-none hidden h-full min-w-0 items-center justify-center justify-self-center px-2 sm:flex sm:px-3">
         <div
           id="viewer-toolbar-dock-slot"
-          className={isSceneSurface ? 'hidden' : 'flex h-full items-center justify-center'}
+          className={isAlternateSurface ? 'hidden' : 'flex h-full items-center justify-center'}
         />
         <div
-          id="scene-toolbar-dock-slot"
-          className={isSceneSurface ? 'flex h-full items-center justify-center' : 'hidden'}
+          id="alternate-workspace-toolbar-dock-slot"
+          className={isAlternateSurface ? 'flex h-full items-center justify-center' : 'hidden'}
         />
       </div>
 
@@ -225,7 +225,7 @@ export function Header({
         setTheme={setTheme}
         undo={undo}
         redo={redo}
-        quickAction={isSceneSurface ? undefined : quickAction}
+        quickAction={isAlternateSurface ? undefined : quickAction}
         secondaryAction={secondaryAction}
         onOpenCodeViewer={onOpenCodeViewer}
         onPrefetchCodeViewer={onPrefetchCodeViewer}

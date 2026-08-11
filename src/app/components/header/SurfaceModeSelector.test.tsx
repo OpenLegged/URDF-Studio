@@ -16,24 +16,24 @@ import type {
 const translations: HeaderSurfaceModeSelectorConfig['translations'] = {
   en: {
     ariaLabel: 'Workspace mode',
-    model: {
-      label: 'Model',
-      description: 'Edit robots, mechanisms, and individual assets',
+    primary: {
+      label: 'Primary',
+      description: 'Use the primary workspace',
     },
-    scene: {
-      label: 'Scene',
-      description: 'Arrange models and environment assets',
+    alternate: {
+      label: 'Alternate',
+      description: 'Use the host workspace',
     },
   },
   zh: {
     ariaLabel: '工作模式',
-    model: {
-      label: '模型',
-      description: '编辑机器人、机构和独立资产',
+    primary: {
+      label: '默认',
+      description: '使用默认工作区',
     },
-    scene: {
-      label: '场景',
-      description: '布置模型和环境资产',
+    alternate: {
+      label: '扩展',
+      description: '使用宿主工作区',
     },
   },
 };
@@ -41,7 +41,7 @@ const translations: HeaderSurfaceModeSelectorConfig['translations'] = {
 function renderSelector(copy: HeaderSurfaceModeSelectorCopy) {
   return renderToStaticMarkup(
     <SurfaceModeSelector
-      config={{ current: 'model', onChange: () => {}, translations }}
+      config={{ current: 'primary', onChange: () => {}, translations }}
       copy={copy}
       closeLabel="Close"
       isOpen
@@ -106,7 +106,7 @@ async function mountSelector(onModeChange: (mode: HeaderSurfaceMode) => void) {
   const root = createRoot(container);
 
   function Harness() {
-    const [current, setCurrent] = React.useState<HeaderSurfaceMode>('model');
+    const [current, setCurrent] = React.useState<HeaderSurfaceMode>('primary');
     const [isOpen, setIsOpen] = React.useState(false);
     const config: HeaderSurfaceModeSelectorConfig = {
       current,
@@ -149,8 +149,8 @@ test('renders localized labels and exposes the current mode as a checked menu it
   );
 
   assert.match(markup, /工作模式/);
-  assert.match(markup, /编辑机器人、机构和独立资产/);
-  assert.match(markup, /布置模型和环境资产/);
+  assert.match(markup, /使用默认工作区/);
+  assert.match(markup, /使用宿主工作区/);
   assert.equal(menuItems.length, 2);
   assert.equal(menuItems[0]?.getAttribute('aria-checked'), 'true');
   assert.equal(menuItems[1]?.getAttribute('aria-checked'), 'false');
@@ -182,10 +182,10 @@ test('supports focus movement, selection, Escape, and outside-click dismissal', 
     assert.equal(document.activeElement, menuItems[1]);
 
     await act(async () => menuItems[1]?.click());
-    assert.deepEqual(changes, ['scene']);
+    assert.deepEqual(changes, ['alternate']);
     assert.equal(mounted.container.querySelector('[role="menu"]'), null);
     assert.equal(document.activeElement, trigger);
-    assert.match(trigger.textContent ?? '', /Scene/);
+    assert.match(trigger.textContent ?? '', /Alternate/);
 
     await act(async () => trigger.click());
     menuItems = Array.from(
