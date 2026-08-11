@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 
 import { cleanupWorkspaceCanvasRenderer } from './workspaceCanvasRendererCleanup.ts';
 
-test('cleanupWorkspaceCanvasRenderer releases canvas listeners before forcing context loss', () => {
+test('cleanupWorkspaceCanvasRenderer releases resources without forcing context loss', () => {
   const calls: string[] = [];
   const renderer = {
     domElement: {
@@ -28,7 +28,7 @@ test('cleanupWorkspaceCanvasRenderer releases canvas listeners before forcing co
     calls.push('context-menu-cleanup');
   });
 
-  assert.deepEqual(calls, ['canvas-cleanup', 'render-lists', 'dispose', 'force-context-loss']);
+  assert.deepEqual(calls, ['canvas-cleanup', 'render-lists', 'dispose']);
 });
 
 test('cleanupWorkspaceCanvasRenderer still releases context-menu cleanup without a renderer', () => {

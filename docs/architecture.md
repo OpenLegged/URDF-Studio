@@ -20,6 +20,14 @@
 - 若能力强依赖 `workspaceStore`、app overlays 或特定业务流程，不要抽进 `src/lib/`
 - `packages/react-robot-canvas/` 是对外发布包工作区；`dist/` 由构建脚本维护，禁止手改
 
+Host App 可以通过 `AppExtensionConfig.contextFileMenu` 为替代工作区 surface 注入一组
+文件动作。Core Header 只拥有菜单的呈现、焦点和关闭行为；文件句柄、保存策略、预检、
+导入提交和业务文案仍由 host 拥有，避免把 Pro 场景工作流反向写入开源 Core。
+
+`AppExtensionConfig.surfaceModeSelector` 只暴露中性的 `primary` / `alternate` 状态。
+Core 据此切换默认工作区与宿主工作区的壳层呈现，但不知道宿主的业务模式名称、数据模型或
+工作流；“模型 / 场景”等产品语义必须由 Pro 在注入配置时映射和提供文案。
+
 ## 3. 当前存量例外（禁止扩散）
 
 运行时代码：

@@ -287,3 +287,55 @@ test('buildUsdBundlePreloadEntries preloads referenced layers and supported bund
     ],
   );
 });
+
+test('scene projection can preload the complete artifact closure hidden behind binary USDC layers', () => {
+  const preloadEntries = buildUsdBundlePreloadEntries(
+    {
+      name: 'Simple_Room/scene.usda',
+      content: '#usda 1.0\n( references = @./SimpleRoom/simple_room.usd@ )',
+      blobUrl: undefined,
+    },
+    [
+      {
+        name: 'Simple_Room/scene.usda',
+        content: '#usda 1.0\n( references = @./SimpleRoom/simple_room.usd@ )',
+        blobUrl: undefined,
+        format: 'usd',
+      },
+      {
+        name: 'Simple_Room/SimpleRoom/simple_room.usd',
+        content: 'PXR-USDC\u0000binary-root',
+        blobUrl: 'blob:simple-room-root',
+        format: 'usd',
+      },
+      {
+        name: 'Simple_Room/Props/SM_TowelRoom01.usd',
+        content: 'PXR-USDC\u0000binary-prop',
+        blobUrl: 'blob:towel-room',
+        format: 'usd',
+      },
+      {
+        name: 'Simple_Room/Props/Textures/TowelRoom_BaseColor.png',
+        content: '',
+        blobUrl: 'blob:towel-room-texture',
+        format: 'asset',
+      },
+    ],
+    {
+      'Simple_Room/SimpleRoom/simple_room.usd': 'blob:simple-room-root',
+      'Simple_Room/Props/SM_TowelRoom01.usd': 'blob:towel-room',
+      'Simple_Room/Props/Textures/TowelRoom_BaseColor.png': 'blob:towel-room-texture',
+    },
+    { includeAllAvailableFiles: true },
+  );
+
+  assert.deepEqual(
+    preloadEntries.map((entry) => entry.path).sort(),
+    [
+      '/Simple_Room/Props/SM_TowelRoom01.usd',
+      '/Simple_Room/Props/Textures/TowelRoom_BaseColor.png',
+      '/Simple_Room/SimpleRoom/simple_room.usd',
+      '/Simple_Room/scene.usda',
+    ],
+  );
+});

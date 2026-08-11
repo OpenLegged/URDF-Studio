@@ -30,6 +30,12 @@ export interface UsdOffscreenViewerInteractionState {
 export interface UsdOffscreenViewerInitRequest {
   type: 'init';
   sessionId: UsdOffscreenViewerSessionId;
+  /**
+   * `scene` publishes the composed OpenUSD scene snapshot without hydrating
+   * RobotData or preparing robot export caches. The default remains `robot`
+   * for existing model-editor callers.
+   */
+  projectionMode?: 'robot' | 'scene';
   canvas: OffscreenCanvas;
   width: number;
   height: number;
@@ -45,6 +51,7 @@ export interface UsdOffscreenViewerInitRequest {
   originSize: number;
   sourceFile: OffscreenViewerSourceFile;
   completionMode?: UsdOffscreenViewerCompletionMode;
+  forceHydraFullDraw?: boolean;
   stageOpenContextKey?: string;
   stageOpenContext?: UsdStageOpenPreparationWorkerContextSnapshot | null;
   stageOpenContextCacheHit?: boolean;

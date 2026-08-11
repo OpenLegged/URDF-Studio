@@ -261,9 +261,15 @@ export async function prepareUsdStageOpenDataCore(
   sourceFile: Pick<RobotFile, 'name' | 'content' | 'blobUrl'>,
   availableFiles: Array<Pick<RobotFile, 'name' | 'content' | 'blobUrl' | 'format'>>,
   assets: Record<string, string>,
+  options: { includeAllAvailableFiles?: boolean } = {},
 ): Promise<PreparedUsdStageOpenData> {
   const stageSourcePath = toVirtualUsdPath(sourceFile.name);
-  const preloadEntries = buildUsdBundlePreloadEntries(sourceFile, availableFiles, assets);
+  const preloadEntries = buildUsdBundlePreloadEntries(
+    sourceFile,
+    availableFiles,
+    assets,
+    options,
+  );
   const preloadFiles = new Array<PreparedUsdPreloadFile>(preloadEntries.length);
   const metrics = createEmptyPreparedUsdStageOpenMetrics(preloadEntries.length);
 

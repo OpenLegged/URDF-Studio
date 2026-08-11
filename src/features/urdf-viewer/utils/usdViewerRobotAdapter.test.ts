@@ -1169,6 +1169,65 @@ test('keeps synthetic displayColor material records in raw linear color space', 
   assert.equal(result.robotData.links.base_link.visual.color, '#597c95');
 });
 
+test('keeps texture-only OpenUSD materials opaque when optional scalar fields are absent', () => {
+  const result = adaptUsdViewerSnapshotToRobotData(
+    {
+      stageSourcePath: '/rooms/Simple_Room/simple_room.usd',
+      stage: {
+        defaultPrimPath: '/Root',
+      },
+      robotTree: {
+        linkParentPairs: [['/Root/Floor', null]],
+        rootLinkPaths: ['/Root/Floor'],
+      },
+      robotMetadataSnapshot: {
+        stageSourcePath: '/rooms/Simple_Room/simple_room.usd',
+        linkParentPairs: [['/Root/Floor', null]],
+        jointCatalogEntries: [],
+        meshCountsByLinkPath: {
+          '/Root/Floor': {
+            visualMeshCount: 1,
+            collisionMeshCount: 0,
+          },
+        },
+      },
+      render: {
+        meshDescriptors: [
+          {
+            meshId: '/Root/Floor.proto_mesh_id0',
+            sectionName: 'visuals',
+            resolvedPrimPath: '/Root/Floor',
+            primType: 'mesh',
+            materialId: '/Root/Looks/ParquetFloor',
+          },
+        ],
+        materials: [
+          {
+            materialId: '/Root/Looks/ParquetFloor',
+            name: 'ParquetFloor',
+            isOmniPbr: true,
+            mapPath: './Materials/Textures/Parquet_Color.png',
+          },
+        ],
+      },
+    },
+    {
+      fileName: 'simple_room.usd',
+    },
+  );
+
+  assert.ok(result);
+  assert.deepEqual(result.robotData.materials?.Floor, {
+    texture: './Materials/Textures/Parquet_Color.png',
+    usdMaterial: {
+      materialId: '/Root/Looks/ParquetFloor',
+      name: 'ParquetFloor',
+      isOmniPbr: true,
+      mapPath: './Materials/Textures/Parquet_Color.png',
+    },
+  });
+});
+
 test('does not preserve disabled OmniPBR default white emission as authored USD emissive material', () => {
   const result = adaptUsdViewerSnapshotToRobotData(
     {

@@ -155,6 +155,15 @@ function normalizeMaterialColorSource(value: string | null | undefined): string 
   return normalized || null;
 }
 
+function toOptionalFiniteNumber(value: unknown): number {
+  if (value === null || value === undefined || value === '') {
+    return Number.NaN;
+  }
+
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? numeric : Number.NaN;
+}
+
 function resolveAuthoredScalarColorSpace(
   material: MaterialRecord | null | undefined,
   colorSpace: string | null | undefined,
@@ -198,7 +207,7 @@ export function resolveSnapshotMaterialColorHex(
     return authoredColor;
   }
 
-  const opacity = Number(material?.opacity);
+  const opacity = toOptionalFiniteNumber(material?.opacity);
   const hasPrimaryTexture = Boolean(
     String(material?.mapPath || material?.alphaMapPath || '').trim(),
   );
@@ -245,9 +254,9 @@ export function resolveSnapshotAuthoredMaterial(
     undefined;
   const color = resolveSnapshotMaterialColorHex(material) || undefined;
   const texture = resolveSnapshotMaterialTexturePath(material);
-  const opacity = Number(material.opacity);
-  const roughness = Number(material.roughness);
-  const metalness = Number(material.metalness);
+  const opacity = toOptionalFiniteNumber(material.opacity);
+  const roughness = toOptionalFiniteNumber(material.roughness);
+  const metalness = toOptionalFiniteNumber(material.metalness);
   const emissiveEnabled = resolveSnapshotMaterialEmissionEnabled(material);
   const emissive = emissiveEnabled
     ? colorArrayToHex(
@@ -256,7 +265,9 @@ export function resolveSnapshotAuthoredMaterial(
         resolveAuthoredScalarColorSpace(material, material.emissiveColorSpace),
       ) || undefined
     : undefined;
-  const emissiveIntensity = emissiveEnabled ? Number(material.emissiveIntensity) : Number.NaN;
+  const emissiveIntensity = emissiveEnabled
+    ? toOptionalFiniteNumber(material.emissiveIntensity)
+    : Number.NaN;
 
   if (
     !name &&

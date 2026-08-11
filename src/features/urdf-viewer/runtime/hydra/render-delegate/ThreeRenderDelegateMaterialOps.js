@@ -1935,11 +1935,64 @@ export class ThreeRenderDelegateMaterialOps extends ThreeRenderDelegateCore {
         }
         return normalizedRecords;
     }
+    resolveMaterialTexturePathCandidates(texturePath, stageSourcePath = null) {
+        const normalizedTexturePath = this.normalizeMaterialTexturePath(texturePath);
+        if (!normalizedTexturePath)
+            return [];
+        const candidates = [];
+        const addCandidate = (candidate) => {
+            const normalizedCandidate = this.normalizeMaterialTexturePath(candidate);
+            if (normalizedCandidate && !candidates.includes(normalizedCandidate)) {
+                candidates.push(normalizedCandidate);
+            }
+        };
+        const normalizedStageSourcePath = String(stageSourcePath || this.getStageSourcePath?.() || '')
+            .trim()
+            .split('?')[0];
+        if (normalizedStageSourcePath && normalizedStageSourcePath !== '__default__') {
+            addCandidate(resolveUsdAssetPath(normalizedStageSourcePath, normalizedTexturePath));
+        }
+        addCandidate(normalizedTexturePath);
+        return candidates;
+    }
+    async loadMaterialTexture(texturePath, options = {}) {
+        const candidates = this.resolveMaterialTexturePathCandidates(
+            texturePath,
+            options?.stageSourcePath,
+        );
+        if (candidates.length === 0) {
+            throw new Error('Missing OpenUSD material texture path.');
+        }
+        let lastError = null;
+        for (const candidate of candidates) {
+            try {
+                return await this.registry.getTexture(candidate);
+            }
+            catch (error) {
+                lastError = error;
+            }
+        }
+        if (lastError && typeof lastError === 'object') {
+            try {
+                lastError.usdTextureCandidates = candidates.slice();
+            }
+            catch {
+                // Preserve loader errors even when a registry freezes them.
+            }
+            throw lastError;
+        }
+        throw new Error(`Unable to load OpenUSD material texture from: ${candidates.join(', ')}`);
+    }
     applySnapshotTextureInput(material, texturePath, materialProperty, options = {}) {
         const normalizedTexturePath = this.normalizeMaterialTexturePath(texturePath);
         if (!material || !normalizedTexturePath)
             return false;
-        this.registry.getTexture(normalizedTexturePath).then((texture) => {
+        const texturePromise = typeof this.loadMaterialTexture === 'function'
+            ? this.loadMaterialTexture(normalizedTexturePath, {
+                stageSourcePath: options?.stageSourcePath,
+            })
+            : this.registry.getTexture(normalizedTexturePath);
+        texturePromise.then((texture) => {
             const nextTexture = texture?.clone ? texture.clone() : texture;
             if (!nextTexture)
                 return;
@@ -1959,6 +2012,9 @@ export class ThreeRenderDelegateMaterialOps extends ThreeRenderDelegateCore {
                 texturePath: normalizedTexturePath,
                 materialProperty,
                 materialName: String(material?.name || ''),
+                textureCandidates: Array.isArray(error?.usdTextureCandidates)
+                    ? error.usdTextureCandidates
+                    : [normalizedTexturePath],
                 error: error instanceof Error ? error.message : String(error || 'unknown-error'),
             });
             if (typeof this.recordSnapshotTextureApplyFailure === 'function') {
@@ -2128,6 +2184,15 @@ export class ThreeRenderDelegateMaterialOps extends ThreeRenderDelegateCore {
             material[materialField] = new Vector2(tuple[0], tuple[1]);
             return true;
         };
+        const applyTexture = (texturePath, materialProperty, options = {}) => this.applySnapshotTextureInput(
+            material,
+            texturePath,
+            materialProperty,
+            {
+                ...options,
+                stageSourcePath: record?.stageSourcePath,
+            },
+        );
         assignColor('color', 'color', {
             treatAsSrgbWhenMatchingMaterialName: this.shouldTreatNamedHexDiffuseAsSrgb(),
         });
@@ -2180,52 +2245,52 @@ export class ThreeRenderDelegateMaterialOps extends ThreeRenderDelegateCore {
                 material.transparent = false;
             }
         }
-        this.applySnapshotTextureInput(material, record?.mapPath, 'map', {
+        applyTexture(record?.mapPath, 'map', {
             colorSpace: SRGBColorSpace,
             onAssigned: () => {
                 material.color = new Color(0xffffff);
             },
         });
         if (emissiveEnabled) {
-            this.applySnapshotTextureInput(material, record?.emissiveMapPath, 'emissiveMap', {
+            applyTexture(record?.emissiveMapPath, 'emissiveMap', {
                 colorSpace: SRGBColorSpace,
                 onAssigned: () => {
                     material.emissive = new Color(0xffffff);
                 },
             });
         }
-        this.applySnapshotTextureInput(material, record?.roughnessMapPath, 'roughnessMap', {
+        applyTexture(record?.roughnessMapPath, 'roughnessMap', {
             onAssigned: () => {
                 material.roughness = 1;
             },
         });
-        this.applySnapshotTextureInput(material, record?.metalnessMapPath, 'metalnessMap', {
+        applyTexture(record?.metalnessMapPath, 'metalnessMap', {
             onAssigned: () => {
                 material.metalness = 1;
             },
         });
-        this.applySnapshotTextureInput(material, record?.normalMapPath, 'normalMap');
-        this.applySnapshotTextureInput(material, record?.aoMapPath, 'aoMap');
+        applyTexture(record?.normalMapPath, 'normalMap');
+        applyTexture(record?.aoMapPath, 'aoMap');
         if (record?.opacityEnabled !== false && record?.opacityTextureEnabled !== false) {
-            this.applySnapshotTextureInput(material, record?.alphaMapPath, 'alphaMap', {
+            applyTexture(record?.alphaMapPath, 'alphaMap', {
                 onAssigned: () => {
                     if (!(material.alphaTest > 0))
                         material.transparent = true;
                 },
             });
         }
-        this.applySnapshotTextureInput(material, record?.clearcoatMapPath, 'clearcoatMap');
-        this.applySnapshotTextureInput(material, record?.clearcoatRoughnessMapPath, 'clearcoatRoughnessMap');
-        this.applySnapshotTextureInput(material, record?.clearcoatNormalMapPath, 'clearcoatNormalMap');
-        this.applySnapshotTextureInput(material, record?.specularColorMapPath, 'specularColorMap', { colorSpace: SRGBColorSpace });
-        this.applySnapshotTextureInput(material, record?.specularIntensityMapPath, 'specularIntensityMap');
-        this.applySnapshotTextureInput(material, record?.transmissionMapPath, 'transmissionMap');
-        this.applySnapshotTextureInput(material, record?.thicknessMapPath, 'thicknessMap');
-        this.applySnapshotTextureInput(material, record?.sheenColorMapPath, 'sheenColorMap', { colorSpace: SRGBColorSpace });
-        this.applySnapshotTextureInput(material, record?.sheenRoughnessMapPath, 'sheenRoughnessMap');
-        this.applySnapshotTextureInput(material, record?.anisotropyMapPath, 'anisotropyMap');
-        this.applySnapshotTextureInput(material, record?.iridescenceMapPath, 'iridescenceMap');
-        this.applySnapshotTextureInput(material, record?.iridescenceThicknessMapPath, 'iridescenceThicknessMap');
+        applyTexture(record?.clearcoatMapPath, 'clearcoatMap');
+        applyTexture(record?.clearcoatRoughnessMapPath, 'clearcoatRoughnessMap');
+        applyTexture(record?.clearcoatNormalMapPath, 'clearcoatNormalMap');
+        applyTexture(record?.specularColorMapPath, 'specularColorMap', { colorSpace: SRGBColorSpace });
+        applyTexture(record?.specularIntensityMapPath, 'specularIntensityMap');
+        applyTexture(record?.transmissionMapPath, 'transmissionMap');
+        applyTexture(record?.thicknessMapPath, 'thicknessMap');
+        applyTexture(record?.sheenColorMapPath, 'sheenColorMap', { colorSpace: SRGBColorSpace });
+        applyTexture(record?.sheenRoughnessMapPath, 'sheenRoughnessMap');
+        applyTexture(record?.anisotropyMapPath, 'anisotropyMap');
+        applyTexture(record?.iridescenceMapPath, 'iridescenceMap');
+        applyTexture(record?.iridescenceThicknessMapPath, 'iridescenceThicknessMap');
         material.needsUpdate = true;
     }
     createFallbackMaterialFromSnapshot(materialPath) {

@@ -20,6 +20,7 @@ interface AppLayoutViewContentProps extends AppLayoutViewProps {
 
 export function AppLayoutViewContent(props: AppLayoutViewContentProps) {
   const { drag, workspaceChrome } = props;
+  const primaryWorkspaceActive = props.header.surfaceModeSelector?.current !== 'alternate';
 
   return (
     <div
@@ -35,26 +36,32 @@ export function AppLayoutViewContent(props: AppLayoutViewContentProps) {
       <AppLayoutIkPanelSection ikPanel={props.ikPanel} />
 
       <div className={workspaceChrome.classNames.root}>
-        <WorkspaceViewerSection
-          workspaceChrome={props.workspaceChrome}
-          viewer={props.viewer}
-          shouldSuppressDocumentLoadingOverlay={props.shouldSuppressDocumentLoadingOverlay}
-        />
-        <WorkspaceSidebarsSection
-          workspaceChrome={props.workspaceChrome}
-          sidebars={props.sidebars}
-        />
+        {primaryWorkspaceActive ? (
+          <>
+            <WorkspaceViewerSection
+              workspaceChrome={props.workspaceChrome}
+              viewer={props.viewer}
+              shouldSuppressDocumentLoadingOverlay={props.shouldSuppressDocumentLoadingOverlay}
+            />
+            <WorkspaceSidebarsSection
+              workspaceChrome={props.workspaceChrome}
+              sidebars={props.sidebars}
+            />
+          </>
+        ) : null}
       </div>
 
       <SnapshotDialogSection snapshot={props.snapshot} />
       <AssemblyPreparationOverlaySection assemblyPreparation={props.assemblyPreparation} />
       <AppLayoutOverlaysSection overlays={props.overlays} />
 
-      {/* Narrow-screen dock for the 3D viewer toolbar (phones, <640px).
-          The ViewerToolbar portals a touch-friendly copy here; hidden on sm+. */}
+      {/* Narrow-screen primary-workspace dock (phones, <640px). A host-provided
+          alternate workspace owns its own controls. */}
       <div
         id="viewer-toolbar-bottom-dock"
-        className="pointer-events-none fixed inset-x-0 bottom-0 z-30 sm:hidden"
+        className={`pointer-events-none fixed inset-x-0 bottom-0 z-30 ${
+          props.header.surfaceModeSelector?.current === 'alternate' ? 'hidden' : 'sm:hidden'
+        }`}
       />
     </div>
   );
@@ -108,6 +115,8 @@ function AppLayoutHeaderSection({
       onPrefetchSettings={header.onPrefetchSettings}
       quickAction={header.headerQuickAction}
       secondaryAction={header.headerSecondaryAction}
+      surfaceModeSelector={header.surfaceModeSelector}
+      contextFileMenu={header.contextFileMenu}
       onSnapshot={header.handleSnapshot}
       onPrefetchSnapshot={header.handlePrefetchSnapshot}
       viewConfig={header.viewConfig}

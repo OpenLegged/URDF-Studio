@@ -138,6 +138,40 @@ test('applyVisualMaterialOverrideToObject preserves near-white texture base colo
   assert.equal(appliedMaterial.userData.urdfTexturePath, 'textures/body.png');
 });
 
+test('applyVisualMaterialOverrideToObject keeps texture-only source projection opaque', () => {
+  const originalTextureLoad = THREE.TextureLoader.prototype.load;
+  THREE.TextureLoader.prototype.load = function mockTextureLoad(
+    _url: string,
+    onLoad?: (texture: THREE.Texture<HTMLImageElement>) => void,
+  ) {
+    const texture = new THREE.Texture() as THREE.Texture<HTMLImageElement>;
+    onLoad?.(texture);
+    return texture;
+  };
+
+  const sourceMaterial = new THREE.MeshStandardMaterial({
+    color: '#ffffff',
+    opacity: 0,
+    transparent: true,
+  });
+  const mesh = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), sourceMaterial);
+  const root = new THREE.Group();
+  root.add(mesh);
+
+  try {
+    applyVisualMaterialOverrideToObject(root, {
+      texture: 'textures/parquet.png',
+    });
+  } finally {
+    THREE.TextureLoader.prototype.load = originalTextureLoad;
+  }
+
+  const appliedMaterial = mesh.material as THREE.MeshStandardMaterial;
+  assert.equal(appliedMaterial.opacity, 1);
+  assert.equal(appliedMaterial.map?.isTexture, true);
+  assert.equal(appliedMaterial.userData.urdfOpacityApplied, undefined);
+});
+
 test('applyVisualMaterialOverrideToObject logs when a texture override has no mesh materials to update', () => {
   const root = new THREE.Group();
   const originalConsoleWarn = console.warn;

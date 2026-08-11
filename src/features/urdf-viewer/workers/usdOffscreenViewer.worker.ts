@@ -2,7 +2,13 @@
 
 import * as THREE from 'three';
 import { getCollisionGeometryEntries } from '@/core/robot';
-import type { RobotFile } from '@/types';
+import type {
+  RobotFile,
+  UsdMeshDescriptorRanges,
+  UsdSceneMaterialRecord,
+  UsdSceneMeshDescriptor,
+  UsdSceneSnapshot,
+} from '@/types';
 import { normalizeLoadingProgress } from '@/shared/components/3d/loadingHudState';
 import {
   createSemanticOutlineComposer,
@@ -28,9 +34,11 @@ import {
   clearPreparedUsdStageOpenCache,
   loadPreparedUsdStageOpenDataInline,
 } from '../utils/preparedUsdStageOpenCache.ts';
+import { prepareUsdStageOpenDataCore } from '@/lib/robot-parser/usd/usdStageOpenPreparationCore';
 import type { ViewerDocumentLoadEvent, UsdLoadingProgress } from '../types';
 import { hydrateUsdViewerRobotResolutionFromRuntime } from '../utils/usdRuntimeRobotHydration.ts';
 import { resolveUsdSceneRobotResolution } from '../utils/usdSceneRobotResolution.ts';
+import { resolveUsdSceneSnapshot } from '../utils/usdSceneSnapshotResolution.ts';
 import { toVirtualUsdPath } from '@/lib/robot-parser/usd/usdPreloadSources';
 import { resolveUsdGroundAlignmentSettleDelaysMs } from '../utils/usdGroundAlignmentDelays.ts';
 import { alignUsdSceneRootToGround } from '../utils/usdGroundAlignment.ts';
@@ -127,6 +135,7 @@ type WorkerControls = {
 
 type UsdWorkerRenderInterface = {
   dispose?: () => void;
+  getCachedRobotSceneSnapshot?: (stageSourcePath?: string | null) => unknown;
   getLastRobotSceneWarmupSummary?: () => unknown;
   getResolvedPrimPathForMeshId?: (meshId: string) => string | null | undefined;
   getResolvedVisualTransformPrimPathForMeshId?: (meshId: string) => string | null | undefined;
@@ -143,6 +152,10 @@ type UsdWorkerRenderInterface = {
     };
   } | null;
   getWorldTransformForPrimPath?: (primPath: string) => unknown;
+  warmupRobotSceneSnapshotFromDriver?: (
+    driver: unknown,
+    options?: Record<string, unknown>,
+  ) => unknown;
   meshes?: Record<string, { _mesh?: THREE.Mesh } | null | undefined>;
 };
 
@@ -168,6 +181,11 @@ type RuntimeWindow = typeof globalThis & {
   usdStage?: unknown;
   _controls?: WorkerControls;
 };
+
+type LiveMeshRenderInterface = Pick<
+  UsdWorkerRenderInterface,
+  'meshes' | 'getResolvedVisualTransformPrimPathForMeshId' | 'getResolvedPrimPathForMeshId'
+>;
 
 interface ActivePointerState {
   pointerId: number;
@@ -1653,6 +1671,209 @@ function summarizeWorkerRenderedScene() {
   };
 }
 
+function buildLiveMeshSceneSnapshotFallback(
+  snapshot: UsdSceneSnapshot,
+  renderInterface: LiveMeshRenderInterface | null | undefined,
+  preferLiveMeshes = false,
+): UsdSceneSnapshot {
+  const nativeMeshDescriptors = Array.from(snapshot.render?.meshDescriptors ?? []);
+  if (!preferLiveMeshes && nativeMeshDescriptors.length > 0) {
+    return snapshot;
+  }
+
+  const positionPool: number[] = [];
+  const indexPool: number[] = [];
+  const normalPool: number[] = [];
+  const uvPool: number[] = [];
+  const transformPool: number[] = [];
+  const rangesByMeshId: Record<string, UsdMeshDescriptorRanges> = {};
+  const meshDescriptors: UsdSceneMeshDescriptor[] = [];
+  const materials: UsdSceneMaterialRecord[] = [];
+  const materialIds = new Map<THREE.Material, string>();
+  const liveVisibilityByPrimPath = new Map<string, boolean>();
+
+  const copyAttribute = (attribute: THREE.BufferAttribute | THREE.InterleavedBufferAttribute | null) => {
+    if (!attribute || attribute.count <= 0) return [];
+    const values: number[] = [];
+    for (let index = 0; index < attribute.count; index += 1) {
+      values.push(attribute.getX(index));
+      if (attribute.itemSize > 1) values.push(attribute.getY(index));
+      if (attribute.itemSize > 2) values.push(attribute.getZ(index));
+      if (attribute.itemSize > 3) values.push(attribute.getW(index));
+    }
+    return values;
+  };
+
+  const getMaterialId = (material: THREE.Material | null | undefined) => {
+    if (!material) return null;
+    const existing = materialIds.get(material);
+    if (existing) return existing;
+    const materialId = `/__ScenePreviewMaterials/material_${materialIds.size}`;
+    materialIds.set(material, materialId);
+    const source = material as THREE.MeshStandardMaterial & {
+      emissive?: THREE.Color;
+      emissiveIntensity?: number;
+      map?: THREE.Texture | null;
+      normalMap?: THREE.Texture | null;
+      roughnessMap?: THREE.Texture | null;
+      metalnessMap?: THREE.Texture | null;
+      aoMap?: THREE.Texture | null;
+      alphaMap?: THREE.Texture | null;
+      transmission?: number;
+      thickness?: number;
+      ior?: number;
+      clearcoat?: number;
+      clearcoatRoughness?: number;
+    };
+    const texturePath = (texture: THREE.Texture | null | undefined) => String(
+      texture?.userData?.usdSourcePath || texture?.name || '',
+    ).trim() || null;
+    materials.push({
+      materialId,
+      name: material.name || `material_${materialIds.size - 1}`,
+      color: source.color ? [source.color.r, source.color.g, source.color.b] : null,
+      emissive: source.emissive
+        ? [source.emissive.r, source.emissive.g, source.emissive.b]
+        : null,
+      emissiveIntensity: Number.isFinite(source.emissiveIntensity)
+        ? source.emissiveIntensity
+        : null,
+      opacity: Number.isFinite(material.opacity) ? material.opacity : null,
+      roughness: Number.isFinite(source.roughness) ? source.roughness : null,
+      metalness: Number.isFinite(source.metalness) ? source.metalness : null,
+      transmission: Number.isFinite(source.transmission) ? source.transmission : null,
+      thickness: Number.isFinite(source.thickness) ? source.thickness : null,
+      ior: Number.isFinite(source.ior) ? source.ior : null,
+      clearcoat: Number.isFinite(source.clearcoat) ? source.clearcoat : null,
+      clearcoatRoughness: Number.isFinite(source.clearcoatRoughness)
+        ? source.clearcoatRoughness
+        : null,
+      opacityEnabled: material.transparent || material.opacity < 1,
+      mapPath: texturePath(source.map),
+      normalMapPath: texturePath(source.normalMap),
+      roughnessMapPath: texturePath(source.roughnessMap),
+      metalnessMapPath: texturePath(source.metalnessMap),
+      aoMapPath: texturePath(source.aoMap),
+      alphaMapPath: texturePath(source.alphaMap),
+    });
+    return materialId;
+  };
+
+  Object.entries(renderInterface?.meshes ?? {}).forEach(([rawMeshId, hydraMesh], ordinal) => {
+    const mesh = hydraMesh?._mesh;
+    const geometry = mesh?.geometry;
+    const positions = copyAttribute(geometry?.getAttribute('position') ?? null);
+    if (!mesh || !geometry || positions.length === 0) return;
+
+    const meshId = String(rawMeshId || `/ScenePreview/mesh_${ordinal}`).trim();
+    const resolvedPrimPath = String(
+      renderInterface?.getResolvedVisualTransformPrimPathForMeshId?.(meshId)
+        || renderInterface?.getResolvedPrimPathForMeshId?.(meshId)
+        || meshId,
+    ).trim();
+    const visible = isVisibleInHierarchy(mesh);
+    liveVisibilityByPrimPath.set(resolvedPrimPath, visible);
+    if (!visible) return;
+
+    const normals = copyAttribute(geometry.getAttribute('normal') ?? null);
+    const uvs = copyAttribute(geometry.getAttribute('uv') ?? null);
+    const rawIndices = geometry.getIndex();
+    const indices = rawIndices
+      ? Array.from(rawIndices.array, (value) => Number(value))
+      : Array.from({ length: Math.floor(positions.length / 3) }, (_, index) => index);
+    mesh.updateWorldMatrix(true, false);
+    const transform = Array.from(mesh.matrixWorld.elements, (value) => Number(value));
+    const meshMaterials = (Array.isArray(mesh.material) ? mesh.material : [mesh.material])
+      .filter((material): material is THREE.Material => Boolean(material));
+    const directMaterialId = getMaterialId(meshMaterials[0]);
+    const geomSubsetSections = geometry.groups
+      .map((group) => ({
+        start: group.start,
+        length: group.count,
+        materialId: getMaterialId(meshMaterials[group.materialIndex ?? 0]),
+      }))
+      .filter((section) => section.length > 0 && section.materialId);
+    const ranges = {
+      positions: { offset: positionPool.length, count: positions.length, stride: 3 },
+      indices: { offset: indexPool.length, count: indices.length, stride: 1 },
+      normals: normals.length > 0
+        ? { offset: normalPool.length, count: normals.length, stride: 3 }
+        : null,
+      uvs: uvs.length > 0
+        ? { offset: uvPool.length, count: uvs.length, stride: 2 }
+        : null,
+      transform: { offset: transformPool.length, count: transform.length, stride: 16 },
+    };
+    positionPool.push(...positions);
+    indexPool.push(...indices);
+    normalPool.push(...normals);
+    uvPool.push(...uvs);
+    transformPool.push(...transform);
+    rangesByMeshId[meshId] = ranges;
+    meshDescriptors.push({
+      meshId,
+      sectionName: 'visuals',
+      resolvedPrimPath,
+      primType: 'mesh',
+      materialId: directMaterialId,
+      doubleSided: meshMaterials.some((material) => material.side === THREE.DoubleSide),
+      renderReady: true,
+      topologyMode: 'indexed',
+      ranges,
+      geometry: {
+        materialId: directMaterialId,
+        renderReady: true,
+        topologyMode: 'indexed',
+        geomSubsetSections,
+      },
+    });
+  });
+
+  if (meshDescriptors.length === 0) {
+    return snapshot;
+  }
+
+  const liveSnapshot: UsdSceneSnapshot = {
+    ...snapshot,
+    render: {
+      ...snapshot.render,
+      meshDescriptors,
+      materials: materials.length > 0 ? materials : snapshot.render?.materials,
+    },
+    buffers: {
+      positions: Float32Array.from(positionPool),
+      indices: Uint32Array.from(indexPool),
+      normals: Float32Array.from(normalPool),
+      uvs: Float32Array.from(uvPool),
+      transforms: Float32Array.from(transformPool),
+      rangesByMeshId,
+    },
+  };
+  if (preferLiveMeshes && nativeMeshDescriptors.length >= meshDescriptors.length) {
+    const liveByPrimPath = new Map(
+      meshDescriptors
+        .filter((descriptor) => descriptor.resolvedPrimPath)
+        .map((descriptor) => [descriptor.resolvedPrimPath, descriptor]),
+    );
+    return {
+      ...snapshot,
+      render: {
+        ...snapshot.render,
+        meshDescriptors: nativeMeshDescriptors.map((descriptor) => ({
+          ...descriptor,
+          visible: liveVisibilityByPrimPath.get(descriptor.resolvedPrimPath ?? '')
+            ?? descriptor.visible
+            ?? true,
+          doubleSided: liveByPrimPath.get(descriptor.resolvedPrimPath ?? '')?.doubleSided
+            ?? descriptor.doubleSided
+            ?? false,
+        })),
+      },
+    };
+  }
+  return liveSnapshot;
+}
+
 async function waitForWorkerSceneSettle(loadGeneration: number, delayMs = 80): Promise<boolean> {
   await new Promise<void>((resolve) => {
     setTimeout(() => resolve(), delayMs);
@@ -1986,14 +2207,12 @@ async function ensureCriticalUsdDependenciesLoaded(
   }
 }
 
-function publishDeferredSceneSnapshot(
+function publishSceneSnapshot(
   snapshot: ViewerRobotDataResolution['usdSceneSnapshot'],
   sourceFileName: string,
   sessionId: UsdOffscreenViewerSessionId | null = activeSessionId,
 ): boolean {
-  if (!snapshot || !hasUsdSceneSnapshotHeavyBuffers(snapshot)) {
-    return true;
-  }
+  if (!snapshot) return false;
 
   const transferables = collectUsdSceneSnapshotTransferables(snapshot);
   const stageSourcePath = snapshot.stageSourcePath ?? currentSourceFileName ?? null;
@@ -2034,6 +2253,18 @@ function publishDeferredSceneSnapshot(
     });
     return false;
   }
+}
+
+function publishDeferredSceneSnapshot(
+  snapshot: ViewerRobotDataResolution['usdSceneSnapshot'],
+  sourceFileName: string,
+  sessionId: UsdOffscreenViewerSessionId | null = activeSessionId,
+): boolean {
+  if (!snapshot || !hasUsdSceneSnapshotHeavyBuffers(snapshot)) {
+    return true;
+  }
+
+  return publishSceneSnapshot(snapshot, sourceFileName, sessionId);
 }
 
 function scheduleDeferredSceneSnapshotPublish(
@@ -2139,13 +2370,16 @@ async function publishResolvedRobotData(
     );
   }
 
-  const { snapshot, resolution: initialRobotResolution } = resolveUsdSceneRobotResolution({
+  const { snapshot: resolvedSnapshot, resolution: initialRobotResolution } = resolveUsdSceneRobotResolution({
     renderInterface: runtimeWindow.renderInterface,
     driver: currentDriver,
     stageSourcePath: currentSourceFileName,
     fileName: currentSourceFileName,
     allowWarmup: true,
   });
+  const snapshot = resolvedSnapshot
+    ? buildLiveMeshSceneSnapshotFallback(resolvedSnapshot, runtimeWindow.renderInterface)
+    : resolvedSnapshot;
 
   const resolvedViewerRobotData =
     hydrateUsdViewerRobotResolutionFromRuntime(
@@ -2292,6 +2526,14 @@ async function loadUsdStageIntoWorker(message: UsdOffscreenViewerInitRequest): P
           message.sourceFile,
           stageOpenContext.availableFiles,
           stageOpenContext.assets,
+          message.projectionMode === 'scene'
+            ? (sourceFile, availableFiles, assets) => prepareUsdStageOpenDataCore(
+                sourceFile,
+                availableFiles,
+                assets,
+                { includeAllAvailableFiles: true },
+              )
+            : undefined,
         ),
       resolveDetail: (result) => ({
         stagePreparationMode: 'worker',
@@ -2371,6 +2613,7 @@ async function loadUsdStageIntoWorker(message: UsdOffscreenViewerInitRequest): P
       // joint/dynamics metadata. Keep the one-shot render drain strict, but do
       // not fail the worker after the scene is visually complete.
       allowIncompleteWorkerRobotMetadata: true,
+      forceHydraFullDraw: message.forceHydraFullDraw === true,
     });
 
     const loadState = await trackWorkerLoadDebugStep({
@@ -2506,6 +2749,65 @@ async function loadUsdStageIntoWorker(message: UsdOffscreenViewerInitRequest): P
       (loadState as { drawSkippedForRobotSceneSnapshot?: boolean } | null | undefined)
         ?.drawSkippedForRobotSceneSnapshot,
     );
+
+    if (message.projectionMode === 'scene') {
+      if (!runtimeWindow.renderInterface) {
+        throw new Error(
+          `USD scene projection has no render interface for "${message.sourceFile.name}".`,
+        );
+      }
+      const resolved = resolveUsdSceneSnapshot({
+        renderInterface: runtimeWindow.renderInterface,
+        driver: currentDriver,
+        stageSourcePath: currentSourceFileName || preparedStageOpenData.stageSourcePath,
+      });
+      const sceneSnapshot = resolved.snapshot
+        ? buildLiveMeshSceneSnapshotFallback(
+            resolved.snapshot,
+            runtimeWindow.renderInterface,
+            true,
+          )
+        : null;
+      if (!sceneSnapshot) {
+        throw new Error(
+          `USD scene projection did not produce a Stage snapshot for "${message.sourceFile.name}".`,
+        );
+      }
+      if (!publishSceneSnapshot(sceneSnapshot, message.sourceFile.name, sessionId)) {
+        throw new Error(
+          `USD scene projection could not publish the Stage snapshot for "${message.sourceFile.name}".`,
+        );
+      }
+      emitLoadDebugEntry(
+        {
+          sourceFileName: message.sourceFile.name,
+          step: 'ready',
+          status: 'resolved',
+          timestamp: Date.now(),
+          detail: {
+            rendererMode: 'offscreen-worker',
+            projectionMode: 'scene',
+            stageSourcePath: sceneSnapshot.stageSourcePath ?? null,
+            meshCount: Array.from(sceneSnapshot.render?.meshDescriptors ?? []).length,
+            usedWarmup: resolved.usedWarmup,
+          },
+        },
+        sessionId,
+      );
+      emitDocumentLoadEvent(
+        normalizeLoadingProgress<ViewerDocumentLoadEvent>({
+          status: 'ready',
+          phase: 'ready',
+          progressMode: 'percent',
+          message: null,
+          progressPercent: 100,
+          loadedCount: null,
+          totalCount: null,
+        }),
+        sessionId,
+      );
+      return;
+    }
 
     if (!robotSceneSnapshotOnlyLoad) {
       const nextLinkRotationController = ensureLinkRotationController();

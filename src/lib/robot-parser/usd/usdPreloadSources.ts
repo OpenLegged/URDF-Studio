@@ -156,10 +156,6 @@ function buildUsdStageOpenFileIndex(
   const fileIndex = new Map<string, StageOpenSourceFile | StageOpenAvailableFile>();
 
   const registerFile = (file: StageOpenSourceFile | StageOpenAvailableFile) => {
-    if (!isUsdLayerPath(file.name)) {
-      return;
-    }
-
     const virtualPath = toVirtualUsdPath(file.name);
     const existingFile = fileIndex.get(virtualPath);
     fileIndex.set(virtualPath, pickMoreInformativeUsdLayerFile(existingFile, file));
@@ -400,11 +396,14 @@ export function buildUsdBundlePreloadEntries(
   sourceFile: Pick<RobotFile, 'name' | 'content' | 'blobUrl'>,
   availableFiles: Array<Pick<RobotFile, 'name' | 'content' | 'blobUrl' | 'format'>>,
   assets: Record<string, string>,
+  options: { includeAllAvailableFiles?: boolean } = {},
 ): UsdPreloadEntry[] {
   const rootPath = toVirtualUsdPath(sourceFile.name);
   const bundleDirectory = inferUsdBundleVirtualDirectory(sourceFile.name);
   const fileIndex = buildUsdStageOpenFileIndex(sourceFile, availableFiles);
-  const relevantVirtualPaths = collectUsdStageOpenRelevantVirtualPaths(sourceFile, availableFiles);
+  const relevantVirtualPaths = options.includeAllAvailableFiles
+    ? Array.from(fileIndex.keys())
+    : collectUsdStageOpenRelevantVirtualPaths(sourceFile, availableFiles);
   const preloadEntries = new Map<string, UsdPreloadEntry>();
 
   const addEntry = (

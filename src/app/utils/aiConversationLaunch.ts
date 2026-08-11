@@ -1,11 +1,13 @@
-import { resolveAIWorkspaceRobotTarget } from '@/features/ai-assistant';
+import {
+  cloneAISnapshot,
+  resolveAIWorkspaceRobotTarget,
+} from '@/features/ai-assistant';
 import type {
   AIConversationFocusedIssue,
   AIConversationLaunchContext,
   AIConversationMode,
   AIConversationSelection,
 } from '@/features/ai-assistant';
-import { cloneAISnapshot } from '@/features/ai-assistant';
 import { useSelectionStore } from '@/store/selectionStore';
 import { useWorkspaceStore } from '@/store/workspaceStore';
 import type { InspectionReport, RobotState } from '@/types';

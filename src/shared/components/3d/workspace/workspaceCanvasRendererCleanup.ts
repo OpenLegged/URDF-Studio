@@ -24,5 +24,9 @@ export function cleanupWorkspaceCanvasRenderer(
     contextMenuCleanup?.();
   }
 
-  disposeWebGLRenderer(renderer, { forceContextLoss: true });
+  // R3F removes the canvas after unmount and renderer.dispose() releases its GPU
+  // resources. Forcing WEBGL_lose_context during an ordinary model/scene switch
+  // turns navigation into a stream of artificial context-loss events and can make
+  // Chrome block subsequent contexts for the entire page.
+  disposeWebGLRenderer(renderer);
 }

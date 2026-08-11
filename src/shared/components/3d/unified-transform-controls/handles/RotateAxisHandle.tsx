@@ -57,9 +57,9 @@ export function RotateAxisHandle({
       ),
     [axis, visualThicknessScale],
   );
-  const frontArcPickerGeometry = useDisposableGeometry(
+  const fullRingPickerGeometry = useDisposableGeometry(
     () =>
-      createFusionRotateFrontArcGeometry(
+      createFusionRotateFullRingGeometry(
         axis,
         THICK_ROTATE_ARC_RADIUS * Math.max(2.65, pickerThicknessScale * 2.1),
       ),
@@ -110,8 +110,8 @@ export function RotateAxisHandle({
         <mesh
           {...frontArcHandleProps}
           frustumCulled={false}
-          geometry={frontArcPickerGeometry}
-          name={`rotate-front-arc-picker-${axis.toLowerCase()}`}
+          geometry={fullRingPickerGeometry}
+          name={`rotate-full-ring-picker-${axis.toLowerCase()}`}
           renderOrder={GIZMO_ARC_RENDER_ORDER + 8}
         >
           <PlainGizmoMaterial color={AXIS_COLORS[axis]} opacity={0} />

@@ -10,7 +10,24 @@ import { Header } from './Header.tsx';
 
 const noopToolboxItems: import('./header/types').ToolboxItem[] = [];
 
-function renderHeader() {
+const surfaceModeSelector: import('./header/types').HeaderSurfaceModeSelectorConfig = {
+  current: 'primary',
+  onChange: () => {},
+  translations: {
+    en: {
+      ariaLabel: 'Workspace mode',
+      primary: { label: 'Primary', description: 'Use the primary workspace' },
+      alternate: { label: 'Alternate', description: 'Use the host workspace' },
+    },
+    zh: {
+      ariaLabel: '工作模式',
+      primary: { label: '默认', description: '使用默认工作区' },
+      alternate: { label: '扩展', description: '使用宿主工作区' },
+    },
+  },
+};
+
+function renderHeader(withSurfaceModeSelector = false) {
   return renderToStaticMarkup(
     React.createElement(Header, {
       onImportFile: () => {},
@@ -35,6 +52,7 @@ function renderHeader() {
         icon: Box,
         onClick: () => {},
       },
+      surfaceModeSelector: withSurfaceModeSelector ? surfaceModeSelector : undefined,
       viewConfig: {
         showOptionsPanel: true,
         showJointPanel: true,
@@ -59,6 +77,7 @@ test('Header does not reserve empty center dock width when no toolbar is mounted
   const markup = renderHeader();
 
   assert.match(markup, /id="viewer-toolbar-dock-slot"/);
+  assert.match(markup, /id="alternate-workspace-toolbar-dock-slot"/);
   assert.match(markup, /min-w-0/);
   assert.doesNotMatch(markup, /min-w-\[240px\]/);
 });
@@ -92,6 +111,57 @@ test('Header uses a slimmer top bar height', () => {
   assert.match(markup, /h-10/, 'header should keep a compact top bar height');
   assert.doesNotMatch(markup, /h-11/, 'header should no longer use the taller top bar height');
   assert.doesNotMatch(markup, /h-12/, 'header should no longer use the tallest top bar height');
+});
+
+test('Header places the optional surface mode selector after the logo and before File', () => {
+  const markup = renderHeader(true);
+  const logoIndex = markup.indexOf('src="/logos/logo.png"');
+  const selectorIndex = markup.indexOf('aria-label="Workspace mode"');
+  const fileIndex = markup.indexOf('aria-label="File"');
+
+  assert.ok(logoIndex >= 0, 'expected the header logo');
+  assert.ok(selectorIndex > logoIndex, 'surface mode selector should follow the logo');
+  assert.ok(fileIndex > selectorIndex, 'File should follow the surface mode selector');
+});
+
+test('Header renders host-owned file actions for the alternate surface', () => {
+  const markup = renderToStaticMarkup(
+    React.createElement(Header, {
+      onImportFile: () => {},
+      onImportFolder: () => {},
+      onOpenExport: () => {},
+      onPrefetchExport: () => {},
+      onExportProject: () => {},
+      toolboxItems: noopToolboxItems,
+      onOpenCodeViewer: () => {},
+      onPrefetchCodeViewer: () => {},
+      onOpenSettings: () => {},
+      onPrefetchSettings: () => {},
+      onSnapshot: () => {},
+      onPrefetchSnapshot: () => {},
+      surfaceModeSelector: {
+        ...surfaceModeSelector,
+        current: 'alternate',
+      },
+      contextFileMenu: {
+        label: 'Host file',
+        items: [{
+          key: 'open-host-project',
+          label: 'Open host project',
+          onSelect: () => {},
+        }],
+      },
+      viewConfig: {
+        showOptionsPanel: true,
+        showJointPanel: true,
+        showStructureGraph: false,
+      },
+      setViewConfig: () => {},
+    }),
+  );
+
+  assert.match(markup, /aria-label="Host file"/);
+  assert.doesNotMatch(markup, /aria-label="File"/);
 });
 
 test('Header links to the feedback form in a new tab', () => {

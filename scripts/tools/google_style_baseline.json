@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-08-08",
+  "generatedAt": "2026-08-11",
   "rules": {
     "file-name-snake-case": {
       "max": 1534,
@@ -8,7 +8,7 @@
     },
     "file-too-long": {
       "max": 32,
-      "note": "src/** files over 800 code lines (blank/comment lines skipped). Exact count synchronized on 2026-08-08 after targeted editor, property, joint, and viewer lifecycle splits; --check rejects both increases and stale headroom. Avoid splitting cohesive parsers/solvers only to satisfy the counter."
+      "note": "src/** files over 800 code lines (blank/comment lines skipped). Exact count synchronized on 2026-08-11 after merging dev into scene-gen; --check rejects both increases and stale headroom. Avoid splitting cohesive parsers/solvers only to satisfy the counter."
     },
     "function-too-long": {
       "max": 112,
@@ -38,7 +38,7 @@
     },
     "dynamic-code-execution": {
       "max": 5,
-      "note": "Historical browser test helper callbacks using new Function."
+      "note": "Historical browser test helper callbacks using new Function; exact count synchronized on 2026-08-11 after merging dev into scene-gen."
     },
     "html-inline-style": {
       "max": 0

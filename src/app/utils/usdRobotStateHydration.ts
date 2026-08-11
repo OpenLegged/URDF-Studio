@@ -66,6 +66,7 @@ export interface StartUsdRobotStateHydrationOptions {
     resolution: ViewerRobotDataResolution,
   ) => Promise<PreparedUsdExportCacheResult | null>;
   completionMode?: UsdOffscreenViewerCompletionMode;
+  forceHydraFullDraw?: boolean;
   resolveBeforePreparedCache?: boolean;
   onDeferredSceneSnapshot?: (snapshot: UsdSceneSnapshot, stageSourcePath: string | null) => void;
   onPreparedCache?: (
@@ -135,6 +136,7 @@ export function startUsdRobotStateHydration({
   workerClient = defaultWorkerClient,
   prepareExportCache = prepareUsdPreparedExportCacheWithWorker,
   completionMode = 'interactive',
+  forceHydraFullDraw = false,
   resolveBeforePreparedCache = false,
   onDeferredSceneSnapshot,
   onPreparedCache,
@@ -505,6 +507,7 @@ export function startUsdRobotStateHydration({
         originSize: DEFAULT_ORIGIN_AXES_SIZE,
         sourceFile: stageDispatch.sourceFile,
         completionMode,
+        forceHydraFullDraw,
         stageOpenContextKey: stageDispatch.stageOpenContextKey,
         stageOpenContext: stageDispatch.stageOpenContext as never,
         stageOpenContextCacheHit: stageDispatch.stageOpenContextCacheHit,

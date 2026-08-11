@@ -85,7 +85,7 @@ function filterStageOpenAvailableFiles(
     if (file.name === sourceFile.name) {
       return false;
     }
-    return isUsdStageOpenLayerPath(file.name) && relevantPathSet.has(toVirtualUsdPath(file.name));
+    return relevantPathSet.has(toVirtualUsdPath(file.name));
   }).map((file) => compactBlobBackedLargeTextUsdForWorker(file));
 }
 

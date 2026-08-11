@@ -14,6 +14,8 @@ const {
     normalizeSnapshotMaterialRecords,
     resolveSnapshotMaterialEmissionEnabled,
     applySnapshotTextureInput,
+    resolveMaterialTexturePathCandidates,
+    loadMaterialTexture,
     getSnapshotTextureApplyFailureSummary,
     recordSnapshotTextureApplyFailure,
     clearSnapshotTextureApplyFailure,
@@ -198,6 +200,65 @@ test('applySnapshotTextureInput clears prior texture failure once assignment suc
     assert.equal(summary.count, 0);
     assert.equal(material.userData.snapshotTextureApplyFailed, undefined);
     assert.equal(material.userData.snapshotTextureApplyFailures, undefined);
+});
+
+test('material textures resolve relative to the entry USD layer before raw-path fallback', async () => {
+    const attempts = [];
+    const expectedTexture = { name: 'parquet-color' };
+    const context = {
+        ...createMaterialOpsContext(),
+        resolveMaterialTexturePathCandidates,
+        getStageSourcePath() {
+            return '/Simple_Room/simple_room.usd';
+        },
+        registry: {
+            getTexture(resourcePath) {
+                attempts.push(resourcePath);
+                if (resourcePath === '/Simple_Room/Materials/Textures/Parquet_Color.png') {
+                    return Promise.resolve(expectedTexture);
+                }
+                return Promise.reject(new Error(`unknown:${resourcePath}`));
+            },
+        },
+    };
+
+    const texture = await loadMaterialTexture.call(
+        context,
+        'Materials/Textures/Parquet_Color.png',
+    );
+
+    assert.equal(texture, expectedTexture);
+    assert.deepEqual(attempts, [
+        '/Simple_Room/Materials/Textures/Parquet_Color.png',
+    ]);
+});
+
+test('material texture loading keeps raw virtual paths as a compatibility fallback', async () => {
+    const attempts = [];
+    const context = {
+        ...createMaterialOpsContext(),
+        resolveMaterialTexturePathCandidates,
+        getStageSourcePath() {
+            return '/Scenes/room.usd';
+        },
+        registry: {
+            getTexture(resourcePath) {
+                attempts.push(resourcePath);
+                if (resourcePath === 'shared/wood.png') {
+                    return Promise.resolve({ name: 'legacy-raw-path' });
+                }
+                return Promise.reject(new Error(`unknown:${resourcePath}`));
+            },
+        },
+    };
+
+    const texture = await loadMaterialTexture.call(context, 'shared/wood.png');
+
+    assert.equal(texture.name, 'legacy-raw-path');
+    assert.deepEqual(attempts, [
+        '/Scenes/shared/wood.png',
+        'shared/wood.png',
+    ]);
 });
 
 test('applyStageFallbackMaterialParameters ignores OmniPBR default white emission unless enabled', () => {

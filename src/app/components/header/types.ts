@@ -17,7 +17,52 @@ export interface ToolboxItem {
   external?: boolean;
   tone?: ToolboxItemTone;
 }
-export type HeaderMenuKey = 'file' | 'ai' | 'toolbox' | 'view' | 'more' | null;
+export type HeaderMenuKey = 'surface' | 'file' | 'ai' | 'toolbox' | 'view' | 'more' | null;
+
+/**
+ * Presentation state for a host-provided alternate workspace.
+ *
+ * Core deliberately does not assign product meaning to either value. Hosts
+ * map their own domain modes onto the primary and alternate surfaces.
+ */
+export type HeaderSurfaceMode = 'primary' | 'alternate';
+
+export interface HeaderSurfaceModeOptionCopy {
+  label: string;
+  description: string;
+}
+
+export interface HeaderSurfaceModeSelectorCopy {
+  ariaLabel: string;
+  primary: HeaderSurfaceModeOptionCopy;
+  alternate: HeaderSurfaceModeOptionCopy;
+}
+
+export interface HeaderSurfaceModeSelectorConfig {
+  current: HeaderSurfaceMode;
+  onChange: (mode: HeaderSurfaceMode) => void;
+  translations: Record<'en' | 'zh', HeaderSurfaceModeSelectorCopy>;
+}
+
+export interface HeaderContextFileMenuItem {
+  key: string;
+  label: string;
+  icon?: ComponentType<{ className?: string }>;
+  onSelect: () => void;
+  disabled?: boolean;
+  separatorBefore?: boolean;
+}
+
+/**
+ * Host-owned file actions for an alternate workspace surface.
+ *
+ * Core owns only the header presentation. The host remains responsible for
+ * file workflows, dialogs, validation, and user-facing copy.
+ */
+export interface HeaderContextFileMenuConfig {
+  label: string;
+  items: readonly HeaderContextFileMenuItem[];
+}
 
 export interface HeaderViewConfig {
   showOptionsPanel: boolean;

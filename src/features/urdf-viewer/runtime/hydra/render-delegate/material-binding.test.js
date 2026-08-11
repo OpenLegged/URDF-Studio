@@ -179,6 +179,21 @@ test('HydraMesh.tryApplyPendingGeomSubsetMaterials applies subset materials with
     assert.deepEqual(hydraMesh._mesh.material.map((material) => material.name), ['mat-a', 'mat-b']);
 });
 
+test('HydraMesh applies composed USD visibility to its render object', () => {
+    const hydraMesh = new HydraMesh('mesh', '/Root/GroundPlane/CollisionMesh', {
+        config: { usdRoot: new Group() },
+    });
+
+    hydraMesh.setVisible(false);
+    assert.equal(hydraMesh._mesh.visible, false);
+
+    hydraMesh.setVisible(0);
+    assert.equal(hydraMesh._mesh.visible, false);
+
+    hydraMesh.setVisible(true);
+    assert.equal(hydraMesh._mesh.visible, true);
+});
+
 test('HydraMesh.tryApplyPendingGeomSubsetMaterials offsets repeated overlapping subset materials idempotently', () => {
     const materialA = new MeshPhysicalMaterial({ name: 'subset-anchor' });
     const materialB = new MeshPhysicalMaterial({ name: 'subset-overlay' });

@@ -1,7 +1,4 @@
-export type WorkspaceCanvasWebglFailureReason =
-  | 'missing-api'
-  | 'context-creation-failed'
-  | 'context-lost';
+export type WorkspaceCanvasWebglFailureReason = 'missing-api';
 
 export interface WorkspaceCanvasWebglSupportState {
   supported: boolean;
@@ -14,41 +11,9 @@ interface WebglProbeWindowLike {
   WebGL2RenderingContext?: unknown;
 }
 
-interface WebglLoseContextExtensionLike {
-  loseContext?: () => void;
-}
-
-interface WebglContextLike {
-  isContextLost?: () => boolean;
-  getExtension?: (name: string) => WebglLoseContextExtensionLike | null;
-}
-
-interface WebglCanvasLike {
-  getContext: (
-    contextId: 'webgl2' | 'webgl' | 'experimental-webgl',
-    attributes?: WebGLContextAttributes,
-  ) => WebglContextLike | null;
-}
-
-interface WebglDocumentLike {
-  createElement: (tagName: 'canvas') => WebglCanvasLike | null;
-}
-
 interface WorkspaceCanvasWebglProbeEnvironment {
   window?: WebglProbeWindowLike;
-  document?: WebglDocumentLike;
 }
-
-const PROBE_ATTRIBUTES: WebGLContextAttributes = {
-  antialias: false,
-  alpha: true,
-  depth: true,
-  failIfMajorPerformanceCaveat: false,
-  powerPreference: 'high-performance',
-  premultipliedAlpha: true,
-  preserveDrawingBuffer: false,
-  stencil: false,
-};
 
 function getErrorMessage(error: unknown): string | undefined {
   if (error instanceof Error) {
@@ -68,9 +33,8 @@ export function probeWorkspaceCanvasWebglSupport(
   environment: WorkspaceCanvasWebglProbeEnvironment = globalThis as WorkspaceCanvasWebglProbeEnvironment,
 ): WorkspaceCanvasWebglSupportState {
   const probeWindow = environment.window;
-  const probeDocument = environment.document;
 
-  if (!probeWindow || !probeDocument) {
+  if (!probeWindow) {
     return { supported: true };
   }
 
@@ -82,47 +46,13 @@ export function probeWorkspaceCanvasWebglSupport(
     };
   }
 
-  const canvas = probeDocument.createElement('canvas');
-  if (!canvas || typeof canvas.getContext !== 'function') {
-    return {
-      supported: false,
-      reason: 'context-creation-failed',
-      detail: 'Unable to create a temporary canvas for WebGL probing.',
-    };
-  }
-
-  try {
-    const context =
-      canvas.getContext('webgl2', PROBE_ATTRIBUTES) ??
-      canvas.getContext('webgl', PROBE_ATTRIBUTES) ??
-      canvas.getContext('experimental-webgl', PROBE_ATTRIBUTES);
-
-    if (!context) {
-      return {
-        supported: false,
-        reason: 'context-creation-failed',
-        detail: 'Unable to create a WebGL rendering context.',
-      };
-    }
-
-    if (typeof context.isContextLost === 'function' && context.isContextLost()) {
-      return {
-        supported: false,
-        reason: 'context-lost',
-        detail: 'The browser created a WebGL context, but it was already lost.',
-      };
-    }
-
-    context.getExtension?.('WEBGL_lose_context')?.loseContext?.();
-
-    return { supported: true };
-  } catch (error) {
-    return {
-      supported: false,
-      reason: 'context-creation-failed',
-      detail: getErrorMessage(error) ?? 'Unknown WebGL initialization error.',
-    };
-  }
+  // Do not create a throwaway WebGL context here. Mode changes mount a real R3F
+  // canvas immediately afterwards; probing with getContext() consumes another
+  // context and explicitly releasing it produces a context-lost event. Chrome
+  // can block the page after enough of those events, leaving both workspaces
+  // unable to mount. The real renderer remains the authority for whether context
+  // creation succeeds and reports its initialization error through the boundary.
+  return { supported: true };
 }
 
 export function getWorkspaceCanvasErrorDetail(error: unknown): string | undefined {

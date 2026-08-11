@@ -5,8 +5,10 @@ import type {
   ProjectImportWorkerRequest,
   ProjectImportWorkerResponse,
 } from '../utils/projectImportWorker.ts';
+import { ensureWorkerXmlDomApis } from '@/core/utils/ensureWorkerXmlDomApis';
 
 const workerScope = self as unknown as DedicatedWorkerGlobalScope;
+ensureWorkerXmlDomApis(workerScope as unknown as typeof globalThis);
 
 function toWorkerErrorMessage(error: unknown): string {
   if (error instanceof Error) {

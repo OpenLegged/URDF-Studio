@@ -69,6 +69,9 @@ export function AppLayout({
   onPrefetchSettings,
   headerQuickAction,
   headerSecondaryAction,
+  surfaceModeSelector,
+  contextFileMenu,
+  extensionToolboxItems,
   viewConfig,
   setViewConfig,
   onLoadRobot,
@@ -439,6 +442,7 @@ export function AppLayout({
     prefetchAIConversation: onPrefetchAIConversation,
     openIkTool: handleOpenIkTool,
     openCollisionOptimizer: handleOpenCollisionOptimizer,
+    extensionItems: extensionToolboxItems,
     prefetchCollisionOptimizer: handlePrefetchCollisionOptimizer,
   });
   useEffect(() => {
@@ -550,6 +554,8 @@ export function AppLayout({
         onPrefetchSettings,
         headerQuickAction,
         headerSecondaryAction,
+        surfaceModeSelector,
+        contextFileMenu,
         viewConfig,
         setViewConfig,
         toolboxItems,

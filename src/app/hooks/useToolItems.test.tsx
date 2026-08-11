@@ -10,6 +10,7 @@ import { useToolItems } from './useToolItems.tsx';
 
 interface RenderHookOverrides {
   openIkTool?: () => void;
+  extensionItems?: Parameters<typeof useToolItems>[0]['extensionItems'];
   prefetchAIInspection?: () => void;
   prefetchAIConversation?: () => void;
   prefetchCollisionOptimizer?: () => void;
@@ -27,6 +28,7 @@ function renderHook(overrides?: RenderHookOverrides) {
       prefetchAIConversation: overrides?.prefetchAIConversation ?? (() => {}),
       openIkTool: overrides?.openIkTool ?? (() => {}),
       openCollisionOptimizer: () => {},
+      extensionItems: overrides?.extensionItems,
       prefetchCollisionOptimizer: overrides?.prefetchCollisionOptimizer ?? (() => {}),
     });
     return null;
@@ -53,6 +55,45 @@ test('useToolItems hides the unfinished IK drag tool entry', () => {
 
   openTool('ik-tool');
   assert.equal(openedIkTool, false);
+});
+
+test('useToolItems appends host tools and makes them addressable by key', () => {
+  let opened = false;
+  const { items, openTool } = renderHook({
+    extensionItems: [
+      {
+        key: 'host-scene-tool',
+        title: 'Scene tool',
+        description: 'Open the host scene tool',
+        icon: null,
+        onClick: () => {
+          opened = true;
+        },
+      },
+    ],
+  });
+
+  assert.equal(items.at(-1)?.key, 'host-scene-tool');
+  openTool('host-scene-tool');
+  assert.equal(opened, true);
+});
+
+test('useToolItems rejects host keys that collide with built-in tools', () => {
+  assert.throws(
+    () =>
+      renderHook({
+        extensionItems: [
+          {
+            key: 'collision-optimizer',
+            title: 'Conflicting tool',
+            description: 'Must not replace a built-in handler',
+            icon: null,
+            onClick: () => {},
+          },
+        ],
+      }),
+    /Duplicate toolbox item key: collision-optimizer/,
+  );
 });
 
 test('useToolItems attaches intent prefetch handlers only to lazy local tools', () => {
