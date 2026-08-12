@@ -85,6 +85,27 @@ export const generateMujocoXML = (robot: RobotState, options: MujocoExportOption
   const includeSceneHelpers = options.includeSceneHelpers ?? false;
   const meshPathOverrides = options.meshPathOverrides;
   const visualMeshVariants = options.visualMeshVariants;
+  // URDF collision names are link-local, while MuJoCo geom names are model-global.
+  const usedGeomNames = new Set<string>();
+  const allocateGeomName = (preferredName: string, ownerName: string): string => {
+    if (!usedGeomNames.has(preferredName)) {
+      usedGeomNames.add(preferredName);
+      return preferredName;
+    }
+
+    const baseName = sanitizeMjcfIdentifier(
+      `${ownerName}_${preferredName}`,
+      `geom_${usedGeomNames.size + 1}`,
+    );
+    let uniqueName = baseName;
+    let suffix = 2;
+    while (usedGeomNames.has(uniqueName)) {
+      uniqueName = `${baseName}_${suffix}`;
+      suffix += 1;
+    }
+    usedGeomNames.add(uniqueName);
+    return uniqueName;
+  };
   const texturePathOverrides = buildTextureExportPathOverrides([
     ...Object.values(links).flatMap((link) => [
       ...getVisualGeometryEntries(link).flatMap((entry) =>
@@ -1291,7 +1312,8 @@ export const generateMujocoXML = (robot: RobotState, options: MujocoExportOption
       let cGeomAttrs = `pos="${cPos}"${quatAttr(c.origin?.rpy)} rgba="${hexToRgba(c.color || DEFAULT_LINK.collision.color)}" group="3" contype="1" conaffinity="1"`;
       const collisionName = c.name?.trim();
       if (collisionName) {
-        cGeomAttrs += ` name="${escapeXmlAttribute(collisionName)}"`;
+        const uniqueCollisionName = allocateGeomName(collisionName, link.name || link.id);
+        cGeomAttrs += ` name="${escapeXmlAttribute(uniqueCollisionName)}"`;
       }
 
       if (c.type === GeometryType.BOX) {
