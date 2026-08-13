@@ -1,6 +1,6 @@
 import React, { useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
-import { Move, MousePointer2, View as ViewIcon, Scan, Ruler, Palette } from 'lucide-react';
+import { Move, MousePointer2, View as ViewIcon, Ruler, Palette } from 'lucide-react';
 import { translations } from '@/shared/i18n';
 import { ToolbarToggleGroup, type ToolbarToggleItem } from '@/shared/components/ui';
 import { useOverlayHoverBlock } from '@/shared/hooks/useOverlayHoverBlock';
@@ -23,7 +23,6 @@ export const ViewerToolbar: React.FC<ViewerToolbarProps> = ({
     { value: 'select', icon: MousePointer2, label: t.selectMode },
     { value: 'universal', icon: Move, label: t.transformMode },
     { value: 'paint', icon: Palette, label: t.paintMode },
-    { value: 'face', icon: Scan, label: t.faceMode },
     { value: 'measure', icon: Ruler, label: t.measureMode },
   ];
 
