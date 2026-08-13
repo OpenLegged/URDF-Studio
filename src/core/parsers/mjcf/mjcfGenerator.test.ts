@@ -1086,6 +1086,38 @@ test('generated MJCF preserves collision geom names through export and reparse',
   assert.equal(reparsed.links.base_link.collisionBodies?.[0]?.name, 'motor_guard');
 });
 
+test('generated MJCF makes repeated collision geom names globally unique', () => {
+  installDomParser();
+
+  const robot = createClosedLoopExportRobot();
+  Object.values(robot.links).forEach((link) => {
+    link.collision.name = 'shared_collision';
+  });
+  robot.links.right_link!.collisionBodies = [
+    {
+      ...robot.links.right_link!.collision,
+      name: 'shared_collision',
+    },
+  ];
+
+  const generated = generateMujocoXML(robot, {
+    includeSceneHelpers: false,
+    meshdir: 'meshes/',
+  });
+  const document = new JSDOM(generated, { contentType: 'text/xml' }).window.document;
+  const geomNames = Array.from(document.querySelectorAll('geom[name]'), (geom) =>
+    geom.getAttribute('name'),
+  );
+
+  assert.deepEqual(geomNames, [
+    'shared_collision',
+    'left_link_shared_collision',
+    'right_link_shared_collision',
+    'right_link_shared_collision_2',
+  ]);
+  assert.equal(new Set(geomNames).size, geomNames.length);
+});
+
 test('unitree_go2 MJCF roundtrip preserves the floating root joint and home keyframe pose', () => {
   installDomParser();
 
