@@ -91,6 +91,11 @@ test('viewer toolbar stays fixed in the header slot without close or drag afford
   ) as HTMLButtonElement | null;
   assert.ok(activeButton, 'current mode button should render');
   assert.match(activeButton.className, /\bring-1\b/);
+  assert.equal(
+    toolbar?.querySelector(`button[aria-label="${translations.en.faceMode}"]`),
+    null,
+    'face selection should not be exposed as a toolbar action',
+  );
 
   await act(async () => {
     root.unmount();
@@ -132,7 +137,8 @@ test('viewer toolbar uses a horizontal touch lane for narrow-screen tools', asyn
   );
 
   const buttons = bottomDockSlot.querySelectorAll('[data-viewer-tool]');
-  assert.equal(buttons.length, 6);
+  assert.equal(buttons.length, 5);
+  assert.equal(bottomDockSlot.querySelector('[data-viewer-tool="face"]'), null);
   assert.ok(
     Array.from(buttons).every((button) => button.className.includes('min-w-12')),
     'bottom tools should keep a fixed touch target width',
