@@ -71,6 +71,7 @@ export type {
   WorkspaceLinkPropertyPatch,
   WorkspacePropertyPatch,
   WorkspaceComponentSeed,
+  WorkspaceJointMotionTarget,
   WorkspaceMutationOptions,
   WorkspaceStoreData,
   WorkspaceStoreState,
@@ -92,4 +93,5 @@ export type {
   JointInteractionPreviewSource,
   JointInteractionPreviewSnapshot,
   WorkspaceJointInteractionPreview,
+  WorkspaceJointInteractionPreviewTarget,
 } from './jointInteractionPreviewStore';

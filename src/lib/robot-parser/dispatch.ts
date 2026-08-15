@@ -5,7 +5,7 @@ import { parseURDF } from '@/core/parsers/urdf/parser';
 import { parseMJCF } from '@/core/parsers/mjcf/mjcfParser';
 import { parseSDF } from '@/core/parsers/sdf/sdfParser';
 import { processXacro } from '@/core/parsers/xacro/xacroParser';
-import type { RobotState } from '@/types/robot';
+import type { RobotData, RobotState } from '@/types/robot';
 import { toRobotData } from './toRobotData';
 import type { ParseRobotDefinitionOptions, ParseResult } from './types';
 
@@ -44,7 +44,11 @@ export function parseRobotDefinition(
   if (!robot) {
     return { status: 'error', format, message: `${format.toUpperCase()} parse returned no robot` };
   }
-  return { status: 'ready', format, robotData: toRobotData(robot) };
+  return {
+    status: 'ready',
+    format,
+    robotData: attachSourceDocument(toRobotData(robot), format, content, filename, options),
+  };
 }
 
 /**
@@ -75,7 +79,36 @@ export async function parseRobotDefinitionAsync(
   if (!robot) {
     return { status: 'error', format, message: 'MJCF parse returned no robot' };
   }
-  return { status: 'ready', format, robotData: toRobotData(robot) };
+  return {
+    status: 'ready',
+    format,
+    robotData: attachSourceDocument(toRobotData(robot), format, content, filename, options),
+  };
+}
+
+function attachSourceDocument(
+  robotData: RobotData,
+  format: Exclude<RobotDefinitionFormat, 'usd'>,
+  content: string,
+  filename: string,
+  options?: ParseRobotDefinitionOptions,
+): RobotData {
+  const relatedFiles: Record<string, string> = {
+    ...(options?.allFileContents ?? {}),
+    ...(options?.xacroFileMap ?? {}),
+  };
+  options?.availableFiles?.forEach((file) => {
+    if (typeof file.content === 'string') relatedFiles[file.name] = file.content;
+  });
+  return {
+    ...robotData,
+    sourceDocument: {
+      format,
+      filename,
+      content,
+      ...(Object.keys(relatedFiles).length > 0 ? { relatedFiles } : {}),
+    },
+  };
 }
 
 function parseByFormat(

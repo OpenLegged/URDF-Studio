@@ -1077,6 +1077,127 @@ test('high-frequency joint motion writes one history entry only on flush', () =>
   );
 });
 
+test('bridge joint motion is canonical, limit-aware, and undoable on flush', () => {
+  const workspace = createWorkspace();
+  workspace.bridges.mount = {
+    id: 'mount',
+    name: 'mount',
+    parentComponentId: 'left',
+    parentLinkId: 'tool_link',
+    childComponentId: 'right',
+    childLinkId: 'base_link',
+    joint: {
+      ...structuredClone(DEFAULT_JOINT),
+      id: 'mount',
+      name: 'mount',
+      type: JointType.REVOLUTE,
+      parentLinkId: 'tool_link',
+      childLinkId: 'base_link',
+      limit: { lower: -1, upper: 1, effort: 10, velocity: 2 },
+    },
+  };
+  installWorkspace(workspace);
+  const store = useWorkspaceStore.getState();
+  const ref = { type: 'bridge' as const, bridgeId: 'mount' };
+
+  assert.equal(store.setBridgeJointMotion(ref, 0.25), true);
+  assert.equal(store.setBridgeJointMotion(ref, 2), true);
+  assert.equal(useWorkspaceStore.getState().workspace.bridges.mount!.joint.angle, 1);
+  assert.equal(useWorkspaceStore.getState().history.past.length, 0);
+  assert.equal(store.flushPendingJointMotion(), true);
+  assert.equal(useWorkspaceStore.getState().history.past.length, 1);
+  assert.equal(store.undo(), true);
+  assert.equal(useWorkspaceStore.getState().workspace.bridges.mount!.joint.angle, undefined);
+});
+
+test('workspace joint motion applies component and bridge poses atomically', () => {
+  const workspace = createWorkspace();
+  workspace.bridges.mount = {
+    id: 'mount',
+    name: 'mount',
+    parentComponentId: 'left',
+    parentLinkId: 'tool_link',
+    childComponentId: 'right',
+    childLinkId: 'base_link',
+    joint: {
+      ...structuredClone(DEFAULT_JOINT),
+      id: 'mount',
+      name: 'mount',
+      type: JointType.BALL,
+      parentLinkId: 'tool_link',
+      childLinkId: 'base_link',
+    },
+  };
+  installWorkspace(workspace);
+  const store = useWorkspaceStore.getState();
+  const bridgeQuaternion = { x: 0, y: 0, z: 0.25, w: 0.9682458366 };
+
+  assert.equal(store.setWorkspaceJointMotion([
+    {
+      ref: { type: 'joint', componentId: 'left', entityId: 'wrist' },
+      angle: 0.35,
+    },
+    {
+      ref: { type: 'bridge', bridgeId: 'mount' },
+      quaternion: bridgeQuaternion,
+    },
+  ]), true);
+  assert.equal(
+    useWorkspaceStore.getState().workspace.components.left!.robot.joints.wrist!.angle,
+    0.35,
+  );
+  assert.deepEqual(
+    useWorkspaceStore.getState().workspace.bridges.mount!.joint.quaternion,
+    bridgeQuaternion,
+  );
+  assert.equal(useWorkspaceStore.getState().history.past.length, 0);
+  assert.equal(store.flushPendingJointMotion(), true);
+  assert.equal(useWorkspaceStore.getState().history.past.length, 1);
+});
+
+test('workspace joint motion rejects a partially locked projected solution', () => {
+  const workspace = createWorkspace();
+  workspace.components.left!.editorLocked = true;
+  workspace.bridges.mount = {
+    id: 'mount',
+    name: 'mount',
+    parentComponentId: 'left',
+    parentLinkId: 'tool_link',
+    childComponentId: 'right',
+    childLinkId: 'base_link',
+    joint: {
+      ...structuredClone(DEFAULT_JOINT),
+      id: 'mount',
+      name: 'mount',
+      type: JointType.REVOLUTE,
+      parentLinkId: 'tool_link',
+      childLinkId: 'base_link',
+    },
+  };
+  installWorkspace(workspace);
+  const store = useWorkspaceStore.getState();
+
+  assert.equal(store.setWorkspaceJointMotion([
+    {
+      ref: { type: 'joint', componentId: 'left', entityId: 'wrist' },
+      angle: 0.35,
+    },
+    {
+      ref: { type: 'bridge', bridgeId: 'mount' },
+      angle: 0.2,
+    },
+  ]), false);
+  assert.equal(
+    useWorkspaceStore.getState().workspace.components.left!.robot.joints.wrist!.angle,
+    undefined,
+  );
+  assert.equal(
+    useWorkspaceStore.getState().workspace.bridges.mount!.joint.angle,
+    undefined,
+  );
+  assert.equal(useWorkspaceStore.getState().history.past.length, 0);
+});
+
 test('joint motion inside a workspace transaction commits with the other edits once', () => {
   const store = useWorkspaceStore.getState();
   const operationId = store.beginWorkspaceTransaction('Pose and rename');

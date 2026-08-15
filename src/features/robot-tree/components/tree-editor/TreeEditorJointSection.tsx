@@ -1,25 +1,46 @@
 import React from 'react';
 import { ChevronDown, ChevronRight } from 'lucide-react';
-import { getJointReferencePosition, resolveJointKey } from '@/core/robot';
+import {
+  getJointReferencePosition,
+  resolveJointKey,
+  type AssemblySceneProjection,
+} from '@/core/robot';
 import { translations } from '@/shared/i18n';
 import { JointPanelControls, JointPanelList } from '@/shared/components/Panel/JointPanelContent';
 import { resolveActiveViewerJointKeyFromSelection } from '@/shared/utils/active_joint_selection';
 import { createJointPanelStore } from '@/shared/utils/jointPanelStore';
 import { normalizeViewerJointAngleState } from '@/shared/utils/jointPanelState';
 import { getSingleDofJointEntries } from '@/shared/utils/jointTypes';
-import type { EntityRef, RobotData, WorkspaceSelection } from '@/types';
+import { entityRefKey } from '@/types';
+import type {
+  BridgeEntityRef,
+  EntityRef,
+  JointEntityRef,
+  RobotData,
+  WorkspaceSelection,
+} from '@/types';
 import {
   useJointInteractionPreviewStore,
   type JointInteractionPreviewSnapshot,
   type WorkspaceJointInteractionPreview,
 } from '@/store/jointInteractionPreviewStore';
 import { useUIStore, type Language } from '@/store/uiStore';
-import type {
-  WorkspaceJointPropertyPatch,
-  WorkspacePropertyPatch,
-} from '@/store/workspace/types';
+import type { WorkspaceJointPropertyPatch, WorkspacePropertyPatch } from '@/store/workspace/types';
 
 const TREE_EDITOR_JOINT_SECTION_KEY = 'tree_editor_joint_panel';
+const projectionScopeIds = new WeakMap<AssemblySceneProjection, number>();
+let nextProjectionScopeId = 1;
+
+function resolveProjectionScopeId(projection: AssemblySceneProjection): number {
+  const existingScopeId = projectionScopeIds.get(projection);
+  if (existingScopeId !== undefined) {
+    return existingScopeId;
+  }
+  const scopeId = nextProjectionScopeId;
+  nextProjectionScopeId += 1;
+  projectionScopeIds.set(projection, scopeId);
+  return scopeId;
+}
 
 export function resolveComponentViewerJointPreview(
   preview: JointInteractionPreviewSnapshot,
@@ -29,6 +50,108 @@ export function resolveComponentViewerJointPreview(
     return null;
   }
   return preview.workspaceByComponent?.[componentId] ?? null;
+}
+
+export function resolveWorkspaceViewerJointPreview(
+  preview: JointInteractionPreviewSnapshot,
+  projection: AssemblySceneProjection,
+): Record<string, number> {
+  return resolveWorkspaceViewerJointPreviewState(preview, projection).jointAngles;
+}
+
+export interface WorkspaceViewerJointPreviewState {
+  activeJointId: string | null;
+  jointAngles: Record<string, number>;
+  jointQuaternions: JointInteractionPreviewSnapshot['jointQuaternions'];
+  jointOrigins: JointInteractionPreviewSnapshot['jointOrigins'];
+}
+
+export function resolveWorkspaceViewerJointPreviewState(
+  preview: JointInteractionPreviewSnapshot,
+  projection: AssemblySceneProjection,
+): WorkspaceViewerJointPreviewState {
+  if (preview.source !== 'viewer') {
+    return {
+      activeJointId: null,
+      jointAngles: {},
+      jointQuaternions: {},
+      jointOrigins: {},
+    };
+  }
+
+  const projected: WorkspaceViewerJointPreviewState = {
+    activeJointId: null,
+    jointAngles: {},
+    jointQuaternions: {},
+    jointOrigins: {},
+  };
+  const canonicalTargets = preview.workspaceTargets ?? [];
+  canonicalTargets.forEach((target) => {
+    const projectedId = projection.entityRefKeyToGlobal.get(entityRefKey(target.ref));
+    if (!projectedId) {
+      return;
+    }
+    if (target.active) {
+      projected.activeJointId = projectedId;
+    }
+    if (typeof target.angle === 'number' && Number.isFinite(target.angle)) {
+      projected.jointAngles[projectedId] = target.angle;
+    }
+    if (target.quaternion) {
+      projected.jointQuaternions[projectedId] = { ...target.quaternion };
+    }
+    if (target.origin) {
+      projected.jointOrigins[projectedId] = structuredClone(target.origin);
+    }
+  });
+
+  if (canonicalTargets.length > 0) {
+    return projected;
+  }
+
+  // Compatibility for tree-panel previews published before canonical bridge
+  // targets were introduced. New viewer publishers use workspaceTargets.
+  Object.entries(preview.workspaceByComponent ?? {}).forEach(([componentId, componentPreview]) => {
+    Object.entries(componentPreview.jointAngles).forEach(([entityId, angle]) => {
+      const projectedId = projection.entityRefKeyToGlobal.get(
+        entityRefKey({
+          type: 'joint',
+          componentId,
+          entityId,
+        }),
+      );
+      if (projectedId && Number.isFinite(angle)) {
+        projected.jointAngles[projectedId] = angle;
+      }
+    });
+    Object.entries(componentPreview.jointQuaternions).forEach(([entityId, quaternion]) => {
+      const projectedId = projection.entityRefKeyToGlobal.get(
+        entityRefKey({ type: 'joint', componentId, entityId }),
+      );
+      if (projectedId && quaternion) {
+        projected.jointQuaternions[projectedId] = { ...quaternion };
+      }
+    });
+    Object.entries(componentPreview.jointOrigins).forEach(([entityId, origin]) => {
+      const projectedId = projection.entityRefKeyToGlobal.get(
+        entityRefKey({ type: 'joint', componentId, entityId }),
+      );
+      if (projectedId && origin) {
+        projected.jointOrigins[projectedId] = structuredClone(origin);
+      }
+    });
+    if (componentPreview.activeJointId) {
+      projected.activeJointId =
+        projection.entityRefKeyToGlobal.get(
+          entityRefKey({
+            type: 'joint',
+            componentId,
+            entityId: componentPreview.activeJointId,
+          }),
+        ) ?? projected.activeJointId;
+    }
+  });
+  return projected;
 }
 
 /**
@@ -41,9 +164,7 @@ export function resolveComponentViewerJointPreview(
  * pose the user had already applied whenever its scope was re-seeded, which made
  * Reset a silent no-op.
  */
-export function resolveJointPanelResetAngles(
-  joints: RobotData['joints'],
-): Record<string, number> {
+export function resolveJointPanelResetAngles(joints: RobotData['joints']): Record<string, number> {
   return Object.fromEntries(
     getSingleDofJointEntries(joints).map(([jointId, joint]) => [
       jointId,
@@ -56,27 +177,30 @@ export function createTreeJointPanelScopeKey({
   componentId,
   sourceFilePath,
   robot,
+  projection,
 }: {
   componentId: string;
   sourceFilePath?: string;
   robot: Pick<RobotData, 'name' | 'rootLinkId'>;
+  projection?: AssemblySceneProjection;
 }): string {
-  return `${componentId}:${sourceFilePath ?? `${robot.name}:${robot.rootLinkId}`}`;
+  const projectionScope = projection ? `projection-${resolveProjectionScopeId(projection)}:` : '';
+  return `${componentId}:${projectionScope}${sourceFilePath ?? `${robot.name}:${robot.rootLinkId}`}`;
 }
 
 interface TreeEditorJointSectionProps {
-  componentId: string;
   robot: RobotData;
+  projection: AssemblySceneProjection;
+  jointAngleState?: Record<string, number>;
   selection: WorkspaceSelection;
   lang: Language;
   onSelect?: (selection: WorkspaceSelection) => void;
   onUpdate: (ref: EntityRef, patch: WorkspacePropertyPatch) => void;
-  onJointAnglePreview?: (ref: Extract<EntityRef, { type: 'joint' }>, angle: number) => void;
-  onJointAngleChange?: (ref: Extract<EntityRef, { type: 'joint' }>, angle: number) => void;
+  onJointAnglePreview?: (ref: JointEntityRef | BridgeEntityRef, angle: number) => void;
+  onJointAngleChange?: (ref: JointEntityRef | BridgeEntityRef, angle: number) => void;
   onResetJointAngles?: (
-    componentId: string,
-    jointAngles: Record<string, number>,
-  ) => Record<string, number>;
+    targets: readonly { ref: JointEntityRef | BridgeEntityRef; angle: number }[],
+  ) => readonly { ref: JointEntityRef | BridgeEntityRef; angle: number }[];
   show: boolean;
   sourceFilePath?: string;
   height: number;
@@ -96,7 +220,10 @@ function areJointAnglesEquivalent(left: number | undefined, right: number | unde
   return Math.abs(left - right) <= 1e-6;
 }
 
-function buildJointAngleSnapshot(joints: Record<string, any>) {
+function buildJointAngleSnapshot(
+  joints: Record<string, any>,
+  projectedJointAngles?: Record<string, number>,
+) {
   const nextAngles: Record<string, number> = {};
   getSingleDofJointEntries(joints).forEach(([jointId, joint]) => {
     const angle = resolveJointSnapshotAngle(joint);
@@ -106,12 +233,68 @@ function buildJointAngleSnapshot(joints: Record<string, any>) {
     }
   });
 
-  return normalizeViewerJointAngleState(joints, nextAngles);
+  return {
+    ...normalizeViewerJointAngleState(joints, nextAngles),
+    ...normalizeViewerJointAngleState(joints, projectedJointAngles),
+  };
+}
+
+export function resolveJointPanelWorkspaceRef(
+  projection: AssemblySceneProjection,
+  projectedJointId: string,
+): JointEntityRef | BridgeEntityRef | null {
+  const ref = projection.globalToEntityRef.get(projectedJointId);
+  return ref?.type === 'joint' || ref?.type === 'bridge' ? ref : null;
+}
+
+export function resolveJointPanelResetReconciliation({
+  acceptedTargets,
+  currentAngles,
+  projection,
+  requestedAngles,
+}: {
+  acceptedTargets: readonly { ref: JointEntityRef | BridgeEntityRef; angle: number }[];
+  currentAngles: Record<string, number>;
+  projection: AssemblySceneProjection;
+  requestedAngles: Record<string, number>;
+}): {
+  jointAngles: Record<string, number>;
+  pendingAngles: Record<string, number>;
+} {
+  const acceptedAngles = Object.fromEntries(
+    acceptedTargets.flatMap(({ ref, angle }) => {
+      const jointId = projection.entityRefKeyToGlobal.get(entityRefKey(ref));
+      return jointId && jointId in requestedAngles && Number.isFinite(angle)
+        ? [[jointId, angle]]
+        : [];
+    }),
+  );
+  const jointAngles: Record<string, number> = {};
+  const pendingAngles: Record<string, number> = {};
+
+  Object.keys(requestedAngles).forEach((jointId) => {
+    const acceptedAngle = acceptedAngles[jointId];
+    if (acceptedAngle !== undefined) {
+      jointAngles[jointId] = acceptedAngle;
+      if (!areJointAnglesEquivalent(currentAngles[jointId], acceptedAngle)) {
+        pendingAngles[jointId] = acceptedAngle;
+      }
+      return;
+    }
+
+    const currentAngle = currentAngles[jointId];
+    if (Number.isFinite(currentAngle)) {
+      jointAngles[jointId] = currentAngle;
+    }
+  });
+
+  return { jointAngles, pendingAngles };
 }
 
 export function TreeEditorJointSection({
-  componentId,
   robot,
+  projection,
+  jointAngleState,
   selection,
   lang,
   onSelect,
@@ -127,16 +310,19 @@ export function TreeEditorJointSection({
   const t = translations[lang];
   const localSelection = React.useMemo(() => {
     const ref = selection?.entity;
-    if (
-      !ref
-      || (ref.type !== 'link' && ref.type !== 'joint')
-      || ref.componentId !== componentId
-    ) {
+    if (!ref || (ref.type !== 'link' && ref.type !== 'joint' && ref.type !== 'bridge')) {
       return { type: null, id: null } as const;
     }
-    return { type: ref.type, id: ref.entityId };
-  }, [componentId, selection]);
-  const localRobot = React.useMemo(() => ({ ...robot, selection: localSelection }), [localSelection, robot]);
+    const id = projection.entityRefKeyToGlobal.get(entityRefKey(ref));
+    if (!id) {
+      return { type: null, id: null } as const;
+    }
+    return { type: ref.type === 'bridge' ? 'joint' : ref.type, id } as const;
+  }, [projection, selection]);
+  const localRobot = React.useMemo(
+    () => ({ ...robot, selection: localSelection }),
+    [localSelection, robot],
+  );
   const jointEntries = React.useMemo(
     () => getSingleDofJointEntries(robot?.joints),
     [robot?.joints],
@@ -156,13 +342,14 @@ export function TreeEditorJointSection({
   const previousActiveJointRef = React.useRef<string | null>(null);
   const shouldShow = show;
   const jointAngleSnapshot = React.useMemo(
-    () => buildJointAngleSnapshot(robot.joints),
-    [robot.joints],
+    () => buildJointAngleSnapshot(robot.joints, jointAngleState),
+    [jointAngleState, robot.joints],
   );
   const resetScopeKey = createTreeJointPanelScopeKey({
-    componentId,
+    componentId: 'workspace',
     sourceFilePath,
     robot,
+    projection,
   });
   const effectiveJointAngleSnapshot = React.useMemo(() => {
     const pendingCommittedAngles = pendingCommittedJointAnglesRef.current;
@@ -245,12 +432,15 @@ export function TreeEditorJointSection({
     const applyViewerJointPreview = (
       preview = useJointInteractionPreviewStore.getState().preview,
     ) => {
-      const componentPreview = resolveComponentViewerJointPreview(preview, componentId);
-      if (!componentPreview || Object.keys(componentPreview.jointAngles).length === 0) {
-        return;
+      const projectedPreview = resolveWorkspaceViewerJointPreviewState(preview, projection);
+      if (projectedPreview.activeJointId) {
+        jointPanelStoreRef.current.setActiveJoint(projectedPreview.activeJointId, {
+          autoScroll: projectedPreview.activeJointId !== previousActiveJointRef.current,
+        });
+        previousActiveJointRef.current = projectedPreview.activeJointId;
       }
 
-      const previewAngles = patchLocalJointAngles(componentPreview.jointAngles);
+      const previewAngles = patchLocalJointAngles(projectedPreview.jointAngles);
       if (Object.keys(previewAngles).length === 0) {
         return;
       }
@@ -267,14 +457,17 @@ export function TreeEditorJointSection({
     return useJointInteractionPreviewStore.subscribe((state) => {
       applyViewerJointPreview(state.preview);
     });
-  }, [componentId, patchLocalJointAngles, resetScopeKey]);
+  }, [patchLocalJointAngles, projection, resetScopeKey]);
 
   const handleJointAnglePreview = React.useCallback(
     (jointName: string, angle: number) => {
       const jointId = patchLocalJointAngle(jointName, angle);
-      onJointAnglePreview?.({ type: 'joint', componentId, entityId: jointId }, angle);
+      const ref = resolveJointPanelWorkspaceRef(projection, jointId);
+      if (ref) {
+        onJointAnglePreview?.(ref, angle);
+      }
     },
-    [componentId, onJointAnglePreview, patchLocalJointAngle],
+    [onJointAnglePreview, patchLocalJointAngle, projection],
   );
 
   const handleJointAngleCommit = React.useCallback(
@@ -285,42 +478,61 @@ export function TreeEditorJointSection({
         [jointId]: angle,
       };
       pendingCommittedJointAnglesScopeRef.current = resetScopeKey;
-      onJointAngleChange?.({ type: 'joint', componentId, entityId: jointId }, angle);
+      const ref = resolveJointPanelWorkspaceRef(projection, jointId);
+      if (ref) {
+        onJointAngleChange?.(ref, angle);
+      }
     },
-    [componentId, onJointAngleChange, patchLocalJointAngle, resetScopeKey],
+    [onJointAngleChange, patchLocalJointAngle, projection, resetScopeKey],
   );
 
   React.useEffect(() => {
     const nextActiveJoint = resolveActiveViewerJointKeyFromSelection(robot.joints, localSelection);
-    const autoScroll = nextActiveJoint !== null && previousActiveJointRef.current !== nextActiveJoint;
+    const autoScroll =
+      nextActiveJoint !== null && previousActiveJointRef.current !== nextActiveJoint;
 
     jointPanelStoreRef.current.setActiveJoint(nextActiveJoint, { autoScroll });
     previousActiveJointRef.current = nextActiveJoint;
   }, [localSelection, robot.joints]);
 
   const handleResetJoints = React.useCallback(() => {
-    const normalizedResetAngles = patchLocalJointAngles(resolveJointPanelResetAngles(robot.joints));
+    const normalizedResetAngles = normalizeViewerJointAngleState(
+      robot.joints,
+      resolveJointPanelResetAngles(robot.joints),
+    );
 
-    // Reset is an authoritative write: the workspace update lands synchronously,
-    // so any locally held commit must be dropped. Keeping it would let angles the
-    // workspace rejected (locked joints) or adjusted mask the real value forever,
-    // because pending entries only clear once the workspace matches them.
-    pendingCommittedJointAnglesRef.current = {};
-    pendingCommittedJointAnglesScopeRef.current = resetScopeKey;
-
+    const resetTargets = Object.entries(normalizedResetAngles).flatMap(([jointId, angle]) => {
+      const ref = resolveJointPanelWorkspaceRef(projection, jointId);
+      return ref ? [{ ref, angle }] : [];
+    });
+    let acceptedTargets: readonly {
+      ref: JointEntityRef | BridgeEntityRef;
+      angle: number;
+    }[];
     if (onResetJointAngles) {
-      onResetJointAngles(componentId, normalizedResetAngles);
-      return;
+      acceptedTargets = onResetJointAngles(resetTargets);
+    } else {
+      resetTargets.forEach(({ ref, angle }) => {
+        onJointAngleChange?.(ref, angle);
+      });
+      acceptedTargets = resetTargets;
     }
 
-    Object.entries(normalizedResetAngles).forEach(([jointId, nextAngle]) => {
-      onJointAngleChange?.({ type: 'joint', componentId, entityId: jointId }, nextAngle);
+    const reconciliation = resolveJointPanelResetReconciliation({
+      acceptedTargets,
+      currentAngles: jointAngleSnapshot,
+      projection,
+      requestedAngles: normalizedResetAngles,
     });
+    patchLocalJointAngles(reconciliation.jointAngles);
+    pendingCommittedJointAnglesRef.current = reconciliation.pendingAngles;
+    pendingCommittedJointAnglesScopeRef.current = resetScopeKey;
   }, [
-    componentId,
+    jointAngleSnapshot,
     onJointAngleChange,
     onResetJointAngles,
     patchLocalJointAngles,
+    projection,
     resetScopeKey,
     robot.joints,
   ]);
@@ -385,18 +597,18 @@ export function TreeEditorJointSection({
               handleJointAngleChange={handleJointAnglePreview}
               handleJointChangeCommit={handleJointAngleCommit}
               onSelect={(type: 'link' | 'joint', id: string) => {
-                onSelect?.({
-                  entity: { type, componentId, entityId: id },
-                });
+                if (type !== 'joint') return;
+                const ref = resolveJointPanelWorkspaceRef(projection, id);
+                if (ref) onSelect?.({ entity: ref });
               }}
               isAdvanced={isAdvanced}
               ignoreLimits={ignoreJointLimits}
               onUpdate={(type, id, data) => {
                 if (type !== 'link' && type !== 'joint') return;
-                onUpdate(
-                  { type, componentId, entityId: id },
-                  data as WorkspaceJointPropertyPatch,
-                );
+                const ref = resolveJointPanelWorkspaceRef(projection, id);
+                if (!ref) return;
+                const patch = data as WorkspaceJointPropertyPatch;
+                onUpdate(ref, ref.type === 'bridge' ? { joint: patch } : patch);
               }}
               className="space-y-0.5 px-1 py-1"
             />

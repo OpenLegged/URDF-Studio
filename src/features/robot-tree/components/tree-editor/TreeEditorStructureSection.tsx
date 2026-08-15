@@ -19,6 +19,7 @@ import type { WorkspacePropertyPatch } from '@/store/workspace/types';
 import { useSelectionStore } from '@/store/selectionStore';
 
 type LinkRef = Extract<EntityRef, { type: 'link' }>;
+type ComponentRef = Extract<EntityRef, { type: 'component' }>;
 
 interface TreeEditorStructureSectionProps {
   workspace: AssemblyState;
@@ -49,6 +50,7 @@ interface TreeEditorStructureSectionProps {
   onAddCollisionBody: (ref: LinkRef) => void;
   onDelete: (ref: EntityRef) => void;
   onUpdate: (ref: EntityRef, patch: WorkspacePropertyPatch) => void;
+  onRobotNameChange: (ref: ComponentRef, name: string) => void;
   onCreateBridge?: () => void;
   onPrefetchCreateBridge?: () => void;
   isReadOnly?: boolean;
@@ -78,6 +80,7 @@ export function TreeEditorStructureSection({
   onAddCollisionBody,
   onDelete,
   onUpdate,
+  onRobotNameChange,
   onCreateBridge,
   onPrefetchCreateBridge,
   isReadOnly = false,
@@ -99,17 +102,23 @@ export function TreeEditorStructureSection({
     return useSelectionStore.subscribe((state, previousState) => {
       if (state.attentionSelection === previousState.attentionSelection) return;
       const target = state.selection?.entity;
-      if (!target || (target.type !== 'link' && target.type !== 'joint')) return;
-      if (!('componentId' in target)) return;
-      const key = `${target.type}:${target.componentId}:${target.entityId}`;
+      if (
+        !target
+        || (target.type !== 'link' && target.type !== 'joint' && target.type !== 'bridge')
+      ) return;
+      const key = target.type === 'bridge'
+        ? `bridge:${target.bridgeId}`
+        : `${target.type}:${target.componentId}:${target.entityId}`;
       if (key === lastScrolledKey) return;
       lastScrolledKey = key;
       // Wait one frame so auto-expanding ancestors (TreeNode/AssemblyTreeView) has a chance to
       // mount the target row before we try to scroll it into view.
       window.requestAnimationFrame(() => {
-        const testId = target.type === 'link'
-          ? `tree-link-${target.componentId}-${target.entityId}`
-          : `tree-joint-${target.componentId}-${target.entityId}`;
+        const testId = target.type === 'bridge'
+          ? `tree-bridge-${target.bridgeId}`
+          : target.type === 'link'
+            ? `tree-link-${target.componentId}-${target.entityId}`
+            : `tree-joint-${target.componentId}-${target.entityId}`;
         const row = scrollContainerRef.current?.querySelector<HTMLElement>(
           `[data-testid="${testId}"]`,
         );
@@ -258,6 +267,7 @@ export function TreeEditorStructureSection({
             onAddCollisionBody={onAddCollisionBody}
             onDelete={onDelete}
             onUpdate={onUpdate}
+            onRobotNameChange={onRobotNameChange}
             onCreateBridge={onCreateBridge}
             onPrefetchCreateBridge={onPrefetchCreateBridge}
             showAssemblyRoot={false}

@@ -10,11 +10,13 @@ import type { RobotData, RobotState } from '@/types/robot';
 export function toRobotData(robot: RobotState | RobotData): RobotData {
   return {
     name: robot.name,
+    version: robot.version,
     links: robot.links,
     joints: robot.joints,
     rootLinkId: robot.rootLinkId,
     materials: robot.materials,
     closedLoopConstraints: robot.closedLoopConstraints,
     inspectionContext: robot.inspectionContext,
+    sourceDocument: 'sourceDocument' in robot ? robot.sourceDocument : undefined,
   };
 }

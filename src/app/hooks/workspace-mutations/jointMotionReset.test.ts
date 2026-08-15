@@ -11,12 +11,11 @@ import {
 
 import {
   commitComponentJointMotionReset,
+  commitWorkspaceJointMotionReset,
   resolveResettableJointAngles,
 } from './jointMotionReset';
 
-function createWorkspace(
-  options: { lockedLinkId?: string } = {},
-): AssemblyState {
+function createWorkspace(options: { lockedLinkId?: string } = {}): AssemblyState {
   return {
     name: 'reset-test',
     transform: {
@@ -110,6 +109,27 @@ function createRecordingStore() {
         committedAngles.push({ ...angles });
         return true;
       },
+      setBridgeJointMotion: (
+        ref: { type: 'bridge'; bridgeId: string },
+        angle: number,
+        options?: { operationId?: string },
+      ) => {
+        events.push(`set-bridge:${ref.bridgeId}:${angle}:${options?.operationId}`);
+        return true;
+      },
+      setWorkspaceJointMotion: (
+        targets: readonly {
+          ref:
+            | { type: 'joint'; componentId: string; entityId: string }
+            | { type: 'bridge'; bridgeId: string };
+          angle?: number;
+          quaternion?: JointQuaternion;
+        }[],
+        options?: { operationId?: string },
+      ) => {
+        events.push(`set-workspace:${targets.length}:${options?.operationId}`);
+        return true;
+      },
     },
   };
 }
@@ -196,10 +216,147 @@ test('cancels the transaction when the reset write throws', () => {
         setComponentJointMotion: () => {
           throw new Error('write failed');
         },
+        setWorkspaceJointMotion: () => false,
       },
       workspace,
     });
   }, /write failed/);
 
   assert.deepEqual(events, ['cancel:operation-1']);
+});
+
+test('workspace reset commits component and bridge joints in one transaction', () => {
+  const workspace = createWorkspace();
+  workspace.components.hand = {
+    ...structuredClone(workspace.components.comp!),
+    id: 'hand',
+    name: 'hand',
+  };
+  workspace.bridges.mount = {
+    id: 'mount',
+    name: 'mount',
+    parentComponentId: 'comp',
+    parentLinkId: 'calf',
+    childComponentId: 'hand',
+    childLinkId: 'base',
+    joint: {
+      ...structuredClone(DEFAULT_JOINT),
+      id: 'mount',
+      name: 'mount',
+      type: JointType.REVOLUTE,
+      parentLinkId: 'calf',
+      childLinkId: 'base',
+      angle: 0.8,
+    },
+  };
+  const { events, store } = createRecordingStore();
+
+  const applied = commitWorkspaceJointMotionReset({
+    targets: [
+      {
+        ref: { type: 'joint', componentId: 'comp', entityId: 'hip_joint' },
+        angle: 0,
+      },
+      { ref: { type: 'bridge', bridgeId: 'mount' }, angle: 0 },
+    ],
+    flushPendingHistory: () => events.push('flush-history'),
+    store,
+    workspace,
+  });
+
+  assert.equal(applied.length, 2);
+  assert.deepEqual(events, [
+    'flush-history',
+    'begin:Reset joint angles',
+    'set-workspace:2:operation-1',
+    'flush-motion:operation-1',
+    'commit:operation-1',
+  ]);
+});
+
+test('workspace reset reports no-ops but excludes locked, unknown, and rejected writes', () => {
+  const workspace = createWorkspace();
+  workspace.components.comp!.robot.joints.hip_joint!.angle = 0;
+  workspace.components.comp!.robot.links.calf!.editorLocked = true;
+  workspace.bridges.mount = {
+    id: 'mount',
+    name: 'mount',
+    parentComponentId: 'comp',
+    parentLinkId: 'base',
+    childComponentId: 'comp',
+    childLinkId: 'base',
+    joint: {
+      ...structuredClone(DEFAULT_JOINT),
+      id: 'mount',
+      name: 'mount',
+      type: JointType.REVOLUTE,
+      parentLinkId: 'base',
+      childLinkId: 'base',
+      angle: 0.8,
+    },
+  };
+  const { events, store } = createRecordingStore();
+  store.setWorkspaceJointMotion = (
+    targets: readonly unknown[],
+    options?: { operationId?: string },
+  ) => {
+    events.push(`reject-workspace:${targets.length}:${options?.operationId}`);
+    return false;
+  };
+
+  const applied = commitWorkspaceJointMotionReset({
+    targets: [
+      {
+        ref: { type: 'joint', componentId: 'comp', entityId: 'hip_joint' },
+        angle: 0,
+      },
+      {
+        ref: { type: 'joint', componentId: 'comp', entityId: 'calf_joint' },
+        angle: 0,
+      },
+      {
+        ref: { type: 'joint', componentId: 'comp', entityId: 'missing_joint' },
+        angle: 0,
+      },
+      { ref: { type: 'bridge', bridgeId: 'mount' }, angle: 0 },
+    ],
+    flushPendingHistory: () => events.push('flush-history'),
+    store,
+    workspace,
+  });
+
+  assert.deepEqual(applied, [
+    {
+      ref: { type: 'joint', componentId: 'comp', entityId: 'hip_joint' },
+      angle: 0,
+    },
+  ]);
+  assert.deepEqual(events, [
+    'flush-history',
+    'begin:Reset joint angles',
+    'reject-workspace:1:operation-1',
+    'flush-motion:operation-1',
+    'commit:operation-1',
+  ]);
+});
+
+test('workspace reset returns canonical no-op targets without creating history', () => {
+  const workspace = createWorkspace();
+  workspace.components.comp!.robot.joints.hip_joint!.angle = 0;
+  const { events, store } = createRecordingStore();
+
+  const applied = commitWorkspaceJointMotionReset({
+    targets: [
+      {
+        ref: { type: 'joint', componentId: 'comp', entityId: 'hip_joint' },
+        angle: 0,
+      },
+    ],
+    flushPendingHistory: () => events.push('flush-history'),
+    store,
+    workspace,
+  });
+
+  assert.equal(applied.length, 1);
+  assert.deepEqual(events, []);
 });

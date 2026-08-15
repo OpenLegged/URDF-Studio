@@ -5,6 +5,7 @@ import {
   type ComponentEntityRef,
   type EntityRef,
   type InteractionSelection,
+  type JointEntityRef,
   type JointQuaternion,
   type UrdfJoint,
   type WorkspaceSelection,
@@ -13,7 +14,11 @@ import {
 import type { AssemblySceneProjection } from '@/core/robot/assemblySceneProjection';
 import type { AssemblyScenePlacement } from '@/core/robot/assemblyScenePlacement';
 import type { ViewerJointChangeContext } from '../types';
-import type { WorkspaceJointInteractionPreview } from '@/store/jointInteractionPreviewStore';
+import type {
+  WorkspaceJointInteractionPreview,
+  WorkspaceJointInteractionPreviewTarget,
+} from '@/store/jointInteractionPreviewStore';
+import type { WorkspaceJointMotionTarget } from '@/store/workspaceStore';
 
 export {
   createAssemblyScenePlacement,
@@ -267,6 +272,99 @@ export function groupProjectedJointMotionByComponent(
   return Array.from(groups, ([componentId, values]) => ({ componentId, ...values }));
 }
 
+/**
+ * Resolve renderer-global joint motion to canonical workspace owners. Angle and
+ * quaternion values for the same owner are merged into one atomic target.
+ */
+export function projectRendererJointMotionToWorkspaceTargets(
+  projection: AssemblySceneProjection,
+  context: ViewerJointChangeContext | null | undefined,
+): WorkspaceJointMotionTarget[] {
+  const targets = new Map<string, WorkspaceJointMotionTarget>();
+  const resolveMotionRef = (globalId: string): JointEntityRef | BridgeEntityRef | null => {
+    const ref = projection.globalToEntityRef.get(globalId);
+    return ref?.type === 'joint' || ref?.type === 'bridge' ? ref : null;
+  };
+  const getTarget = (ref: JointEntityRef | BridgeEntityRef) => {
+    const key = entityRefKey(ref);
+    const existing = targets.get(key);
+    if (existing) {
+      return existing;
+    }
+    const created: WorkspaceJointMotionTarget = { ref: { ...ref } };
+    targets.set(key, created);
+    return created;
+  };
+
+  Object.entries(context?.jointAngles ?? {}).forEach(([globalId, angle]) => {
+    const ref = resolveMotionRef(globalId);
+    if (ref && Number.isFinite(angle)) {
+      getTarget(ref).angle = angle;
+    }
+  });
+  Object.entries(context?.jointQuaternions ?? {}).forEach(([globalId, quaternion]) => {
+    const ref = resolveMotionRef(globalId);
+    if (ref && quaternion) {
+      getTarget(ref).quaternion = { ...quaternion };
+    }
+  });
+
+  return Array.from(targets.values());
+}
+
+/** Project renderer joint previews to canonical component and bridge refs. */
+export function projectJointPreviewToWorkspaceTargets(
+  projection: AssemblySceneProjection,
+  preview: RendererJointInteractionPreview,
+): WorkspaceJointInteractionPreviewTarget[] {
+  const targets = new Map<string, WorkspaceJointInteractionPreviewTarget>();
+  const resolveJoint = (globalId: string): JointEntityRef | BridgeEntityRef | null => {
+    const ref = projection.globalToEntityRef.get(globalId);
+    return ref?.type === 'joint' || ref?.type === 'bridge' ? ref : null;
+  };
+  const getTarget = (ref: JointEntityRef | BridgeEntityRef) => {
+    const key = entityRefKey(ref);
+    const existing = targets.get(key);
+    if (existing) {
+      return existing;
+    }
+    const created: WorkspaceJointInteractionPreviewTarget = {
+      ref: { ...ref },
+      active: false,
+    };
+    targets.set(key, created);
+    return created;
+  };
+
+  Object.entries(preview.jointAngles).forEach(([globalId, angle]) => {
+    const ref = resolveJoint(globalId);
+    if (ref && Number.isFinite(angle)) {
+      getTarget(ref).angle = angle;
+    }
+  });
+  Object.entries(preview.jointQuaternions).forEach(([globalId, quaternion]) => {
+    const ref = resolveJoint(globalId);
+    if (ref && quaternion) {
+      getTarget(ref).quaternion = { ...quaternion };
+    }
+  });
+  Object.entries(preview.jointOrigins).forEach(([globalId, origin]) => {
+    const ref = resolveJoint(globalId);
+    if (ref && origin) {
+      getTarget(ref).origin = structuredClone(origin);
+    }
+  });
+  if (preview.activeJointId) {
+    const ref = resolveJoint(preview.activeJointId);
+    if (ref) {
+      getTarget(ref).active = true;
+    }
+  }
+
+  return Array.from(targets.values());
+}
+
+/** @deprecated Prefer the canonical flat target projection above. */
 export function projectJointPreviewToWorkspaceComponents(
   projection: AssemblySceneProjection,
   preview: RendererJointInteractionPreview,

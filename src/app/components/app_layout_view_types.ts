@@ -145,6 +145,8 @@ export interface AppLayoutViewerSectionProps {
 
 export interface AppLayoutSidebarsProps {
   workspace: TreeEditorProps['workspace'];
+  sceneProjection: TreeEditorProps['sceneProjection'];
+  jointAngleState: TreeEditorProps['jointAngleState'];
   activeComponentId: TreeEditorProps['activeComponentId'];
   selection: PropertyEditorProps['selection'];
   handleSelect: TreeEditorProps['onSelect'] & PropertyEditorProps['onSelect'];
@@ -155,6 +157,7 @@ export interface AppLayoutSidebarsProps {
   handleAddCollisionBody: TreeEditorProps['onAddCollisionBody'];
   handleDelete: TreeEditorProps['onDelete'];
   handleUpdate: TreeEditorProps['onUpdate'] & PropertyEditorProps['onUpdate'];
+  handleRobotNameChange: TreeEditorProps['onRobotNameChange'];
   showVisual: TreeEditorProps['showVisual'];
   handleSetShowVisual: TreeEditorProps['setShowVisual'];
   mergedAppMode: ViewerProps['mode'];

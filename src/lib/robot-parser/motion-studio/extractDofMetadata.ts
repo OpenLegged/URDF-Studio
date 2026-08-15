@@ -6,7 +6,8 @@ import type { RobotDofMetadata, RobotJointLimit } from './types';
  *
  * Projection rules:
  * - skip joints whose type is `fixed` (JointType.FIXED === 'fixed')
- * - only record a joint limit when both bounds are finite and `lower < upper`
+ * - record finite position bounds only when `lower < upper`
+ * - retain finite effort and velocity even for unbounded continuous joints
  * - linkNames come from the canonical definition link names
  */
 export function extractDofMetadata(robotData: RobotData): RobotDofMetadata {
@@ -24,6 +25,12 @@ export function extractDofMetadata(robotData: RobotData): RobotDofMetadata {
 
     const lower = joint.limit?.lower;
     const upper = joint.limit?.upper;
+    const effort = joint.limit?.effort;
+    const velocity = joint.limit?.velocity;
+    const projectedLimit: RobotJointLimit = {
+      ...(effort !== undefined && Number.isFinite(effort) ? { effort } : {}),
+      ...(velocity !== undefined && Number.isFinite(velocity) ? { velocity } : {}),
+    };
     if (
       lower !== undefined &&
       upper !== undefined &&
@@ -31,7 +38,11 @@ export function extractDofMetadata(robotData: RobotData): RobotDofMetadata {
       Number.isFinite(upper) &&
       lower < upper
     ) {
-      jointLimits[joint.name] = { lower, upper };
+      projectedLimit.lower = lower;
+      projectedLimit.upper = upper;
+    }
+    if (Object.keys(projectedLimit).length > 0) {
+      jointLimits[joint.name] = projectedLimit;
     }
   }
 

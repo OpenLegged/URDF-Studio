@@ -1,23 +1,21 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { commitProjectedJointMotionGroups } from './projectedJointMotionCommit';
+import { commitProjectedJointMotionTargets } from './projectedJointMotionCommit';
 
-test('commits projected joint groups in one workspace transaction', () => {
+test('commits projected component and bridge joints in one workspace transaction', () => {
   const events: string[] = [];
 
-  const changed = commitProjectedJointMotionGroups({
+  const changed = commitProjectedJointMotionTargets({
     flushPendingHistory: () => events.push('flush-history'),
-    groups: [
+    targets: [
       {
-        componentId: 'component-a',
-        jointAngles: { hip: 0.5 },
-        jointQuaternions: {},
+        ref: { type: 'joint', componentId: 'component-a', entityId: 'hip' },
+        angle: 0.5,
       },
       {
-        componentId: 'component-b',
-        jointAngles: {},
-        jointQuaternions: { free: { x: 0, y: 0, z: 0, w: 1 } },
+        ref: { type: 'bridge', bridgeId: 'bridge-a-b' },
+        quaternion: { x: 0, y: 0, z: 0, w: 1 },
       },
     ],
     store: {
@@ -34,8 +32,8 @@ test('commits projected joint groups in one workspace transaction', () => {
         events.push(`flush-motion:${operationId}`);
         return true;
       },
-      setComponentJointMotion: (componentId, _angles, _quaternions, options) => {
-        events.push(`set:${componentId}:${options?.operationId}`);
+      setWorkspaceJointMotion: (targets, options) => {
+        events.push(`set:${targets.length}:${options?.operationId}`);
         return true;
       },
     },
@@ -45,8 +43,7 @@ test('commits projected joint groups in one workspace transaction', () => {
   assert.deepEqual(events, [
     'flush-history',
     'begin:Commit viewer joint motion',
-    'set:component-a:operation-1',
-    'set:component-b:operation-1',
+    'set:2:operation-1',
     'flush-motion:operation-1',
     'commit:operation-1',
   ]);
@@ -56,13 +53,12 @@ test('cancels the transaction when a projected joint commit throws', () => {
   const events: string[] = [];
 
   assert.throws(() => {
-    commitProjectedJointMotionGroups({
+    commitProjectedJointMotionTargets({
       flushPendingHistory: () => {},
-      groups: [
+      targets: [
         {
-          componentId: 'component-a',
-          jointAngles: { hip: 0.5 },
-          jointQuaternions: {},
+          ref: { type: 'joint', componentId: 'component-a', entityId: 'hip' },
+          angle: 0.5,
         },
       ],
       store: {
@@ -73,7 +69,7 @@ test('cancels the transaction when a projected joint commit throws', () => {
         },
         commitWorkspaceTransaction: () => false,
         flushPendingJointMotion: () => false,
-        setComponentJointMotion: () => {
+        setWorkspaceJointMotion: () => {
           throw new Error('motion failed');
         },
       },
@@ -85,9 +81,9 @@ test('cancels the transaction when a projected joint commit throws', () => {
 
 test('does not open a transaction for an empty projection', () => {
   let began = false;
-  const changed = commitProjectedJointMotionGroups({
+  const changed = commitProjectedJointMotionTargets({
     flushPendingHistory: () => {},
-    groups: [],
+    targets: [],
     store: {
       beginWorkspaceTransaction: () => {
         began = true;
@@ -96,7 +92,7 @@ test('does not open a transaction for an empty projection', () => {
       cancelWorkspaceTransaction: () => false,
       commitWorkspaceTransaction: () => false,
       flushPendingJointMotion: () => false,
-      setComponentJointMotion: () => false,
+      setWorkspaceJointMotion: () => false,
     },
   });
 

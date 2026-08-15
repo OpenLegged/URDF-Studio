@@ -230,6 +230,8 @@ function WorkspaceSidebarsSection({
       rightSidebarClassName={workspaceChrome.classNames.rightSidebarLayer}
       treeEditorProps={{
         workspace: sidebars.workspace,
+        sceneProjection: sidebars.sceneProjection,
+        jointAngleState: sidebars.jointAngleState,
         activeComponentId: sidebars.activeComponentId,
         onSelect: sidebars.handleSelect,
         onHover: sidebars.handleHover,
@@ -239,6 +241,7 @@ function WorkspaceSidebarsSection({
         onAddCollisionBody: sidebars.handleAddCollisionBody,
         onDelete: sidebars.handleDelete,
         onUpdate: sidebars.handleUpdate,
+        onRobotNameChange: sidebars.handleRobotNameChange,
         showVisual: sidebars.showVisual,
         setShowVisual: sidebars.handleSetShowVisual,
         mode: sidebars.mergedAppMode,

@@ -2,12 +2,16 @@ import { useCallback } from 'react';
 
 import { useUIStore } from '@/store/uiStore';
 import { useWorkspaceStore } from '@/store/workspaceStore';
-import type { JointEntityRef } from '@/types';
+import type { BridgeEntityRef, JointEntityRef } from '@/types';
 
 import type { WorkspaceMutationHandlers } from '../useWorkspaceMutationsTypes';
 import { persistWorkspaceViewerShowVisualPreference } from '../workspaceViewerDetailPreferences';
 import { resolveViewerJointChangeContext } from './jointMotion';
-import { commitComponentJointMotionReset } from './jointMotionReset';
+import {
+  commitComponentJointMotionReset,
+  commitWorkspaceJointMotionReset,
+  type WorkspaceJointMotionResetTarget,
+} from './jointMotionReset';
 
 interface UseViewerPreferenceCommandsParams {
   commitPendingHistory: (expectedKey?: string) => boolean;
@@ -31,30 +35,32 @@ export function useViewerPreferenceCommands({
 
   const handleJointChange = useCallback(
     (
-      ref: JointEntityRef,
+      ref: JointEntityRef | BridgeEntityRef,
       angle: number,
       context?: Parameters<WorkspaceMutationHandlers['handleJointChange']>[2],
     ) => {
       const store = useWorkspaceStore.getState();
-      const joints = store.workspace.components[ref.componentId]?.robot.joints;
-      if (!joints?.[ref.entityId]) {
-        return;
-      }
-      const contextMotion = resolveViewerJointChangeContext(
-        joints,
-        ref.entityId,
-        angle,
-        context,
-      );
-      if (contextMotion) {
-        store.setComponentJointMotion(
-          ref.componentId,
-          contextMotion.angles,
-          contextMotion.quaternions,
+      if (ref.type === 'joint' && context) {
+        const joints = store.workspace.components[ref.componentId]?.robot.joints;
+        if (!joints?.[ref.entityId]) {
+          return;
+        }
+        const contextMotion = resolveViewerJointChangeContext(
+          joints,
+          ref.entityId,
+          angle,
+          context,
         );
-        return;
+        if (contextMotion) {
+          store.setComponentJointMotion(
+            ref.componentId,
+            contextMotion.angles,
+            contextMotion.quaternions,
+          );
+          return;
+        }
       }
-      store.setJointMotion(ref, angle, {
+      store.driveWorkspaceJoint(ref, angle, {
         ignoreLimits: useUIStore.getState().ignoreJointLimits,
       });
     },
@@ -75,6 +81,19 @@ export function useViewerPreferenceCommands({
     [commitPendingHistory],
   );
 
+  const handleResetWorkspaceJointAngles = useCallback(
+    (targets: readonly WorkspaceJointMotionResetTarget[]) => {
+      const store = useWorkspaceStore.getState();
+      return commitWorkspaceJointMotionReset({
+        targets,
+        flushPendingHistory: commitPendingHistory,
+        store,
+        workspace: store.workspace,
+      });
+    },
+    [commitPendingHistory],
+  );
+
   const flushJointMotion = useCallback(() => {
     commitPendingHistory();
     useWorkspaceStore
@@ -86,6 +105,7 @@ export function useViewerPreferenceCommands({
     flushJointMotion,
     handleJointChange,
     handleResetJointAngles,
+    handleResetWorkspaceJointAngles,
     handleSetShowVisual,
   };
 }

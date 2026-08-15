@@ -10,14 +10,14 @@ function installDomGlobals(): void {
   globalThis.DOMParser = dom.window.DOMParser as unknown as typeof DOMParser;
 }
 
-test('extractDofMetadata skips fixed joints and records only finite lower<upper limits', () => {
+test('extractDofMetadata skips fixed joints and retains finite canonical constraints', () => {
   installDomGlobals();
   const urdf = `<robot name="t">
     <link name="base"/>
     <link name="l1"/>
     <link name="l2"/>
     <joint name="fixed1" type="fixed"><parent link="base"/><child link="l1"/></joint>
-    <joint name="rev" type="revolute"><parent link="base"/><child link="l2"/><limit lower="-1.5" upper="1.5"/></joint>
+    <joint name="rev" type="revolute"><parent link="base"/><child link="l2"/><limit lower="-1.5" upper="1.5" effort="10" velocity="2.5"/></joint>
     <joint name="cont" type="continuous"><parent link="l2"/><child link="base"/><limit effort="10" velocity="1"/></joint>
   </robot>`;
   const robot = parseURDF(urdf);
@@ -27,7 +27,10 @@ test('extractDofMetadata skips fixed joints and records only finite lower<upper 
   // fixed1 excluded; rev and cont are non-fixed; cont has no lower/upper.
   assert.deepEqual(meta.jointNames, ['rev', 'cont']);
   assert.deepEqual(meta.dofNames, ['rev', 'cont']);
-  assert.deepEqual(meta.jointLimits, { rev: { lower: -1.5, upper: 1.5 } });
+  assert.deepEqual(meta.jointLimits, {
+    rev: { lower: -1.5, upper: 1.5, effort: 10, velocity: 2.5 },
+    cont: { effort: 10, velocity: 1 },
+  });
   assert.deepEqual(meta.linkNames, ['base', 'l1', 'l2']);
 });
 
@@ -80,4 +83,23 @@ test('extractDofMetadata omits limit when lower >= upper', () => {
   const meta = extractDofMetadata(toRobotData(robot!));
   assert.deepEqual(meta.dofNames, ['bad']);
   assert.deepEqual(meta.jointLimits, {});
+});
+
+test('extractDofMetadata omits non-finite effort and velocity from valid bounded limits', () => {
+  installDomGlobals();
+  const urdf = `<robot name="t">
+    <link name="base"/><link name="l1"/>
+    <joint name="bounded" type="revolute"><parent link="base"/><child link="l1"/><limit lower="-1" upper="1"/></joint>
+  </robot>`;
+  const robot = parseURDF(urdf);
+  assert.ok(robot);
+  robot.joints.bounded.limit = {
+    lower: -1,
+    upper: 1,
+    effort: Number.POSITIVE_INFINITY,
+    velocity: Number.NaN,
+  };
+
+  const meta = extractDofMetadata(toRobotData(robot));
+  assert.deepEqual(meta.jointLimits, { bounded: { lower: -1, upper: 1 } });
 });

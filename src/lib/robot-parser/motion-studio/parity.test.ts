@@ -19,7 +19,10 @@ function installDomGlobals(): void {
 function expectedDofMetadata(urdfText: string): {
   jointNames: string[];
   dofNames: string[];
-  jointLimits: Record<string, { lower: number; upper: number }>;
+  jointLimits: Record<
+    string,
+    { lower: number; upper: number; effort?: number; velocity?: number }
+  >;
   linkNames: string[];
 } {
   const document = new DOMParser().parseFromString(urdfText, 'application/xml');
@@ -28,7 +31,10 @@ function expectedDofMetadata(urdfText: string): {
   const linkNames = Array.from(document.querySelectorAll('link'))
     .map((link) => link.getAttribute('name')?.trim() ?? '')
     .filter(Boolean);
-  const jointLimits: Record<string, { lower: number; upper: number }> = {};
+  const jointLimits: Record<
+    string,
+    { lower: number; upper: number; effort?: number; velocity?: number }
+  > = {};
 
   Array.from(document.querySelectorAll('joint'))
     .filter((joint) => joint.getAttribute('type') !== 'fixed')
@@ -38,10 +44,22 @@ function expectedDofMetadata(urdfText: string): {
       jointNames.push(name);
       dofNames.push(name);
       const limit = joint.querySelector('limit');
-      const lower = Number(limit?.getAttribute('lower'));
-      const upper = Number(limit?.getAttribute('upper'));
+      const lowerText = limit?.getAttribute('lower');
+      const upperText = limit?.getAttribute('upper');
+      const effortText = limit?.getAttribute('effort');
+      const velocityText = limit?.getAttribute('velocity');
+      const lower = lowerText === null || lowerText === undefined ? Number.NaN : Number(lowerText);
+      const upper = upperText === null || upperText === undefined ? Number.NaN : Number(upperText);
+      const effort = effortText === null || effortText === undefined ? Number.NaN : Number(effortText);
+      const velocity =
+        velocityText === null || velocityText === undefined ? Number.NaN : Number(velocityText);
       if (Number.isFinite(lower) && Number.isFinite(upper) && lower < upper) {
-        jointLimits[name] = { lower, upper };
+        jointLimits[name] = {
+          lower,
+          upper,
+          ...(Number.isFinite(effort) ? { effort } : {}),
+          ...(Number.isFinite(velocity) ? { velocity } : {}),
+        };
       }
     });
 

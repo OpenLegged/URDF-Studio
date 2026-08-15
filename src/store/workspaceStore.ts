@@ -21,6 +21,7 @@ export type {
   WorkspacePropertyPatch,
   WorkspaceComponentSeed,
   WorkspaceMutationOptions,
+  WorkspaceJointMotionTarget,
   WorkspaceStoreData,
   WorkspaceStoreState,
   WorkspaceTransactionState,

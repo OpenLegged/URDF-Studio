@@ -116,6 +116,7 @@ function baseProps(
     onAddCollisionBody: () => {},
     onDelete: () => {},
     onUpdate: () => {},
+    onRobotNameChange: () => {},
     mode: 'editor',
     t: translations.en,
     ...overrides,
@@ -197,9 +198,55 @@ test('single component renders the legacy robot root without exposing a componen
   assert.doesNotMatch(markup, /data-testid="tree-component-left"/);
   assert.match(markup, /data-testid="tree-robot-root-left"/);
   assert.match(markup, /rounded-md bg-element-bg px-2 py-1/);
-  assert.match(markup, /Left instance/);
+  assert.match(markup, /left_source_name/);
   assert.match(markup, /data-testid="tree-link-left-base_link"/);
   assert.match(markup, /data-testid="tree-tendon-left-shared_tendon"/);
+});
+
+test('single-component robot root renames the source robot instead of the component alias', async () => {
+  const dom = installDom();
+  const container = dom.window.document.getElementById('root')!;
+  const root = createRoot(container);
+  const updates: Array<{ ref: EntityRef; patch: unknown }> = [];
+  const robotNameChanges: Array<{ ref: EntityRef; name: string }> = [];
+
+  try {
+    await act(async () => {
+      root.render(React.createElement(AssemblyTreeView, baseProps(createWorkspace(), {
+        onUpdate: (ref, patch) => updates.push({ ref, patch }),
+        onRobotNameChange: (ref, name) => robotNameChanges.push({ ref, name }),
+      })));
+    });
+
+    const robotRoot = container.querySelector('[data-testid="tree-robot-root-left"]');
+    assert.equal(robotRoot?.getAttribute('aria-label'), 'left_source_name');
+    await act(async () => {
+      robotRoot?.dispatchEvent(new dom.window.MouseEvent('dblclick', {
+        bubbles: true,
+        cancelable: true,
+      }));
+    });
+
+    const input = container.querySelector<HTMLInputElement>('[aria-label="rename-robot-left"]');
+    assert.ok(input, 'source robot rename input');
+    await act(async () => {
+      const setter = Object.getOwnPropertyDescriptor(
+        dom.window.HTMLInputElement.prototype,
+        'value',
+      )?.set;
+      setter?.call(input, 'renamed_source_robot');
+      input.dispatchEvent(new dom.window.FocusEvent('focusout', { bubbles: true }));
+    });
+
+    assert.deepEqual(robotNameChanges, [{
+      ref: { type: 'component', componentId: 'left' },
+      name: 'renamed_source_robot',
+    }]);
+    assert.deepEqual(updates, [], 'source robot rename must not mutate the component alias');
+  } finally {
+    await act(async () => root.unmount());
+    dom.window.close();
+  }
 });
 
 test('multi-component tree keeps full assembly, component and bridge hierarchy', () => {
@@ -502,6 +549,83 @@ test('polished rows preserve keyboard selection and bridge disclosure', async ()
   }
 });
 
+test('bridge attention reopens the Bridges group so the selected row is mounted', async () => {
+  const dom = installDom();
+  const container = dom.window.document.getElementById('root')!;
+  const root = createRoot(container);
+  const bridgeSelection: WorkspaceSelection = {
+    entity: { type: 'bridge', bridgeId: 'mount' },
+  };
+  useSelectionStore.getState().clearSelection();
+  useSelectionStore.getState().clearAttentionSelection();
+
+  try {
+    await act(async () => {
+      root.render(React.createElement(AssemblyTreeView, baseProps(createWorkspace(true))));
+    });
+    await click(
+      dom,
+      container.querySelector('[data-testid="assembly-tree-bridges"] > div'),
+      'bridge disclosure',
+    );
+    assert.equal(container.querySelector('[data-testid="tree-bridge-mount"]'), null);
+
+    await act(async () => {
+      useSelectionStore.getState().setSelection(bridgeSelection);
+      useSelectionStore.getState().setAttentionSelection(bridgeSelection);
+    });
+
+    assert.ok(
+      container.querySelector('[data-testid="tree-bridge-mount"]'),
+      'bridge attention should reopen its collapsed group',
+    );
+  } finally {
+    await act(async () => {
+      useSelectionStore.getState().clearAttentionSelection();
+      useSelectionStore.getState().clearSelection();
+      root.unmount();
+    });
+    dom.window.close();
+  }
+});
+
+test('bridge interaction guard turns a component-row pick into its canonical root link', async () => {
+  const dom = installDom();
+  const container = dom.window.document.getElementById('root')!;
+  const root = createRoot(container);
+  const selections: WorkspaceSelection[] = [];
+  useSelectionStore.getState().setInteractionGuard(
+    (candidate) => candidate.entity.type === 'link',
+  );
+
+  try {
+    await act(async () => {
+      root.render(React.createElement(AssemblyTreeView, baseProps(createWorkspace(true), {
+        onSelect: (selection) => selections.push(selection),
+      })));
+    });
+
+    await click(
+      dom,
+      container.querySelector('[data-testid="tree-component-left"] > div'),
+      'component row during bridge picking',
+    );
+    assert.deepEqual(selections.at(-1), {
+      entity: { type: 'link', componentId: 'left', entityId: 'base_link' },
+    });
+    assert.ok(
+      container.querySelector('[data-testid="tree-link-left-base_link"]'),
+      'component should expand so the picked root link is visible',
+    );
+  } finally {
+    await act(async () => {
+      useSelectionStore.getState().setInteractionGuard(null);
+      root.unmount();
+    });
+    dom.window.close();
+  }
+});
+
 test('geometry bodies and CRUD callbacks keep component ownership and object indexes', async () => {
   const dom = installDom();
   const container = dom.window.document.getElementById('root')!;
@@ -583,6 +707,7 @@ test('geometry bodies and CRUD callbacks keep component ownership and object ind
   }
 });
 
+
 test('duplicate local IDs, tendon, bridge, hover, focus and updates keep explicit ownership', async () => {
   const dom = installDom();
   const container = dom.window.document.getElementById('root')!;
@@ -591,6 +716,7 @@ test('duplicate local IDs, tendon, bridge, hover, focus and updates keep explici
   const hovers: WorkspaceSelection[] = [];
   const focuses: EntityRef[] = [];
   const updates: Array<{ ref: EntityRef; data: unknown }> = [];
+  const robotNameChanges: Array<{ ref: EntityRef; name: string }> = [];
   useSelectionStore.getState().clearSelection();
   useSelectionStore.getState().clearHover();
 
@@ -601,6 +727,7 @@ test('duplicate local IDs, tendon, bridge, hover, focus and updates keep explici
         onHover: (selection: WorkspaceSelection) => hovers.push(selection),
         onFocus: (ref: EntityRef) => focuses.push(ref),
         onUpdate: (ref: EntityRef, data: unknown) => updates.push({ ref, data }),
+        onRobotNameChange: (ref, name) => robotNameChanges.push({ ref, name }),
       })));
     });
 
@@ -648,6 +775,7 @@ test('duplicate local IDs, tendon, bridge, hover, focus and updates keep explici
       ref: { type: 'component', componentId: 'right' },
       data: { visible: false },
     });
+    assert.deepEqual(robotNameChanges, [], 'component aliases stay separate from source names');
 
     const rightComponentRow = container.querySelector('[data-testid="tree-component-right"] > div')!;
     await act(async () => {
@@ -671,6 +799,7 @@ test('duplicate local IDs, tendon, bridge, hover, focus and updates keep explici
       ref: { type: 'component', componentId: 'right' },
       data: { name: 'Renamed instance' },
     });
+    assert.deepEqual(robotNameChanges, [], 'component aliases stay separate from source names');
     assert.equal(createWorkspace(true).components.right.robot.name, 'right_source_name');
   } finally {
     await act(async () => root.unmount());

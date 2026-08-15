@@ -1,8 +1,10 @@
 /** Canonical metadata DTOs shared by Robot Runtime and Motion Studio. */
 
 export interface RobotJointLimit {
-  lower: number;
-  upper: number;
+  lower?: number;
+  upper?: number;
+  effort?: number;
+  velocity?: number;
 }
 
 export type CollisionGeometryType =

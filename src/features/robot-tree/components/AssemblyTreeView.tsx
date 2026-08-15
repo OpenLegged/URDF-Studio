@@ -32,6 +32,7 @@ import type {
   WorkspaceSelection,
 } from '@/types';
 import { TreeNode } from './TreeNode';
+import { SingleComponentRobotRoot } from './tree-node/SingleComponentRobotRoot';
 import {
   buildChildJointsByParent,
   runOnActivationKey,
@@ -41,6 +42,7 @@ import {
 
 type LinkRef = Extract<EntityRef, { type: 'link' }>;
 type JointRef = Extract<EntityRef, { type: 'joint' }>;
+type ComponentRef = Extract<EntityRef, { type: 'component' }>;
 
 export interface AssemblyTreeViewProps {
   workspace: AssemblyState;
@@ -59,6 +61,7 @@ export interface AssemblyTreeViewProps {
   onAddCollisionBody: (ref: LinkRef) => void;
   onDelete: (ref: EntityRef) => void;
   onUpdate: (ref: EntityRef, patch: WorkspacePropertyPatch) => void;
+  onRobotNameChange: (ref: ComponentRef, name: string) => void;
   onCreateBridge?: () => void;
   onPrefetchCreateBridge?: () => void;
   showAssemblyRoot?: boolean;
@@ -195,6 +198,7 @@ export const AssemblyTreeView = memo(function AssemblyTreeView({
   onAddCollisionBody,
   onDelete,
   onUpdate,
+  onRobotNameChange,
   onCreateBridge,
   onPrefetchCreateBridge,
   showAssemblyRoot = true,
@@ -205,6 +209,7 @@ export const AssemblyTreeView = memo(function AssemblyTreeView({
   const selection = useSelectionStore((state) => state.selection);
   const hoveredSelection = useSelectionStore((state) => state.hoveredSelection);
   const attentionSelection = useSelectionStore((state) => state.attentionSelection);
+  const interactionGuard = useSelectionStore((state) => state.interactionGuard);
   const setSelection = useSelectionStore((state) => state.setSelection);
   const setHoveredSelection = useSelectionStore((state) => state.setHoveredSelection);
   const clearHover = useSelectionStore((state) => state.clearHover);
@@ -231,13 +236,19 @@ export const AssemblyTreeView = memo(function AssemblyTreeView({
   // tree-internal clicks don't fight the user's own collapse/expand actions.
   useEffect(() => {
     const target = attentionSelection?.entity;
-    if (!target || !('componentId' in target)) return;
+    if (!target) return;
+    if (target.type === 'bridge') {
+      if (!workspace.bridges[target.bridgeId]) return;
+      setBridgesExpanded(true);
+      return;
+    }
+    if (!('componentId' in target)) return;
     const targetComponentId = target.componentId;
     if (!workspace.components[targetComponentId]) return;
     setExpandedComponents((current) => current.has(targetComponentId)
       ? current
       : new Set([...current, targetComponentId]));
-  }, [attentionSelection, workspace.components]);
+  }, [attentionSelection, workspace.bridges, workspace.components]);
 
   useEffect(() => {
     if (!editing) return;
@@ -371,122 +382,30 @@ export const AssemblyTreeView = memo(function AssemblyTreeView({
 
       {singleComponent ? (
         <>
-          <div
-            data-testid={`tree-robot-root-${singleComponent.id}`}
-            className={`group mx-1 my-0.5 flex items-center rounded-md bg-element-bg px-2 py-1 text-text-primary transition-colors ${readOnly ? 'cursor-default' : 'cursor-pointer'} ${
-              selectionTargets(attentionSelection, {
-                type: 'component',
-                componentId: singleComponent.id,
-              })
-                ? itemAttentionClass
-                : selectionTargetsComponent(selection, singleComponent.id)
-                  ? itemSelectedClass
-                  : selectionTargetsComponent(hoveredSelection, singleComponent.id)
-                    ? itemHoveredClass
-                    : itemHoverClass
-            }`}
-            onClick={readOnly ? undefined : () => dispatchSelection({
+          <SingleComponentRobotRoot
+            component={singleComponent}
+            rowStateClass={selectionTargets(attentionSelection, {
+              type: 'component',
+              componentId: singleComponent.id,
+            })
+              ? itemAttentionClass
+              : selectionTargetsComponent(selection, singleComponent.id)
+                ? itemSelectedClass
+                : selectionTargetsComponent(hoveredSelection, singleComponent.id)
+                  ? itemHoveredClass
+                  : itemHoverClass}
+            readOnly={readOnly}
+            t={t}
+            onSelect={() => dispatchSelection({
               entity: { type: 'component', componentId: singleComponent.id },
             })}
-            onMouseEnter={readOnly ? undefined : () => dispatchHover({
+            onHover={() => dispatchHover({
               entity: { type: 'component', componentId: singleComponent.id },
             })}
-            onMouseLeave={readOnly ? undefined : clearCanonicalHover}
-            onDoubleClick={readOnly
-              ? undefined
-              : () => beginRename(
-                  { type: 'component', componentId: singleComponent.id },
-                  singleComponent.name,
-                  singleComponent.editorLocked === true,
-                )}
-            onKeyDown={readOnly
-              ? undefined
-              : (event) => runOnActivationKey(event, () => dispatchSelection({
-                  entity: { type: 'component', componentId: singleComponent.id },
-                }))}
-            role={readOnly ? undefined : 'button'}
-            aria-label={singleComponent.name}
-            tabIndex={readOnly ? undefined : 0}
-          >
-            <Cuboid size={14} className="mr-1.5 shrink-0 text-system-blue" />
-            {editing?.type === 'component'
-            && editing.componentId === singleComponent.id ? (
-              <input
-                ref={renameInputRef}
-                aria-label={`rename-component-${singleComponent.id}`}
-                value={draft}
-                className={renameInputClassName}
-                onChange={(event) => setDraft(event.currentTarget.value)}
-                onBlur={(event) => commitRename(
-                  { type: 'component', componentId: singleComponent.id },
-                  singleComponent.name,
-                  event.currentTarget.value,
-                )}
-                onClick={(event) => event.stopPropagation()}
-                onKeyDown={(event) => {
-                  if (event.key === 'Enter') {
-                    commitRename(
-                      { type: 'component', componentId: singleComponent.id },
-                      singleComponent.name,
-                    );
-                  }
-                  if (event.key === 'Escape') setEditing(null);
-                }}
-              />
-            ) : (
-              <span
-                className="min-w-0 flex-1 truncate text-[11px] font-medium leading-normal"
-                title={singleComponent.name}
-              >
-                {singleComponent.name}
-              </span>
-            )}
-            {!readOnly ? (
-              <div className="ml-1 flex shrink-0 items-center gap-0.5">
-                <button
-                  type="button"
-                  aria-label={`toggle-component-${singleComponent.id}`}
-                  className="h-5 w-5 rounded p-1 text-text-tertiary transition-colors hover:bg-system-blue/10 hover:text-text-primary dark:hover:bg-system-blue/20"
-                  title={singleComponent.visible !== false ? t.hide : t.show}
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    onUpdate(
-                      { type: 'component', componentId: singleComponent.id },
-                      { visible: singleComponent.visible === false },
-                    );
-                  }}
-                >
-                  {singleComponent.visible !== false ? <Eye size={12} /> : <EyeOff size={12} />}
-                </button>
-                <button
-                  type="button"
-                  aria-label={`toggle-component-editor-lock-${singleComponent.id}`}
-                  aria-pressed={singleComponent.editorLocked === true}
-                  className={`h-5 w-5 rounded p-1 transition-colors ${
-                    singleComponent.editorLocked === true
-                      ? 'bg-amber-500/10 text-amber-600 hover:bg-amber-500/20 dark:text-amber-300'
-                      : 'text-text-tertiary hover:bg-system-blue/10 hover:text-text-primary dark:hover:bg-system-blue/20'
-                  }`}
-                  title={singleComponent.editorLocked === true
-                    ? t.unlockEditing
-                    : t.lockEditing}
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    onUpdate(
-                      { type: 'component', componentId: singleComponent.id },
-                      {
-                        editorLocked: singleComponent.editorLocked !== true,
-                      },
-                    );
-                  }}
-                >
-                  {singleComponent.editorLocked === true
-                    ? <LockKeyhole size={12} />
-                    : <LockKeyholeOpen size={12} />}
-                </button>
-              </div>
-            ) : null}
-          </div>
+            onClearHover={clearCanonicalHover}
+            onUpdate={onUpdate}
+            onRobotNameChange={onRobotNameChange}
+          />
           {componentContents(singleComponent, 'ml-1 border-l border-border-black')}
         </>
       ) : (
@@ -510,6 +429,22 @@ export const AssemblyTreeView = memo(function AssemblyTreeView({
                 : hovered
                   ? itemHoveredClass
                   : itemHoverClass;
+            const selectComponentRow = () => {
+              if (interactionGuard) {
+                setExpandedComponents((current) => current.has(component.id)
+                  ? current
+                  : new Set([...current, component.id]));
+                dispatchSelection({
+                  entity: {
+                    type: 'link',
+                    componentId: component.id,
+                    entityId: component.robot.rootLinkId,
+                  },
+                });
+                return;
+              }
+              dispatchSelection({ entity: componentRef });
+            };
 
             return (
               <div key={component.id} data-testid={`tree-component-${component.id}`}>
@@ -517,7 +452,7 @@ export const AssemblyTreeView = memo(function AssemblyTreeView({
                   className={`group mx-1 flex items-center gap-1.5 rounded-md px-2 py-1 transition-all duration-200 ${readOnly ? 'cursor-default' : 'cursor-pointer'} ${rowStateClass} ${
                     isVisible ? '' : 'opacity-60'
                   }`}
-                  onClick={readOnly ? undefined : () => dispatchSelection({ entity: componentRef })}
+                  onClick={readOnly ? undefined : selectComponentRow}
                   onMouseEnter={readOnly ? undefined : () => dispatchHover({ entity: componentRef })}
                   onMouseLeave={readOnly ? undefined : clearCanonicalHover}
                   onDoubleClick={readOnly || component.editorLocked === true
@@ -531,7 +466,7 @@ export const AssemblyTreeView = memo(function AssemblyTreeView({
                     ? undefined
                     : (event) => runOnActivationKey(
                         event,
-                        () => dispatchSelection({ entity: componentRef }),
+                        selectComponentRow,
                       )}
                   role={readOnly ? undefined : 'button'}
                   aria-label={component.name}

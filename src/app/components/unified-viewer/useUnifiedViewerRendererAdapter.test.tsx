@@ -422,8 +422,13 @@ test('renderer adapter routes update patches, transforms, and joint previews', a
   assert.equal(assemblyTransforms.length, 1);
   assert.deepEqual(componentTransformRefs, ['alpha']);
   assert.deepEqual(bridgeTransformRefs, ['alpha_beta']);
-  assert.equal(projectedPreview.alpha?.activeJointId, 'hip_joint');
-  assert.equal(projectedPreview.alpha?.jointAngles.hip_joint, 0.25);
+  assert.deepEqual(projectedPreview, [
+    {
+      ref: jointRef,
+      active: true,
+      angle: 0.25,
+    },
+  ]);
   assert.equal(typeof adapter.commitProjectedJointMotion, 'function');
 
   await harness.unmount();

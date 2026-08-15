@@ -5,6 +5,7 @@ import type {
   AssemblyComponent,
   AssemblyState,
   AssemblyTransform,
+  BridgeEntityRef,
   BridgeJoint,
   JointEntityRef,
   JointQuaternion,
@@ -22,6 +23,13 @@ export interface WorkspaceMutationOptions {
   label?: string;
   skipHistory?: boolean;
   operationId?: string;
+}
+
+/** Canonical pose update for either a component-owned or assembly bridge joint. */
+export interface WorkspaceJointMotionTarget {
+  ref: JointEntityRef | BridgeEntityRef;
+  angle?: number;
+  quaternion?: JointQuaternion;
 }
 
 export interface ReplaceWorkspaceOptions extends WorkspaceMutationOptions {
@@ -250,6 +258,27 @@ export interface WorkspaceActions {
     angle: number,
     options?: Pick<WorkspaceMutationOptions, 'operationId'> & {
       /** Drive the joint past its authored limit (temporary limit override). */
+      ignoreLimits?: boolean;
+    },
+  ) => boolean;
+  /** Drive any projected workspace joint through the complete assembly solver. */
+  driveWorkspaceJoint: (
+    ref: JointEntityRef | BridgeEntityRef,
+    angle: number,
+    options?: Pick<WorkspaceMutationOptions, 'operationId'> & {
+      ignoreLimits?: boolean;
+    },
+  ) => boolean;
+  /** Apply an already-resolved component/bridge joint pose as one atomic motion update. */
+  setWorkspaceJointMotion: (
+    targets: readonly WorkspaceJointMotionTarget[],
+    options?: Pick<WorkspaceMutationOptions, 'operationId'>,
+  ) => boolean;
+  setBridgeJointMotion: (
+    ref: BridgeEntityRef,
+    angle: number,
+    options?: Pick<WorkspaceMutationOptions, 'operationId'> & {
+      /** Drive the bridge joint past its authored limit. */
       ignoreLimits?: boolean;
     },
   ) => boolean;

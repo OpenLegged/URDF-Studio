@@ -10,7 +10,7 @@ function installDomGlobals(): void {
   globalThis.DOMParser = dom.window.DOMParser as unknown as typeof DOMParser;
 }
 
-const URDF = `<robot name="test">
+const URDF = `<robot name="test" version="1.1">
   <link name="base"><collision><geometry><box size="1 1 1"/></geometry></collision></link>
   <link name="link1"/>
   <joint name="j1" type="revolute"><parent link="base"/><child link="link1"/><limit lower="-1" upper="1"/></joint>
@@ -28,12 +28,26 @@ const XACRO = `<robot name="test" xmlns:xacro="http://ros.org/wiki/xacro">
   <link name="base"/>
 </robot>`;
 
+const PHYSICAL_MJCF = `<mujoco model="physical">
+      <compiler fitaabb="true"/>
+      <asset>
+        <mesh name="fit" vertex="-0.1 -0.2 -0.5 -0.1 -0.2 0.5 -0.1 0.2 -0.5 -0.1 0.2 0.5 0.1 -0.2 -0.5 0.1 -0.2 0.5 0.1 0.2 -0.5 0.1 0.2 0.5"/>
+      </asset>
+      <worldbody><body name="base"><geom type="capsule" mesh="fit" group="3"/></body></worldbody>
+    </mujoco>`;
+
 test('parseRobotDefinition parses URDF by extension', () => {
   installDomGlobals();
   const result = parseRobotDefinition(URDF, 'robot.urdf');
   assert.equal(result.status, 'ready');
   if (result.status === 'ready') {
     assert.equal(result.format, 'urdf');
+    assert.equal(result.robotData.version, '1.1');
+    assert.deepEqual(result.robotData.sourceDocument, {
+      format: 'urdf',
+      filename: 'robot.urdf',
+      content: URDF,
+    });
     assert.ok(Object.keys(result.robotData.links).length > 0);
   }
 });
@@ -47,19 +61,15 @@ test('parseRobotDefinition parses MJCF via content detection on .xml', () => {
 
 test('parseRobotDefinitionAsync resolves mesh-backed MJCF collision primitives', async () => {
   installDomGlobals();
-  const result = await parseRobotDefinitionAsync(
-    `<mujoco model="physical">
-      <compiler fitaabb="true"/>
-      <asset>
-        <mesh name="fit" vertex="-0.1 -0.2 -0.5 -0.1 -0.2 0.5 -0.1 0.2 -0.5 -0.1 0.2 0.5 0.1 -0.2 -0.5 0.1 -0.2 0.5 0.1 0.2 -0.5 0.1 0.2 0.5"/>
-      </asset>
-      <worldbody><body name="base"><geom type="capsule" mesh="fit" group="3"/></body></worldbody>
-    </mujoco>`,
-    'robot.xml',
-  );
+  const result = await parseRobotDefinitionAsync(PHYSICAL_MJCF, 'robot.xml');
 
   assert.equal(result.status, 'ready');
   if (result.status !== 'ready') return;
+  assert.deepEqual(result.robotData.sourceDocument, {
+    format: 'mjcf',
+    filename: 'robot.xml',
+    content: PHYSICAL_MJCF,
+  });
   const collision = result.robotData.links.base?.collision;
   assert.equal(collision?.type, GeometryType.CAPSULE);
   assert.ok(Math.abs((collision?.dimensions.x ?? 0) - 0.2) <= 1e-6);
@@ -69,9 +79,16 @@ test('parseRobotDefinitionAsync resolves mesh-backed MJCF collision primitives',
 
 test('parseRobotDefinition parses SDF by extension', () => {
   installDomGlobals();
-  const result = parseRobotDefinition(SDF, 'model.sdf');
+  const result = parseRobotDefinition(SDF, 'model.sdf', {
+    availableFiles: [{ name: 'parts/tool.sdf', content: '<sdf version="1.6"/>' }],
+  });
   assert.equal(result.status, 'ready');
-  if (result.status === 'ready') assert.equal(result.format, 'sdf');
+  if (result.status === 'ready') {
+    assert.equal(result.format, 'sdf');
+    assert.deepEqual(result.robotData.sourceDocument?.relatedFiles, {
+      'parts/tool.sdf': '<sdf version="1.6"/>',
+    });
+  }
 });
 
 test('parseRobotDefinition parses Xacro by extension', () => {
