@@ -4,6 +4,7 @@ import { useUIStore } from '@/store/uiStore';
 import type {
   JointInteractionPreviewSnapshot,
   WorkspaceJointInteractionPreview,
+  WorkspaceJointInteractionPreviewTarget,
 } from '@/store/jointInteractionPreviewStore';
 import type { RuntimeRobotObject } from '@/shared/components/3d/runtimeRobotTypes';
 import type { InteractionSelection, RobotState } from '@/types';
@@ -72,7 +73,9 @@ interface UseViewerControllerProps {
       JointInteractionPreviewSnapshot,
       'activeJointId' | 'jointAngles' | 'jointQuaternions' | 'jointOrigins'
     >,
-  ) => Record<string, WorkspaceJointInteractionPreview>;
+  ) =>
+    | readonly WorkspaceJointInteractionPreviewTarget[]
+    | Record<string, WorkspaceJointInteractionPreview>;
 }
 
 export const useViewerController = ({

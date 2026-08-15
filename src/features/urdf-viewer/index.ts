@@ -40,6 +40,8 @@ export {
   groupProjectedJointMotionByComponent,
   isWorkspaceTransformSelection,
   projectJointPreviewToWorkspaceComponents,
+  projectJointPreviewToWorkspaceTargets,
+  projectRendererJointMotionToWorkspaceTargets,
   projectWorkspaceJointMotionToRenderer,
   projectWorkspaceSelectionToRenderer,
   resolveRendererSelectionToWorkspace,

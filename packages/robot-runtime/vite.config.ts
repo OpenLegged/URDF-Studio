@@ -1,9 +1,45 @@
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { defineConfig } from 'vite';
+import { type GetManualChunk } from 'rollup';
+import { defineConfig, transformWithEsbuild, type Plugin } from 'vite';
 
 const packageDir = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(packageDir, '../..');
+
+const resolveWorkerVendorChunk: GetManualChunk = (id, { getModuleInfo }) => {
+  const normalizedId = id.replace(/\\/g, '/');
+
+  if (!normalizedId.includes('/node_modules/') || !getModuleInfo(id)?.isIncluded) return;
+
+  if (normalizedId.includes('/three/examples/') || normalizedId.includes('/three-stdlib/')) {
+    return 'three-addons';
+  }
+
+  if (normalizedId.includes('/three/')) {
+    return 'three-core';
+  }
+};
+
+function createWorkerMinifyPlugin(): Plugin {
+  return {
+    name: 'robot-runtime:minify-worker-chunks',
+    renderChunk: {
+      order: 'post',
+      async handler(code, chunk) {
+        // Vite carries library mode into worker builds, so ES worker chunks keep
+        // library-style whitespace unless they are minified independently. Run
+        // after Vite's library transpilation so it cannot reformat the result.
+        const result = await transformWithEsbuild(code, chunk.fileName, {
+          minify: true,
+        });
+        return {
+          code: result.code,
+          map: result.map,
+        };
+      },
+    },
+  };
+}
 
 export default defineConfig({
   root: repoRoot,
@@ -17,6 +53,12 @@ export default defineConfig({
   },
   worker: {
     format: 'es',
+    plugins: () => [createWorkerMinifyPlugin()],
+    rollupOptions: {
+      output: {
+        manualChunks: resolveWorkerVendorChunk,
+      },
+    },
   },
   build: {
     outDir: path.resolve(packageDir, 'dist'),

@@ -4,12 +4,19 @@
  */
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useShallow } from 'zustand/react/shallow';
-import { getPrimaryTreeRenderRootLinkId } from '@/core/robot';
+import {
+  createAssemblySceneProjection,
+  getPrimaryTreeRenderRootLinkId,
+  type AssemblySceneProjection,
+} from '@/core/robot';
 import type {
   AppMode,
   AssemblyComponent,
   AssemblyState,
+  BridgeEntityRef,
+  ComponentEntityRef,
   EntityRef,
+  JointEntityRef,
   RobotFile,
   Theme,
   WorkspaceSelection,
@@ -42,6 +49,8 @@ export type LibraryRobotLoadResult =
 
 export interface TreeEditorProps {
   workspace: AssemblyState;
+  sceneProjection?: AssemblySceneProjection;
+  jointAngleState?: Record<string, number>;
   activeComponentId?: string | null;
   onSelect?: (selection: WorkspaceSelection) => void;
   onHover?: (selection: WorkspaceSelection) => void;
@@ -57,6 +66,7 @@ export interface TreeEditorProps {
   onAddCollisionBody: (ref: Extract<EntityRef, { type: 'link' }>) => void;
   onDelete: (ref: EntityRef) => void;
   onUpdate: (ref: EntityRef, patch: WorkspacePropertyPatch) => void;
+  onRobotNameChange: (ref: ComponentEntityRef, name: string) => void;
   showVisual: boolean;
   setShowVisual: (show: boolean) => void;
   mode: AppMode;
@@ -88,21 +98,19 @@ export interface TreeEditorProps {
   showStructureGraph?: boolean;
   onCloseStructureGraph?: () => void;
   onJointAnglePreview?: (
-    ref: Extract<EntityRef, { type: 'joint' }>,
+    ref: JointEntityRef | BridgeEntityRef,
     angle: number,
   ) => void;
   onJointAngleChange?: (
-    ref: Extract<EntityRef, { type: 'joint' }>,
+    ref: JointEntityRef | BridgeEntityRef,
     angle: number,
   ) => void;
   /**
-   * Restore a component's joint angles in one step. Returns the angles the
-   * workspace accepted, which may omit locked joints.
+   * Restore all resettable component and bridge joints in one step.
    */
   onResetJointAngles?: (
-    componentId: string,
-    jointAngles: Record<string, number>,
-  ) => Record<string, number>;
+    targets: readonly { ref: JointEntityRef | BridgeEntityRef; angle: number }[],
+  ) => readonly { ref: JointEntityRef | BridgeEntityRef; angle: number }[];
 }
 
 export function resolveTreeActiveComponent(
@@ -127,6 +135,8 @@ export function resolveTreeActiveComponent(
 
 export const TreeEditor: React.FC<TreeEditorProps> = ({
   workspace,
+  sceneProjection,
+  jointAngleState,
   activeComponentId,
   onSelect,
   onHover,
@@ -136,6 +146,7 @@ export const TreeEditor: React.FC<TreeEditorProps> = ({
   onAddCollisionBody,
   onDelete,
   onUpdate,
+  onRobotNameChange,
   showVisual,
   setShowVisual,
   mode,
@@ -147,7 +158,6 @@ export const TreeEditor: React.FC<TreeEditorProps> = ({
   onLoadRobot,
   onRequestLoadRobot,
   currentFileName,
-  sourceFilePath,
   onAddComponent,
   onDeleteLibraryFile,
   onDeleteLibraryFolder,
@@ -210,6 +220,10 @@ export const TreeEditor: React.FC<TreeEditorProps> = ({
     workspace,
     activeComponentId,
     workspaceSelection,
+  );
+  const jointPanelProjection = useMemo(
+    () => sceneProjection ?? createAssemblySceneProjection(workspace),
+    [sceneProjection, workspace],
   );
 
   const browserAvailableFiles = useMemo(
@@ -625,8 +639,9 @@ export const TreeEditor: React.FC<TreeEditorProps> = ({
 
           <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
             <TreeEditorJointSection
-              componentId={activeComponent.id}
-              robot={activeComponent.robot}
+              robot={jointPanelProjection.robotData}
+              projection={jointPanelProjection}
+              jointAngleState={jointAngleState}
               selection={workspaceSelection}
               lang={lang}
               onSelect={onSelect}
@@ -635,7 +650,7 @@ export const TreeEditor: React.FC<TreeEditorProps> = ({
               onJointAngleChange={onJointAngleChange}
               onResetJointAngles={onResetJointAngles}
               show={showJointPanel}
-              sourceFilePath={activeComponent.sourceFile ?? sourceFilePath ?? currentFileName}
+              sourceFilePath={workspace.name}
               height={jointPanelHeight}
               isDragging={isDragging}
             />
@@ -672,6 +687,7 @@ export const TreeEditor: React.FC<TreeEditorProps> = ({
               onAddCollisionBody={onAddCollisionBody}
               onDelete={onDelete}
               onUpdate={onUpdate}
+              onRobotNameChange={onRobotNameChange}
               onCreateBridge={onCreateBridge}
               onPrefetchCreateBridge={onPrefetchCreateBridge}
               isReadOnly={isReadOnly}

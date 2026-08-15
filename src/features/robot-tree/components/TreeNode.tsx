@@ -14,8 +14,6 @@ import {
   getCollisionGeometryEntries,
   getVisualGeometryEntries,
 } from '@/core/robot';
-import type { CollisionGeometryEntry } from '@/core/robot/collisionBodies';
-import type { VisualGeometryEntry } from '@/core/robot/visualBodies';
 import type { TranslationKeys } from '@/shared/i18n';
 import {
   getMjcfJointDisplayName,
@@ -32,7 +30,6 @@ import type {
   WorkspaceSelection,
 } from '@/types';
 import {
-  getGeometryVisibilityButtonClass,
   getJointTypeIcon,
   getJointTypeLabel,
   getTreeConnectorElbowClass,
@@ -45,8 +42,10 @@ import {
 } from './tree-node/presentation';
 import {
   TreeNodeContextMenu,
-  type TreeNodeContextMenuTarget,
+  type TreeNodeEntityContextMenuTarget,
+  useTreeNodeContextMenuState,
 } from './tree-node/TreeNodeContextMenu';
+import { TreeNodeGeometryRows } from './tree-node/TreeNodeGeometryRows';
 import { stripTreeDisplayNamePrefix } from './tree-node/treeDisplayNames';
 import {
   LinkEditorLockButton,
@@ -60,14 +59,12 @@ import {
 
 type LinkRef = Extract<EntityRef, { type: 'link' }>;
 type JointRef = Extract<EntityRef, { type: 'joint' }>;
-type GeometryEntry = VisualGeometryEntry | CollisionGeometryEntry;
-type ContextMenuState = TreeNodeContextMenuTarget & {
+type ContextMenuState = TreeNodeEntityContextMenuTarget & {
   ref: LinkRef | JointRef;
   targetLinkRef: LinkRef;
   currentName: string;
 };
 const EMPTY_ANCESTOR_LINK_IDS = new Set<string>();
-const TREE_NODE_CONTEXT_MENU_OPEN_EVENT = 'urdf-studio:tree-node-context-menu-open';
 
 export interface TreeNodeProps {
   componentId: string;
@@ -96,28 +93,6 @@ export interface TreeNodeProps {
   ancestorLinkIds?: ReadonlySet<string>;
   componentDisplayNamePrefix?: string;
   inheritedEditorLockSource?: InheritedEditorLockSource;
-}
-
-function selectionTargetsGeometry(
-  selection: WorkspaceSelection,
-  ref: LinkRef,
-  subType: 'visual' | 'collision',
-  objectIndex: number,
-): boolean {
-  return selectionTargets(selection, ref)
-    && selection?.subType === subType
-    && (selection.objectIndex ?? 0) === objectIndex;
-}
-
-function getGeometryLabel(
-  entry: GeometryEntry,
-  subType: 'visual' | 'collision',
-  t: TranslationKeys,
-): string {
-  const authoredName = entry.geometry.name?.trim();
-  if (authoredName) return authoredName;
-  const baseLabel = subType === 'visual' ? t.visualGeometry : t.collision;
-  return entry.objectIndex === 0 ? baseLabel : `${baseLabel} ${entry.objectIndex + 1}`;
 }
 
 export const TreeNode = memo(function TreeNode({
@@ -153,15 +128,22 @@ export const TreeNode = memo(function TreeNode({
   const [geometryExpanded, setGeometryExpanded] = useState(showGeometryDetailsByDefault);
   const [editing, setEditing] = useState<LinkRef | JointRef | null>(null);
   const [draft, setDraft] = useState('');
-  const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null);
-  const contextMenuOwnerRef = useRef(Symbol('tree-node-context-menu'));
+  const contextMenu = useTreeNodeContextMenuState<ContextMenuState>();
   const renameInputRef = useRef<HTMLInputElement>(null);
   const link = robot.links[linkId];
+  const hasLink = Boolean(link);
   const jointsByParent = useMemo(
     () => childJointsByParent ?? buildChildJointsByParent(robot.joints),
     [childJointsByParent, robot],
   );
-  const childJoints = jointsByParent[linkId] ?? [];
+  const childJoints = useMemo(
+    () => jointsByParent[linkId] ?? [],
+    [jointsByParent, linkId],
+  );
+  const childBranchKey = useMemo(
+    () => childJoints.map((joint) => `${joint.id}:${joint.childLinkId}`).join('\u0000'),
+    [childJoints],
+  );
   const linkRef: LinkRef = { type: 'link', componentId, entityId: linkId };
   const visualEntries = useMemo(() => link ? getVisualGeometryEntries(link) : [], [link]);
   const collisionEntries = useMemo(
@@ -186,6 +168,13 @@ export const TreeNode = memo(function TreeNode({
     setGeometryExpanded(showGeometryDetailsByDefault);
   }, [showGeometryDetailsByDefault]);
 
+  // Source replacement can add or replace children while the branch is collapsed. Re-open the
+  // affected branch so newly imported topology is not silently hidden behind stale disclosure
+  // state.
+  useEffect(() => {
+    if (hasLink) setExpanded(true);
+  }, [childBranchKey, hasLink, linkId]);
+
   // When the canvas selects a link inside this subtree, auto-expand so the target row mounts and
   // can be scrolled into view. Driven by attentionSelection (pulse) so tree-internal clicks don't
   // fight the user's own collapse/expand actions.
@@ -208,31 +197,6 @@ export const TreeNode = memo(function TreeNode({
       setExpanded(true);
     }
   }, [isAncestorOfSelectedLink, expanded]);
-
-  useEffect(() => {
-    if (!contextMenu) return;
-    const closeMenu = () => setContextMenu(null);
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === 'Escape') closeMenu();
-    };
-    const handleOtherMenuOpen = (event: Event) => {
-      const owner = (event as CustomEvent<symbol>).detail;
-      if (owner !== contextMenuOwnerRef.current) closeMenu();
-    };
-
-    window.addEventListener('click', closeMenu);
-    window.addEventListener('resize', closeMenu);
-    window.addEventListener('contextmenu', closeMenu);
-    window.addEventListener('keydown', handleKeyDown);
-    window.addEventListener(TREE_NODE_CONTEXT_MENU_OPEN_EVENT, handleOtherMenuOpen);
-    return () => {
-      window.removeEventListener('click', closeMenu);
-      window.removeEventListener('resize', closeMenu);
-      window.removeEventListener('contextmenu', closeMenu);
-      window.removeEventListener('keydown', handleKeyDown);
-      window.removeEventListener(TREE_NODE_CONTEXT_MENU_OPEN_EVENT, handleOtherMenuOpen);
-    };
-  }, [contextMenu]);
 
   if (!link || ancestorLinkIds.has(linkId)) return null;
 
@@ -271,11 +235,8 @@ export const TreeNode = memo(function TreeNode({
     if (readOnly) return;
     event.preventDefault();
     event.stopPropagation();
-    window.dispatchEvent(new window.CustomEvent(TREE_NODE_CONTEXT_MENU_OPEN_EVENT, {
-      detail: contextMenuOwnerRef.current,
-    }));
     dispatchSelection({ entity: ref });
-    setContextMenu({
+    contextMenu.open({
       type: ref.type,
       x: event.clientX,
       y: event.clientY,
@@ -286,74 +247,50 @@ export const TreeNode = memo(function TreeNode({
       hasCollision: ref.type === 'link' && hasCollision,
     });
   };
-  const closeContextMenu = () => setContextMenu(null);
   const handleContextMenuRename = () => {
-    if (!contextMenu) return;
-    beginRename(contextMenu.ref, contextMenu.currentName);
-    closeContextMenu();
+    const target = contextMenu.target;
+    if (!target) return;
+    beginRename(target.ref, target.currentName);
+    contextMenu.close();
   };
   const handleContextMenuAddChild = () => {
-    if (!contextMenu) return;
-    onAddChild(contextMenu.targetLinkRef);
+    const target = contextMenu.target;
+    if (!target) return;
+    onAddChild(target.targetLinkRef);
     setExpanded(true);
-    closeContextMenu();
+    contextMenu.close();
   };
   const handleContextMenuAddCollision = () => {
-    if (!contextMenu) return;
-    onAddCollisionBody(contextMenu.targetLinkRef);
-    if (areEntityRefsEqual(contextMenu.targetLinkRef, linkRef)) setGeometryExpanded(true);
-    closeContextMenu();
+    const target = contextMenu.target;
+    if (!target) return;
+    onAddCollisionBody(target.targetLinkRef);
+    if (areEntityRefsEqual(target.targetLinkRef, linkRef)) setGeometryExpanded(true);
+    contextMenu.close();
   };
   const handleContextMenuDelete = () => {
-    if (!contextMenu) return;
-    onDelete(contextMenu.targetLinkRef);
-    closeContextMenu();
+    const target = contextMenu.target;
+    if (!target) return;
+    onDelete(target.targetLinkRef);
+    contextMenu.close();
   };
   const handleDeleteLinkGeometry = (subType: 'visual' | 'collision') => {
-    if (!contextMenu || contextMenu.ref.type !== 'link') return;
+    const target = contextMenu.target;
+    if (!target || target.ref.type !== 'link') return;
     if (subType === 'visual') {
-      onUpdate(contextMenu.ref, {
+      onUpdate(target.ref, {
         visual: { type: GeometryType.NONE, meshPath: undefined },
         visualBodies: [],
       });
     } else {
-      onUpdate(contextMenu.ref, {
+      onUpdate(target.ref, {
         collision: { type: GeometryType.NONE, meshPath: undefined },
         collisionBodies: [],
       });
     }
-    if (selectionTargets(selection, contextMenu.ref) && selection?.subType === subType) {
-      dispatchSelection({ entity: contextMenu.ref });
+    if (selectionTargets(selection, target.ref) && selection?.subType === subType) {
+      dispatchSelection({ entity: target.ref });
     }
-    closeContextMenu();
-  };
-  const toggleGeometryVisibility = (
-    event: React.MouseEvent,
-    subType: 'visual' | 'collision',
-    entry: GeometryEntry,
-  ) => {
-    event.stopPropagation();
-    const visible = entry.geometry.visible !== false;
-    if (subType === 'visual') {
-      if (entry.bodyIndex === null) {
-        onUpdate(linkRef, { visual: { visible: !visible } });
-        return;
-      }
-      const visualBodies = [...(link.visualBodies ?? [])];
-      visualBodies[entry.bodyIndex] = { ...visualBodies[entry.bodyIndex], visible: !visible };
-      onUpdate(linkRef, { visualBodies });
-      return;
-    }
-    if (entry.bodyIndex === null) {
-      onUpdate(linkRef, { collision: { visible: !visible } });
-      return;
-    }
-    const collisionBodies = [...(link.collisionBodies ?? [])];
-    collisionBodies[entry.bodyIndex] = {
-      ...collisionBodies[entry.bodyIndex],
-      visible: !visible,
-    };
-    onUpdate(linkRef, { collisionBodies });
+    contextMenu.close();
   };
 
   const sourceFormat = robot.inspectionContext?.sourceFormat;
@@ -383,102 +320,6 @@ export const TreeNode = memo(function TreeNode({
     isLinkSelected || isLinkAttentionHighlighted;
   const selectedLinkActionClass =
     'text-system-blue hover:bg-system-blue/15 hover:text-system-blue-hover dark:hover:bg-system-blue/25';
-
-  const renderGeometryRow = (
-    subType: 'visual' | 'collision',
-    entry: GeometryEntry,
-  ) => {
-    const target: WorkspaceSelection = {
-      entity: linkRef,
-      subType,
-      objectIndex: entry.objectIndex,
-    };
-    const selected = selectionTargetsGeometry(selection, linkRef, subType, entry.objectIndex);
-    const hovered = selectionTargetsGeometry(
-      hoveredSelection,
-      linkRef,
-      subType,
-      entry.objectIndex,
-    );
-    const attention = selectionTargetsGeometry(
-      attentionSelection,
-      linkRef,
-      subType,
-      entry.objectIndex,
-    );
-    const locallyVisible = entry.geometry.visible !== false;
-    const inheritedHidden = !isLinkVisible && locallyVisible;
-    const effectivelyVisible = isLinkVisible && locallyVisible;
-    const label = getGeometryLabel(entry, subType, t);
-    const isVisual = subType === 'visual';
-
-    return (
-      <div
-        key={`${subType}:${entry.objectIndex}`}
-        data-testid={`tree-geometry-${componentId}-${linkId}-${subType}${
-          entry.objectIndex === 0 ? '' : `-${entry.objectIndex}`
-        }`}
-        className={`relative mx-1 my-0.5 flex min-w-0 items-center rounded-md px-2 py-0.5 transition-all duration-200 ${readOnly ? 'cursor-default' : 'cursor-pointer'} ${resolveTreeRowStateClass(
-          'text-text-secondary dark:text-text-tertiary',
-          { isHovered: hovered, isSelected: selected, isAttentionHighlighted: attention },
-        )}`}
-        style={{ marginLeft: '12px' }}
-        title={label}
-        role={readOnly ? undefined : 'button'}
-        aria-label={label}
-        tabIndex={readOnly ? undefined : 0}
-        onClick={readOnly
-          ? undefined
-          : () => {
-              dispatchSelection(target);
-              onSelectGeometry?.(linkRef, subType, entry.objectIndex);
-            }}
-        onKeyDown={readOnly
-          ? undefined
-          : (event) => runOnActivationKey(event, () => {
-              dispatchSelection(target);
-              onSelectGeometry?.(linkRef, subType, entry.objectIndex);
-            })}
-        onMouseEnter={readOnly ? undefined : () => dispatchHover(target)}
-        onMouseLeave={readOnly ? undefined : clearCanonicalHover}
-      >
-        <div
-          className={getTreeConnectorElbowClass(selected || attention)}
-          style={getTreeConnectorElbowStyle(12)}
-        />
-        <div
-          className={`mr-1 flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded border transition-colors ${
-            isVisual
-              ? selected || hovered || attention
-                ? 'border-emerald-500/20 bg-emerald-500/15 dark:border-emerald-400/20 dark:bg-emerald-400/15'
-                : 'border-transparent bg-emerald-500/10 dark:bg-emerald-400/10'
-              : selected || hovered || attention
-                ? 'border-amber-500/20 bg-amber-500/15 dark:border-amber-400/20 dark:bg-amber-400/15'
-                : 'border-transparent bg-amber-500/10 dark:bg-amber-400/10'
-          }`}
-        >
-          {isVisual ? (
-            <Shapes size={9} className="text-emerald-600 dark:text-emerald-300" />
-          ) : (
-            <Shield size={9} className="text-amber-600 dark:text-amber-300" />
-          )}
-        </div>
-        <span className="min-w-0 flex-1 truncate text-[10px] font-medium">{label}</span>
-        {!readOnly && !isLinkEditorLocked ? (
-          <button
-            type="button"
-            aria-label={`toggle-geometry-visibility-${componentId}-${linkId}-${subType}-${entry.objectIndex}`}
-            className={getGeometryVisibilityButtonClass(effectivelyVisible, { inheritedHidden })}
-            data-visibility-source={inheritedHidden ? 'inherited' : 'local'}
-            title={locallyVisible ? t.hide : t.show}
-            onClick={(event) => toggleGeometryVisibility(event, subType, entry)}
-          >
-            {effectivelyVisible ? <Eye size={10} /> : <EyeOff size={10} />}
-          </button>
-        ) : null}
-      </div>
-    );
-  };
 
   const renderJointBranches = () => childJoints.map((joint) => {
     const jointRef: JointRef = { type: 'joint', componentId, entityId: joint.id };
@@ -776,9 +617,9 @@ export const TreeNode = memo(function TreeNode({
         </div>
       </div>
 
-      {!readOnly && !isLinkEditorLocked && mode === 'editor' ? (
+      {!readOnly && !isLinkEditorLocked && mode === 'editor' && contextMenu.target ? (
         <TreeNodeContextMenu
-          target={contextMenu}
+          target={contextMenu.target}
           t={t}
           onRename={handleContextMenuRename}
           onAddChild={handleContextMenuAddChild}
@@ -796,8 +637,18 @@ export const TreeNode = memo(function TreeNode({
           />
           {geometryExpanded && hasGeometry ? (
             <>
-              {visualEntries.map((entry) => renderGeometryRow('visual', entry))}
-              {collisionEntries.map((entry) => renderGeometryRow('collision', entry))}
+              <TreeNodeGeometryRows
+                componentId={componentId}
+                link={link}
+                mode={mode}
+                readOnly={readOnly}
+                editorLocked={isLinkEditorLocked}
+                t={t}
+                onSelect={onSelect}
+                onHover={onHover}
+                onSelectGeometry={onSelectGeometry}
+                onUpdate={onUpdate}
+              />
               {!readOnly && !isLinkEditorLocked && mode === 'editor' ? (
                 <button
                   type="button"

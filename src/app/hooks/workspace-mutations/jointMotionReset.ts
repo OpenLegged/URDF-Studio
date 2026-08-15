@@ -1,5 +1,5 @@
 import { isEntityEditorLocked } from '@/core/robot';
-import type { AssemblyState } from '@/types';
+import type { AssemblyState, BridgeEntityRef, JointEntityRef } from '@/types';
 import type { WorkspaceStoreState } from '@/store/workspaceStore';
 
 type JointMotionResetStore = Pick<
@@ -9,7 +9,23 @@ type JointMotionResetStore = Pick<
   | 'commitWorkspaceTransaction'
   | 'flushPendingJointMotion'
   | 'setComponentJointMotion'
+  | 'setWorkspaceJointMotion'
 >;
+
+export interface WorkspaceJointMotionResetTarget {
+  ref: JointEntityRef | BridgeEntityRef;
+  angle: number;
+}
+
+const JOINT_RESET_EPSILON = 1e-9;
+
+function isJointAlreadyAtResetAngle(currentAngle: unknown, resetAngle: number): boolean {
+  return (
+    typeof currentAngle === 'number' &&
+    Number.isFinite(currentAngle) &&
+    Math.abs(currentAngle - resetAngle) <= JOINT_RESET_EPSILON
+  );
+}
 
 interface CommitComponentJointMotionResetOptions {
   componentId: string;
@@ -40,9 +56,9 @@ export function resolveResettableJointAngles(
   return Object.entries(jointAngles).reduce<Record<string, number>>(
     (resettable, [entityId, angle]) => {
       if (
-        joints[entityId] !== undefined
-        && Number.isFinite(angle)
-        && !isEntityEditorLocked(workspace, { type: 'joint', componentId, entityId })
+        joints[entityId] !== undefined &&
+        Number.isFinite(angle) &&
+        !isEntityEditorLocked(workspace, { type: 'joint', componentId, entityId })
       ) {
         resettable[entityId] = angle;
       }
@@ -82,12 +98,98 @@ export function commitComponentJointMotionReset({
   try {
     const transactionId = store.beginWorkspaceTransaction('Reset joint angles');
     operationId = transactionId;
-    store.setComponentJointMotion(componentId, resettableAngles, {}, {
-      operationId: transactionId,
-    });
+    store.setComponentJointMotion(
+      componentId,
+      resettableAngles,
+      {},
+      {
+        operationId: transactionId,
+      },
+    );
     store.flushPendingJointMotion({ operationId: transactionId });
     store.commitWorkspaceTransaction(transactionId);
     return resettableAngles;
+  } catch (error) {
+    if (operationId) {
+      store.cancelWorkspaceTransaction(operationId);
+    }
+    throw error;
+  }
+}
+
+/** Restore every resettable component and bridge joint in one undoable step. */
+export function commitWorkspaceJointMotionReset({
+  targets,
+  flushPendingHistory,
+  store,
+  workspace,
+}: {
+  targets: readonly WorkspaceJointMotionResetTarget[];
+  flushPendingHistory: () => void;
+  store: JointMotionResetStore;
+  workspace: AssemblyState;
+}): WorkspaceJointMotionResetTarget[] {
+  type IndexedResetTarget = {
+    index: number;
+    target: WorkspaceJointMotionResetTarget;
+  };
+
+  const componentTargets = new Map<string, IndexedResetTarget[]>();
+  const bridgeTargets: IndexedResetTarget[] = [];
+  const acceptedTargetIndexes = new Set<number>();
+
+  targets.forEach((target, index) => {
+    if (!Number.isFinite(target.angle) || isEntityEditorLocked(workspace, target.ref)) {
+      return;
+    }
+    if (target.ref.type === 'bridge') {
+      const bridge = workspace.bridges[target.ref.bridgeId];
+      if (!bridge) {
+        return;
+      }
+      if (isJointAlreadyAtResetAngle(bridge.joint.angle, target.angle)) {
+        acceptedTargetIndexes.add(index);
+        return;
+      }
+      bridgeTargets.push({ index, target });
+      return;
+    }
+
+    const joint = workspace.components[target.ref.componentId]?.robot.joints[target.ref.entityId];
+    if (!joint) {
+      return;
+    }
+    if (isJointAlreadyAtResetAngle(joint.angle, target.angle)) {
+      acceptedTargetIndexes.add(index);
+      return;
+    }
+    const componentResetTargets = componentTargets.get(target.ref.componentId) ?? [];
+    componentResetTargets.push({ index, target });
+    componentTargets.set(target.ref.componentId, componentResetTargets);
+  });
+
+  if (componentTargets.size === 0 && bridgeTargets.length === 0) {
+    return targets.filter((_, index) => acceptedTargetIndexes.has(index));
+  }
+
+  flushPendingHistory();
+  let operationId: string | null = null;
+  try {
+    const transactionId = store.beginWorkspaceTransaction('Reset joint angles');
+    operationId = transactionId;
+    const pendingTargets = [
+      ...Array.from(componentTargets.values()).flat(),
+      ...bridgeTargets,
+    ];
+    if (store.setWorkspaceJointMotion(
+      pendingTargets.map(({ target }) => target),
+      { operationId: transactionId },
+    )) {
+      pendingTargets.forEach(({ index }) => acceptedTargetIndexes.add(index));
+    }
+    store.flushPendingJointMotion({ operationId: transactionId });
+    store.commitWorkspaceTransaction(transactionId);
+    return targets.filter((_, index) => acceptedTargetIndexes.has(index));
   } catch (error) {
     if (operationId) {
       store.cancelWorkspaceTransaction(operationId);

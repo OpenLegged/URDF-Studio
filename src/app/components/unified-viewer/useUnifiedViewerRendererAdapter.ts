@@ -16,7 +16,7 @@ import type {
 import type { AssemblyScenePlacement, AssemblySceneProjection } from '@/core/robot';
 import { isEntityEditorLocked, isWorkspaceSelectionEditorLocked } from '@/core/robot';
 import {
-  projectJointPreviewToWorkspaceComponents,
+  projectJointPreviewToWorkspaceTargets,
   projectWorkspaceSelectionToRenderer,
   resolveRendererSelectionToWorkspace,
   resolveWorkspaceFocusTarget,
@@ -158,8 +158,8 @@ export interface UnifiedViewerRendererAdapter {
   ) => void;
   commitProjectedJointMotion: ReturnType<typeof useProjectedJointMotionCommit>;
   projectJointInteractionPreview: (
-    preview: Parameters<typeof projectJointPreviewToWorkspaceComponents>[1],
-  ) => ReturnType<typeof projectJointPreviewToWorkspaceComponents>;
+    preview: Parameters<typeof projectJointPreviewToWorkspaceTargets>[1],
+  ) => ReturnType<typeof projectJointPreviewToWorkspaceTargets>;
 }
 
 type RendererHoverArgs = Parameters<UnifiedViewerRendererAdapter['handleRendererHover']>;
@@ -469,8 +469,8 @@ export function useUnifiedViewerRendererAdapter({
   });
   const commitProjectedJointMotion = useProjectedJointMotionCommit(sceneProjection);
   const projectJointInteractionPreview = React.useCallback(
-    (preview: Parameters<typeof projectJointPreviewToWorkspaceComponents>[1]) =>
-      projectJointPreviewToWorkspaceComponents(sceneProjection, preview),
+    (preview: Parameters<typeof projectJointPreviewToWorkspaceTargets>[1]) =>
+      projectJointPreviewToWorkspaceTargets(sceneProjection, preview),
     [sceneProjection],
   );
 

@@ -317,6 +317,19 @@ export interface RobotData {
   materials?: Record<string, RobotMaterialState>;
   closedLoopConstraints?: RobotClosedLoopConstraint[];
   inspectionContext?: RobotInspectionContext;
+  /**
+   * Exact source envelope retained by the public parser. Canonical fields are
+   * the queryable runtime model; this preserves format-specific extensions
+   * (for example URDF transmissions/Gazebo tags or MJCF actuator/sensor/contact
+   * sections) until they gain a dedicated typed projection.
+   */
+  sourceDocument?: {
+    format: 'urdf' | 'mjcf' | 'xacro' | 'sdf';
+    filename: string;
+    content: string;
+    /** Exact sibling/include text supplied with a folder or ZIP import. */
+    relatedFiles?: Record<string, string>;
+  };
 }
 
 export interface AssemblyTransform {

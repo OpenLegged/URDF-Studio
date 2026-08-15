@@ -1,3 +1,4 @@
+import { entityRefKey } from '@/types';
 import type { AssemblyState, JointQuaternion, WorkspaceHistory } from '@/types';
 import {
   assertCanonicalWorkspace,
@@ -22,6 +23,7 @@ import type {
   ReplaceWorkspaceOptions,
   WorkspaceActions,
   WorkspaceMutationOptions,
+  WorkspaceJointMotionTarget,
   WorkspaceStoreGet,
   WorkspaceStoreSet,
 } from './types';
@@ -51,6 +53,9 @@ export interface WorkspaceRuntime {
     | 'canRedo'
     | 'clearHistory'
     | 'setJointMotion'
+    | 'driveWorkspaceJoint'
+    | 'setWorkspaceJointMotion'
+    | 'setBridgeJointMotion'
     | 'setComponentJointMotion'
     | 'flushPendingJointMotion'
     | 'consumePendingAutoGroundComponentIds'
@@ -86,6 +91,87 @@ function quaternionValuesEqual(
 
 function isFiniteQuaternion(value: JointQuaternion): boolean {
   return [value.x, value.y, value.z, value.w].every(Number.isFinite);
+}
+
+function getWorkspaceJoint(
+  workspace: AssemblyState,
+  ref: WorkspaceJointMotionTarget['ref'],
+) {
+  return ref.type === 'bridge'
+    ? workspace.bridges[ref.bridgeId]?.joint
+    : workspace.components[ref.componentId]?.robot.joints[ref.entityId];
+}
+
+function mergeWorkspaceJointMotionTargets(
+  workspace: AssemblyState,
+  targets: readonly WorkspaceJointMotionTarget[],
+): WorkspaceJointMotionTarget[] | null {
+  const merged = new Map<string, WorkspaceJointMotionTarget>();
+
+  for (const target of targets) {
+    if (!getWorkspaceJoint(workspace, target.ref)) {
+      return null;
+    }
+    if (target.angle !== undefined && !Number.isFinite(target.angle)) {
+      return null;
+    }
+    if (target.quaternion !== undefined && !isFiniteQuaternion(target.quaternion)) {
+      return null;
+    }
+    if (target.angle === undefined && target.quaternion === undefined) {
+      continue;
+    }
+
+    const key = entityRefKey(target.ref);
+    const current = merged.get(key);
+    merged.set(key, {
+      ref: target.ref,
+      ...(current?.angle !== undefined ? { angle: current.angle } : {}),
+      ...(current?.quaternion ? { quaternion: current.quaternion } : {}),
+      ...(target.angle !== undefined ? { angle: target.angle } : {}),
+      ...(target.quaternion ? { quaternion: { ...target.quaternion } } : {}),
+    });
+  }
+
+  return Array.from(merged.values());
+}
+
+function projectJointSolutionToWorkspaceTargets(
+  workspace: AssemblyState,
+  angles: Record<string, number>,
+  quaternions: Record<string, JointQuaternion>,
+): WorkspaceJointMotionTarget[] {
+  const projection = createAssemblySceneProjection(workspace);
+  const targets = new Map<string, WorkspaceJointMotionTarget>();
+  const getTarget = (globalId: string) => {
+    const ref = projection.globalToEntityRef.get(globalId);
+    if (ref?.type !== 'joint' && ref?.type !== 'bridge') {
+      return null;
+    }
+    const key = entityRefKey(ref);
+    const existing = targets.get(key);
+    if (existing) {
+      return existing;
+    }
+    const created: WorkspaceJointMotionTarget = { ref };
+    targets.set(key, created);
+    return created;
+  };
+
+  Object.entries(angles).forEach(([globalId, angle]) => {
+    const target = getTarget(globalId);
+    if (target && Number.isFinite(angle)) {
+      target.angle = angle;
+    }
+  });
+  Object.entries(quaternions).forEach(([globalId, quaternion]) => {
+    const target = getTarget(globalId);
+    if (target && isFiniteQuaternion(quaternion)) {
+      target.quaternion = { ...quaternion };
+    }
+  });
+
+  return Array.from(targets.values());
 }
 
 export function createWorkspaceRuntime(
@@ -342,70 +428,103 @@ export function createWorkspaceRuntime(
     return true;
   };
 
-  const applyJointSolution = (
-    componentId: string,
-    angles: Record<string, number>,
-    quaternions: Record<string, JointQuaternion>,
+  const applyWorkspaceJointMotion = (
+    targets: readonly WorkspaceJointMotionTarget[],
     options?: Pick<WorkspaceMutationOptions, 'operationId'>,
   ): boolean => {
     if (!isOperationAllowed(options)) {
       return false;
     }
-    const component = get().workspace.components[componentId];
-    if (!component) {
+    const workspace = get().workspace;
+    const normalizedTargets = mergeWorkspaceJointMotionTargets(workspace, targets);
+    if (!normalizedTargets || normalizedTargets.length === 0) {
+      return false;
+    }
+    if (normalizedTargets.some(({ ref }) => isEntityEditorLocked(workspace, ref))) {
       return false;
     }
 
-    const requestedJointIds = new Set([
-      ...Object.keys(angles),
-      ...Object.keys(quaternions),
-    ]);
-    if ([...requestedJointIds].some((entityId) => isEntityEditorLocked(
-      get().workspace,
-      { type: 'joint', componentId, entityId },
-    ))) {
-      return false;
-    }
-
-    const angleEntries = Object.entries(angles).filter(([jointId, angle]) => {
-      const current = component.robot.joints[jointId]?.angle;
+    const changedTargets = normalizedTargets.filter((target) => {
+      const joint = getWorkspaceJoint(workspace, target.ref)!;
       return (
-        Number.isFinite(angle) &&
-        component.robot.joints[jointId] !== undefined &&
-        (current === undefined || Math.abs(current - angle) > JOINT_MOTION_EPSILON)
+        (target.angle !== undefined &&
+          (joint.angle === undefined ||
+            Math.abs(joint.angle - target.angle) > JOINT_MOTION_EPSILON)) ||
+        (target.quaternion !== undefined &&
+          !quaternionValuesEqual(joint.quaternion, target.quaternion))
       );
     });
-    const quaternionEntries = Object.entries(quaternions).filter(([jointId, quaternion]) => {
-      const joint = component.robot.joints[jointId];
-      return (
-        joint !== undefined &&
-        isFiniteQuaternion(quaternion) &&
-        !quaternionValuesEqual(joint.quaternion, quaternion)
-      );
-    });
-    if (angleEntries.length === 0 && quaternionEntries.length === 0) {
+    if (changedTargets.length === 0) {
       return false;
     }
 
     if (!get().transaction && !pendingJointMotionBefore) {
-      pendingJointMotionBefore = cloneWorkspace(get().workspace);
+      pendingJointMotionBefore = cloneWorkspace(workspace);
     }
     pendingJointMotionDirty = true;
     set((state) => {
-      const draftComponent = state.workspace.components[componentId];
-      if (!draftComponent) {
-        return;
-      }
-      angleEntries.forEach(([jointId, angle]) => {
-        draftComponent.robot.joints[jointId]!.angle = angle;
-      });
-      quaternionEntries.forEach(([jointId, quaternion]) => {
-        draftComponent.robot.joints[jointId]!.quaternion = { ...quaternion };
+      changedTargets.forEach((target) => {
+        const draftJoint = getWorkspaceJoint(state.workspace, target.ref)!;
+        if (target.angle !== undefined) {
+          draftJoint.angle = target.angle;
+        }
+        if (target.quaternion !== undefined) {
+          draftJoint.quaternion = { ...target.quaternion };
+        }
       });
       state.revision += 1;
       state.jointMotionRevision += 1;
     });
     return true;
+  };
+
+  const applyComponentJointSolution = (
+    componentId: string,
+    angles: Record<string, number>,
+    quaternions: Record<string, JointQuaternion>,
+    options?: Pick<WorkspaceMutationOptions, 'operationId'>,
+  ): boolean => applyWorkspaceJointMotion(
+    [
+      ...Object.entries(angles).map(([entityId, angle]) => ({
+        ref: { type: 'joint' as const, componentId, entityId },
+        angle,
+      })),
+      ...Object.entries(quaternions).map(([entityId, quaternion]) => ({
+        ref: { type: 'joint' as const, componentId, entityId },
+        quaternion,
+      })),
+    ],
+    options,
+  );
+
+  const driveWorkspaceJoint = (
+    ref: WorkspaceJointMotionTarget['ref'],
+    angle: number,
+    options?: Pick<WorkspaceMutationOptions, 'operationId'> & { ignoreLimits?: boolean },
+  ): boolean => {
+    const workspace = get().workspace;
+    if (!getWorkspaceJoint(workspace, ref) || !Number.isFinite(angle)) {
+      return false;
+    }
+    const projection = createAssemblySceneProjection(workspace);
+    const projectedJointId = projection.entityRefKeyToGlobal.get(entityRefKey(ref));
+    if (!projectedJointId) {
+      return false;
+    }
+    const solution = resolveClosedLoopDrivenJointMotion(
+      projection.robotData,
+      projectedJointId,
+      angle,
+      { ignoreLimits: options?.ignoreLimits },
+    );
+    return applyWorkspaceJointMotion(
+      projectJointSolutionToWorkspaceTargets(
+        workspace,
+        solution.angles,
+        solution.quaternions,
+      ),
+      options,
+    );
   };
 
   const actions: WorkspaceRuntime['actions'] = {
@@ -531,15 +650,18 @@ export function createWorkspaceRuntime(
         angle,
         { ignoreLimits: options?.ignoreLimits },
       );
-      return applyJointSolution(
+      return applyComponentJointSolution(
         ref.componentId,
         solution.angles,
         solution.quaternions,
         options,
       );
     },
+    driveWorkspaceJoint,
+    setWorkspaceJointMotion: applyWorkspaceJointMotion,
+    setBridgeJointMotion: driveWorkspaceJoint,
     setComponentJointMotion: (componentId, angles, quaternions = {}, options) =>
-      applyJointSolution(componentId, angles, quaternions, options),
+      applyComponentJointSolution(componentId, angles, quaternions, options),
     flushPendingJointMotion,
     consumePendingAutoGroundComponentIds: (componentIds) => {
       const ids = new Set(componentIds);

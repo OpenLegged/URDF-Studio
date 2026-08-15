@@ -1,12 +1,15 @@
 import { useCallback } from 'react';
 
 import {
-  groupProjectedJointMotionByComponent,
+  projectRendererJointMotionToWorkspaceTargets,
   type ViewerJointChangeContext,
-  type WorkspaceJointMotionGroup,
 } from '@/features/editor';
 import type { AssemblySceneProjection } from '@/core/robot';
-import { useWorkspaceStore, type WorkspaceStoreState } from '@/store/workspaceStore';
+import {
+  useWorkspaceStore,
+  type WorkspaceJointMotionTarget,
+  type WorkspaceStoreState,
+} from '@/store/workspaceStore';
 import { logRegressionWarn } from '@/shared/debug/consoleDiagnostics';
 import { flushPendingHistory } from '@/app/utils/pendingHistory';
 
@@ -16,22 +19,22 @@ type ProjectedJointMotionStore = Pick<
   | 'cancelWorkspaceTransaction'
   | 'commitWorkspaceTransaction'
   | 'flushPendingJointMotion'
-  | 'setComponentJointMotion'
+  | 'setWorkspaceJointMotion'
 >;
 
-interface CommitProjectedJointMotionGroupsOptions {
+interface CommitProjectedJointMotionTargetsOptions {
   flushPendingHistory: () => void;
-  groups: WorkspaceJointMotionGroup[];
+  targets: readonly WorkspaceJointMotionTarget[];
   store: ProjectedJointMotionStore;
 }
 
 /** Commits one renderer motion projection as one canonical workspace transaction. */
-export function commitProjectedJointMotionGroups({
+export function commitProjectedJointMotionTargets({
   flushPendingHistory: flushHistory,
-  groups,
+  targets,
   store,
-}: CommitProjectedJointMotionGroupsOptions): boolean {
-  if (groups.length === 0) {
+}: CommitProjectedJointMotionTargetsOptions): boolean {
+  if (targets.length === 0) {
     return false;
   }
 
@@ -40,16 +43,11 @@ export function commitProjectedJointMotionGroups({
   try {
     const transactionId = store.beginWorkspaceTransaction('Commit viewer joint motion');
     operationId = transactionId;
-    groups.forEach((group) => {
-      store.setComponentJointMotion(
-        group.componentId,
-        { ...group.jointAngles },
-        { ...group.jointQuaternions },
-        { operationId: transactionId },
-      );
+    const changed = store.setWorkspaceJointMotion(targets, {
+      operationId: transactionId,
     });
     store.flushPendingJointMotion({ operationId: transactionId });
-    return store.commitWorkspaceTransaction(transactionId);
+    return store.commitWorkspaceTransaction(transactionId) && changed;
   } catch (error) {
     if (operationId) {
       store.cancelWorkspaceTransaction(operationId);
@@ -65,9 +63,9 @@ export function useProjectedJointMotionCommit(
   return useCallback(
     (context: ViewerJointChangeContext) => {
       try {
-        commitProjectedJointMotionGroups({
+        commitProjectedJointMotionTargets({
           flushPendingHistory,
-          groups: groupProjectedJointMotionByComponent(sceneProjection, context),
+          targets: projectRendererJointMotionToWorkspaceTargets(sceneProjection, context),
           store: useWorkspaceStore.getState(),
         });
       } catch (error) {

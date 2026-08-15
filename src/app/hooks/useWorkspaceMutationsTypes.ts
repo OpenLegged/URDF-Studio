@@ -128,7 +128,7 @@ export interface WorkspaceMutationHandlers {
   ) => void;
   handleSetShowVisual: (visible: boolean) => void;
   handleJointChange: (
-    ref: JointEntityRef,
+    ref: JointEntityRef | BridgeEntityRef,
     angle: number,
     context?: ViewerJointChangeContext,
   ) => void;
@@ -141,5 +141,14 @@ export interface WorkspaceMutationHandlers {
     componentId: string,
     jointAngles: Record<string, number>,
   ) => Record<string, number>;
+  handleResetWorkspaceJointAngles: (
+    targets: readonly {
+      ref: JointEntityRef | BridgeEntityRef;
+      angle: number;
+    }[],
+  ) => readonly {
+    ref: JointEntityRef | BridgeEntityRef;
+    angle: number;
+  }[];
   flushJointMotion: () => void;
 }

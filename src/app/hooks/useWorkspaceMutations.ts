@@ -78,6 +78,7 @@ export function useWorkspaceMutations({
     flushJointMotion,
     handleJointChange,
     handleResetJointAngles,
+    handleResetWorkspaceJointAngles,
     handleSetShowVisual,
   } = useViewerPreferenceCommands({ commitPendingHistory });
 
@@ -99,6 +100,7 @@ export function useWorkspaceMutations({
     handleSetShowVisual,
     handleJointChange,
     handleResetJointAngles,
+    handleResetWorkspaceJointAngles,
     flushJointMotion,
   };
 }

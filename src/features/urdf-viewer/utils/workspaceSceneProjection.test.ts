@@ -23,6 +23,8 @@ import {
 import {
   EMPTY_RENDERER_SELECTION,
   groupProjectedJointMotionByComponent,
+  projectJointPreviewToWorkspaceTargets,
+  projectRendererJointMotionToWorkspaceTargets,
   projectWorkspaceJointMotionToRenderer,
   projectWorkspaceSelectionToRenderer,
   projectJointPreviewToWorkspaceComponents,
@@ -280,6 +282,122 @@ test('runtime joint motion groups same-name joints by their explicit component o
         jointOrigins: {},
       },
     },
+  );
+});
+
+test('renderer joint motion projects component and bridge joints to canonical flat targets', () => {
+  const state = workspace({
+    left: component('left', robot('left')),
+    right: component('right', robot('right')),
+  });
+  state.bridges.bridge = {
+    id: 'bridge',
+    name: 'bridge',
+    parentComponentId: 'left',
+    parentLinkId: 'tip',
+    childComponentId: 'right',
+    childLinkId: 'base',
+    joint: {
+      ...structuredClone(DEFAULT_JOINT),
+      id: 'bridge',
+      name: 'bridge',
+      type: JointType.REVOLUTE,
+      parentLinkId: 'tip',
+      childLinkId: 'base',
+    },
+  };
+  const projection = createAssemblySceneProjection(state);
+  const leftGlobal = projection.entityRefKeyToGlobal.get(
+    entityRefKey({ type: 'joint', componentId: 'left', entityId: 'hinge' }),
+  )!;
+  const bridgeGlobal = projection.entityRefKeyToGlobal.get(
+    entityRefKey({ type: 'bridge', bridgeId: 'bridge' }),
+  )!;
+  const bridgeQuaternion = { x: 0, y: 0, z: 0.25, w: 0.75 };
+
+  assert.deepEqual(
+    projectRendererJointMotionToWorkspaceTargets(projection, {
+      jointAngles: {
+        [leftGlobal]: 0.2,
+        [bridgeGlobal]: -0.4,
+        __workspace_component_root_joint__left: 42,
+        foreign: 99,
+      },
+      jointQuaternions: {
+        [bridgeGlobal]: bridgeQuaternion,
+        foreign: { x: 1, y: 0, z: 0, w: 0 },
+      },
+    }),
+    [
+      {
+        ref: { type: 'joint', componentId: 'left', entityId: 'hinge' },
+        angle: 0.2,
+      },
+      {
+        ref: { type: 'bridge', bridgeId: 'bridge' },
+        angle: -0.4,
+        quaternion: bridgeQuaternion,
+      },
+    ],
+  );
+});
+
+test('joint preview projects bridge angle, quaternion, origin, and active ownership', () => {
+  const state = workspace({
+    left: component('left', robot('left')),
+    right: component('right', robot('right')),
+  });
+  state.bridges.bridge = {
+    id: 'bridge',
+    name: 'bridge',
+    parentComponentId: 'left',
+    parentLinkId: 'tip',
+    childComponentId: 'right',
+    childLinkId: 'base',
+    joint: {
+      ...structuredClone(DEFAULT_JOINT),
+      id: 'bridge',
+      name: 'bridge',
+      type: JointType.REVOLUTE,
+      parentLinkId: 'tip',
+      childLinkId: 'base',
+    },
+  };
+  const projection = createAssemblySceneProjection(state);
+  const leftGlobal = projection.entityRefKeyToGlobal.get(
+    entityRefKey({ type: 'joint', componentId: 'left', entityId: 'hinge' }),
+  )!;
+  const bridgeGlobal = projection.entityRefKeyToGlobal.get(
+    entityRefKey({ type: 'bridge', bridgeId: 'bridge' }),
+  )!;
+  const bridgeOrigin = {
+    xyz: { x: 1, y: 2, z: 3 },
+    rpy: { r: 0.1, p: 0.2, y: 0.3 },
+  };
+
+  assert.deepEqual(
+    projectJointPreviewToWorkspaceTargets(projection, {
+      activeJointId: bridgeGlobal,
+      jointAngles: { [leftGlobal]: 0.25, [bridgeGlobal]: -0.5, foreign: 10 },
+      jointQuaternions: {
+        [bridgeGlobal]: { x: 0, y: 0, z: 0.5, w: 0.5 },
+      },
+      jointOrigins: { [bridgeGlobal]: bridgeOrigin },
+    }),
+    [
+      {
+        ref: { type: 'joint', componentId: 'left', entityId: 'hinge' },
+        active: false,
+        angle: 0.25,
+      },
+      {
+        ref: { type: 'bridge', bridgeId: 'bridge' },
+        active: true,
+        angle: -0.5,
+        quaternion: { x: 0, y: 0, z: 0.5, w: 0.5 },
+        origin: bridgeOrigin,
+      },
+    ],
   );
 });
 

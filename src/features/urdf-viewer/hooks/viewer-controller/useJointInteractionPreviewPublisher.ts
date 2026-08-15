@@ -3,6 +3,7 @@ import { useJointInteractionPreviewStore } from '@/store';
 import type {
   JointInteractionPreviewSnapshot,
   WorkspaceJointInteractionPreview,
+  WorkspaceJointInteractionPreviewTarget,
 } from '@/store/jointInteractionPreviewStore';
 import type { ViewerJointMotionStateValue } from '../../types';
 
@@ -15,7 +16,9 @@ interface UseJointInteractionPreviewPublisherOptions {
       JointInteractionPreviewSnapshot,
       'activeJointId' | 'jointAngles' | 'jointQuaternions' | 'jointOrigins'
     >,
-  ) => Record<string, WorkspaceJointInteractionPreview>;
+  ) =>
+    | readonly WorkspaceJointInteractionPreviewTarget[]
+    | Record<string, WorkspaceJointInteractionPreview>;
 }
 
 interface PublishJointInteractionPreviewInput {
@@ -63,12 +66,21 @@ export function useJointInteractionPreviewPublisher({
         jointQuaternions,
         jointOrigins: {},
       };
+      const workspaceProjection = projectJointInteractionPreview?.(rendererPreview);
+      const workspaceTargets = Array.isArray(workspaceProjection)
+        ? (workspaceProjection as readonly WorkspaceJointInteractionPreviewTarget[])
+        : [];
+      const workspaceByComponent =
+        workspaceProjection && !Array.isArray(workspaceProjection)
+          ? (workspaceProjection as Record<string, WorkspaceJointInteractionPreview>)
+          : {};
       useJointInteractionPreviewStore.getState().publishPreview({
         ownerId: ownerIdRef.current,
         source: 'viewer',
         dragSessionId: ensureSessionId(),
         ...rendererPreview,
-        workspaceByComponent: projectJointInteractionPreview?.(rendererPreview) ?? {},
+        workspaceByComponent,
+        workspaceTargets,
       });
     },
     [ensureSessionId, projectJointInteractionPreview],

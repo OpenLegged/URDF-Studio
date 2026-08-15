@@ -1,6 +1,11 @@
 import { create } from 'zustand';
 
-import type { JointQuaternion, UrdfJoint } from '@/types';
+import type {
+  BridgeEntityRef,
+  JointEntityRef,
+  JointQuaternion,
+  UrdfJoint,
+} from '@/types';
 
 export type JointInteractionPreviewSource = 'viewer' | 'tree-panel';
 
@@ -9,6 +14,15 @@ export interface WorkspaceJointInteractionPreview {
   jointAngles: Record<string, number>;
   jointQuaternions: Record<string, JointQuaternion>;
   jointOrigins: Record<string, UrdfJoint['origin']>;
+}
+
+/** Canonical workspace ownership for one renderer joint preview entry. */
+export interface WorkspaceJointInteractionPreviewTarget {
+  ref: JointEntityRef | BridgeEntityRef;
+  active: boolean;
+  angle?: number;
+  quaternion?: JointQuaternion;
+  origin?: UrdfJoint['origin'];
 }
 
 export interface JointInteractionPreviewSnapshot {
@@ -21,6 +35,8 @@ export interface JointInteractionPreviewSnapshot {
   jointOrigins: Record<string, UrdfJoint['origin']>;
   /** Canonical component-local payload; renderer-global keys remain above for runtime consumers. */
   workspaceByComponent?: Record<string, WorkspaceJointInteractionPreview>;
+  /** Canonical flat payload. Unlike the legacy component map, this also owns bridge joints. */
+  workspaceTargets?: readonly WorkspaceJointInteractionPreviewTarget[];
 }
 
 export interface JointInteractionPreviewMatch {
@@ -38,6 +54,7 @@ export const EMPTY_JOINT_INTERACTION_PREVIEW: JointInteractionPreviewSnapshot = 
   jointQuaternions: {},
   jointOrigins: {},
   workspaceByComponent: {},
+  workspaceTargets: [],
 };
 
 interface JointInteractionPreviewState {
@@ -114,7 +131,48 @@ function previewsEqual(
     recordMapsEqual(left.jointAngles, right.jointAngles, numbersEqual) &&
     recordMapsEqual(left.jointQuaternions, right.jointQuaternions, quaternionsEqual) &&
     recordMapsEqual(left.jointOrigins, right.jointOrigins, originsEqual) &&
-    workspacePreviewMapsEqual(left.workspaceByComponent, right.workspaceByComponent)
+    workspacePreviewMapsEqual(left.workspaceByComponent, right.workspaceByComponent) &&
+    workspaceTargetsEqual(left.workspaceTargets, right.workspaceTargets)
+  );
+}
+
+function workspaceTargetRefsEqual(
+  left: JointEntityRef | BridgeEntityRef,
+  right: JointEntityRef | BridgeEntityRef,
+): boolean {
+  if (left.type !== right.type) {
+    return false;
+  }
+  if (left.type === 'bridge' && right.type === 'bridge') {
+    return left.bridgeId === right.bridgeId;
+  }
+  return (
+    left.type === 'joint' &&
+    right.type === 'joint' &&
+    left.componentId === right.componentId &&
+    left.entityId === right.entityId
+  );
+}
+
+function workspaceTargetsEqual(
+  left: readonly WorkspaceJointInteractionPreviewTarget[] | undefined,
+  right: readonly WorkspaceJointInteractionPreviewTarget[] | undefined,
+): boolean {
+  const leftTargets = left ?? [];
+  const rightTargets = right ?? [];
+  return (
+    leftTargets.length === rightTargets.length &&
+    leftTargets.every((leftTarget, index) => {
+      const rightTarget = rightTargets[index];
+      return Boolean(
+        rightTarget &&
+          workspaceTargetRefsEqual(leftTarget.ref, rightTarget.ref) &&
+          leftTarget.active === rightTarget.active &&
+          numbersEqual(leftTarget.angle, rightTarget.angle) &&
+          quaternionsEqual(leftTarget.quaternion, rightTarget.quaternion) &&
+          originsEqual(leftTarget.origin, rightTarget.origin),
+      );
+    })
   );
 }
 
@@ -152,6 +210,13 @@ export function hasJointInteractionPreview(
     Object.keys(preview.jointAngles).length > 0 ||
     Object.keys(preview.jointQuaternions).length > 0 ||
     Object.keys(preview.jointOrigins).length > 0 ||
+    (preview.workspaceTargets?.some(
+      (target) =>
+        target.active ||
+        target.angle !== undefined ||
+        target.quaternion !== undefined ||
+        target.origin !== undefined,
+    ) ?? false) ||
     Object.keys(preview.workspaceByComponent ?? {}).some((componentId) => {
       const componentPreview = preview.workspaceByComponent?.[componentId];
       return Boolean(

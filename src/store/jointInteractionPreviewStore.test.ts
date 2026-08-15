@@ -72,3 +72,27 @@ test('joint interaction preview store preserves canonical component-local viewer
   );
   store.clearPreview();
 });
+
+test('joint interaction preview store preserves canonical bridge targets', () => {
+  const store = useJointInteractionPreviewStore.getState();
+  store.clearPreview();
+  const target = {
+    ref: { type: 'bridge' as const, bridgeId: 'arm_to_hand' },
+    active: true,
+    angle: 0.5,
+    quaternion: { x: 0, y: 0, z: 0.25, w: 0.75 },
+  };
+  store.publishPreview({
+    ownerId: 'viewer-owner',
+    source: 'viewer',
+    dragSessionId: 'viewer-drag',
+    activeJointId: 'renderer-bridge',
+    jointAngles: { 'renderer-bridge': 0.5 },
+    jointQuaternions: {},
+    jointOrigins: {},
+    workspaceTargets: [target],
+  });
+
+  assert.deepEqual(useJointInteractionPreviewStore.getState().preview.workspaceTargets, [target]);
+  store.clearPreview();
+});

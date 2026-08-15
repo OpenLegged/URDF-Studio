@@ -40,6 +40,7 @@ import { logRegressionError } from '@/shared/debug/consoleDiagnostics';
 import { translations } from '@/shared/i18n';
 import type {
   BridgeJoint,
+  BridgeEntityRef,
   InteractionSelection,
   JointEntityRef,
   LinkEntityRef,
@@ -276,9 +277,10 @@ export function AppLayout({
     handleAddChild,
     handleAddCollisionBody,
     handleDelete,
+    handleRobotNameChange,
     handleSetShowVisual,
     handleJointChange: handleCommittedJointChange,
-    handleResetJointAngles,
+    handleResetWorkspaceJointAngles,
     flushJointMotion,
   } = useWorkspaceMutations({
     focusOn,
@@ -297,11 +299,12 @@ export function AppLayout({
     patchEditableSourceRenameEntities,
   });
   const handleJointPreview = useCallback(
-    (ref: JointEntityRef, angle: number) => handleCommittedJointChange(ref, angle),
+    (ref: JointEntityRef | BridgeEntityRef, angle: number) =>
+      handleCommittedJointChange(ref, angle),
     [handleCommittedJointChange],
   );
   const handleJointChange = useCallback(
-    (ref: JointEntityRef, angle: number) => {
+    (ref: JointEntityRef | BridgeEntityRef, angle: number) => {
       handleCommittedJointChange(ref, angle);
       flushJointMotion();
     },
@@ -627,6 +630,8 @@ export function AppLayout({
       }}
       sidebars={{
         workspace,
+        sceneProjection,
+        jointAngleState,
         activeComponentId,
         selection,
         handleSelect,
@@ -636,6 +641,7 @@ export function AppLayout({
         handleAddCollisionBody,
         handleDelete,
         handleUpdate,
+        handleRobotNameChange,
         showVisual,
         handleSetShowVisual,
         mergedAppMode,
@@ -663,7 +669,7 @@ export function AppLayout({
         setViewConfig,
         handleJointPreview,
         handleJointChange,
-        handleResetJointAngles,
+        handleResetJointAngles: handleResetWorkspaceJointAngles,
         previewFile: activePreviewFile,
         previewRobot,
         filePreview,
