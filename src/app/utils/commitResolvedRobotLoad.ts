@@ -134,9 +134,7 @@ function commitFileSessionState(file: RobotFile): void {
 
 function activateComponent(componentId: string): void {
   useWorkspaceStore.getState().setActiveComponent(componentId);
-  useSelectionStore.getState().setSelection({
-    entity: { type: 'component', componentId },
-  });
+  useSelectionStore.getState().clearSelection();
 }
 
 function registerCommittedSourceDraft(

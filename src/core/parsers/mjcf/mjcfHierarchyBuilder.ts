@@ -1316,17 +1316,19 @@ export async function buildMJCFHierarchy(
       textureCacheOwnershipTransferred = true;
       deferredTextureApplicationsReady = (async () => {
         try {
-          const settledApplications = await Promise.allSettled(
-            deferredTextureApplications.map((applyDeferredTexture) => applyDeferredTexture()),
-          );
-          settledApplications.forEach((result) => {
-            if (result.status === 'rejected' && !isMJCFLoadAbortedError(result.reason)) {
-              console.error(
-                '[MJCFLoader] Failed to apply deferred material texture.',
-                result.reason,
-              );
+          for (const applyDeferredTexture of deferredTextureApplications) {
+            try {
+              await applyDeferredTexture();
+            } catch (error) {
+              if (!isMJCFLoadAbortedError(error)) {
+                console.error(
+                  '[MJCFLoader] Failed to apply deferred material texture.',
+                  error,
+                );
+              }
             }
-          });
+            await yieldIfNeeded?.();
+          }
         } finally {
           disposeTemporaryTexturePromiseCache(textureLoadCache);
         }

@@ -23,20 +23,6 @@ function waitForNextMacrotask(): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, 0));
 }
 
-async function waitForCondition(
-  predicate: () => boolean,
-  timeoutMs = 500,
-  intervalMs = 5,
-): Promise<void> {
-  const deadline = Date.now() + timeoutMs;
-  while (!predicate()) {
-    if (Date.now() > deadline) {
-      throw new Error('Timed out while waiting for condition');
-    }
-    await new Promise((resolve) => setTimeout(resolve, intervalMs));
-  }
-}
-
 function installDomGlobals(): void {
   const dom = new JSDOM('<!doctype html><html><body></body></html>', { contentType: 'text/html' });
   globalThis.window = dom.window as any;
@@ -668,7 +654,7 @@ test('MJCF spatial tendon visualization keeps geom wrap refs and preserves sides
   disposeTransientObject3D(root);
 });
 
-test('loadMJCFToThreeJS reports ready before deferred textures finish and applies textures asynchronously', async (t) => {
+test('loadMJCFToThreeJS awaits deferred textures before returning ready and applies them synchronously', async (t) => {
   installDomGlobals();
   clearParsedMJCFModelCache();
 
@@ -718,17 +704,29 @@ test('loadMJCFToThreeJS reports ready before deferred textures finish and applie
     },
   );
 
-  const root = await Promise.race([
-    loadPromise,
-    new Promise<never>((_, reject) => {
-      setTimeout(() => reject(new Error('MJCF loader did not become ready in time')), 200);
-    }),
-  ]);
+  // loader should NOT be ready yet — texture promise is still pending
+  let loadResolved = false;
+  loadPromise.then(() => {
+    loadResolved = true;
+  });
+
+  // Give the loader time to run up to the texture await point
+  await new Promise<void>((resolve) => setTimeout(resolve, 50));
+  assert.equal(loadResolved, false);
+
+  // Resolve the deferred texture
+  const resolvedTexture = new THREE.Texture() as THREE.Texture<HTMLImageElement>;
+  resolvedTexture.needsUpdate = true;
+  assert.ok(resolveTexture);
+  resolveTexture(resolvedTexture);
+
+  // Now the loader should complete — textures are applied before return
+  const root = await loadPromise;
 
   assert.ok(root);
   assert.ok(progressPhases.includes('finalizing-scene'));
   assert.equal(progressPhases.at(-1), 'ready');
-  assert.equal(asyncSceneMutationCount, 0);
+  assert.equal(asyncSceneMutationCount, 1);
 
   const hasMappedTexture = () => {
     let mapped = false;
@@ -744,15 +742,7 @@ test('loadMJCFToThreeJS reports ready before deferred textures finish and applie
     });
     return mapped;
   };
-  assert.equal(hasMappedTexture(), false);
-
-  const resolvedTexture = new THREE.Texture() as THREE.Texture<HTMLImageElement>;
-  resolvedTexture.needsUpdate = true;
-  assert.ok(resolveTexture);
-  resolveTexture(resolvedTexture);
-
-  await waitForCondition(() => asyncSceneMutationCount > 0);
-  await waitForCondition(hasMappedTexture);
+  assert.equal(hasMappedTexture(), true);
 
   disposeTransientObject3D(root);
 });
