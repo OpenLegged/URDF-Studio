@@ -49,6 +49,12 @@ import type {
 import type { ToolMode } from '@/features/editor';
 import type { SourceCodeEditorApplyRequest } from '@/features/code-editor';
 import type { ImportPreparationOverlayState } from './hooks/useFileImport';
+import type { WorkspaceCameraSnapshot } from '@/shared/components/3d';
+
+interface ViewerCameraSession {
+  scopeKey: string;
+  snapshot: WorkspaceCameraSnapshot;
+}
 
 export function AppLayout({
   importInputRef,
@@ -130,6 +136,7 @@ export function AppLayout({
 
   const transformPendingRef = useRef(false);
   const proModeRoundtripSessionRef = useRef<ProModeRoundtripSession | null>(null);
+  const viewerCameraSessionRef = useRef<ViewerCameraSession | null>(null);
   const [pendingViewerToolMode, setPendingViewerToolMode] = useState<ToolMode | null>(null);
   const [isBridgeModalOpen, setIsBridgeModalOpen] = useState(false);
   const [shouldRenderBridgeModal, setShouldRenderBridgeModal] = useState(false);
@@ -534,6 +541,21 @@ export function AppLayout({
     },
     [handleUpdate],
   );
+  const viewerCameraScopeKey = [
+    viewerReloadKey,
+    viewerDocument.sourceFile?.format ?? 'inline',
+    viewerDocument.sourceFile?.name ?? viewerDocument.sourceFilePath ?? 'empty',
+  ].join(':');
+  const initialViewerCameraSnapshot =
+    viewerCameraSessionRef.current?.scopeKey === viewerCameraScopeKey
+      ? viewerCameraSessionRef.current.snapshot
+      : null;
+  const handleViewerCameraSnapshotChange = useCallback(
+    (snapshot: WorkspaceCameraSnapshot) => {
+      viewerCameraSessionRef.current = { scopeKey: viewerCameraScopeKey, snapshot };
+    },
+    [viewerCameraScopeKey],
+  );
 
   return (
     <AppLayoutView
@@ -599,6 +621,8 @@ export function AppLayout({
         snapshotActionRef,
         previewActionRef,
         viewerCanvasStateRef,
+        initialCameraSnapshot: initialViewerCameraSnapshot,
+        onCameraSnapshotChange: handleViewerCameraSnapshotChange,
         availableFiles,
         urdfContentForViewer: viewerDocument.urdfContent,
         viewerSourceFormat: viewerDocument.sourceFormat,

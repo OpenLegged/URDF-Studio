@@ -173,6 +173,8 @@ function WorkspaceViewerSection({
         onCanvasCreated: (state) => {
           viewer.viewerCanvasStateRef.current = state;
         },
+        initialCameraSnapshot: viewer.initialCameraSnapshot,
+        onCameraSnapshotChange: viewer.onCameraSnapshotChange,
         showOptionsPanel: viewer.viewConfig.showOptionsPanel,
         setShowOptionsPanel: viewer.handleSetDetailOptionsPanelVisibility,
         showJointPanel: false,

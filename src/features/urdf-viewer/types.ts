@@ -312,6 +312,7 @@ export interface RobotModelProps {
   isMeshPreview?: boolean;
   groundPlaneOffset?: number;
   active?: boolean;
+  suppressInitialAutoFrame?: boolean;
   workspace?: AssemblyState | null;
   sceneProjection?: AssemblySceneProjection | null;
   scenePlacement?: AssemblyScenePlacement | null;

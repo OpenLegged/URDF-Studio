@@ -42,6 +42,7 @@ export interface UnifiedViewerSceneInteractionInput {
   onCollisionTransform?: ViewerProps['onCollisionTransform'];
   isMeshPreview?: boolean;
   ikDragActive?: boolean;
+  suppressInitialAutoFrame?: boolean;
   viewerReloadKey?: number;
 }
 
@@ -100,6 +101,7 @@ export function buildUnifiedViewerSceneProps({
     onCollisionTransform,
     isMeshPreview = false,
     ikDragActive = false,
+    suppressInitialAutoFrame = false,
     viewerReloadKey = 0,
   } = interaction;
   const {
@@ -152,6 +154,7 @@ export function buildUnifiedViewerSceneProps({
     onCollisionTransform: blocksReadOnlyModelInteraction ? undefined : onCollisionTransform,
     isMeshPreview: hasActivePreview ? false : isMeshPreview,
     ikDragActive: blocksReadOnlyModelInteraction ? false : ikDragActive,
+    suppressInitialAutoFrame,
     runtimeInstanceKey: viewerReloadKey,
     workspace: blocksReadOnlyModelInteraction ? null : (workspace ?? null),
     sceneProjection: blocksReadOnlyModelInteraction ? null : (sceneProjection ?? null),

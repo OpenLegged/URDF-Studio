@@ -153,6 +153,7 @@ test('buildUnifiedViewerSceneProps preserves live interaction wiring without pre
       onUpdate,
       focusTarget: 'base_link',
       isMeshPreview: true,
+      suppressInitialAutoFrame: true,
       viewerReloadKey: 9,
     },
     workspace: {
@@ -178,6 +179,7 @@ test('buildUnifiedViewerSceneProps preserves live interaction wiring without pre
   assert.equal(sceneProps.robotJoints?.hip_joint !== undefined, true);
   assert.equal(sceneProps.focusTarget, 'base_link');
   assert.equal(sceneProps.isMeshPreview, true);
+  assert.equal(sceneProps.suppressInitialAutoFrame, true);
   assert.equal(sceneProps.runtimeInstanceKey, 9);
   assert.equal(sceneProps.workspaceSelection?.entity.type, 'component');
   assert.equal(sceneProps.onAssemblyTransform, onAssemblyTransform);

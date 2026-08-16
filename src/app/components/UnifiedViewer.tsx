@@ -24,6 +24,7 @@ import {
   WORKSPACE_CANVAS_BACKGROUND,
   type SnapshotCaptureAction,
   type SnapshotPreviewAction,
+  type WorkspaceCameraSnapshot,
   type WorkspaceOverlayGizmoMargin,
 } from '@/shared/components/3d';
 import {
@@ -83,6 +84,8 @@ interface UnifiedViewerProps {
   snapshotAction?: React.RefObject<SnapshotCaptureAction | null>;
   previewAction?: React.RefObject<SnapshotPreviewAction | null>;
   onCanvasCreated?: (state: RootState) => void;
+  initialCameraSnapshot?: WorkspaceCameraSnapshot | null;
+  onCameraSnapshotChange?: (snapshot: WorkspaceCameraSnapshot) => void;
   showOptionsPanel?: boolean;
   setShowOptionsPanel?: (show: boolean) => void;
   showJointPanel?: boolean;
@@ -160,6 +163,8 @@ export const UnifiedViewer = React.memo(
     snapshotAction,
     previewAction,
     onCanvasCreated,
+    initialCameraSnapshot = null,
+    onCameraSnapshotChange,
     showOptionsPanel = true,
     setShowOptionsPanel,
     showJointPanel = true,
@@ -485,6 +490,8 @@ export const UnifiedViewer = React.memo(
         snapshotAction={snapshotAction}
         previewAction={previewAction}
         onCreated={onCanvasCreated}
+        initialCameraSnapshot={initialCameraSnapshot}
+        onCameraSnapshotChange={onCameraSnapshotChange}
         onPointerDownCapture={handleWorkspacePointerDownCapture}
         onPointerMissed={handleViewerPointerMissed}
         onMouseMove={viewerController.layout.handleMouseMove}
@@ -586,6 +593,7 @@ export const UnifiedViewer = React.memo(
           onAssemblyComponentAutoGroundResolved={assemblyAutoGrounding.onResolution}
           t={t}
           ikDragActive={ikDragActive}
+          suppressInitialAutoFrame={initialCameraSnapshot !== null}
         />
       </WorkspaceCanvas>
     );

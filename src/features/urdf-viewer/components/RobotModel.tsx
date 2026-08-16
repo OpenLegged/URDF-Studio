@@ -126,6 +126,7 @@ export const RobotModel: React.FC<RobotModelProps> = memo(
     interactionLayerPriority = [],
     groundPlaneOffset = 0,
     active = true,
+    suppressInitialAutoFrame = false,
     workspace = null,
     sceneProjection = null,
     scenePlacement = null,
@@ -375,7 +376,7 @@ export const RobotModel: React.FC<RobotModelProps> = memo(
       focusTarget,
       selection,
       mode,
-      autoFrameOnRobotChange: active && !isLoading,
+      autoFrameOnRobotChange: active && !isLoading && !suppressInitialAutoFrame,
       autoFrameScopeKey,
       active,
     });

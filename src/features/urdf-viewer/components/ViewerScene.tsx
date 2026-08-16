@@ -98,6 +98,7 @@ export const ViewerScene = ({
   onCollisionTransform,
   isMeshPreview = false,
   ikDragActive = false,
+  suppressInitialAutoFrame = false,
   runtimeInstanceKey = 0,
   workspace,
   sceneProjection,
@@ -256,6 +257,7 @@ export const ViewerScene = ({
       <Suspense fallback={null}>
         <RobotModel
           active={active}
+          suppressInitialAutoFrame={suppressInitialAutoFrame}
           urdfContent={urdfContent}
           assets={assets}
           sourceFile={sourceFile}
