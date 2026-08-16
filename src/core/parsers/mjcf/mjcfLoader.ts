@@ -224,12 +224,12 @@ export async function loadMJCFToThreeJS(
     (rootGroup as any).links = linksMap;
     (rootGroup as any).joints = jointsMap;
 
+    await deferredTextureApplicationsReady;
+
     emitProgress({
       phase: 'ready',
       progressPercent: 100,
     });
-
-    void deferredTextureApplicationsReady;
 
     return rootGroup;
   } catch (error) {

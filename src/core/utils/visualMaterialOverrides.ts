@@ -279,6 +279,7 @@ export function applyVisualMaterialOverrideToObject(
   override: VisualMaterialOverride | null | undefined,
   manager?: THREE.LoadingManager,
   cache?: VisualMaterialOverrideCache,
+  textureCache?: Map<string, THREE.Texture>,
 ): void {
   const colorOverride = normalizeMaterialValue(override?.color);
   const texturePath = normalizeMaterialValue(override?.texture);
@@ -322,6 +323,31 @@ export function applyVisualMaterialOverrideToObject(
   // before sharing, anymal_b allocated 138 MeshStandardMaterials for the 10
   // distinct named materials, and the cost compounded on every assembly add.
   const hasExplicitOverrideColor = Boolean(parsedColor);
+  const baseCachedTexture = (texturePath && textureCache?.get(texturePath)) ?? null;
+  const hasPerMaterialTextureSettings = Boolean(textureRepeat) || Boolean(
+    override?.textureRotation !== undefined && override.textureRotation !== 0,
+  );
+  const cachedTexture = baseCachedTexture
+    ? hasPerMaterialTextureSettings
+      ? (() => {
+          const texture = baseCachedTexture.clone();
+          texture.source = baseCachedTexture.source;
+          texture.colorSpace = THREE.SRGBColorSpace;
+          if (textureRepeat) {
+            texture.wrapS = THREE.RepeatWrapping;
+            texture.wrapT = THREE.RepeatWrapping;
+            texture.repeat.set(textureRepeat[0], textureRepeat[1]);
+          }
+          const rotation = override?.textureRotation;
+          if (rotation !== undefined && rotation !== 0) {
+            texture.rotation = rotation;
+            texture.center.set(0.5, 0.5);
+          }
+          texture.needsUpdate = true;
+          return texture;
+        })()
+      : baseCachedTexture
+    : null;
   const cacheKeyBase =
     cache && (hasExplicitOverrideColor || hasTextureOverride)
       ? `${nextColor ? nextColor.getHexString() : ''}|tx=${texturePath || ''}|mj=${
@@ -364,7 +390,7 @@ export function applyVisualMaterialOverrideToObject(
         opacity: nextOpacity ?? (texturePath ? 1 : (material.opacity ?? 1)),
         transparent: sourceTransparent,
         side: sourceSide,
-        map: hasTextureOverride ? null : (material as any).map || null,
+        map: cachedTexture ?? (hasTextureOverride ? null : (material as any).map || null),
         roughness: roughnessOverride,
         metalness: metalnessOverride,
         emissive: nextEmissive ?? undefined,
@@ -439,6 +465,12 @@ export function applyVisualMaterialOverrideToObject(
         texturePath,
       );
     }
+    return;
+  }
+
+  // When a cached texture was already applied to the materials synchronously
+  // (see `cachedTexture` above), skip the async loader.load() call.
+  if (cachedTexture) {
     return;
   }
 

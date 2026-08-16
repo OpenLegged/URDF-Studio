@@ -135,9 +135,7 @@ for (const format of ['urdf', 'mjcf', 'sdf', 'xacro', 'usd'] as const) {
       'tool_link',
     ]);
     assert.equal(useAssetsStore.getState().selectedFile?.name, file.name);
-    assert.deepEqual(useSelectionStore.getState().selection, {
-      entity: { type: 'component', componentId: 'component_1' },
-    });
+    assert.equal(useSelectionStore.getState().selection, null);
     assert.equal(
       useAssetsStore.getState().componentSourceDrafts.component_1?.componentId,
       'component_1',

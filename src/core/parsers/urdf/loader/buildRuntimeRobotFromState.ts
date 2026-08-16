@@ -123,6 +123,9 @@ export async function buildRuntimeRobotFromState({
   // mesh. Scope is intentionally one cache per load: dispose lifecycle stays
   // tied to the loaded robot and there is no cross-load aliasing.
   const visualMaterialOverrideCache = new Map<string, THREE.MeshStandardMaterial>();
+  // Pre-load textures so materials are created with map already set, avoiding
+  // async callback jank from tree-traversing texture loads firing simultaneously.
+  const textureCache = new Map<string, THREE.Texture>();
   const visualRestackBatch = createVisualRestackBatch(() => restackRobotVisualRoots(robot));
 
   robot.robotName = robotName ?? null;
@@ -229,6 +232,7 @@ export async function buildRuntimeRobotFromState({
           effectiveVisualMaterialOverride,
           manager,
           visualMaterialOverrideCache,
+          textureCache,
         );
       }
 
@@ -308,6 +312,7 @@ export async function buildRuntimeRobotFromState({
             visualMaterialOverride,
             manager,
             visualMaterialOverrideCache,
+            textureCache,
           );
         }
         if (!isCollision && hasGeometryMeshMaterialGroups(geometry)) {
@@ -385,6 +390,55 @@ export async function buildRuntimeRobotFromState({
       }
     }
   };
+
+  // Pre-load all unique texture paths from visual geometry overrides before
+  // the link iteration loop, so materials are created with textures already in
+  // hand instead of being patched asynchronously by callbacks that each do a
+  // tree traversal and set material.needsUpdate = true (GPU jank).
+  if (parseVisual) {
+    const texturePaths = new Set<string>();
+    for (const [linkId, linkData] of Object.entries(links)) {
+      const visualEntries = getVisualGeometryEntries(linkData);
+      for (const entry of visualEntries) {
+        const geometry = entry.geometry;
+        const hasBoxFacePalette = getBoxFaceMaterialPalette(geometry).length > 0;
+        if (hasBoxFacePalette) {
+          continue;
+        }
+        const resolved = resolveStateVisualMaterialOverride({
+          geometry,
+          isPrimaryVisual: entry.objectIndex === 0,
+          link: linkData,
+          materials,
+        });
+        const override = resolved.override ?? resolveVisualMaterialOverrideFromGeometry(geometry);
+        const texturePath = override?.texture;
+        if (texturePath) {
+          texturePaths.add(texturePath);
+        }
+      }
+    }
+
+    if (texturePaths.size > 0) {
+      const textureLoader = new THREE.TextureLoader(manager);
+      const paths = Array.from(texturePaths);
+      // Load in small batches to avoid blocking the main thread.
+      const BATCH_SIZE = 4;
+      for (let i = 0; i < paths.length; i += BATCH_SIZE) {
+        const batch = paths.slice(i, i + BATCH_SIZE);
+        const results = await Promise.allSettled(
+          batch.map((path) => textureLoader.loadAsync(path)),
+        );
+        results.forEach((result, index) => {
+          if (result.status === 'fulfilled') {
+            result.value.colorSpace = THREE.SRGBColorSpace;
+            textureCache.set(batch[index], result.value);
+          }
+        });
+        await yieldIfNeeded();
+      }
+    }
+  }
 
   for (const [linkId, linkData] of Object.entries(links)) {
     const linkKey = linkData.id || linkId;
