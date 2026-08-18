@@ -192,6 +192,27 @@ The Vite dev server listens on `127.0.0.1` by default for local IPv4 loopback ac
 For remote-dev port forwarding, containers, or LAN access, run `URDF_STUDIO_DEV_HOST=0.0.0.0 npm run dev`.
 If a preview/tunnel hostname is rejected by Vite's host check, set a comma-separated allow-list with `URDF_STUDIO_DEV_ALLOWED_HOSTS=preview.example.test,.tunnel.example.test npm run dev`.
 
+**LAN access with USD WASM (HTTPS dev server):** `http://<LAN-IP>:3000` can load the app shell but USD WASM requires a _secure context_ for `SharedArrayBuffer`. Enable HTTPS mode:
+
+```bash
+# Quick: self-signed cert (accept browser warning)
+URDF_STUDIO_DEV_HTTPS=true npm run dev
+# Then open https://<your-LAN-IP>:3000 and click "advanced → proceed"
+
+# Trusted (mkcert): one-time setup, no browser warnings
+sudo apt install -y mkcert libnss3-tools          # Ubuntu/Debian; or download binary to ~/.local/bin
+mkcert -key-file .dev-certs/key.pem -cert-file .dev-certs/cert.pem localhost 127.0.0.1 <LAN-IP> ::1
+sudo -E mkcert -install                             # -E preserves HOME so the correct CA is installed
+# Gotcha: plain `sudo mkcert -install` (without -E) creates a wrong CA because sudo changes HOME
+# and mkcert can't find your rootCA. Fallback if it happens:
+#   sudo cp ~/.local/share/mkcert/rootCA.pem /usr/local/share/ca-certificates/mkcert_rootCA.crt && sudo update-ca-certificates --fresh
+# Restart Chrome so it picks up the new CA, then:
+URDF_STUDIO_DEV_TLS_CERT=./.dev-certs/cert.pem URDF_STUDIO_DEV_TLS_KEY=./.dev-certs/key.pem URDF_STUDIO_DEV_HTTPS=true npm run dev
+# Open https://<LAN-IP>:3000 — trusted, no warning, USD WASM works.
+```
+
+When `URDF_STUDIO_DEV_HTTPS=true` is set, the server listens on `0.0.0.0` by default and allows all hostnames. Override with `URDF_STUDIO_DEV_HOST` and `URDF_STUDIO_DEV_ALLOWED_HOSTS` if needed.
+
 ## USD Runtime Requirements
 
 USD loading depends on `SharedArrayBuffer`, so the page must be cross-origin isolated.
@@ -199,7 +220,7 @@ USD loading depends on `SharedArrayBuffer`, so the page must be cross-origin iso
 - Use `npm run dev` for development
 - Use `npm run preview` to validate the production build locally
 - Prefer `127.0.0.1` / `localhost` or HTTPS
-- Direct `http://<LAN-IP>:3000` access can load the app shell, but USD import / stage open requires HTTPS or a trusted localhost-style forwarded origin
+- Direct `http://<LAN-IP>:3000` access can load the app shell, but USD import / stage open requires HTTPS or a trusted localhost-style forwarded origin. Use `URDF_STUDIO_DEV_HTTPS=true npm run dev` for LAN HTTPS (see "Run the App" above).
 - Do not serve `dist/` with a plain static server that omits these headers:
 
 ```http

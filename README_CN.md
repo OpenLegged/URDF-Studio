@@ -192,6 +192,26 @@ npm run dev
 如需远程开发端口转发、容器或局域网访问，运行 `URDF_STUDIO_DEV_HOST=0.0.0.0 npm run dev`。
 如果预览 / 隧道域名被 Vite host check 拒绝，可以用逗号分隔的 allow-list：`URDF_STUDIO_DEV_ALLOWED_HOSTS=preview.example.test,.tunnel.example.test npm run dev`。
 
+**局域网 HTTPS 访问（USD WASM 需要）：** `http://<LAN-IP>:3000` 可以加载应用外壳，但 USD WASM 依赖 `SharedArrayBuffer`，后者要求*安全上下文（secure context）*。启用 HTTPS 模式：
+
+```bash
+# 快速：自签名证书（接受浏览器警告）
+URDF_STUDIO_DEV_HTTPS=true npm run dev
+# 然后打开 https://<your-LAN-IP>:3000，点击"高级→继续"
+
+# 可信（mkcert）：一次性配置，浏览器无警告
+sudo apt install -y mkcert libnss3-tools          # Ubuntu/Debian；或下载二进制到 ~/.local/bin
+mkcert -key-file .dev-certs/key.pem -cert-file .dev-certs/cert.pem localhost 127.0.0.1 <LAN-IP> ::1
+sudo -E mkcert -install                             # -E 保留 HOME，确保装入正确的 CA
+# 注意：不带 -E 的 `sudo mkcert -install` 会因 sudo 改了 HOME 而创建错误的 CA（root@<host>）。
+# 若已发生，回退：sudo cp ~/.local/share/mkcert/rootCA.pem /usr/local/share/ca-certificates/mkcert_rootCA.crt && sudo update-ca-certificates --fresh
+# 重启 Chrome 加载新 CA，然后：
+URDF_STUDIO_DEV_TLS_CERT=./.dev-certs/cert.pem URDF_STUDIO_DEV_TLS_KEY=./.dev-certs/key.pem URDF_STUDIO_DEV_HTTPS=true npm run dev
+# 打开 https://<LAN-IP>:3000 —— 受信、无警告、USD WASM 可用。
+```
+
+设置 `URDF_STUDIO_DEV_HTTPS=true` 后，服务器默认监听 `0.0.0.0` 并允许所有主机名。如需覆盖，可用 `URDF_STUDIO_DEV_HOST` 和 `URDF_STUDIO_DEV_ALLOWED_HOSTS` 指定。
+
 ## USD 运行时要求
 
 USD 加载依赖 `SharedArrayBuffer`，因此页面必须处于 cross-origin isolated 环境。
@@ -199,7 +219,7 @@ USD 加载依赖 `SharedArrayBuffer`，因此页面必须处于 cross-origin iso
 - 开发使用 `npm run dev`
 - 本地验证生产构建使用 `npm run preview`
 - 优先使用 `127.0.0.1` / `localhost` 或 HTTPS
-- 直接使用 `http://<LAN-IP>:3000` 可以加载应用外壳，但 USD 导入 / stage open 需要 HTTPS 或可信的 localhost 风格转发源
+- 直接使用 `http://<LAN-IP>:3000` 可以加载应用外壳，但 USD 导入 / stage open 需要 HTTPS 或可信的 localhost 风格转发源。使用 `URDF_STUDIO_DEV_HTTPS=true npm run dev` 启用局域网 HTTPS（见上方"运行应用"）。
 - 不要用缺少下列响应头的普通静态服务器直接托管 `dist/`
 
 ```http

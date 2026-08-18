@@ -1,7 +1,7 @@
 import fs from 'fs';
 import { createRequire } from 'node:module';
 import path from 'path';
-import { defineConfig, loadEnv, type ServerOptions } from 'vite';
+import { defineConfig, loadEnv, type Plugin, type ServerOptions } from 'vite';
 import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
 
@@ -217,6 +217,56 @@ function resolveDevServerAllowedHosts(
   return allowedHosts.length > 0 ? allowedHosts : undefined;
 }
 
+/**
+ * Resolves HTTPS dev server configuration.
+ *
+ * Activate via URDF_STUDIO_DEV_HTTPS=true. When active:
+ * - host defaults to 0.0.0.0 (all interfaces, LAN-accessible) unless
+ *   URDF_STUDIO_DEV_HOST is explicitly set (explicit wins).
+ * - allowedHosts defaults to true (allow all) unless
+ *   URDF_STUDIO_DEV_ALLOWED_HOSTS is explicitly set (explicit wins).
+ *
+ * Cert resolution:
+ * - If URDF_STUDIO_DEV_TLS_CERT and URDF_STUDIO_DEV_TLS_KEY are both set,
+ *   the user-provided cert pair is used (e.g. from mkcert <LAN-IP>).
+ * - Otherwise, @vitejs/plugin-basic-ssl generates a self-signed cert.
+ *   The browser will warn; the user clicks "advanced -> proceed".
+ *
+ * WHY HTTPS for LAN: The USD WASM runtime depends on SharedArrayBuffer, which
+ * requires (a) cross-origin isolation (COOP + COEP headers) AND (b) a secure
+ * context. http://<LAN-IP> is NOT a secure context, so SAB is unavailable even
+ * with isolation headers. Only https://<LAN-IP> satisfies both conditions.
+ * The existing createConditionalIsolationHeadersPlugin already emits COOP/COEP
+ * when isHttpsDevRequest() detects socket.encrypted === true on HTTPS.
+ */
+async function resolveDevServerHttps(
+  env: Record<string, string | undefined>,
+): Promise<{ https: NonNullable<ServerOptions['https']>; plugin?: Plugin } | undefined> {
+  const enableHttps = env.URDF_STUDIO_DEV_HTTPS?.trim().toLowerCase();
+  if (enableHttps !== 'true' && enableHttps !== '1') {
+    return undefined;
+  }
+
+  const tlsCertPath = env.URDF_STUDIO_DEV_TLS_CERT?.trim();
+  const tlsKeyPath = env.URDF_STUDIO_DEV_TLS_KEY?.trim();
+
+  if (tlsCertPath && tlsKeyPath) {
+    return {
+      https: {
+        cert: fs.readFileSync(tlsCertPath),
+        key: fs.readFileSync(tlsKeyPath),
+      },
+    };
+  }
+
+  const { default: basicSsl } = await import('@vitejs/plugin-basic-ssl');
+
+  return {
+    https: {} as NonNullable<ServerOptions['https']>,
+    plugin: basicSsl() as Plugin,
+  };
+}
+
 function shouldIgnoreWatchPath(watchPath: string): boolean {
   const normalizedPath = watchPath.replace(/\\/g, '/');
 
@@ -343,9 +393,17 @@ function createStaticHostingHeadersAssetPlugin() {
   };
 }
 
-export default defineConfig(({ mode }) => {
+export default defineConfig(async ({ mode }) => {
   const env = loadEnv(mode, '.', '');
-  const devServerAllowedHosts = resolveDevServerAllowedHosts(env);
+  const devServerHttps = await resolveDevServerHttps(env);
+  const devServerHost = devServerHttps
+    ? (env.URDF_STUDIO_DEV_HOST?.trim() || '0.0.0.0')
+    : resolveDevServerHost(env);
+  const devServerAllowedHosts = devServerHttps
+    ? (env.URDF_STUDIO_DEV_ALLOWED_HOSTS?.trim()
+        ? resolveDevServerAllowedHosts(env)
+        : true)
+    : resolveDevServerAllowedHosts(env);
   const aiRuntimeEnv = resolveAiRuntimeEnv(env);
   const viteCacheDir = resolveViteCacheDir(env);
 
@@ -354,8 +412,9 @@ export default defineConfig(({ mode }) => {
     server: {
       port: 3000,
       strictPort: false,
-      host: resolveDevServerHost(env),
+      host: devServerHost,
       ...(devServerAllowedHosts ? { allowedHosts: devServerAllowedHosts } : {}),
+      ...(devServerHttps?.https ? { https: devServerHttps.https } : {}),
       // Optimized dependency URLs can retain the same Vite browser hash across
       // a no-reload optimizer update. Revalidate their ETags on page reload so
       // an old wrapper cannot keep importing chunks from a replaced cache graph.
@@ -453,6 +512,7 @@ export default defineConfig(({ mode }) => {
       createUsdConfigurationProxyPlugin(),
       createConditionalIsolationHeadersPlugin(),
       createStaticHostingHeadersAssetPlugin(),
+      ...(devServerHttps?.plugin ? [devServerHttps.plugin] : []),
     ],
     define: {
       __APP_VERSION__: JSON.stringify(appPackageVersion),

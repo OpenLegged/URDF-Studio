@@ -208,6 +208,25 @@ P0 内部的执行顺序是：可能导致错误 mutation/history 或多 viewer 
 
 需要远程开发端口转发、容器或局域网访问时，显式运行 `URDF_STUDIO_DEV_HOST=0.0.0.0 npm run dev`。如果预览 / 隧道域名被 Vite host check 拒绝，再按需设置 `URDF_STUDIO_DEV_ALLOWED_HOSTS=preview.example.test,.tunnel.example.test npm run dev`。
 
+**局域网 HTTPS 模式（USD WASM 需要安全上下文）：** `http://<LAN-IP>` 不是安全上下文，`SharedArrayBuffer` 不可用，USD WASM 加载会失败。启用 HTTPS：
+
+```bash
+# 快速：自签名证书（浏览器点"高级→继续"即可）
+URDF_STUDIO_DEV_HTTPS=true npm run dev
+# 然后访问 https://<your-LAN-IP>:3000
+
+# 可信（mkcert）：一次性配置，浏览器无警告
+sudo apt install -y mkcert libnss3-tools          # Ubuntu/Debian；或下载二进制到 ~/.local/bin
+mkcert -key-file .dev-certs/key.pem -cert-file .dev-certs/cert.pem localhost 127.0.0.1 <LAN-IP> ::1
+sudo -E mkcert -install                             # -E 保留 HOME，确保装入正确的 CA
+# 注意：不带 -E 的 `sudo mkcert -install` 会因 sudo 改 HOME 而创建错误的 CA（root@<host>）。
+# 若已发生，回退：sudo cp ~/.local/share/mkcert/rootCA.pem /usr/local/share/ca-certificates/mkcert_rootCA.crt && sudo update-ca-certificates --fresh
+# 重启 Chrome 加载新 CA，然后：
+URDF_STUDIO_DEV_TLS_CERT=./.dev-certs/cert.pem URDF_STUDIO_DEV_TLS_KEY=./.dev-certs/key.pem URDF_STUDIO_DEV_HTTPS=true npm run dev
+```
+
+HTTPS 模式下 `host` 默认 `0.0.0.0`，`allowedHosts` 默认 `true`。覆盖：`URDF_STUDIO_DEV_HOST` 和 `URDF_STUDIO_DEV_ALLOWED_HOSTS` 仍然生效（显式值优先）。
+
 ## 常用命令
 
 ```bash
