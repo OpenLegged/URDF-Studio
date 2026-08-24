@@ -80,6 +80,7 @@ interface WorkspaceCanvasProps {
   environmentIntensityByTheme?: WorkspaceCanvasEnvironmentIntensityByTheme;
   groundOffset?: number;
   enableAmbientOcclusion?: boolean;
+  enableDefaultLighting?: boolean;
   enableShadows?: boolean;
   shadowMapSize?: number;
   minDpr?: number;
@@ -179,6 +180,7 @@ export const WorkspaceCanvas = ({
   environmentIntensityByTheme,
   groundOffset = 0,
   enableAmbientOcclusion = false,
+  enableDefaultLighting = true,
   enableShadows = true,
   shadowMapSize,
   minDpr,
@@ -649,14 +651,16 @@ export const WorkspaceCanvas = ({
                       <NeutralStudioEnvironment intensity={resolvedEnvironmentIntensity} />
                     )}
                   </Suspense>
-                  <SceneLighting
-                    theme={effectiveTheme}
-                    cameraFollowPrimary={cameraFollowPrimary}
-                    // Keep shadows enabled and updating across interaction so
-                    // orbiting and dragging use the exact same lighting path.
-                    enableShadows={enableShadows}
-                    shadowMapSize={shadowMapSize}
-                  />
+                  {enableDefaultLighting ? (
+                    <SceneLighting
+                      theme={effectiveTheme}
+                      cameraFollowPrimary={cameraFollowPrimary}
+                      // Keep shadows enabled and updating across interaction so
+                      // orbiting and dragging use the exact same lighting path.
+                      enableShadows={enableShadows}
+                      shadowMapSize={shadowMapSize}
+                    />
+                  ) : null}
                   <SnapshotManager
                     actionRef={snapshotAction}
                     onSnapshotActionChange={onSnapshotActionChange}

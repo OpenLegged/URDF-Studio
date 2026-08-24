@@ -8,7 +8,6 @@ import {
   isUsdPathWithinBundleDirectory,
   isUsdRuntimeTexturePath,
 } from '@/core/parsers/usd/usdAssetPaths';
-import { buildCriticalUsdDependencyPaths } from './usdCriticalDependencyPaths.ts';
 import { USD_INSTANCEABLE_VISUAL_SCOPE_NORMALIZATION_VERSION } from './usdStageOpenTextNormalization.ts';
 import {
   buildBlobBackedLargeTextUsdSignature,
@@ -173,11 +172,15 @@ export function extractUsdLayerReferencesFromText(layerText: string): string[] {
   }
 
   const references = new Set<string>();
-  const referenceRegex = /@([^@]+\.usd(?:a|c|z)?)@/gi;
+  const referenceRegex = /@([^@]+)@/g;
   let match: RegExpExecArray | null = null;
   while ((match = referenceRegex.exec(layerText))) {
-    const referencePath = String(match[1] || '').trim();
-    if (!referencePath) {
+    const assetPath = String(match[1] || '').trim();
+    const packageSeparatorIndex = assetPath.indexOf('[');
+    const referencePath = (
+      packageSeparatorIndex >= 0 ? assetPath.slice(0, packageSeparatorIndex) : assetPath
+    ).trim();
+    if (!isUsdLayerPath(referencePath)) {
       continue;
     }
     references.add(referencePath);
@@ -224,17 +227,23 @@ export function resolveUsdLayerReferencePath(
   return baseSegments.length > 0 ? `/${baseSegments.join('/')}` : '/';
 }
 
-export function collectUsdStageOpenRelevantVirtualPaths(
+interface UsdLayerDependencyTraversal {
+  orderedPaths: string[];
+  authoredDependencyPaths: string[];
+  hasOpaqueReachableLayer: boolean;
+}
+
+function traceUsdLayerDependencies(
   sourceFile: StageOpenSourceFile,
   availableFiles: StageOpenAvailableFile[],
-): string[] {
+): UsdLayerDependencyTraversal {
   const rootPath = toVirtualUsdPath(sourceFile.name);
   const fileIndex = buildUsdStageOpenFileIndex(sourceFile, availableFiles);
-  const pendingPaths = [rootPath, ...buildCriticalUsdDependencyPaths(rootPath)];
+  const pendingPaths = [rootPath];
   const visitedPaths = new Set<string>();
+  const authoredDependencyPaths = new Set<string>();
   const orderedPaths: string[] = [];
-  const rootFile = fileIndex.get(rootPath) ?? sourceFile;
-  const canTraceRootLayerText = hasInlineUsdLayerTextContent(rootFile);
+  let hasOpaqueReachableLayer = false;
 
   while (pendingPaths.length > 0) {
     const currentPath = pendingPaths.shift()!;
@@ -246,23 +255,64 @@ export function collectUsdStageOpenRelevantVirtualPaths(
     orderedPaths.push(currentPath);
 
     const currentFile = fileIndex.get(currentPath);
-    if (!currentFile || !hasInlineUsdLayerTextContent(currentFile)) {
+    if (!currentFile) {
+      continue;
+    }
+    if (!hasInlineUsdLayerTextContent(currentFile)) {
+      hasOpaqueReachableLayer = true;
       continue;
     }
 
     extractUsdLayerReferencesFromText(currentFile.content).forEach((referencePath) => {
       const resolvedPath = resolveUsdLayerReferencePath(currentPath, referencePath);
-      if (!resolvedPath || visitedPaths.has(resolvedPath) || !isUsdLayerPath(resolvedPath)) {
+      if (!resolvedPath || !isUsdLayerPath(resolvedPath)) {
         return;
       }
-      pendingPaths.push(resolvedPath);
+      if (resolvedPath !== rootPath) {
+        authoredDependencyPaths.add(resolvedPath);
+      }
+      if (!visitedPaths.has(resolvedPath)) {
+        pendingPaths.push(resolvedPath);
+      }
     });
   }
 
-  if (!canTraceRootLayerText) {
+  return {
+    orderedPaths,
+    authoredDependencyPaths: Array.from(authoredDependencyPaths),
+    hasOpaqueReachableLayer,
+  };
+}
+
+/**
+ * Return only dependency paths authored by reachable textual USD layers.
+ * Opaque USDC/USDZ layers are deliberately not classified by file-name
+ * conventions; OpenUSD remains the source of truth for their dependency graph.
+ */
+export function collectAuthoredUsdLayerDependencyPaths(
+  sourceFile: StageOpenSourceFile,
+  availableFiles: StageOpenAvailableFile[],
+): string[] {
+  return traceUsdLayerDependencies(sourceFile, availableFiles).authoredDependencyPaths;
+}
+
+export function collectUsdStageOpenRelevantVirtualPaths(
+  sourceFile: StageOpenSourceFile,
+  availableFiles: StageOpenAvailableFile[],
+): string[] {
+  const fileIndex = buildUsdStageOpenFileIndex(sourceFile, availableFiles);
+  const traversal = traceUsdLayerDependencies(sourceFile, availableFiles);
+  const orderedPaths = [...traversal.orderedPaths];
+  const visitedPaths = new Set(orderedPaths);
+
+  if (traversal.hasOpaqueReachableLayer) {
     const bundleDirectory = inferUsdBundleVirtualDirectory(sourceFile.name);
     const bundledLayerPaths = Array.from(fileIndex.keys())
-      .filter((virtualPath) => isUsdPathWithinBundleDirectory(virtualPath, bundleDirectory))
+      .filter(
+        (virtualPath) =>
+          isUsdLayerPath(virtualPath)
+          && isUsdPathWithinBundleDirectory(virtualPath, bundleDirectory),
+      )
       .sort((left, right) => left.localeCompare(right));
 
     bundledLayerPaths.forEach((virtualPath) => {

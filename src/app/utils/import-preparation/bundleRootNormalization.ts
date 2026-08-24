@@ -1,5 +1,8 @@
 import { inferCommonPackageAssetBundleRoot } from '@/app/utils/importPackageAssetReferences.ts';
-import { isAssetLibraryOnlyFormat } from '@/shared/utils/robotFileSupport';
+import {
+  isAssetLibraryOnlyFormat,
+  SUPPORTED_ARCHIVE_IMPORT_EXTENSIONS,
+} from '@/shared/utils/robotFileSupport';
 import { normalizeLibraryPathKey } from '@/core/utils/pathKeys';
 import type { RobotFile } from '@/types';
 
@@ -267,23 +270,10 @@ function prefixCollectedImportPath(path: string, bundleRoot: string): string {
   return `${bundleRoot}/${normalized}`;
 }
 
-export function normalizeLooseImportBundleRoot<T extends BundleRootPayload>(payload: T): T {
-  const packageAssetBundleRoot = inferCommonPackageAssetBundleRoot(
-    payload.robotFiles
-      .filter((file) => !isAssetLibraryOnlyFormat(file.format) && file.format !== 'usd')
-      .map((file) => ({ format: file.format, content: file.content })),
-  );
-  const bundleRoot =
-    packageAssetBundleRoot &&
-    shouldWrapLooseImportUnderPackageAssetRoot(payload, packageAssetBundleRoot)
-      ? packageAssetBundleRoot
-      : shouldWrapLooseImportUnderBundleRoot(payload)
-        ? inferBundleRootFromRobotFiles(payload.robotFiles)
-        : null;
-  if (!bundleRoot) {
-    return payload;
-  }
-
+function prefixCollectedImportPayload<T extends BundleRootPayload>(
+  payload: T,
+  bundleRoot: string,
+): T {
   return {
     ...payload,
     robotFiles: payload.robotFiles.map((file) => ({
@@ -311,4 +301,61 @@ export function normalizeLooseImportBundleRoot<T extends BundleRootPayload>(payl
       path: prefixCollectedImportPath(file.path, bundleRoot),
     })),
   };
+}
+
+function inferArchiveBundleRoot(archivePath: string): string | null {
+  const normalizedArchivePath = normalizeImportPath(archivePath);
+  const matchingExtension = [...SUPPORTED_ARCHIVE_IMPORT_EXTENSIONS]
+    .sort((left, right) => right.length - left.length)
+    .find((extension) => normalizedArchivePath.toLowerCase().endsWith(extension));
+  const archiveStem = matchingExtension
+    ? normalizedArchivePath.slice(0, -matchingExtension.length)
+    : normalizedArchivePath.replace(/\.[^.]+$/, '');
+
+  return sanitizeInferredImportRoot(archiveStem);
+}
+
+/**
+ * Keep opaque root-level USD stages and their relative sidecars in one namespace.
+ * Binary USDC references cannot be rewritten when a later import collides with a
+ * generic folder such as `resource/`, so collision handling must rename the whole
+ * archive bundle atomically instead of renaming individual top-level folders.
+ */
+export function normalizeRootlessUsdArchiveBundle<T extends BundleRootPayload>(
+  payload: T,
+  archivePath: string,
+): T {
+  const hasRootLevelUsdStage = payload.robotFiles.some(
+    (file) => file.format === 'usd' && getTopLevelImportSegment(file.name) === null,
+  );
+  if (!hasRootLevelUsdStage) {
+    return payload;
+  }
+
+  const bundleRoot = inferArchiveBundleRoot(archivePath);
+  if (!bundleRoot) {
+    return payload;
+  }
+
+  return prefixCollectedImportPayload(payload, bundleRoot);
+}
+
+export function normalizeLooseImportBundleRoot<T extends BundleRootPayload>(payload: T): T {
+  const packageAssetBundleRoot = inferCommonPackageAssetBundleRoot(
+    payload.robotFiles
+      .filter((file) => !isAssetLibraryOnlyFormat(file.format) && file.format !== 'usd')
+      .map((file) => ({ format: file.format, content: file.content })),
+  );
+  const bundleRoot =
+    packageAssetBundleRoot &&
+    shouldWrapLooseImportUnderPackageAssetRoot(payload, packageAssetBundleRoot)
+      ? packageAssetBundleRoot
+      : shouldWrapLooseImportUnderBundleRoot(payload)
+        ? inferBundleRootFromRobotFiles(payload.robotFiles)
+        : null;
+  if (!bundleRoot) {
+    return payload;
+  }
+
+  return prefixCollectedImportPayload(payload, bundleRoot);
 }

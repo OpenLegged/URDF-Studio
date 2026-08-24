@@ -1216,10 +1216,74 @@ test('prepareImportPayload keeps unrelated opaque USD package assets deferred', 
     result.assetFiles.map((file) => file.name),
     ['lab/textures/albedo.jpg'],
   );
+  assert.deepEqual(result.deferredAssetFiles.map((file) => file.name).sort(), [
+    'lab/point_cloud.ply',
+    'other/textures/unrelated.png',
+  ]);
+});
+
+test('prepareImportPayload isolates sequential rootless USD archives with relative sidecars', async () => {
+  const prepareFixture = async (fileName: string, existingPaths: string[]) =>
+    prepareImportPayload({
+      files: [
+        new File([fs.readFileSync(`test/${fileName}`)], fileName, {
+          type: 'application/zip',
+        }),
+      ],
+      existingPaths,
+      preResolvePreferredImport: false,
+    });
+  const collectPreparedPaths = (payload: Awaited<ReturnType<typeof prepareImportPayload>>) => [
+    ...payload.robotFiles.map((file) => file.name),
+    ...payload.assetFiles.map((file) => file.name),
+    ...payload.deferredAssetFiles.map((file) => file.name),
+    ...payload.textFiles.map((file) => file.path),
+  ];
+
+  const fireRatedDoor = await prepareFixture('fire_rated_door.zip', []);
+  const door001 = await prepareFixture('door001.zip', collectPreparedPaths(fireRatedDoor));
+
+  assert.equal(fireRatedDoor.preferredFileName, 'fire_rated_door/model_door.usd');
+  assert.equal(door001.preferredFileName, 'door001/model_door001.usd');
   assert.deepEqual(
-    result.deferredAssetFiles.map((file) => file.name).sort(),
-    ['lab/point_cloud.ply', 'other/textures/unrelated.png'],
+    door001.usdSourceFiles.map((file) => file.name),
+    [
+      'door001/model_door001.usd',
+      'door001/resource/material.usd',
+      'door001/resource/v_0/link_0.usd',
+    ],
   );
+  assert.ok(
+    door001.assetFiles.every((file) => file.name.startsWith('door001/resource/img/')),
+    'expected the second archive textures to stay beside its own USD sidecars',
+  );
+  assert.equal(
+    door001.robotFiles.some((file) => file.name.startsWith('resource (1)/')),
+    false,
+  );
+});
+
+test('prepareImportPayload keeps standalone USDZ packages opaque and hydration-ready', async () => {
+  const fixtureBytes = fs.readFileSync('test/0006(1).usdz');
+  const result = await prepareImportPayload({
+    files: [
+      new File([fixtureBytes], '0006(1).usdz', {
+        type: 'model/vnd.usdz+zip',
+      }),
+    ],
+    existingPaths: [],
+  });
+
+  assert.equal(result.preferredFileName, '0006(1).usdz');
+  assert.deepEqual(
+    result.robotFiles.map(({ name, content, format }) => ({ name, content, format })),
+    [{ name: '0006(1).usdz', content: '', format: 'usd' }],
+  );
+  assert.deepEqual(
+    result.usdSourceFiles.map(({ name, blob }) => ({ name, size: blob.size })),
+    [{ name: '0006(1).usdz', size: fixtureBytes.byteLength }],
+  );
+  assert.equal(result.preResolvedImports[0]?.result.status, 'needs_hydration');
 });
 
 test('prepareImportPayload keeps large USDA sidecars blob-backed instead of eagerly decoding them', async () => {

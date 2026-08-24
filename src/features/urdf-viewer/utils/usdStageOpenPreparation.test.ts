@@ -3,43 +3,12 @@ import assert from 'node:assert/strict';
 
 import { clearPreparedUsdStageOpenCache } from './preparedUsdStageOpenCache.ts';
 import {
-  buildCriticalUsdDependencyPaths,
   prepareUsdStageOpenDataCore,
   resolveUsdStageOpenPreparationConcurrency,
 } from '@/lib/robot-parser/usd/usdStageOpenPreparationCore';
 
 test.afterEach(() => {
   clearPreparedUsdStageOpenCache();
-});
-
-test('buildCriticalUsdDependencyPaths infers configuration sublayers for Unitree roots', () => {
-  assert.deepEqual(buildCriticalUsdDependencyPaths('/Go2/usd/go2.usd'), [
-    '/Go2/usd/configuration/go2_description_base.usd',
-    '/Go2/usd/configuration/go2_description_physics.usd',
-    '/Go2/usd/configuration/go2_description_sensor.usd',
-  ]);
-});
-
-test('buildCriticalUsdDependencyPaths prefers robot config for h1_2_handless', () => {
-  assert.deepEqual(buildCriticalUsdDependencyPaths('/robots/h1_2_handless/usd/h1_2_handless.usd'), [
-    '/robots/h1_2_handless/usd/configuration/h1_2_handless_base.usd',
-    '/robots/h1_2_handless/usd/configuration/h1_2_handless_physics.usd',
-    '/robots/h1_2_handless/usd/configuration/h1_2_handless_robot.usd',
-  ]);
-});
-
-test('buildCriticalUsdDependencyPaths preserves usda configuration layers for Isaac-style roots', () => {
-  assert.deepEqual(
-    buildCriticalUsdDependencyPaths(
-      '/test/unitree_ros_usda/go2_description/urdf/go2_description.usda',
-    ),
-    [
-      '/test/unitree_ros_usda/go2_description/urdf/configuration/go2_description_base.usda',
-      '/test/unitree_ros_usda/go2_description/urdf/configuration/go2_description_physics.usda',
-      '/test/unitree_ros_usda/go2_description/urdf/configuration/go2_description_sensor.usda',
-      '/test/unitree_ros_usda/go2_description/urdf/configuration/go2_description_robot.usda',
-    ],
-  );
 });
 
 test('resolveUsdStageOpenPreparationConcurrency caps worker preload fan-out at 10', () => {
@@ -171,7 +140,6 @@ test('prepareUsdStageOpenDataCore materializes preload blobs and keeps optional 
     assert.equal(result.stageSourcePath, '/Go2/usd/go2.usd');
     assert.deepEqual(result.criticalDependencyPaths, [
       '/Go2/usd/configuration/go2_description_base.usd',
-      '/Go2/usd/configuration/go2_description_physics.usd',
       '/Go2/usd/configuration/go2_description_sensor.usd',
     ]);
     assert.deepEqual(
@@ -270,17 +238,179 @@ test('prepareUsdStageOpenDataCore preloads bundle USD layers when binary root re
   }
 });
 
-test('prepareUsdStageOpenDataCore keeps Isaac-style USDA sidecars as critical dependencies', async () => {
+test('prepareUsdStageOpenDataCore does not invent critical configuration layers for generic binary USD bundles', async () => {
+  const binaryLayerContent = 'PXR-USDC\u0000opaque-binary-layer';
+  const result = await prepareUsdStageOpenDataCore(
+    {
+      name: 'model_door.usd',
+      content: binaryLayerContent,
+      blobUrl: undefined,
+    },
+    [
+      {
+        name: 'model_door.usd',
+        content: binaryLayerContent,
+        blobUrl: undefined,
+        format: 'usd',
+      },
+      {
+        name: 'resource/material.usd',
+        content: binaryLayerContent,
+        blobUrl: undefined,
+        format: 'usd',
+      },
+      {
+        name: 'resource/v_0/link_0.usd',
+        content: binaryLayerContent,
+        blobUrl: undefined,
+        format: 'usd',
+      },
+    ],
+    {},
+  );
+
+  assert.deepEqual(result.criticalDependencyPaths, []);
+  assert.deepEqual(
+    result.preloadFiles.map((entry) => entry.path),
+    ['/resource/material.usd', '/resource/v_0/link_0.usd', '/model_door.usd'],
+  );
+});
+
+test('prepareUsdStageOpenDataCore does not invent critical sidecars for standalone USDZ packages', async () => {
+  const originalFetch = globalThis.fetch;
+
+  globalThis.fetch = (async (input: RequestInfo | URL) => {
+    assert.equal(String(input), 'blob:standalone-usdz');
+    return new Response(new Blob(['opaque-usdz-package'], { type: 'model/vnd.usdz+zip' }), {
+      status: 200,
+    });
+  }) as typeof fetch;
+
+  try {
+    const result = await prepareUsdStageOpenDataCore(
+      {
+        name: '0006(1).usdz',
+        content: '',
+        blobUrl: 'blob:standalone-usdz',
+      },
+      [
+        {
+          name: '0006(1).usdz',
+          content: '',
+          blobUrl: 'blob:standalone-usdz',
+          format: 'usd',
+        },
+      ],
+      {},
+    );
+
+    assert.deepEqual(result.criticalDependencyPaths, []);
+    assert.deepEqual(
+      result.preloadFiles.map(({ path, blob, error }) => ({
+        path,
+        blobSize: blob?.size ?? null,
+        error,
+      })),
+      [{ path: '/0006(1).usdz', blobSize: 19, error: null }],
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
+test('prepareUsdStageOpenDataCore does not infer sibling dependencies from binary config files', async () => {
+  const binaryLayerContent = 'PXR-USDC\u0000opaque-binary-layer';
+  const result = await prepareUsdStageOpenDataCore(
+    {
+      name: 'vendor/demo.usd',
+      content: binaryLayerContent,
+      blobUrl: undefined,
+    },
+    [
+      {
+        name: 'vendor/demo.usd',
+        content: binaryLayerContent,
+        blobUrl: undefined,
+        format: 'usd',
+      },
+      {
+        name: 'vendor/configuration/demo_base.usd',
+        content: binaryLayerContent,
+        blobUrl: undefined,
+        format: 'usd',
+      },
+    ],
+    {},
+  );
+
+  assert.deepEqual(result.criticalDependencyPaths, []);
+});
+
+test('prepareUsdStageOpenDataCore does not infer dependencies from a mapped root filename', async () => {
+  const binaryLayerContent = 'PXR-USDC\u0000opaque-binary-layer';
+  const result = await prepareUsdStageOpenDataCore(
+    {
+      name: 'robots/go2.usd',
+      content: binaryLayerContent,
+      blobUrl: undefined,
+    },
+    [
+      {
+        name: 'robots/go2.usd',
+        content: binaryLayerContent,
+        blobUrl: undefined,
+        format: 'usd',
+      },
+    ],
+    {},
+  );
+
+  assert.deepEqual(result.criticalDependencyPaths, []);
+  assert.deepEqual(result.preloadFiles.map((entry) => entry.path), ['/robots/go2.usd']);
+});
+
+test('prepareUsdStageOpenDataCore keeps explicitly referenced missing configuration layers critical', async () => {
+  const result = await prepareUsdStageOpenDataCore(
+    {
+      name: 'vendor/demo.usd',
+      content: '#usda 1.0\n(\n  subLayers = [@./configuration/demo_base.usd@]\n)\n',
+      blobUrl: undefined,
+    },
+    [
+      {
+        name: 'vendor/demo.usd',
+        content: '#usda 1.0\n(\n  subLayers = [@./configuration/demo_base.usd@]\n)\n',
+        blobUrl: undefined,
+        format: 'usd',
+      },
+    ],
+    {},
+  );
+
+  assert.deepEqual(result.criticalDependencyPaths, ['/vendor/configuration/demo_base.usd']);
+});
+
+test('prepareUsdStageOpenDataCore keeps authored USDA sidecars as critical dependencies', async () => {
+  const rootContent = `#usda 1.0
+(
+  subLayers = [
+    @configuration/go2_description_base.usda@,
+    @configuration/go2_description_physics.usda@,
+    @configuration/go2_description_sensor.usda@,
+    @configuration/go2_description_robot.usda@
+  ]
+)
+`;
   const result = await prepareUsdStageOpenDataCore(
     {
       name: 'test/unitree_ros_usda/go2_description/urdf/go2_description.usda',
-      content: '#usda 1.0\n',
+      content: rootContent,
       blobUrl: undefined,
     },
     [
       {
         name: 'test/unitree_ros_usda/go2_description/urdf/go2_description.usda',
-        content: '#usda 1.0\n',
+        content: rootContent,
         blobUrl: undefined,
         format: 'usd',
       },
@@ -325,6 +455,8 @@ test('prepareUsdStageOpenDataCore keeps Isaac-style USDA sidecars as critical de
 });
 
 test('prepareUsdStageOpenDataCore normalizes invisible top-level visuals scopes for instanceable USDA references', async () => {
+  const rootLayerSource =
+    '#usda 1.0\n(\n  subLayers = [@configuration/b2_description_base.usda@]\n)\n';
   const baseLayerSource = `#usda 1.0
 def Xform "b2_description"
 {
@@ -356,13 +488,13 @@ def Scope "visuals"
   const result = await prepareUsdStageOpenDataCore(
     {
       name: 'test/unitree_ros_usda/b2_description_mujoco/xml/b2_description.usda',
-      content: '#usda 1.0\n',
+      content: rootLayerSource,
       blobUrl: undefined,
     },
     [
       {
         name: 'test/unitree_ros_usda/b2_description_mujoco/xml/b2_description.usda',
-        content: '#usda 1.0\n',
+        content: rootLayerSource,
         blobUrl: undefined,
         format: 'usd',
       },

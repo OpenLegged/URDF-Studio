@@ -7,7 +7,10 @@ import { isAssetLibraryOnlyFormat, isVisibleLibraryEntry } from '@/shared/utils/
 import { pickPreferredImportFile } from '@/app/hooks/importPreferredFile';
 import { buildPreResolvedImportContentSignature } from './preResolvedImportSignature.ts';
 import { peekPreResolvedRobotImport } from './preResolvedRobotImportCache.ts';
-import { normalizeLooseImportBundleRoot } from './import-preparation/bundleRootNormalization.ts';
+import {
+  normalizeLooseImportBundleRoot,
+  normalizeRootlessUsdArchiveBundle,
+} from './import-preparation/bundleRootNormalization.ts';
 import { pickFastPreparedPreferredFile } from './import-preparation/fastPreferredFile.ts';
 import { mapImportProgressToPercentRange } from './import-preparation/progress.ts';
 import { determineCriticalDeferredAssetNames } from './import-preparation/criticalDeferredAssets.ts';
@@ -177,7 +180,10 @@ export async function prepareImportPayload({
       }
 
       const preparedPayload = renameCollectedImportPayload(
-        normalizeLooseImportBundleRoot(sortedCollectedPayload),
+        normalizeRootlessUsdArchiveBundle(
+          normalizeLooseImportBundleRoot(sortedCollectedPayload),
+          firstFile.name,
+        ),
         existingPaths,
         {
           preResolvePreferredImport,

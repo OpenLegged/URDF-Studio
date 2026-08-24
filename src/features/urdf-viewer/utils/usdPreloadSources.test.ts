@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 
 import {
   buildUsdBundlePreloadEntries,
+  collectAuthoredUsdLayerDependencyPaths,
   collectUsdStageOpenRelevantVirtualPaths,
   createUsdPreloadSource,
   extractUsdLayerReferencesFromText,
@@ -118,11 +119,16 @@ test('extractUsdLayerReferencesFromText keeps only USD layer references', () => 
         subLayers = [
           @./configuration/go2_description_base.usd@,
           @./configuration/go2_description_sensor.usda@,
+          @./packages/arm.usdz[inner/arm.usdc]@,
           @./textures/body.png@
         ]
       )
     `),
-    ['./configuration/go2_description_base.usd', './configuration/go2_description_sensor.usda'],
+    [
+      './configuration/go2_description_base.usd',
+      './configuration/go2_description_sensor.usda',
+      './packages/arm.usdz',
+    ],
   );
 });
 
@@ -143,7 +149,7 @@ test('resolveUsdLayerReferencePath resolves relative layer paths from the curren
   );
 });
 
-test('collectUsdStageOpenRelevantVirtualPaths keeps the selected root layer, its references, and critical config sidecars', () => {
+test('collectUsdStageOpenRelevantVirtualPaths follows only authored textual layer dependencies', () => {
   assert.deepEqual(
     collectUsdStageOpenRelevantVirtualPaths(
       {
@@ -166,7 +172,7 @@ test('collectUsdStageOpenRelevantVirtualPaths keeps the selected root layer, its
         },
         {
           name: 'robots/go2/usd/configuration/go2_description_sensor.usd',
-          content: '',
+          content: '#usda 1.0',
           blobUrl: undefined,
           format: 'usd',
         },
@@ -181,13 +187,39 @@ test('collectUsdStageOpenRelevantVirtualPaths keeps the selected root layer, its
     [
       '/robots/go2/usd/go2.usd',
       '/robots/go2/usd/configuration/go2_description_base.usd',
-      '/robots/go2/usd/configuration/go2_description_physics.usd',
       '/robots/go2/usd/configuration/go2_description_sensor.usd',
     ],
   );
 });
 
-test('collectUsdStageOpenRelevantVirtualPaths still keeps critical sidecars for binary .usd roots', () => {
+test('collectAuthoredUsdLayerDependencyPaths returns exact transitive authored paths', () => {
+  const rootContent = '#usda 1.0\n(\n  subLayers = [@layers/base.usda@]\n)\n';
+  const baseContent = '#usda 1.0\n(\n  subLayers = [@../shared/materials.usd@]\n)\n';
+  const availableFiles = [
+    {
+      name: 'vendor/root.usda',
+      content: rootContent,
+      blobUrl: undefined,
+      format: 'usd' as const,
+    },
+    {
+      name: 'vendor/layers/base.usda',
+      content: baseContent,
+      blobUrl: undefined,
+      format: 'usd' as const,
+    },
+  ];
+
+  assert.deepEqual(
+    collectAuthoredUsdLayerDependencyPaths(
+      { name: 'vendor/root.usda', content: rootContent, blobUrl: undefined },
+      availableFiles,
+    ),
+    ['/vendor/layers/base.usda', '/vendor/shared/materials.usd'],
+  );
+});
+
+test('collectUsdStageOpenRelevantVirtualPaths keeps same-bundle layers for binary roots', () => {
   assert.deepEqual(
     collectUsdStageOpenRelevantVirtualPaths(
       {
@@ -247,7 +279,7 @@ test('buildUsdBundlePreloadEntries preloads referenced layers and supported bund
       },
       {
         name: 'Go2/usd/configuration/go2_description_base.usd',
-        content: '',
+        content: '#usda 1.0',
         blobUrl: undefined,
         format: 'usd',
       },
