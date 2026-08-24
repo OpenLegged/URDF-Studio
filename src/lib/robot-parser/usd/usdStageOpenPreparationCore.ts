@@ -6,17 +6,15 @@ import type {
 } from './usdStageOpenPreparation.ts';
 import {
   buildUsdBundlePreloadEntries,
+  collectAuthoredUsdLayerDependencyPaths,
   isTextualUsdLayerCandidatePath,
   toVirtualUsdPath,
   type UsdPreloadEntry,
 } from './usdPreloadSources.ts';
-import { buildCriticalUsdDependencyPaths } from './usdCriticalDependencyPaths.ts';
 import {
   blobNeedsUsdInstanceableVisualScopeNormalization,
   normalizeUsdInstanceableVisualScopeVisibility,
 } from './usdStageOpenTextNormalization.ts';
-
-export { buildCriticalUsdDependencyPaths } from './usdCriticalDependencyPaths.ts';
 
 const NORMALIZED_USD_BLOB_CACHE_LIMIT = 64;
 type PreparedUsdPreloadPayload = {
@@ -270,6 +268,10 @@ export async function prepareUsdStageOpenDataCore(
     assets,
     options,
   );
+  const authoredDependencyPaths = collectAuthoredUsdLayerDependencyPaths(
+    sourceFile,
+    availableFiles,
+  );
   const preloadFiles = new Array<PreparedUsdPreloadFile>(preloadEntries.length);
   const metrics = createEmptyPreparedUsdStageOpenMetrics(preloadEntries.length);
 
@@ -300,7 +302,7 @@ export async function prepareUsdStageOpenDataCore(
 
   return {
     stageSourcePath,
-    criticalDependencyPaths: buildCriticalUsdDependencyPaths(stageSourcePath),
+    criticalDependencyPaths: authoredDependencyPaths,
     preloadFiles,
     metrics,
   };

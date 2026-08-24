@@ -17,6 +17,7 @@ import {
 import { processWithConcurrency, resolveImportPreparationConcurrency } from './concurrency.ts';
 import { isSupportedArchiveImportFile, withArchiveImportSession } from '../archiveImport.ts';
 import { collectImportPayloadFromArchiveSession } from './archiveCollector.ts';
+import { normalizeRootlessUsdArchiveBundle } from './bundleRootNormalization.ts';
 import {
   appendObjMaterialSidecarsFromLooseFiles,
   appendPreparedImportBlobFileIfMissing,
@@ -111,7 +112,10 @@ export async function collectImportPayloadFromLooseFiles(
             sourceArchiveImportPath: normalizeImportPath(path),
           }),
         );
-        appendCollectedImportPayload(payload, archivePayload);
+        appendCollectedImportPayload(
+          payload,
+          normalizeRootlessUsdArchiveBundle(archivePayload, path),
+        );
       } else if (isUsdFamilyPath(path)) {
         payload.robotFiles.push(await createImportedUsdFileFromLooseFile(path, file));
         payload.usdSourceFiles.push({ name: path, blob: file });
