@@ -13,6 +13,7 @@ import { shouldScheduleWorkspaceOrbitDemandFrame } from './workspaceOrbitRenderP
 import { useSceneBoundsCache } from './useSceneBoundsCache';
 import {
   applyWorkspaceCameraSnapshot,
+  captureWorkspaceCameraSnapshot,
   type WorkspaceCameraSnapshot,
 } from '../workspace/workspaceCameraSnapshot';
 
@@ -57,6 +58,7 @@ export interface WorkspaceOrbitControlsProps {
   minDistance?: number;
   maxDistance?: number;
   initialCameraSnapshot?: WorkspaceCameraSnapshot | null;
+  onCameraSnapshotChange?: (snapshot: WorkspaceCameraSnapshot) => void;
   eventSource?: 'default' | 'canvas';
 }
 
@@ -84,6 +86,7 @@ export function WorkspaceOrbitControls({
   minDistance = WORKSPACE_ORBIT_CONTROL_TUNING.minDistance,
   maxDistance,
   initialCameraSnapshot = null,
+  onCameraSnapshotChange,
   eventSource = 'default',
 }: WorkspaceOrbitControlsProps) {
   const camera = useThree((state) => state.camera);
@@ -271,7 +274,7 @@ export function WorkspaceOrbitControls({
     zoomToCursor,
   ]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!controlsRef.current) {
       return;
     }
@@ -288,6 +291,29 @@ export function WorkspaceOrbitControls({
     });
     invalidate();
   }, [camera, get, initialCameraSnapshot, invalidate]);
+
+  useLayoutEffect(() => {
+    if (!onCameraSnapshotChange) {
+      return undefined;
+    }
+
+    const capture = () => {
+      const snapshot = captureWorkspaceCameraSnapshot(
+        get(),
+        gl.domElement.parentElement,
+      );
+      if (snapshot) {
+        onCameraSnapshotChange(snapshot);
+      }
+    };
+
+    capture();
+    controls.addEventListener('change', capture);
+    return () => {
+      capture();
+      controls.removeEventListener('change', capture);
+    };
+  }, [controls, get, gl.domElement, onCameraSnapshotChange]);
 
   // Keep the perspective aspect ratio locked to the actual render surface on
   // every resize (e.g. switching the snapshot aspect preset reshapes the
