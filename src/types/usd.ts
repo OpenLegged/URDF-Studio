@@ -90,6 +90,10 @@ export interface UsdScenePrimDescriptor {
   hasPayload: boolean;
   hasAuthoredReferences: boolean;
   visible?: boolean;
+  /** Composed UsdPhysics collision state published by the native Stage. */
+  collisionEnabled?: boolean | null;
+  /** Authored mesh collision approximation token, when present. */
+  collisionApproximation?: string | null;
   transformable: boolean;
   hasAuthoredXformOps: boolean;
   resetsXformStack: boolean;

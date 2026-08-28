@@ -9,7 +9,10 @@ import {
     parseUrdfMaterialMetadataFromLayerText,
     parseVisualSemanticChildNamesFromLayerText,
 } from './shared-basic.js';
-import { ThreeRenderDelegateInterface } from './ThreeRenderDelegateInterface.js';
+import {
+    readUsdPrimCollisionMetadata,
+    ThreeRenderDelegateInterface,
+} from './ThreeRenderDelegateInterface.js';
 
 const exportedBaseLayerText = `#usda 1.0
 def Xform "Robot"
@@ -265,6 +268,50 @@ def Scope "meshes"
         }
     }
 }`;
+
+test('readUsdPrimCollisionMetadata preserves composed collision claims without certifying them', () => {
+    const attributes = new Map([
+        ['physics:collisionEnabled', { Get: () => true }],
+        ['physics:approximation', { Get: () => 'sdf' }],
+    ]);
+    assert.deepEqual(readUsdPrimCollisionMetadata({
+        GetAttribute: (name) => attributes.get(name) || null,
+        GetAppliedSchemas: () => ['PhysicsCollisionAPI', 'PhysxSDFMeshCollisionAPI'],
+    }), {
+        collisionEnabled: true,
+        collisionApproximation: 'sdf',
+    });
+
+    assert.deepEqual(readUsdPrimCollisionMetadata({
+        GetAttribute: (name) => name === 'physics:collisionEnabled'
+            ? { Get: () => false }
+            : null,
+        GetAppliedSchemas: () => ['PhysicsCollisionAPI'],
+    }), {
+        collisionEnabled: false,
+        collisionApproximation: null,
+    });
+
+    assert.deepEqual(readUsdPrimCollisionMetadata({
+        GetAttribute: (name) => name === 'physics:collisionEnabled'
+            ? { Get: () => 1 }
+            : { Get: () => null },
+    }), {
+        collisionEnabled: true,
+        collisionApproximation: null,
+    });
+
+    assert.deepEqual(readUsdPrimCollisionMetadata({
+        GetAttribute: () => null,
+        GetAppliedSchemas: () => ({
+            size: () => 1,
+            get: () => 'PhysicsCollisionAPI',
+        }),
+    }), {
+        collisionEnabled: true,
+        collisionApproximation: null,
+    });
+});
 
 test('parseVisualSemanticChildNamesFromLayerText finds semantic children across nested link-local scopes', () => {
     const result = parseVisualSemanticChildNamesFromLayerText(exportedBaseLayerText);

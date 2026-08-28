@@ -76,6 +76,53 @@ function normalizeDescriptorSectionName(sectionName) {
     }
     return normalized;
 }
+export function readUsdPrimCollisionMetadata(prim) {
+    if (!prim || typeof prim.GetAttribute !== 'function') {
+        return { collisionEnabled: null, collisionApproximation: null };
+    }
+    let collisionEnabled = null;
+    try {
+        const enabledAttribute = prim.GetAttribute('physics:collisionEnabled');
+        if (enabledAttribute && typeof enabledAttribute.Get === 'function') {
+            const value = enabledAttribute.Get();
+            if (typeof value === 'boolean') {
+                collisionEnabled = value;
+            }
+            else if (value === 0 || value === 1) {
+                // The Emscripten VtValue bridge used by some OpenUSD builds
+                // exposes authored bools as numeric scalars.
+                collisionEnabled = value === 1;
+            }
+        }
+    }
+    catch { }
+    if (collisionEnabled === null) {
+        try {
+            const rawSchemas = prim.GetAppliedSchemas?.();
+            let schemas = toArrayLike(rawSchemas) || [];
+            if (schemas.length === 0
+                && typeof rawSchemas?.size === 'function'
+                && typeof rawSchemas?.get === 'function') {
+                schemas = Array.from(
+                    { length: Number(rawSchemas.size()) || 0 },
+                    (_, index) => rawSchemas.get(index),
+                );
+            }
+            collisionEnabled = schemas.some((schema) => /collisionapi/i.test(String(schema)))
+                ? true
+                : null;
+        }
+        catch { }
+    }
+    let collisionApproximation = null;
+    try {
+        const approximation = prim.GetAttribute('physics:approximation')?.Get?.();
+        const normalized = String(approximation || '').trim();
+        collisionApproximation = normalized || null;
+    }
+    catch { }
+    return { collisionEnabled, collisionApproximation };
+}
 function normalizeNormalDiagnostics(source) {
     if (!source || typeof source !== 'object') {
         return null;
@@ -4242,7 +4289,18 @@ export class ThreeRenderDelegateInterface extends ThreeRenderDelegateMaterialOps
             framesPerSecond: Number(rawStage.framesPerSecond || 0),
             metersPerUnit: Number(rawStage.metersPerUnit || 0),
         };
-
+        const nativeCollisionByPrimPath = new Map(
+            toPlainArray(rawStage.collisionPrimRecords)
+                .map((record) => ({
+                    path: normalizeHydraPath(record?.path || ''),
+                    collisionEnabled: typeof record?.collisionEnabled === 'boolean'
+                        ? record.collisionEnabled
+                        : null,
+                    collisionApproximation: String(record?.collisionApproximation || '').trim() || null,
+                }))
+                .filter((record) => record.path && record.collisionEnabled !== null)
+                .map((record) => [record.path, record]),
+        );
         // Extract authoredXformOps and layerInfo for USD-free rendering
         const authoredXformOpsByPrimPath = {};
         const primDescriptors = [];
@@ -4425,6 +4483,8 @@ export class ThreeRenderDelegateInterface extends ThreeRenderDelegateMaterialOps
                     const prototype = readFlag('IsPrototype', false);
                     const hasPayload = readFlag('HasPayload', false);
                     const hasAuthoredReferences = readFlag('HasAuthoredReferences', false);
+                    const collisionMetadata = readUsdPrimCollisionMetadata(prim);
+                    const nativeCollisionMetadata = nativeCollisionByPrimPath.get(primPath) || null;
                     let visible = true;
                     try {
                         const visibilityAttribute = typeof prim.GetAttribute === 'function'
@@ -4472,6 +4532,10 @@ export class ThreeRenderDelegateInterface extends ThreeRenderDelegateMaterialOps
                         hasPayload,
                         hasAuthoredReferences,
                         visible,
+                        collisionEnabled: nativeCollisionMetadata?.collisionEnabled
+                            ?? collisionMetadata.collisionEnabled,
+                        collisionApproximation: nativeCollisionMetadata?.collisionApproximation
+                            ?? collisionMetadata.collisionApproximation,
                         transformable,
                         hasAuthoredXformOps,
                         resetsXformStack,

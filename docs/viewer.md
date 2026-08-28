@@ -1,6 +1,6 @@
 # Editor / Viewer 子域
 
-> 最后更新：2026-07-09 | 覆盖源码：`src/core/robot/assemblySceneProjection.ts`、`src/core/robot/assemblyScenePlacement.ts`、`src/features/editor/`、`src/features/urdf-viewer/`、`src/app/components/unified-viewer/`、`src/shared/components/3d/`
+> 最后更新：2026-08-28 | 覆盖源码：`src/core/robot/assemblySceneProjection.ts`、`src/core/robot/assemblyScenePlacement.ts`、`src/features/editor/`、`src/features/urdf-viewer/`、`src/app/components/unified-viewer/`、`src/shared/components/3d/`
 > 交叉引用：[architecture.md](architecture.md)、[file-io.md](file-io.md)、[style-guide.md](style-guide.md)、[wasm-build.md](wasm-build.md)
 
 ## 1. 单模式 Editor
@@ -89,6 +89,9 @@ features/urdf-viewer/
 
 - USD stage preparation、runtime metadata、robot hydration、prepared export cache、roundtrip archive 的修复，默认优先放在 worker/runtime 链路完成，不要搬到主线程 adapter 或 debug bridge
 - `runtime/hydra/render-delegate/*` 产出的 metadata snapshot 是该链路的 source of truth；缺字段应修 worker/runtime 生成逻辑
+- scene snapshot 的 Prim descriptor 保留 composed `physics:collisionEnabled` 与
+  `physics:approximation`，供宿主区分“源文件声明碰撞”和“平台认证碰撞”；该 metadata 只陈述
+  Stage 事实，不签发或暗示 Sim Ready 认证
 - 禁止新增"worker 结果缺失 -> 主线程重建 metadata -> 静默继续"的 fallback
 - 对 folded fixed link、collision-only semantic child link 的推断只能基于 stage/truth 中的明确证据，不做纯命名猜测
 - `visual_*` / `collision_*` / `group_*` / `xform_*` / `scene` / `root` 这类 roundtrip 容器 prim 不是 link identity；runtime metadata 不得把它们提升为 synthetic link 或 fixed joint

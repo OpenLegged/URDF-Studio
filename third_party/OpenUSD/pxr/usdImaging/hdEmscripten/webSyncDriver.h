@@ -530,6 +530,7 @@ public:
         stageInfo.set("timeCodesPerSecond", 0.0);
         stageInfo.set("framesPerSecond", 0.0);
         stageInfo.set("metersPerUnit", 0.0);
+        stageInfo.set("collisionPrimRecords", emptyArray);
 
         robotTree.set("linkParentPairs", emptyArray);
         robotTree.set("jointCatalogEntries", emptyArray);
@@ -607,6 +608,48 @@ public:
         stageInfo.set("timeCodesPerSecond", _stage->GetTimeCodesPerSecond());
         stageInfo.set("framesPerSecond", _stage->GetFramesPerSecond());
         stageInfo.set("metersPerUnit", metersPerUnit);
+
+        emscripten::val collisionPrimRecords = emscripten::val::array();
+        int collisionPrimRecordIndex = 0;
+        const UsdTimeCode collisionTimeCode =
+            _delegate ? _delegate->GetTime() : UsdTimeCode::Default();
+        const Usd_PrimFlagsPredicate collisionPredicate =
+            UsdTraverseInstanceProxies(UsdPrimAllPrimsPredicate);
+        for (UsdPrim const& prim : UsdPrimRange::Stage(
+                 _stage, collisionPredicate)) {
+            if (!prim) continue;
+            const UsdAttribute collisionEnabledAttr =
+                prim.GetAttribute(TfToken("physics:collisionEnabled"));
+            bool hasCollisionDeclaration = static_cast<bool>(collisionEnabledAttr);
+            if (!hasCollisionDeclaration) {
+                for (TfToken const& schemaToken : prim.GetAppliedSchemas()) {
+                    if (_ToLowerAscii(schemaToken.GetString()).find("collisionapi")
+                        != std::string::npos) {
+                        hasCollisionDeclaration = true;
+                        break;
+                    }
+                }
+            }
+            if (!hasCollisionDeclaration) continue;
+
+            emscripten::val record = emscripten::val::object();
+            record.set("path", prim.GetPath().GetString());
+            record.set(
+                "collisionEnabled",
+                _PrimHasEnabledCollision(prim, collisionTimeCode));
+            const UsdAttribute approximationAttr =
+                prim.GetAttribute(TfToken("physics:approximation"));
+            TfToken approximation;
+            if (approximationAttr
+                && approximationAttr.Get(&approximation, collisionTimeCode)
+                && !approximation.IsEmpty()) {
+                record.set("collisionApproximation", approximation.GetString());
+            } else {
+                record.set("collisionApproximation", emscripten::val::null());
+            }
+            collisionPrimRecords.set(collisionPrimRecordIndex++, record);
+        }
+        stageInfo.set("collisionPrimRecords", collisionPrimRecords);
         snapshotProfile.stageInfoMs = _NowSteadyMs() - stageInfoStartedAtMs;
 
         auto makeFloat32ArrayCopy = [](std::vector<float> const& values) {

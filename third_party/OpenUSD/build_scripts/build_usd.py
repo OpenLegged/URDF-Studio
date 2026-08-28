@@ -3022,7 +3022,7 @@ if Windows():
         os.path.join(context.instDir, "lib")
     ])
 
-if MacOS():
+if MacOS() and context.buildTarget not in (TARGET_WASM, TARGET_WASM_NODE):
     if context.macOSCodesign:
         apple_utils.Codesign(context.usdInstDir, verbosity > 1)
 
