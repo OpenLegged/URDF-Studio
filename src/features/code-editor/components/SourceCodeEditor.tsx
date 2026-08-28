@@ -174,6 +174,8 @@ export const SourceCodeEditor: React.FC<SourceCodeEditorProps> = ({
   const copyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingAppliedCodeRef = useRef<string | null>(null);
   const pendingAppliedBaseCodeRef = useRef<string | null>(null);
+  const editorBaseCodeRef = useRef(activeDocumentCode);
+  const dirtyBaseCodeRef = useRef<string | null>(null);
   const dirtyRangesRef = useRef<NonNullable<SourceCodeEditorApplyRequest['dirtyRanges']>>([]);
   const suppressDirtyTrackingRef = useRef(0);
   const contentChangeDisposableRef = useRef<{ dispose: () => void } | null>(null);
@@ -294,6 +296,8 @@ export const SourceCodeEditor: React.FC<SourceCodeEditorProps> = ({
     sessionBoundaryRef.current = nextSessionBoundary;
     pendingAppliedCodeRef.current = null;
     pendingAppliedBaseCodeRef.current = null;
+    editorBaseCodeRef.current = activeDocumentCode;
+    dirtyBaseCodeRef.current = null;
     dirtyRangesRef.current = [];
     contentChangeDisposableRef.current?.dispose();
     contentChangeDisposableRef.current = null;
@@ -335,6 +339,8 @@ export const SourceCodeEditor: React.FC<SourceCodeEditorProps> = ({
       editorRef.current.setValue(activeDocumentCode);
       suppressDirtyTrackingRef.current = Math.max(0, suppressDirtyTrackingRef.current - 1);
       setCurrentCode(activeDocumentCode);
+      editorBaseCodeRef.current = activeDocumentCode;
+      dirtyBaseCodeRef.current = null;
       dirtyRangesRef.current = [];
       setApplyErrorMessage(null);
       setAutoApplyBlockedCode(null);
@@ -364,12 +370,15 @@ export const SourceCodeEditor: React.FC<SourceCodeEditorProps> = ({
       try {
         const didApply = await Promise.resolve(
           activeDocument.onCodeChange(value, {
+            baseContent: dirtyBaseCodeRef.current ?? editorBaseCodeRef.current,
             dirtyRanges: [...dirtyRangesRef.current],
           }),
         );
         if (didApply) {
           pendingAppliedCodeRef.current = value;
           pendingAppliedBaseCodeRef.current = activeDocumentCode;
+          editorBaseCodeRef.current = value;
+          dirtyBaseCodeRef.current = null;
           dirtyRangesRef.current = [];
           setIsDirty(false);
           setApplyErrorMessage(null);
@@ -415,6 +424,11 @@ export const SourceCodeEditor: React.FC<SourceCodeEditorProps> = ({
 
       setCurrentCode(value);
       setIsDirty(isReadOnly ? false : value !== activeDocumentCode);
+      if (!isReadOnly && value === activeDocumentCode) {
+        editorBaseCodeRef.current = activeDocumentCode;
+        dirtyBaseCodeRef.current = null;
+        dirtyRangesRef.current = [];
+      }
       if (applyErrorMessage) {
         setApplyErrorMessage(null);
       }
@@ -606,6 +620,7 @@ export const SourceCodeEditor: React.FC<SourceCodeEditorProps> = ({
             return;
           }
 
+          dirtyBaseCodeRef.current ??= editorBaseCodeRef.current;
           dirtyRangesRef.current = accumulateSourceCodeDirtyRanges(dirtyRangesRef.current, changes);
         }) ?? null;
 

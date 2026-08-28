@@ -364,3 +364,51 @@ test('editable source apply ignores stale worker results before committing', asy
   );
   assert.equal(regressionDebugState.lastEditableSourceApplyResult, null);
 });
+
+test('source edits based on an older draft cannot overwrite property-panel changes', async () => {
+  const { initialDraft, revision } = reset();
+  const currentRobot = useWorkspaceStore.getState().workspace.components.arm.robot;
+  const synchronizedDraft = createComponentSourceDraft({
+    componentId: 'arm',
+    format: 'urdf',
+    content: '<robot name="before"><link name="base"/></robot>',
+    robot: currentRobot,
+  });
+  useAssetsStore.getState().setComponentSourceDraft(synchronizedDraft);
+  let workerCalled = false;
+
+  const applied = await applyPreparedEditableSourceCodeChange({
+    allFileContents: { 'library/arm.urdf': synchronizedDraft.content },
+    applyEditableSourceChange: async () => {
+      workerCalled = true;
+      return {
+        mode: 'full-parse',
+        state: robotState('stale-editor'),
+        diagnostics: {
+          attempted: false,
+          dirtyRangeCount: 1,
+          dirtySpanBytes: 12,
+          dirtySpanLimitBytes: 128,
+          patchKind: null,
+          skipReason: 'incremental-patch-not-requested',
+        },
+      };
+    },
+    applyRequest: {
+      baseContent: initialDraft.content,
+      dirtyRanges: [{ startOffset: 8, endOffset: 20 }],
+    },
+    availableFiles: useAssetsStore.getState().availableFiles,
+    componentId: 'arm',
+    draft: synchronizedDraft,
+    expectedWorkspaceRevision: revision,
+    robot: currentRobot,
+    sourceFileName: 'library/arm.urdf',
+    newCode: '<robot name="stale-editor"/>',
+  });
+
+  assert.equal(applied, false);
+  assert.equal(workerCalled, false);
+  assert.equal(useWorkspaceStore.getState().workspace.components.arm.robot.name, 'before');
+  assert.deepEqual(useAssetsStore.getState().componentSourceDrafts.arm, synchronizedDraft);
+});

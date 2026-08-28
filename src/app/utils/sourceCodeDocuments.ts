@@ -7,7 +7,6 @@ import type {
 import { generateURDF } from '@/core/parsers';
 import { buildExportableAssemblyRobotData } from '@/core/robot/assemblyTransforms';
 import { analyzeAssemblyConnectivity } from '@/core/robot/assemblyConnectivity';
-import { hasComponentEditorLocks } from '@/core/robot/editorLock';
 import type { SourceCodeDocumentFlavor } from './sourceCodeDisplay';
 import { detectImportFormat } from './import-preparation/formatDetection.ts';
 import {
@@ -89,7 +88,6 @@ interface BuildSourceCodeDocumentsParams {
   sourceCodeDocumentFlavor: SourceCodeDocumentFlavor;
   availableFiles: RobotFile[];
   allFileContents: Record<string, string>;
-  forceReadOnly?: boolean;
 }
 
 const XACRO_INCLUDE_REGEX =
@@ -509,11 +507,10 @@ export function buildSourceCodeDocuments({
   sourceCodeDocumentFlavor,
   availableFiles,
   allFileContents,
-  forceReadOnly = false,
 }: BuildSourceCodeDocumentsParams): SourceCodeDocumentDescriptor[] {
   if (!activeSourceFile) {
     const generatedDocumentFormat = resolveGeneratedDocumentFormat(sourceCodeDocumentFlavor);
-    const isReadOnly = forceReadOnly || isSourceCodeDocumentReadOnly(sourceCodeDocumentFlavor);
+    const isReadOnly = isSourceCodeDocumentReadOnly(sourceCodeDocumentFlavor);
     return [
       {
         id: 'source:robot',
@@ -551,9 +548,9 @@ export function buildSourceCodeDocuments({
           ? activeSourceFile.blobUrl
           : undefined,
       documentFlavor: sourceCodeDocumentFlavor,
-      readOnly: forceReadOnly || isSourceCodeDocumentReadOnly(sourceCodeDocumentFlavor),
+      readOnly: isSourceCodeDocumentReadOnly(sourceCodeDocumentFlavor),
       changeTarget:
-        forceReadOnly || isSourceCodeDocumentReadOnly(sourceCodeDocumentFlavor)
+        isSourceCodeDocumentReadOnly(sourceCodeDocumentFlavor)
           ? undefined
           : {
               kind: 'component',
@@ -657,7 +654,6 @@ function buildComponentDraftDocuments(
     sourceCodeDocumentFlavor: documentFlavor,
     availableFiles,
     allFileContents,
-    forceReadOnly: hasComponentEditorLocks(component),
   });
 }
 
@@ -703,8 +699,16 @@ function buildComponentGeneratedFallbackDocument(
     filePath: null,
     content,
     documentFlavor: 'urdf',
-    readOnly: true,
+    readOnly: false,
     validationEnabled: true,
+    changeTarget: {
+      kind: 'component',
+      componentId: component.id,
+      name: fileName,
+      format: 'urdf',
+      content,
+      persistContent: false,
+    },
   };
 }
 
@@ -736,10 +740,6 @@ function buildGroupMergedDocument(
   componentIds: string[],
   componentSourceDrafts: Record<string, ComponentSourceDraft>,
 ): SourceCodeDocumentDescriptor {
-  const editorLocked = componentIds.some((componentId) => {
-    const component = workspace.components[componentId];
-    return Boolean(component && hasComponentEditorLocks(component));
-  });
   const masterComponentId = resolveAssemblyGroupMasterComponentId(workspace, componentIds);
   const masterComponent = masterComponentId ? workspace.components[masterComponentId] : null;
   const groupName = masterComponent?.name || workspace.name;
@@ -763,16 +763,14 @@ function buildGroupMergedDocument(
           filePath: null,
           content: grafted.urdfText,
           documentFlavor: 'urdf',
-          readOnly: editorLocked,
+          readOnly: false,
           validationEnabled: true,
-          changeTarget: editorLocked
-            ? undefined
-            : {
-                kind: 'group',
-                rootComponentId: masterComponentId,
-                groupComponentIds: [...componentIds],
-                provenance: grafted.provenance,
-              },
+          changeTarget: {
+            kind: 'group',
+            rootComponentId: masterComponentId,
+            groupComponentIds: [...componentIds],
+            provenance: grafted.provenance,
+          },
         };
       }
     }

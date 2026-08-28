@@ -227,7 +227,6 @@ export function createComponentActions(
       if (
         get().revision !== expectedRevision
         || !get().workspace.components[componentId]
-        || hasLockedContent(componentId)
       ) {
         return false;
       }

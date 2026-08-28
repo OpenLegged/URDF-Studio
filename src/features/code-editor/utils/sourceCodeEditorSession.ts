@@ -15,6 +15,8 @@ export interface SourceCodeEditorContentChange {
 }
 
 export interface SourceCodeEditorApplyRequest {
+  /** Source text the editor session was based on before local edits began. */
+  baseContent?: string;
   dirtyRanges?: SourceCodeDirtyRange[];
 }
 

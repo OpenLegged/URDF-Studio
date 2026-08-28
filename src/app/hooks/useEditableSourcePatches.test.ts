@@ -98,7 +98,7 @@ test('property patch updates only its target component draft and current semanti
   assert.equal(assets.allFileContents['library/shared.xml'], '<mujoco model="template"/>');
 });
 
-test('unsafe patch invalidates only its target draft', () => {
+test('unsafe patch preserves its target draft for source reconciliation', () => {
   const before = reset();
   const expectedRobotSnapshotHash = createSourceSemanticRobotHash(before.components.left.robot);
 
@@ -107,11 +107,14 @@ test('unsafe patch invalidates only its target draft', () => {
     expectedRobotSnapshotHash,
     patch: () => null,
   }), 'invalidated');
-  assert.equal(useAssetsStore.getState().componentSourceDrafts.left, undefined);
+  assert.equal(
+    useAssetsStore.getState().componentSourceDrafts.left.content,
+    '<mujoco model="left"/>',
+  );
   assert.ok(useAssetsStore.getState().componentSourceDrafts.right);
 });
 
-test('foreign or already-stale drafts are rejected and removed', () => {
+test('foreign or already-stale drafts are rejected without discarding authored text', () => {
   const before = reset();
   useAssetsStore.setState((state) => ({
     componentSourceDrafts: {
@@ -125,7 +128,10 @@ test('foreign or already-stale drafts are rejected and removed', () => {
     expectedRobotSnapshotHash: createSourceSemanticRobotHash(before.components.left.robot),
     patch: () => '<mujoco model="should-not-commit"/>',
   }), 'invalidated');
-  assert.equal(useAssetsStore.getState().componentSourceDrafts.left, undefined);
+  assert.equal(
+    useAssetsStore.getState().componentSourceDrafts.left.content,
+    '<mujoco model="left"/>',
+  );
   assert.ok(useAssetsStore.getState().componentSourceDrafts.right);
 });
 

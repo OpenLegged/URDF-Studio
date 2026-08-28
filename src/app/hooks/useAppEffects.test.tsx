@@ -82,7 +82,7 @@ test('selection cleanup repairs committed selection and clears every invalid tra
   }
 });
 
-test('source draft cleanup preserves owned stale drafts and removes foreign drafts', async () => {
+test('source draft synchronization updates owned stale drafts and removes foreign drafts', async () => {
   const originalWindow = globalThis.window;
   const originalDocument = globalThis.document;
   const originalNavigator = globalThis.navigator;
@@ -123,7 +123,6 @@ test('source draft cleanup preserves owned stale drafts and removes foreign draf
     assert.deepEqual(Object.keys(useAssetsStore.getState().componentSourceDrafts), [
       'component_1',
     ]);
-
     const currentRobot = useWorkspaceStore.getState().workspace.components.component_1!.robot;
     useWorkspaceStore.getState().replaceComponentRobot('component_1', {
       ...currentRobot,
@@ -133,6 +132,17 @@ test('source draft cleanup preserves owned stale drafts and removes foreign draf
     assert.deepEqual(Object.keys(useAssetsStore.getState().componentSourceDrafts), [
       'component_1',
     ]);
+    assert.match(
+      useAssetsStore.getState().componentSourceDrafts.component_1.content,
+      /mutated source robot/,
+    );
+
+    assert.equal(useWorkspaceStore.getState().undo(), true);
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
+    assert.doesNotMatch(
+      useAssetsStore.getState().componentSourceDrafts.component_1.content,
+      /mutated source robot/,
+    );
   } finally {
     flushSync(() => root.unmount());
     await new Promise<void>((resolve) => setTimeout(resolve, 0));

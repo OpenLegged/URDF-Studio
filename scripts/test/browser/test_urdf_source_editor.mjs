@@ -16,6 +16,10 @@ import {
   importModel,
   waitForReady,
   getTopology,
+  openSourceEditor,
+  getSourceEditorText,
+  replaceSourceEditorText,
+  saveSourceEditor,
   store,
   writeReport,
   printSummary,
@@ -68,9 +72,20 @@ async function main() {
     const topo = await getTopology(page);
     assert(suite, topo.linkCount > 0, 'model loaded');
 
-    // Once the application is ready, opening the source editor must not depend
-    // on another Vite feature-module fetch. A stale page can keep working across
-    // a dev-server/HMR restart only when this dependency graph is already loaded.
+    // Mount once before enabling the late-request fault injection. This proves
+    // the real first-open path and deterministically loads the complete lazy
+    // module graph; hover-only prefetch can resolve before Vite has fetched every
+    // transitive module after an HMR invalidation.
+    const sourceEditorButton = await page
+      .waitForSelector('[data-testid="source-code-open"]:not([disabled])', { timeout: 30_000 })
+      .catch(() => null);
+    assert(suite, Boolean(sourceEditorButton), 'source editor button found');
+    if (sourceEditorButton) {
+      await sourceEditorButton.click();
+      await page.waitForSelector('.monaco-editor', { timeout: 30_000 });
+      await closeSourceEditor(page);
+    }
+
     const lateEditorModuleRequests = [];
     await page.setRequestInterception(true);
     page.on('request', (request) => {
@@ -90,10 +105,6 @@ async function main() {
     });
 
     // ── 1. Open source editor via UI ──
-    const sourceEditorButton = await page
-      .waitForSelector('[data-testid="source-code-open"]:not([disabled])', { timeout: 30_000 })
-      .catch(() => null);
-    assert(suite, Boolean(sourceEditorButton), 'source editor button found');
     if (sourceEditorButton) {
       await sourceEditorButton.click();
     }
@@ -157,6 +168,73 @@ async function main() {
       'source contains robot XML elements',
     );
 
+    // Imported URDF source remains editable even if scene/property editing is
+    // independently locked. Save must update both RobotData and its owned draft.
+    await page.evaluate(() => {
+      window.__URDF_STUDIO_DEBUG__?.__uiStore__?.setState?.({ sourceCodeAutoApply: false });
+    });
+    const importedTarget = await page.evaluate(() => {
+      const workspace = window.__URDF_STUDIO_DEBUG__?.__workspaceStore__?.getState?.().workspace;
+      const component = workspace ? Object.values(workspace.components ?? {})[0] : undefined;
+      return component ? { componentId: component.id, robotName: component.robot.name } : null;
+    });
+    assert(suite, Boolean(importedTarget), 'imported URDF component resolved');
+    if (importedTarget) {
+      await page.evaluate((componentId) => {
+        const workspaceStore = window.__URDF_STUDIO_DEBUG__?.__workspaceStore__;
+        workspaceStore?.getState?.().setComponentEditorLocked(componentId, true);
+      }, importedTarget.componentId);
+      await delay(100);
+      const importedEditorState = await page.evaluate(() => ({
+        hasReadOnlyBadge: [...document.querySelectorAll('.source-code-editor-window *')].some(
+          (element) => /^read-only$/i.test(element.textContent?.trim() ?? ''),
+        ),
+        hasSaveButton: Boolean(document.querySelector('[data-testid="source-code-save"]')),
+      }));
+      assert(
+        suite,
+        !importedEditorState.hasReadOnlyBadge,
+        'imported URDF stays editable while component is scene-locked',
+      );
+      assert(suite, importedEditorState.hasSaveButton, 'imported URDF exposes Save');
+
+      const importedSource = await getSourceEditorText(page);
+      const originalNameAttribute = `name="${importedTarget.robotName}"`;
+      const savedRobotName = `${importedTarget.robotName}_source_saved`;
+      assert(
+        suite,
+        importedSource.includes(originalNameAttribute),
+        'imported URDF source contains canonical robot name',
+      );
+      await replaceSourceEditorText(
+        page,
+        importedSource.replace(originalNameAttribute, `name="${savedRobotName}"`),
+      );
+      await saveSourceEditor(page);
+      await page.waitForFunction(
+        (componentId, expectedName) =>
+          window.__URDF_STUDIO_DEBUG__?.__workspaceStore__?.getState?.()
+            .workspace?.components?.[componentId]?.robot?.name === expectedName,
+        { timeout: 30_000 },
+        importedTarget.componentId,
+        savedRobotName,
+      );
+      const importedDraftSaved = await page.evaluate(
+        (componentId, expectedName) => {
+          const draft = window.__URDF_STUDIO_DEBUG__?.__assetsStore__?.getState?.()
+            .componentSourceDrafts?.[componentId];
+          return draft?.content?.includes(`name="${expectedName}"`) ?? false;
+        },
+        importedTarget.componentId,
+        savedRobotName,
+      );
+      assert(suite, importedDraftSaved, 'imported URDF save updates owned source draft');
+      await page.evaluate((componentId) => {
+        window.__URDF_STUDIO_DEBUG__?.__workspaceStore__?.getState?.()
+          .setComponentEditorLocked(componentId, false);
+      }, importedTarget.componentId);
+    }
+
     // Repeatedly remount the editor while every late feature-module request is
     // still forced to fail. This covers the frequent open/close workflow that
     // exposed rejected React.lazy promises in long-lived development tabs.
@@ -217,6 +295,48 @@ async function main() {
     const reimported = await getTopology(page);
     assertEqual(suite, reimported.linkCount, topo.linkCount, 'reimport restores link count');
     assertEqual(suite, reimported.jointCount, topo.jointCount, 'reimport restores joint count');
+
+    // ── 7. A source-less default workspace is still a real editable document ──
+    await page.evaluate(() => {
+      window.__URDF_STUDIO_DEBUG__?.__workspaceStore__?.getState?.().resetWorkspace(
+        'editable_default',
+      );
+      window.__URDF_STUDIO_DEBUG__?.__assetsStore__?.getState?.().clearComponentSourceDrafts();
+      window.__URDF_STUDIO_DEBUG__?.__uiStore__?.setState?.({ sourceCodeAutoApply: false });
+    });
+    await openSourceEditor(page);
+    const defaultEditorState = await page.evaluate(() => ({
+      hasReadOnlyBadge: [...document.querySelectorAll('.source-code-editor-window *')].some(
+        (element) => /^read-only$/i.test(element.textContent?.trim() ?? ''),
+      ),
+      hasSaveButton: Boolean(document.querySelector('[data-testid="source-code-save"]')),
+    }));
+    assert(suite, !defaultEditorState.hasReadOnlyBadge, 'default workspace source is not read-only');
+    assert(suite, defaultEditorState.hasSaveButton, 'default workspace source exposes Save');
+
+    const defaultSource = await getSourceEditorText(page);
+    assert(suite, defaultSource.includes('editable_default'), 'default source reflects RobotData');
+    await replaceSourceEditorText(
+      page,
+      defaultSource.replace('editable_default', 'editable_default_saved'),
+    );
+    await saveSourceEditor(page);
+    await page.waitForFunction(
+      () => {
+        const workspace = window.__URDF_STUDIO_DEBUG__?.__workspaceStore__?.getState?.().workspace;
+        return workspace?.components?.component_1?.robot?.name === 'editable_default_saved';
+      },
+      { timeout: 30_000 },
+    );
+    const savedDefaultDraft = await page.evaluate(
+      () => window.__URDF_STUDIO_DEBUG__?.__assetsStore__?.getState?.()
+        .componentSourceDrafts?.component_1?.content ?? '',
+    );
+    assert(
+      suite,
+      savedDefaultDraft.includes('editable_default_saved'),
+      'first save bootstraps an editable component source draft',
+    );
 
     const errs = session.errors();
     assert(suite, errs.page.length === 0, 'no page errors');

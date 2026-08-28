@@ -4,7 +4,6 @@ import {
   appendCollisionBody,
   createSourceSemanticRobotHash,
   getCollisionGeometryEntries,
-  isComponentSourceDraftMatchingComponent,
   normalizeJointLimitOrder,
   resolveClosedLoopJointOriginCompensationDetailed,
 } from '@/core/robot';
@@ -51,16 +50,11 @@ import { hasLinkInertialChanged } from './linkInertialDiff';
 import { applyLinkPatch } from './linkPatch';
 import type { PropertyHistoryCommands } from './usePropertyHistoryCommands';
 import type { WorkspaceTransformCommands } from './useWorkspaceTransformCommands';
+import { synchronizeComponentSourceDraft } from '../workspace-source-sync/component_source_draft_sync';
 
-function invalidateComponentDraftUnlessCurrent(componentId: string): void {
-  const component = useWorkspaceStore.getState().workspace.components[componentId];
-  const assets = useAssetsStore.getState();
-  const draft = assets.componentSourceDrafts[componentId];
-  if (!draft) return;
-  if (!component || !isComponentSourceDraftMatchingComponent(draft, component)) {
-    assets.removeComponentSourceDraft(componentId);
-  }
-}
+const synchronizeSourceDraft = (componentId: string, force = false): void => {
+  synchronizeComponentSourceDraft(componentId, { force });
+};
 
 interface UseSourceAwareWorkspaceCommandsParams {
   commitPendingHistory: PropertyHistoryCommands['commitPendingHistory'];
@@ -144,7 +138,7 @@ export function useSourceAwareWorkspaceCommands({
           expectedRobotSnapshotHash: createSourceSemanticRobotHash(component.robot),
           name,
         });
-        invalidateComponentDraftUnlessCurrent(ref.componentId);
+        synchronizeSourceDraft(ref.componentId);
       }
     },
     [commitPendingHistory, patchEditableSourceRobotName],
@@ -236,7 +230,10 @@ export function useSourceAwareWorkspaceCommands({
           inertial: nextLink.inertial,
         });
       }
-      invalidateComponentDraftUnlessCurrent(ref.componentId);
+      const requiresSourceReconciliation = Object.keys(rawPatch).some(
+        (key) => key !== 'name' && key !== 'collision' && key !== 'inertial',
+      );
+      synchronizeSourceDraft(ref.componentId, requiresSourceReconciliation);
     },
     [
       mutationOptions,
@@ -332,7 +329,10 @@ export function useSourceAwareWorkspaceCommands({
           }],
         });
       }
-      invalidateComponentDraftUnlessCurrent(ref.componentId);
+      const requiresSourceReconciliation = Object.keys(patch).some(
+        (key) => key !== 'name' && key !== 'limit',
+      );
+      synchronizeSourceDraft(ref.componentId, requiresSourceReconciliation);
     },
     [
       mutationOptions,
@@ -357,7 +357,7 @@ export function useSourceAwareWorkspaceCommands({
           mutationOptions(operationId, label, Boolean(options.skipHistory)),
         ),
       );
-      if (changed) invalidateComponentDraftUnlessCurrent(ref.componentId);
+      if (changed) synchronizeSourceDraft(ref.componentId);
     },
     [mutationOptions, runPropertyMutation],
   );
@@ -495,7 +495,7 @@ export function useSourceAwareWorkspaceCommands({
           joint,
         });
       }
-      invalidateComponentDraftUnlessCurrent(ref.componentId);
+      synchronizeSourceDraft(ref.componentId);
       const linkRef: LinkEntityRef = {
         type: 'link',
         componentId: ref.componentId,
@@ -531,7 +531,7 @@ export function useSourceAwareWorkspaceCommands({
           geometry,
         });
       }
-      invalidateComponentDraftUnlessCurrent(ref.componentId);
+      synchronizeSourceDraft(ref.componentId);
       setSelection({ entity: ref, subType: 'collision', objectIndex });
       focusOn(ref);
     },
@@ -597,7 +597,7 @@ export function useSourceAwareWorkspaceCommands({
       if (removedComponentId) {
         useAssetsStore.getState().removeComponentSourceDraft(removedComponentId);
       } else if ('componentId' in ref) {
-        invalidateComponentDraftUnlessCurrent(ref.componentId);
+        synchronizeSourceDraft(ref.componentId);
       }
       const nextState = useWorkspaceStore.getState();
       setSelection(repairWorkspaceSelection(

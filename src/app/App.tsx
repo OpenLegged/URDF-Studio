@@ -12,6 +12,7 @@ import {
   type DisconnectedWorkspaceUrdfDialogState,
 } from './components/AppOverlayLayer';
 import { useAppShellState } from './hooks/useAppShellState';
+import { useComponentSourceDraftCleanup } from './hooks/useAppEffects';
 import { useFileImport } from './hooks/useFileImport';
 import { useFileExport } from './hooks/useFileExport';
 import { useImportInputBinding } from './hooks/useImportInputBinding';
@@ -63,6 +64,7 @@ function preloadOverlay(label: string, preload: () => Promise<unknown>): void {
 
 export function AppContent({ extensions, onExposeActions }: AppContentProps = {}) {
   useUnsavedChangesPrompt();
+  useComponentSourceDraftCleanup();
 
   // Refs for file inputs
   const importInputRef = useRef<HTMLInputElement>(null);

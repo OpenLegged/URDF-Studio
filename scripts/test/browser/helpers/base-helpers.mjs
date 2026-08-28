@@ -32,7 +32,7 @@ export {
 export async function createSession(options = {}) {
   // Allow `--headed` from the unified runner (run-all.mjs) to flow through env.
   const headed = options.headed ?? (process.env.URDF_E2E_HEADED === '1');
-  let siteUrl = options.siteUrl ?? DEFAULT_SITE_URL;
+  let siteUrl = options.siteUrl ?? process.env.URDF_STUDIO_TEST_SITE_URL ?? DEFAULT_SITE_URL;
   // Append regressionDebug=1 if not already present
   const url = new URL(siteUrl);
   if (!url.searchParams.has('regressionDebug')) url.searchParams.set('regressionDebug', '1');
@@ -745,6 +745,8 @@ export async function getSourceEditorText(page) {
 
 export async function replaceSourceEditorText(page, nextText) {
   const changedViaMonaco = await page.evaluate((value) => {
+    const debugResult = window.__URDF_STUDIO_DEBUG__?.__sourceEditor?.setValue?.(value);
+    if (debugResult?.ok) return true;
     const monacoModels = globalThis.monaco?.editor?.getModels?.();
     const activeModel = Array.isArray(monacoModels) ? monacoModels[monacoModels.length - 1] : null;
     if (!activeModel || typeof activeModel.setValue !== 'function') return false;

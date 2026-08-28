@@ -64,13 +64,11 @@ export function applyComponentEditableSourcePatch({
   });
   if (resolved.status === 'invalid') {
     if (resolved.reason === 'draft-missing') return 'unavailable';
-    assets.removeComponentSourceDraft(componentId);
     return 'invalidated';
   }
 
   const nextContent = patch(resolved.draft);
   if (nextContent === null) {
-    assets.removeComponentSourceDraft(componentId);
     return 'invalidated';
   }
   assets.setComponentSourceDraft(buildEditableSourcePatchState({
@@ -90,7 +88,6 @@ export function useEditableSourcePatches({ showToast }: UseEditableSourcePatches
     try {
       return applyComponentEditableSourcePatch({ ...target, patch });
     } catch (error) {
-      useAssetsStore.getState().removeComponentSourceDraft(target.componentId);
       console.error(errorLabel, error);
       showToast(errorLabel, 'info');
       return 'invalidated' as const;

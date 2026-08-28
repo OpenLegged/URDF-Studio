@@ -3,6 +3,7 @@ import { useCallback, useRef } from 'react';
 import {
   createComponentSourceDraft,
   createSourceSemanticRobotHash,
+  isComponentSourceFormat,
   normalizeComponentRobot,
 } from '@/core/robot';
 import { rewriteRobotMeshPathsForSource } from '@/core/parsers/meshPathUtils';
@@ -228,6 +229,17 @@ export async function applyPreparedEditableSourceCodeChange({
   sourceFileName,
   newCode,
 }: PreparedEditableSourceCodeChange): Promise<boolean> {
+  // Property-panel mutations may synchronize a newer draft while Monaco keeps
+  // unsaved local edits visible. Never let text based on the older draft replace
+  // the newer canonical RobotData; the editor remains dirty so the user can
+  // reconcile and retry without losing either side.
+  if (
+    applyRequest?.baseContent !== undefined
+    && applyRequest.baseContent !== currentDraft.content
+  ) {
+    return false;
+  }
+
   const { sourceFile, nextAvailableFiles, nextAllFileContents } = createParseInputs({
     componentId,
     draft: currentDraft,
@@ -352,8 +364,16 @@ export function useEditableSourceCodeApply({
 
       const workspaceState = useWorkspaceStore.getState();
       const component = workspaceState.workspace.components[componentId];
-      const currentDraft = useAssetsStore.getState().componentSourceDrafts[componentId];
-      if (!component || !currentDraft || target.format !== currentDraft.format) return false;
+      if (!component || !isComponentSourceFormat(target.format)) return false;
+      const storedDraft = useAssetsStore.getState().componentSourceDrafts[componentId];
+      const currentDraft = storedDraft?.format === target.format
+        ? storedDraft
+        : createComponentSourceDraft({
+            componentId,
+            format: target.format,
+            content: target.content ?? '',
+            robot: component.robot,
+          });
       if (currentDraft.format === 'usd') return false;
 
       // Owned stale drafts remain editable so post-import normalization cannot
@@ -374,7 +394,7 @@ export function useEditableSourceCodeApply({
           expectedWorkspaceRevision,
           isCurrentRequest: () => requestIdsRef.current.get(componentId) === requestId,
           robot: component.robot,
-          sourceFileName: component.sourceFile,
+          sourceFileName: component.sourceFile ?? target.name,
           newCode,
         });
         if (applied) {

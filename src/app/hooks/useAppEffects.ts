@@ -15,6 +15,7 @@ import {
 } from '@/store/selectionStore';
 import { useWorkspaceStore } from '@/store/workspaceStore';
 import { useActiveHistory } from './useActiveHistory';
+import { synchronizeWorkspaceComponentSourceDrafts } from './workspace-source-sync/component_source_draft_sync';
 
 /**
  * Hook for keyboard shortcuts (undo/redo)
@@ -109,7 +110,7 @@ export function useSelectionCleanup() {
   }, [activeComponentId, selectionSession, workspace]);
 }
 
-/** Remove source drafts only after their owning component leaves the workspace. */
+/** Keep component-owned source drafts aligned across undo/redo and external mutations. */
 export function useComponentSourceDraftCleanup() {
   const { workspace, revision, jointMotionRevision } = useWorkspaceStore(
     useShallow((state) => ({
@@ -137,20 +138,7 @@ export function useComponentSourceDraftCleanup() {
     ) {
       return;
     }
-    const ownedDrafts = Object.fromEntries(
-      Object.entries(componentSourceDrafts).filter(([componentId, draft]) => {
-        const component = workspace.components[componentId];
-        // Only prune drafts whose component no longer exists. Do NOT prune
-        // on hash mismatch — normal post-import processing (inertia defaults,
-        // mesh path normalization, etc.) changes the semantic hash and would
-        // discard the freshly-created draft, leaving the source editor
-        // read-only until the user re-imports.
-        return Boolean(component && draft.componentId === componentId);
-      }),
-    );
-    if (Object.keys(ownedDrafts).length !== Object.keys(componentSourceDrafts).length) {
-      useAssetsStore.getState().replaceComponentSourceDrafts(ownedDrafts);
-    }
+    synchronizeWorkspaceComponentSourceDrafts();
   }, [componentSourceDrafts, jointMotionRevision, revision, workspace]);
 }
 

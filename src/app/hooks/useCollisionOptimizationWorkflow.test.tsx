@@ -4,7 +4,11 @@ import test from 'node:test';
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 
-import { createComponentSourceDraft, createSingleComponentWorkspace } from '@/core/robot';
+import {
+  createComponentSourceDraft,
+  createSingleComponentWorkspace,
+  isComponentSourceDraftMatchingComponent,
+} from '@/core/robot';
 import type { CollisionOptimizationOperation } from '@/features/property-editor';
 import { useAssetsStore } from '@/store/assetsStore';
 import { useWorkspaceStore } from '@/store/workspaceStore';
@@ -64,7 +68,7 @@ function renderWorkflow(): ReturnType<typeof useCollisionOptimizationWorkflow> {
   return workflow as unknown as ReturnType<typeof useCollisionOptimizationWorkflow>;
 }
 
-test('multi-component collision optimization commits one history entry and invalidates drafts', async () => {
+test('multi-component collision optimization commits one history entry and synchronizes drafts', async () => {
   const workspace = createSingleComponentWorkspace(robot('left'), { componentId: 'left' });
   workspace.components.right = createSingleComponentWorkspace(robot('right'), {
     componentId: 'right',
@@ -93,7 +97,17 @@ test('multi-component collision optimization commits one history entry and inval
   assert.equal(state.workspace.components.left?.robot.links.base?.collision.type, GeometryType.SPHERE);
   assert.equal(state.workspace.components.right?.robot.links.base?.collision.type, GeometryType.SPHERE);
   assert.equal(state.history.past.length, 1);
-  assert.deepEqual(useAssetsStore.getState().componentSourceDrafts, {});
+  const drafts = useAssetsStore.getState().componentSourceDrafts;
+  assert.match(drafts.left.content, /<sphere radius="0\.05"/);
+  assert.match(drafts.right.content, /<sphere radius="0\.05"/);
+  assert.equal(
+    isComponentSourceDraftMatchingComponent(drafts.left, state.workspace.components.left),
+    true,
+  );
+  assert.equal(
+    isComponentSourceDraftMatchingComponent(drafts.right, state.workspace.components.right),
+    true,
+  );
 });
 
 test('collision optimization flushes pending property history before batching replacements', async () => {

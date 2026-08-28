@@ -1,7 +1,7 @@
 import { useCallback, useMemo } from 'react';
 import type { AssemblyState, EntityRef, RobotData, WorkspaceSelection } from '@/types';
-import { useAssetsStore } from '@/store/assetsStore';
 import { useWorkspaceStore } from '@/store/workspaceStore';
+import { synchronizeComponentSourceDraft } from './workspace-source-sync/component_source_draft_sync';
 import { beginCoordinatedWorkspaceTransaction } from '@/app/utils/pendingHistory';
 import type {
   CollisionOptimizationOperation,
@@ -99,8 +99,9 @@ export function useCollisionOptimizationWorkflow({
           useWorkspaceStore.getState().cancelWorkspaceTransaction(operationId);
           throw error;
         }
-        const assets = useAssetsStore.getState();
-        replacements.forEach(([componentId]) => assets.removeComponentSourceDraft(componentId));
+        replacements.forEach(([componentId]) => synchronizeComponentSourceDraft(componentId, {
+          force: true,
+        }));
       }
     },
     [],

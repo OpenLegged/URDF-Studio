@@ -4,7 +4,10 @@ import test, { beforeEach } from 'node:test';
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 
-import { createComponentSourceDraft } from '@/core/robot';
+import {
+  createComponentSourceDraft,
+  isComponentSourceDraftMatchingComponent,
+} from '@/core/robot';
 import { useAssetsStore } from '@/store/assetsStore';
 import { useWorkspaceStore } from '@/store/workspaceStore';
 import { useSelectionStore } from '@/store/selectionStore';
@@ -119,7 +122,11 @@ function installWorkspace(workspace = createWorkspace()): void {
     revision: 0,
     jointMotionRevision: 0,
   });
-  useAssetsStore.setState({ componentSourceDrafts: {} });
+  useAssetsStore.setState({
+    availableFiles: [],
+    allFileContents: {},
+    componentSourceDrafts: {},
+  });
   useSelectionStore.setState({ selection: null });
 }
 
@@ -202,6 +209,28 @@ test('debounced property edits share one workspace transaction and one history e
     state.workspace.components.left!.robot.links.shared_link!.inertial?.mass,
     4,
   );
+});
+
+test('unhandled visual and joint properties stay synchronized to editable source', () => {
+  installWorkspace(createWorkspace(false));
+  const mutations = renderMutations();
+
+  mutations.handleUpdate(
+    { type: 'link', componentId: 'left', entityId: 'shared_link' },
+    { visual: { dimensions: { x: 0.125 } } },
+    { commitMode: 'immediate' },
+  );
+  mutations.handleUpdate(
+    { type: 'joint', componentId: 'left', entityId: 'shared_joint' },
+    { origin: { xyz: { x: 0.33 } } },
+    { commitMode: 'immediate' },
+  );
+
+  const component = useWorkspaceStore.getState().workspace.components.left;
+  const draft = useAssetsStore.getState().componentSourceDrafts.left;
+  assert.match(draft.content, /radius="0\.125"/);
+  assert.match(draft.content, /<origin xyz="0\.33 0 0\.5"/);
+  assert.equal(isComponentSourceDraftMatchingComponent(draft, component), true);
 });
 
 test('a failed transactional mutation cancels its exact token and restores partial writes', () => {
