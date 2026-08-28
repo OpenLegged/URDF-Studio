@@ -12,7 +12,67 @@ const {
     getSnapshotMeshDescriptor,
     getSnapshotDirectMaterialIdForMeshId,
     getSnapshotGeomSubsetSectionsForMeshId,
+    repairMaterialBindingApiSchemasInLayerText,
 } = ThreeRenderDelegateMaterialOps.prototype;
+
+test('material binding repair restores an API deleted by a stronger layer', () => {
+    const source = `#usda 1.0
+over "root"
+{
+    over "mesh" (
+        delete apiSchemas = ["MaterialBindingAPI"]
+    )
+    {
+        rel material:binding = </root/materials/wood>
+    }
+}`;
+
+    const repaired = repairMaterialBindingApiSchemasInLayerText(source);
+
+    assert.equal(repaired.changed, true);
+    assert.equal(repaired.count, 1);
+    assert.match(repaired.text, /delete apiSchemas = \["MaterialBindingAPI"\]/);
+    assert.match(repaired.text, /prepend apiSchemas = \["MaterialBindingAPI"\]/);
+    assert.equal(repairMaterialBindingApiSchemasInLayerText(repaired.text).changed, false);
+});
+
+test('material binding repair appends the API to an existing positive list operation', () => {
+    const source = `#usda 1.0
+def Mesh "mesh" (
+    prepend apiSchemas = ["PhysicsCollisionAPI"]
+)
+{
+    rel material:binding = </materials/paint>
+}`;
+
+    const repaired = repairMaterialBindingApiSchemasInLayerText(source);
+
+    assert.equal(repaired.changed, true);
+    assert.match(
+        repaired.text,
+        /prepend apiSchemas = \["PhysicsCollisionAPI", "MaterialBindingAPI"\]/,
+    );
+});
+
+test('material binding repair leaves valid and unrelated prims unchanged', () => {
+    const validSource = `#usda 1.0
+def Mesh "mesh" (
+    prepend apiSchemas = ["MaterialBindingAPI"]
+)
+{
+    rel material:binding = </materials/paint>
+}`;
+    const unrelatedSource = `#usda 1.0
+def Mesh "mesh" (
+    delete apiSchemas = ["MaterialBindingAPI"]
+)
+{
+    int[] faceVertexIndices = [0, 1, 2]
+}`;
+
+    assert.equal(repairMaterialBindingApiSchemasInLayerText(validSource).changed, false);
+    assert.equal(repairMaterialBindingApiSchemasInLayerText(unrelatedSource).changed, false);
+});
 
 function createTestContext({
     materials = {},

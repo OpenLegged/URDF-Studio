@@ -25,6 +25,7 @@ const {
 } = ThreeRenderDelegateMaterialOps.prototype;
 const {
     applyStageFallbackMaterialParameters,
+    resolveMaterialTexturePath,
     warmupRobotSceneSnapshotFromDriver,
     getLastRobotSceneWarmupSummary,
     getProtoDataBlob,
@@ -261,6 +262,31 @@ test('material texture loading keeps raw virtual paths as a compatibility fallba
     ]);
 });
 
+test('material texture candidates recover paths relative to referenced USD layers', () => {
+    const context = {
+        normalizeMaterialTexturePath(value) {
+            return String(value || '').trim().replace(/^\.\//, '') || null;
+        },
+        getStageSourcePath() {
+            return '/model.usd';
+        },
+        registry: {
+            allPaths: [
+                '/resource/material.usd',
+                '/resource/img/wood.png',
+            ],
+        },
+    };
+
+    const candidates = resolveMaterialTexturePathCandidates.call(context, 'img/wood.png');
+
+    assert.deepEqual(candidates, [
+        '/img/wood.png',
+        '/resource/img/wood.png',
+        'img/wood.png',
+    ]);
+});
+
 test('applyStageFallbackMaterialParameters ignores OmniPBR default white emission unless enabled', () => {
     const material = new MeshPhysicalMaterial({ color: 0x000000 });
     const context = createStageFallbackContext();
@@ -315,6 +341,57 @@ test('applyStageFallbackMaterialParameters resolves Isaac Sim texture aliases an
     assert.equal(material.aoMap?.name, 'textures/orm.png');
     assert.equal(material.emissiveMap?.name, 'textures/emissive.png');
     assert.equal(material.normalMap?.name, 'textures/detail-normal.png');
+});
+
+test('resolveMaterialTexturePath follows a conventional UsdPreviewSurface diffuse texture shader', () => {
+    const materialPath = '/root/materials/wood';
+    const textureShaderPrim = createShaderPrim(new Map([
+        ['inputs:file', { resolvedPath: 'resource/img/wood.jpg' }],
+    ]));
+    const stage = {};
+    const context = createStageFallbackContext();
+    context.getStage = () => stage;
+    context.safeGetPrimAtPath = (candidateStage, primPath) => (
+        candidateStage === stage && primPath === `${materialPath}/diffuseTexture`
+            ? textureShaderPrim
+            : null
+    );
+    const surfaceShaderPrim = createShaderPrim(new Map());
+
+    const texturePath = resolveMaterialTexturePath.call(
+        context,
+        surfaceShaderPrim,
+        ['inputs:diffuseColor'],
+        { materialPath, materialProperty: 'map' },
+    );
+
+    assert.equal(texturePath, 'resource/img/wood.jpg');
+});
+
+test('applyStageFallbackMaterialParameters applies a connected UsdPreviewSurface diffuse texture', async () => {
+    const materialPath = '/root/materials/wood';
+    const material = new MeshPhysicalMaterial({ color: 0x123456 });
+    const textureShaderPrim = createShaderPrim(new Map([
+        ['inputs:file', { resolvedPath: 'resource/img/wood.jpg' }],
+    ]));
+    const stage = {};
+    const context = createStageFallbackTextureContext();
+    context.getStage = () => stage;
+    context.safeGetPrimAtPath = (candidateStage, primPath) => (
+        candidateStage === stage && primPath === `${materialPath}/diffuseTexture`
+            ? textureShaderPrim
+            : null
+    );
+    const surfaceShaderPrim = createShaderPrim(new Map());
+
+    applyStageFallbackMaterialParameters.call(context, material, surfaceShaderPrim, { materialPath });
+
+    assert.equal(material.userData.usdPendingTexturePaths.map, 'resource/img/wood.jpg');
+    await new Promise((resolve) => setImmediate(resolve));
+
+    assert.equal(material.map?.name, 'resource/img/wood.jpg');
+    assert.equal(material.color.getHexString(), 'ffffff');
+    assert.equal(material.userData.usdMaterialPath, materialPath);
 });
 
 test('applyStageFallbackMaterialParameters keeps dedicated maps ahead of enabled ORM fallback', async () => {

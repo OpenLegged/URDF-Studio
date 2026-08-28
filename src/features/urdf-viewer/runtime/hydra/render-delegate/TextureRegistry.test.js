@@ -1,7 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { TextureRegistry } from './TextureRegistry.js';
+import {
+  TextureRegistry,
+  detectTextureMimeTypeFromBytes,
+  inferTextureMimeTypeFromPath,
+} from './TextureRegistry.js';
 
 function installWindowMock() {
   const originalWindow = globalThis.window;
@@ -24,14 +28,16 @@ function installObjectUrlMocks() {
   const originalCreateObjectURL = URL.createObjectURL;
   const originalRevokeObjectURL = URL.revokeObjectURL;
   const createdUrls = [];
+  const createdBlobs = [];
   const revokedUrls = [];
 
   Object.defineProperty(URL, 'createObjectURL', {
     configurable: true,
     writable: true,
-    value: () => {
+    value: (blob) => {
       const nextUrl = `blob:texture-${createdUrls.length + 1}`;
       createdUrls.push(nextUrl);
+      createdBlobs.push(blob);
       return nextUrl;
     },
   });
@@ -46,6 +52,7 @@ function installObjectUrlMocks() {
 
   return {
     createdUrls,
+    createdBlobs,
     revokedUrls,
     restore: () => {
       Object.defineProperty(URL, 'createObjectURL', {
@@ -62,16 +69,63 @@ function installObjectUrlMocks() {
   };
 }
 
-function createTextureRegistryForTest() {
+function createTextureRegistryForTest(bytes = Uint8Array.from([1, 2, 3, 4])) {
   return new TextureRegistry({
     paths: {},
     driver: () => ({
       getFile: (_resourcePath, callback) => {
-        callback(Uint8Array.from([1, 2, 3, 4]));
+        callback(bytes);
       },
     }),
   });
 }
+
+test('detectTextureMimeTypeFromBytes identifies common texture signatures', () => {
+  assert.equal(
+    detectTextureMimeTypeFromBytes(Uint8Array.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])),
+    'image/png',
+  );
+  assert.equal(
+    detectTextureMimeTypeFromBytes(Uint8Array.from([0xff, 0xd8, 0xff, 0xe0])),
+    'image/jpeg',
+  );
+  assert.equal(
+    detectTextureMimeTypeFromBytes(Uint8Array.from([
+      0x52, 0x49, 0x46, 0x46, 0, 0, 0, 0, 0x57, 0x45, 0x42, 0x50,
+    ])),
+    'image/webp',
+  );
+  assert.equal(detectTextureMimeTypeFromBytes(Uint8Array.from([1, 2, 3, 4])), undefined);
+});
+
+test('inferTextureMimeTypeFromPath handles case-insensitive extensions', () => {
+  assert.equal(inferTextureMimeTypeFromPath('textures/base.PNG'), 'image/png');
+  assert.equal(inferTextureMimeTypeFromPath('textures/base.JPEG'), 'image/jpeg');
+  assert.equal(inferTextureMimeTypeFromPath('textures/base.webp'), 'image/webp');
+  assert.equal(inferTextureMimeTypeFromPath('textures/base.bin'), undefined);
+});
+
+test('TextureRegistry corrects a JPEG texture mislabeled with a PNG extension', async () => {
+  const restoreWindow = installWindowMock();
+  const objectUrls = installObjectUrlMocks();
+  try {
+    const registry = createTextureRegistryForTest(Uint8Array.from([0xff, 0xd8, 0xff, 0xe0]));
+    registry.loader = {
+      load(url, onLoad) {
+        onLoad({ loadedFrom: url });
+      },
+    };
+
+    await registry.getTexture('textures/base_color.png');
+
+    assert.equal(objectUrls.createdBlobs[0]?.type, 'image/jpeg');
+    assert.equal(registry.getTextureLoadSnapshot().mimeCorrected, 1);
+    assert.equal(registry.getTextureLoadSnapshot().recent[0]?.mimeCorrected, true);
+  } finally {
+    objectUrls.restore();
+    restoreWindow();
+  }
+});
 
 test('TextureRegistry revokes blob object URL after successful texture load', async () => {
   const restoreWindow = installWindowMock();

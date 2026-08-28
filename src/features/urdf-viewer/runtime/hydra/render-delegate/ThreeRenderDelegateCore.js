@@ -170,6 +170,8 @@ export class ThreeRenderDelegateCore {
         this._materialBindingSchemaRepairAttempted = false;
         this._materialBindingSchemaRepairSucceeded = false;
         this._materialBindingSchemaWriteSupported = null;
+        this._materialBindingSchemaRepairCandidateCount = 0;
+        this._materialBindingSchemaRepairCount = 0;
         this._hasRunStageTruthAlignmentDiagnostics = false;
         this._materialBindingWarningHandler = ({ message, level }) => this.handleMaterialBindingApiWarning({ message, level });
         setActiveMaterialBindingWarningOwner(this);

@@ -151,12 +151,14 @@ export class ThreeRenderDelegateMaterialOps extends ThreeRenderDelegateCore {
         if (this._materialBindingSchemaRepairAttempted) {
             return this._materialBindingSchemaRepairSucceeded;
         }
-        this._materialBindingSchemaRepairAttempted = true;
-        this._materialBindingSchemaRepairSucceeded = false;
-        this._materialBindingSchemaWriteSupported = false;
         const stage = this.getStage();
         if (!stage)
             return false;
+        this._materialBindingSchemaRepairAttempted = true;
+        this._materialBindingSchemaRepairSucceeded = false;
+        this._materialBindingSchemaWriteSupported = false;
+        this._materialBindingSchemaRepairCandidateCount = 0;
+        this._materialBindingSchemaRepairCount = 0;
         const candidateLayers = [];
         const seenLayers = new Set();
         const addLayer = (layer, label) => {
@@ -216,8 +218,10 @@ export class ThreeRenderDelegateMaterialOps extends ThreeRenderDelegateCore {
             if (writeSucceeded) {
                 this._materialBindingSchemaWriteSupported = true;
                 this._materialBindingSchemaRepairSucceeded = true;
+                this._materialBindingSchemaRepairCount += repairedText.count;
             }
         }
+        this._materialBindingSchemaRepairCandidateCount = detectedRepairCandidates;
         if (!this._materialBindingSchemaWriteSupported && detectedRepairCandidates > 0) {
             this.suppressMaterialBindingApiWarnings = true;
             getRawConsoleMethod('warn')('[HydraDelegate] MaterialBindingAPI schema repair is unavailable in current WASM bindings; using aggregated warning fallback.');
@@ -233,12 +237,22 @@ export class ThreeRenderDelegateMaterialOps extends ThreeRenderDelegateCore {
         const stack = [];
         let pendingContext = null;
         const registerApiSchemasLine = (context, lineIndex, lineText) => {
-            if (!context || context.apiSchemasLineIndex !== null)
+            if (!context)
                 return;
-            if (!/apiSchemas\s*=/.test(lineText))
+            const apiSchemasMatch = lineText.match(/^\s*(?:(prepend|append|add|delete|reorder)\s+)?apiSchemas\s*=/);
+            if (!apiSchemasMatch)
                 return;
-            context.apiSchemasLineIndex = lineIndex;
-            context.hasMaterialBindingApi = /MaterialBindingAPI/.test(lineText);
+            const listOperation = apiSchemasMatch[1] || 'explicit';
+            const canAddSchema = listOperation === 'explicit'
+                || listOperation === 'prepend'
+                || listOperation === 'append'
+                || listOperation === 'add';
+            if (canAddSchema && context.apiSchemasLineIndex === null) {
+                context.apiSchemasLineIndex = lineIndex;
+            }
+            if (canAddSchema && /MaterialBindingAPI/.test(lineText)) {
+                context.hasMaterialBindingApi = true;
+            }
         };
         for (let lineIndex = 0; lineIndex < lines.length; lineIndex++) {
             const line = lines[lineIndex];
@@ -254,7 +268,7 @@ export class ThreeRenderDelegateMaterialOps extends ThreeRenderDelegateCore {
                     current.hasMaterialBinding = true;
                 registerApiSchemasLine(current, lineIndex, line);
             }
-            const defMatch = trimmed.match(/^(?:def|over|class)\s+\w+\s+"[^"]+"/);
+            const defMatch = trimmed.match(/^(?:def|over|class)\s+(?:[A-Za-z_][\w:]*\s+)?"[^"]+"/);
             if (defMatch) {
                 pendingContext = {
                     hasMaterialBinding: false,
@@ -1197,7 +1211,7 @@ export class ThreeRenderDelegateMaterialOps extends ThreeRenderDelegateCore {
                 preserveDriverCaches: canPreserveRuntimeBridgeCaches,
                 preserveRuntimeBridgeCaches: canPreserveRuntimeBridgeCaches,
             });
-            if (!this.suppressMaterialBindingApiWarnings && stage) {
+            if (stage) {
                 this.tryRepairMaterialBindingApiSchemas();
             }
             this.pruneSyntheticTopLevelMeshes();
@@ -1952,6 +1966,21 @@ export class ThreeRenderDelegateMaterialOps extends ThreeRenderDelegateCore {
         if (normalizedStageSourcePath && normalizedStageSourcePath !== '__default__') {
             addCandidate(resolveUsdAssetPath(normalizedStageSourcePath, normalizedTexturePath));
         }
+        const normalizedTextureSuffix = `/${normalizedTexturePath.replace(/^\/+/, '')}`;
+        const knownVirtualPaths = Array.isArray(this.registry?.allPaths)
+            ? this.registry.allPaths
+            : [];
+        for (const knownVirtualPath of knownVirtualPaths) {
+            const normalizedKnownPath = this.normalizeMaterialTexturePath(knownVirtualPath);
+            if (!normalizedKnownPath)
+                continue;
+            const knownPathWithLeadingSlash = normalizedKnownPath.startsWith('/')
+                ? normalizedKnownPath
+                : `/${normalizedKnownPath}`;
+            if (knownPathWithLeadingSlash.endsWith(normalizedTextureSuffix)) {
+                addCandidate(knownVirtualPath);
+            }
+        }
         addCandidate(normalizedTexturePath);
         return candidates;
     }
@@ -2485,7 +2514,9 @@ export class ThreeRenderDelegateMaterialOps extends ThreeRenderDelegateCore {
             this._stageFallbackMaterialCache.set(materialPath, null);
             return null;
         }
-        const materialPrim = this.safeGetPrimAtPath(stage, materialPath);
+        const materialPrim = typeof this.getPrimAtPathAllowUnknown === 'function'
+            ? this.getPrimAtPathAllowUnknown(stage, materialPath)
+            : this.safeGetPrimAtPath(stage, materialPath);
         if (!materialPrim) {
             this._stageFallbackMaterialCache.set(materialPath, null);
             return null;
@@ -2505,8 +2536,11 @@ export class ThreeRenderDelegateMaterialOps extends ThreeRenderDelegateCore {
                 color: inferredColorHex ?? 0x888888,
                 name: materialName,
             }));
+        if (material.userData && typeof material.userData === 'object') {
+            material.userData.usdMaterialPath = materialPath;
+        }
         if (shaderPrim) {
-            this.applyStageFallbackMaterialParameters(material, shaderPrim);
+            this.applyStageFallbackMaterialParameters(material, shaderPrim, { materialPath });
         }
         const wrappedMaterial = {
             _id: materialPath,

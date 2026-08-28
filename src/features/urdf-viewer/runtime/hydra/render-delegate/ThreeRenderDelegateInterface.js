@@ -50,6 +50,22 @@ const STAGE_AO_TEXTURE_INPUTS = [
     'inputs:ao_texture',
     'inputs:ORM_texture',
 ];
+const STAGE_TEXTURE_SHADER_CHILD_NAMES_BY_PROPERTY = Object.freeze({
+    map: [
+        'diffuseTexture',
+        'baseColorTexture',
+        'base_color_texture',
+        'albedoTexture',
+        'DiffuseTexture',
+        'BaseColorTexture',
+    ],
+    emissiveMap: ['emissiveTexture', 'emissiveColorTexture', 'EmissiveTexture'],
+    roughnessMap: ['roughnessTexture', 'reflectionRoughnessTexture', 'RoughnessTexture', 'ORMTexture'],
+    metalnessMap: ['metallicTexture', 'metalnessTexture', 'MetallicTexture', 'ORMTexture'],
+    normalMap: ['normalTexture', 'normalMapTexture', 'NormalTexture'],
+    aoMap: ['occlusionTexture', 'aoTexture', 'OcclusionTexture', 'ORMTexture'],
+    alphaMap: ['opacityTexture', 'opacityMaskTexture', 'OpacityTexture'],
+});
 function normalizeDescriptorSectionName(sectionName) {
     const normalized = String(sectionName || '').trim().toLowerCase();
     if (normalized === 'visual') {
@@ -202,6 +218,13 @@ function serializePreferredMaterialRecord(material) {
         const normalized = String(texture?.userData?.usdSourcePath || texture?.name || '').trim();
         return normalized || null;
     };
+    const normalizeTexturePathOrPending = (texture, materialProperty) => {
+        const loadedTexturePath = normalizeTexturePath(texture);
+        if (loadedTexturePath)
+            return loadedTexturePath;
+        const pendingTexturePath = String(materialUserData.usdPendingTexturePaths?.[materialProperty] || '').trim();
+        return pendingTexturePath || null;
+    };
     const normalizeScalar = (value, options = {}) => {
         const numeric = toFiniteNumber(value);
         if (numeric === undefined)
@@ -255,13 +278,13 @@ function serializePreferredMaterialRecord(material) {
         ...(normalizeScalar(material.anisotropyRotation) !== null ? { anisotropyRotation: normalizeScalar(material.anisotropyRotation) } : {}),
         ...(materialEmissiveEnabled !== false && normalizeScalar(material.emissiveIntensity, { min: 0 }) !== null ? { emissiveIntensity: normalizeScalar(material.emissiveIntensity, { min: 0 }) } : {}),
         ...(normalizeScalar(material.ior, { min: 1 }) !== null ? { ior: normalizeScalar(material.ior, { min: 1 }) } : {}),
-        ...(normalizeTexturePath(material.map) ? { mapPath: normalizeTexturePath(material.map) } : {}),
-        ...(materialEmissiveEnabled !== false && normalizeTexturePath(material.emissiveMap) ? { emissiveMapPath: normalizeTexturePath(material.emissiveMap) } : {}),
-        ...(normalizeTexturePath(material.roughnessMap) ? { roughnessMapPath: normalizeTexturePath(material.roughnessMap) } : {}),
-        ...(normalizeTexturePath(material.metalnessMap) ? { metalnessMapPath: normalizeTexturePath(material.metalnessMap) } : {}),
-        ...(normalizeTexturePath(material.normalMap) ? { normalMapPath: normalizeTexturePath(material.normalMap) } : {}),
-        ...(normalizeTexturePath(material.aoMap) ? { aoMapPath: normalizeTexturePath(material.aoMap) } : {}),
-        ...(normalizeTexturePath(material.alphaMap) ? { alphaMapPath: normalizeTexturePath(material.alphaMap) } : {}),
+        ...(normalizeTexturePathOrPending(material.map, 'map') ? { mapPath: normalizeTexturePathOrPending(material.map, 'map') } : {}),
+        ...(materialEmissiveEnabled !== false && normalizeTexturePathOrPending(material.emissiveMap, 'emissiveMap') ? { emissiveMapPath: normalizeTexturePathOrPending(material.emissiveMap, 'emissiveMap') } : {}),
+        ...(normalizeTexturePathOrPending(material.roughnessMap, 'roughnessMap') ? { roughnessMapPath: normalizeTexturePathOrPending(material.roughnessMap, 'roughnessMap') } : {}),
+        ...(normalizeTexturePathOrPending(material.metalnessMap, 'metalnessMap') ? { metalnessMapPath: normalizeTexturePathOrPending(material.metalnessMap, 'metalnessMap') } : {}),
+        ...(normalizeTexturePathOrPending(material.normalMap, 'normalMap') ? { normalMapPath: normalizeTexturePathOrPending(material.normalMap, 'normalMap') } : {}),
+        ...(normalizeTexturePathOrPending(material.aoMap, 'aoMap') ? { aoMapPath: normalizeTexturePathOrPending(material.aoMap, 'aoMap') } : {}),
+        ...(normalizeTexturePathOrPending(material.alphaMap, 'alphaMap') ? { alphaMapPath: normalizeTexturePathOrPending(material.alphaMap, 'alphaMap') } : {}),
         ...(normalizeTexturePath(material.clearcoatMap) ? { clearcoatMapPath: normalizeTexturePath(material.clearcoatMap) } : {}),
         ...(normalizeTexturePath(material.clearcoatRoughnessMap) ? { clearcoatRoughnessMapPath: normalizeTexturePath(material.clearcoatRoughnessMap) } : {}),
         ...(normalizeTexturePath(material.clearcoatNormalMap) ? { clearcoatNormalMapPath: normalizeTexturePath(material.clearcoatNormalMap) } : {}),
@@ -612,9 +635,13 @@ export class ThreeRenderDelegateInterface extends ThreeRenderDelegateMaterialOps
         ];
         return candidateAttributeNames.some((attributeName) => this.readPrimAttribute(shaderPrim, [attributeName]) !== undefined);
     }
-    applyStageFallbackMaterialParameters(material, shaderPrim) {
+    applyStageFallbackMaterialParameters(material, shaderPrim, options = {}) {
         if (!material || !shaderPrim)
             return;
+        const materialPath = normalizeHydraPath(options.materialPath || material?.userData?.usdMaterialPath || '');
+        if (materialPath && material.userData && typeof material.userData === 'object') {
+            material.userData.usdMaterialPath = materialPath;
+        }
         const treatNamedHexDiffuseAsSrgb = this.shouldTreatNamedHexDiffuseAsSrgb();
         const isOmniPbrShader = this.isLikelyOmniPbrShaderPrim(shaderPrim);
         const emissiveEnabled = this.readPrimBooleanAttribute(shaderPrim, [
@@ -953,9 +980,20 @@ export class ThreeRenderDelegateInterface extends ThreeRenderDelegateMaterialOps
         return color;
     }
     applyStageFallbackTextureInput(material, shaderPrim, attributeNames, materialProperty, options = {}) {
-        const texturePath = this.resolveMaterialTexturePath(shaderPrim, attributeNames);
+        const texturePath = this.resolveMaterialTexturePath(shaderPrim, attributeNames, {
+            materialPath: material?.userData?.usdMaterialPath,
+            materialProperty,
+        });
         if (!texturePath)
             return false;
+        if (material.userData && typeof material.userData === 'object') {
+            const pendingTexturePaths = material.userData.usdPendingTexturePaths
+                && typeof material.userData.usdPendingTexturePaths === 'object'
+                ? material.userData.usdPendingTexturePaths
+                : {};
+            pendingTexturePaths[materialProperty] = texturePath;
+            material.userData.usdPendingTexturePaths = pendingTexturePaths;
+        }
         const texturePromise = typeof this.loadMaterialTexture === 'function'
             ? this.loadMaterialTexture(texturePath, {
                 stageSourcePath: this.getStageSourcePath?.(),
@@ -1061,7 +1099,9 @@ export class ThreeRenderDelegateInterface extends ThreeRenderDelegateMaterialOps
         addCandidate('ND_standard_surface_surfaceshader');
         for (const candidateName of candidateNames) {
             const shaderPath = `${materialPath}/${candidateName}`;
-            const shaderPrim = this.safeGetPrimAtPath(stage, shaderPath);
+            const shaderPrim = typeof this.getPrimAtPathAllowUnknown === 'function'
+                ? this.getPrimAtPathAllowUnknown(stage, shaderPath)
+                : this.safeGetPrimAtPath(stage, shaderPath);
             if (!shaderPrim)
                 continue;
             if (this.isUsableMaterialShaderPrim(shaderPrim)) {
@@ -1213,7 +1253,7 @@ export class ThreeRenderDelegateInterface extends ThreeRenderDelegateMaterialOps
         catch { }
         return null;
     }
-    resolveMaterialTexturePath(shaderPrim, attributeNames = null) {
+    resolveMaterialTexturePath(shaderPrim, attributeNames = null, options = {}) {
         const candidateAttributeNames = Array.isArray(attributeNames) && attributeNames.length > 0
             ? attributeNames
             : STAGE_BASE_COLOR_TEXTURE_INPUTS;
@@ -1222,9 +1262,33 @@ export class ThreeRenderDelegateInterface extends ThreeRenderDelegateMaterialOps
             attributeName !== 'inputs:ORM_texture' || ormTextureEnabled !== false
         ));
         const texturePathValue = this.readPrimAttribute(shaderPrim, enabledCandidateAttributeNames);
-        if (!texturePathValue)
+        const directTexturePath = this.extractMaterialTexturePath(texturePathValue);
+        if (directTexturePath)
+            return directTexturePath;
+        const materialPath = normalizeHydraPath(options.materialPath || '');
+        if (!materialPath)
             return null;
-        return this.extractMaterialTexturePath(texturePathValue);
+        const textureShaderChildNames = STAGE_TEXTURE_SHADER_CHILD_NAMES_BY_PROPERTY[options.materialProperty] || [];
+        if (textureShaderChildNames.length === 0)
+            return null;
+        const stage = this.getStage?.();
+        if (!stage)
+            return null;
+        for (const childName of textureShaderChildNames) {
+            // Driver prim indexes can omit auxiliary shader nodes. Use the
+            // direct-stage compatibility lookup before treating the texture
+            // shader as missing.
+            const textureShaderPrim = typeof this.getPrimAtPathAllowUnknown === 'function'
+                ? this.getPrimAtPathAllowUnknown(stage, `${materialPath}/${childName}`)
+                : this.safeGetPrimAtPath(stage, `${materialPath}/${childName}`);
+            if (!textureShaderPrim)
+                continue;
+            const connectedTextureValue = this.readPrimAttribute(textureShaderPrim, ['inputs:file']);
+            const connectedTexturePath = this.extractMaterialTexturePath(connectedTextureValue);
+            if (connectedTexturePath)
+                return connectedTexturePath;
+        }
+        return null;
     }
     getNamedNonDefaultMaterial(materialValue) {
         const materials = Array.isArray(materialValue) ? materialValue : [materialValue];
@@ -4051,7 +4115,9 @@ export class ThreeRenderDelegateInterface extends ThreeRenderDelegateMaterialOps
             if (!materialId) {
                 return record;
             }
-            if (snapshotMaterialRecordHasRenderableData(record)) {
+            const hasRenderableData = snapshotMaterialRecordHasRenderableData(record);
+            const colorSource = String(record?.colorSource || '').trim().toLowerCase();
+            if (hasRenderableData && colorSource !== 'material-name') {
                 return record;
             }
             const fallbackStageMaterial = this.createFallbackMaterialFromStage(materialId);
@@ -4059,9 +4125,17 @@ export class ThreeRenderDelegateInterface extends ThreeRenderDelegateMaterialOps
             if (!fallbackRecord) {
                 return record;
             }
+            const fallbackForMerge = hasRenderableData
+                ? Object.fromEntries(Object.entries(fallbackRecord).filter(([key]) => (
+                    key === 'materialId'
+                    || key === 'id'
+                    || key.endsWith('MapPath')
+                    || key === 'mapPath'
+                )))
+                : fallbackRecord;
             return mergeSnapshotMaterialRecordWithFallback(record, {
                 materialId,
-                ...fallbackRecord,
+                ...fallbackForMerge,
             });
         });
         const normalizedMaterials = this.ingestSnapshotMaterialRecords(snapshotMaterialRecords, {
