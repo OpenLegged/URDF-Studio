@@ -339,8 +339,17 @@ export function parseDescriptorOrdinal(descriptor: MeshDescriptor, fallbackIndex
   return fallbackIndex;
 }
 
-export function getUsdDescriptorAttachmentGroupKey(descriptor: MeshDescriptor): string {
-  return getUsdDescriptorSectionChildToken(descriptor) || '__default__';
+export function getUsdDescriptorAttachmentGroupKey(
+  descriptor: MeshDescriptor,
+  options: { fallbackToResolvedPrimPath?: boolean } = {},
+): string {
+  return (
+    getUsdDescriptorSectionChildToken(descriptor) ||
+    (options.fallbackToResolvedPrimPath
+      ? normalizeUsdPath(descriptor.resolvedPrimPath) || normalizeUsdPath(descriptor.meshId)
+      : '') ||
+    '__default__'
+  );
 }
 
 export function groupDescriptorEntries(entries: DescriptorEntry[]): DescriptorGroup[] {

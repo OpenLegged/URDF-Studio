@@ -205,6 +205,20 @@ export function resolveUsdDescriptorTargetLinkPath({
     return owningLinkPath;
   }
 
+  if (!normalizedKnownLinkPaths.has(owningLinkPath)) {
+    const resolvedPrimPath = normalizeUsdPath(descriptor.resolvedPrimPath);
+    const resolvedPrimOwner = Array.from(normalizedKnownLinkPaths)
+      .filter(
+        (knownLinkPath) =>
+          resolvedPrimPath === knownLinkPath ||
+          resolvedPrimPath.startsWith(`${knownLinkPath}/`),
+      )
+      .sort((left, right) => right.length - left.length)[0];
+    if (resolvedPrimOwner) {
+      return resolvedPrimOwner;
+    }
+  }
+
   const semanticChildLinkName = getUsdDescriptorSemanticChildLinkName(descriptor);
   if (!semanticChildLinkName) {
     return owningLinkPath;

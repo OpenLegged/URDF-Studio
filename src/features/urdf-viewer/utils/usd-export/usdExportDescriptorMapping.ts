@@ -15,6 +15,7 @@ import {
   resolveUsdPrimitiveGeometryFromDescriptor as resolvePrimitiveGeometryFromDescriptor,
 } from '@/lib/robot-parser/usd/usdPrimitiveGeometry';
 import type { ViewerRobotDataResolution } from '@/lib/robot-parser/usd/viewerRobotData';
+import { resolveUsdDescriptorTargetLinkPath } from '@/lib/robot-parser/usd/usdDescriptorLinkResolution';
 
 import {
   cloneRobotState,
@@ -29,7 +30,6 @@ export {
   stripSyntheticWorldRootForExport,
 } from './usdExportRobotMerge.ts';
 import {
-  getDescriptorLinkPath,
   getDescriptorRole,
   getDescriptorSemanticName,
   normalizeSemanticToken,
@@ -642,9 +642,13 @@ export function createDescriptorExportMap(
   const descriptorsByLinkRole = new Map<string, ExportDescriptor[]>();
   const materialLookup = getSnapshotMaterialLookup(snapshot);
   const preferredMaterialLookup = getSnapshotPreferredVisualMaterialLookup(snapshot);
+  const knownLinkPaths = Object.keys(resolution.linkIdByPath);
 
   descriptors.forEach((descriptor, index) => {
-    const linkPath = getDescriptorLinkPath(descriptor);
+    const linkPath = resolveUsdDescriptorTargetLinkPath({
+      descriptor,
+      knownLinkPaths,
+    });
     if (!linkPath) return;
 
     const linkId = resolution.linkIdByPath[linkPath];

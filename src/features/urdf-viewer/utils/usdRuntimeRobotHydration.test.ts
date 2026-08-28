@@ -47,6 +47,80 @@ function assertMatrixClose(
   });
 }
 
+test('hydrates flattened stage-direct descriptors from snapshot transform ranges', () => {
+  const firstVisualWorld = composeMatrix({ x: 0, y: 0.18, z: 0.3 });
+  const secondVisualWorld = composeMatrix({ x: -0.15, y: -0.17, z: 0.175 });
+  const transforms = [
+    ...firstVisualWorld.elements,
+    ...secondVisualWorld.elements,
+  ];
+  const resolution: ViewerRobotDataResolution = {
+    stageSourcePath: '/cabinet/model.usd',
+    linkIdByPath: { '/root/cabinet': 'cabinet' },
+    linkPathById: { cabinet: '/root/cabinet' },
+    jointPathById: {},
+    childLinkPathByJointId: {},
+    parentLinkPathByJointId: {},
+    robotData: {
+      name: 'cabinet',
+      rootLinkId: 'cabinet',
+      links: {
+        cabinet: {
+          ...DEFAULT_LINK,
+          id: 'cabinet',
+          name: 'cabinet',
+          visual: {
+            ...DEFAULT_LINK.visual,
+            type: GeometryType.MESH,
+            origin: { xyz: { x: 0, y: 0, z: 0 }, rpy: { r: 0, p: 0, y: 0 } },
+          },
+        },
+      },
+      joints: {},
+    },
+  };
+
+  const hydrated = hydrateUsdViewerRobotResolutionFromRuntime(
+    resolution,
+    {
+      stage: { metersPerUnit: 1 },
+      render: {
+        meshDescriptors: [
+          {
+            meshId: '/root/visuals.proto_mesh_id0',
+            sectionName: 'visuals',
+            resolvedPrimPath: '/root/cabinet/rail_mesh',
+            ranges: { transform: { offset: 0, count: 16, stride: 16 } },
+          },
+          {
+            meshId: '/root/visuals.proto_mesh_id1',
+            sectionName: 'visuals',
+            resolvedPrimPath: '/root/cabinet/side_mesh',
+            ranges: { transform: { offset: 16, count: 16, stride: 16 } },
+          },
+        ],
+      },
+      buffers: { transforms },
+    },
+    {},
+  );
+
+  assertMatrixClose(
+    hydrated.robotData.links.cabinet.visual.origin,
+    firstVisualWorld,
+    'primary visual should use its snapshot world transform',
+  );
+  const attachment = Object.values(hydrated.robotData.links).find(
+    (link) => link.id !== 'cabinet',
+  );
+  assert.ok(attachment, 'expected a synthetic link for the second flattened descriptor');
+  assertMatrixClose(
+    attachment.visual.origin,
+    secondVisualWorld,
+    'attachment visual should use its snapshot world transform',
+  );
+});
+
 test('hydrateUsdViewerRobotResolutionFromRuntime syncs runtime link and mesh transforms into exportable robot data', () => {
   const baseWorld = composeMatrix({ x: 0, y: 0, z: 0 });
   const childWorld = composeMatrix({ x: 1, y: 2, z: 3 }, { r: 0.05, p: 0.1, y: 0.15 });

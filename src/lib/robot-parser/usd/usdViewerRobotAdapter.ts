@@ -318,7 +318,9 @@ export function adaptUsdViewerSnapshotToRobotData(
     entries.push({
       descriptor,
       ordinal: parseDescriptorOrdinal(descriptor, entries.length),
-      groupKey: getUsdDescriptorAttachmentGroupKey(descriptor),
+      groupKey: getUsdDescriptorAttachmentGroupKey(descriptor, {
+        fallbackToResolvedPrimPath: !isGenericScene,
+      }),
     });
     targetMap.set(linkPath, entries);
   });

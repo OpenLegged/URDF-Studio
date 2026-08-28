@@ -48,6 +48,64 @@ function createTriangleBuffers() {
   return { positions, indices };
 }
 
+test('prepared cache maps flattened Hydra descriptor ids back to authored rigid links', () => {
+  const triangle = [0, 0, 0, 0.1, 0, 0, 0, 0.1, 0];
+  const snapshot = {
+    stageSourcePath: '/cabinet/model.usd',
+    stage: { defaultPrimPath: '/root' },
+    robotTree: {
+      linkParentPairs: [
+        ['/root/cabinet', null],
+        ['/root/door', '/root/cabinet'],
+      ] as Array<[string, string | null]>,
+      rootLinkPaths: ['/root/cabinet'],
+    },
+    robotMetadataSnapshot: {
+      source: 'usd-stage-cpp',
+      linkParentPairs: [
+        ['/root/cabinet', null],
+        ['/root/door', '/root/cabinet'],
+      ] as Array<[string, string | null]>,
+      jointCatalogEntries: [
+        {
+          jointPath: '/root/door/hinge',
+          jointName: 'hinge',
+          parentLinkPath: '/root/cabinet',
+          childLinkPath: '/root/door',
+          jointType: 'revolute',
+          axisToken: 'Z',
+        },
+      ],
+    },
+    render: {
+      meshDescriptors: [
+        {
+          meshId: '/root/visuals.proto_mesh_id0',
+          sectionName: 'visuals',
+          resolvedPrimPath: '/root/cabinet/body_mesh',
+          primType: 'Mesh',
+          ranges: { positions: { offset: 0, count: 9, stride: 3 } },
+        },
+        {
+          meshId: '/root/visuals.proto_mesh_id1',
+          sectionName: 'visuals',
+          resolvedPrimPath: '/root/door/door_mesh',
+          primType: 'Mesh',
+          ranges: { positions: { offset: 9, count: 9, stride: 3 } },
+        },
+      ],
+    },
+    buffers: { positions: new Float32Array([...triangle, ...triangle]) },
+  } satisfies UsdSceneSnapshot;
+
+  const prepared = prepareUsdExportCacheFromSnapshot(snapshot, { fileName: 'model.usd' });
+  assert.ok(prepared);
+  assert.equal(Object.keys(prepared.meshFiles).length, 2);
+  assert.equal(Object.keys(prepared.robotData.links).length, 2);
+  assert.ok(Object.values(prepared.robotData.links).every((link) => link.visual.meshPath));
+  assert.equal(prepared.robotData.joints.hinge.type, JointType.REVOLUTE);
+});
+
 test('buildUsdExportBundleFromSnapshot preserves current robot edits and emits exportable mesh files', async () => {
   const { positions, indices } = createTriangleBuffers();
 
