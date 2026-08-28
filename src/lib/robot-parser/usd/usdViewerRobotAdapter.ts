@@ -29,6 +29,7 @@ import {
 import {
   applyVisualGroupMaterialsToLink,
   attachUsdMeshDescriptorRefs,
+  createUsdDescriptorRoleResolver,
   deriveMeshCountsByLinkPath,
   getDescriptorSemanticName,
   getSnapshotMaterialLookup,
@@ -298,6 +299,7 @@ export function adaptUsdViewerSnapshotToRobotData(
   const visualDescriptorsByLinkPath = new Map<string, DescriptorEntry[]>();
   const collisionDescriptorsByLinkPath = new Map<string, DescriptorEntry[]>();
   const visualDescriptorTargetLinkIds = new Map<string, string>();
+  const resolveDescriptorRoles = createUsdDescriptorRoleResolver(snapshot);
 
   const getDescriptorEntryKey = (descriptor: MeshDescriptor, ordinal: number) =>
     `${normalizeDescriptorSectionName(descriptor.sectionName)}|${normalizeUsdPath(descriptor.meshId)}|${normalizeUsdPath(descriptor.resolvedPrimPath)}|${ordinal}`;
@@ -311,18 +313,20 @@ export function adaptUsdViewerSnapshotToRobotData(
       return;
     }
 
-    const sectionName = normalizeDescriptorSectionName(descriptor.sectionName);
-    const targetMap =
-      sectionName === 'collisions' ? collisionDescriptorsByLinkPath : visualDescriptorsByLinkPath;
-    const entries = targetMap.get(linkPath) || [];
-    entries.push({
-      descriptor,
-      ordinal: parseDescriptorOrdinal(descriptor, entries.length),
-      groupKey: getUsdDescriptorAttachmentGroupKey(descriptor, {
-        fallbackToResolvedPrimPath: !isGenericScene,
-      }),
-    });
-    targetMap.set(linkPath, entries);
+    const roles = resolveDescriptorRoles(descriptor);
+    const appendDescriptor = (targetMap: Map<string, DescriptorEntry[]>) => {
+      const entries = targetMap.get(linkPath) || [];
+      entries.push({
+        descriptor,
+        ordinal: parseDescriptorOrdinal(descriptor, entries.length),
+        groupKey: getUsdDescriptorAttachmentGroupKey(descriptor, {
+          fallbackToResolvedPrimPath: !isGenericScene,
+        }),
+      });
+      targetMap.set(linkPath, entries);
+    };
+    if (roles.visual) appendDescriptor(visualDescriptorsByLinkPath);
+    if (roles.collision) appendDescriptor(collisionDescriptorsByLinkPath);
   });
 
   visualDescriptorsByLinkPath.forEach((entries) => {

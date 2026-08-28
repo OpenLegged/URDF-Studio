@@ -987,6 +987,61 @@ test('keeps authored visual and collision slots grouped when a single USD visual
   assert.equal(result.robotData.materials?.base_link?.color, '#7c8995');
 });
 
+test('uses a visible PhysicsCollisionAPI mesh as both visual and collision geometry', () => {
+  const result = adaptUsdViewerSnapshotToRobotData(
+    {
+      stageSourcePath: '/furniture/chair.usd',
+      stage: {
+        defaultPrimPath: '/Chair',
+        primDescriptors: [{
+          semanticSource: 'stage',
+          path: '/Chair/P_mesh',
+          parentPath: '/Chair',
+          name: 'P_mesh',
+          typeName: 'Mesh',
+          active: true,
+          loaded: true,
+          defined: true,
+          instance: false,
+          instanceProxy: false,
+          prototype: false,
+          hasPayload: false,
+          hasAuthoredReferences: false,
+          visible: true,
+          collisionEnabled: true,
+          collisionApproximation: 'sdf',
+          transformable: true,
+          hasAuthoredXformOps: false,
+          resetsXformStack: false,
+        }],
+      },
+      render: {
+        meshDescriptors: [{
+          meshId: '/Chair/P_mesh',
+          resolvedPrimPath: '/Chair/P_mesh',
+          primType: 'mesh',
+          extentSize: [0.5, 0.6, 0.9],
+        }],
+      },
+    },
+    { fileName: 'chair.usd' },
+  );
+
+  assert.ok(result);
+  const rootLink = result.robotData.links[result.robotData.rootLinkId];
+  assert.ok(rootLink);
+  assert.equal(rootLink.visual.type, GeometryType.MESH);
+  assert.equal(rootLink.collision.type, GeometryType.MESH);
+  assert.deepEqual(
+    rootLink.visual.usdMeshDescriptors?.map((descriptor) => descriptor.resolvedPrimPath),
+    ['/Chair/P_mesh'],
+  );
+  assert.deepEqual(
+    rootLink.collision.usdMeshDescriptors?.map((descriptor) => descriptor.resolvedPrimPath),
+    ['/Chair/P_mesh'],
+  );
+});
+
 test('preserves multiple authored materials when one USD visual scope emits multiple mesh descriptors', () => {
   const result = adaptUsdViewerSnapshotToRobotData(
     {

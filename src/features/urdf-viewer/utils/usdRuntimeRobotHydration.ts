@@ -14,7 +14,10 @@ import type { ViewerRobotDataResolution } from '@/lib/robot-parser/usd/viewerRob
 import {
   resolveUsdDescriptorTargetLinkPath,
 } from '@/lib/robot-parser/usd/usdDescriptorLinkResolution';
-import { getUsdDescriptorAttachmentGroupKey } from '@/lib/robot-parser/usd/usdViewerRobotAdapter/usdAdapterDescriptors';
+import {
+  createUsdDescriptorRoleResolver,
+  getUsdDescriptorAttachmentGroupKey,
+} from '@/lib/robot-parser/usd/usdViewerRobotAdapter/usdAdapterDescriptors';
 import { resolveUsdPrimitiveGeometryFromDescriptor } from '@/lib/robot-parser/usd/usdPrimitiveGeometry';
 import { isUsdGenericSceneSnapshot } from '@/lib/robot-parser/usd/usdGenericScenePolicy';
 import {
@@ -29,8 +32,6 @@ interface UsdRuntimeTransformInterface {
   ) => { angleDeg?: number | null } | null | undefined;
   getWorldTransformForPrimPath?: (primPath: string) => unknown;
 }
-
-type DescriptorRole = 'visual' | 'collision';
 
 interface DescriptorEntry {
   descriptor: UsdSceneMeshDescriptor;
@@ -92,24 +93,6 @@ function degreesToRadians(value: unknown): number | undefined {
   }
 
   return (numeric * Math.PI) / 180;
-}
-
-function getDescriptorRole(descriptor: UsdSceneMeshDescriptor): DescriptorRole {
-  const sectionName = String(descriptor.sectionName || '')
-    .trim()
-    .toLowerCase();
-  if (
-    sectionName === 'collisions' ||
-    sectionName === 'collision' ||
-    sectionName === 'colliders' ||
-    sectionName === 'collider'
-  ) {
-    return 'collision';
-  }
-
-  const candidateText =
-    `${descriptor.meshId || ''} ${descriptor.resolvedPrimPath || ''}`.toLowerCase();
-  return /\/coll(?:isions?|iders?)(?:$|[/.])/.test(candidateText) ? 'collision' : 'visual';
 }
 
 function parseDescriptorOrdinal(descriptor: UsdSceneMeshDescriptor, fallbackIndex: number): number {
@@ -256,6 +239,7 @@ function buildDescriptorMap(
   const descriptors = Array.from(snapshot?.render?.meshDescriptors || []);
   const knownLinkPaths = Object.keys(resolution.linkIdByPath);
   const isGenericScene = isUsdGenericSceneSnapshot(snapshot);
+  const resolveRoles = createUsdDescriptorRoleResolver(snapshot);
 
   descriptors.forEach((descriptor, index) => {
     const linkPath = resolveUsdDescriptorTargetLinkPath({
@@ -267,17 +251,20 @@ function buildDescriptorMap(
     const linkId = resolution.linkIdByPath[linkPath];
     if (!linkId) return;
 
-    const role = getDescriptorRole(descriptor);
-    const key = `${linkId}:${role}`;
-    const entries = descriptorsByLinkRole.get(key) || [];
-    entries.push({
-      descriptor,
-      ordinal: parseDescriptorOrdinal(descriptor, index),
-      groupKey: getUsdDescriptorAttachmentGroupKey(descriptor, {
-        fallbackToResolvedPrimPath: !isGenericScene,
-      }),
+    const roles = resolveRoles(descriptor);
+    (['visual', 'collision'] as const).forEach((role) => {
+      if (!roles[role]) return;
+      const key = `${linkId}:${role}`;
+      const entries = descriptorsByLinkRole.get(key) || [];
+      entries.push({
+        descriptor,
+        ordinal: parseDescriptorOrdinal(descriptor, index),
+        groupKey: getUsdDescriptorAttachmentGroupKey(descriptor, {
+          fallbackToResolvedPrimPath: !isGenericScene,
+        }),
+      });
+      descriptorsByLinkRole.set(key, entries);
     });
-    descriptorsByLinkRole.set(key, entries);
   });
 
   descriptorsByLinkRole.forEach((entries) => {
