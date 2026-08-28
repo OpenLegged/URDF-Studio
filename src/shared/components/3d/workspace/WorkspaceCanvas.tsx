@@ -104,6 +104,7 @@ interface WorkspaceCanvasProps {
   cameraProjection?: 'perspective' | 'orthographic';
   renderKey?: string;
   initialCameraSnapshot?: WorkspaceCameraSnapshot | null;
+  onCameraSnapshotChange?: (snapshot: WorkspaceCameraSnapshot) => void;
   gizmoMargin?: WorkspaceOverlayGizmoMargin;
 }
 
@@ -200,6 +201,7 @@ export const WorkspaceCanvas = ({
   cameraProjection = 'perspective',
   renderKey = 'default',
   initialCameraSnapshot = null,
+  onCameraSnapshotChange,
   gizmoMargin = DEFAULT_WORKSPACE_OVERLAY_GIZMO_MARGIN,
 }: WorkspaceCanvasProps) => {
   const effectiveTheme = useWorkspaceCanvasTheme(theme);
@@ -684,6 +686,7 @@ export const WorkspaceCanvas = ({
                     key={`orbit-${controlLayerKey}`}
                     initialCameraSnapshot={initialCameraSnapshot}
                     {...finalOrbitControlsProps}
+                    onCameraSnapshotChange={onCameraSnapshotChange}
                     eventSource={orbitControlsEventSource}
                   />
                   {showViewportGizmo && !snapshotRenderActive && (
