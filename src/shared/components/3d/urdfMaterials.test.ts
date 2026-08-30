@@ -75,6 +75,9 @@ test('applyURDFMaterialTextures assigns palette textures to their named material
 
   const appliedMaterial = mesh.material as THREE.MeshStandardMaterial;
   assert.notEqual(appliedMaterial.map, null);
+  assert.equal(appliedMaterial.color.getHex(), 0xffffff);
   assert.equal(appliedMaterial.vertexColors, false);
   assert.equal(appliedMaterial.userData.urdfTexturePath, 'textures/ceiling.png');
+  assert.equal(appliedMaterial.userData.urdfColorApplied, true);
+  assert.equal(appliedMaterial.userData.urdfColor.getHex(), 0xffffff);
 });

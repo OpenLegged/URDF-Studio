@@ -1,5 +1,5 @@
 // @ts-nocheck
-import { Color, FrontSide, LinearSRGBColorSpace, Quaternion, SRGBColorSpace, Vector2, Vector3 } from 'three';
+import { Color, Float32BufferAttribute, FrontSide, LinearSRGBColorSpace, Quaternion, SRGBColorSpace, Vector2, Vector3 } from 'three';
 import * as Shared from './shared.js';
 import { ThreeRenderDelegateCore } from './ThreeRenderDelegateCore.js';
 import { createHydraColorFromTuple, createUnifiedHydraPhysicalMaterial, createUnifiedHydraStandardMaterial, hydraMaterialRequiresPhysicalExtensions, HYDRA_UNIFIED_MATERIAL_DEFAULTS } from './material-defaults.js';
@@ -1940,7 +1940,13 @@ export class ThreeRenderDelegateMaterialOps extends ThreeRenderDelegateCore {
         }
         this._snapshotMaterialIdsByStageSource.set(normalizedStageSourcePath, stageMaterialIds);
         for (const materialId of stageMaterialIds) {
-            if (this.materials[materialId])
+            const existingMaterial = this.materials[materialId] || null;
+            const existingNodeCount = existingMaterial?._nodes && typeof existingMaterial._nodes === 'object'
+                ? Object.keys(existingMaterial._nodes).length
+                : 0;
+            const hasResolvedHydraNetwork = existingNodeCount > 0
+                && !existingMaterial?._snapshotRecord;
+            if (hasResolvedHydraNetwork)
                 continue;
             const wrappedMaterial = this.createFallbackMaterialFromSnapshot(materialId);
             if (wrappedMaterial) {
@@ -2021,7 +2027,7 @@ export class ThreeRenderDelegateMaterialOps extends ThreeRenderDelegateCore {
                 stageSourcePath: options?.stageSourcePath,
             })
             : this.registry.getTexture(normalizedTexturePath);
-        texturePromise.then((texture) => {
+        const assignmentPromise = texturePromise.then((texture) => {
             const nextTexture = texture?.clone ? texture.clone() : texture;
             if (!nextTexture)
                 return;
@@ -2050,7 +2056,22 @@ export class ThreeRenderDelegateMaterialOps extends ThreeRenderDelegateCore {
                 this.recordSnapshotTextureApplyFailure(material, normalizedTexturePath, materialProperty, error);
             }
         });
+        if (!(this._pendingSnapshotTextureLoads instanceof Set)) {
+            this._pendingSnapshotTextureLoads = new Set();
+        }
+        this._pendingSnapshotTextureLoads.add(assignmentPromise);
+        assignmentPromise.finally(() => {
+            this._pendingSnapshotTextureLoads?.delete?.(assignmentPromise);
+        });
         return true;
+    }
+    async waitForPendingSnapshotTextures() {
+        const pendingLoads = this._pendingSnapshotTextureLoads instanceof Set
+            ? Array.from(this._pendingSnapshotTextureLoads)
+            : [];
+        if (pendingLoads.length === 0)
+            return;
+        await Promise.allSettled(pendingLoads);
     }
     recordSnapshotTextureApplyFailure(material, texturePath, materialProperty, error) {
         const normalizedTexturePath = this.normalizeMaterialTexturePath(texturePath);
@@ -2278,6 +2299,7 @@ export class ThreeRenderDelegateMaterialOps extends ThreeRenderDelegateCore {
             colorSpace: SRGBColorSpace,
             onAssigned: () => {
                 material.color = new Color(0xffffff);
+                material.vertexColors = false;
             },
         });
         if (emissiveEnabled) {
@@ -2376,9 +2398,12 @@ export class ThreeRenderDelegateMaterialOps extends ThreeRenderDelegateCore {
         const descriptorIndex = new Map();
         for (const descriptor of descriptors) {
             const meshId = normalizeHydraPath(descriptor?.meshId || '');
-            if (!meshId || descriptorIndex.has(meshId))
-                continue;
-            descriptorIndex.set(meshId, descriptor);
+            const resolvedPrimPath = normalizeHydraPath(descriptor?.resolvedPrimPath || '');
+            for (const lookupId of [meshId, resolvedPrimPath]) {
+                if (!lookupId || descriptorIndex.has(lookupId))
+                    continue;
+                descriptorIndex.set(lookupId, descriptor);
+            }
         }
         return descriptorIndex;
     }
@@ -2420,6 +2445,77 @@ export class ThreeRenderDelegateMaterialOps extends ThreeRenderDelegateCore {
         }
         return normalizedSections;
     }
+    ensureSnapshotMeshNormals() {
+        const snapshotDescriptorIndex = this.buildSnapshotMeshDescriptorIndex?.() || new Map();
+        let generatedCount = 0;
+        for (const hydraMesh of Object.values(this.meshes || {})) {
+            const meshId = normalizeHydraPath(hydraMesh?._id || '');
+            if (!meshId || !this.getSnapshotMeshDescriptor?.(meshId, snapshotDescriptorIndex))
+                continue;
+            const geometry = hydraMesh?._mesh?.geometry;
+            const positionAttribute = geometry?.getAttribute?.('position');
+            const normalAttribute = geometry?.getAttribute?.('normal');
+            if (!(positionAttribute?.count > 0) || normalAttribute)
+                continue;
+            try {
+                geometry.computeVertexNormals?.();
+                if (geometry.getAttribute?.('normal')) {
+                    generatedCount += 1;
+                }
+            }
+            catch { }
+        }
+        return generatedCount;
+    }
+    applySnapshotUvsToMeshes() {
+        const snapshot = this.getCachedRobotSceneSnapshot?.();
+        const uvPool = snapshot?.buffers?.uvs;
+        if (!uvPool || typeof uvPool.length !== 'number' || uvPool.length === 0)
+            return 0;
+        const rangesByMeshId = snapshot?.buffers?.rangesByMeshId || {};
+        const snapshotDescriptorIndex = this.buildSnapshotMeshDescriptorIndex?.() || new Map();
+        let appliedCount = 0;
+        for (const hydraMesh of Object.values(this.meshes || {})) {
+            const meshId = normalizeHydraPath(hydraMesh?._id || '');
+            const descriptor = meshId
+                ? this.getSnapshotMeshDescriptor?.(meshId, snapshotDescriptorIndex)
+                : null;
+            const geometry = hydraMesh?._mesh?.geometry;
+            if (!descriptor || !geometry || geometry.getAttribute?.('uv'))
+                continue;
+            const descriptorMeshId = normalizeHydraPath(descriptor?.meshId || '');
+            const uvRange = descriptor?.ranges?.uvs
+                || rangesByMeshId?.[descriptorMeshId]?.uvs
+                || null;
+            const offset = Math.max(0, Math.floor(Number(uvRange?.offset || 0)));
+            const count = Math.max(0, Math.floor(Number(uvRange?.count || 0)));
+            const stride = Math.max(1, Math.floor(Number(uvRange?.stride || 2)));
+            const positionCount = Number(geometry.getAttribute?.('position')?.count || 0);
+            const uvVertexCount = Math.floor(count / stride);
+            if (stride < 2 || positionCount <= 0 || uvVertexCount !== positionCount)
+                continue;
+            if (offset + count > uvPool.length)
+                continue;
+            const values = new Float32Array(positionCount * 2);
+            for (let index = 0; index < positionCount; index += 1) {
+                const sourceOffset = offset + index * stride;
+                values[index * 2] = Number(uvPool[sourceOffset] || 0);
+                values[index * 2 + 1] = Number(uvPool[sourceOffset + 1] || 0);
+            }
+            const uvAttribute = new Float32BufferAttribute(values, 2);
+            uvAttribute.needsUpdate = true;
+            geometry.setAttribute('uv', uvAttribute);
+            const materials = Array.isArray(hydraMesh._mesh.material)
+                ? hydraMesh._mesh.material
+                : [hydraMesh._mesh.material];
+            for (const material of materials) {
+                if (material)
+                    material.needsUpdate = true;
+            }
+            appliedCount += 1;
+        }
+        return appliedCount;
+    }
     applySnapshotMaterialsToMeshes() {
         const summary = {
             boundCount: 0,
@@ -2427,6 +2523,7 @@ export class ThreeRenderDelegateMaterialOps extends ThreeRenderDelegateCore {
             inheritedCount: 0,
             subsetFailureCount: 0,
             inheritFailureCount: 0,
+            normalFallbackCount: 0,
             subsetFailureMeshIds: [],
             inheritFailureMeshIds: [],
             textureFailureCount: Number(this.getSnapshotTextureApplyFailureSummary?.().count || 0),
@@ -2459,6 +2556,18 @@ export class ThreeRenderDelegateMaterialOps extends ThreeRenderDelegateCore {
             if (!resolvedMaterial || !hydraMesh._mesh)
                 continue;
             hydraMesh._mesh.material = resolvedMaterial;
+            const geometry = hydraMesh._mesh.geometry;
+            const positionAttribute = geometry?.getAttribute?.('position');
+            const normalAttribute = geometry?.getAttribute?.('normal');
+            if (positionAttribute?.count > 0 && !normalAttribute) {
+                try {
+                    geometry.computeVertexNormals?.();
+                    if (geometry.getAttribute?.('normal')) {
+                        summary.normalFallbackCount += 1;
+                    }
+                }
+                catch { }
+            }
             hydraMesh._pendingMaterialId = undefined;
             summary.boundCount += 1;
         }

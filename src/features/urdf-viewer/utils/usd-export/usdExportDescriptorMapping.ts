@@ -16,6 +16,7 @@ import {
 } from '@/lib/robot-parser/usd/usdPrimitiveGeometry';
 import type { ViewerRobotDataResolution } from '@/lib/robot-parser/usd/viewerRobotData';
 import { resolveUsdDescriptorTargetLinkPath } from '@/lib/robot-parser/usd/usdDescriptorLinkResolution';
+import { selectUsdRenderableMeshDescriptors } from '@/lib/robot-parser/usd/usdRenderableDescriptors';
 
 import {
   cloneRobotState,
@@ -638,7 +639,7 @@ export function createDescriptorExportMap(
   const baseRobot = currentRobot
     ? mergeCurrentRobotWithSnapshotMeshPaths(currentRobot, snapshotRobot)
     : snapshotRobot;
-  const descriptors = Array.from(snapshot.render?.meshDescriptors || []);
+  const descriptors = selectUsdRenderableMeshDescriptors(snapshot);
   const descriptorsByLinkRole = new Map<string, ExportDescriptor[]>();
   const materialLookup = getSnapshotMaterialLookup(snapshot);
   const preferredMaterialLookup = getSnapshotPreferredVisualMaterialLookup(snapshot);

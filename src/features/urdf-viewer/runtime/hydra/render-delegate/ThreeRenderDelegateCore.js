@@ -104,6 +104,7 @@ export class ThreeRenderDelegateCore {
         this._snapshotMaterialRecordById = new Map();
         this._snapshotMaterialIdsByStageSource = new Map();
         this._snapshotFallbackMaterialCache = new Map();
+        this._pendingSnapshotTextureLoads = new Set();
         this._linkVisualTransformCache = new Map();
         this._visualMeshIdByLinkPath = new Map();
         this._meshIdByLinkPath = new Map();

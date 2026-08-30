@@ -422,6 +422,8 @@ export function applyURDFMaterialTextures(
             standardMaterial.color.set('#ffffff');
             standardMaterial.userData.urdfTextureApplied = true;
             standardMaterial.userData.urdfTexturePath = texturePath;
+            standardMaterial.userData.urdfColorApplied = true;
+            standardMaterial.userData.urdfColor = new THREE.Color('#ffffff');
             standardMaterial.needsUpdate = true;
           });
         });

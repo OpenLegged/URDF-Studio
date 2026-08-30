@@ -2603,8 +2603,16 @@ class HydraMesh {
         }
         this._colors = null;
         if (interpolation === 'constant') {
-            this._mesh.material.vertexColors = false;
-            this._mesh.material.color = setHydraColorFromTuple(new Color(), data);
+            const materials = this._getAssignedMaterials();
+            for (const material of materials) {
+                material.vertexColors = false;
+                // `displayColor` is Hydra's fallback surface color. It must not
+                // tint a bound base-color texture, which already defines the
+                // surface color and is multiplied by `material.color` in Three.js.
+                if (material.map)
+                    continue;
+                material.color = setHydraColorFromTuple(new Color(), data);
+            }
         }
         else if (interpolation === 'vertex') {
             // Per-vertex buffer attribute

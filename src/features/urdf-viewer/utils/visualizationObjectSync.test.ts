@@ -440,6 +440,44 @@ test('syncLinkVisualColors uses tracked robot material colors for the primary vi
   assert.equal((mesh.material as THREE.MeshStandardMaterial).color.getHexString(), '12ab34');
 });
 
+test('syncLinkVisualColors keeps an authored texture on its neutral base color', () => {
+  const robot = new THREE.Group();
+  const link = new THREE.Group() as THREE.Group & { isURDFLink?: boolean };
+  link.isURDFLink = true;
+  link.name = 'cabinet_top';
+
+  const material = new THREE.MeshStandardMaterial({
+    color: '#ffffff',
+    map: new THREE.Texture(),
+  });
+  const mesh = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), material);
+  mesh.userData.isVisualMesh = true;
+  link.add(mesh);
+  robot.add(link);
+
+  const changed = syncLinkVisualColors({
+    robot,
+    robotLinks: {
+      cabinet_top: {
+        ...DEFAULT_LINK,
+        id: 'cabinet_top',
+        name: 'cabinet_top',
+        visual: {
+          ...DEFAULT_LINK.visual,
+          type: GeometryType.MESH,
+          color: '#2290cb',
+        },
+      },
+    },
+    robotMaterials: {
+      cabinet_top: { color: '#2290cb' },
+    },
+  });
+
+  assert.equal(changed, false);
+  assert.equal(material.color.getHexString(), 'ffffff');
+});
+
 test('syncLinkVisualColors applies visualBodies colors to their matching visual groups', () => {
   const robot = new THREE.Group();
 

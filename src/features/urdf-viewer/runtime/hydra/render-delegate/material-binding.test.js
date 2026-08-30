@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { Float32BufferAttribute, Group, MeshPhysicalMaterial } from 'three';
+import { BufferGeometry, Float32BufferAttribute, Group, MeshPhysicalMaterial, Texture } from 'three';
 
 import { isCoplanarOffsetMaterial } from '../../../../../core/loaders/coplanarMaterialOffset.ts';
 import { ThreeRenderDelegateMaterialOps } from './ThreeRenderDelegateMaterialOps.js';
@@ -8,11 +8,16 @@ import { HydraMesh } from './HydraMesh.js';
 
 const {
     applySnapshotMaterialsToMeshes,
+    applySnapshotTextureInput,
+    applySnapshotUvsToMeshes,
     buildSnapshotMeshDescriptorIndex,
     getSnapshotMeshDescriptor,
     getSnapshotDirectMaterialIdForMeshId,
     getSnapshotGeomSubsetSectionsForMeshId,
+    ensureSnapshotMeshNormals,
+    ingestSnapshotMaterialRecords,
     repairMaterialBindingApiSchemasInLayerText,
+    waitForPendingSnapshotTextures,
 } = ThreeRenderDelegateMaterialOps.prototype;
 
 test('material binding repair restores an API deleted by a stronger layer', () => {
@@ -100,6 +105,7 @@ function createTestContext({
         getSnapshotMeshDescriptor,
         getSnapshotDirectMaterialIdForMeshId,
         getSnapshotGeomSubsetSectionsForMeshId,
+        ensureSnapshotMeshNormals,
     };
 }
 
@@ -141,6 +147,195 @@ test('applySnapshotMaterialsToMeshes binds direct material from snapshot descrip
     assert.equal(hydraMesh._mesh.material, expectedMaterial);
     assert.equal(hydraMesh._pendingMaterialId, undefined);
     assert.equal(summary.boundCount, 1);
+});
+
+test('applySnapshotMaterialsToMeshes matches a Hydra prim path to the snapshot resolved prim path', () => {
+    const meshId = '/root/visuals.proto_mesh_id0';
+    const resolvedPrimPath = '/root/__materials_0/geometry/P_9';
+    const materialId = '/root/materials/mat_390';
+    const expectedMaterial = new MeshPhysicalMaterial({ name: 'walnut' });
+    const geometry = new BufferGeometry();
+    geometry.setAttribute('position', new Float32BufferAttribute([
+        0, 0, 0,
+        1, 0, 0,
+        0, 1, 0,
+    ], 3));
+    const hydraMesh = {
+        _id: resolvedPrimPath,
+        _pendingMaterialId: null,
+        _pendingGeomSubsetSections: null,
+        _mesh: { material: null, geometry },
+        tryApplyPendingGeomSubsetMaterials() {
+            return false;
+        },
+        tryInheritVisualMaterialFromLink() {
+            return false;
+        },
+    };
+    const context = createTestContext({
+        meshId: resolvedPrimPath,
+        mesh: hydraMesh,
+        materials: {
+            [materialId]: { _material: expectedMaterial },
+        },
+        descriptors: [
+            {
+                meshId,
+                resolvedPrimPath,
+                geometry: {
+                    materialId,
+                    geomSubsetSections: [],
+                },
+            },
+        ],
+    });
+
+    const summary = applySnapshotMaterialsToMeshes.call(context);
+
+    assert.equal(hydraMesh._mesh.material, expectedMaterial);
+    assert.ok(geometry.getAttribute('normal'));
+    assert.equal(summary.boundCount, 1);
+    assert.equal(summary.normalFallbackCount, 1);
+});
+
+test('ensureSnapshotMeshNormals repairs geometry hydrated after the material warmup', () => {
+    const meshId = '/root/visuals.proto_mesh_id0';
+    const resolvedPrimPath = '/root/__materials_0/geometry/P_9';
+    const geometry = new BufferGeometry();
+    geometry.setAttribute('position', new Float32BufferAttribute([
+        0, 0, 0,
+        1, 0, 0,
+        0, 1, 0,
+    ], 3));
+    const context = createTestContext({
+        meshId: resolvedPrimPath,
+        mesh: { _id: resolvedPrimPath, _mesh: { geometry } },
+        descriptors: [{ meshId, resolvedPrimPath }],
+    });
+
+    assert.equal(ensureSnapshotMeshNormals.call(context), 1);
+    assert.ok(geometry.getAttribute('normal'));
+});
+
+test('applySnapshotUvsToMeshes restores UVs by resolved prim path', () => {
+    const descriptorMeshId = '/root/visuals.proto_mesh_id0';
+    const resolvedPrimPath = '/root/__materials_0/geometry/P_9';
+    const geometry = new BufferGeometry();
+    geometry.setAttribute('position', new Float32BufferAttribute([
+        0, 0, 0,
+        1, 0, 0,
+        0, 1, 0,
+    ], 3));
+    const descriptor = {
+        meshId: descriptorMeshId,
+        resolvedPrimPath,
+        ranges: { uvs: { offset: 2, count: 6, stride: 2 } },
+    };
+    const context = createTestContext({
+        meshId: resolvedPrimPath,
+        mesh: { _id: resolvedPrimPath, _mesh: { geometry } },
+        descriptors: [descriptor],
+    });
+    context.getCachedRobotSceneSnapshot = () => ({
+        render: { meshDescriptors: [descriptor] },
+        buffers: {
+            uvs: Float32Array.from([9, 9, 0, 0, 1, 0, 0, 1]),
+            rangesByMeshId: {},
+        },
+    });
+
+    assert.equal(applySnapshotUvsToMeshes.call(context), 1);
+    assert.deepEqual(Array.from(geometry.getAttribute('uv').array), [0, 0, 1, 0, 0, 1]);
+});
+
+test('ingestSnapshotMaterialRecords replaces an unresolved Hydra placeholder', () => {
+    const materialId = '/root/materials/mat_390';
+    const placeholderMaterial = { _nodes: {}, _material: new MeshPhysicalMaterial({ name: 'placeholder' }) };
+    const expectedMaterial = { _nodes: {}, _material: new MeshPhysicalMaterial({ name: 'walnut' }), _snapshotRecord: {} };
+    const context = {
+        materials: { [materialId]: placeholderMaterial },
+        _snapshotMaterialRecordById: new Map(),
+        _snapshotMaterialIdsByStageSource: new Map(),
+        _snapshotFallbackMaterialCache: new Map(),
+        getStageSourcePath() {
+            return '/model.usd';
+        },
+        normalizeSnapshotMaterialRecords(records) {
+            return records;
+        },
+        createFallbackMaterialFromSnapshot(requestedMaterialId) {
+            assert.equal(requestedMaterialId, materialId);
+            return expectedMaterial;
+        },
+    };
+
+    ingestSnapshotMaterialRecords.call(context, [{ materialId }]);
+
+    assert.equal(context.materials[materialId], expectedMaterial);
+});
+
+test('ingestSnapshotMaterialRecords preserves a resolved Hydra material network', () => {
+    const materialId = '/root/materials/mat_390';
+    const resolvedMaterial = {
+        _nodes: { surface: { path: '/root/materials/mat_390/surface' } },
+        _material: new MeshPhysicalMaterial({ name: 'resolved' }),
+    };
+    let fallbackCreateCount = 0;
+    const context = {
+        materials: { [materialId]: resolvedMaterial },
+        _snapshotMaterialRecordById: new Map(),
+        _snapshotMaterialIdsByStageSource: new Map(),
+        _snapshotFallbackMaterialCache: new Map(),
+        getStageSourcePath() {
+            return '/model.usd';
+        },
+        normalizeSnapshotMaterialRecords(records) {
+            return records;
+        },
+        createFallbackMaterialFromSnapshot() {
+            fallbackCreateCount += 1;
+            return null;
+        },
+    };
+
+    ingestSnapshotMaterialRecords.call(context, [{ materialId }]);
+
+    assert.equal(context.materials[materialId], resolvedMaterial);
+    assert.equal(fallbackCreateCount, 0);
+});
+
+test('waitForPendingSnapshotTextures waits until an assigned texture is ready', async () => {
+    let resolveTexture;
+    const texturePromise = new Promise((resolve) => {
+        resolveTexture = resolve;
+    });
+    const material = new MeshPhysicalMaterial({ name: 'walnut' });
+    const context = {
+        _pendingSnapshotTextureLoads: new Set(),
+        normalizeMaterialTexturePath(texturePath) {
+            return texturePath;
+        },
+        loadMaterialTexture() {
+            return texturePromise;
+        },
+        clearSnapshotTextureApplyFailure() {},
+        recordSnapshotTextureApplyFailure() {},
+    };
+
+    assert.equal(applySnapshotTextureInput.call(
+        context,
+        material,
+        'img/walnut.png',
+        'map',
+    ), true);
+    const waitPromise = waitForPendingSnapshotTextures.call(context);
+    assert.equal(material.map, null);
+
+    resolveTexture(new Texture());
+    await waitPromise;
+
+    assert.ok(material.map);
+    assert.equal(context._pendingSnapshotTextureLoads.size, 0);
 });
 
 test('applySnapshotMaterialsToMeshes seeds missing geom subset sections from snapshot descriptor', () => {

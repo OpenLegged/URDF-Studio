@@ -198,6 +198,18 @@ export function hasMaterialRecordContent(material: MaterialRecord | null | undef
 export function resolveSnapshotMaterialColorHex(
   material: MaterialRecord | null | undefined,
 ): string | null {
+  const opacity = toOptionalFiniteNumber(material?.opacity);
+  const hasBaseColorTexture = Boolean(String(material?.mapPath || '').trim());
+  if (hasBaseColorTexture) {
+    // In Three.js the scalar color multiplies the base-color map. Snapshot
+    // colors may be a generated fallback inferred from an opaque material
+    // name, so carrying that color into RobotData tints walnut brown teal.
+    return colorArrayToHex(
+      [1, 1, 1],
+      Number.isFinite(opacity) ? opacity : 1,
+    );
+  }
+
   const authoredColor = colorArrayToHex(
     material?.color,
     material?.opacity,
@@ -207,11 +219,8 @@ export function resolveSnapshotMaterialColorHex(
     return authoredColor;
   }
 
-  const opacity = toOptionalFiniteNumber(material?.opacity);
-  const hasPrimaryTexture = Boolean(
-    String(material?.mapPath || material?.alphaMapPath || '').trim(),
-  );
-  if (hasPrimaryTexture && Number.isFinite(opacity) && opacity < 0.999) {
+  const hasAlphaTexture = Boolean(String(material?.alphaMapPath || '').trim());
+  if (hasAlphaTexture && Number.isFinite(opacity) && opacity < 0.999) {
     return colorArrayToHex([1, 1, 1], opacity);
   }
 

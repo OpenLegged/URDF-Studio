@@ -4,6 +4,7 @@ import type { UsdSceneMaterialRecord, UsdSceneMeshDescriptor } from '@/types';
 import { URDFCollider, URDFVisual } from '@/core/parsers/urdf/loader/URDFClasses';
 import { buildRobotRuntimeFromData, type RobotRuntimeModel } from '../runtime';
 import { resolveUsdDescriptorTargetLinkPath } from './usdDescriptorLinkResolution';
+import { selectUsdRenderableMeshDescriptors } from './usdRenderableDescriptors';
 import { parseUsdScene, type ParsedUsdScene, type ParseUsdSceneOptions } from './parseUsd';
 
 export interface LoadUsdRobotRuntimeOptions extends ParseUsdSceneOptions {
@@ -164,6 +165,12 @@ function finite(value: unknown, fallback: number): number {
 
 function createMaterial(record: UsdSceneMaterialRecord | null): THREE.MeshPhysicalMaterial {
   const opacity = THREE.MathUtils.clamp(finite(record?.opacity, 1), 0, 1);
+  const alphaTest = THREE.MathUtils.clamp(finite(record?.alphaTest, 0), 0, 1);
+  const hasBlendAlphaMap = Boolean(
+    record?.alphaMapPath
+      && record?.opacityTextureEnabled !== false
+      && alphaTest <= 0,
+  );
   const material = new THREE.MeshPhysicalMaterial({
     name: record?.name || record?.materialId || 'USD Material',
     color: toColor(record?.color ?? record?.authoredColor, 0xcccccc),
@@ -172,8 +179,8 @@ function createMaterial(record: UsdSceneMaterialRecord | null): THREE.MeshPhysic
     roughness: THREE.MathUtils.clamp(finite(record?.roughness, 0.7), 0, 1),
     metalness: THREE.MathUtils.clamp(finite(record?.metalness, 0), 0, 1),
     opacity,
-    transparent: opacity < 1 || record?.opacityEnabled === true,
-    alphaTest: THREE.MathUtils.clamp(finite(record?.alphaTest, 0), 0, 1),
+    transparent: opacity < 1 || hasBlendAlphaMap,
+    alphaTest,
     clearcoat: THREE.MathUtils.clamp(finite(record?.clearcoat, 0), 0, 1),
     clearcoatRoughness: THREE.MathUtils.clamp(finite(record?.clearcoatRoughness, 0), 0, 1),
     transmission: THREE.MathUtils.clamp(finite(record?.transmission, 0), 0, 1),
@@ -233,12 +240,25 @@ async function applyMaterialTextures(
       load(record.alphaMapPath, false),
     ]);
   material.map = map;
+  if (map) {
+    // A connected USD base-color texture replaces the scalar/fallback color.
+    // Three.js multiplies both, which tinted named materials (for example
+    // mat_390...) dark teal in the model editor.
+    material.color.set(0xffffff);
+    material.vertexColors = false;
+    material.userData.urdfTextureApplied = true;
+    material.userData.urdfColorApplied = true;
+    material.userData.urdfColor = '#ffffff';
+  }
   material.emissiveMap = emissiveMap;
   material.roughnessMap = roughnessMap;
   material.metalnessMap = metalnessMap;
   material.normalMap = normalMap;
   material.aoMap = aoMap;
   material.alphaMap = alphaMap;
+  if (alphaMap && material.alphaTest <= 0) {
+    material.transparent = true;
+  }
   material.needsUpdate = true;
 }
 
@@ -317,7 +337,7 @@ export async function buildUsdRobotRuntimeFromScene(
       if (record.materialId) materialById.set(normalizePath(record.materialId), record);
     });
     const textureCache = new Map<string, Promise<THREE.Texture>>();
-    const descriptors = Array.from(parsed.snapshot.render?.meshDescriptors || []);
+    const descriptors = selectUsdRenderableMeshDescriptors(parsed.snapshot);
     const knownLinkPaths = Object.keys(parsed.resolution.linkIdByPath);
     const rootLink = runtime.root.links[parsed.resolution.robotData.rootLinkId] ?? runtime.root;
     let meshCount = 0;

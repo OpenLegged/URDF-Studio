@@ -359,6 +359,13 @@ class HydraMaterial {
                     clonedTexture.wrapS = this.convertWrap(nodeIn.wrapS);
                     clonedTexture.wrapT = this.convertWrap(nodeIn.wrapT);
                     this._material[materialParameterMapName] = clonedTexture;
+                    if (materialParameterMapName === 'map') {
+                        // A connected UsdPreviewSurface base-color texture replaces the
+                        // scalar input. Three.js multiplies `map` by `color`, so keeping
+                        // the fallback gray here incorrectly darkens every color texture.
+                        this._material.color = new Color(0xffffff);
+                        this._material.vertexColors = false;
+                    }
                     this._material.needsUpdate = true;
                     resolve();
                     return;

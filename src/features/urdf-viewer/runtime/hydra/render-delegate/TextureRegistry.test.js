@@ -127,6 +127,54 @@ test('TextureRegistry corrects a JPEG texture mislabeled with a PNG extension', 
   }
 });
 
+test('TextureRegistry normalizes worker ImageBitmaps through OffscreenCanvas', async () => {
+  const originalCreateImageBitmap = globalThis.createImageBitmap;
+  const originalOffscreenCanvas = globalThis.OffscreenCanvas;
+  const objectUrls = installObjectUrlMocks();
+  let drawCount = 0;
+  let closeCount = 0;
+  class FakeOffscreenCanvas {
+    constructor(width, height) {
+      this.width = width;
+      this.height = height;
+    }
+    getContext() {
+      return {
+        drawImage() {
+          drawCount += 1;
+        },
+      };
+    }
+  }
+  globalThis.createImageBitmap = async () => ({
+    width: 8,
+    height: 4,
+    close() {
+      closeCount += 1;
+    },
+  });
+  globalThis.OffscreenCanvas = FakeOffscreenCanvas;
+  try {
+    const registry = createTextureRegistryForTest(
+      Uint8Array.from([0xff, 0xd8, 0xff, 0xe0]),
+    );
+    const texture = await registry.getTexture('textures/base_color.png');
+
+    assert.equal(texture.isTexture, true);
+    assert.equal(texture.image.width, 8);
+    assert.equal(texture.image.height, 4);
+    assert.equal(texture.flipY, true);
+    assert.equal(drawCount, 1);
+    assert.equal(closeCount, 1);
+  } finally {
+    if (originalCreateImageBitmap === undefined) delete globalThis.createImageBitmap;
+    else globalThis.createImageBitmap = originalCreateImageBitmap;
+    if (originalOffscreenCanvas === undefined) delete globalThis.OffscreenCanvas;
+    else globalThis.OffscreenCanvas = originalOffscreenCanvas;
+    objectUrls.restore();
+  }
+});
+
 test('TextureRegistry revokes blob object URL after successful texture load', async () => {
   const restoreWindow = installWindowMock();
   const objectUrls = installObjectUrlMocks();

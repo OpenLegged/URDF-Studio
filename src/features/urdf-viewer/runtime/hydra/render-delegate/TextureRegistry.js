@@ -367,7 +367,23 @@ class TextureRegistry {
                             return response.blob();
                         });
                     const bitmap = await createImageBitmap(bitmapBlob);
-                    const texture = new Texture(bitmap);
+                    let texture = null;
+                    if (typeof OffscreenCanvas === 'function') {
+                        const normalizedCanvas = new OffscreenCanvas(bitmap.width, bitmap.height);
+                        const context = normalizedCanvas.getContext('2d');
+                        if (context) {
+                            context.drawImage(bitmap, 0, 0);
+                            // Keep the browser-native canvas as the upload source. Converting
+                            // worker-decoded pixels into a typed DataTexture can reinterpret
+                            // platform channel order and turn warm walnut tones blue/teal.
+                            texture = new Texture(normalizedCanvas);
+                            texture.flipY = true;
+                            bitmap.close?.();
+                        }
+                    }
+                    if (!texture) {
+                        texture = new Texture(bitmap);
+                    }
                     texture.name = resourcePath;
                     texture.needsUpdate = true;
                     finalizeLoad('ok');
