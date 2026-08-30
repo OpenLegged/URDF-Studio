@@ -27,18 +27,22 @@ import { ConversationMessageMarkdown } from './ConversationMessageMarkdown';
 import { shouldSubmitConversationInput } from '../utils/conversationInput';
 import { buildConversationPromptSuggestions } from '../utils/conversationPromptSuggestions';
 import {
+  appendConversationContextCheckpoint,
   createConversationMessage,
+  getActiveConversationHistory,
   isConversationChatMessage,
   removeTrailingAssistantPlaceholder,
   startNewConversationTimeline,
 } from '../utils/conversationTimeline';
 import type {
+  AIConversationApplyResult,
   AIConversationLaunchContext,
   AIConversationMessage,
   AIConversationModificationCard,
 } from '../types';
 import type { RobotState } from '@/types';
 import { generateURDF } from '@/core/parsers';
+import { createSourceSemanticRobotHash } from '@/core/robot';
 import { canGenerateUrdf } from '@/core/parsers/urdf/urdfExportSupport';
 import { resolveModificationProposal } from '../utils/resolveModificationProposal';
 import { resolveAIWorkspaceRobotTarget } from '../utils/aiWorkspaceTarget';
@@ -46,6 +50,12 @@ import { useAssetsStore } from '@/store/assetsStore';
 import { useSelectionStore } from '@/store/selectionStore';
 import { useWorkspaceStore } from '@/store/workspaceStore';
 import { ConversationModificationCard } from './ConversationModificationCard';
+import { ConversationAgentActivity } from './ConversationAgentActivity';
+import { buildConversationContext } from '../utils/buildConversationContext';
+import { buildStudioAppCapabilities } from '../capabilities/studioAppCapabilities';
+import type { StudioAgentPorts } from '../studioAppControl';
+import { useConversationSessionPersistence } from '../hooks/useConversationSessionPersistence';
+import { verifyAppliedRobotTask } from '../services/aiAgent';
 
 interface AIConversationModalProps {
   isOpen: boolean;
@@ -53,7 +63,11 @@ interface AIConversationModalProps {
   lang: Language;
   launchContext: AIConversationLaunchContext | null;
   onStartNewConversation: (launchContext: AIConversationLaunchContext) => void;
-  onApply: (componentId: string, proposedUrdf: string) => boolean;
+  onApply: (
+    componentId: string,
+    proposedUrdf: string,
+  ) => AIConversationApplyResult | boolean;
+  studioAgentPorts?: StudioAgentPorts;
 }
 
 type ConversationResetAction = 'new-conversation' | 'clear-history';
@@ -69,6 +83,79 @@ function resolveSelectedEntityName(context: AIConversationLaunchContext | null):
     : context.robotSnapshot.joints[snapshotEntityId]?.name || entityId;
 }
 
+function findLastAgentActivityIndex(messages: AIConversationMessage[]): number {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    if (messages[index]?.kind === 'agent-activity') {
+      return index;
+    }
+  }
+  return -1;
+}
+
+function resolveStudioCapabilities(
+  ports: StudioAgentPorts | undefined,
+  editableComponentId: string,
+) {
+  return ports
+    ? buildStudioAppCapabilities(ports, { editableComponentId })
+    : undefined;
+}
+
+function appendTurnOutcome(
+  messages: AIConversationMessage[],
+  historyCheckpoint: Array<{ role: 'user' | 'assistant'; content: string }> | undefined,
+  outcome: AIConversationMessage,
+): AIConversationMessage[] {
+  const normalized = removeTrailingAssistantPlaceholder(
+    updateLatestAgentActivityStatus(messages, 'completed'),
+  )
+  return [
+    ...appendConversationContextCheckpoint(normalized, historyCheckpoint),
+    outcome,
+  ]
+}
+
+function updateLatestAgentActivityStatus(
+  messages: AIConversationMessage[],
+  status: Extract<AIConversationMessage, { kind: 'agent-activity' }>['status'],
+): AIConversationMessage[] {
+  const activityIndex = findLastAgentActivityIndex(messages)
+  if (activityIndex === -1) return messages
+  const activity = messages[activityIndex]
+  if (
+    !activity ||
+    activity.kind !== 'agent-activity' ||
+    activity.status === 'completed' ||
+    activity.status === 'failed' ||
+    activity.status === 'aborted'
+  ) {
+    return messages
+  }
+  const updated = [...messages]
+  updated[activityIndex] = { ...activity, status }
+  return updated
+}
+
+interface ModificationTurnOptions {
+  showUserMessage?: boolean
+  originalUserRequest?: string
+  forceConfirmation?: boolean
+}
+
+function canSubmitModificationTurn(options: {
+  launchContext: AIConversationLaunchContext | null
+  userMessage: string
+  isSending: boolean
+  isRestoringSession: boolean
+}): options is typeof options & { launchContext: AIConversationLaunchContext } {
+  return Boolean(
+    options.launchContext &&
+    options.userMessage.trim() &&
+    !options.isSending &&
+    !options.isRestoringSession,
+  )
+}
+
 export function AIConversationModal({
   isOpen,
   onClose,
@@ -76,9 +163,13 @@ export function AIConversationModal({
   launchContext,
   onStartNewConversation,
   onApply,
+  studioAgentPorts,
 }: AIConversationModalProps) {
   const t = translations[lang];
-  const conversationWindowLayer = useManagedWindowLayer('aiConversation');
+  const {
+    zIndex: conversationWindowZIndex,
+    onActivate: activateConversationWindow,
+  } = useManagedWindowLayer('aiConversation');
   const defaultWindowSize = useMemo(() => {
     if (typeof window === 'undefined') {
       return { width: 760, height: 620 };
@@ -103,13 +194,20 @@ export function AIConversationModal({
       bottomMargin: 50,
     },
   });
-  const { isMinimized, size, isResizing } = windowState;
+  const { isMinimized, size } = windowState;
   const isCompactLayout = size.width < 700;
+
+  useEffect(() => {
+    if (isOpen) {
+      activateConversationWindow();
+    }
+  }, [activateConversationWindow, isOpen]);
 
   const [messages, setMessages] = useState<AIConversationMessage[]>([]);
   const [input, setInput] = useState('');
   const [isSending, setIsSending] = useState(false);
   const [copiedMessageKey, setCopiedMessageKey] = useState<string | null>(null);
+  const visibleMessages = messages.filter(message => message.kind !== 'context-checkpoint');
   const [lastSubmittedTurn, setLastSubmittedTurn] = useState<{ userMessage: string } | null>(
     null,
   );
@@ -123,8 +221,10 @@ export function AIConversationModal({
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const copiedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const isComposingRef = useRef(false);
+  const isSendingRef = useRef(false);
   const abortControllerRef = useRef<AbortController | null>(null);
-  const skipNextSessionResetRef = useRef(false);
+  const postApplyAbortControllerRef = useRef<AbortController | null>(null);
+  const automaticRepairHandlerRef = useRef<(request: string) => void>(() => {});
 
   const selectedEntityName = useMemo(
     () => resolveSelectedEntityName(launchContext),
@@ -144,13 +244,18 @@ export function AIConversationModal({
       return lastMessage.content;
     }
 
+    if (lastMessage.kind === 'agent-activity') {
+      return `${lastMessage.status}:${lastMessage.events.length}`;
+    }
+
     if (lastMessage.kind === 'divider') {
       return lastMessage.marker;
     }
 
     return '';
   })();
-  const showHeaderActionLabels = !isMinimized && !isCompactLayout;
+  const showNewConversationActionLabel = !isMinimized && size.width >= (lang === 'zh' ? 520 : 560);
+  const showClearHistoryActionLabel = !isMinimized && size.width >= (lang === 'zh' ? 620 : 720);
   const suggestedPrompts = useMemo(
     () =>
       buildConversationPromptSuggestions({
@@ -166,6 +271,8 @@ export function AIConversationModal({
     (options?: { preserveMessages?: boolean; startNewConversation?: boolean }) => {
       abortControllerRef.current?.abort();
       abortControllerRef.current = null;
+      postApplyAbortControllerRef.current?.abort();
+      postApplyAbortControllerRef.current = null;
       requestIdRef.current += 1;
       setMessages((currentMessages) => {
         if (!options?.preserveMessages) {
@@ -187,6 +294,19 @@ export function AIConversationModal({
     },
     [],
   );
+  const {
+    isRestoringSession,
+    ensurePersistentSession,
+    forkPersistentSession,
+    clearPersistentSession,
+  } = useConversationSessionPersistence({
+    isOpen,
+    launchContext,
+    messages,
+    setMessages,
+    resetConversationState,
+    onStartNewConversation,
+  });
 
   useEffect(() => {
     isMountedRef.current = true;
@@ -195,6 +315,8 @@ export function AIConversationModal({
       requestIdRef.current += 1;
       abortControllerRef.current?.abort();
       abortControllerRef.current = null;
+      postApplyAbortControllerRef.current?.abort();
+      postApplyAbortControllerRef.current = null;
       if (copiedTimerRef.current) {
         clearTimeout(copiedTimerRef.current);
         copiedTimerRef.current = null;
@@ -203,17 +325,12 @@ export function AIConversationModal({
   }, []);
 
   useEffect(() => {
-    if (skipNextSessionResetRef.current) {
-      skipNextSessionResetRef.current = false;
-      return;
-    }
-
-    resetConversationState();
-  }, [launchContext?.sessionId, resetConversationState]);
-
-  useEffect(() => {
     if (!isOpen && isSending) {
       abortControllerRef.current?.abort();
+    }
+    if (!isOpen) {
+      postApplyAbortControllerRef.current?.abort();
+      postApplyAbortControllerRef.current = null;
     }
   }, [isOpen, isSending]);
 
@@ -284,26 +401,127 @@ export function AIConversationModal({
     abortControllerRef.current?.abort();
   };
 
+  const normalizeApplyResult = (
+    result: AIConversationApplyResult | boolean,
+    componentId: string,
+  ): AIConversationApplyResult => {
+    if (typeof result !== 'boolean') {
+      return result;
+    }
+    if (!result) {
+      return { ok: false, reason: 'revision-conflict' };
+    }
+    const state = useWorkspaceStore.getState();
+    const liveRobot = state.workspace.components[componentId]?.robot;
+    if (!liveRobot) {
+      return { ok: false, reason: 'component-missing' };
+    }
+    const clonedRobot = structuredClone(liveRobot);
+    return {
+      ok: true,
+      componentId,
+      revision: state.revision,
+      liveRobot: clonedRobot,
+      liveRobotHash: createSourceSemanticRobotHash(clonedRobot),
+    };
+  };
+
+  const updateProposalVerification = (
+    proposalId: string,
+    verificationStatus: AIConversationModificationCard['verificationStatus'],
+  ) => {
+    setMessages((prev) => prev.map((message) => (
+      message.kind === 'modification-card' && message.proposalId === proposalId
+        ? { ...message, verificationStatus }
+        : message
+    )));
+  };
+
+  const startPostApplyVerification = (options: {
+    proposalId?: string;
+    originalUserRequest: string;
+    applyResult: Extract<AIConversationApplyResult, { ok: true }>;
+  }) => {
+    const publishStatus = (
+      status: NonNullable<AIConversationModificationCard['verificationStatus']>,
+    ) => {
+      if (options.proposalId) {
+        updateProposalVerification(
+          options.proposalId,
+          status === 'unverified' || status === 'stale' ? 'not-started' : status,
+        );
+        return;
+      }
+      // Auto-applied edits have no card to update. Verification remains an
+      // internal guard: failures start a correction turn below, while unknown
+      // or stale results stay silent instead of creating a system-like chat reply.
+    };
+
+    postApplyAbortControllerRef.current?.abort();
+    const controller = new AbortController();
+    postApplyAbortControllerRef.current = controller;
+    publishStatus('verifying');
+    void verifyAppliedRobotTask(
+      options.originalUserRequest,
+      options.applyResult.liveRobot,
+      lang,
+      { signal: controller.signal },
+    ).then((verdict) => {
+      if (!isMountedRef.current || postApplyAbortControllerRef.current !== controller) {
+        return;
+      }
+      const currentRobot = useWorkspaceStore.getState()
+        .workspace.components[options.applyResult.componentId]?.robot;
+      if (
+        !currentRobot ||
+        createSourceSemanticRobotHash(currentRobot) !== options.applyResult.liveRobotHash
+      ) {
+        publishStatus('stale');
+        return;
+      }
+      const status = verdict.ok
+        ? 'verified'
+        : verdict.checks.some((check) => check.status === 'fail')
+          ? 'failed'
+          : 'unverified';
+      publishStatus(status);
+      if (status === 'failed') {
+        automaticRepairHandlerRef.current(options.originalUserRequest);
+      }
+    }).catch((error) => {
+      if (controller.signal.aborted) {
+        return;
+      }
+      console.error('Post-apply AI verification failed', error);
+      publishStatus('unverified');
+    }).finally(() => {
+      if (postApplyAbortControllerRef.current === controller) {
+        postApplyAbortControllerRef.current = null;
+      }
+    });
+  };
+
   const handleConfirmResetAction = () => {
     if (!launchContext || !pendingResetAction) {
       return;
     }
 
     if (pendingResetAction === 'new-conversation') {
-      skipNextSessionResetRef.current = true;
+      const nextMessages = startNewConversationTimeline(messages);
       resetConversationState({
         preserveMessages: true,
         startNewConversation: true,
       });
-      onStartNewConversation(launchContext);
+      void forkPersistentSession(nextMessages);
       return;
     }
 
     resetConversationState();
+    void clearPersistentSession();
   };
 
   const handleSuggestedPromptSelect = async (prompt: string) => {
-    if (!prompt.trim() || isSending) {
+    if (!prompt.trim() || isSending || isRestoringSession) {
       return;
     }
 
@@ -329,19 +547,45 @@ export function AIConversationModal({
     await submitModificationTurn(lastSubmittedTurn.userMessage);
   };
 
-  const submitModificationTurn = async (userMessage: string) => {
-    if (!launchContext || !userMessage.trim() || isSending) {
+  const submitModificationTurn = async (
+    userMessage: string,
+    options: ModificationTurnOptions = {},
+  ) => {
+    const submission = {
+      launchContext,
+      userMessage,
+      isSending: isSendingRef.current,
+      isRestoringSession,
+    };
+    if (!canSubmitModificationTurn(submission)) {
       return;
     }
 
     const trimmedMessage = userMessage.trim();
+    const originalUserRequest = options.originalUserRequest?.trim() || trimmedMessage;
+    const history = getActiveConversationHistory(messages);
     setInput('');
-    setMessages((prev) => [
-      ...removeTrailingAssistantPlaceholder(prev),
-      createConversationMessage('user', trimmedMessage),
-      createConversationMessage('assistant', ''),
-    ]);
+    setMessages((prev) => {
+      const next: AIConversationMessage[] = [
+        ...removeTrailingAssistantPlaceholder(prev),
+      ];
+      if (options.showUserMessage !== false) {
+        next.push(createConversationMessage('user', originalUserRequest));
+      }
+      next.push({
+        kind: 'agent-activity',
+        role: 'assistant',
+        status: 'running',
+        events: [],
+      });
+      return next;
+    });
+    isSendingRef.current = true;
     setIsSending(true);
+    postApplyAbortControllerRef.current?.abort();
+    postApplyAbortControllerRef.current = null;
+
+    await ensurePersistentSession();
 
     const requestId = requestIdRef.current + 1;
     requestIdRef.current = requestId;
@@ -351,7 +595,7 @@ export function AIConversationModal({
       isMountedRef.current &&
       requestIdRef.current === requestId &&
       abortControllerRef.current === abortController;
-    setLastSubmittedTurn({ userMessage: trimmedMessage });
+    setLastSubmittedTurn({ userMessage: originalUserRequest });
 
     try {
       const workspace = useWorkspaceStore.getState().workspace;
@@ -359,10 +603,11 @@ export function AIConversationModal({
       const target = resolveAIWorkspaceRobotTarget(workspace, selection);
       const componentId = target.componentId;
       if (!componentId) {
-        setMessages((prev) => [
-          ...removeTrailingAssistantPlaceholder(prev),
+        setMessages((prev) => appendTurnOutcome(
+          prev,
+          undefined,
           createConversationMessage('assistant', t.aiModificationNoComponent),
-        ]);
+        ));
         return;
       }
 
@@ -371,6 +616,13 @@ export function AIConversationModal({
         selection: { type: null, id: null },
       };
       const motorLibrary = useAssetsStore.getState().motorLibrary;
+      const context = buildConversationContext({
+        mode: submission.launchContext.mode,
+        robot: currentRobot,
+        inspectionReport: submission.launchContext.inspectionReportSnapshot,
+        selectedEntity: submission.launchContext.selectedEntity,
+        focusedIssue: submission.launchContext.focusedIssue,
+      });
 
       const proposal = await resolveModificationProposal({
         message: trimmedMessage,
@@ -379,17 +631,27 @@ export function AIConversationModal({
         motorLibrary,
         lang,
         signal: abortController.signal,
-        onToolCall: (step) => {
+        history,
+        context,
+        additionalCapabilities: resolveStudioCapabilities(studioAgentPorts, componentId),
+        onAgentEvent: (event) => {
+          if (!isRequestActive()) {
+            return;
+          }
           setMessages((prev) => {
-            const last = prev[prev.length - 1];
-            if (!last || !isConversationChatMessage(last) || last.role !== 'assistant') {
+            const activityIndex = findLastAgentActivityIndex(prev);
+            if (activityIndex === -1) {
               return prev;
             }
             const updated = [...prev];
-            const current = last.content || '';
-            updated[updated.length - 1] = {
-              ...last,
-              content: current ? `${current}\n${step}` : step,
+            const activity = updated[activityIndex];
+            if (!activity || activity.kind !== 'agent-activity') {
+              return prev;
+            }
+            updated[activityIndex] = {
+              ...activity,
+              status: event.type === 'run.status' ? event.status : activity.status,
+              events: [...activity.events, event],
             };
             return updated;
           });
@@ -400,13 +662,14 @@ export function AIConversationModal({
         return;
       }
       if (proposal.kind === 'no-change') {
-        setMessages((prev) => [
-          ...removeTrailingAssistantPlaceholder(prev),
+        setMessages((prev) => appendTurnOutcome(
+          prev,
+          proposal.historyCheckpoint,
           createConversationMessage(
             'assistant',
             proposal.explanation || t.aiModificationNoChange,
           ),
-        ]);
+        ));
         return;
       }
 
@@ -419,10 +682,11 @@ export function AIConversationModal({
       };
 
       if (!canGenerateUrdf(proposedRobotState)) {
-        setMessages((prev) => [
-          ...removeTrailingAssistantPlaceholder(prev),
+        setMessages((prev) => appendTurnOutcome(
+          prev,
+          proposal.historyCheckpoint,
           createConversationMessage('assistant', t.aiModificationUnsupportedJoint),
-        ]);
+        ));
         return;
       }
 
@@ -434,32 +698,39 @@ export function AIConversationModal({
           : generateURDF(currentRobot, { preserveMeshPaths: true });
 
       if (proposedUrdf === currentUrdf) {
-        setMessages((prev) => [
-          ...removeTrailingAssistantPlaceholder(prev),
+        setMessages((prev) => appendTurnOutcome(
+          prev,
+          proposal.historyCheckpoint,
           createConversationMessage(
             'assistant',
             proposal.explanation
               ? `${proposal.explanation}\n\n⚠️ 修改后与当前内容一致，未产生实际变更。`
               : t.aiModificationNoChange,
           ),
-        ]);
+        ));
         return;
       }
 
-      if (aiAutoApply) {
-        // Highest permission: apply immediately, surface a summary. Undoable
-        // via workspace history (Ctrl+Z), same as the card's Apply path.
-        const applied = onApply(componentId, proposedUrdf);
-        const summary = applied
+      if (aiAutoApply && !options.forceConfirmation) {
+        // Highest permission: apply immediately and surface a summary.
+        const applyResult = normalizeApplyResult(onApply(componentId, proposedUrdf), componentId);
+        const summary = applyResult.ok
           ? t.aiAutoAppliedSummary.replace(
               '{explanation}',
               proposal.explanation || t.aiModificationApplied,
             )
           : t.aiModificationFailed;
-        setMessages((prev) => [
-          ...removeTrailingAssistantPlaceholder(prev),
+        setMessages((prev) => appendTurnOutcome(
+          prev,
+          proposal.historyCheckpoint,
           createConversationMessage('assistant', summary),
-        ]);
+        ));
+        if (applyResult.ok) {
+          startPostApplyVerification({
+            originalUserRequest,
+            applyResult,
+          });
+        }
         return;
       }
 
@@ -471,41 +742,77 @@ export function AIConversationModal({
         currentUrdf,
         componentId,
         status: 'pending',
+        proposalId: `${submission.launchContext.sessionId}:${requestId}`,
+        originalUserRequest,
+        verificationStatus: 'not-started',
       };
-      setMessages((prev) => [...removeTrailingAssistantPlaceholder(prev), cardMessage]);
+      setMessages((prev) => appendTurnOutcome(
+        prev,
+        proposal.historyCheckpoint,
+        cardMessage,
+      ));
     } catch (error) {
       if (abortController.signal.aborted) {
         return;
       }
       console.error('AI modification turn failed', error);
       setMessages((prev) => [
-        ...removeTrailingAssistantPlaceholder(prev),
+        ...removeTrailingAssistantPlaceholder(
+          updateLatestAgentActivityStatus(prev, 'failed'),
+        ),
         createConversationMessage('assistant', t.aiModificationFailed),
       ]);
     } finally {
       if (isRequestActive()) {
+        if (abortController.signal.aborted) {
+          setMessages((prev) => removeTrailingAssistantPlaceholder(
+            updateLatestAgentActivityStatus(prev, 'aborted'),
+          ));
+        }
         abortControllerRef.current = null;
+        isSendingRef.current = false;
         setIsSending(false);
       }
     }
   };
 
-  const handleApplyModification = useCallback(
-    (componentId: string, proposedUrdf: string): boolean => {
-      const ok = onApply(componentId, proposedUrdf);
-      if (ok) {
-        setMessages((prev) =>
-          prev.map((message) =>
-            message.kind === 'modification-card' && message.proposedUrdf === proposedUrdf
-              ? { ...message, status: 'applied' as const }
-              : message,
-          ),
-        );
-      }
-      return ok;
-    },
-    [onApply],
-  );
+  automaticRepairHandlerRef.current = (request) => {
+    if (!request.trim()) return;
+    const repairPrompt = lang === 'zh'
+      ? `上一次实际应用结果未满足原始要求。请重新读取当前机器人并生成正确的修复方案。原始要求：${request}`
+      : `The previously applied result did not satisfy the original request. Re-read the live robot and create a corrected proposal. Original request: ${request}`;
+    void submitModificationTurn(repairPrompt, {
+      showUserMessage: false,
+      originalUserRequest: request,
+      forceConfirmation: true,
+    });
+  };
+
+  const handleApplyModification = (card: AIConversationModificationCard): boolean => {
+    const result = normalizeApplyResult(onApply(card.componentId, card.proposedUrdf), card.componentId);
+    if (result.ok) {
+      setMessages((prev) =>
+        prev.map((message) =>
+          message.kind === 'modification-card' &&
+            (card.proposalId
+              ? message.proposalId === card.proposalId
+              : message.proposedUrdf === card.proposedUrdf)
+            ? {
+                ...message,
+                status: 'applied' as const,
+                verificationStatus: 'verifying' as const,
+              }
+            : message,
+        ),
+      );
+      startPostApplyVerification({
+        proposalId: card.proposalId,
+        originalUserRequest: card.originalUserRequest ?? lastSubmittedTurn?.userMessage ?? '',
+        applyResult: result,
+      });
+    }
+    return result.ok;
+  };
 
   const handleDismissModification = useCallback((proposedUrdf: string) => {
     setMessages((prev) =>
@@ -532,27 +839,32 @@ export function AIConversationModal({
   const confirmDialogActionLabel =
     pendingResetAction === 'new-conversation' ? t.newConversation : t.clearConversationHistory;
   const headerActionButtonClassName =
-    'inline-flex h-8 items-center gap-1.5 rounded-lg border border-border-black bg-panel-bg px-2.5 text-[11px] font-semibold text-text-secondary transition-colors hover:bg-element-hover focus:outline-none focus:ring-2 focus:ring-system-blue/30 dark:bg-panel-bg';
-  const newConversationButtonClassName = `${headerActionButtonClassName} hover:border-system-blue/35 hover:text-system-blue focus:border-system-blue/35 focus:text-system-blue`;
-  const clearHistoryButtonClassName = `${headerActionButtonClassName} hover:border-danger-border hover:bg-danger-soft hover:text-danger-hover focus:ring-danger/20`;
+    'inline-flex h-8 shrink-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-lg border border-border-black bg-panel-bg text-[11px] font-semibold text-text-secondary transition-colors hover:bg-element-hover focus:outline-none focus:ring-2 focus:ring-system-blue/30 dark:bg-panel-bg';
+  const newConversationButtonClassName = `${headerActionButtonClassName} ${
+    showNewConversationActionLabel ? 'px-2.5' : 'w-8 px-0'
+  } hover:border-system-blue/35 hover:text-system-blue focus:border-system-blue/35 focus:text-system-blue`;
+  const clearHistoryButtonClassName = `${headerActionButtonClassName} ${
+    showClearHistoryActionLabel ? 'px-2.5' : 'w-8 px-0'
+  } hover:border-danger-border hover:bg-danger-soft hover:text-danger-hover focus:ring-danger/20`;
 
   return (
     <>
       <div aria-hidden="true" className="pointer-events-none fixed inset-0 z-[95] bg-transparent" />
 
-      <DraggableWindow
+      <div data-studio-agent-exclude="true">
+        <DraggableWindow
         window={windowState}
         onClose={onClose}
         title={
-          <div className="flex items-center gap-2">
-            <div className="rounded-lg border border-border-black bg-panel-bg p-1.5 text-system-blue dark:bg-element-bg dark:text-system-blue">
+          <div className="flex min-w-0 items-center gap-2">
+            <div className="shrink-0 rounded-lg border border-border-black bg-panel-bg p-1.5 text-system-blue dark:bg-element-bg dark:text-system-blue">
               <MessageCircle className="w-4 h-4" />
             </div>
-            <h1 className={FLOATING_WINDOW_TITLE_CLASS}>{headerTitle}</h1>
+            <h1 className={`${FLOATING_WINDOW_TITLE_CLASS} truncate`}>{headerTitle}</h1>
           </div>
         }
         headerActions={
-          <div className="flex items-center gap-2">
+          <div className="flex shrink-0 items-center gap-1">
             <button
               data-window-control
               type="button"
@@ -562,7 +874,7 @@ export function AIConversationModal({
               title={t.newConversation}
             >
               <Plus className="h-3 w-3" />
-              {showHeaderActionLabels && <span>{t.newConversation}</span>}
+              {showNewConversationActionLabel && <span>{t.newConversation}</span>}
             </button>
             <button
               data-window-control
@@ -573,13 +885,15 @@ export function AIConversationModal({
               title={t.clearConversationHistory}
             >
               <Trash2 className="h-3 w-3" />
-              {showHeaderActionLabels && <span>{t.clearConversationHistory}</span>}
+              {showClearHistoryActionLabel && <span>{t.clearConversationHistory}</span>}
             </button>
           </div>
         }
+        headerLeftClassName="flex min-w-0 flex-1 items-center gap-2 overflow-hidden"
+        headerRightClassName="ml-2 flex shrink-0 items-center gap-1"
         className={`flex flex-col overflow-hidden ${FLOATING_WINDOW_RADIUS_CLASS} border border-border-black bg-panel-bg text-text-primary shadow-xl dark:bg-panel-bg`}
-        zIndex={conversationWindowLayer.zIndex}
-        onActivate={conversationWindowLayer.onActivate}
+        zIndex={conversationWindowZIndex}
+        onActivate={activateConversationWindow}
         headerClassName={`${FLOATING_WINDOW_HEADER_HEIGHT_CLASS} border-b border-border-black flex items-center justify-between bg-element-bg shrink-0 ${
           isCompactLayout ? 'px-3' : 'px-4'
         }`}
@@ -642,6 +956,7 @@ export function AIConversationModal({
                             onClick={() => {
                               void handleSuggestedPromptSelect(prompt);
                             }}
+                            disabled={isRestoringSession}
                             className="group flex items-start gap-2.5 rounded-xl border border-border-black bg-panel-bg px-2.5 py-2 text-left shadow-sm transition-all duration-100 hover:-translate-y-0.5 hover:border-system-blue/35 hover:bg-element-hover focus:border-system-blue/35 focus:bg-element-hover focus:outline-none focus:ring-2 focus:ring-system-blue/30 dark:bg-panel-bg"
                             title={prompt}
                           >
@@ -649,7 +964,7 @@ export function AIConversationModal({
                               <Send className="h-3 w-3" />
                             </span>
                             <span className="min-w-0 flex-1">
-                              <span className="block text-[11px] leading-relaxed text-text-secondary transition-colors group-hover:text-text-primary group-focus-visible:text-text-primary">
+                              <span className="block text-xs leading-5 text-text-secondary transition-colors group-hover:text-text-primary group-focus-visible:text-text-primary">
                                 {prompt}
                               </span>
                             </span>
@@ -661,7 +976,17 @@ export function AIConversationModal({
                 </div>
               ) : (
                 <div className="space-y-2.5">
-                  {messages.map((message, index) => {
+                  {visibleMessages.map((message, index) => {
+                    if (message.kind === 'agent-activity') {
+                      return (
+                        <ConversationAgentActivity
+                          key={`agent-activity-${index}`}
+                          activity={message}
+                          lang={lang}
+                        />
+                      );
+                    }
+
                     if (message.kind === 'modification-card') {
                       return (
                         <div
@@ -694,9 +1019,6 @@ export function AIConversationModal({
 
                     const messageKey = `${message.role}-${index}`;
                     const isCopied = copiedMessageKey === messageKey;
-                    const isStreamingAssistant =
-                      message.role === 'assistant' && index === messages.length - 1 && isSending;
-
                     return (
                       <div
                         key={messageKey}
@@ -709,28 +1031,11 @@ export function AIConversationModal({
                                 ? 'rounded-tr-[4px] border border-system-blue-solid bg-system-blue-solid text-white'
                                 : 'rounded-tl-[4px] border border-border-black bg-panel-bg text-text-secondary dark:bg-element-bg'
                             }`}
-                          >
-{isStreamingAssistant && !message.content ? (
-                              <div className="flex items-center gap-2 text-sm text-text-tertiary">
-                                <Loader2 className="w-4 h-4 animate-spin text-system-blue" />
-                                <span>{t.aiAnalyzing}</span>
-                              </div>
-                            ) : isStreamingAssistant && message.content ? (
-                              <div className="space-y-1">
-                                <div className="flex items-center gap-2 text-xs text-text-tertiary">
-                                  <Loader2 className="w-3.5 h-3.5 animate-spin text-system-blue" />
-                                  <span>{t.aiAnalyzing}</span>
-                                </div>
-                                <div className="text-[11px] text-text-tertiary/80 font-mono whitespace-pre-wrap">
-                                  {message.content}
-                                </div>
-                              </div>
-                            ) : (
+                            >
                               <ConversationMessageMarkdown
                                 content={message.content}
                                 tone={message.role === 'user' ? 'user' : 'assistant'}
                               />
-                            )}
                           </div>
                           {message.content && (
                             <div
@@ -777,6 +1082,7 @@ export function AIConversationModal({
                 <textarea
                   ref={textareaRef}
                   value={input}
+                  disabled={isRestoringSession}
                   onChange={(event) => setInput(event.target.value)}
                   onCompositionStart={() => {
                     isComposingRef.current = true;
@@ -793,7 +1099,7 @@ export function AIConversationModal({
                     }
                   }}
                   placeholder={t.chatPlaceholder}
-                  className={`w-full resize-none rounded-lg border-none bg-transparent px-1 py-1 text-[11px] text-text-primary outline-none placeholder:text-text-tertiary ${
+                  className={`w-full resize-none rounded-lg border-none bg-transparent px-1 py-1 text-[13px] leading-5 text-text-primary outline-none placeholder:text-text-tertiary ${
                     isCompactLayout ? 'min-h-[64px]' : 'min-h-[88px]'
                   }`}
                 />
@@ -839,7 +1145,7 @@ export function AIConversationModal({
                       onClick={() => {
                         void handleSend();
                       }}
-                      disabled={isSending || !input.trim()}
+                      disabled={isSending || isRestoringSession || !input.trim()}
                       className="flex h-6 items-center gap-1 rounded-lg bg-system-blue-solid px-2.5 text-[11px] font-semibold text-white transition-colors hover:bg-system-blue-hover disabled:opacity-30"
                     >
                       {isSending ? (
@@ -856,14 +1162,9 @@ export function AIConversationModal({
           </div>
         )}
 
-        {isResizing && (
-          <div className="absolute bottom-2 right-12 z-50 rounded-lg bg-system-blue-solid px-2 py-1 text-[9px] font-medium text-white shadow-sm">
-            {size.width} × {size.height}
-          </div>
-        )}
-      </DraggableWindow>
+        </DraggableWindow>
 
-      <Dialog
+        <Dialog
         isOpen={pendingResetAction !== null}
         onClose={() => setPendingResetAction(null)}
         title={confirmDialogTitle}
@@ -882,7 +1183,8 @@ export function AIConversationModal({
         }
       >
         <p className="text-sm leading-6 text-text-secondary">{confirmDialogMessage}</p>
-      </Dialog>
+        </Dialog>
+      </div>
     </>
   );
 }

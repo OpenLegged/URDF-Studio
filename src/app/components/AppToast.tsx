@@ -37,7 +37,12 @@ export function AppToast({ toast, onClose }: AppToastProps) {
 
   return (
     <div className="fixed top-20 left-1/2 -translate-x-1/2 z-[200] animate-in fade-in slide-in-from-top-4 duration-300">
-      <div className="flex max-w-[min(44rem,calc(100vw-2rem))] items-center gap-2.5 rounded-[1.75rem] border border-border-black bg-panel-bg px-3.5 py-2.5 shadow-2xl dark:shadow-black/40">
+      <div
+        className="flex max-w-[min(44rem,calc(100vw-2rem))] items-center gap-2.5 rounded-[1.75rem] border border-border-black bg-panel-bg px-3.5 py-2.5 shadow-2xl dark:shadow-black/40"
+        role={toast.type === 'error' ? 'alert' : 'status'}
+        aria-live={toast.type === 'error' ? 'assertive' : 'polite'}
+        aria-atomic="true"
+      >
         <div
           className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full ${presentation.badgeClassName}`}
         >

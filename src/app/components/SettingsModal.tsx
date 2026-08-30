@@ -3,7 +3,7 @@
  * Desktop-first settings surface for interface, editor, view, and about preferences.
  */
 import React from 'react';
-import { Code, Eye, Info, Settings, X } from 'lucide-react';
+import { Bot, Code, Eye, Info, Settings, X } from 'lucide-react';
 import { useShallow } from 'zustand/react/shallow';
 
 import { OptionsPanelContainer } from '@/shared/components/Panel';
@@ -116,12 +116,17 @@ export function SettingsModal() {
         title: t.view,
       },
       {
+        key: 'ai',
+        icon: <Bot className="h-4 w-4" strokeWidth={SETTINGS_ICON_STROKE_WIDTH} />,
+        title: t.aiAgentSettings,
+      },
+      {
         key: 'about',
         icon: <Info className="h-4 w-4" strokeWidth={SETTINGS_ICON_STROKE_WIDTH} />,
         title: t.about,
       },
     ],
-    [t.about, t.codeEditor, t.general, t.view],
+    [t.about, t.aiAgentSettings, t.codeEditor, t.general, t.view],
   );
 
   const resetCodeEditorTypography = React.useCallback(() => {

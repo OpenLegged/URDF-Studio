@@ -1,5 +1,9 @@
 import { AIConversationModal } from '@/features/ai-assistant';
-import type { AIConversationLaunchContext } from '@/features/ai-assistant';
+import type {
+  AIConversationApplyResult,
+  AIConversationLaunchContext,
+} from '@/features/ai-assistant';
+import type { StudioAgentPorts } from '@/features/ai-assistant';
 import type { Language } from '@/shared/i18n';
 
 interface AIConversationConnectorProps {
@@ -8,7 +12,8 @@ interface AIConversationConnectorProps {
   lang: Language;
   launchContext: AIConversationLaunchContext | null;
   onStartNewConversation: (launchContext: AIConversationLaunchContext) => void;
-  onApply: (componentId: string, proposedUrdf: string) => boolean;
+  onApply: (componentId: string, proposedUrdf: string) => AIConversationApplyResult;
+  studioAgentPorts: StudioAgentPorts;
 }
 
 export function AIConversationConnector({
@@ -18,6 +23,7 @@ export function AIConversationConnector({
   launchContext,
   onStartNewConversation,
   onApply,
+  studioAgentPorts,
 }: AIConversationConnectorProps) {
   return (
     <AIConversationModal
@@ -27,6 +33,7 @@ export function AIConversationConnector({
       launchContext={launchContext}
       onStartNewConversation={onStartNewConversation}
       onApply={onApply}
+      studioAgentPorts={studioAgentPorts}
     />
   );
 }

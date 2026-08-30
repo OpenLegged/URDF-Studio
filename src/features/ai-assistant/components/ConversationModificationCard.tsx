@@ -1,5 +1,13 @@
 import { useState } from 'react';
-import { Check, ChevronDown, ChevronRight, Loader2, Wand2, X } from 'lucide-react';
+import {
+  AlertTriangle,
+  Check,
+  ChevronDown,
+  ChevronRight,
+  Loader2,
+  Wand2,
+  X,
+} from 'lucide-react';
 import type { TranslationKeys } from '@/shared/i18n';
 import { ConversationMessageMarkdown } from './ConversationMessageMarkdown';
 import type { AIConversationModificationCard } from '../types';
@@ -7,7 +15,7 @@ import type { AIConversationModificationCard } from '../types';
 interface ConversationModificationCardProps {
   card: AIConversationModificationCard;
   t: TranslationKeys;
-  onApply: (componentId: string, proposedUrdf: string) => boolean;
+  onApply: (card: AIConversationModificationCard) => boolean;
   onDismiss: (proposedUrdf: string) => void;
 }
 
@@ -16,6 +24,7 @@ interface DiffLine {
   type: DiffLineType;
   text: string;
   collapsedCount?: number;
+  collapsedLines?: DiffLine[];
 }
 
 const CONTEXT_LINES = 3;
@@ -56,7 +65,32 @@ function diffLines(currentText: string, proposedText: string): DiffLine[] {
     raw.push({ type: 'added', text: b[j] });
     j += 1;
   }
-  return collapseUnchangedRuns(raw);
+  return collapseUnchangedRuns(interleaveReplacementLines(raw));
+}
+
+function interleaveReplacementLines(lines: DiffLine[]): DiffLine[] {
+  const out: DiffLine[] = [];
+  let index = 0;
+  while (index < lines.length) {
+    if (lines[index].type === 'unchanged') {
+      out.push(lines[index]);
+      index += 1;
+      continue;
+    }
+    const removed: DiffLine[] = [];
+    const added: DiffLine[] = [];
+    while (index < lines.length && lines[index].type !== 'unchanged') {
+      if (lines[index].type === 'removed') removed.push(lines[index]);
+      if (lines[index].type === 'added') added.push(lines[index]);
+      index += 1;
+    }
+    const replacementLength = Math.max(removed.length, added.length);
+    for (let replacementIndex = 0; replacementIndex < replacementLength; replacementIndex += 1) {
+      if (removed[replacementIndex]) out.push(removed[replacementIndex]);
+      if (added[replacementIndex]) out.push(added[replacementIndex]);
+    }
+  }
+  return out;
 }
 
 function collapseUnchangedRuns(lines: DiffLine[]): DiffLine[] {
@@ -86,7 +120,12 @@ function collapseUnchangedRuns(lines: DiffLine[]): DiffLine[] {
     }
     const collapsedCount = runLength - CONTEXT_LINES * 2;
     if (collapsedCount > 0) {
-      out.push({ type: 'collapsed', text: '', collapsedCount });
+      out.push({
+        type: 'collapsed',
+        text: '',
+        collapsedCount,
+        collapsedLines: lines.slice(runStart + CONTEXT_LINES, runEnd - CONTEXT_LINES),
+      });
     }
     for (let k = Math.max(runStart + CONTEXT_LINES, runEnd - CONTEXT_LINES); k < runEnd; k += 1) {
       out.push(lines[k]);
@@ -114,7 +153,7 @@ export function ConversationModificationCard({
       return;
     }
     setApplying(true);
-    onApply(card.componentId, card.proposedUrdf);
+    onApply(card);
     setApplying(false);
   };
 
@@ -143,14 +182,14 @@ export function ConversationModificationCard({
         </div>
         <span className="text-[11px] font-semibold text-text-primary">{t.aiModificationTitle}</span>
         <span className="ml-auto text-[9px] font-medium text-text-tertiary">
-          <span className="text-system-green">+{addedCount}</span>
+          <span className="text-success">+{addedCount}</span>
           {'  '}
           <span className="text-danger">-{removedCount}</span>
         </span>
       </div>
 
       {card.explanation && (
-        <div className="border-b border-border-black px-2 py-1.5 text-xs text-text-secondary">
+        <div className="border-b border-border-black px-2 py-1.5 text-[13px] leading-5 text-text-secondary">
           <ConversationMessageMarkdown content={card.explanation} tone="assistant" />
         </div>
       )}
@@ -159,6 +198,32 @@ export function ConversationModificationCard({
         {diff.map((line, index) => {
           if (line.type === 'collapsed') {
             const isExpanded = expandedSections.has(index);
+            if (isExpanded) {
+              return (
+                <div key={index}>
+                  {line.collapsedLines?.map((collapsedLine, collapsedIndex) => (
+                    <div
+                      key={collapsedIndex}
+                      data-diff-line="unchanged"
+                      className="flex whitespace-pre text-text-tertiary"
+                    >
+                      <span className="w-6 shrink-0 select-none px-2 text-center opacity-70"> </span>
+                      <span className="pr-3">{collapsedLine.text || ' '}</span>
+                    </div>
+                  ))}
+                  <button
+                    type="button"
+                    className="flex w-full cursor-pointer items-center gap-1 border-y border-border-black/30 bg-element-bg/50 px-1.5 py-0.5 text-left text-text-tertiary hover:bg-element-hover"
+                    onClick={() => toggleSection(index)}
+                  >
+                    <ChevronDown className="h-2.5 w-2.5" />
+                    <span className="text-[9px]">
+                      {t.aiDiffCollapsedLines.replace('{count}', String(line.collapsedCount))}
+                    </span>
+                  </button>
+                </div>
+              );
+            }
             return (
               <button
                 key={index}
@@ -166,11 +231,7 @@ export function ConversationModificationCard({
                 className="flex w-full cursor-pointer items-center gap-1 border-y border-border-black/30 bg-element-bg/50 px-1.5 py-0.5 text-left text-text-tertiary hover:bg-element-hover"
                 onClick={() => toggleSection(index)}
               >
-                {isExpanded ? (
-                  <ChevronDown className="h-2.5 w-2.5" />
-                ) : (
-                  <ChevronRight className="h-2.5 w-2.5" />
-                )}
+                <ChevronRight className="h-2.5 w-2.5" />
                 <span className="text-[9px]">
                   {t.aiDiffCollapsedLines.replace('{count}', String(line.collapsedCount))}
                 </span>
@@ -181,9 +242,10 @@ export function ConversationModificationCard({
           return (
             <div
               key={index}
+              data-diff-line={line.type}
               className={`flex whitespace-pre ${
                 line.type === 'added'
-                  ? 'bg-system-green/10 text-system-green'
+                  ? 'bg-success/10 text-success'
                   : line.type === 'removed'
                     ? 'bg-danger/10 text-danger'
                     : 'text-text-tertiary'
@@ -206,11 +268,29 @@ export function ConversationModificationCard({
 
       <div className="flex items-center justify-end gap-2 border-t border-border-black bg-element-bg px-2 py-1.5">
         {applied ? (
-          <span className="inline-flex items-center gap-1.5 text-[10px] font-medium text-system-green">
-            <Check className="h-3 w-3" />
-            {t.aiModificationApplied}
-            <span className="text-text-tertiary">· {t.aiModificationUndoHint}</span>
-          </span>
+          <>
+            {card.verificationStatus === 'verifying' ? (
+              <span className="mr-auto inline-flex items-center gap-1.5 text-[10px] font-medium text-system-blue">
+                <Loader2 className="h-3 w-3 animate-spin" />
+                {t.aiModificationVerifying}
+              </span>
+            ) : card.verificationStatus === 'verified' ? (
+              <span className="mr-auto inline-flex items-center gap-1.5 text-[10px] font-medium text-success">
+                <Check className="h-3 w-3" />
+                {t.aiModificationVerified}
+              </span>
+            ) : card.verificationStatus === 'failed' ? (
+              <span className="mr-auto inline-flex items-center gap-1.5 text-[10px] font-medium text-warning">
+                <AlertTriangle className="h-3 w-3" />
+                {t.aiModificationVerificationFailed}
+              </span>
+            ) : (
+              <span className="mr-auto inline-flex items-center gap-1.5 text-[10px] font-medium text-success">
+                <Check className="h-3 w-3" />
+                {t.aiModificationApplied}
+              </span>
+            )}
+          </>
         ) : (
           <>
             <button

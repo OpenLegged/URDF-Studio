@@ -44,7 +44,7 @@ export const parseSensitivityPercent = (input: string): number | null => {
   return Number.isFinite(numeric) ? numeric / 100 : null;
 };
 
-export type SettingsPage = 'general' | 'sourceCode' | 'view' | 'about';
+export type SettingsPage = 'general' | 'sourceCode' | 'view' | 'ai' | 'about';
 
 export interface SettingsSectionProps {
   icon: React.ReactNode;

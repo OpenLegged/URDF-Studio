@@ -17,6 +17,7 @@ const CONFIG_ENV_KEYS = [
   'OPENAI_API_KEY',
   'GEMINI_API_KEY',
   'OPENAI_BASE_URL',
+  'OPENAI_CONTEXT_WINDOW_TOKENS',
   'OPENAI_MODEL',
 ] as const;
 
@@ -190,6 +191,7 @@ test('vite config injects AI runtime env into browser process env defines', asyn
     OPENAI_API_KEY: 'test-openai-key',
     GEMINI_API_KEY: 'test-gemini-key',
     OPENAI_BASE_URL: 'https://example.test/v1',
+    OPENAI_CONTEXT_WINDOW_TOKENS: '65536',
     OPENAI_MODEL: 'test-model',
   });
 
@@ -197,6 +199,7 @@ test('vite config injects AI runtime env into browser process env defines', asyn
   assert.equal(readDefinedString(config, 'process.env.OPENAI_API_KEY'), 'test-openai-key');
   assert.equal(readDefinedString(config, 'process.env.GEMINI_API_KEY'), 'test-gemini-key');
   assert.equal(readDefinedString(config, 'process.env.OPENAI_BASE_URL'), 'https://example.test/v1');
+  assert.equal(readDefinedString(config, 'process.env.OPENAI_CONTEXT_WINDOW_TOKENS'), '65536');
   assert.equal(readDefinedString(config, 'process.env.OPENAI_MODEL'), 'test-model');
 });
 

@@ -518,3 +518,55 @@ test('SettingsModal updates the persisted 3D render quality from the view page',
     dom.window.close();
   }
 });
+
+test('SettingsModal exposes browser-local Agent data controls', async () => {
+  const { dom, container, root } = createComponentRoot();
+  const initialState = useUIStore.getState();
+
+  try {
+    useUIStore.setState({
+      isSettingsOpen: true,
+      settingsPos: { x: 48, y: 64 },
+      lang: 'zh',
+      aiAutoApplyEdits: false,
+    });
+
+    await act(async () => {
+      root.render(React.createElement(SettingsModal));
+    });
+
+    const agentButton = container.querySelector(
+      '[data-settings-page="ai"]',
+    ) as HTMLButtonElement | null;
+    assert.ok(agentButton, 'settings navigation should expose an AI Agent page');
+
+    await act(async () => {
+      agentButton.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+
+    assert.equal(container.textContent?.includes('本地会话数据'), true);
+    assert.equal(container.textContent?.includes('清理缓存'), true);
+    assert.ok(
+      container.querySelector('[data-testid="agent-session-import-input"]'),
+      'Agent data page should expose a JSON archive input',
+    );
+    assert.equal(
+      container.querySelector('[data-testid="agent-session-count"]')?.textContent,
+      '0',
+    );
+
+    const autoApplySwitch = container.querySelector('[role="switch"]') as HTMLButtonElement | null;
+    assert.ok(autoApplySwitch, 'Agent settings should retain the auto-apply preference');
+    await act(async () => {
+      autoApplySwitch.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
+    });
+    assert.equal(useUIStore.getState().aiAutoApplyEdits, true);
+  } finally {
+    await act(async () => {
+      root.unmount();
+    });
+    useUIStore.setState(initialState);
+    dom.window.close();
+  }
+});

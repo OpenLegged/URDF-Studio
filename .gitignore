@@ -6,6 +6,7 @@ node_modules/
 .mimocode/
 .env.local
 .env
+.dev-certs/
 *.log
 MUJOCO_LOG.TXT
 .DS_Store

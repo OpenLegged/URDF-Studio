@@ -21,13 +21,28 @@
 import OpenAI from 'openai';
 import type { Language } from '@/shared/i18n';
 import type { RobotData } from '@/types';
-import { buildRobotCapabilities } from '../capabilities/robotCapabilities';
-import { resolveAiRuntimeEnv } from './aiRuntimeEnv';
+import {
+  buildCompactRobotCapabilities,
+  validateRobotDraft,
+} from '../capabilities/robotCapabilities';
+import type { AgentCapability } from '../capabilities/types';
+import { buildAiThinkingRequestOptions, resolveAiRuntimeEnv } from './aiRuntimeEnv';
 import {
   AgentToolsUnsupportedError,
   runAgentEngine,
+  type AgentConversationTurn,
   type RobotEditAgentResult,
 } from './agentEngine';
+import type { AgentRunEvent } from '../agentRuntimeTypes';
+import {
+  clipAgentTextToTokens,
+  estimateAgentTextTokens,
+} from './contextCompaction';
+import {
+  buildAppliedRobotVerificationMessages,
+  parseCompletionVerificationVerdict,
+  type CompletionVerificationVerdict,
+} from './completionVerification';
 
 export { AgentToolsUnsupportedError };
 export type { RobotEditAgentResult };
@@ -55,55 +70,169 @@ export function __setAgentOpenAIClientFactoryForTests(factory: (() => OpenAI) | 
   openAIClientFactoryForTests = factory;
 }
 
+export async function verifyAppliedRobotTask(
+  userMessage: string,
+  liveRobot: RobotData,
+  lang: Language,
+  options: { signal?: AbortSignal } = {},
+): Promise<CompletionVerificationVerdict> {
+  const structuralValidation = validateRobotDraft(liveRobot);
+  if (!structuralValidation.ok) {
+    return {
+      ok: false,
+      message: structuralValidation.message,
+      checks: [{
+        requirement: 'The applied robot remains structurally valid.',
+        status: 'fail',
+        evidence: [2],
+      }],
+    };
+  }
+
+  const runtime = resolveAiRuntimeEnv();
+  if (!runtime.apiKey) {
+    return {
+      ok: false,
+      message: 'Post-apply verification is unavailable because no AI API key is configured.',
+      checks: [{
+        requirement: 'Verify the applied result against the original request.',
+        status: 'unknown',
+        evidence: [],
+      }],
+    };
+  }
+
+  const thinking = buildAiThinkingRequestOptions(runtime, 'low');
+  const request = {
+    model: runtime.model,
+    messages: buildAppliedRobotVerificationMessages({
+      userRequest: userMessage,
+      liveRobot,
+      structuralValidation: structuralValidation.message,
+      lang,
+      tokenEstimator: estimateAgentTextTokens,
+    }),
+    max_tokens: 1280,
+    ...(thinking.thinking?.type === 'enabled' ? {} : { temperature: 0 }),
+    ...thinking,
+  } as OpenAI.Chat.Completions.ChatCompletionCreateParamsNonStreaming;
+  const response = await createOpenAIClient().chat.completions.create(
+    request,
+    { signal: options.signal },
+  );
+  const content = response.choices[0]?.message?.content;
+  const verdict = typeof content === 'string'
+    ? parseCompletionVerificationVerdict(content, 2, new Set([1, 2]))
+    : null;
+  return verdict ?? {
+    ok: false,
+    message: 'The post-apply verifier returned no valid verdict.',
+    checks: [{
+      requirement: 'Verify the applied result against the original request.',
+      status: 'unknown',
+      evidence: [],
+    }],
+  };
+}
+
 // -------------------------------------------------------------------------------------
 // System prompt
 // -------------------------------------------------------------------------------------
+
+const MAX_PROMPT_ENTITY_ITEMS = 40;
+const MAX_TASK_CONTEXT_TOKENS = 2_048;
+
+function formatBoundedItems(items: string[]): string {
+  const visible = items.slice(0, MAX_PROMPT_ENTITY_ITEMS);
+  const omitted = items.length - visible.length;
+  return omitted > 0
+    ? `${visible.join(', ')}, … ${omitted} more (use read_path for exact data)`
+    : visible.join(', ');
+}
 
 function summarizeRobot(robot: RobotData): string {
   const linkIds = Object.values(robot.links).map((l) => l.id);
   const joints = Object.values(robot.joints).map(
     (j) => `${j.id} (${j.type}, ${j.parentLinkId} -> ${j.childLinkId})`,
   );
-  return `links: [${linkIds.join(', ')}]\njoints: [${joints.join(', ')}]`;
+  return `links (${linkIds.length}): [${formatBoundedItems(linkIds)}]\n`
+    + `joints (${joints.length}): [${formatBoundedItems(joints)}]`;
 }
 
-function getAgentSystemPrompt(robot: RobotData, lang: Language): string {
+function getAgentSystemPrompt(
+  robot: RobotData,
+  lang: Language,
+  context: string | undefined,
+  capabilities: AgentCapability[],
+): string {
   const langInstruction = lang === 'zh' ? '请用中文回复。' : 'Respond in English.';
-  return [
-    'You are a URDF editing agent inside URDF Studio. You MUST call tools to make ANY change to the robot. If you do not call a tool, NO change will be applied — the robot stays exactly as-is.',
+  const canControlStudio = capabilities.some(capability => capability.effect === 'app-command');
+  const promptSections = [
+    'You are an agent operating inside URDF Studio. Use tools for every robot edit or app action; never claim an action happened unless its tool succeeded.',
+    '',
+    'TASK ROUTING:',
+    '- Robot/model/URDF construction and property edits operate on the live RobotData draft. Use read_path, write_path, and run_script directly.',
+    '- The generated source editor and page DOM are views of the model, not the editing API. Never inspect or operate UI elements to discover or perform a robot edit.',
+    '- Saying "in this webpage" or "in URDF Studio" does not make a robot construction request a UI task.',
+    '- Never mutate the draft as an experiment or probe. Read exact draft values, make the intended edit once, then verify and validate it.',
     '',
     'HOW TO EXPLORE THE ROBOT:',
-    '- Use read_path to inspect any field: read_path path="links.base_link.visual" returns the entire visual object as JSON.',
-    '- Use get_link linkId="base_link" to get a full link summary.',
+    '- Use read_path for exact values. Root fields such as name/rootLinkId are valid paths; reading links.base_link returns the full link.',
     '',
     'HOW TO MAKE CHANGES (like Codex — write code to edit the robot):',
     '- run_script is the PRIMARY tool. You can write arbitrary JavaScript that receives the full robot draft and returns the modified draft.',
     '- For simple single-field changes, use write_path: write_path path="links.base_link.visual.color" value="#ff0000".',
-    '- For geometry changes, use update_link_geometry: update_link_geometry linkId="base_link" geometryType="box" dimensions=[0.1,0.2,0.3].',
     '- Colors are hex strings: #ff0000=red, #00ff00=green, #0000ff=blue, #ffffff=white.',
     '- For bulk edits across many links, ALWAYS use run_script with a loop.',
     '',
     'WORKFLOW:',
-    '1. Explore: read_path or get_link to see current values.',
-    '2. Edit: run_script or write_path or update_link_geometry to make changes.',
-    '3. Verify: read_path the SAME fields you changed to confirm the new values are correct.',
-    '4. Validate: validate_robot to confirm the result is structurally valid.',
+    '- Before each tool batch, put at most one short user-facing sentence in assistant content describing the immediate intent. Do not reveal private chain-of-thought.',
+    '1. Plan: for multi-step work, call update_plan before editing and update it as work completes.',
+    '2. Explore: read_path to see current values.',
+    '3. Edit: write_path for focused fields or run_script for topology and bulk changes.',
+    '4. Verify: read_path the SAME fields you changed to confirm the new values are correct.',
+    '5. Validate: validate_robot to confirm the result is structurally valid.',
+    '6. Completion gate: the harness accepts completion only after fresh observable evidence; if its verifier finds a gap, continue fixing and re-checking.',
     '',
     'CRITICAL RULES:',
     '1. You CANNOT change the robot by just saying you changed it. You MUST call at least one mutating tool.',
-    '2. ALWAYS explore first: use read_path or get_link to see current values before writing.',
+    '2. ALWAYS explore first with read_path before writing.',
     '3. ALWAYS verify after: read back the fields you changed to confirm they match what you intended.',
     '4. Only change what the user asked. Preserve every other field.',
     '5. Call validate_robot after edits to confirm the result is valid.',
     '6. Do NOT output URDF or code snippets. Tools are the ONLY way to edit.',
     '7. When all edits are done, reply with ONE short sentence summarizing what you changed.',
     '8. If the request is truly impossible with the available tools, say so briefly WITHOUT claiming you made a change.',
-    '',
-    'Current robot:',
-    summarizeRobot(robot),
-    '',
-    langInstruction,
-  ].join('\n');
+  ];
+
+  if (canControlStudio) {
+    promptSections.push(
+      '',
+      'URDF STUDIO APP CONTROL:',
+      '- studio is a general UI command executor, not a robot-data editor. Keep it available for any UI portion of the request.',
+      '- For related UI changes, emit multiple studio tool calls in the same response; the harness executes that tool batch in order without another model round.',
+      '- Use studio action=inspect before acting when the live target or UI state is ambiguous.',
+      '- For controls without a semantic command, use action=interact with an accessible query directly. Use elements only to resolve ambiguity or read visible status/errors.',
+      '- studio actions select/focus/view/panels act immediately on the browser UI and do not create a robot modification card.',
+      '- studio action=workflow only opens inspection setup or export. The user controls running checks and downloading.',
+      '- The robot editing draft is fixed to the component named in the task context for this turn. Selecting another component does NOT retarget the draft; use a later user turn before editing it.',
+      '- Do not use robot mutation tools for a request that only asks to navigate or configure the Studio UI.',
+      '- Use studio only for the explicit UI portion of the current request. Never use studio elements/interact to edit robot structure, geometry, joints, or properties.',
+    );
+  }
+
+  promptSections.push('', 'Current robot editing draft:', summarizeRobot(robot));
+
+  if (context?.trim()) {
+    promptSections.push(
+      '',
+      'Conversation task context (read-only). The live draft returned by tools is authoritative:',
+      clipAgentTextToTokens(context.trim(), MAX_TASK_CONTEXT_TOKENS),
+    );
+  }
+
+  promptSections.push('', langInstruction);
+  return promptSections.join('\n');
 }
 
 // -------------------------------------------------------------------------------------
@@ -120,8 +249,16 @@ export async function runRobotEditAgent(
   userMessage: string,
   robot: RobotData,
   lang: Language,
-  signal?: AbortSignal,
-  onToolCall?: (step: string) => void,
+  options: {
+    signal?: AbortSignal;
+    onToolCall?: (step: string) => void;
+    history?: AgentConversationTurn[];
+    context?: string;
+    onEvent?: (event: AgentRunEvent) => void;
+    additionalCapabilities?: AgentCapability[];
+    /** Keep false for confirmation-card proposals; verify the committed live robot after Apply. */
+    verifyCompletion?: boolean;
+  } = {},
 ): Promise<RobotEditAgentResult> {
   const runtime = resolveAiRuntimeEnv();
   if (!runtime.apiKey) {
@@ -129,16 +266,28 @@ export async function runRobotEditAgent(
     throw new AgentToolsUnsupportedError('API key missing');
   }
 
-  return runAgentEngine(
+  const capabilities = [
+    ...buildCompactRobotCapabilities(lang),
+    ...(options.additionalCapabilities ?? []),
+  ];
+
+  return runAgentEngine({
     userMessage,
     robot,
-    createOpenAIClient,
-    runtime.model,
-    signal,
-    {
-      capabilities: buildRobotCapabilities(lang),
-      systemPrompt: (draft) => getAgentSystemPrompt(draft, lang),
-      onToolCall,
+    createClient: createOpenAIClient,
+    model: runtime.model,
+    signal: options.signal,
+    options: {
+      capabilities,
+      contextBudget: { contextWindowTokens: runtime.contextWindowTokens },
+      thinking: buildAiThinkingRequestOptions(runtime),
+      verifyCompletion: options.verifyCompletion ?? true,
+      verificationContext: options.context,
+      systemPrompt: (draft, activeCapabilities) =>
+        getAgentSystemPrompt(draft, lang, options.context, activeCapabilities),
+      history: options.history,
+      onEvent: options.onEvent,
+      onToolCall: options.onToolCall,
     },
-  );
+  });
 }

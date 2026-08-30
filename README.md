@@ -159,6 +159,7 @@ The app can run without AI credentials. If you want AI generation / inspection e
 OPENAI_API_KEY=your_api_key
 OPENAI_BASE_URL=https://api.openai.com/v1
 OPENAI_MODEL=gpt-4.1-mini
+OPENAI_CONTEXT_WINDOW_TOKENS=32768
 
 # GEMINI_API_KEY is accepted as a fallback key when OPENAI_API_KEY is unset
 GEMINI_API_KEY=

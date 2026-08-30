@@ -42,6 +42,18 @@ export function isConversationModificationCard(
   return message.kind === 'modification-card'
 }
 
+export function isConversationAgentActivity(
+  message: AIConversationMessage,
+): message is Extract<AIConversationMessage, { kind: 'agent-activity' }> {
+  return message.kind === 'agent-activity'
+}
+
+export function isConversationContextCheckpoint(
+  message: AIConversationMessage,
+): message is Extract<AIConversationMessage, { kind: 'context-checkpoint' }> {
+  return message.kind === 'context-checkpoint'
+}
+
 function findLastConversationDividerIndex(messages: AIConversationMessage[]): number {
   for (let index = messages.length - 1; index >= 0; index -= 1) {
     if (isConversationDivider(messages[index])) {
@@ -67,6 +79,22 @@ export function getActiveConversationHistory(
       break
     }
 
+    if (isConversationContextCheckpoint(message)) {
+      history.unshift(...message.turns)
+      break
+    }
+
+    if (isConversationModificationCard(message)) {
+      if (message.status !== 'applied') {
+        continue
+      }
+      const content = message.explanation.trim()
+      if (content) {
+        history.unshift({ role: 'assistant', content })
+      }
+      continue
+    }
+
     if (!isConversationChatMessage(message)) {
       continue
     }
@@ -85,6 +113,23 @@ export function getActiveConversationHistory(
   return history
 }
 
+export function appendConversationContextCheckpoint(
+  messages: AIConversationMessage[],
+  turns: ConversationHistoryTurn[] | null | undefined,
+): AIConversationMessage[] {
+  if (!turns?.length) return messages
+  const dividerIndex = findLastConversationDividerIndex(messages)
+  const withoutPriorActiveCheckpoint = messages.filter((message, index) =>
+    index <= dividerIndex || !isConversationContextCheckpoint(message))
+  return [
+    ...withoutPriorActiveCheckpoint,
+    {
+      kind: 'context-checkpoint',
+      turns: turns.map(turn => ({ ...turn })),
+    },
+  ]
+}
+
 export function removeTrailingAssistantPlaceholder(
   messages: AIConversationMessage[],
 ): AIConversationMessage[] {
@@ -97,6 +142,13 @@ export function removeTrailingAssistantPlaceholder(
   for (let index = nextMessages.length - 1; index >= 0; index -= 1) {
     const message = nextMessages[index]
     if (!message || isConversationDivider(message)) {
+      return nextMessages
+    }
+
+    if (isConversationAgentActivity(message)) {
+      if (message.status === 'running' || message.status === 'aborted') {
+        nextMessages.splice(index, 1)
+      }
       return nextMessages
     }
 
