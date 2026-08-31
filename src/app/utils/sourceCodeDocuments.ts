@@ -4,7 +4,6 @@ import type {
   ComponentSourceDraft,
   RobotFile,
 } from '@/types';
-import { generateURDF } from '@/core/parsers';
 import { buildExportableAssemblyRobotData } from '@/core/robot/assemblyTransforms';
 import { analyzeAssemblyConnectivity } from '@/core/robot/assemblyConnectivity';
 import { hasComponentEditorLocks } from '@/core/robot/editorLock';
@@ -20,6 +19,7 @@ import {
   resolveAssemblyGroupMasterComponentId,
 } from './assemblyUrdfSourceGraft.ts';
 import type { GraftAssemblyGroupUrdfSourceProvenance } from './assemblyUrdfSourceGraft.ts';
+import { generateEditableRobotSource } from './generateEditableRobotSource.ts';
 
 type SourceFileFormat = RobotFile['format'] | null;
 
@@ -688,10 +688,12 @@ function buildComponentGeneratedFallbackDocument(
   disambiguate: boolean,
 ): SourceCodeDocumentDescriptor {
   const content = component.robot
-    ? generateURDF(
-        { ...component.robot, selection: { type: null, id: null } },
-        { preserveMeshPaths: true },
-      )
+    ? generateEditableRobotSource({
+        format: 'urdf',
+        robotState: { ...component.robot, selection: { type: null, id: null } },
+        includeHardware: 'auto',
+        preserveMeshPaths: true,
+      })
     : '';
   const fileName = disambiguate
     ? `${sanitizeSourceFileBaseName(component.name)}.urdf`
@@ -781,10 +783,12 @@ function buildGroupMergedDocument(
   const subAssembly = buildGroupSubAssembly(workspace, componentIds);
   const projectedRobot = buildExportableAssemblyRobotData(subAssembly);
   const content = projectedRobot
-    ? generateURDF(
-        { ...projectedRobot, selection: { type: null, id: null } },
-        { preserveMeshPaths: true },
-      )
+    ? generateEditableRobotSource({
+        format: 'urdf',
+        robotState: { ...projectedRobot, selection: { type: null, id: null } },
+        includeHardware: 'auto',
+        preserveMeshPaths: true,
+      })
     : '';
   return {
     id: documentId,

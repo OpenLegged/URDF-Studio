@@ -55,3 +55,16 @@ test('findUpdatedCollisionGeometryPatch detects single geometry changes only', (
   assert.strictEqual(updated?.objectIndex, 0);
   assert.strictEqual(updated?.geometry.dimensions.x, 2);
 });
+
+test('findUpdatedCollisionGeometryPatch detects collision name changes', () => {
+  const current = createLink();
+  const next: UrdfLink = {
+    ...current,
+    collision: { ...baseVisual, name: 'renamed-collision' },
+  };
+
+  const updated = findUpdatedCollisionGeometryPatch(current, next);
+
+  assert.strictEqual(updated?.objectIndex, 0);
+  assert.strictEqual(updated?.geometry.name, 'renamed-collision');
+});

@@ -2,6 +2,7 @@ import { useCallback, useMemo } from 'react';
 import type { AssemblyState, EntityRef, RobotData, WorkspaceSelection } from '@/types';
 import { useAssetsStore } from '@/store/assetsStore';
 import { useWorkspaceStore } from '@/store/workspaceStore';
+import { createSourceSemanticRobotHash } from '@/core/robot';
 import { beginCoordinatedWorkspaceTransaction } from '@/app/utils/pendingHistory';
 import type {
   CollisionOptimizationOperation,
@@ -14,6 +15,12 @@ interface UseCollisionOptimizationWorkflowParams {
   focusOn: (ref: EntityRef) => void;
   pulseSelection: (selection: WorkspaceSelection) => void;
   setSelection: (selection: WorkspaceSelection) => void;
+  patchEditableSourceRobot?: (args: {
+    componentId: string;
+    expectedRobotSnapshotHash: string;
+    previousRobot: RobotData;
+    nextRobot: RobotData;
+  }) => boolean;
 }
 
 export function useCollisionOptimizationWorkflow({
@@ -21,6 +28,7 @@ export function useCollisionOptimizationWorkflow({
   focusOn,
   pulseSelection,
   setSelection,
+  patchEditableSourceRobot,
 }: UseCollisionOptimizationWorkflowParams) {
   const collisionOptimizationSource = useMemo<CollisionOptimizationSource>(() => ({
     kind: 'assembly',
@@ -100,10 +108,21 @@ export function useCollisionOptimizationWorkflow({
           throw error;
         }
         const assets = useAssetsStore.getState();
-        replacements.forEach(([componentId]) => assets.removeComponentSourceDraft(componentId));
+        replacements.forEach(([componentId, nextRobot]) => {
+          const previousRobot = currentWorkspace.components[componentId]?.robot;
+          const handled = previousRobot
+            ? patchEditableSourceRobot?.({
+                componentId,
+                expectedRobotSnapshotHash: createSourceSemanticRobotHash(previousRobot),
+                previousRobot,
+                nextRobot,
+              }) === true
+            : false;
+          if (!handled) assets.removeComponentSourceDraft(componentId);
+        });
       }
     },
-    [],
+    [patchEditableSourceRobot],
   );
 
   return {

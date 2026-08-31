@@ -264,6 +264,7 @@ export function AppLayout({
   });
 
   const {
+    patchEditableSourceRobot,
     patchEditableSourceAddChild,
     patchEditableSourceDeleteSubtree,
     patchEditableSourceAddCollisionBody,
@@ -295,6 +296,7 @@ export function AppLayout({
     setPendingCollisionTransform,
     clearPendingCollisionTransform,
     handleTransformPendingChange,
+    patchEditableSourceRobot,
     patchEditableSourceAddChild,
     patchEditableSourceDeleteSubtree,
     patchEditableSourceAddCollisionBody,
@@ -363,6 +365,7 @@ export function AppLayout({
   } = useCollisionOptimizationWorkflow({
     assemblyState: workspace,
     focusOn,
+    patchEditableSourceRobot,
     pulseSelection,
     setSelection,
   });

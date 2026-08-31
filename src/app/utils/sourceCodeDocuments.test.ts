@@ -249,6 +249,50 @@ test('stale single-component drafts remain editable while missing drafts use a r
   assert.match(missingResult.content, /semantic-edit/);
 });
 
+test('missing URDF drafts keep authored joint hardware in the generated fallback', () => {
+  const hardwareRobot = robot('hardware_robot');
+  hardwareRobot.links.tip = {
+    ...structuredClone(DEFAULT_LINK),
+    id: 'tip',
+    name: 'tip',
+  };
+  hardwareRobot.joints.hinge = {
+    ...structuredClone(DEFAULT_JOINT),
+    id: 'hinge',
+    name: 'hinge',
+    parentLinkId: 'base',
+    childLinkId: 'tip',
+    hardware: {
+      ...structuredClone(DEFAULT_JOINT.hardware),
+      brand: 'Acme Robotics',
+      motorType: 'Servo-X',
+      motorId: 'motor-42',
+      armature: 0.25,
+      motorDirection: -1,
+      hardwareInterface: 'position',
+    },
+  };
+  const workspace = createSingleComponentWorkspace(hardwareRobot, {
+    componentId: 'hardware-instance',
+    sourceFile: 'library/hardware.urdf',
+  });
+
+  const result = buildCanonicalWorkspaceSourceDocuments({
+    workspace,
+    activeComponentId: 'hardware-instance',
+    componentSourceDrafts: {},
+    availableFiles: [],
+    allFileContents: {},
+  });
+
+  assert.equal(result.documents[0].readOnly, true);
+  assert.match(result.content, /<hardware>/);
+  assert.match(result.content, /<brand>Acme Robotics<\/brand>/);
+  assert.match(result.content, /<motorType>Servo-X<\/motorType>/);
+  assert.match(result.content, /<motorId>motor-42<\/motorId>/);
+  assert.match(result.content, /<hardwareInterface>position<\/hardwareInterface>/);
+});
+
 test('multi-component and bridged workspaces expose a transformed read-only projection', () => {
   const workspace = sharedSourceWorkspace();
   workspace.name = 'transformed_assembly';

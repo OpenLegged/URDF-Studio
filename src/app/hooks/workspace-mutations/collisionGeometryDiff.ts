@@ -11,6 +11,7 @@ function createCollisionGeometrySignature(
   includeVisibility: boolean,
 ): string {
   return JSON.stringify({
+    name: geometry.name ?? null,
     type: geometry.type,
     dimensions: geometry.dimensions,
     color: geometry.color,

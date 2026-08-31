@@ -48,7 +48,9 @@ function operation(componentId: string): CollisionOptimizationOperation {
   };
 }
 
-function renderWorkflow(): ReturnType<typeof useCollisionOptimizationWorkflow> {
+function renderWorkflow(
+  overrides: Partial<Parameters<typeof useCollisionOptimizationWorkflow>[0]> = {},
+): ReturnType<typeof useCollisionOptimizationWorkflow> {
   let workflow: ReturnType<typeof useCollisionOptimizationWorkflow> | null = null;
   function Probe() {
     workflow = useCollisionOptimizationWorkflow({
@@ -56,6 +58,7 @@ function renderWorkflow(): ReturnType<typeof useCollisionOptimizationWorkflow> {
       focusOn: () => {},
       pulseSelection: () => {},
       setSelection: () => {},
+      ...overrides,
     });
     return null;
   }
@@ -94,6 +97,41 @@ test('multi-component collision optimization commits one history entry and inval
   assert.equal(state.workspace.components.right?.robot.links.base?.collision.type, GeometryType.SPHERE);
   assert.equal(state.history.past.length, 1);
   assert.deepEqual(useAssetsStore.getState().componentSourceDrafts, {});
+});
+
+test('collision optimization reconciles each complete URDF robot when supported', async () => {
+  const workspace = createSingleComponentWorkspace(robot('left'), { componentId: 'left' });
+  useWorkspaceStore.getState().replaceWorkspace(workspace, { resetHistory: true });
+  useWorkspaceStore.setState({ history: { past: [], future: [], activity: [] } });
+  useAssetsStore.setState({
+    componentSourceDrafts: {
+      left: createComponentSourceDraft({
+        componentId: 'left',
+        format: 'urdf',
+        content: '<robot name="left" />',
+        robot: workspace.components.left!.robot,
+      }),
+    },
+  });
+  const reconciled: Array<{ previousRobot: RobotData; nextRobot: RobotData }> = [];
+
+  await renderWorkflow({
+    patchEditableSourceRobot: (args) => {
+      reconciled.push(args);
+      return true;
+    },
+  }).handleApplyCollisionOptimization([operation('left')]);
+
+  assert.equal(reconciled.length, 1);
+  assert.equal(
+    reconciled[0]?.previousRobot.links.base?.collision.type,
+    DEFAULT_LINK.collision.type,
+  );
+  assert.equal(
+    reconciled[0]?.nextRobot.links.base?.collision.type,
+    GeometryType.SPHERE,
+  );
+  assert.ok(useAssetsStore.getState().componentSourceDrafts.left);
 });
 
 test('collision optimization flushes pending property history before batching replacements', async () => {
