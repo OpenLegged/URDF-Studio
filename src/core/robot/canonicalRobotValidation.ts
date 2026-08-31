@@ -44,7 +44,7 @@ const USD_STRING_KEYS = [
   'iridescenceMapPath', 'iridescenceThicknessMapPath',
 ] as const;
 const USD_BOOLEAN_KEYS = [
-  'isOmniPbr', 'opacityEnabled', 'opacityTextureEnabled', 'emissiveEnabled',
+  'isOmniPbr', 'isOmniGlass', 'opacityEnabled', 'opacityTextureEnabled', 'emissiveEnabled',
 ] as const;
 const USD_NUMBER_KEYS = [
   'roughness', 'metalness', 'opacity', 'alphaTest', 'clearcoat', 'clearcoatRoughness',

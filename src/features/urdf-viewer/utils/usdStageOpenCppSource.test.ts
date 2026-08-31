@@ -120,3 +120,15 @@ test('HdWebSyncDriver projects common OmniPBR texture aliases into snapshot mate
     /_PrimHasAuthoredTexturePath[\s\S]*?"inputs:diffuse_texture"[\s\S]*?"inputs:reflectionroughness_texture"/,
   );
 });
+
+test('HdWebSyncDriver projects OmniGlass MDL inputs into physical snapshot materials', () => {
+  const source = readFileSync(webSyncDriverPath, 'utf8');
+
+  assert.match(source, /find\("omniglass"\)[\s\S]*?record\.set\("isOmniGlass",\s*true\)/);
+  assert.match(source, /setScalar\("opacity",\s*\{[\s\S]*?"inputs:cutout_opacity"/);
+  assert.match(source, /setColor\("color",\s*\{[\s\S]*?"inputs:glass_color"/);
+  assert.match(source, /record\.set\("ior",\s*1\.491\)/);
+  assert.match(source, /record\.set\("transmission",\s*1\.0\)/);
+  assert.match(source, /setTexture\("mapPath",\s*\{[\s\S]*?"inputs:glass_color_texture"/);
+  assert.match(source, /setTexture\("alphaMapPath",\s*\{[\s\S]*?"inputs:cutout_opacity_texture"/);
+});

@@ -6,6 +6,7 @@ export interface UsdSceneMaterialRecord {
   shaderName?: string | null;
   shaderInfoId?: string | null;
   isOmniPbr?: boolean | null;
+  isOmniGlass?: boolean | null;
   opacityEnabled?: boolean | null;
   opacityTextureEnabled?: boolean | null;
   emissiveEnabled?: boolean | null;

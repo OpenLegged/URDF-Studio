@@ -5,6 +5,11 @@ import * as THREE from 'three';
 import { computeLinkWorldMatrices } from '@/core/robot/kinematics';
 import { DEFAULT_LINK, GeometryType, JointType } from '../../../types/index.ts';
 import { adaptUsdViewerSnapshotToRobotData } from '@/lib/robot-parser/usd/usdViewerRobotAdapter';
+import { resolveSnapshotMaterialEmissionEnabled } from '@/lib/robot-parser/usd/usdViewerRobotAdapter/usdAdapterConversions';
+
+test('treats OmniGlass default emission as disabled', () => {
+  assert.equal(resolveSnapshotMaterialEmissionEnabled({ isOmniGlass: true }), false);
+});
 
 test('does not duplicate aggregate parent visuals when descriptors resolve to child prims', () => {
   const result = adaptUsdViewerSnapshotToRobotData({

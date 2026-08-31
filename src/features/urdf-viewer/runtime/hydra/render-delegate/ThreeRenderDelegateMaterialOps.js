@@ -8,6 +8,8 @@ export class ThreeRenderDelegateMaterialOps extends ThreeRenderDelegateCore {
     snapshotRecordRequiresPhysicalMaterial(record) {
         if (!record || typeof record !== 'object')
             return false;
+        if (record.isOmniGlass === true)
+            return true;
         const candidateNames = [];
         const scalarOrColorPropertyNames = [
             'clearcoat',
@@ -62,7 +64,7 @@ export class ThreeRenderDelegateMaterialOps extends ThreeRenderDelegateCore {
             return true;
         if (record.emissiveEnabled === false)
             return false;
-        return record.isOmniPbr === true ? false : true;
+        return record.isOmniPbr === true || record.isOmniGlass === true ? false : true;
     }
     getActiveStageRootPrimPath() {
         const snapshotDefaultPrimPath = normalizeHydraPath(this.getCachedRobotSceneSnapshot?.()?.stage?.defaultPrimPath || '');
@@ -1799,6 +1801,15 @@ export class ThreeRenderDelegateMaterialOps extends ThreeRenderDelegateCore {
             if (!materialId)
                 return null;
             const name = String(rawRecord.name || materialId.split('/').filter(Boolean).pop() || materialId).trim();
+            const shaderPath = normalizeHydraPath(rawRecord.shaderPath || '') || null;
+            const shaderName = String(rawRecord.shaderName || '').trim() || null;
+            const shaderInfoId = String(rawRecord.shaderInfoId || '').trim() || null;
+            const shaderSignature = [shaderInfoId, shaderName, shaderPath]
+                .filter(Boolean)
+                .join('|')
+                .toLowerCase();
+            const isOmniPbr = rawRecord.isOmniPbr === true || shaderSignature.includes('omnipbr');
+            const isOmniGlass = rawRecord.isOmniGlass === true || shaderSignature.includes('omniglass');
             const authoredOrRawColor = normalizeColor(rawRecord.color);
             const rawColorSource = normalizeColorSource(rawRecord.colorSource);
             const colorSpace = rawColorSource === 'authored'
@@ -1815,7 +1826,8 @@ export class ThreeRenderDelegateMaterialOps extends ThreeRenderDelegateCore {
             const hasShaderColorEvidence = Boolean(rawRecord.shaderPath
                 || rawRecord.shaderName
                 || rawRecord.shaderInfoId
-                || rawRecord.isOmniPbr === true
+                || isOmniPbr
+                || isOmniGlass
                 || rawRecord.colorSpace
                 || rawRecord.roughness != null
                 || rawRecord.metalness != null
@@ -1834,10 +1846,11 @@ export class ThreeRenderDelegateMaterialOps extends ThreeRenderDelegateCore {
                 materialId,
                 name,
                 stageSourcePath: normalizedStageSourcePath,
-                shaderPath: normalizeHydraPath(rawRecord.shaderPath || '') || null,
-                shaderName: String(rawRecord.shaderName || '').trim() || null,
-                shaderInfoId: String(rawRecord.shaderInfoId || '').trim() || null,
-                isOmniPbr: rawRecord.isOmniPbr === true,
+                shaderPath,
+                shaderName,
+                shaderInfoId,
+                isOmniPbr,
+                isOmniGlass,
                 opacityEnabled: typeof rawRecord.opacityEnabled === 'boolean' ? rawRecord.opacityEnabled : null,
                 opacityTextureEnabled: typeof rawRecord.opacityTextureEnabled === 'boolean' ? rawRecord.opacityTextureEnabled : null,
                 emissiveEnabled: typeof rawRecord.emissiveEnabled === 'boolean' ? rawRecord.emissiveEnabled : null,
@@ -1903,6 +1916,17 @@ export class ThreeRenderDelegateMaterialOps extends ThreeRenderDelegateCore {
             }
             if (normalizedRecord.roughness === null && normalizedRecord.isOmniPbr) {
                 normalizedRecord.roughness = HYDRA_UNIFIED_MATERIAL_DEFAULTS.roughness;
+            }
+            if (normalizedRecord.isOmniGlass) {
+                if (normalizedRecord.roughness === null) {
+                    normalizedRecord.roughness = 0;
+                }
+                if (normalizedRecord.ior === null) {
+                    normalizedRecord.ior = 1.491;
+                }
+                if (normalizedRecord.transmission === null) {
+                    normalizedRecord.transmission = 1;
+                }
             }
             return normalizedRecord;
         })

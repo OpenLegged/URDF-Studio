@@ -246,7 +246,7 @@ export function resolveSnapshotMaterialEmissionEnabled(
   if (material.emissiveEnabled === false) {
     return false;
   }
-  return material.isOmniPbr === true ? false : true;
+  return material.isOmniPbr === true || material.isOmniGlass === true ? false : true;
 }
 
 export function resolveSnapshotAuthoredMaterial(

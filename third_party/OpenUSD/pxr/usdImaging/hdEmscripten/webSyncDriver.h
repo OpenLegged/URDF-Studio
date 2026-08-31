@@ -3291,6 +3291,9 @@ private:
             if (_ToLowerAscii(shaderInfoId).find("omnipbr") != std::string::npos) {
                 record.set("isOmniPbr", true);
             }
+            if (_ToLowerAscii(shaderInfoId).find("omniglass") != std::string::npos) {
+                record.set("isOmniGlass", true);
+            }
         }
 
         bool opacityEnabled = true;
@@ -3315,6 +3318,7 @@ private:
             "inputs:base_color_constant",
             "inputs:albedo",
             "inputs:albedo_constant",
+            "inputs:glass_color",
         });
         if (hasBaseColor) {
             record.set("colorSpace", std::string("linear"));
@@ -3328,6 +3332,7 @@ private:
             "inputs:reflection_roughness",
             "inputs:reflection_roughness_constant",
             "inputs:specular_roughness",
+            "inputs:frosting_roughness",
         }, true);
         bool isOmniPbr = false;
         try {
@@ -3338,6 +3343,15 @@ private:
         if (!roughnessAssigned && isOmniPbr) {
             record.set("roughness", 0.5);
         }
+        bool isOmniGlass = false;
+        try {
+            isOmniGlass = record["isOmniGlass"].as<bool>();
+        } catch (...) {
+            isOmniGlass = false;
+        }
+        if (!roughnessAssigned && isOmniGlass) {
+            record.set("roughness", 0.0);
+        }
 
         setScalar("metalness", {
             "inputs:metallic",
@@ -3345,7 +3359,11 @@ private:
             "inputs:metalness",
             "inputs:metalness_constant",
         }, true);
-        setScalar("opacity", { "inputs:opacity", "inputs:opacity_constant" }, true);
+        setScalar("opacity", {
+            "inputs:opacity",
+            "inputs:opacity_constant",
+            "inputs:cutout_opacity",
+        }, true);
         setScalar("alphaTest", {
             "inputs:opacityThreshold",
             "inputs:opacity_threshold",
@@ -3364,8 +3382,21 @@ private:
             "inputs:specular_intensity",
             "inputs:specularIntensity",
         }, true);
-        setScalar("ior", { "inputs:ior", "inputs:indexOfRefraction" }, false, true, 1.0);
-        setScalar("transmission", { "inputs:transmission", "inputs:transmission_weight" }, true);
+        const bool iorAssigned = setScalar("ior", {
+            "inputs:ior",
+            "inputs:indexOfRefraction",
+            "inputs:glass_ior",
+        }, false, true, 1.0);
+        if (!iorAssigned && isOmniGlass) {
+            record.set("ior", 1.491);
+        }
+        const bool transmissionAssigned = setScalar("transmission", {
+            "inputs:transmission",
+            "inputs:transmission_weight",
+        }, true);
+        if (!transmissionAssigned && isOmniGlass) {
+            record.set("transmission", 1.0);
+        }
         setScalar("thickness", { "inputs:thickness", "inputs:thickness_constant" }, false, true, 0.0);
         setScalar("attenuationDistance", { "inputs:attenuationDistance", "inputs:attenuation_distance" }, false, true, 0.0);
         setScalar("aoMapIntensity", { "inputs:ao_strength", "inputs:occlusion_strength", "inputs:occlusion" }, true);
@@ -3401,6 +3432,7 @@ private:
             "inputs:baseColor_texture",
             "inputs:base_color_texture",
             "inputs:albedo_texture",
+            "inputs:glass_color_texture",
         });
         setTexture("emissiveMapPath", {
             "inputs:emissiveColor_texture",
@@ -3437,6 +3469,7 @@ private:
             "inputs:opacity_texture",
             "inputs:opacity_mask_texture",
             "inputs:opacityMask_texture",
+            "inputs:cutout_opacity_texture",
         });
         setTexture("clearcoatMapPath", { "inputs:clearcoat_texture", "inputs:coat_texture" });
         setTexture("clearcoatRoughnessMapPath", {
@@ -3555,6 +3588,7 @@ private:
                 "inputs:baseColor_texture",
                 "inputs:base_color_texture",
                 "inputs:albedo_texture",
+                "inputs:glass_color_texture",
                 "inputs:emissiveColor_texture",
                 "inputs:emissive_color_texture",
                 "inputs:emissive_texture",
@@ -3576,7 +3610,8 @@ private:
                 "inputs:ORM_texture",
                 "inputs:opacity_texture",
                 "inputs:opacity_mask_texture",
-                "inputs:opacityMask_texture"})) {
+                "inputs:opacityMask_texture",
+                "inputs:cutout_opacity_texture"})) {
             return true;
         }
 

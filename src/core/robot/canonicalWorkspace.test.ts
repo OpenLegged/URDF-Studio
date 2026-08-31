@@ -441,7 +441,7 @@ test('canonical validation rejects malformed nested geometry and material collec
   );
 });
 
-test('canonical validation accepts stage-scoped USD material metadata', () => {
+test('canonical validation accepts stage-scoped USD and OmniGlass material metadata', () => {
   const workspace = createSingleComponentWorkspace(createRobot('unitree_usd')) as unknown;
   asRecord(getFirstComponent(workspace).robot).materials = {
     FL_foot: {
@@ -449,12 +449,29 @@ test('canonical validation accepts stage-scoped USD material metadata', () => {
       usdMaterial: {
         materialId: '/World/Looks/FL_foot',
         stageSourcePath: '/unitree_model/Go2/usd/go2.viewer_roundtrip.usd',
+        isOmniGlass: true,
       },
     },
   };
 
   assert.equal(validateCanonicalWorkspace(workspace).valid, true);
   assert.doesNotThrow(() => assertCanonicalWorkspace(workspace));
+});
+
+test('canonical validation rejects non-boolean OmniGlass material metadata', () => {
+  const workspace = createSingleComponentWorkspace(createRobot('invalid_omni_glass')) as unknown;
+  asRecord(getFirstComponent(workspace).robot).materials = {
+    glass: {
+      usdMaterial: {
+        isOmniGlass: 'yes',
+      },
+    },
+  };
+
+  assertInvalid(
+    workspace,
+    'components.component_1.robot.materials.glass.usdMaterial.isOmniGlass',
+  );
 });
 
 test('canonical validation rejects malformed URDF inspection collections before runtime use', () => {

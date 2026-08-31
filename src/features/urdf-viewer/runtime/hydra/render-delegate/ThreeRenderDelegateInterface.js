@@ -19,6 +19,7 @@ const STAGE_BASE_COLOR_TEXTURE_INPUTS = [
     'inputs:baseColor_texture',
     'inputs:base_color_texture',
     'inputs:albedo_texture',
+    'inputs:glass_color_texture',
 ];
 const STAGE_EMISSIVE_TEXTURE_INPUTS = [
     'inputs:emissiveColor_texture',
@@ -238,6 +239,9 @@ function mergeSnapshotMaterialRecordWithFallback(record, fallbackRecord) {
     if (fallbackRecord.isOmniPbr === true && mergedRecord.isOmniPbr !== true) {
         mergedRecord.isOmniPbr = true;
     }
+    if (fallbackRecord.isOmniGlass === true && mergedRecord.isOmniGlass !== true) {
+        mergedRecord.isOmniGlass = true;
+    }
     for (const [key, value] of Object.entries(fallbackRecord)) {
         if (key === 'materialId' || key === 'id') {
             continue;
@@ -261,6 +265,7 @@ function serializePreferredMaterialRecord(material) {
             ? materialUserData.usdEmissiveEnabled
             : null);
     const materialIsOmniPbr = material.isOmniPbr === true || materialUserData.usdIsOmniPbr === true;
+    const materialIsOmniGlass = material.isOmniGlass === true || materialUserData.usdIsOmniGlass === true;
     const normalizeTexturePath = (texture) => {
         const normalized = String(texture?.userData?.usdSourcePath || texture?.name || '').trim();
         return normalized || null;
@@ -296,6 +301,7 @@ function serializePreferredMaterialRecord(material) {
     const record = {
         ...(String(material.name || '').trim() ? { name: String(material.name || '').trim() } : {}),
         ...(materialIsOmniPbr ? { isOmniPbr: true } : {}),
+        ...(materialIsOmniGlass ? { isOmniGlass: true } : {}),
         ...(materialEmissiveEnabled !== null ? { emissiveEnabled: materialEmissiveEnabled } : {}),
         ...(normalizeColor(material.color) ? { color: normalizeColor(material.color) } : {}),
         ...(materialEmissiveEnabled !== false && normalizeColor(material.emissive)
@@ -616,6 +622,8 @@ export class ThreeRenderDelegateInterface extends ThreeRenderDelegateMaterialOps
     stageShaderRequiresPhysicalMaterial(shaderPrim) {
         if (!shaderPrim)
             return false;
+        if (this.isLikelyOmniGlassShaderPrim(shaderPrim))
+            return true;
         const candidateAttributeNames = [
             'inputs:clearcoat',
             'inputs:coat',
@@ -691,18 +699,22 @@ export class ThreeRenderDelegateInterface extends ThreeRenderDelegateMaterialOps
         }
         const treatNamedHexDiffuseAsSrgb = this.shouldTreatNamedHexDiffuseAsSrgb();
         const isOmniPbrShader = this.isLikelyOmniPbrShaderPrim(shaderPrim);
+        const isOmniGlassShader = this.isLikelyOmniGlassShaderPrim(shaderPrim);
         const emissiveEnabled = this.readPrimBooleanAttribute(shaderPrim, [
             'inputs:enable_emission',
             'inputs:enableEmission',
         ]);
         const effectiveEmissiveEnabled = emissiveEnabled === true
             ? true
-            : (emissiveEnabled === false ? false : !isOmniPbrShader);
+            : (emissiveEnabled === false ? false : !isOmniPbrShader && !isOmniGlassShader);
         if (material.userData && typeof material.userData === 'object') {
             if (isOmniPbrShader) {
                 material.userData.usdIsOmniPbr = true;
             }
-            if (emissiveEnabled !== undefined || isOmniPbrShader) {
+            if (isOmniGlassShader) {
+                material.userData.usdIsOmniGlass = true;
+            }
+            if (emissiveEnabled !== undefined || isOmniPbrShader || isOmniGlassShader) {
                 material.userData.usdEmissiveEnabled = effectiveEmissiveEnabled;
             }
         }
@@ -723,6 +735,7 @@ export class ThreeRenderDelegateInterface extends ThreeRenderDelegateMaterialOps
             'inputs:base_color_constant',
             'inputs:albedo',
             'inputs:albedo_constant',
+            'inputs:glass_color',
         ], 'color', {
             treatAsSrgbWhenMatchingMaterialName: treatNamedHexDiffuseAsSrgb,
         });
@@ -732,11 +745,15 @@ export class ThreeRenderDelegateInterface extends ThreeRenderDelegateMaterialOps
             'inputs:reflection_roughness',
             'inputs:reflection_roughness_constant',
             'inputs:specular_roughness',
+            'inputs:frosting_roughness',
         ], 'roughness', { clamp01: true });
         if (!roughnessAssigned && isOmniPbrShader) {
             // OmniPBR often omits explicit roughness attributes in exported USD.
             // Fall back to the shared viewer matte profile so USD matches URDF/MJCF better.
             material.roughness = HYDRA_UNIFIED_MATERIAL_DEFAULTS.roughness;
+        }
+        if (!roughnessAssigned && isOmniGlassShader) {
+            material.roughness = 0;
         }
         this.applyStageFallbackScalarInput(material, shaderPrim, [
             'inputs:metallic',
@@ -747,6 +764,7 @@ export class ThreeRenderDelegateInterface extends ThreeRenderDelegateMaterialOps
         this.applyStageFallbackScalarInput(material, shaderPrim, [
             'inputs:opacity',
             'inputs:opacity_constant',
+            'inputs:cutout_opacity',
         ], 'opacity', {
             clamp01: true,
             onAssigned: (value) => {
@@ -781,21 +799,28 @@ export class ThreeRenderDelegateInterface extends ThreeRenderDelegateMaterialOps
             'inputs:clearcoat_roughness',
             'inputs:coat_roughness',
         ], 'clearcoatRoughness', { clamp01: true });
-        this.applyStageFallbackScalarInput(material, shaderPrim, [
+        const iorAssigned = this.applyStageFallbackScalarInput(material, shaderPrim, [
             'inputs:ior',
             'inputs:indexOfRefraction',
             'inputs:index_of_refraction',
+            'inputs:glass_ior',
         ], 'ior', { min: 1 });
+        if (!iorAssigned && isOmniGlassShader) {
+            material.ior = 1.491;
+        }
         this.applyStageFallbackScalarInput(material, shaderPrim, [
             'inputs:specular',
             'inputs:specular_constant',
             'inputs:specularIntensity',
             'inputs:specular_intensity',
         ], 'specularIntensity', { clamp01: true });
-        this.applyStageFallbackScalarInput(material, shaderPrim, [
+        const transmissionAssigned = this.applyStageFallbackScalarInput(material, shaderPrim, [
             'inputs:transmission',
             'inputs:transmission_weight',
         ], 'transmission', { clamp01: true });
+        if (!transmissionAssigned && isOmniGlassShader) {
+            material.transmission = 1;
+        }
         this.applyStageFallbackScalarInput(material, shaderPrim, [
             'inputs:thickness',
             'inputs:thickness_constant',
@@ -923,6 +948,7 @@ export class ThreeRenderDelegateInterface extends ThreeRenderDelegateMaterialOps
                 'inputs:opacity_texture',
                 'inputs:opacity_mask_texture',
                 'inputs:opacityMask_texture',
+                'inputs:cutout_opacity_texture',
             ], 'alphaMap', {
                 onAssigned: () => {
                     if (!(material.alphaTest > 0))
@@ -1257,6 +1283,16 @@ export class ThreeRenderDelegateInterface extends ThreeRenderDelegateMaterialOps
             this.readPrimAttribute(shaderPrim, ['info:mdl:sourceAsset']),
         ];
         return signatures.some((value) => String(value || '').toLowerCase().includes('omnipbr'));
+    }
+    isLikelyOmniGlassShaderPrim(shaderPrim) {
+        if (!shaderPrim)
+            return false;
+        const signatures = [
+            this.readPrimAttribute(shaderPrim, ['info:id']),
+            this.readPrimAttribute(shaderPrim, ['info:mdl:sourceAsset:subIdentifier']),
+            this.readPrimAttribute(shaderPrim, ['info:mdl:sourceAsset']),
+        ];
+        return signatures.some((value) => String(value || '').toLowerCase().includes('omniglass'));
     }
     normalizeMaterialTexturePath(pathValue) {
         if (pathValue === null || pathValue === undefined)
