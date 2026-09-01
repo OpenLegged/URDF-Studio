@@ -1161,6 +1161,70 @@ test('uses a visible PhysicsCollisionAPI mesh as both visual and collision geome
   );
 });
 
+test('keeps native-render descriptors below an authored Collisions scope out of visuals', () => {
+  const result = adaptUsdViewerSnapshotToRobotData(
+    {
+      stageSourcePath: '/appliances/stove.usd',
+      stage: {
+        defaultPrimPath: '/Stove',
+        primDescriptors: [{
+          path: '/Stove/Collisions/body_box',
+          parentPath: '/Stove/Collisions',
+          name: 'body_box',
+          typeName: 'Cube',
+          collisionEnabled: true,
+        }],
+      },
+      robotTree: {
+        linkParentPairs: [['/Stove', null]],
+        rootLinkPaths: ['/Stove'],
+      },
+      robotMetadataSnapshot: {
+        stageSourcePath: '/appliances/stove.usd',
+        linkParentPairs: [['/Stove', null]],
+        jointCatalogEntries: [],
+        meshCountsByLinkPath: {
+          '/Stove': {
+            visualMeshCount: 1,
+            collisionMeshCount: 1,
+            collisionPrimitiveCounts: { box: 1 },
+          },
+        },
+      },
+      render: {
+        meshDescriptors: [
+          {
+            meshId: '/Stove/visuals.proto_box_id0',
+            sectionName: 'visuals',
+            resolvedPrimPath: '/Stove/Collisions/body_box',
+            primType: 'cube',
+            extentSize: [0.8, 0.7, 0.9],
+            materialId: '/Stove/Physics/PhysicsMaterial',
+          },
+          {
+            meshId: '/Stove/visuals.proto_mesh_id0',
+            sectionName: 'visuals',
+            resolvedPrimPath: '/Stove/StoveBody',
+            primType: 'mesh',
+          },
+        ],
+      },
+    },
+    { fileName: 'stove.usd' },
+  );
+
+  assert.ok(result);
+  const rootLink = result.robotData.links[result.robotData.rootLinkId];
+  assert.ok(rootLink);
+  assert.equal(rootLink.visual.type, GeometryType.MESH);
+  assert.deepEqual(
+    rootLink.visual.usdMeshDescriptors?.map((descriptor) => descriptor.resolvedPrimPath),
+    ['/Stove/StoveBody'],
+  );
+  assert.equal(rootLink.collision.type, GeometryType.BOX);
+  assert.deepEqual(rootLink.collision.dimensions, { x: 0.8, y: 0.7, z: 0.9 });
+});
+
 test('preserves multiple authored materials when one USD visual scope emits multiple mesh descriptors', () => {
   const result = adaptUsdViewerSnapshotToRobotData(
     {

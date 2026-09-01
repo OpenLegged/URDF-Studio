@@ -372,6 +372,7 @@ export function resolveStateVisualMaterialOverride({
     ...(resolved.mjcfBuiltinTexture
       ? { mjcfBuiltinTexture: { ...resolved.mjcfBuiltinTexture } }
       : {}),
+    ...(resolved.usdMaterial ? { usdMaterial: { ...resolved.usdMaterial } } : {}),
     ...(opacity !== undefined ? { opacity } : {}),
     ...(resolved.roughness !== undefined ? { roughness: resolved.roughness } : {}),
     ...(resolved.metalness !== undefined ? { metalness: resolved.metalness } : {}),

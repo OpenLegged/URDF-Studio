@@ -4,10 +4,29 @@ import * as THREE from 'three';
 
 import {
   applyVisualMaterialOverrideToObject,
+  getVisualMaterialTextureRequests,
   hasExplicitGeometryMaterialOverride,
   resolvePrimaryAuthoredVisualMaterialOverride,
   resolveVisualMaterialOverrideFromGeometry,
 } from './visualMaterialOverrides';
+
+test('USD texture requests preserve prepared OBJ orientation and packed ORM roles', () => {
+  assert.deepEqual(
+    getVisualMaterialTextureRequests({
+      texture: 'texture/base.png',
+      usdMaterial: {
+        mapPath: 'texture/base.png',
+        roughnessMapPath: 'texture/orm.png',
+        metalnessMapPath: 'texture/orm.png',
+        aoMapPath: 'texture/orm.png',
+      },
+    }),
+    [
+      { path: 'texture/base.png', isColor: true, flipY: true },
+      { path: 'texture/orm.png', isColor: false, flipY: true },
+    ],
+  );
+});
 
 test('resolveVisualMaterialOverrideFromGeometry includes first-batch PBR parameters', () => {
   const override = resolveVisualMaterialOverrideFromGeometry({
@@ -103,6 +122,92 @@ test('applyVisualMaterialOverrideToObject applies PBR parameters to generated ma
   assert.ok(Math.abs(appliedMaterial.metalness - 0.85) <= 1e-6);
   assert.equal(appliedMaterial.emissive.getHexString(), '224466');
   assert.ok(Math.abs(appliedMaterial.emissiveIntensity - 0.9) <= 1e-6);
+});
+
+test('applyVisualMaterialOverrideToObject restores USD base color and packed ORM maps', () => {
+  const baseTexture = new THREE.Texture();
+  baseTexture.flipY = true;
+  const ormTexture = new THREE.Texture();
+  ormTexture.flipY = true;
+  const textureCache = new Map<string, THREE.Texture>([
+    ['texture/base.png', baseTexture],
+    ['texture/orm.png', ormTexture],
+  ]);
+  const geometry = new THREE.BoxGeometry(1, 1, 1);
+  const mesh = new THREE.Mesh(
+    geometry,
+    new THREE.MeshPhongMaterial({ color: '#888888' }),
+  );
+  const root = new THREE.Group();
+  root.add(mesh);
+
+  applyVisualMaterialOverrideToObject(
+    root,
+    {
+      color: '#ffffff',
+      texture: 'texture/base.png',
+      usdMaterial: {
+        isOmniPbr: true,
+        mapPath: 'texture/base.png',
+        roughnessMapPath: 'texture/orm.png',
+        metalnessMapPath: 'texture/orm.png',
+        aoMapPath: 'texture/orm.png',
+        emissive: [0.1, 0.2, 0.3],
+        roughness: 0.5,
+        metalness: 0.1,
+      },
+    },
+    undefined,
+    undefined,
+    textureCache,
+  );
+
+  assert.ok(mesh.material instanceof THREE.MeshStandardMaterial);
+  const material = mesh.material as THREE.MeshStandardMaterial;
+  assert.equal(material.map, baseTexture);
+  assert.equal(material.map?.flipY, true);
+  assert.equal(material.roughnessMap, ormTexture);
+  assert.equal(material.metalnessMap, ormTexture);
+  assert.equal(material.aoMap, ormTexture);
+  assert.deepEqual(
+    material.emissive.toArray().map((value) => Number(value.toFixed(6))),
+    [0.1, 0.2, 0.3],
+  );
+  assert.equal(material.userData.usdMaterialApplied, true);
+  assert.equal(geometry.getAttribute('uv1'), geometry.getAttribute('uv'));
+});
+
+test('applyVisualMaterialOverrideToObject restores OmniGlass physical properties', () => {
+  const mesh = new THREE.Mesh(
+    new THREE.BoxGeometry(1, 1, 1),
+    new THREE.MeshPhongMaterial({ color: '#888888' }),
+  );
+  const root = new THREE.Group();
+  root.add(mesh);
+
+  applyVisualMaterialOverrideToObject(root, {
+    color: '#777777',
+    usdMaterial: {
+      materialId: '/Looks/door_glass',
+      isOmniGlass: true,
+      opacity: 0.8,
+      roughness: 0,
+      metalness: 0.01,
+      transmission: 1,
+      ior: 1.491,
+      specularIntensity: 1,
+    },
+  });
+
+  assert.ok(mesh.material instanceof THREE.MeshPhysicalMaterial);
+  const material = mesh.material as THREE.MeshPhysicalMaterial;
+  assert.equal(material.transparent, true);
+  assert.equal(material.depthWrite, false);
+  assert.equal(material.side, THREE.DoubleSide);
+  assert.ok(Math.abs(material.opacity - 0.8) <= 1e-6);
+  assert.ok(Math.abs(material.transmission - 1) <= 1e-6);
+  assert.ok(Math.abs(material.ior - 1.491) <= 1e-6);
+  assert.equal(material.userData.usdMaterialId, '/Looks/door_glass');
 });
 
 test('applyVisualMaterialOverrideToObject preserves near-white texture base colors', () => {

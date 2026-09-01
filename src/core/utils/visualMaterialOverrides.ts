@@ -8,6 +8,7 @@ import {
   parseThreeColorWithOpacity,
 } from './color.ts';
 import type { MjcfBuiltinTexture, UrdfVisual } from '@/types';
+import type { UsdSceneMaterialRecord } from '@/types/usdMaterial';
 
 export interface VisualMaterialOverride {
   color?: string;
@@ -21,6 +22,13 @@ export interface VisualMaterialOverride {
   alphaTest?: number;
   textureRepeat?: [number, number];
   mjcfBuiltinTexture?: MjcfBuiltinTexture;
+  usdMaterial?: UsdSceneMaterialRecord;
+}
+
+export interface VisualMaterialTextureRequest {
+  path: string;
+  isColor: boolean;
+  flipY: boolean;
 }
 
 function normalizeMaterialValue(value: string | null | undefined): string | undefined {
@@ -42,6 +50,74 @@ function normalizeNonNegativeValue(value: number | undefined): number | undefine
   }
 
   return Math.max(0, Number(value));
+}
+
+function normalizePositiveValue(value: number | null | undefined): number | undefined {
+  if (!Number.isFinite(value) || Number(value) <= 0) {
+    return undefined;
+  }
+
+  return Number(value);
+}
+
+function usdColorToThreeColor(
+  value: ArrayLike<number> | null | undefined,
+): THREE.Color | null {
+  if (!value || value.length < 3) {
+    return null;
+  }
+
+  const red = Number(value[0]);
+  const green = Number(value[1]);
+  const blue = Number(value[2]);
+  if (![red, green, blue].every(Number.isFinite)) {
+    return null;
+  }
+
+  return new THREE.Color().setRGB(red, green, blue);
+}
+
+export function getVisualMaterialTextureRequests(
+  override: VisualMaterialOverride | null | undefined,
+): VisualMaterialTextureRequest[] {
+  const usdMaterial = override?.usdMaterial;
+  const requests = new Map<string, VisualMaterialTextureRequest>();
+  const add = (pathValue: string | null | undefined, isColor: boolean, flipY: boolean) => {
+    const path = normalizeMaterialValue(pathValue);
+    if (!path) {
+      return;
+    }
+
+    const existing = requests.get(path);
+    requests.set(path, {
+      path,
+      isColor: Boolean(existing?.isColor || isColor),
+      flipY: existing ? existing.flipY && flipY : flipY,
+    });
+  };
+
+  // The state-based USD workspace renders a prepared OBJ. Its UVs use the
+  // same bottom-left convention as the browser/OBJ loader, so retain Three's
+  // default image flip here. The direct snapshot runtime owns a separate
+  // BufferGeometry path and handles its texture orientation independently.
+  add(override?.texture ?? usdMaterial?.mapPath, true, true);
+  if (usdMaterial) {
+    add(usdMaterial.emissiveMapPath, true, true);
+    add(usdMaterial.roughnessMapPath, false, true);
+    add(usdMaterial.metalnessMapPath, false, true);
+    add(usdMaterial.normalMapPath, false, true);
+    add(usdMaterial.aoMapPath, false, true);
+    add(usdMaterial.alphaMapPath, false, true);
+    add(usdMaterial.clearcoatMapPath, false, true);
+    add(usdMaterial.clearcoatRoughnessMapPath, false, true);
+    add(usdMaterial.clearcoatNormalMapPath, false, true);
+    add(usdMaterial.specularColorMapPath, true, true);
+    add(usdMaterial.specularIntensityMapPath, false, true);
+    add(usdMaterial.transmissionMapPath, false, true);
+    add(usdMaterial.thicknessMapPath, false, true);
+  }
+
+  return Array.from(requests.values());
 }
 
 function normalizeTextureRepeat(
@@ -281,14 +357,25 @@ export function applyVisualMaterialOverrideToObject(
   cache?: VisualMaterialOverrideCache,
   textureCache?: Map<string, THREE.Texture>,
 ): void {
+  const usdMaterial = override?.usdMaterial;
   const colorOverride = normalizeMaterialValue(override?.color);
-  const texturePath = normalizeMaterialValue(override?.texture);
-  const opacityOverride = normalizeUnitIntervalValue(override?.opacity);
-  const roughnessOverride = normalizeUnitIntervalValue(override?.roughness);
-  const metalnessOverride = normalizeUnitIntervalValue(override?.metalness);
+  const texturePath = normalizeMaterialValue(override?.texture ?? usdMaterial?.mapPath);
+  const opacityOverride =
+    normalizeUnitIntervalValue(override?.opacity) ??
+    normalizeUnitIntervalValue(usdMaterial?.opacity ?? undefined);
+  const roughnessOverride =
+    normalizeUnitIntervalValue(override?.roughness) ??
+    normalizeUnitIntervalValue(usdMaterial?.roughness ?? undefined);
+  const metalnessOverride =
+    normalizeUnitIntervalValue(override?.metalness) ??
+    normalizeUnitIntervalValue(usdMaterial?.metalness ?? undefined);
   const emissiveOverride = normalizeMaterialValue(override?.emissive);
-  const emissiveIntensityOverride = normalizeNonNegativeValue(override?.emissiveIntensity);
-  const alphaTestOverride = normalizeUnitIntervalValue(override?.alphaTest);
+  const emissiveIntensityOverride =
+    normalizeNonNegativeValue(override?.emissiveIntensity) ??
+    normalizeNonNegativeValue(usdMaterial?.emissiveIntensity ?? undefined);
+  const alphaTestOverride =
+    normalizeUnitIntervalValue(override?.alphaTest) ??
+    normalizeUnitIntervalValue(usdMaterial?.alphaTest ?? undefined);
   const textureRepeat = normalizeTextureRepeat(override?.textureRepeat);
   const mjcfBuiltinTexture = isSupportedMjcfBuiltinTexture(override?.mjcfBuiltinTexture)
     ? override.mjcfBuiltinTexture
@@ -296,11 +383,22 @@ export function applyVisualMaterialOverrideToObject(
   const hasTextureOverride = Boolean(texturePath || mjcfBuiltinTexture);
   const parsedColor = parseThreeColorWithOpacity(colorOverride);
   const parsedEmissive = parseThreeColorWithOpacity(emissiveOverride);
+  const usdColor = usdColorToThreeColor(usdMaterial?.color ?? usdMaterial?.authoredColor);
+  const usdEmissive = usdColorToThreeColor(usdMaterial?.emissive);
   const hasExplicitColor = Boolean(parsedColor);
-  const hasExplicitEmissive = Boolean(parsedEmissive);
-  const nextColor = parsedColor?.color ?? (hasTextureOverride ? new THREE.Color('#ffffff') : null);
+  const hasExplicitEmissive = Boolean(parsedEmissive || usdEmissive);
+  const nextColor =
+    parsedColor?.color ??
+    (texturePath ? new THREE.Color('#ffffff') : usdColor) ??
+    (hasTextureOverride ? new THREE.Color('#ffffff') : null);
   const nextOpacity = opacityOverride ?? parsedColor?.opacity;
-  const nextEmissive = parsedEmissive?.color;
+  const nextEmissive = parsedEmissive?.color ?? usdEmissive ?? undefined;
+  const usePhysicalMaterial = Boolean(
+    usdMaterial?.isOmniGlass ||
+      normalizeUnitIntervalValue(usdMaterial?.transmission ?? undefined) ||
+      normalizeUnitIntervalValue(usdMaterial?.clearcoat ?? undefined) ||
+      normalizeNonNegativeValue(usdMaterial?.thickness ?? undefined),
+  );
   const replacementMaterials: THREE.MeshStandardMaterial[] = [];
 
   if (
@@ -333,6 +431,7 @@ export function applyVisualMaterialOverrideToObject(
           const texture = baseCachedTexture.clone();
           texture.source = baseCachedTexture.source;
           texture.colorSpace = THREE.SRGBColorSpace;
+          texture.flipY = baseCachedTexture.flipY;
           if (textureRepeat) {
             texture.wrapS = THREE.RepeatWrapping;
             texture.wrapT = THREE.RepeatWrapping;
@@ -349,10 +448,10 @@ export function applyVisualMaterialOverrideToObject(
       : baseCachedTexture
     : null;
   const cacheKeyBase =
-    cache && (hasExplicitOverrideColor || hasTextureOverride)
+    cache && (hasExplicitOverrideColor || hasTextureOverride || usdMaterial)
       ? `${nextColor ? nextColor.getHexString() : ''}|tx=${texturePath || ''}|mj=${
           mjcfBuiltinTexture ? JSON.stringify(mjcfBuiltinTexture) : ''
-        }|rp=${textureRepeat?.join(',') || ''}|op=${
+        }|usd=${usdMaterial ? JSON.stringify(usdMaterial) : ''}|rp=${textureRepeat?.join(',') || ''}|op=${
           nextOpacity ?? 'src'
         }|rg=${roughnessOverride ?? 'src'}|mt=${metalnessOverride ?? 'src'}|em=${
           nextEmissive ? nextEmissive.getHexString() : ''
@@ -382,7 +481,7 @@ export function applyVisualMaterialOverrideToObject(
         }
       }
 
-      const nextMaterial = createMatteMaterial({
+      let nextMaterial: THREE.MeshStandardMaterial = createMatteMaterial({
         color: nextColor ?? ((material as any).color?.clone?.() || '#ffffff'),
         // A canonical texture override without authored opacity is opaque by
         // default. Do not inherit a derived loader material's placeholder
@@ -399,6 +498,93 @@ export function applyVisualMaterialOverrideToObject(
         name: material.name,
         preserveExactColor: hasExplicitColor || hasTextureOverride || hasExplicitEmissive,
       });
+
+      if (usePhysicalMaterial) {
+        const physicalMaterial = new THREE.MeshPhysicalMaterial({
+          color: nextMaterial.color.clone(),
+          roughness: nextMaterial.roughness,
+          metalness: nextMaterial.metalness,
+          envMapIntensity: nextMaterial.envMapIntensity,
+          emissive: nextMaterial.emissive.clone(),
+          emissiveIntensity: nextMaterial.emissiveIntensity,
+          // OmniGlass is a thin-surface material. USD renderers shade it from
+          // both sides, and several assets author the pane winding opposite to
+          // the editor camera. Keeping the generated OBJ's FrontSide setting
+          // makes the material appear to be missing from those viewpoints.
+          side: usdMaterial?.isOmniGlass ? THREE.DoubleSide : nextMaterial.side,
+          transparent: nextMaterial.transparent,
+          opacity: nextMaterial.opacity,
+          depthWrite: nextMaterial.depthWrite,
+          map: nextMaterial.map,
+          alphaTest: nextMaterial.alphaTest,
+          clearcoat: normalizeUnitIntervalValue(usdMaterial?.clearcoat ?? undefined) ?? 0,
+          clearcoatRoughness:
+            normalizeUnitIntervalValue(usdMaterial?.clearcoatRoughness ?? undefined) ?? 0,
+          transmission: normalizeUnitIntervalValue(usdMaterial?.transmission ?? undefined) ?? 0,
+          thickness: normalizeNonNegativeValue(usdMaterial?.thickness ?? undefined) ?? 0,
+          ior: Math.max(1, normalizePositiveValue(usdMaterial?.ior) ?? 1.5),
+          specularIntensity:
+            normalizeUnitIntervalValue(usdMaterial?.specularIntensity ?? undefined) ?? 1,
+          name: nextMaterial.name,
+        });
+        physicalMaterial.toneMapped = nextMaterial.toneMapped;
+        physicalMaterial.userData = { ...nextMaterial.userData };
+        if (usdMaterial?.attenuationColor) {
+          const attenuationColor = usdColorToThreeColor(usdMaterial.attenuationColor);
+          if (attenuationColor) {
+            physicalMaterial.attenuationColor.copy(attenuationColor);
+          }
+        }
+        const attenuationDistance = normalizePositiveValue(usdMaterial?.attenuationDistance);
+        if (attenuationDistance !== undefined) {
+          physicalMaterial.attenuationDistance = attenuationDistance;
+        }
+        nextMaterial.dispose();
+        nextMaterial = physicalMaterial;
+      }
+
+      const cachedUsdTexture = (path: string | null | undefined): THREE.Texture | null => {
+        const normalizedPath = normalizeMaterialValue(path);
+        return normalizedPath ? (textureCache?.get(normalizedPath) ?? null) : null;
+      };
+      if (usdMaterial) {
+        nextMaterial.emissiveMap = cachedUsdTexture(usdMaterial.emissiveMapPath);
+        nextMaterial.roughnessMap = cachedUsdTexture(usdMaterial.roughnessMapPath);
+        nextMaterial.metalnessMap = cachedUsdTexture(usdMaterial.metalnessMapPath);
+        nextMaterial.normalMap = cachedUsdTexture(usdMaterial.normalMapPath);
+        nextMaterial.aoMap = cachedUsdTexture(usdMaterial.aoMapPath);
+        nextMaterial.alphaMap = cachedUsdTexture(usdMaterial.alphaMapPath);
+        const normalScale = usdMaterial.normalScale;
+        if (normalScale && normalScale.length >= 2) {
+          const x = Number(normalScale[0]);
+          const y = Number(normalScale[1]);
+          if (Number.isFinite(x) && Number.isFinite(y)) {
+            nextMaterial.normalScale.set(x, y);
+          }
+        }
+        nextMaterial.aoMapIntensity =
+          normalizeNonNegativeValue(usdMaterial.aoMapIntensity ?? undefined) ??
+          nextMaterial.aoMapIntensity;
+
+        if (nextMaterial instanceof THREE.MeshPhysicalMaterial) {
+          nextMaterial.clearcoatMap = cachedUsdTexture(usdMaterial.clearcoatMapPath);
+          nextMaterial.clearcoatRoughnessMap = cachedUsdTexture(
+            usdMaterial.clearcoatRoughnessMapPath,
+          );
+          nextMaterial.clearcoatNormalMap = cachedUsdTexture(
+            usdMaterial.clearcoatNormalMapPath,
+          );
+          nextMaterial.specularColorMap = cachedUsdTexture(usdMaterial.specularColorMapPath);
+          nextMaterial.specularIntensityMap = cachedUsdTexture(
+            usdMaterial.specularIntensityMapPath,
+          );
+          nextMaterial.transmissionMap = cachedUsdTexture(usdMaterial.transmissionMapPath);
+          nextMaterial.thicknessMap = cachedUsdTexture(usdMaterial.thicknessMapPath);
+        }
+
+        nextMaterial.userData.usdMaterialApplied = true;
+        nextMaterial.userData.usdMaterialId = usdMaterial.materialId ?? null;
+      }
 
       if (hasTextureOverride && !hasExplicitColor) {
         nextMaterial.color.set('#ffffff');
@@ -437,7 +623,7 @@ export function applyVisualMaterialOverrideToObject(
       }
       if (hasExplicitEmissive) {
         nextMaterial.userData.urdfEmissiveApplied = true;
-        nextMaterial.userData.urdfEmissive = parsedEmissive!.color.clone();
+        nextMaterial.userData.urdfEmissive = nextEmissive!.clone();
       }
       if (emissiveIntensityOverride !== undefined) {
         nextMaterial.userData.urdfEmissiveIntensityApplied = true;
@@ -450,6 +636,18 @@ export function applyVisualMaterialOverrideToObject(
 
       return nextMaterial;
     });
+
+    if (nextMaterials.some((material) => Boolean(material.aoMap))) {
+      const uv = mesh.geometry.getAttribute('uv');
+      if (uv) {
+        if (!mesh.geometry.getAttribute('uv1')) {
+          mesh.geometry.setAttribute('uv1', uv);
+        }
+        if (!mesh.geometry.getAttribute('uv2')) {
+          mesh.geometry.setAttribute('uv2', uv);
+        }
+      }
+    }
 
     mesh.material = Array.isArray(mesh.material) ? nextMaterials : nextMaterials[0];
     currentMaterials.forEach((material) => disposeTransientMaterial(material));

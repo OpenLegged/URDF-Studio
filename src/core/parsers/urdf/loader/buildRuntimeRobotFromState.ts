@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { isImageAssetPath } from '@/core/utils/assetFileTypes';
 import {
   applyVisualMaterialOverrideToObject,
+  getVisualMaterialTextureRequests,
   hasExplicitGeometryMaterialOverride,
   resolvePrimaryAuthoredVisualMaterialOverride,
   resolveVisualMaterialOverrideFromGeometry,
@@ -396,8 +397,11 @@ export async function buildRuntimeRobotFromState({
   // hand instead of being patched asynchronously by callbacks that each do a
   // tree traversal and set material.needsUpdate = true (GPU jank).
   if (parseVisual) {
-    const texturePaths = new Set<string>();
-    for (const [linkId, linkData] of Object.entries(links)) {
+    const textureRequests = new Map<
+      string,
+      { path: string; isColor: boolean; flipY: boolean }
+    >();
+    for (const linkData of Object.values(links)) {
       const visualEntries = getVisualGeometryEntries(linkData);
       for (const entry of visualEntries) {
         const geometry = entry.geometry;
@@ -412,27 +416,39 @@ export async function buildRuntimeRobotFromState({
           materials,
         });
         const override = resolved.override ?? resolveVisualMaterialOverrideFromGeometry(geometry);
-        const texturePath = override?.texture;
-        if (texturePath) {
-          texturePaths.add(texturePath);
-        }
+        getVisualMaterialTextureRequests(override).forEach((request) => {
+          const existing = textureRequests.get(request.path);
+          textureRequests.set(request.path, {
+            path: request.path,
+            isColor: Boolean(existing?.isColor || request.isColor),
+            flipY: existing ? existing.flipY && request.flipY : request.flipY,
+          });
+        });
       }
     }
 
-    if (texturePaths.size > 0) {
+    if (textureRequests.size > 0) {
       const textureLoader = new THREE.TextureLoader(manager);
-      const paths = Array.from(texturePaths);
+      const requests = Array.from(textureRequests.values());
       // Load in small batches to avoid blocking the main thread.
       const BATCH_SIZE = 4;
-      for (let i = 0; i < paths.length; i += BATCH_SIZE) {
-        const batch = paths.slice(i, i + BATCH_SIZE);
+      for (let i = 0; i < requests.length; i += BATCH_SIZE) {
+        const batch = requests.slice(i, i + BATCH_SIZE);
         const results = await Promise.allSettled(
-          batch.map((path) => textureLoader.loadAsync(path)),
+          batch.map((request) => textureLoader.loadAsync(request.path)),
         );
         results.forEach((result, index) => {
           if (result.status === 'fulfilled') {
-            result.value.colorSpace = THREE.SRGBColorSpace;
-            textureCache.set(batch[index], result.value);
+            const request = batch[index];
+            if (!request) {
+              return;
+            }
+            result.value.colorSpace = request.isColor
+              ? THREE.SRGBColorSpace
+              : THREE.NoColorSpace;
+            result.value.flipY = request.flipY;
+            result.value.needsUpdate = true;
+            textureCache.set(request.path, result.value);
           }
         });
         await yieldIfNeeded();

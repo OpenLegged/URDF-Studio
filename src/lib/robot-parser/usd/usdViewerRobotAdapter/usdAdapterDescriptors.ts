@@ -115,6 +115,20 @@ export interface UsdDescriptorRoles {
   collision: boolean;
 }
 
+const USD_COLLISION_SCOPE_NAMES = new Set([
+  'collision',
+  'collisions',
+  'collider',
+  'colliders',
+]);
+
+function descriptorUsesAuthoredCollisionScope(descriptor: MeshDescriptor): boolean {
+  return normalizeUsdPath(descriptor.resolvedPrimPath || '')
+    .split('/')
+    .filter(Boolean)
+    .some((segment) => USD_COLLISION_SCOPE_NAMES.has(segment.toLowerCase()));
+}
+
 /**
  * Resolve render roles without assuming visual and collision are mutually exclusive.
  * OpenUSD commonly applies PhysicsCollisionAPI directly to a visible Mesh instead of
@@ -148,9 +162,16 @@ export function createUsdDescriptorRoleResolver(
   return (descriptor) => {
     const sectionName = normalizeDescriptorSectionName(descriptor.sectionName);
     const collisionSection = sectionName === 'collisions';
+    // Some native USD render snapshots place every renderable primitive in the
+    // synthetic `visuals` descriptor section, including authored primitives
+    // below a `Collisions` scope. Treat those primitives as collision-only.
+    // A visible mesh with PhysicsCollisionAPI applied directly remains both a
+    // visual and a collision because it does not live below such a scope.
+    const authoredCollisionScope = descriptorUsesAuthoredCollisionScope(descriptor);
     return {
-      visual: !collisionSection,
-      collision: collisionSection || sourceDeclaresCollision(descriptor),
+      visual: !collisionSection && !authoredCollisionScope,
+      collision:
+        collisionSection || authoredCollisionScope || sourceDeclaresCollision(descriptor),
     };
   };
 }
