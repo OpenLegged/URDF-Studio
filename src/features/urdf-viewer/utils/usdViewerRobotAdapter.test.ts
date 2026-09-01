@@ -435,6 +435,54 @@ test('maps authored USD physics schema joint type names back onto URDF joint typ
   assert.equal(joint.type, JointType.FIXED);
 });
 
+test('keeps USD prismatic joint limits in normalized linear units', () => {
+  const result = adaptUsdViewerSnapshotToRobotData(
+    {
+      stageSourcePath: '/robots/stove.usd',
+      stage: { defaultPrimPath: '/Stove' },
+      robotTree: {
+        linkParentPairs: [
+          ['/Stove/body', null],
+          ['/Stove/rack', '/Stove/body'],
+        ],
+        rootLinkPaths: ['/Stove/body'],
+      },
+      robotMetadataSnapshot: {
+        stageSourcePath: '/robots/stove.usd',
+        linkParentPairs: [
+          ['/Stove/body', null],
+          ['/Stove/rack', '/Stove/body'],
+        ],
+        jointCatalogEntries: [
+          {
+            linkPath: '/Stove/rack',
+            parentLinkPath: '/Stove/body',
+            jointName: 'rack_joint',
+            jointTypeName: 'PhysicsPrismaticJoint',
+            axisToken: 'X',
+            axisLocal: [0, -1, 0],
+            lowerLimitDeg: 0,
+            upperLimitDeg: 0.35,
+            angleDeg: 0.125,
+            localPos0: [0, 0, 0],
+            localPos1: [0, 0, 0],
+          },
+        ],
+        meshCountsByLinkPath: {},
+      },
+    },
+    { fileName: 'stove.usd' },
+  );
+
+  assert.ok(result);
+  const joint = result.robotData.joints.rack_joint;
+  assert.ok(joint);
+  assert.equal(joint.type, JointType.PRISMATIC);
+  assert.equal(joint.limit?.lower, 0);
+  assert.equal(joint.limit?.upper, 0.35);
+  assert.equal(joint.angle, 0.125);
+});
+
 test('maps unsupported generic UsdPhysics joint type names to floating joints', () => {
   for (const jointTypeName of [
     'PhysicsJoint',

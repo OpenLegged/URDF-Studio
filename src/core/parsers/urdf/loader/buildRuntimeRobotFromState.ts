@@ -19,7 +19,10 @@ import { createMatteMaterial } from '@/core/utils/materialFactory';
 import { applyVisualMeshMaterialGroupsToObject } from '@/core/utils/meshMaterialGroups';
 import { createMainThreadYieldController } from '@/core/utils/yieldToMainThread';
 import { createInlineMJCFMeshObject } from '@/core/parsers/mjcf/mjcfGeometry';
-import { getJointMotionAngleFromActualAngle } from '@/core/robot/kinematics';
+import {
+  getJointMotionAngleFromActualAngle,
+  getUsdJointMotionPivot,
+} from '@/core/robot/kinematics';
 import { normalizeJointLimitOrder } from '@/core/robot/jointLimits';
 import {
   GeometryType,
@@ -114,6 +117,7 @@ export async function buildRuntimeRobotFromState({
   const robot = new URDFRobot();
   const linkMap: Record<string, URDFLink> = {};
   const jointMap: Record<string, URDFJoint> = {};
+  const usdJointChildFrameMap: Record<string, THREE.Group> = {};
   const colliderMap: Record<string, URDFCollider> = {};
   const visualMap: Record<string, URDFVisual> = {};
   const authoredColliderFrameMap: Record<string, URDFCollider> = {};
@@ -575,6 +579,21 @@ export async function buildRuntimeRobotFromState({
     }
 
     applyOrigin(joint, jointData.origin);
+    const usdMotionPivot = getUsdJointMotionPivot(jointData);
+    if (usdMotionPivot) {
+      // `joint.origin` is the zero-pose parent-to-child body transform. Put the
+      // runtime joint at the authored child-body pivot, then undo that offset
+      // before attaching the child link. This yields:
+      //   origin * T(pivot) * motion * T(-pivot)
+      // which is the USD Physics two-frame motion used by the stage viewer.
+      joint.position.add(usdMotionPivot.clone().applyQuaternion(joint.quaternion));
+
+      const childFrame = new THREE.Group();
+      childFrame.name = '__usd_joint_child_frame__';
+      childFrame.userData.internalUsdJointChildFrame = true;
+      childFrame.position.copy(usdMotionPivot).multiplyScalar(-1);
+      usdJointChildFrameMap[jointKey] = childFrame;
+    }
     attachBallJointQuaternionState(joint, jointData);
     if (
       jointData.type !== JointType.BALL &&
@@ -600,7 +619,13 @@ export async function buildRuntimeRobotFromState({
     }
 
     parentLink.add(joint);
-    joint.add(childLink);
+    const usdChildFrame = usdJointChildFrameMap[jointKey];
+    if (usdChildFrame) {
+      joint.add(usdChildFrame);
+      usdChildFrame.add(childLink);
+    } else {
+      joint.add(childLink);
+    }
     (joint as URDFJoint & { child?: URDFLink; parentLink?: URDFLink }).child = childLink;
     (joint as URDFJoint & { child?: URDFLink; parentLink?: URDFLink }).parentLink = parentLink;
     await yieldIfNeeded();

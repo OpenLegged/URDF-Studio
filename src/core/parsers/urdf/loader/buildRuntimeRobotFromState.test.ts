@@ -669,6 +669,61 @@ test('buildRuntimeRobotFromState applies RobotState ball joint quaternion as mot
   );
 });
 
+test('buildRuntimeRobotFromState preserves the USD child-body joint pivot during motion', async () => {
+  const pivot = new THREE.Vector3(-0.01463734, -0.28014922, -0.38335115);
+  const angle = 0.61;
+  const robot = await buildRuntimeRobotFromState({
+    robotName: 'usd_pivot_robot',
+    links: {
+      stove: { ...DEFAULT_LINK, id: 'stove', name: 'stove' },
+      door: { ...DEFAULT_LINK, id: 'door', name: 'door' },
+    },
+    joints: {
+      door_joint: {
+        ...DEFAULT_JOINT,
+        id: 'door_joint',
+        name: 'door_joint',
+        type: JointType.REVOLUTE,
+        parentLinkId: 'stove',
+        childLinkId: 'door',
+        origin: {
+          xyz: { x: 0, y: 0, z: 0 },
+          rpy: { r: 0, p: 0, y: 0 },
+        },
+        axis: { x: 1, y: 0, z: 0 },
+        angle,
+        usdPhysics: {
+          jointTypeName: 'PhysicsRevoluteJoint',
+          axisToken: 'X',
+          localPos0: { x: pivot.x, y: pivot.y, z: pivot.z },
+          localPos1: { x: pivot.x, y: pivot.y, z: pivot.z },
+        },
+      },
+    },
+    rootLinkId: 'stove',
+    manager: new THREE.LoadingManager(),
+    loadMeshCb: createNoopMeshLoadCb(),
+  });
+
+  robot.updateMatrixWorld(true);
+  const expected = new THREE.Matrix4()
+    .makeTranslation(pivot.x, pivot.y, pivot.z)
+    .multiply(new THREE.Matrix4().makeRotationX(angle))
+    .multiply(new THREE.Matrix4().makeTranslation(-pivot.x, -pivot.y, -pivot.z));
+  const door = robot.links.door;
+  assert.ok(door);
+  assert.deepEqual(
+    door.matrixWorld.elements.map((value) => Number(value.toFixed(10))),
+    expected.elements.map((value) => Number(value.toFixed(10))),
+  );
+  assertTupleClose(
+    decomposeWorldPose(robot.joints.door_joint).position,
+    [pivot.x, pivot.y, pivot.z],
+    1e-9,
+    'runtime joint pivot',
+  );
+});
+
 test('buildRuntimeRobotFromState matches Cassie solved home keyframe pose for referenced closed-loop links', async () => {
   const xml = fs.readFileSync('test/mujoco_menagerie-main/agility_cassie/cassie.xml', 'utf8');
   const robotState = parseMJCF(xml);

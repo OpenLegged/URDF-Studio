@@ -454,7 +454,9 @@ export function getDynamicsOriginRotation(dynamicsEntry?: LinkDynamicsEntry | nu
 }
 
 export function degreesToRadians(value: number | null | undefined): number | undefined {
-  return Number.isFinite(Number(value)) ? (Number(value) * Math.PI) / 180 : undefined;
+  return value != null && Number.isFinite(Number(value))
+    ? (Number(value) * Math.PI) / 180
+    : undefined;
 }
 
 export function jointTypeFromViewerValue(value: string | null | undefined): JointType {

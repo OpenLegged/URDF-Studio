@@ -33,12 +33,22 @@ function scaleArrayLike(
 }
 
 function scaleJointEntry(entry: UsdJointCatalogEntry, scale: number): UsdJointCatalogEntry {
+  const jointType = String(entry.jointTypeName || entry.jointType || '').toLowerCase();
+  const isPrismatic = jointType.includes('prismatic');
+  const scaleLinearValue = (value: number | null | undefined) =>
+    isPrismatic && value != null && Number.isFinite(Number(value))
+      ? Number(value) * scale
+      : value;
+
   return {
     ...entry,
     localPos0: scaleArrayLike(entry.localPos0, scale),
     localPos1: scaleArrayLike(entry.localPos1, scale),
     localPivotInLink: scaleArrayLike(entry.localPivotInLink, scale),
     originXyz: scaleArrayLike(entry.originXyz, scale),
+    lowerLimitDeg: scaleLinearValue(entry.lowerLimitDeg),
+    upperLimitDeg: scaleLinearValue(entry.upperLimitDeg),
+    angleDeg: scaleLinearValue(entry.angleDeg),
   };
 }
 

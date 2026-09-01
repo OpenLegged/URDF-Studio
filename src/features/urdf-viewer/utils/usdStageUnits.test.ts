@@ -11,7 +11,15 @@ test('normalizes USD geometry, transforms, primitives, joints, and dynamics to m
   const snapshot: UsdSceneSnapshot = {
     stage: { defaultPrimPath: '/World', metersPerUnit: 0.001 },
     robotTree: {
-      jointCatalogEntries: [{ localPos0: [1000, 0, 0], originXyz: [0, 2000, 0] }],
+      jointCatalogEntries: [
+        { localPos0: [1000, 0, 0], originXyz: [0, 2000, 0] },
+        {
+          jointTypeName: 'PhysicsPrismaticJoint',
+          lowerLimitDeg: 0,
+          upperLimitDeg: 350,
+          angleDeg: 125,
+        },
+      ],
     },
     physics: {
       linkDynamicsEntries: [{ centerOfMassLocal: [0, 0, 500], diagonalInertia: [1e6, 2e6, 3e6] }],
@@ -45,6 +53,10 @@ test('normalizes USD geometry, transforms, primitives, joints, and dynamics to m
   assert.deepEqual(Array.from(normalized.render?.meshDescriptors?.[0]?.extentSize || []), [1, 2, 3]);
   assert.equal(normalized.render?.meshDescriptors?.[0]?.radius, 0.5);
   assert.deepEqual(normalized.robotTree?.jointCatalogEntries?.[0]?.localPos0, [1, 0, 0]);
+  assert.ok(
+    Math.abs(Number(normalized.robotTree?.jointCatalogEntries?.[1]?.upperLimitDeg) - 0.35) < 1e-12,
+  );
+  assert.equal(normalized.robotTree?.jointCatalogEntries?.[1]?.angleDeg, 0.125);
   assert.deepEqual(normalized.physics?.linkDynamicsEntries?.[0]?.centerOfMassLocal, [0, 0, 0.5]);
   assert.deepEqual(normalized.physics?.linkDynamicsEntries?.[0]?.diagonalInertia, [1, 2, 3]);
   assert.deepEqual(
