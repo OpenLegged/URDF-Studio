@@ -75,6 +75,26 @@ test('collectPickTargets keeps meshes under synthetic URDF roots whose names sta
   assert.deepEqual(targets, [torsoMesh]);
 });
 
+test('collectPickTargets keeps movable link meshes under an internal USD joint child frame', () => {
+  const jointFrame = new THREE.Group();
+  jointFrame.name = '__usd_joint_child_frame__';
+  jointFrame.userData.internalUsdJointChildFrame = true;
+
+  const doorLink = new THREE.Group() as THREE.Group & { isURDFLink?: boolean };
+  doorLink.name = 'door';
+  doorLink.isURDFLink = true;
+  jointFrame.add(doorLink);
+
+  const doorMesh = createBoxMesh();
+  doorMesh.userData.parentLinkName = 'door';
+  doorMesh.userData.isVisualMesh = true;
+  doorLink.add(doorMesh);
+
+  const linkMeshMap = new Map<string, THREE.Mesh[]>([['door:visual', [doorMesh]]]);
+
+  assert.deepEqual(collectPickTargets(linkMeshMap, 'visual'), [doorMesh]);
+});
+
 test('collectPickTargets includes mjcf tendon meshes that live outside the link mesh map', () => {
   const robot = new THREE.Group();
   const tendonMesh = createBoxMesh(new THREE.MeshStandardMaterial({ color: 0xff5533 }));
