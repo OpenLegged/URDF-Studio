@@ -27,7 +27,7 @@ import {
   isAiBackendEnabled,
   requestAiBackendContent,
 } from './aiBackendTransport'
-import { resolveAiRuntimeEnv } from './aiRuntimeEnv'
+import { buildAiThinkingRequestOptions, resolveAiRuntimeEnv } from './aiRuntimeEnv'
 
 export type RobotInspectionStage =
   | 'preparing-context'
@@ -110,6 +110,7 @@ interface GenerationContentRequest {
   robot: unknown
   motorLibrary: unknown
   lang: Language
+  signal?: AbortSignal
 }
 
 /**
@@ -123,24 +124,35 @@ const requestGenerationContent = async ({
   robot,
   motorLibrary,
   lang,
+  signal,
 }: GenerationContentRequest): Promise<string | null | undefined> => {
   if (useBackend) {
-    return requestAiBackendContent('/generate', { prompt, robot, motorLibrary, lang })
+    return requestAiBackendContent(
+      '/generate',
+      { prompt, robot, motorLibrary, lang },
+      { signal },
+    )
   }
 
   const openai = createOpenAIClient()
   const systemPrompt = getGenerationSystemPrompt({ robot, motorLibrary })
-  const response = await openai.chat.completions.create({
+  const thinking = buildAiThinkingRequestOptions(resolveAiRuntimeEnv())
+  const request = {
     model: getModelName(),
     messages: [
-      { role: 'system', content: systemPrompt },
-      { role: 'user', content: prompt }
+      { role: 'system' as const, content: systemPrompt },
+      { role: 'user' as const, content: prompt }
     ],
     response_format: {
-      type: 'json_object'
+      type: 'json_object' as const
     },
-    temperature: 0.7
-  })
+    ...(thinking.thinking?.type === 'enabled' ? {} : { temperature: 0.7 }),
+    ...thinking,
+  } as OpenAI.Chat.Completions.ChatCompletionCreateParamsNonStreaming
+  const response = await openai.chat.completions.create(
+    request,
+    { signal },
+  )
   return response.choices[0]?.message?.content
 }
 
@@ -172,18 +184,21 @@ const requestInspectionContent = async ({
 
   const openai = createOpenAIClient()
   const systemPrompt = getInspectionSystemPrompt(lang, { criteriaDescription, inspectionNotes })
-  const response = await openai.chat.completions.create(
-    {
-      model: getModelName(),
-      messages: [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: `Inspect this robot structure:\n${JSON.stringify(robot)}` }
-      ],
-      response_format: {
-        type: 'json_object'
-      },
-      temperature: 0.7
+  const thinking = buildAiThinkingRequestOptions(resolveAiRuntimeEnv())
+  const request = {
+    model: getModelName(),
+    messages: [
+      { role: 'system' as const, content: systemPrompt },
+      { role: 'user' as const, content: `Inspect this robot structure:\n${JSON.stringify(robot)}` }
+    ],
+    response_format: {
+      type: 'json_object' as const
     },
+    ...(thinking.thinking?.type === 'enabled' ? {} : { temperature: 0.7 }),
+    ...thinking,
+  } as OpenAI.Chat.Completions.ChatCompletionCreateParamsNonStreaming
+  const response = await openai.chat.completions.create(
+    request,
     {
       signal,
     },
@@ -310,11 +325,27 @@ export const buildInspectionCriteriaDescription = (
 /**
  * Generate or modify robot from natural language prompt
  */
-export const generateRobotFromPrompt = async (
-  prompt: string,
-  currentRobot: RobotState,
-  motorLibrary: Record<string, MotorSpec[]>,
-  lang: Language = 'en'
+interface GenerateRobotFromPromptRequest {
+  prompt: string
+  currentRobot: RobotState
+  motorLibrary: Record<string, MotorSpec[]>
+  lang: Language
+  signal?: AbortSignal
+}
+
+const rethrowIfGenerationAborted = (signal: AbortSignal | undefined, error: unknown): void => {
+  if (signal?.aborted) {
+    throw error
+  }
+}
+
+const generateRobotFromPromptRequest = async ({
+  prompt,
+  currentRobot,
+  motorLibrary,
+  lang,
+  signal,
+}: GenerateRobotFromPromptRequest
 ): Promise<AIResponse | null> => {
   const text = getAiServiceTexts(lang)
   const easterEggResponse = getEasterEggResponse(prompt)
@@ -375,7 +406,8 @@ export const generateRobotFromPrompt = async (
       prompt,
       robot: contextRobot,
       motorLibrary: contextLibrary,
-      lang
+      lang,
+      signal,
     })
 
     if (!content) {
@@ -440,9 +472,26 @@ export const generateRobotFromPrompt = async (
       robotData: finalRobotState
     }
   } catch (e: unknown) {
+    rethrowIfGenerationAborted(signal, e)
     return mapGenerationFailure(e, text)
   }
 }
+
+export const generateRobotFromPrompt = (
+  prompt: string,
+  currentRobot: RobotState,
+  motorLibrary: Record<string, MotorSpec[]>,
+  lang: Language = 'en',
+): Promise<AIResponse | null> => generateRobotFromPromptRequest({
+  prompt,
+  currentRobot,
+  motorLibrary,
+  lang,
+})
+
+export const generateRobotFromPromptWithOptions = (
+  request: GenerateRobotFromPromptRequest,
+): Promise<AIResponse | null> => generateRobotFromPromptRequest(request)
 
 const mapGenerationFailure = (
   e: unknown,

@@ -1,5 +1,6 @@
 import type React from 'react';
 
+import type { JointPanelRobot } from '@/shared/components/Panel/JointPanelContent';
 import type { JointPanelActiveJointOptions, JointPanelStore } from '@/shared/utils/jointPanelStore';
 import type { RuntimeRobotObject } from '@/shared/components/3d/runtimeRobotTypes';
 import type { InteractionSelection, RobotState } from '@/types';
@@ -148,6 +149,9 @@ export interface ViewerControllerOptionsPanelSurface {
 export interface ViewerControllerJointsPanelSurface {
   robot: RuntimeRobotObject | null;
   jointPanelRobot: RuntimeRobotObject | null;
+  /** Immutable authored metadata merged with the live pose for panel rendering. */
+  displayRobot: JointPanelRobot | null;
+  scopeKey: string | null;
   jointPanelStore: JointPanelStore;
   angleUnit: 'rad' | 'deg';
   setAngleUnit: React.Dispatch<React.SetStateAction<'rad' | 'deg'>>;

@@ -722,7 +722,9 @@ export async function loadUsdStage(args) {
     applyStageMetersPerUnitToRoot(window.usdRoot);
     const renderInterface = (window.renderInterface = new ThreeRenderDelegateInterface({
         usdRoot: window.usdRoot,
-        paths: [],
+        paths: typeof usdFsHelper.getAllLoadedFiles === "function"
+            ? usdFsHelper.getAllLoadedFiles()
+            : [],
         stageSourcePath: normalizedPath,
         suppressMaterialBindingApiWarnings: true,
         // Parsing fallback xform ops from raw USDA layer text is extremely expensive
@@ -771,6 +773,54 @@ export async function loadUsdStage(args) {
         },
         driver: () => driver,
     }));
+    let driverOpenPath = normalizedPath;
+    const materialBindingOpenPreparation = {
+        attempted: false,
+        repaired: false,
+        candidateCount: 0,
+        repairedCount: 0,
+        preparedPath: null,
+    };
+    let sourceRootLayer = null;
+    try {
+        const sdfLayerApi = usdModule?.SdfLayer;
+        if (sdfLayerApi && typeof sdfLayerApi.FindOrOpen === "function" && typeof TextEncoder !== "undefined") {
+            materialBindingOpenPreparation.attempted = true;
+            sourceRootLayer = sdfLayerApi.FindOrOpen(normalizedPath, {});
+            const sourceRootLayerText = sourceRootLayer?.ExportToString?.() || "";
+            const repairedLayer = renderInterface.repairMaterialBindingApiSchemasInLayerText?.(sourceRootLayerText);
+            if (repairedLayer?.changed === true && repairedLayer.count > 0) {
+                const lastSlashIndex = normalizedPath.lastIndexOf("/");
+                const sourceDirectory = lastSlashIndex >= 0
+                    ? normalizedPath.slice(0, lastSlashIndex + 1)
+                    : "";
+                const sourceFileName = lastSlashIndex >= 0
+                    ? normalizedPath.slice(lastSlashIndex + 1)
+                    : normalizedPath;
+                const sourceStem = sourceFileName.replace(/\.[^.]+$/, "") || "stage";
+                const preparedFileName = `${sourceStem}.__urdf_studio_material_binding_repaired.usda`;
+                const preparedPath = `${sourceDirectory}${preparedFileName}`;
+                writeBinaryToVirtualPath(preparedPath, new TextEncoder().encode(repairedLayer.text));
+                if (usdFsHelper.hasVirtualFilePath(preparedPath)) {
+                    driverOpenPath = preparedPath;
+                    materialBindingOpenPreparation.repaired = true;
+                    materialBindingOpenPreparation.candidateCount = repairedLayer.count;
+                    materialBindingOpenPreparation.repairedCount = repairedLayer.count;
+                    materialBindingOpenPreparation.preparedPath = preparedPath;
+                }
+            }
+        }
+    }
+    catch (error) {
+        console.warn(`[usd-loader] Failed to prepare a material-binding-compatible root layer for ${normalizedPath}.`, error);
+    }
+    finally {
+        try {
+            sourceRootLayer?.delete?.();
+            usdModule?.flushPendingDeletes?.();
+        }
+        catch { }
+    }
     if (profileLoad && renderInterface && typeof renderInterface === "object") {
         const wrappedFunctionNames = new Set();
         const wrapMethod = (owner, methodName) => {
@@ -824,7 +874,7 @@ export async function loadUsdStage(args) {
         await yieldToMainThread();
     }
     try {
-        driver = new USD.HdWebSyncDriver(renderInterface, normalizedPath);
+        driver = new USD.HdWebSyncDriver(renderInterface, driverOpenPath);
         if (driver instanceof Promise) {
             driver = await driver;
         }
@@ -867,6 +917,40 @@ export async function loadUsdStage(args) {
     }
     catch { }
     state.driver = window.driver = driver;
+    try {
+        const stageCandidate = typeof driver.GetStage === "function"
+            ? driver.GetStage()
+            : null;
+        const resolvedStage = stageCandidate && typeof stageCandidate.then === "function"
+            ? await stageCandidate
+            : stageCandidate;
+        if (resolvedStage) {
+            window.usdStage = resolvedStage;
+            renderInterface._resolvedDriverStage = resolvedStage;
+            renderInterface.setDriverStageResolveState?.("resolved", { source: "pre-draw-material-repair" });
+            renderInterface.tryRepairMaterialBindingApiSchemas?.();
+            state.materialBindingRecovery = {
+                attempted: materialBindingOpenPreparation.attempted
+                    || renderInterface._materialBindingSchemaRepairAttempted === true,
+                repaired: materialBindingOpenPreparation.repaired
+                    || renderInterface._materialBindingSchemaRepairSucceeded === true,
+                candidateCount: materialBindingOpenPreparation.candidateCount
+                    + Math.max(0, Number(renderInterface._materialBindingSchemaRepairCandidateCount || 0)),
+                repairedCount: materialBindingOpenPreparation.repairedCount
+                    + Math.max(0, Number(renderInterface._materialBindingSchemaRepairCount || 0)),
+                preparedPath: materialBindingOpenPreparation.preparedPath,
+            };
+        }
+    }
+    catch (error) {
+        console.warn(`[usd-loader] Material binding compatibility repair failed for ${normalizedPath}.`, error);
+        state.materialBindingRecovery = {
+            attempted: true,
+            repaired: false,
+            candidateCount: 0,
+            repairedCount: 0,
+        };
+    }
     if (yieldDuringLoad) {
         await yieldToMainThread();
     }

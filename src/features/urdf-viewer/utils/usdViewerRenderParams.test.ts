@@ -6,8 +6,20 @@ import { WORKSPACE_DEFAULT_CAMERA_POSITION } from '../../../shared/components/3d
 import {
   createEmbeddedUsdViewerLoadParams,
   resolveEmbeddedUsdViewerLoadProfile,
+  shouldForceHydraFullDrawForStandaloneAsset,
   shouldPreferSlicedEmbeddedUsdLoad,
 } from '@/lib/robot-parser/usd/usdViewerRenderParams';
+
+test('standalone model assets use the full Hydra material path', () => {
+  assert.equal(
+    shouldForceHydraFullDrawForStandaloneAsset(
+      'catalog/cabinet/model_EKET_Cabinet_with_door.usd',
+    ),
+    true,
+  );
+  assert.equal(shouldForceHydraFullDrawForStandaloneAsset('robots/unitree/g1.usd'), false);
+  assert.equal(shouldForceHydraFullDrawForStandaloneAsset('scene.usda'), false);
+});
 
 test('createEmbeddedUsdViewerLoadParams keeps USD auto-fit aligned with the workspace camera defaults', () => {
   const params = createEmbeddedUsdViewerLoadParams(4);

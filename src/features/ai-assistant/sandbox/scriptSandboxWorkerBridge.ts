@@ -67,8 +67,12 @@ export function createScriptSandboxWorkerClient({
   let requestIdCounter = 0;
   let disposed = false;
 
-  const dispose = (): void => {
+  const dispose = (pendingError = 'Agent script sandbox is disposed.'): void => {
     disposed = true;
+    for (const requestId of [...pendingRequests.keys()]) {
+      const pending = clearPendingRequest(requestId);
+      pending?.resolve({ ok: false, error: pendingError });
+    }
     if (worker) {
       worker.removeEventListener('message', handleWorkerMessage as EventListener);
       worker.removeEventListener('error', handleWorkerError as EventListener);
@@ -79,7 +83,7 @@ export function createScriptSandboxWorkerClient({
 
   const failAll = (error: unknown): void => {
     console.error('[ScriptSandboxWorker] worker failed', error);
-    dispose();
+    dispose(`Agent script worker failed: ${describeError(error)}`);
   };
 
   function handleWorkerError(event: ErrorEvent | { error?: unknown; message?: string }): void {
@@ -115,6 +119,8 @@ export function createScriptSandboxWorkerClient({
         clearTimeout(pending.timeoutId);
         pending.timeoutId = undefined;
       }
+      pending.abortCleanup?.();
+      pending.abortCleanup = undefined;
     }
     return pending;
   };
@@ -122,6 +128,7 @@ export function createScriptSandboxWorkerClient({
   interface PendingRequest {
     resolve: (outcome: RunAgentScriptOutcome) => void;
     timeoutId?: ReturnType<typeof setTimeout>;
+    abortCleanup?: () => void;
   }
 
   const pendingRequests = new Map<number, PendingRequest>();
@@ -178,9 +185,16 @@ export function createScriptSandboxWorkerClient({
 
       const abortHandler = () => {
         clearPendingRequest(requestId);
+        if (worker === workerToUse) {
+          workerToUse.removeEventListener('message', handleWorkerMessage as EventListener);
+          workerToUse.removeEventListener('error', handleWorkerError as EventListener);
+          workerToUse.terminate();
+          worker = null;
+        }
         resolve({ ok: false, error: 'Agent script aborted.' });
       };
       args.signal?.addEventListener('abort', abortHandler, { once: true });
+      pending.abortCleanup = () => args.signal?.removeEventListener('abort', abortHandler);
 
       try {
         workerToUse.postMessage({
@@ -190,7 +204,6 @@ export function createScriptSandboxWorkerClient({
         });
       } catch (error) {
         clearPendingRequest(requestId);
-        args.signal?.removeEventListener('abort', abortHandler);
         resolve({ ok: false, error: `Failed to dispatch script: ${describeError(error)}` });
       }
     });

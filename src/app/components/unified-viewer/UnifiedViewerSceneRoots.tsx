@@ -96,6 +96,7 @@ interface UnifiedViewerSceneRootsProps {
   onAssemblyComponentAutoGroundResolved?: import('@/features/editor').ViewerProps['onAssemblyComponentAutoGroundResolved'];
   t: typeof import('@/shared/i18n').translations.en;
   ikDragActive: boolean;
+  suppressInitialAutoFrame?: boolean;
 }
 
 export function UnifiedViewerSceneRoots({
@@ -138,6 +139,7 @@ export function UnifiedViewerSceneRoots({
   onAssemblyComponentAutoGroundResolved,
   t,
   ikDragActive,
+  suppressInitialAutoFrame = false,
 }: UnifiedViewerSceneRootsProps) {
   return shouldRenderViewerScene ? (
     <group key="viewer-scene-root" ref={viewerGroupRef} visible={viewerVisible}>
@@ -169,6 +171,7 @@ export function UnifiedViewerSceneRoots({
           onCollisionTransform={onCollisionTransform}
           isMeshPreview={isMeshPreview}
           ikDragActive={ikDragActive}
+          suppressInitialAutoFrame={suppressInitialAutoFrame}
           viewerReloadKey={viewerReloadKey}
           workspace={workspace}
           sceneProjection={sceneProjection}

@@ -74,6 +74,7 @@ test('HydraMaterial.applyNetworkUpdate reuses owned materials and disposes super
     };
 
     const hydraMaterial = new HydraMaterial('/Robot/Looks/TestMaterial', hydraInterface);
+    hydraMaterial._material.vertexColors = true;
 
     await hydraMaterial.applyNetworkUpdate(buildMaterialNetworkUpdate('/textures/albedo-a.png'));
 
@@ -82,6 +83,8 @@ test('HydraMaterial.applyNetworkUpdate reuses owned materials and disposes super
 
     assert.ok(firstAssignedMap, 'expected first network update to assign a cloned texture');
     assert.equal(firstAssignedMap.colorSpace, SRGBColorSpace);
+    assertColorClose(firstMaterial.color, new Color(0xffffff));
+    assert.equal(firstMaterial.vertexColors, false);
 
     activeSourceTexture = secondSourceTexture;
     await hydraMaterial.applyNetworkUpdate(buildMaterialNetworkUpdate('/textures/albedo-b.png'));

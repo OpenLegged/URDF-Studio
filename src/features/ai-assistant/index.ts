@@ -16,6 +16,13 @@ export {
   isAiBackendEnabled,
   setAiBackendAuthTokenProvider,
 } from './services/aiBackendTransport'
+export {
+  clearAgentSessionStore,
+  exportAgentSessionArchive,
+  getAgentSessionStorageStats,
+  importAgentSessionArchive,
+  subscribeAgentSessionStore,
+} from './services/agentSessionStore'
 
 // Utilities
 export {
@@ -41,9 +48,31 @@ export type {
   IssueType,
   InspectionIssue,
   AIConversationMode,
+  AIConversationApplyResult,
   AIConversationMessage,
   AIConversationFocusedIssue,
   AIConversationSelection,
   AIConversationLaunchContext,
   AIConversationTurnResult,
 } from './types'
+export type {
+  StudioAgentPorts,
+  StudioAppSnapshot,
+  StudioCommandContext,
+  StudioCommandResult,
+  StudioElementInteraction,
+  StudioElementKind,
+  StudioElementOperation,
+  StudioElementPage,
+  StudioElementQuery,
+  StudioElementSnapshot,
+  StudioPanelPatch,
+  StudioSelectOptions,
+  StudioViewPatch,
+  StudioWorkflow,
+} from './studioAppControl'
+export type {
+  AgentSessionArchive,
+  AgentSessionStorageStats,
+  ImportAgentSessionArchiveResult,
+} from './persistence'

@@ -284,6 +284,17 @@ test('readRobotPath reads a joint field', () => {
   assert.equal(axis.z, 1);
 });
 
+test('readRobotPath reads safe RobotData root fields', () => {
+  const robot = buildRobot();
+  const name = readRobotPath(robot, { path: 'name' });
+  const rootLinkId = readRobotPath(robot, { path: 'rootLinkId' });
+
+  assert.equal(name.ok, true);
+  assert.equal(JSON.parse(name.message), robot.name);
+  assert.equal(rootLinkId.ok, true);
+  assert.equal(JSON.parse(rootLinkId.message), 'base_link');
+});
+
 test('readRobotPath rejects paths outside links/joints', () => {
   const robot = buildRobot();
   const res = readRobotPath(robot, { path: 'globalThis.process' });
@@ -316,8 +327,18 @@ test('writeRobotPath shallow-merges an object leaf', () => {
   assert.equal(robot.joints.elbow.dynamics.friction, 0, 'unspecified sibling preserved');
 });
 
-test('writeRobotPath rejects paths outside links/joints and short paths', () => {
+test('writeRobotPath updates a safe RobotData root field', () => {
+  const robot = buildRobot();
+  const res = writeRobotPath(robot, { path: 'name', value: 'verified_robot' });
+
+  assert.equal(res.ok, true);
+  assert.equal(robot.name, 'verified_robot');
+});
+
+test('writeRobotPath rejects unsupported, short entity, and prototype paths', () => {
   const robot = buildRobot();
   assert.equal(writeRobotPath(robot, { path: 'process.exit', value: 1 }).ok, false);
   assert.equal(writeRobotPath(robot, { path: 'links.base_link', value: {} }).ok, false);
+  assert.equal(writeRobotPath(robot, { path: 'links.__proto__.polluted', value: true }).ok, false);
+  assert.equal((Object.prototype as { polluted?: boolean }).polluted, undefined);
 });

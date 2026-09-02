@@ -68,7 +68,10 @@ import { resolveScreenSpaceUsdHelperHit } from '../utils/usdScreenSpaceHelperInt
 import { resolveUsdRuntimeLinkPathForMesh } from '../utils/usdRuntimeMeshMapping.ts';
 import { resolveUsdVisualMeshObjectOrder } from '../utils/usdRuntimeMeshObjectOrder.ts';
 import { prepareUsdVisualMesh } from '../utils/usdVisualRendering.ts';
-import { createEmbeddedUsdViewerLoadParams } from '@/lib/robot-parser/usd/usdViewerRenderParams';
+import {
+  createEmbeddedUsdViewerLoadParams,
+  shouldForceHydraFullDrawForStandaloneAsset,
+} from '@/lib/robot-parser/usd/usdViewerRenderParams';
 import { prepareUsdExportCacheFromResolvedSnapshot } from '../utils/usdExportBundle.ts';
 import { serializePreparedUsdExportCacheForWorker } from '../utils/usdPreparedExportCacheWorkerTransfer.ts';
 import {
@@ -156,6 +159,9 @@ type UsdWorkerRenderInterface = {
     driver: unknown,
     options?: Record<string, unknown>,
   ) => unknown;
+  waitForPendingSnapshotTextures?: () => Promise<void>;
+  ensureSnapshotMeshNormals?: () => number;
+  applySnapshotUvsToMeshes?: () => number;
   meshes?: Record<string, { _mesh?: THREE.Mesh } | null | undefined>;
 };
 
@@ -2613,7 +2619,9 @@ async function loadUsdStageIntoWorker(message: UsdOffscreenViewerInitRequest): P
       // joint/dynamics metadata. Keep the one-shot render drain strict, but do
       // not fail the worker after the scene is visually complete.
       allowIncompleteWorkerRobotMetadata: true,
-      forceHydraFullDraw: message.forceHydraFullDraw === true,
+      forceHydraFullDraw:
+        message.forceHydraFullDraw === true ||
+        shouldForceHydraFullDrawForStandaloneAsset(message.sourceFile.name),
     });
 
     const loadState = await trackWorkerLoadDebugStep({
@@ -2809,6 +2817,13 @@ async function loadUsdStageIntoWorker(message: UsdOffscreenViewerInitRequest): P
       return;
     }
 
+    runtimeWindow.renderInterface?.ensureSnapshotMeshNormals?.();
+    await runtimeWindow.renderInterface?.waitForPendingSnapshotTextures?.();
+    if (!isLoadGenerationActive(loadGeneration)) {
+      return;
+    }
+    renderScene();
+
     if (!robotSceneSnapshotOnlyLoad) {
       const nextLinkRotationController = ensureLinkRotationController();
       nextLinkRotationController.setRenderInterface(runtimeWindow.renderInterface);
@@ -2878,6 +2893,13 @@ async function loadUsdStageIntoWorker(message: UsdOffscreenViewerInitRequest): P
       if (!(await waitForWorkerSceneSettle(loadGeneration))) {
         return;
       }
+      runtimeWindow.renderInterface?.ensureSnapshotMeshNormals?.();
+      runtimeWindow.renderInterface?.applySnapshotUvsToMeshes?.();
+      await runtimeWindow.renderInterface?.waitForPendingSnapshotTextures?.();
+      if (!isLoadGenerationActive(loadGeneration)) {
+        return;
+      }
+      renderScene();
       validateWorkerRenderedScene(currentSourceFileName || message.sourceFile.name);
     }
 

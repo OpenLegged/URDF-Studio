@@ -6,7 +6,7 @@ import {
   isAiBackendEnabled,
   streamAiBackendChat,
 } from './aiBackendTransport';
-import { resolveAiRuntimeEnv } from './aiRuntimeEnv';
+import { buildAiThinkingRequestOptions, resolveAiRuntimeEnv } from './aiRuntimeEnv';
 
 export interface ConversationHistoryTurn {
   role: 'user' | 'assistant';
@@ -250,18 +250,21 @@ export const sendConversationTurnStream = async ({
 
   const openai = createOpenAIClient(apiKey);
   const modelName = getModelName();
+  const thinking = buildAiThinkingRequestOptions(resolveAiRuntimeEnv());
   const messages = buildConversationMessages(history, trimmedMessage);
   const requestMessages = [{ role: 'system' as const, content: systemPrompt }, ...messages];
   let reply = '';
 
   try {
+    const request = {
+      model: modelName,
+      messages: requestMessages,
+      stream: true as const,
+      ...(thinking.thinking?.type === 'enabled' ? {} : { temperature: 0.3 }),
+      ...thinking,
+    } as OpenAI.Chat.Completions.ChatCompletionCreateParamsStreaming;
     const stream = await openai.chat.completions.create(
-      {
-        model: modelName,
-        messages: requestMessages,
-        temperature: 0.3,
-        stream: true,
-      },
+      request,
       {
         signal,
       },

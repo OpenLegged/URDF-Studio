@@ -78,6 +78,7 @@ interface ViewerSceneConnectorProps {
   ) => void;
   isMeshPreview?: boolean;
   ikDragActive?: boolean;
+  suppressInitialAutoFrame?: boolean;
   viewerReloadKey?: number;
   /** Omitted only for isolated read-only renderers such as snapshot preview. */
   workspace?: AssemblyState | null;
@@ -135,6 +136,7 @@ export const ViewerSceneConnector = React.memo(function ViewerSceneConnector({
   onCollisionTransform,
   isMeshPreview = false,
   ikDragActive = false,
+  suppressInitialAutoFrame = false,
   viewerReloadKey = 0,
   workspace,
   sceneProjection,
@@ -179,6 +181,7 @@ export const ViewerSceneConnector = React.memo(function ViewerSceneConnector({
       onCollisionTransform,
       isMeshPreview,
       ikDragActive,
+      suppressInitialAutoFrame,
       viewerReloadKey,
     },
     workspace: {

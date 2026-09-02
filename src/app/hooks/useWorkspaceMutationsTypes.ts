@@ -11,6 +11,7 @@ import type {
   EntityRef,
   JointEntityRef,
   LinkEntityRef,
+  RobotData,
   UrdfJoint,
   UrdfLink,
   UrdfOrigin,
@@ -30,6 +31,16 @@ export interface UseWorkspaceMutationsParams {
   setPendingCollisionTransform: (transform: PendingCollisionTransform) => void;
   clearPendingCollisionTransform: () => void;
   handleTransformPendingChange: (pending: boolean) => void;
+  /**
+   * Reconcile one component-owned MJCF/URDF/Xacro/SDF draft from the complete robot
+   * mutation. Returning true also covers safe invalidation on patch failure.
+   */
+  patchEditableSourceRobot?: (
+    args: ComponentSourcePatchTarget & {
+      previousRobot: RobotData;
+      nextRobot: RobotData;
+    },
+  ) => boolean;
   patchEditableSourceAddChild?: (
     args: ComponentSourcePatchTarget & {
       parentLinkName: string;

@@ -2,7 +2,7 @@
  * Main App Component
  * Root component that assembles app workflows and overlay layers.
  */
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import { Providers } from './Providers';
 import { AppLayout } from './AppLayout';
@@ -55,6 +55,8 @@ import { applyAIUrdfModification } from './utils/applyAIUrdfModification';
 import { waitForNextPaint } from './utils/waitForNextPaint';
 import { waitForAnimationFrame } from './utils/waitForAnimationFrame';
 import { logRegressionError } from '@/shared/debug/consoleDiagnostics';
+import { createStudioAgentPorts } from './components/ai/studioAgentPorts';
+import { installStudioAgentConsoleApi } from './components/ai/studioAgentConsoleApi';
 
 function preloadOverlay(label: string, preload: () => Promise<unknown>): void {
   void preload().catch((error: unknown) => {
@@ -123,6 +125,14 @@ export function AppContent({ extensions, onExposeActions }: AppContentProps = {}
     viewConfig,
     setViewConfig,
   } = useAppShellState();
+  const viewConfigRef = useRef(viewConfig);
+  viewConfigRef.current = viewConfig;
+
+  const updateAgentPanelConfig = useCallback((patch: Partial<typeof viewConfig>) => {
+    const next = { ...viewConfigRef.current, ...patch };
+    viewConfigRef.current = next;
+    setViewConfig(next);
+  }, [setViewConfig]);
 
   const handleViewerReload = useCallback(() => {
     setViewerReloadKey((value) => value + 1);
@@ -277,12 +287,23 @@ export function AppContent({ extensions, onExposeActions }: AppContentProps = {}
     preloadOverlay('AI inspection connector', preloadAIInspectionConnector);
   }, []);
 
+  const handleAgentOpenAIInspection = useCallback((): boolean => {
+    if (!ensureAIEntryAvailable()) {
+      return false;
+    }
+    setShouldRenderAIInspectionModal(true);
+    preloadOverlay('AI inspection connector', preloadAIInspectionConnector);
+    // Keep the conversation running; the inspection window opens alongside it.
+    setIsAIInspectionOpen(true);
+    return true;
+  }, [ensureAIEntryAvailable, setIsAIInspectionOpen]);
+
   const handleOpenAIConversation = useCallback(() => {
     if (!ensureAIEntryAvailable()) {
       return;
     }
 
-    if (aiConversationLaunchContext?.mode === 'general') {
+    if (isAIConversationOpen && aiConversationLaunchContext?.mode === 'general') {
       setShouldRenderAIConversationModal(true);
       preloadOverlay('AI conversation connector', preloadAIConversationConnector);
       openAIConversation();
@@ -302,6 +323,7 @@ export function AppContent({ extensions, onExposeActions }: AppContentProps = {}
     aiConversationLaunchContext,
     createConversationLaunchContextFromSnapshot,
     ensureAIEntryAvailable,
+    isAIConversationOpen,
     openAIConversation,
   ]);
 
@@ -367,6 +389,21 @@ export function AppContent({ extensions, onExposeActions }: AppContentProps = {}
     setExportDialogTarget({ type: 'current' });
     setIsExportDialogOpen(true);
   }, [setIsExportDialogOpen]);
+
+  const studioAgentPorts = useMemo(
+    () => createStudioAgentPorts({
+      openInspection: handleAgentOpenAIInspection,
+      openExport: () => {
+        handleOpenExportDialog();
+        return true;
+      },
+      readPanelConfig: () => viewConfigRef.current,
+      updatePanelConfig: updateAgentPanelConfig,
+    }),
+    [handleAgentOpenAIInspection, handleOpenExportDialog, updateAgentPanelConfig],
+  );
+
+  useEffect(() => installStudioAgentConsoleApi(window, studioAgentPorts), [studioAgentPorts]);
 
   const handlePrefetchExportDialog = useCallback(() => {
     preloadOverlay('export dialog connector', preloadExportDialogConnector);
@@ -605,6 +642,7 @@ export function AppContent({ extensions, onExposeActions }: AppContentProps = {}
         setIsExportDialogOpen={setIsExportDialogOpen}
         shouldRenderAIConversationModal={shouldRenderAIConversationModal}
         shouldRenderAIInspectionModal={shouldRenderAIInspectionModal}
+        studioAgentPorts={studioAgentPorts}
         toast={toast}
       />
     </>

@@ -457,6 +457,25 @@ export const SourceCodeEditor: React.FC<SourceCodeEditorProps> = ({
     });
   }, [activeDocument, activeDocumentFileName, activeDocumentFlavor, currentCode]);
 
+  const handleDocumentDownload = useCallback(
+    (documentId: string) => {
+      const document = normalizedDocuments.find((candidate) => candidate.id === documentId);
+      if (!document || document.documentFlavor !== 'urdf') {
+        return;
+      }
+
+      const isActiveTarget = document.id === activeDocument.id;
+      downloadSourceCodeDocument({
+        content: isActiveTarget ? currentCode : document.code,
+        fileName: document.fileName,
+        documentFlavor: document.documentFlavor,
+        // Downloading an inactive tab must not mark unrelated active edits as saved.
+        onDownload: isActiveTarget ? document.onDownload : undefined,
+      });
+    },
+    [activeDocument.id, currentCode, normalizedDocuments],
+  );
+
   const handleDocumentSwitch = useCallback(
     async (nextDocumentId: string) => {
       if (
@@ -724,6 +743,7 @@ export const SourceCodeEditor: React.FC<SourceCodeEditorProps> = ({
         activeDocument={activeDocument}
         activeDocumentPath={activeDocumentPath}
         documents={normalizedDocuments}
+        onDocumentDownload={handleDocumentDownload}
         onDocumentSwitch={handleDocumentSwitch}
         t={t}
       />

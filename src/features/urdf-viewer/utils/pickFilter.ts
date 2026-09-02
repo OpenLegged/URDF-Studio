@@ -123,6 +123,14 @@ export function isInternalHelperObject(object: THREE.Object3D | null): boolean {
       continue;
     }
 
+    if (current.userData?.internalUsdJointChildFrame === true) {
+      // This frame preserves the authored USD joint pivot for rendered link
+      // geometry. It is an internal transform, not a helper overlay, so its
+      // `__`-prefixed name must not make the movable link subtree unpickable.
+      current = current.parent;
+      continue;
+    }
+
     if (isBlockingGizmoNode(current) || current.userData?.isHelper === true) {
       return true;
     }

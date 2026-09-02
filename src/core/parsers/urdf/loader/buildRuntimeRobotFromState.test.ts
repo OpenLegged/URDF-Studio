@@ -470,11 +470,19 @@ test('buildRuntimeRobotFromState exposes referenced joint limits in runtime moti
   const joint = robot.joints.hip_joint as {
     jointValue?: number[];
     limit: { lower: number; upper: number };
+    referencePosition?: number;
     setJointValue: (value: number) => boolean;
   };
 
+  assert.equal(joint.referencePosition, referencePosition);
   assert.ok(Math.abs(joint.limit.lower + 0.6) <= 1e-12);
   assert.ok(Math.abs(joint.limit.upper - 0.8) <= 1e-12);
+  assert.equal(
+    ((joint as unknown as THREE.Object3D).clone() as THREE.Object3D & {
+      referencePosition?: number;
+    }).referencePosition,
+    referencePosition,
+  );
 
   joint.setJointValue(0.9);
   assert.ok(Math.abs((joint.jointValue?.[0] ?? Number.NaN) - 0.8) <= 1e-12);
@@ -666,6 +674,61 @@ test('buildRuntimeRobotFromState applies RobotState ball joint quaternion as mot
     originQuaternion.clone().multiply(nextMotionQuaternion),
     1e-12,
     'updated joint local quaternion',
+  );
+});
+
+test('buildRuntimeRobotFromState preserves the USD child-body joint pivot during motion', async () => {
+  const pivot = new THREE.Vector3(-0.01463734, -0.28014922, -0.38335115);
+  const angle = 0.61;
+  const robot = await buildRuntimeRobotFromState({
+    robotName: 'usd_pivot_robot',
+    links: {
+      stove: { ...DEFAULT_LINK, id: 'stove', name: 'stove' },
+      door: { ...DEFAULT_LINK, id: 'door', name: 'door' },
+    },
+    joints: {
+      door_joint: {
+        ...DEFAULT_JOINT,
+        id: 'door_joint',
+        name: 'door_joint',
+        type: JointType.REVOLUTE,
+        parentLinkId: 'stove',
+        childLinkId: 'door',
+        origin: {
+          xyz: { x: 0, y: 0, z: 0 },
+          rpy: { r: 0, p: 0, y: 0 },
+        },
+        axis: { x: 1, y: 0, z: 0 },
+        angle,
+        usdPhysics: {
+          jointTypeName: 'PhysicsRevoluteJoint',
+          axisToken: 'X',
+          localPos0: { x: pivot.x, y: pivot.y, z: pivot.z },
+          localPos1: { x: pivot.x, y: pivot.y, z: pivot.z },
+        },
+      },
+    },
+    rootLinkId: 'stove',
+    manager: new THREE.LoadingManager(),
+    loadMeshCb: createNoopMeshLoadCb(),
+  });
+
+  robot.updateMatrixWorld(true);
+  const expected = new THREE.Matrix4()
+    .makeTranslation(pivot.x, pivot.y, pivot.z)
+    .multiply(new THREE.Matrix4().makeRotationX(angle))
+    .multiply(new THREE.Matrix4().makeTranslation(-pivot.x, -pivot.y, -pivot.z));
+  const door = robot.links.door;
+  assert.ok(door);
+  assert.deepEqual(
+    door.matrixWorld.elements.map((value) => Number(value.toFixed(10))),
+    expected.elements.map((value) => Number(value.toFixed(10))),
+  );
+  assertTupleClose(
+    decomposeWorldPose(robot.joints.door_joint).position,
+    [pivot.x, pivot.y, pivot.z],
+    1e-9,
+    'runtime joint pivot',
   );
 });
 

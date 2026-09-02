@@ -38,7 +38,7 @@ import { runAgentScript } from '../sandbox/scriptSandboxWorkerBridge';
 const typed = <T>(args: Record<string, unknown>): T => args as unknown as T;
 
 /** Validate the draft can round-trip through URDF (generate → parse). */
-function validateRobot(draft: RobotData): AgentToolResult {
+export function validateRobotDraft(draft: RobotData): AgentToolResult {
   if (!canGenerateUrdf(draft)) {
     return { ok: false, message: 'Cannot export to URDF: unsupported joint type or structure.' };
   }
@@ -207,6 +207,8 @@ export function buildRobotCapabilities(_lang: Language): AgentCapability[] {
       },
       execute: (draft, args) => getLink(draft, typed<Parameters<typeof getLink>[1]>(args)),
       mutates: false,
+      effect: 'read',
+      verificationScopes: ['draft'],
     },
     {
       name: 'get_joint',
@@ -218,30 +220,34 @@ export function buildRobotCapabilities(_lang: Language): AgentCapability[] {
       },
       execute: (draft, args) => getJoint(draft, typed<Parameters<typeof getJoint>[1]>(args)),
       mutates: false,
+      effect: 'read',
+      verificationScopes: ['draft'],
     },
     {
       name: 'read_path',
       description:
-        "Read any field of the robot under 'links.<linkId>...' or 'joints.<jointId>...' by dot-path as JSON. Catch-all for fields without a dedicated tool (e.g. links.base_link.visual.color, joints.shoulder_h.dynamics). Does not modify the robot.",
+        'Read robot data by safe dot-path, including root fields such as name/rootLinkId and fields under links or joints. Reading a whole link/joint is supported. Does not modify the draft.',
       parameters: {
         type: 'object',
         properties: {
-          path: { type: 'string', description: "e.g. 'links.base_link.visual.color' or 'joints.shoulder_h.dynamics'" },
+          path: { type: 'string', description: "e.g. 'name', 'links.base_link.visual.color', or 'joints.shoulder_h.dynamics'" },
         },
         required: ['path'],
       },
       execute: (draft, args) =>
         readRobotPath(draft, typed<Parameters<typeof readRobotPath>[1]>(args)),
       mutates: false,
+      effect: 'read',
+      verificationScopes: ['draft'],
     },
     {
       name: 'write_path',
       description:
-        "Write a field of the robot under 'links.<linkId>...' or 'joints.<jointId>...' by dot-path. Catch-all for fields without a dedicated tool. When the target value is an object, it is merged with existing (preserving sibling fields); otherwise it is replaced. Use read_path first to get exact current values.",
+        'Write robot data by safe dot-path, including root fields such as name and fields under links or joints. Objects merge with existing data; other values replace. Read first.',
       parameters: {
         type: 'object',
         properties: {
-          path: { type: 'string', description: "e.g. 'links.base_link.visual.color' or 'joints.shoulder_h.limit.upper'" },
+          path: { type: 'string', description: "e.g. 'name', 'links.base_link.visual.color', or 'joints.shoulder_h.limit.upper'" },
           value: { description: 'JSON value to write, e.g. {"r":0.85,"g":0.1,"b":0.1} or a number' },
         },
         required: ['path', 'value'],
@@ -252,15 +258,15 @@ export function buildRobotCapabilities(_lang: Language): AgentCapability[] {
     },
     {
       name: 'validate_robot',
-      description: 'Validate the current draft: checks it can be exported to URDF and re-parsed. Call after edits to confirm the result is a valid URDF tree before finishing. Does not modify the robot.',
+      description: 'Verify that the draft exports and parses as a valid URDF tree. Does not modify it.',
       parameters: { type: 'object', properties: {} },
-      execute: (draft) => validateRobot(draft),
+      execute: (draft) => validateRobotDraft(draft),
       mutates: false,
     },
     {
       name: 'run_script',
       description:
-        "Run arbitrary JavaScript to edit the robot. This is the most powerful tool — use it for ANY edit that the dedicated tools cannot express, or when you need to loop over many links/joints. The script runs as `(draft, api) => { ...; return draft; }`. `draft` is the full robot: `draft.links` (Record<id, link>), `draft.joints` (Record<id, joint>), `draft.rootLinkId`. Each link has: `visual { type, dimensions{x,y,z}, origin{xyz,rpy}, color }, collision { type, dimensions, origin }, inertial { mass, origin, inertia{ixx,ixy,ixz,iyy,iyz,izz} }`. Each joint has: `type, origin{xyz, rpy}, axis{x,y,z}, limit{lower,upper,effort,velocity}, dynamics{damping,friction}, hardware`. `api` gives: `json` (JSON), `math` (Math), `clone` (structuredClone), `keys` (Object.keys), `has` (in operator). No DOM, no network, no stores. ALWAYS return the draft object. Examples: change all link colors: `Object.values(draft.links).forEach(l => l.visual.color = '#ff0000'); return draft;` — set every joint limit: `Object.values(draft.joints).forEach(j => { if(j.limit) j.limit.upper = 3.14; }); return draft;`",
+        'Edit topology or many fields with JavaScript over the full draft. Receives (draft, api), must return draft. api has json, math, clone, keys, has; no DOM/network/stores.',
       parameters: {
         type: 'object',
         properties: {
@@ -272,12 +278,12 @@ export function buildRobotCapabilities(_lang: Language): AgentCapability[] {
         },
         required: ['code'],
       },
-      execute: async (draft, args) => {
+      execute: async (draft, args, context) => {
         const code = typeof args.code === 'string' ? args.code : '';
         if (!code.trim()) {
           return { ok: false, message: 'Script code is empty.' };
         }
-        const outcome = await runAgentScript({ code, draft });
+        const outcome = await runAgentScript({ code, draft, signal: context.signal });
         if (!outcome.ok) {
           return { ok: false, message: outcome.error };
         }
@@ -286,7 +292,7 @@ export function buildRobotCapabilities(_lang: Language): AgentCapability[] {
           return { ok: false, message: 'Script must return a plain object (the edited robot draft).' };
         }
         const replacement = result as RobotData;
-        const validation = validateRobot(replacement);
+        const validation = validateRobotDraft(replacement);
         if (!validation.ok) {
           return { ok: false, message: `Script produced an invalid robot: ${validation.message}` };
         }
@@ -299,4 +305,17 @@ export function buildRobotCapabilities(_lang: Language): AgentCapability[] {
       mutates: true,
     },
   ];
+}
+
+const COMPACT_CAPABILITY_NAMES = new Set([
+  'read_path',
+  'write_path',
+  'validate_robot',
+  'run_script',
+]);
+
+/** Default low-context profile; dedicated tools remain available for future opt-in use. */
+export function buildCompactRobotCapabilities(lang: Language): AgentCapability[] {
+  return buildRobotCapabilities(lang).filter(capability =>
+    COMPACT_CAPABILITY_NAMES.has(capability.name));
 }

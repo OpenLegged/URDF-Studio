@@ -71,6 +71,11 @@ test('ConversationMessageMarkdown renders common markdown structures safely', as
     assert.ok(container.querySelector('pre code'))
     assert.equal(container.querySelectorAll('code').length >= 2, true)
     assert.ok(container.querySelector('table'))
+    assert.equal(
+      container.firstElementChild?.className.includes('text-[13px]'),
+      true,
+      'conversation body copy should use the readable 13px text scale',
+    )
 
     const link = container.querySelector('a')
     assert.ok(link, 'expected markdown link to render')

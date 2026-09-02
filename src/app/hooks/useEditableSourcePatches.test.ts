@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { JSDOM } from 'jsdom';
 
 import {
   createComponentSourceDraft,
@@ -9,7 +10,16 @@ import {
 import { useAssetsStore } from '@/store/assetsStore';
 import { useWorkspaceStore } from '@/store/workspaceStore';
 import { DEFAULT_JOINT, DEFAULT_LINK, JointType, type AssemblyState, type RobotData } from '@/types';
-import { applyComponentEditableSourcePatch } from './useEditableSourcePatches.ts';
+import { generateEditableRobotSource } from '../utils/generateEditableRobotSource.ts';
+import { parseEditableRobotSource } from '../utils/parseEditableRobotSource.ts';
+import {
+  applyComponentEditableSourcePatch,
+  reconcileComponentEditableRobotSource,
+} from './useEditableSourcePatches.ts';
+
+const dom = new JSDOM('<!doctype html><html><body></body></html>');
+globalThis.DOMParser = dom.window.DOMParser as typeof DOMParser;
+globalThis.XMLSerializer = dom.window.XMLSerializer as typeof XMLSerializer;
 
 function robot(name: string): RobotData {
   return {
@@ -114,6 +124,23 @@ test('unsafe patch preserves its target draft for source reconciliation', () => 
   assert.ok(useAssetsStore.getState().componentSourceDrafts.right);
 });
 
+test('no-op text patch cannot mark a semantically changed robot draft as current', () => {
+  const before = reset();
+  const expectedRobotSnapshotHash = createSourceSemanticRobotHash(before.components.left.robot);
+  useWorkspaceStore.getState().replaceComponentRobot('left', {
+    ...before.components.left.robot,
+    name: 'workspace-only-change',
+  });
+
+  assert.equal(applyComponentEditableSourcePatch({
+    componentId: 'left',
+    expectedRobotSnapshotHash,
+    patch: (draft) => draft.content,
+  }), 'invalidated');
+  assert.equal(useAssetsStore.getState().componentSourceDrafts.left, undefined);
+  assert.ok(useAssetsStore.getState().componentSourceDrafts.right);
+});
+
 test('foreign or already-stale drafts are rejected without discarding authored text', () => {
   const before = reset();
   useAssetsStore.setState((state) => ({
@@ -145,4 +172,58 @@ test('missing draft reports unavailable without changing other drafts', () => {
     patch: () => '<mujoco model="unused"/>',
   }), 'unavailable');
   assert.ok(useAssetsStore.getState().componentSourceDrafts.right);
+});
+
+(['mjcf', 'sdf', 'urdf', 'xacro'] as const).forEach((format) => {
+  test(`complete source reconciliation keeps an imported ${format} draft in its format`, () => {
+    const fileName = format === 'xacro' ? 'library/robot.xacro' : 'library/robot.xml';
+    const generated = generateEditableRobotSource({
+      format,
+      robotState: { ...robot('before'), selection: { type: null, id: null } },
+    });
+    const content = generated.replace(
+      /(<(?:mujoco|robot|sdf)\b[^>]*>)/,
+      '$1\n  <!-- preserve imported source -->',
+    );
+    const parsed = parseEditableRobotSource({
+      file: { name: fileName, format },
+      content,
+      allFileContents: { [fileName]: content },
+    });
+    assert.ok(parsed);
+    const { selection: _selection, ...beforeRobot } = parsed;
+    const currentWorkspace = createSingleComponentWorkspace(beforeRobot, {
+      componentId: 'component',
+      sourceFile: fileName,
+    });
+    useWorkspaceStore.getState().replaceWorkspace(currentWorkspace, { resetHistory: true });
+    useAssetsStore.setState({
+      componentSourceDrafts: {
+        component: createComponentSourceDraft({
+          componentId: 'component',
+          format,
+          content,
+          robot: beforeRobot,
+        }),
+      },
+    });
+    const afterRobot = { ...structuredClone(beforeRobot), name: `${format}_after` };
+    useWorkspaceStore.getState().replaceComponentRobot('component', afterRobot);
+
+    const result = reconcileComponentEditableRobotSource({
+      componentId: 'component',
+      expectedRobotSnapshotHash: createSourceSemanticRobotHash(beforeRobot),
+      previousRobot: beforeRobot,
+      nextRobot: afterRobot,
+    });
+
+    assert.equal(result.handled, true);
+    assert.equal(result.outcome, 'patched');
+    const draft = useAssetsStore.getState().componentSourceDrafts.component;
+    assert.ok(draft);
+    assert.equal(draft.format, format);
+    assert.match(draft.content, /preserve imported source/);
+    assert.match(draft.content, new RegExp(`${format}_after`));
+    assert.equal(draft.robotSnapshotHash, createSourceSemanticRobotHash(afterRobot));
+  });
 });

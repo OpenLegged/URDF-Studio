@@ -8,6 +8,63 @@ const nowMs = () => ((typeof performance !== 'undefined' && typeof performance.n
     : Date.now());
 const canLoadBitmapTextureInWorker = () => typeof document === 'undefined'
     && typeof createImageBitmap === 'function';
+const inferTextureMimeTypeFromPath = (resourcePath) => {
+    const lowercaseFilename = String(resourcePath || '').toLowerCase();
+    if (lowercaseFilename.endsWith('.png'))
+        return 'image/png';
+    if (lowercaseFilename.endsWith('.jpg') || lowercaseFilename.endsWith('.jpeg'))
+        return 'image/jpeg';
+    if (lowercaseFilename.endsWith('.webp'))
+        return 'image/webp';
+    if (lowercaseFilename.endsWith('.exr'))
+        return 'image/x-exr';
+    if (lowercaseFilename.endsWith('.tga'))
+        return 'image/tga';
+    return undefined;
+};
+const getTextureByteView = (loadedFile) => {
+    if (loadedFile instanceof ArrayBuffer) {
+        return new Uint8Array(loadedFile);
+    }
+    if (ArrayBuffer.isView(loadedFile)) {
+        return new Uint8Array(loadedFile.buffer, loadedFile.byteOffset, loadedFile.byteLength);
+    }
+    return null;
+};
+const detectTextureMimeTypeFromBytes = (loadedFile) => {
+    const bytes = getTextureByteView(loadedFile);
+    if (!bytes)
+        return undefined;
+    if (bytes.length >= 8
+        && bytes[0] === 0x89
+        && bytes[1] === 0x50
+        && bytes[2] === 0x4e
+        && bytes[3] === 0x47
+        && bytes[4] === 0x0d
+        && bytes[5] === 0x0a
+        && bytes[6] === 0x1a
+        && bytes[7] === 0x0a) {
+        return 'image/png';
+    }
+    if (bytes.length >= 3
+        && bytes[0] === 0xff
+        && bytes[1] === 0xd8
+        && bytes[2] === 0xff) {
+        return 'image/jpeg';
+    }
+    if (bytes.length >= 12
+        && bytes[0] === 0x52
+        && bytes[1] === 0x49
+        && bytes[2] === 0x46
+        && bytes[3] === 0x46
+        && bytes[8] === 0x57
+        && bytes[9] === 0x45
+        && bytes[10] === 0x42
+        && bytes[11] === 0x50) {
+        return 'image/webp';
+    }
+    return undefined;
+};
 const closeTextureImageIfNeeded = (texture) => {
     const image = texture?.image;
     if (!image || typeof image.close !== 'function')
@@ -114,6 +171,7 @@ class TextureRegistry {
             completed: 0,
             failed: 0,
             pending: 0,
+            mimeCorrected: 0,
             recent: [],
             maxRecent: 24,
         };
@@ -173,6 +231,7 @@ class TextureRegistry {
             completed: Number(local.completed || 0),
             failed: Number(local.failed || 0),
             pending: Number(local.pending || 0),
+            mimeCorrected: Number(local.mimeCorrected || 0),
             manager,
             recent: Array.isArray(local.recent) ? local.recent.slice(-12) : [],
         };
@@ -199,32 +258,25 @@ class TextureRegistry {
         if (!resourcePath) {
             return Promise.reject(new Error('Empty resource path for file: ' + resourcePath));
         }
-        let filetype = undefined;
-        let lowercaseFilename = resourcePath.toLowerCase();
-        if (lowercaseFilename.indexOf('.png') >= lowercaseFilename.length - 5) {
-            filetype = 'image/png';
-        }
-        else if (lowercaseFilename.indexOf('.jpg') >= lowercaseFilename.length - 5) {
-            filetype = 'image/jpeg';
-        }
-        else if (lowercaseFilename.indexOf('.jpeg') >= lowercaseFilename.length - 5) {
-            filetype = 'image/jpeg';
-        }
-        else if (lowercaseFilename.indexOf('.exr') >= lowercaseFilename.length - 4) {
+        const pathFiletype = inferTextureMimeTypeFromPath(resourcePath);
+        if (pathFiletype === 'image/x-exr') {
             console.error("EXR textures are not fully supported yet", resourcePath);
-            // using EXRLoader explicitly
-            filetype = 'image/x-exr';
         }
-        else if (lowercaseFilename.indexOf('.tga') >= lowercaseFilename.length - 4) {
+        else if (pathFiletype === 'image/tga') {
             console.error("TGA textures are not fully supported yet", resourcePath);
-            // using TGALoader explicitly
-            filetype = 'image/tga';
         }
-        else {
+        else if (!pathFiletype) {
             console.error("Error when loading texture: unknown filetype", resourcePath);
-            // throw new Error('Unknown filetype');
         }
         this.config.driver().getFile(resourcePath, async (loadedFile) => {
+            const detectedFiletype = detectTextureMimeTypeFromBytes(loadedFile);
+            const filetype = detectedFiletype || pathFiletype;
+            const mimeCorrected = !!detectedFiletype
+                && !!pathFiletype
+                && detectedFiletype !== pathFiletype;
+            if (mimeCorrected) {
+                this._textureLoadStats.mimeCorrected = Number(this._textureLoadStats.mimeCorrected || 0) + 1;
+            }
             let loader = this.loader;
             if (filetype === 'image/tga')
                 loader = this.tgaLoader;
@@ -236,7 +288,7 @@ class TextureRegistry {
                 let createdBlobObjectUrl = false;
                 let createdBlob = null;
                 if (_loadedFile) {
-                    createdBlob = new Blob([_loadedFile.slice(0)], { type: filetype });
+                    createdBlob = new Blob([_loadedFile.slice(0)], { type: filetype || '' });
                     url = URL.createObjectURL(createdBlob);
                     createdBlobObjectUrl = true;
                     this._pendingBlobObjectUrls?.add?.(url);
@@ -288,6 +340,9 @@ class TextureRegistry {
                         durationMs,
                         pending: Number(stats.pending || 0),
                         managerPending,
+                        mimeType: filetype || '',
+                        sourceMimeType: pathFiletype || '',
+                        mimeCorrected,
                     };
                     if (Array.isArray(stats.recent)) {
                         stats.recent.push(recentEntry);
@@ -312,7 +367,23 @@ class TextureRegistry {
                             return response.blob();
                         });
                     const bitmap = await createImageBitmap(bitmapBlob);
-                    const texture = new Texture(bitmap);
+                    let texture = null;
+                    if (typeof OffscreenCanvas === 'function') {
+                        const normalizedCanvas = new OffscreenCanvas(bitmap.width, bitmap.height);
+                        const context = normalizedCanvas.getContext('2d');
+                        if (context) {
+                            context.drawImage(bitmap, 0, 0);
+                            // Keep the browser-native canvas as the upload source. Converting
+                            // worker-decoded pixels into a typed DataTexture can reinterpret
+                            // platform channel order and turn warm walnut tones blue/teal.
+                            texture = new Texture(normalizedCanvas);
+                            texture.flipY = true;
+                            bitmap.close?.();
+                        }
+                    }
+                    if (!texture) {
+                        texture = new Texture(bitmap);
+                    }
                     texture.name = resourcePath;
                     texture.needsUpdate = true;
                     finalizeLoad('ok');
@@ -323,7 +394,7 @@ class TextureRegistry {
                 try {
                     if (
                         canLoadBitmapTextureInWorker()
-                        && (filetype === 'image/png' || filetype === 'image/jpeg')
+                        && (filetype === 'image/png' || filetype === 'image/jpeg' || filetype === 'image/webp')
                     ) {
                         void loadBitmapTextureFromWorker().catch((error) => {
                             finalizeLoad('error', error);
@@ -371,4 +442,4 @@ class TextureRegistry {
         return this.textures[resourcePath];
     }
 }
-export { TextureRegistry };
+export { TextureRegistry, detectTextureMimeTypeFromBytes, inferTextureMimeTypeFromPath };

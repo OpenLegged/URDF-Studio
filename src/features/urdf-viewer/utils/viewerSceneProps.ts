@@ -40,6 +40,7 @@ interface BuildViewerScenePropsArgs {
   onCollisionTransform?: ViewerProps['onCollisionTransform'];
   isMeshPreview?: boolean;
   ikDragActive?: boolean;
+  suppressInitialAutoFrame?: boolean;
   runtimeInstanceKey?: number;
   workspace?: AssemblyState | null;
   sceneProjection?: AssemblySceneProjection | null;
@@ -90,6 +91,7 @@ export function buildViewerSceneProps({
   onCollisionTransform,
   isMeshPreview = false,
   ikDragActive = false,
+  suppressInitialAutoFrame = false,
   runtimeInstanceKey = 0,
   workspace,
   sceneProjection,
@@ -136,6 +138,7 @@ export function buildViewerSceneProps({
     onCollisionTransform,
     isMeshPreview,
     ikDragActive,
+    suppressInitialAutoFrame,
     runtimeInstanceKey,
     workspace,
     sceneProjection,

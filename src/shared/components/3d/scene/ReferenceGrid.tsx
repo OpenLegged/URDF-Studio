@@ -12,6 +12,8 @@ interface ReferenceGridProps {
   size?: number;
   fadeDistance?: number;
   fadeFrom?: number;
+  fadeStrength?: number;
+  cellSize?: number;
 }
 
 const REFERENCE_GRID_RENDER_ORDER = -100;
@@ -38,6 +40,8 @@ export function ReferenceGrid({
   size = 20,
   fadeDistance = 20 * 100,
   fadeFrom = 1,
+  fadeStrength = 0.86,
+  cellSize = 0.1,
 }: ReferenceGridProps) {
   const gridRef = useRef<THREE.Mesh>(null);
   const groundPlaneOffset = groundOffset ?? 0;
@@ -67,9 +71,9 @@ export function ReferenceGrid({
       side={THREE.DoubleSide}
       fadeDistance={fadeDistance}
       fadeFrom={fadeFrom}
-      fadeStrength={0.86}
+      fadeStrength={fadeStrength}
       sectionSize={1}
-      cellSize={0.1}
+      cellSize={cellSize}
       sectionThickness={gridStyle.sectionThickness}
       cellThickness={gridStyle.cellThickness}
       cellColor={gridStyle.cellColor}

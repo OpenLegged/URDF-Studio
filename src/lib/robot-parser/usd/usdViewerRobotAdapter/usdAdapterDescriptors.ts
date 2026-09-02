@@ -110,6 +110,72 @@ export function normalizeDescriptorSectionName(sectionName: string | null | unde
   return normalized;
 }
 
+export interface UsdDescriptorRoles {
+  visual: boolean;
+  collision: boolean;
+}
+
+const USD_COLLISION_SCOPE_NAMES = new Set([
+  'collision',
+  'collisions',
+  'collider',
+  'colliders',
+]);
+
+function descriptorUsesAuthoredCollisionScope(descriptor: MeshDescriptor): boolean {
+  return normalizeUsdPath(descriptor.resolvedPrimPath || '')
+    .split('/')
+    .filter(Boolean)
+    .some((segment) => USD_COLLISION_SCOPE_NAMES.has(segment.toLowerCase()));
+}
+
+/**
+ * Resolve render roles without assuming visual and collision are mutually exclusive.
+ * OpenUSD commonly applies PhysicsCollisionAPI directly to a visible Mesh instead of
+ * duplicating it below a named `collisions` scope.
+ */
+export function createUsdDescriptorRoleResolver(
+  snapshot: RobotSceneSnapshot | null | undefined,
+): (descriptor: MeshDescriptor) => UsdDescriptorRoles {
+  const collisionStateByPrimPath = new Map(
+    Array.from(snapshot?.stage?.primDescriptors || [])
+      .filter((descriptor) => typeof descriptor.collisionEnabled === 'boolean')
+      .map((descriptor) => [
+        normalizeUsdPath(descriptor.path),
+        descriptor.collisionEnabled === true,
+      ] as const)
+      .filter(([path]) => Boolean(path)),
+  );
+
+  const sourceDeclaresCollision = (descriptor: MeshDescriptor): boolean => {
+    let primPath = normalizeUsdPath(descriptor.resolvedPrimPath || descriptor.meshId || '');
+    while (primPath) {
+      const collisionEnabled = collisionStateByPrimPath.get(primPath);
+      if (collisionEnabled !== undefined) return collisionEnabled;
+      const slashIndex = primPath.lastIndexOf('/');
+      if (slashIndex <= 0) break;
+      primPath = primPath.slice(0, slashIndex);
+    }
+    return false;
+  };
+
+  return (descriptor) => {
+    const sectionName = normalizeDescriptorSectionName(descriptor.sectionName);
+    const collisionSection = sectionName === 'collisions';
+    // Some native USD render snapshots place every renderable primitive in the
+    // synthetic `visuals` descriptor section, including authored primitives
+    // below a `Collisions` scope. Treat those primitives as collision-only.
+    // A visible mesh with PhysicsCollisionAPI applied directly remains both a
+    // visual and a collision because it does not live below such a scope.
+    const authoredCollisionScope = descriptorUsesAuthoredCollisionScope(descriptor);
+    return {
+      visual: !collisionSection && !authoredCollisionScope,
+      collision:
+        collisionSection || authoredCollisionScope || sourceDeclaresCollision(descriptor),
+    };
+  };
+}
+
 function getDescriptorMaterialId(descriptor: MeshDescriptor): string {
   return normalizeUsdPath(descriptor.materialId || descriptor.geometry?.materialId || '');
 }
@@ -339,8 +405,17 @@ export function parseDescriptorOrdinal(descriptor: MeshDescriptor, fallbackIndex
   return fallbackIndex;
 }
 
-export function getUsdDescriptorAttachmentGroupKey(descriptor: MeshDescriptor): string {
-  return getUsdDescriptorSectionChildToken(descriptor) || '__default__';
+export function getUsdDescriptorAttachmentGroupKey(
+  descriptor: MeshDescriptor,
+  options: { fallbackToResolvedPrimPath?: boolean } = {},
+): string {
+  return (
+    getUsdDescriptorSectionChildToken(descriptor) ||
+    (options.fallbackToResolvedPrimPath
+      ? normalizeUsdPath(descriptor.resolvedPrimPath) || normalizeUsdPath(descriptor.meshId)
+      : '') ||
+    '__default__'
+  );
 }
 
 export function groupDescriptorEntries(entries: DescriptorEntry[]): DescriptorGroup[] {
@@ -392,6 +467,7 @@ export function deriveMeshCountsByLinkPath(
     }
   >();
   const normalizedKnownLinkPaths = buildNormalizedUsdPathSet(knownLinkPaths);
+  const resolveRoles = createUsdDescriptorRoleResolver(snapshot);
 
   const ensureEntry = (linkPath: string) => {
     let entry = derivedGroupsByLinkPath.get(linkPath);
@@ -413,9 +489,9 @@ export function deriveMeshCountsByLinkPath(
     if (!linkPath) continue;
 
     const entry = ensureEntry(linkPath);
-    const sectionName = normalizeDescriptorSectionName(descriptor.sectionName);
+    const roles = resolveRoles(descriptor);
     const groupKey = getUsdDescriptorAttachmentGroupKey(descriptor);
-    if (sectionName === 'collisions') {
+    if (roles.collision) {
       if (!entry.collisionGroupPrimitiveTypes.has(groupKey)) {
         const primitiveType =
           String(descriptor.primType || '')
@@ -423,10 +499,11 @@ export function deriveMeshCountsByLinkPath(
             .toLowerCase() || 'mesh';
         entry.collisionGroupPrimitiveTypes.set(groupKey, primitiveType);
       }
-      continue;
     }
 
-    entry.visualGroups.add(groupKey);
+    if (roles.visual) {
+      entry.visualGroups.add(groupKey);
+    }
   }
 
   const derived = Object.fromEntries(

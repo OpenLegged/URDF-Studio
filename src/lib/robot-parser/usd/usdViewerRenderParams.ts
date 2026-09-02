@@ -62,6 +62,15 @@ export function shouldPreferSlicedEmbeddedUsdLoad({
   return isUsdLayerRoot && preloadFileCount > 1 && criticalDependencyCount > 0;
 }
 
+export function shouldForceHydraFullDrawForStandaloneAsset(sourceFileName: string): boolean {
+  const basename = String(sourceFileName || '')
+    .trim()
+    .split(/[\\/]/)
+    .pop()
+    ?.toLowerCase() ?? '';
+  return /^model_.+\.usd[ac]?$/.test(basename);
+}
+
 export function createEmbeddedUsdViewerLoadParams(
   threadCount: number,
   options: CreateEmbeddedUsdViewerLoadParamsOptions = {},

@@ -223,6 +223,7 @@ export function BridgeProperties({
         />
       </StaticSection>
       <JointProperties
+        key={`${bridgeRef.bridgeId}:${bridge.joint.id}`}
         data={bridge.joint}
         mode={mode}
         selection={{ type: 'joint', id: bridge.joint.id }}
@@ -634,6 +635,7 @@ export const PropertyEditor: React.FC<PropertyEditorProps> = ({
                 />
               ) : target?.kind === 'joint' ? (
                 <JointProperties
+                  key={`${target.ref.componentId}:${target.ref.entityId}`}
                   data={target.data}
                   mode={mode}
                   selection={localSelection}

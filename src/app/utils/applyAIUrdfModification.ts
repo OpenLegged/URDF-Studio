@@ -5,6 +5,7 @@ import {
   normalizeComponentRobot,
 } from '@/core/robot';
 import type { RobotData, RobotState } from '@/types';
+import type { AIConversationApplyResult } from '@/features/ai-assistant';
 import { useAssetsStore } from '@/store/assetsStore';
 import { useWorkspaceStore } from '@/store/workspaceStore';
 
@@ -26,16 +27,17 @@ function toRobotData(state: RobotState): RobotData {
  * workspace + assets-store mutation; the feature modal receives it as an
  * `onApply` prop to keep the feature -> app dependency direction correct.
  *
- * Returns false without mutating when the URDF fails to parse, the component
- * is missing, or a concurrent workspace edit invalidated the revision.
+ * Returns the canonical robot read back after a successful commit so callers
+ * can verify the applied state. Parse/missing/conflict failures are reported
+ * as typed results without mutating the workspace.
  */
 export function applyAIUrdfModification(
   componentId: string,
   proposedUrdf: string,
-): boolean {
+): AIConversationApplyResult {
   const parsed = parseURDF(proposedUrdf);
   if (!parsed) {
-    return false;
+    return { ok: false, reason: 'invalid-urdf' };
   }
 
   const robot = normalizeComponentRobot(toRobotData(parsed));
@@ -49,7 +51,7 @@ export function applyAIUrdfModification(
   const workspaceState = useWorkspaceStore.getState();
   const component = workspaceState.workspace.components[componentId];
   if (!component) {
-    return false;
+    return { ok: false, reason: 'component-missing' };
   }
 
   const robotChanged =
@@ -62,10 +64,22 @@ export function applyAIUrdfModification(
       { label: 'Apply AI modification' },
     );
     if (!replaced) {
-      return false;
+      return { ok: false, reason: 'revision-conflict' };
     }
   }
 
   useAssetsStore.getState().setComponentSourceDraft(draft);
-  return true;
+  const committedState = useWorkspaceStore.getState();
+  const committedRobot = committedState.workspace.components[componentId]?.robot;
+  if (!committedRobot) {
+    return { ok: false, reason: 'component-missing' };
+  }
+  const liveRobot = structuredClone(committedRobot);
+  return {
+    ok: true,
+    componentId,
+    revision: committedState.revision,
+    liveRobot,
+    liveRobotHash: createSourceSemanticRobotHash(liveRobot),
+  };
 }

@@ -11,12 +11,20 @@
 
 import type { Language } from '@/shared/i18n';
 import type { MotorSpec, RobotData, RobotState } from '@/types';
-import { generateRobotFromPrompt } from '../services/aiService';
+import { generateRobotFromPromptWithOptions } from '../services/aiService';
 import { runRobotEditAgent, AgentToolsUnsupportedError } from '../services/aiAgent';
+import type { AgentConversationTurn } from '../services/agentEngine';
+import type { AgentRunEvent } from '../agentRuntimeTypes';
+import type { AgentCapability } from '../capabilities/types';
 
 export type ModificationProposal =
-  | { kind: 'change'; robot: Partial<RobotState>; explanation: string }
-  | { kind: 'no-change'; explanation: string }
+  | {
+      kind: 'change'
+      robot: Partial<RobotState>
+      explanation: string
+      historyCheckpoint?: AgentConversationTurn[]
+    }
+  | { kind: 'no-change'; explanation: string; historyCheckpoint?: AgentConversationTurn[] }
   | { kind: 'aborted' };
 
 export interface ResolveModificationProposalArgs {
@@ -28,8 +36,16 @@ export interface ResolveModificationProposalArgs {
   motorLibrary: Record<string, MotorSpec[]>;
   lang: Language;
   signal: AbortSignal;
+  /** Active conversation turns from before the current user message. */
+  history?: AgentConversationTurn[];
+  /** Selected entity / inspection report context for this turn. */
+  context?: string;
+  /** Typed browser-harness lifecycle events for the active turn. */
+  onAgentEvent?: (event: AgentRunEvent) => void;
   /** Called for each tool call the agent makes. */
   onToolCall?: (step: string) => void;
+  /** App-hosted semantic commands exposed alongside the robot draft tools. */
+  additionalCapabilities?: AgentCapability[];
 }
 
 /**
@@ -40,13 +56,42 @@ export interface ResolveModificationProposalArgs {
 export async function resolveModificationProposal(
   args: ResolveModificationProposalArgs,
 ): Promise<ModificationProposal> {
-  const { message, currentRobot, robotData, motorLibrary, lang, signal, onToolCall } = args;
+  const {
+    message,
+    currentRobot,
+    robotData,
+    motorLibrary,
+    lang,
+    signal,
+    history,
+    context,
+    onAgentEvent,
+    onToolCall,
+    additionalCapabilities,
+  } = args;
   try {
-    const agentResult = await runRobotEditAgent(message, robotData, lang, signal, onToolCall);
+    const agentResult = await runRobotEditAgent(message, robotData, lang, {
+      signal,
+      history,
+      context,
+      onEvent: onAgentEvent,
+      onToolCall,
+      additionalCapabilities,
+      verifyCompletion: false,
+    });
     if (agentResult.robot) {
-      return { kind: 'change', robot: agentResult.robot, explanation: agentResult.explanation };
+      return {
+        kind: 'change',
+        robot: agentResult.robot,
+        explanation: agentResult.explanation,
+        historyCheckpoint: agentResult.historyCheckpoint ?? undefined,
+      };
     }
-    return { kind: 'no-change', explanation: agentResult.explanation };
+    return {
+      kind: 'no-change',
+      explanation: agentResult.explanation,
+      historyCheckpoint: agentResult.historyCheckpoint ?? undefined,
+    };
   } catch (agentError) {
     if (signal.aborted) {
       return { kind: 'aborted' };
@@ -54,7 +99,13 @@ export async function resolveModificationProposal(
     if (agentError instanceof AgentToolsUnsupportedError) {
       const errorMessage = (agentError as Error).message || '';
       if (/api.?key/i.test(errorMessage)) {
-        const response = await generateRobotFromPrompt(message, currentRobot, motorLibrary, lang);
+        const response = await generateRobotFromPromptWithOptions({
+          prompt: message,
+          currentRobot,
+          motorLibrary,
+          lang,
+          signal,
+        });
         if (!response || !response.robotData) {
           return { kind: 'no-change', explanation: response?.explanation ?? '' };
         }
@@ -67,7 +118,13 @@ export async function resolveModificationProposal(
       return { kind: 'no-change', explanation: hint };
     }
     console.warn('AI edit agent unavailable, falling back to generation', agentError);
-    const response = await generateRobotFromPrompt(message, currentRobot, motorLibrary, lang);
+    const response = await generateRobotFromPromptWithOptions({
+      prompt: message,
+      currentRobot,
+      motorLibrary,
+      lang,
+      signal,
+    });
     if (!response || !response.robotData) {
       return { kind: 'no-change', explanation: response?.explanation ?? '' };
     }

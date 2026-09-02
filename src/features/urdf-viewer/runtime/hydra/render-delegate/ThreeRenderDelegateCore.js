@@ -104,6 +104,7 @@ export class ThreeRenderDelegateCore {
         this._snapshotMaterialRecordById = new Map();
         this._snapshotMaterialIdsByStageSource = new Map();
         this._snapshotFallbackMaterialCache = new Map();
+        this._pendingSnapshotTextureLoads = new Set();
         this._linkVisualTransformCache = new Map();
         this._visualMeshIdByLinkPath = new Map();
         this._meshIdByLinkPath = new Map();
@@ -170,6 +171,8 @@ export class ThreeRenderDelegateCore {
         this._materialBindingSchemaRepairAttempted = false;
         this._materialBindingSchemaRepairSucceeded = false;
         this._materialBindingSchemaWriteSupported = null;
+        this._materialBindingSchemaRepairCandidateCount = 0;
+        this._materialBindingSchemaRepairCount = 0;
         this._hasRunStageTruthAlignmentDiagnostics = false;
         this._materialBindingWarningHandler = ({ message, level }) => this.handleMaterialBindingApiWarning({ message, level });
         setActiveMaterialBindingWarningOwner(this);

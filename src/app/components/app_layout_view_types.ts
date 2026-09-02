@@ -19,6 +19,7 @@ import type {
 } from '@/shared/components/3d/scene/snapshotConfig';
 import type { Language, TranslationKeys } from '@/shared/i18n';
 import type { RobotFile } from '@/types';
+import type { WorkspaceCameraSnapshot } from '@/shared/components/3d';
 
 type HeaderProps = React.ComponentProps<typeof Header>;
 type IkToolPanelProps = React.ComponentProps<typeof IkToolPanel>;
@@ -110,6 +111,8 @@ export interface AppLayoutViewerSectionProps {
   snapshotActionRef: React.RefObject<SnapshotCaptureAction | null>;
   previewActionRef: React.RefObject<SnapshotPreviewAction | null>;
   viewerCanvasStateRef: React.MutableRefObject<RootState | null>;
+  initialCameraSnapshot: WorkspaceCameraSnapshot | null;
+  onCameraSnapshotChange: (snapshot: WorkspaceCameraSnapshot) => void;
   availableFiles: ViewerProps['availableFiles'];
   urdfContentForViewer: ViewerProps['urdfContent'];
   viewerSourceFormat: ViewerProps['viewerSourceFormat'];

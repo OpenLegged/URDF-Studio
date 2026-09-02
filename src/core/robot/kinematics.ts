@@ -4,6 +4,7 @@ import type { Euler, JointQuaternion, RobotData, UrdfJoint } from '@/types';
 
 const UNIT_SCALE = new THREE.Vector3(1, 1, 1);
 const JOINT_AXIS_EPSILON_SQ = 1e-12;
+const USD_JOINT_PIVOT_EPSILON_SQ = 1e-24;
 
 export type JointOriginOverrideMap = Record<string, UrdfJoint['origin']>;
 export type JointAngleOverrideMap = Record<string, number>;
@@ -40,6 +41,36 @@ export function getNormalizedJointAxis(joint: Pick<UrdfJoint, 'axis'>): THREE.Ve
   }
 
   return axisVector.normalize();
+}
+
+/**
+ * USD Physics keeps a joint frame on both connected bodies. The adapter stores
+ * the zero-pose body transform in `joint.origin`, so motion must still be
+ * conjugated around the child-body joint position (`localPos1`).
+ */
+export function getUsdJointMotionPivot(
+  joint: Pick<UrdfJoint, 'type' | 'usdPhysics'>,
+): THREE.Vector3 | null {
+  if (joint.type === 'fixed') {
+    return null;
+  }
+
+  const source = joint.usdPhysics?.localPos1;
+  if (!source) {
+    return null;
+  }
+
+  const pivot = new THREE.Vector3(Number(source.x), Number(source.y), Number(source.z));
+  if (
+    !Number.isFinite(pivot.x) ||
+    !Number.isFinite(pivot.y) ||
+    !Number.isFinite(pivot.z) ||
+    pivot.lengthSq() <= USD_JOINT_PIVOT_EPSILON_SQ
+  ) {
+    return null;
+  }
+
+  return pivot;
 }
 
 export function getJointMotionAngleFromActualAngle(
@@ -132,24 +163,10 @@ export function getJointMotionPose(
   joint: UrdfJoint,
   overrides: JointKinematicOverrideMap = {},
 ): { position: THREE.Vector3; quaternion: THREE.Quaternion } {
-  const angle = getJointEffectiveAngle(joint, overrides.angles ?? {});
   const position = new THREE.Vector3();
   const quaternion = new THREE.Quaternion();
-
-  if ((joint.type === 'revolute' || joint.type === 'continuous') && Math.abs(angle) > 1e-12) {
-    quaternion.setFromAxisAngle(getNormalizedJointAxis(joint), angle);
-    return { position, quaternion };
-  }
-
-  if (joint.type === 'ball') {
-    quaternion.copy(getJointEffectiveQuaternion(joint, overrides.quaternions ?? {}));
-    return { position, quaternion };
-  }
-
-  if (joint.type === 'prismatic' && Math.abs(angle) > 1e-12) {
-    position.copy(getNormalizedJointAxis(joint)).multiplyScalar(angle);
-  }
-
+  const scale = new THREE.Vector3();
+  createJointMotionMatrix(joint, overrides).decompose(position, quaternion, scale);
   return { position, quaternion };
 }
 
@@ -164,21 +181,21 @@ export function createJointMotionMatrix(
     if (Math.abs(angle) > 1e-12) {
       matrix.makeRotationAxis(getNormalizedJointAxis(joint), angle);
     }
-    return matrix;
-  }
-
-  if (joint.type === 'ball') {
+  } else if (joint.type === 'ball') {
     matrix.makeRotationFromQuaternion(
       getJointEffectiveQuaternion(joint, overrides.quaternions ?? {}),
     );
-    return matrix;
-  }
-
-  if (joint.type === 'prismatic') {
+  } else if (joint.type === 'prismatic') {
     if (Math.abs(angle) > 1e-12) {
       const axisVector = getNormalizedJointAxis(joint).multiplyScalar(angle);
       matrix.makeTranslation(axisVector.x, axisVector.y, axisVector.z);
     }
+  }
+
+  const usdPivot = getUsdJointMotionPivot(joint);
+  if (usdPivot) {
+    matrix.premultiply(new THREE.Matrix4().makeTranslation(usdPivot.x, usdPivot.y, usdPivot.z));
+    matrix.multiply(new THREE.Matrix4().makeTranslation(-usdPivot.x, -usdPivot.y, -usdPivot.z));
   }
 
   return matrix;

@@ -181,6 +181,7 @@ function resolveAiRuntimeEnv(env: Record<string, string | undefined>): Record<st
     GEMINI_API_KEY: env.GEMINI_API_KEY?.trim() || '',
     OPENAI_API_KEY: env.OPENAI_API_KEY?.trim() || '',
     OPENAI_BASE_URL: env.OPENAI_BASE_URL?.trim() || '',
+    OPENAI_CONTEXT_WINDOW_TOKENS: env.OPENAI_CONTEXT_WINDOW_TOKENS?.trim() || '',
     OPENAI_MODEL: env.OPENAI_MODEL?.trim() || '',
   };
 }
@@ -520,6 +521,9 @@ export default defineConfig(async ({ mode }) => {
       'process.env.GEMINI_API_KEY': JSON.stringify(aiRuntimeEnv.GEMINI_API_KEY),
       'process.env.OPENAI_API_KEY': JSON.stringify(aiRuntimeEnv.OPENAI_API_KEY),
       'process.env.OPENAI_BASE_URL': JSON.stringify(aiRuntimeEnv.OPENAI_BASE_URL),
+      'process.env.OPENAI_CONTEXT_WINDOW_TOKENS': JSON.stringify(
+        aiRuntimeEnv.OPENAI_CONTEXT_WINDOW_TOKENS,
+      ),
       'process.env.OPENAI_MODEL': JSON.stringify(aiRuntimeEnv.OPENAI_MODEL),
     },
     optimizeDeps: {

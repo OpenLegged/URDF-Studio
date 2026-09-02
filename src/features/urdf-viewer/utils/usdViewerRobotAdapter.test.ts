@@ -5,6 +5,125 @@ import * as THREE from 'three';
 import { computeLinkWorldMatrices } from '@/core/robot/kinematics';
 import { DEFAULT_LINK, GeometryType, JointType } from '../../../types/index.ts';
 import { adaptUsdViewerSnapshotToRobotData } from '@/lib/robot-parser/usd/usdViewerRobotAdapter';
+import { resolveSnapshotMaterialEmissionEnabled } from '@/lib/robot-parser/usd/usdViewerRobotAdapter/usdAdapterConversions';
+
+test('treats OmniGlass default emission as disabled', () => {
+  assert.equal(resolveSnapshotMaterialEmissionEnabled({ isOmniGlass: true }), false);
+});
+
+test('does not duplicate aggregate parent visuals when descriptors resolve to child prims', () => {
+  const result = adaptUsdViewerSnapshotToRobotData({
+    stageSourcePath: '/assets/cabinet.usd',
+    stage: {
+      defaultPrimPath: '/Robot',
+      primDescriptors: [
+        {
+          path: '/Robot/cabinet/visuals/top',
+          primType: 'Mesh',
+          collisionEnabled: true,
+        },
+      ],
+    },
+    robotTree: {
+      linkParentPairs: [
+        ['/Robot/cabinet', null],
+        ['/Robot/top', '/Robot/cabinet'],
+      ],
+      rootLinkPaths: ['/Robot/cabinet'],
+    },
+    robotMetadataSnapshot: {
+      stageSourcePath: '/assets/cabinet.usd',
+      linkParentPairs: [
+        ['/Robot/cabinet', null],
+        ['/Robot/top', '/Robot/cabinet'],
+      ],
+      jointCatalogEntries: [],
+      meshCountsByLinkPath: {
+        '/Robot/cabinet': {
+          visualMeshCount: 1,
+          collisionMeshCount: 1,
+          collisionPrimitiveCounts: { mesh: 1 },
+        },
+      },
+    },
+    render: {
+      meshDescriptors: [
+        {
+          meshId: '/Robot/cabinet/visuals.proto_mesh_id0',
+          sectionName: 'visuals',
+          resolvedPrimPath: '/Robot/cabinet/visuals/top',
+          primType: 'mesh',
+          materialId: '/Robot/materials/walnut',
+        },
+      ],
+      materials: [
+        {
+          materialId: '/Robot/materials/walnut',
+          name: 'walnut',
+          mapPath: 'textures/walnut.jpg',
+          opacity: 1,
+        },
+      ],
+    },
+  });
+
+  assert.ok(result);
+  assert.equal(result.robotData.links.cabinet?.visual.type, GeometryType.NONE);
+  assert.equal(result.robotData.links.cabinet?.collision.type, GeometryType.NONE);
+  assert.equal(result.robotData.links.top?.visual.type, GeometryType.MESH);
+  assert.equal(result.robotData.links.top?.visual.color, '#ffffff');
+});
+
+test('does not duplicate descriptor-less physics leaf visuals beneath a rendered parent', () => {
+  const result = adaptUsdViewerSnapshotToRobotData({
+    stageSourcePath: '/assets/cabinet.usd',
+    stage: {
+      defaultPrimPath: '/Robot',
+    },
+    robotTree: {
+      linkParentPairs: [
+        ['/Robot/cabinet', null],
+        ['/Robot/p_9_link', '/Robot/cabinet'],
+      ],
+      rootLinkPaths: ['/Robot/cabinet'],
+    },
+    robotMetadataSnapshot: {
+      stageSourcePath: '/assets/cabinet.usd',
+      linkParentPairs: [
+        ['/Robot/cabinet', null],
+        ['/Robot/p_9_link', '/Robot/cabinet'],
+      ],
+      jointCatalogEntries: [],
+      meshCountsByLinkPath: {
+        '/Robot/cabinet': { visualMeshCount: 1, collisionMeshCount: 0 },
+        '/Robot/p_9_link': { visualMeshCount: 1, collisionMeshCount: 0 },
+      },
+    },
+    render: {
+      meshDescriptors: [
+        {
+          meshId: '/Robot/visuals.proto_mesh_id0',
+          sectionName: 'visuals',
+          resolvedPrimPath: '/Robot/cabinet/Geo/P_9',
+          primType: 'mesh',
+          materialId: '/Robot/materials/walnut',
+        },
+      ],
+      materials: [
+        {
+          materialId: '/Robot/materials/walnut',
+          name: 'walnut',
+          mapPath: 'textures/walnut.jpg',
+          opacity: 1,
+        },
+      ],
+    },
+  });
+
+  assert.ok(result);
+  assert.equal(result.robotData.links.cabinet?.visual.type, GeometryType.MESH);
+  assert.equal(result.robotData.links.p_9_link?.visual.type, GeometryType.NONE);
+});
 
 test('adapts usd-viewer robot scene snapshot into URDF Studio RobotData', () => {
   const jointYawRadians = Math.PI / 2;
@@ -314,6 +433,54 @@ test('maps authored USD physics schema joint type names back onto URDF joint typ
   );
   assert.ok(joint);
   assert.equal(joint.type, JointType.FIXED);
+});
+
+test('keeps USD prismatic joint limits in normalized linear units', () => {
+  const result = adaptUsdViewerSnapshotToRobotData(
+    {
+      stageSourcePath: '/robots/stove.usd',
+      stage: { defaultPrimPath: '/Stove' },
+      robotTree: {
+        linkParentPairs: [
+          ['/Stove/body', null],
+          ['/Stove/rack', '/Stove/body'],
+        ],
+        rootLinkPaths: ['/Stove/body'],
+      },
+      robotMetadataSnapshot: {
+        stageSourcePath: '/robots/stove.usd',
+        linkParentPairs: [
+          ['/Stove/body', null],
+          ['/Stove/rack', '/Stove/body'],
+        ],
+        jointCatalogEntries: [
+          {
+            linkPath: '/Stove/rack',
+            parentLinkPath: '/Stove/body',
+            jointName: 'rack_joint',
+            jointTypeName: 'PhysicsPrismaticJoint',
+            axisToken: 'X',
+            axisLocal: [0, -1, 0],
+            lowerLimitDeg: 0,
+            upperLimitDeg: 0.35,
+            angleDeg: 0.125,
+            localPos0: [0, 0, 0],
+            localPos1: [0, 0, 0],
+          },
+        ],
+        meshCountsByLinkPath: {},
+      },
+    },
+    { fileName: 'stove.usd' },
+  );
+
+  assert.ok(result);
+  const joint = result.robotData.joints.rack_joint;
+  assert.ok(joint);
+  assert.equal(joint.type, JointType.PRISMATIC);
+  assert.equal(joint.limit?.lower, 0);
+  assert.equal(joint.limit?.upper, 0.35);
+  assert.equal(joint.angle, 0.125);
 });
 
 test('maps unsupported generic UsdPhysics joint type names to floating joints', () => {
@@ -987,6 +1154,125 @@ test('keeps authored visual and collision slots grouped when a single USD visual
   assert.equal(result.robotData.materials?.base_link?.color, '#7c8995');
 });
 
+test('uses a visible PhysicsCollisionAPI mesh as both visual and collision geometry', () => {
+  const result = adaptUsdViewerSnapshotToRobotData(
+    {
+      stageSourcePath: '/furniture/chair.usd',
+      stage: {
+        defaultPrimPath: '/Chair',
+        primDescriptors: [{
+          semanticSource: 'stage',
+          path: '/Chair/P_mesh',
+          parentPath: '/Chair',
+          name: 'P_mesh',
+          typeName: 'Mesh',
+          active: true,
+          loaded: true,
+          defined: true,
+          instance: false,
+          instanceProxy: false,
+          prototype: false,
+          hasPayload: false,
+          hasAuthoredReferences: false,
+          visible: true,
+          collisionEnabled: true,
+          collisionApproximation: 'sdf',
+          transformable: true,
+          hasAuthoredXformOps: false,
+          resetsXformStack: false,
+        }],
+      },
+      render: {
+        meshDescriptors: [{
+          meshId: '/Chair/P_mesh',
+          resolvedPrimPath: '/Chair/P_mesh',
+          primType: 'mesh',
+          extentSize: [0.5, 0.6, 0.9],
+        }],
+      },
+    },
+    { fileName: 'chair.usd' },
+  );
+
+  assert.ok(result);
+  const rootLink = result.robotData.links[result.robotData.rootLinkId];
+  assert.ok(rootLink);
+  assert.equal(rootLink.visual.type, GeometryType.MESH);
+  assert.equal(rootLink.collision.type, GeometryType.MESH);
+  assert.deepEqual(
+    rootLink.visual.usdMeshDescriptors?.map((descriptor) => descriptor.resolvedPrimPath),
+    ['/Chair/P_mesh'],
+  );
+  assert.deepEqual(
+    rootLink.collision.usdMeshDescriptors?.map((descriptor) => descriptor.resolvedPrimPath),
+    ['/Chair/P_mesh'],
+  );
+});
+
+test('keeps native-render descriptors below an authored Collisions scope out of visuals', () => {
+  const result = adaptUsdViewerSnapshotToRobotData(
+    {
+      stageSourcePath: '/appliances/stove.usd',
+      stage: {
+        defaultPrimPath: '/Stove',
+        primDescriptors: [{
+          path: '/Stove/Collisions/body_box',
+          parentPath: '/Stove/Collisions',
+          name: 'body_box',
+          typeName: 'Cube',
+          collisionEnabled: true,
+        }],
+      },
+      robotTree: {
+        linkParentPairs: [['/Stove', null]],
+        rootLinkPaths: ['/Stove'],
+      },
+      robotMetadataSnapshot: {
+        stageSourcePath: '/appliances/stove.usd',
+        linkParentPairs: [['/Stove', null]],
+        jointCatalogEntries: [],
+        meshCountsByLinkPath: {
+          '/Stove': {
+            visualMeshCount: 1,
+            collisionMeshCount: 1,
+            collisionPrimitiveCounts: { box: 1 },
+          },
+        },
+      },
+      render: {
+        meshDescriptors: [
+          {
+            meshId: '/Stove/visuals.proto_box_id0',
+            sectionName: 'visuals',
+            resolvedPrimPath: '/Stove/Collisions/body_box',
+            primType: 'cube',
+            extentSize: [0.8, 0.7, 0.9],
+            materialId: '/Stove/Physics/PhysicsMaterial',
+          },
+          {
+            meshId: '/Stove/visuals.proto_mesh_id0',
+            sectionName: 'visuals',
+            resolvedPrimPath: '/Stove/StoveBody',
+            primType: 'mesh',
+          },
+        ],
+      },
+    },
+    { fileName: 'stove.usd' },
+  );
+
+  assert.ok(result);
+  const rootLink = result.robotData.links[result.robotData.rootLinkId];
+  assert.ok(rootLink);
+  assert.equal(rootLink.visual.type, GeometryType.MESH);
+  assert.deepEqual(
+    rootLink.visual.usdMeshDescriptors?.map((descriptor) => descriptor.resolvedPrimPath),
+    ['/Stove/StoveBody'],
+  );
+  assert.equal(rootLink.collision.type, GeometryType.BOX);
+  assert.deepEqual(rootLink.collision.dimensions, { x: 0.8, y: 0.7, z: 0.9 });
+});
+
 test('preserves multiple authored materials when one USD visual scope emits multiple mesh descriptors', () => {
   const result = adaptUsdViewerSnapshotToRobotData(
     {
@@ -1206,6 +1492,9 @@ test('keeps texture-only OpenUSD materials opaque when optional scalar fields ar
             materialId: '/Root/Looks/ParquetFloor',
             name: 'ParquetFloor',
             isOmniPbr: true,
+            color: [0.1, 0.4, 0.8],
+            opacity: 1,
+            opacityEnabled: true,
             mapPath: './Materials/Textures/Parquet_Color.png',
           },
         ],
@@ -1217,12 +1506,17 @@ test('keeps texture-only OpenUSD materials opaque when optional scalar fields ar
   );
 
   assert.ok(result);
+  assert.equal(result.robotData.links.Floor.visual.color, '#ffffff');
   assert.deepEqual(result.robotData.materials?.Floor, {
+    color: '#ffffff',
     texture: './Materials/Textures/Parquet_Color.png',
     usdMaterial: {
       materialId: '/Root/Looks/ParquetFloor',
       name: 'ParquetFloor',
       isOmniPbr: true,
+      color: [0.1, 0.4, 0.8],
+      opacity: 1,
+      opacityEnabled: true,
       mapPath: './Materials/Textures/Parquet_Color.png',
     },
   });

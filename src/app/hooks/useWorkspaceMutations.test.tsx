@@ -233,6 +233,100 @@ test('unhandled visual and joint properties stay synchronized to editable source
   assert.equal(isComponentSourceDraftMatchingComponent(draft, component), true);
 });
 
+test('complete robot reconciliation owns source joint updates and suppresses partial patches', () => {
+  const reconciliations: NonNullable<
+    UseWorkspaceMutationsParams['patchEditableSourceRobot']
+  > extends (args: infer Args) => boolean ? Args[] : never = [];
+  const mutations = renderMutations({
+    patchEditableSourceRobot: (args) => {
+      reconciliations.push(args);
+      return true;
+    },
+    patchEditableSourceUpdateJointLimit: () => {
+      assert.fail('legacy limit patch must not run after complete source reconciliation');
+    },
+  });
+
+  mutations.handleUpdate(
+    { type: 'joint', componentId: 'left', entityId: 'shared_joint' },
+    {
+      origin: {
+        xyz: { x: 1, y: 2, z: 3 },
+        rpy: { r: 0.1, p: 0.2, y: 0.3 },
+      },
+      axis: { x: 0, y: 1, z: 0 },
+      limit: { lower: -2, upper: 2 },
+      dynamics: { damping: 0.5, friction: 0.25 },
+      hardware: { motorId: 'motor-42' },
+    },
+    { commitMode: 'immediate' },
+  );
+
+  assert.equal(reconciliations.length, 1);
+  const reconciliation = reconciliations[0]!;
+  assert.notDeepEqual(
+    reconciliation.previousRobot.joints.shared_joint,
+    reconciliation.nextRobot.joints.shared_joint,
+  );
+  assert.deepEqual(
+    reconciliation.nextRobot.joints.shared_joint?.origin.xyz,
+    { x: 1, y: 2, z: 3 },
+  );
+  assert.equal(
+    reconciliation.nextRobot.joints.shared_joint?.hardware.motorId,
+    'motor-42',
+  );
+});
+
+test('MJCF tendon property updates use complete source reconciliation', () => {
+  const workspace = createWorkspace(false);
+  const tendon = {
+    name: 'cable',
+    type: 'fixed' as const,
+    width: 0.01,
+    rgba: [1, 0, 0, 1] as [number, number, number, number],
+    attachmentRefs: ['shared_joint'],
+    attachments: [{ type: 'joint' as const, ref: 'shared_joint', coef: 1 }],
+    actuatorNames: [],
+  };
+  workspace.components.left!.robot.inspectionContext = {
+    sourceFormat: 'mjcf',
+    mjcf: {
+      siteCount: 0,
+      tendonCount: 1,
+      tendonActuatorCount: 0,
+      bodiesWithSites: [],
+      tendons: [tendon],
+    },
+  };
+  installWorkspace(workspace);
+  const reconciliations: NonNullable<
+    UseWorkspaceMutationsParams['patchEditableSourceRobot']
+  > extends (args: infer Args) => boolean ? Args[] : never = [];
+  const mutations = renderMutations({
+    patchEditableSourceRobot: (args) => {
+      reconciliations.push(args);
+      return true;
+    },
+  });
+
+  mutations.handleUpdate(
+    { type: 'tendon', componentId: 'left', entityId: 'cable' },
+    { ...tendon, width: 0.02, rgba: [0, 1, 0, 1] },
+    { commitMode: 'immediate' },
+  );
+
+  assert.equal(reconciliations.length, 1);
+  assert.equal(
+    reconciliations[0]?.previousRobot.inspectionContext?.mjcf?.tendons[0]?.width,
+    0.01,
+  );
+  assert.equal(
+    reconciliations[0]?.nextRobot.inspectionContext?.mjcf?.tendons[0]?.width,
+    0.02,
+  );
+});
+
 test('a failed transactional mutation cancels its exact token and restores partial writes', () => {
   const mutations = renderMutations();
   const originalUpdateLink = useWorkspaceStore.getState().updateLink;

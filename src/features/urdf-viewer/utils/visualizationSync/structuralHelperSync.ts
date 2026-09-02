@@ -77,6 +77,7 @@ interface SyncIkHandleVisualizationOptions {
 }
 
 const ORIGIN_OVERLAY_BASE_RENDER_ORDER = GIZMO_BASE_RENDER_ORDER - 60;
+const AUTHORED_TEXTURE_BASE_COLOR = new THREE.Color(0xffffff);
 
 function resolveRobotRootLinkId(
   robotLinks?: Record<string, UrdfLink>,
@@ -587,11 +588,24 @@ export function syncLinkVisualColors({
       const mat = child.material as THREE.MeshStandardMaterial | undefined;
       if (!mat?.color) return;
 
+      // A link-level fallback color must not tint an authored base-color map.
+      // USD imports keep the resolved texture color in `urdfColor` (normally
+      // neutral white); reusing the inferred link color here multiplies the
+      // walnut texture by a blue fallback and is also shared across sibling
+      // meshes through the runtime material cache.
+      const authoredTextureColor = mat.map
+        ? AUTHORED_TEXTURE_BASE_COLOR
+        : mat.userData?.urdfTextureApplied === true &&
+            mat.userData?.urdfColorApplied === true
+          ? parseThreeColorWithOpacity(mat.userData.urdfColor)?.color ?? null
+          : null;
+      const effectiveTargetColor = authoredTextureColor ?? parsedTargetColor.color;
+
       const lastSynced = child.userData.__syncedColor as string | undefined;
-      if (lastSynced === targetColor) return;
+      if (lastSynced === targetColor && mat.color.equals(effectiveTargetColor)) return;
 
       const nextOpacity = parsedTargetColor.opacity;
-      const colorMatches = mat.color.equals(parsedTargetColor.color);
+      const colorMatches = mat.color.equals(effectiveTargetColor);
       const opacityMatches =
         nextOpacity == null || Math.abs((mat.opacity ?? 1) - nextOpacity) <= 1e-6;
 
@@ -601,7 +615,7 @@ export function syncLinkVisualColors({
       }
 
       if (!colorMatches) {
-        mat.color.copy(parsedTargetColor.color);
+        mat.color.copy(effectiveTargetColor);
       }
       if (nextOpacity != null && !opacityMatches) {
         mat.opacity = nextOpacity;

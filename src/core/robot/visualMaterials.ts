@@ -6,6 +6,7 @@ import {
   type UrdfVisualMaterial,
   type MjcfBuiltinTexture,
 } from '@/types';
+import type { UsdSceneMaterialRecord } from '@/types/usdMaterial';
 import { getVisualGeometryByObjectIndex, updateVisualGeometryByObjectIndex } from './visualBodies';
 
 type RobotMaterials = RobotData['materials'];
@@ -44,6 +45,7 @@ export interface ResolvedVisualMaterialOverride {
   passes?: UrdfVisualMaterial['passes'];
   textureRepeat?: [number, number];
   mjcfBuiltinTexture?: MjcfBuiltinTexture;
+  usdMaterial?: UsdSceneMaterialRecord | null;
   source: 'authored' | 'legacy-link' | 'none';
   isMultiMaterial: boolean;
 }
@@ -203,17 +205,27 @@ export function normalizeAuthoredMaterialEntry(
 function resolveLegacyLinkMaterial(
   materials: RobotMaterials | undefined,
   link: Pick<UrdfLink, 'id' | 'name'>,
-): UrdfVisualMaterial | null {
+): (UrdfVisualMaterial & { usdMaterial?: UsdSceneMaterialRecord | null }) | null {
   const material = materials?.[link.id] || materials?.[link.name];
   if (!material) {
     return null;
   }
 
-  return normalizeAuthoredMaterialEntry({
+  const normalizedMaterial = normalizeAuthoredMaterialEntry({
     color: material.color,
     colorRgba: material.colorRgba,
     texture: material.texture,
   });
+  const usdMaterial = material.usdMaterial ? { ...material.usdMaterial } : undefined;
+
+  if (!normalizedMaterial && !usdMaterial) {
+    return null;
+  }
+
+  return {
+    ...(normalizedMaterial ?? {}),
+    ...(usdMaterial ? { usdMaterial } : {}),
+  };
 }
 
 export function getGeometryAuthoredMaterials(
@@ -351,6 +363,7 @@ export function resolveVisualMaterialOverride(
         color: legacyLinkMaterial.color,
         colorRgba: legacyLinkMaterial.colorRgba,
         texture: legacyLinkMaterial.texture,
+        usdMaterial: legacyLinkMaterial.usdMaterial,
         source: 'legacy-link',
         isMultiMaterial: false,
       };

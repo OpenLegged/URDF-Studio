@@ -351,6 +351,15 @@ export function TreeEditorJointSection({
     robot,
     projection,
   });
+  // Row-local editing and drag state belongs to the document target, not to a
+  // semantic projection revision. Limit edits rebuild the projection; using
+  // resetScopeKey as the React key would unmount a slider while pointerdown is
+  // committing an adjacent numeric editor.
+  const interactionScopeKey = createTreeJointPanelScopeKey({
+    componentId: 'workspace',
+    sourceFilePath,
+    robot,
+  });
   const effectiveJointAngleSnapshot = React.useMemo(() => {
     const pendingCommittedAngles = pendingCommittedJointAnglesRef.current;
     if (
@@ -591,6 +600,7 @@ export function TreeEditorJointSection({
           {hasJointEntries ? (
             <JointPanelList
               robot={localRobot}
+              scopeKey={interactionScopeKey}
               angleUnit={angleUnit}
               jointPanelStore={jointPanelStoreRef.current}
               setActiveJoint={jointPanelStoreRef.current.setActiveJoint}

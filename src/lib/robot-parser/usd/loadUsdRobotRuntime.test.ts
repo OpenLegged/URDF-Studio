@@ -156,6 +156,49 @@ test('USD runtime builds baked meshes under articulated links with material and 
   assert.equal(runtime.root.children.length, 0);
 });
 
+test('USD runtime keeps opaque textured materials white-based instead of name-tinted', async () => {
+  const parsed = createParsedScene();
+  const materialRecord = parsed.snapshot.render?.materials?.[0];
+  assert.ok(materialRecord);
+  materialRecord.mapPath = 'resource/img/walnut.png';
+  materialRecord.opacity = 1;
+  materialRecord.opacityEnabled = true;
+
+  const originalImage = globalThis.Image;
+  const originalLoadAsync = THREE.TextureLoader.prototype.loadAsync;
+  Object.defineProperty(globalThis, 'Image', {
+    configurable: true,
+    value: class Image {},
+  });
+  THREE.TextureLoader.prototype.loadAsync = async () => new THREE.Texture();
+  try {
+    const runtime = await buildUsdRobotRuntimeFromScene(parsed, {
+      assets: { 'resource/img/walnut.png': 'blob:walnut' },
+    });
+    const mesh = runtime.root.links.arm.getObjectByName('shell') as THREE.Mesh;
+    const material = mesh.material as THREE.MeshPhysicalMaterial;
+
+    assert.ok(material.map);
+    assert.equal(material.color.getHex(), 0xffffff);
+    assert.equal(material.vertexColors, false);
+    assert.equal(material.transparent, false);
+    assert.equal(material.userData.urdfTextureApplied, true);
+    assert.equal(material.userData.urdfColorApplied, true);
+    assert.equal(material.userData.urdfColor, '#ffffff');
+    runtime.dispose();
+  } finally {
+    THREE.TextureLoader.prototype.loadAsync = originalLoadAsync;
+    if (originalImage === undefined) {
+      delete (globalThis as { Image?: typeof Image }).Image;
+    } else {
+      Object.defineProperty(globalThis, 'Image', {
+        configurable: true,
+        value: originalImage,
+      });
+    }
+  }
+});
+
 test('USD runtime rejects descriptor-only snapshots instead of returning an invisible robot', async () => {
   await assert.rejects(
     buildUsdRobotRuntimeFromScene(createParsedScene({ includeBuffers: false })),

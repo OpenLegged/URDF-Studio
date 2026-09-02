@@ -99,6 +99,7 @@ export interface JointPanelControlsProps {
 
 export interface JointPanelListProps {
   robot: JointPanelRobot | null | undefined;
+  scopeKey?: string | null;
   angleUnit: JointPanelAngleUnit;
   jointPanelStore: JointPanelStore;
   setActiveJoint: (name: string | null, options?: JointPanelActiveJointOptions) => void;
@@ -391,6 +392,7 @@ export function JointPanelControls({
 
 export function JointPanelList({
   robot,
+  scopeKey,
   angleUnit,
   jointPanelStore,
   setActiveJoint,
@@ -441,7 +443,7 @@ export function JointPanelList({
     >
       {jointEntries.map(([name, joint]) => (
         <JointPanelItemBinding
-          key={name}
+          key={`${scopeKey ?? 'joint-panel'}:${name}`}
           name={name}
           joint={joint}
           displayName={resolveJointPanelJointDisplayName(

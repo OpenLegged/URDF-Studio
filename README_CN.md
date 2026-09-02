@@ -159,6 +159,7 @@ npm install
 OPENAI_API_KEY=your_api_key
 OPENAI_BASE_URL=https://api.openai.com/v1
 OPENAI_MODEL=gpt-4.1-mini
+OPENAI_CONTEXT_WINDOW_TOKENS=32768
 
 # 当 OPENAI_API_KEY 未设置时，GEMINI_API_KEY 会作为备选键
 GEMINI_API_KEY=

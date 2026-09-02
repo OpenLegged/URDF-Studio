@@ -6,8 +6,10 @@ import type {
   InspectionReport,
   JointEntityRef,
   LinkEntityRef,
+  RobotData,
   RobotState,
 } from '@/types';
+import type { AgentRunEvent, AgentRunStatus } from './agentRuntimeTypes';
 
 /**
  * AI response structure
@@ -63,6 +65,19 @@ export interface AIConversationDivider {
   marker: 'new-conversation';
 }
 
+export interface AIConversationAgentActivity {
+  kind: 'agent-activity';
+  role: 'assistant';
+  status: AgentRunStatus;
+  events: AgentRunEvent[];
+}
+
+/** Hidden canonical history after token-pressure compaction. */
+export interface AIConversationContextCheckpoint {
+  kind: 'context-checkpoint';
+  turns: Array<{ role: 'user' | 'assistant'; content: string }>;
+}
+
 /**
  * A proposed URDF modification returned by the AI. The user previews the diff
  * against `currentUrdf` and applies it; apply re-parses `proposedUrdf` and
@@ -77,10 +92,37 @@ export interface AIConversationModificationCard {
   currentUrdf: string;
   componentId: string;
   status: 'pending' | 'applied' | 'dismissed';
+  /** Stable identity for exactly one proposal/apply/verification lifecycle. */
+  proposalId?: string;
+  /** Original visible request used by the post-apply requirement verifier. */
+  originalUserRequest?: string;
+  /** Post-apply checks are intentionally summarized rather than shown as a checklist. */
+  verificationStatus?:
+    | 'not-started'
+    | 'verifying'
+    | 'verified'
+    | 'failed'
+    | 'unverified'
+    | 'stale';
 }
+
+export type AIConversationApplyResult =
+  | {
+      ok: true;
+      componentId: string;
+      revision: number;
+      liveRobot: RobotData;
+      liveRobotHash: string;
+    }
+  | {
+      ok: false;
+      reason: 'invalid-urdf' | 'component-missing' | 'revision-conflict';
+    };
 
 export type AIConversationMessage =
   | AIConversationChatMessage
+  | AIConversationAgentActivity
+  | AIConversationContextCheckpoint
   | AIConversationDivider
   | AIConversationModificationCard;
 

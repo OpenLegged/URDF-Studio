@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { BackSide, BoxGeometry, Color, CylinderGeometry, DoubleSide, Float32BufferAttribute, FrontSide, Group, MeshPhysicalMaterial, Vector3 } from 'three';
+import { BackSide, BoxGeometry, Color, CylinderGeometry, DoubleSide, Float32BufferAttribute, FrontSide, Group, MeshPhysicalMaterial, Texture, Vector3 } from 'three';
 
 import { isCoplanarOffsetMaterial } from '../../../../../core/loaders/coplanarMaterialOffset.ts';
 import { HydraMesh } from './HydraMesh.js';
@@ -193,6 +193,21 @@ test('HydraMesh preserves USD displayColor constant values as raw linear colors'
     assert.ok(material);
     assert.equal(material.vertexColors, false);
     assertColorClose(material.color, expectedColor);
+});
+
+test('HydraMesh does not tint a bound base-color texture with fallback displayColor', () => {
+    const hydraMesh = new HydraMesh('Mesh', '/robot/base_link/mesh', createHydraInterfaceStub());
+    const material = Array.isArray(hydraMesh._mesh.material)
+        ? hydraMesh._mesh.material[0]
+        : hydraMesh._mesh.material;
+
+    assert.ok(material);
+    material.map = new Texture();
+    material.color.set(0xffffff);
+    hydraMesh.setDisplayColor([0.18, 0.32, 0.41], 'constant');
+
+    assert.equal(material.vertexColors, false);
+    assertColorClose(material.color, new Color(0xffffff));
 });
 
 test('HydraMesh preserves USD displayColor vertex values as raw linear colors', () => {

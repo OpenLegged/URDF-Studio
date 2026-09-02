@@ -530,6 +530,7 @@ public:
         stageInfo.set("timeCodesPerSecond", 0.0);
         stageInfo.set("framesPerSecond", 0.0);
         stageInfo.set("metersPerUnit", 0.0);
+        stageInfo.set("collisionPrimRecords", emptyArray);
 
         robotTree.set("linkParentPairs", emptyArray);
         robotTree.set("jointCatalogEntries", emptyArray);
@@ -607,6 +608,48 @@ public:
         stageInfo.set("timeCodesPerSecond", _stage->GetTimeCodesPerSecond());
         stageInfo.set("framesPerSecond", _stage->GetFramesPerSecond());
         stageInfo.set("metersPerUnit", metersPerUnit);
+
+        emscripten::val collisionPrimRecords = emscripten::val::array();
+        int collisionPrimRecordIndex = 0;
+        const UsdTimeCode collisionTimeCode =
+            _delegate ? _delegate->GetTime() : UsdTimeCode::Default();
+        const Usd_PrimFlagsPredicate collisionPredicate =
+            UsdTraverseInstanceProxies(UsdPrimAllPrimsPredicate);
+        for (UsdPrim const& prim : UsdPrimRange::Stage(
+                 _stage, collisionPredicate)) {
+            if (!prim) continue;
+            const UsdAttribute collisionEnabledAttr =
+                prim.GetAttribute(TfToken("physics:collisionEnabled"));
+            bool hasCollisionDeclaration = static_cast<bool>(collisionEnabledAttr);
+            if (!hasCollisionDeclaration) {
+                for (TfToken const& schemaToken : prim.GetAppliedSchemas()) {
+                    if (_ToLowerAscii(schemaToken.GetString()).find("collisionapi")
+                        != std::string::npos) {
+                        hasCollisionDeclaration = true;
+                        break;
+                    }
+                }
+            }
+            if (!hasCollisionDeclaration) continue;
+
+            emscripten::val record = emscripten::val::object();
+            record.set("path", prim.GetPath().GetString());
+            record.set(
+                "collisionEnabled",
+                _PrimHasEnabledCollision(prim, collisionTimeCode));
+            const UsdAttribute approximationAttr =
+                prim.GetAttribute(TfToken("physics:approximation"));
+            TfToken approximation;
+            if (approximationAttr
+                && approximationAttr.Get(&approximation, collisionTimeCode)
+                && !approximation.IsEmpty()) {
+                record.set("collisionApproximation", approximation.GetString());
+            } else {
+                record.set("collisionApproximation", emscripten::val::null());
+            }
+            collisionPrimRecords.set(collisionPrimRecordIndex++, record);
+        }
+        stageInfo.set("collisionPrimRecords", collisionPrimRecords);
         snapshotProfile.stageInfoMs = _NowSteadyMs() - stageInfoStartedAtMs;
 
         auto makeFloat32ArrayCopy = [](std::vector<float> const& values) {
@@ -3248,6 +3291,9 @@ private:
             if (_ToLowerAscii(shaderInfoId).find("omnipbr") != std::string::npos) {
                 record.set("isOmniPbr", true);
             }
+            if (_ToLowerAscii(shaderInfoId).find("omniglass") != std::string::npos) {
+                record.set("isOmniGlass", true);
+            }
         }
 
         bool opacityEnabled = true;
@@ -3272,6 +3318,7 @@ private:
             "inputs:base_color_constant",
             "inputs:albedo",
             "inputs:albedo_constant",
+            "inputs:glass_color",
         });
         if (hasBaseColor) {
             record.set("colorSpace", std::string("linear"));
@@ -3285,6 +3332,7 @@ private:
             "inputs:reflection_roughness",
             "inputs:reflection_roughness_constant",
             "inputs:specular_roughness",
+            "inputs:frosting_roughness",
         }, true);
         bool isOmniPbr = false;
         try {
@@ -3295,6 +3343,15 @@ private:
         if (!roughnessAssigned && isOmniPbr) {
             record.set("roughness", 0.5);
         }
+        bool isOmniGlass = false;
+        try {
+            isOmniGlass = record["isOmniGlass"].as<bool>();
+        } catch (...) {
+            isOmniGlass = false;
+        }
+        if (!roughnessAssigned && isOmniGlass) {
+            record.set("roughness", 0.0);
+        }
 
         setScalar("metalness", {
             "inputs:metallic",
@@ -3302,7 +3359,11 @@ private:
             "inputs:metalness",
             "inputs:metalness_constant",
         }, true);
-        setScalar("opacity", { "inputs:opacity", "inputs:opacity_constant" }, true);
+        setScalar("opacity", {
+            "inputs:opacity",
+            "inputs:opacity_constant",
+            "inputs:cutout_opacity",
+        }, true);
         setScalar("alphaTest", {
             "inputs:opacityThreshold",
             "inputs:opacity_threshold",
@@ -3321,8 +3382,21 @@ private:
             "inputs:specular_intensity",
             "inputs:specularIntensity",
         }, true);
-        setScalar("ior", { "inputs:ior", "inputs:indexOfRefraction" }, false, true, 1.0);
-        setScalar("transmission", { "inputs:transmission", "inputs:transmission_weight" }, true);
+        const bool iorAssigned = setScalar("ior", {
+            "inputs:ior",
+            "inputs:indexOfRefraction",
+            "inputs:glass_ior",
+        }, false, true, 1.0);
+        if (!iorAssigned && isOmniGlass) {
+            record.set("ior", 1.491);
+        }
+        const bool transmissionAssigned = setScalar("transmission", {
+            "inputs:transmission",
+            "inputs:transmission_weight",
+        }, true);
+        if (!transmissionAssigned && isOmniGlass) {
+            record.set("transmission", 1.0);
+        }
         setScalar("thickness", { "inputs:thickness", "inputs:thickness_constant" }, false, true, 0.0);
         setScalar("attenuationDistance", { "inputs:attenuationDistance", "inputs:attenuation_distance" }, false, true, 0.0);
         setScalar("aoMapIntensity", { "inputs:ao_strength", "inputs:occlusion_strength", "inputs:occlusion" }, true);
@@ -3358,6 +3432,7 @@ private:
             "inputs:baseColor_texture",
             "inputs:base_color_texture",
             "inputs:albedo_texture",
+            "inputs:glass_color_texture",
         });
         setTexture("emissiveMapPath", {
             "inputs:emissiveColor_texture",
@@ -3394,6 +3469,7 @@ private:
             "inputs:opacity_texture",
             "inputs:opacity_mask_texture",
             "inputs:opacityMask_texture",
+            "inputs:cutout_opacity_texture",
         });
         setTexture("clearcoatMapPath", { "inputs:clearcoat_texture", "inputs:coat_texture" });
         setTexture("clearcoatRoughnessMapPath", {
@@ -3512,6 +3588,7 @@ private:
                 "inputs:baseColor_texture",
                 "inputs:base_color_texture",
                 "inputs:albedo_texture",
+                "inputs:glass_color_texture",
                 "inputs:emissiveColor_texture",
                 "inputs:emissive_color_texture",
                 "inputs:emissive_texture",
@@ -3533,7 +3610,8 @@ private:
                 "inputs:ORM_texture",
                 "inputs:opacity_texture",
                 "inputs:opacity_mask_texture",
-                "inputs:opacityMask_texture"})) {
+                "inputs:opacityMask_texture",
+                "inputs:cutout_opacity_texture"})) {
             return true;
         }
 

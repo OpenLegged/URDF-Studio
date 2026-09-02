@@ -5,6 +5,7 @@ import {
   DEFAULT_JOINT,
   DEFAULT_LINK,
   GeometryType,
+  JointType,
   type RobotClosedLoopConstraint,
   type UrdfJoint,
   type UrdfLink,
@@ -325,9 +326,16 @@ export function createJointFromViewerEntry(
   ).trim();
   const jointId = createUniqueId(jointName || 'joint', usedJointIds, `${parentPath}_${childPath}`);
   const jointType = jointTypeFromViewerValue(entry.jointTypeName || entry.jointType);
-  const lower = degreesToRadians(entry.lowerLimitDeg);
-  const upper = degreesToRadians(entry.upperLimitDeg);
-  const angle = degreesToRadians(entry.angleDeg);
+  // USD linear joint limits are authored in stage distance units, while
+  // angular limits use degrees. The snapshot unit-normalization pass has
+  // already converted prismatic distances to meters.
+  const normalizeJointValue = (value: unknown) =>
+    jointType === JointType.PRISMATIC
+      ? (value != null && Number.isFinite(Number(value)) ? Number(value) : undefined)
+      : degreesToRadians(value as number | null | undefined);
+  const lower = normalizeJointValue(entry.lowerLimitDeg);
+  const upper = normalizeJointValue(entry.upperLimitDeg);
+  const angle = normalizeJointValue(entry.angleDeg);
   const driveDamping =
     typeof entry.driveDamping === 'number' && Number.isFinite(entry.driveDamping)
       ? entry.driveDamping

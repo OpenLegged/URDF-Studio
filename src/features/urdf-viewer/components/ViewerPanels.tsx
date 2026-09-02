@@ -137,7 +137,8 @@ export const ViewerPanels = ({
         <React.Suspense fallback={null}>
           <LazyJointsPanel
             showJointPanel={showJointPanel}
-            robot={jointsPanel.jointPanelRobot ?? jointsPanel.robot}
+            robot={jointsPanel.displayRobot}
+            scopeKey={jointsPanel.scopeKey}
             jointPanelRef={layout.jointPanelRef}
             jointPanelPos={layout.jointPanelPos}
             defaultPosition={jointsDefaultPosition}

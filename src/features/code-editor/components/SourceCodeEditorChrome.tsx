@@ -13,7 +13,7 @@ import {
   Save,
 } from 'lucide-react';
 import { FLOATING_WINDOW_TITLE_CLASS } from '@/shared/components/DraggableWindow';
-import { Select, Tooltip } from '@/shared/components/ui';
+import { IconButton, Select, Tooltip } from '@/shared/components/ui';
 import type { TranslationKeys } from '@/shared/i18n';
 import {
   getSourceCodeEditorTabAccentClassName,
@@ -179,6 +179,7 @@ interface SourceCodeEditorDocumentNavigationProps {
   activeDocument: ActiveSourceCodeDocument;
   activeDocumentPath: string;
   documents: ActiveSourceCodeDocument[];
+  onDocumentDownload: (documentId: string) => void;
   onDocumentSwitch: (documentId: string) => Promise<void> | void;
   t: TranslationKeys;
 }
@@ -187,6 +188,7 @@ export function SourceCodeEditorDocumentNavigation({
   activeDocument,
   activeDocumentPath,
   documents,
+  onDocumentDownload,
   onDocumentSwitch,
   t,
 }: SourceCodeEditorDocumentNavigationProps) {
@@ -221,6 +223,20 @@ export function SourceCodeEditorDocumentNavigation({
             void onDocumentSwitch(event.currentTarget.value);
           }}
         />
+        {activeDocument.documentFlavor === 'urdf' ? (
+          <IconButton
+            aria-label={`${t.sourceCodeDownload}: ${activeDocument.tabLabel ?? activeDocument.fileName}`}
+            className="h-7 w-7 shrink-0 text-text-secondary"
+            data-testid={`source-code-document-download-${activeDocument.id}`}
+            onClick={() => {
+              onDocumentDownload(activeDocument.id);
+            }}
+            size="sm"
+            title={t.sourceCodeDownloadTooltip}
+          >
+            <Download className="h-3.5 w-3.5" />
+          </IconButton>
+        ) : null}
         <span className="shrink-0 text-[10px] font-medium text-text-tertiary">
           {documents.length} {t.sourceCodeFiles}
         </span>
@@ -238,28 +254,45 @@ export function SourceCodeEditorDocumentNavigation({
         {documents.map((document) => {
           const isActiveDocument = document.id === activeDocument.id;
           return (
-            <button
-              key={document.id}
-              aria-selected={isActiveDocument}
-              className={getSourceCodeEditorTabClassName(isActiveDocument)}
-              onClick={() => {
-                void onDocumentSwitch(document.id);
-              }}
-              role="tab"
-              title={document.filePath ?? document.fileName}
-              type="button"
-            >
-              <span
-                aria-hidden="true"
-                className={getSourceCodeEditorTabAccentClassName(isActiveDocument)}
-              />
-              <span className="max-w-44 truncate">{document.tabLabel ?? document.fileName}</span>
-              {document.documentFlavor === 'equivalent-mjcf' ? (
-                <span className={getSourceCodeEditorTabBadgeClassName(isActiveDocument)}>
-                  {t.sourceCodeGenerated}
-                </span>
+            <div key={document.id} className="flex h-full shrink-0 items-stretch">
+              <button
+                aria-selected={isActiveDocument}
+                className={getSourceCodeEditorTabClassName(isActiveDocument)}
+                onClick={() => {
+                  void onDocumentSwitch(document.id);
+                }}
+                role="tab"
+                title={document.filePath ?? document.fileName}
+                type="button"
+              >
+                <span
+                  aria-hidden="true"
+                  className={getSourceCodeEditorTabAccentClassName(isActiveDocument)}
+                />
+                <span className="max-w-44 truncate">{document.tabLabel ?? document.fileName}</span>
+                {document.documentFlavor === 'equivalent-mjcf' ? (
+                  <span className={getSourceCodeEditorTabBadgeClassName(isActiveDocument)}>
+                    {t.sourceCodeGenerated}
+                  </span>
+                ) : null}
+              </button>
+              {document.documentFlavor === 'urdf' ? (
+                <IconButton
+                  aria-label={`${t.sourceCodeDownload}: ${document.tabLabel ?? document.fileName}`}
+                  className={`h-full w-8 shrink-0 rounded-none border-r border-border-black ${
+                    isActiveDocument ? 'bg-panel-bg text-system-blue' : 'bg-element-bg'
+                  }`}
+                  data-testid={`source-code-document-download-${document.id}`}
+                  onClick={() => {
+                    onDocumentDownload(document.id);
+                  }}
+                  size="sm"
+                  title={t.sourceCodeDownloadTooltip}
+                >
+                  <Download className="h-3.5 w-3.5" />
+                </IconButton>
               ) : null}
-            </button>
+            </div>
           );
         })}
       </div>

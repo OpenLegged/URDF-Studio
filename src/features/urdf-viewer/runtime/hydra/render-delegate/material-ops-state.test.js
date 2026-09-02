@@ -25,6 +25,7 @@ const {
 } = ThreeRenderDelegateMaterialOps.prototype;
 const {
     applyStageFallbackMaterialParameters,
+    resolveMaterialTexturePath,
     warmupRobotSceneSnapshotFromDriver,
     getLastRobotSceneWarmupSummary,
     getProtoDataBlob,
@@ -261,6 +262,31 @@ test('material texture loading keeps raw virtual paths as a compatibility fallba
     ]);
 });
 
+test('material texture candidates recover paths relative to referenced USD layers', () => {
+    const context = {
+        normalizeMaterialTexturePath(value) {
+            return String(value || '').trim().replace(/^\.\//, '') || null;
+        },
+        getStageSourcePath() {
+            return '/model.usd';
+        },
+        registry: {
+            allPaths: [
+                '/resource/material.usd',
+                '/resource/img/wood.png',
+            ],
+        },
+    };
+
+    const candidates = resolveMaterialTexturePathCandidates.call(context, 'img/wood.png');
+
+    assert.deepEqual(candidates, [
+        '/img/wood.png',
+        '/resource/img/wood.png',
+        'img/wood.png',
+    ]);
+});
+
 test('applyStageFallbackMaterialParameters ignores OmniPBR default white emission unless enabled', () => {
     const material = new MeshPhysicalMaterial({ color: 0x000000 });
     const context = createStageFallbackContext();
@@ -293,6 +319,29 @@ test('applyStageFallbackMaterialParameters trusts authored white over numeric ma
     assert.equal(material.color.getHexString(), 'ffffff');
 });
 
+test('applyStageFallbackMaterialParameters approximates OmniGlass MDL inputs', () => {
+    const material = new MeshPhysicalMaterial();
+    const context = createStageFallbackContext();
+    const shaderPrim = createShaderPrim(
+        new Map([
+            ['info:mdl:sourceAsset', 'OmniGlass.mdl'],
+            ['inputs:enable_opacity', true],
+            ['inputs:cutout_opacity', 0.8],
+            ['inputs:glass_color', [0.25, 0.5, 0.75]],
+        ]),
+    );
+
+    applyStageFallbackMaterialParameters.call(context, material, shaderPrim);
+
+    assert.equal(material.userData.usdIsOmniGlass, true);
+    assert.equal(material.opacity, 0.8);
+    assert.equal(material.transparent, true);
+    assert.equal(material.transmission, 1);
+    assert.equal(material.roughness, 0);
+    assert.equal(material.ior, 1.491);
+    assert.equal(material.color.getHexString(), '89bce1');
+});
+
 test('applyStageFallbackMaterialParameters resolves Isaac Sim texture aliases and packed ORM channels', async () => {
     const material = new MeshPhysicalMaterial();
     const context = createStageFallbackTextureContext();
@@ -315,6 +364,57 @@ test('applyStageFallbackMaterialParameters resolves Isaac Sim texture aliases an
     assert.equal(material.aoMap?.name, 'textures/orm.png');
     assert.equal(material.emissiveMap?.name, 'textures/emissive.png');
     assert.equal(material.normalMap?.name, 'textures/detail-normal.png');
+});
+
+test('resolveMaterialTexturePath follows a conventional UsdPreviewSurface diffuse texture shader', () => {
+    const materialPath = '/root/materials/wood';
+    const textureShaderPrim = createShaderPrim(new Map([
+        ['inputs:file', { resolvedPath: 'resource/img/wood.jpg' }],
+    ]));
+    const stage = {};
+    const context = createStageFallbackContext();
+    context.getStage = () => stage;
+    context.safeGetPrimAtPath = (candidateStage, primPath) => (
+        candidateStage === stage && primPath === `${materialPath}/diffuseTexture`
+            ? textureShaderPrim
+            : null
+    );
+    const surfaceShaderPrim = createShaderPrim(new Map());
+
+    const texturePath = resolveMaterialTexturePath.call(
+        context,
+        surfaceShaderPrim,
+        ['inputs:diffuseColor'],
+        { materialPath, materialProperty: 'map' },
+    );
+
+    assert.equal(texturePath, 'resource/img/wood.jpg');
+});
+
+test('applyStageFallbackMaterialParameters applies a connected UsdPreviewSurface diffuse texture', async () => {
+    const materialPath = '/root/materials/wood';
+    const material = new MeshPhysicalMaterial({ color: 0x123456 });
+    const textureShaderPrim = createShaderPrim(new Map([
+        ['inputs:file', { resolvedPath: 'resource/img/wood.jpg' }],
+    ]));
+    const stage = {};
+    const context = createStageFallbackTextureContext();
+    context.getStage = () => stage;
+    context.safeGetPrimAtPath = (candidateStage, primPath) => (
+        candidateStage === stage && primPath === `${materialPath}/diffuseTexture`
+            ? textureShaderPrim
+            : null
+    );
+    const surfaceShaderPrim = createShaderPrim(new Map());
+
+    applyStageFallbackMaterialParameters.call(context, material, surfaceShaderPrim, { materialPath });
+
+    assert.equal(material.userData.usdPendingTexturePaths.map, 'resource/img/wood.jpg');
+    await new Promise((resolve) => setImmediate(resolve));
+
+    assert.equal(material.map?.name, 'resource/img/wood.jpg');
+    assert.equal(material.color.getHexString(), 'ffffff');
+    assert.equal(material.userData.usdMaterialPath, materialPath);
 });
 
 test('applyStageFallbackMaterialParameters keeps dedicated maps ahead of enabled ORM fallback', async () => {
@@ -457,6 +557,26 @@ test('normalizeSnapshotMaterialRecords treats authored USD scalar colors as line
     assert.equal(records[0].colorSource, 'authored');
     assert.equal(records[0].colorSpace, 'linear');
     assert.equal(records[0].authoredColorSpace, 'linear');
+});
+
+test('normalizeSnapshotMaterialRecords applies OmniGlass physical defaults', () => {
+    const context = createMaterialOpsContext();
+    context.getStageSourcePath = () => '/scene.usd';
+    context.inferColorHexFromMaterialName = () => null;
+    context.resolveSnapshotMaterialEmissionEnabled = resolveSnapshotMaterialEmissionEnabled;
+
+    const [record] = normalizeSnapshotMaterialRecords.call(context, [{
+        materialId: '/root/Looks/glass',
+        shaderInfoId: 'OmniGlass',
+        opacity: 0.8,
+    }]);
+
+    assert.equal(record.isOmniGlass, true);
+    assert.equal(record.opacity, 0.8);
+    assert.equal(record.roughness, 0);
+    assert.equal(record.ior, 1.491);
+    assert.equal(record.transmission, 1);
+    assert.equal(record.emissiveEnabled, false);
 });
 
 test('normalizeSnapshotMaterialRecords uses numeric material-name color only without authored color', () => {

@@ -16,8 +16,10 @@ import type { ExportTarget } from '../hooks/file-export/types';
 import type { ImportFromUrlProgress, ImportPhase } from '../hooks/useAssetImportFromUrl';
 import type {
   AIConversationFocusedIssue,
+  AIConversationApplyResult,
   AIConversationLaunchContext,
   AIConversationSelection,
+  StudioAgentPorts,
 } from '@/features/ai-assistant';
 import type { ExportDialogConfig, ExportProgressState } from '@/features/file-io';
 import type { InspectionReport, RobotState } from '@/types';
@@ -63,7 +65,10 @@ interface AppOverlayLayerProps {
   ) => void;
   handleStartNewAIConversation: (currentLaunchContext: AIConversationLaunchContext) => void;
   isAIConversationOpen: boolean;
-  onApplyAIUrdfModification: (componentId: string, proposedUrdf: string) => boolean;
+  onApplyAIUrdfModification: (
+    componentId: string,
+    proposedUrdf: string,
+  ) => AIConversationApplyResult;
   isAIInspectionOpen: boolean;
   isDisconnectedWorkspaceUrdfExporting: boolean;
   isExportDialogOpen: boolean;
@@ -80,6 +85,7 @@ interface AppOverlayLayerProps {
   setIsExportDialogOpen: Dispatch<SetStateAction<boolean>>;
   shouldRenderAIConversationModal: boolean;
   shouldRenderAIInspectionModal: boolean;
+  studioAgentPorts: StudioAgentPorts;
   toast: AppToastState;
 }
 
@@ -111,6 +117,7 @@ export function AppOverlayLayer({
   setIsExportDialogOpen,
   shouldRenderAIConversationModal,
   shouldRenderAIInspectionModal,
+  studioAgentPorts,
   toast,
 }: AppOverlayLayerProps) {
   return (
@@ -144,6 +151,7 @@ export function AppOverlayLayer({
             launchContext={aiConversationLaunchContext}
             onStartNewConversation={handleStartNewAIConversation}
             onApply={onApplyAIUrdfModification}
+            studioAgentPorts={studioAgentPorts}
           />
         </Suspense>
       )}

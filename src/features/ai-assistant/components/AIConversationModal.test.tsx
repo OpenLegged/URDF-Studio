@@ -6,11 +6,22 @@ import { createRoot } from 'react-dom/client';
 import { JSDOM } from 'jsdom';
 
 import { createSingleComponentWorkspace } from '@/core/robot';
+import { applyAIUrdfModification } from '@/app/utils/applyAIUrdfModification';
 import { __setAgentOpenAIClientFactoryForTests } from '../services/aiAgent';
 import { DEFAULT_MANAGED_WINDOW_ORDER, useSelectionStore, useUIStore, useWorkspaceStore } from '@/store';
+import { useAssetsStore } from '@/store/assetsStore';
 import { GeometryType, JointType, type RobotState } from '@/types';
 import type { AIConversationLaunchContext } from '../types';
 import { buildConversationPromptSuggestions } from '../utils/conversationPromptSuggestions';
+import {
+  clearAgentSessionStore,
+  getAgentSessionRepository,
+  getAgentSessionStorageStats,
+} from '../services/agentSessionStore';
+import {
+  createAgentConversationSession,
+  persistConversationTimeline,
+} from '../utils/conversationSessionPersistence';
 
 function installDom() {
   const dom = new JSDOM('<!doctype html><html><body><div id="root"></div></body></html>', {
@@ -40,6 +51,7 @@ function installDom() {
   (globalThis as { Node?: typeof Node }).Node = dom.window.Node;
   (globalThis as { Event?: typeof Event }).Event = dom.window.Event;
   (globalThis as { MouseEvent?: typeof MouseEvent }).MouseEvent = dom.window.MouseEvent;
+  (globalThis as { DOMParser?: typeof DOMParser }).DOMParser = dom.window.DOMParser;
   (globalThis as { getComputedStyle?: typeof getComputedStyle }).getComputedStyle =
     dom.window.getComputedStyle.bind(dom.window);
   (globalThis as { requestAnimationFrame?: typeof requestAnimationFrame }).requestAnimationFrame =
@@ -153,10 +165,11 @@ const getCopyButtons = (scope: ParentNode): HTMLButtonElement[] =>
 const clickButton = async (button: HTMLButtonElement) => {
   await act(async () => {
     button.dispatchEvent(new window.MouseEvent('click', { bubbles: true }));
+    await new Promise((resolve) => setTimeout(resolve, 0));
   });
 };
 
-test('AIConversationModal opens at the front and remains front when activated', async () => {
+test('AIConversationModal opens and reopens at the front', async () => {
   const previousApiKey = process.env.API_KEY;
   process.env.API_KEY = '';
   const dom = installDom();
@@ -205,6 +218,46 @@ test('AIConversationModal opens at the front and remains front when activated', 
       useUIStore.getState().getManagedWindowZIndex('aiConversation') >
         useUIStore.getState().getManagedWindowZIndex('sourceCode'),
       'activated AI conversation window should move above source code',
+    );
+
+    await act(async () => {
+      root.render(
+        <AIConversationModal
+          isOpen={false}
+          onClose={() => {}}
+          lang="en"
+          launchContext={createLaunchContext()}
+          onStartNewConversation={() => {}}
+          onApply={() => true}
+        />,
+      );
+    });
+    await act(async () => {
+      useUIStore.getState().bringWindowToFront('sourceCode');
+    });
+    assert.ok(
+      useUIStore.getState().getManagedWindowZIndex('sourceCode') >
+        useUIStore.getState().getManagedWindowZIndex('aiConversation'),
+      'source code should be in front while the conversation is closed',
+    );
+
+    await act(async () => {
+      root.render(
+        <AIConversationModal
+          isOpen
+          onClose={() => {}}
+          lang="en"
+          launchContext={createLaunchContext()}
+          onStartNewConversation={() => {}}
+          onApply={() => true}
+        />,
+      );
+    });
+
+    assert.ok(
+      useUIStore.getState().getManagedWindowZIndex('aiConversation') >
+        useUIStore.getState().getManagedWindowZIndex('sourceCode'),
+      'reopened AI conversation window should move above source code',
     );
   } finally {
     await act(async () => {
@@ -262,8 +315,273 @@ test('compact conversation layout fits the viewport and keeps content scrollable
       container
         .querySelector<HTMLButtonElement>('button[aria-label="新开对话"]')
         ?.textContent?.trim(),
+      '新开对话',
+    );
+    assert.equal(
+      container
+        .querySelector<HTMLButtonElement>('button[aria-label="清除历史"]')
+        ?.textContent?.trim(),
       '',
     );
+  } finally {
+    await act(async () => {
+      root.unmount();
+    });
+    dom.window.close();
+  }
+});
+
+test('shows safe AI analysis progress immediately without exposing internal reasoning', async () => {
+  const previousApiKey = process.env.API_KEY;
+  process.env.API_KEY = 'test-key';
+  await clearAgentSessionStore();
+  const client = {
+    chat: {
+      completions: {
+        create: async (
+          _body: unknown,
+          requestOptions?: { signal?: AbortSignal },
+        ) => await new Promise<never>((_resolve, reject) => {
+          const abort = () => {
+            const error = new Error('Request aborted');
+            error.name = 'AbortError';
+            reject(error);
+          };
+          if (requestOptions?.signal?.aborted) {
+            abort();
+            return;
+          }
+          requestOptions?.signal?.addEventListener('abort', abort, { once: true });
+        }),
+      },
+    },
+  };
+  __setAgentOpenAIClientFactoryForTests(() => client as never);
+
+  const dom = installDom();
+  const container = dom.window.document.getElementById('root');
+  assert.ok(container);
+  const initialWorkspaceState = useWorkspaceStore.getState();
+  const initialSelectionState = useSelectionStore.getState();
+  const robot = createRobotFixture();
+  const { selection: _selection, ...robotData } = robot;
+  robotData.joints = {};
+  robotData.rootLinkId = 'base_link';
+  useWorkspaceStore.setState({
+    workspace: createSingleComponentWorkspace(robotData, { componentId: 'car' }),
+    activeComponentId: 'car',
+  });
+  useSelectionStore.getState().setSelection(null);
+  const { AIConversationModal } = await import('./AIConversationModal.tsx');
+  const root = createRoot(container);
+
+  try {
+    await act(async () => {
+      root.render(
+        <AIConversationModal
+          isOpen
+          onClose={() => {}}
+          lang="zh"
+          launchContext={createLaunchContext()}
+          onStartNewConversation={() => {}}
+          onApply={() => true}
+        />,
+      );
+    });
+    await flush();
+    await flush();
+
+    const [prompt] = buildConversationPromptSuggestions({
+      lang: 'zh',
+      isReportFollowup: false,
+      selectedEntityName: null,
+    });
+    assert.ok(prompt);
+    await clickButton(findButtonByText(container, prompt));
+    await flush();
+
+    assert.equal(container.textContent?.includes(prompt), true);
+    assert.equal(container.textContent?.includes('AI 正在思考'), true);
+    assert.equal(container.textContent?.includes('先看看当前模型'), false);
+    assert.equal(container.textContent?.includes('正在思考下一步'), false);
+    assert.equal(container.textContent?.includes('操作完成'), false);
+    assert.equal(container.querySelectorAll('[data-agent-activity]').length, 1);
+    assert.equal(container.textContent?.includes('AI 分析中'), false);
+  } finally {
+    useWorkspaceStore.setState(initialWorkspaceState);
+    useSelectionStore.setState(initialSelectionState);
+    __setAgentOpenAIClientFactoryForTests(null);
+    if (previousApiKey === undefined) {
+      delete process.env.API_KEY;
+    } else {
+      process.env.API_KEY = previousApiKey;
+    }
+    await act(async () => {
+      root.unmount();
+    });
+    dom.window.close();
+  }
+});
+
+test('opening starts empty without restoring a persisted browser-local conversation', async () => {
+  await clearAgentSessionStore();
+  const dom = installDom();
+  const container = dom.window.document.getElementById('root');
+  assert.ok(container, 'root container should exist');
+  const repository = await getAgentSessionRepository();
+  const session = await createAgentConversationSession(repository, 'general');
+  await persistConversationTimeline(repository, session.id, [
+    { kind: 'message', role: 'user', content: 'Persist this exact request' },
+    { kind: 'message', role: 'assistant', content: 'Recovered response' },
+    {
+      kind: 'agent-activity',
+      role: 'assistant',
+      status: 'executing-tools',
+      events: [
+        {
+          type: 'tool.started',
+          callId: 'persisted-tool',
+          name: 'studio',
+          summary: 'Reading the current Studio state',
+          step: 1,
+          index: 0,
+          total: 1,
+        },
+      ],
+    },
+  ]);
+  const sessionCountBeforeOpen = (await getAgentSessionStorageStats()).sessionCount;
+
+  const { AIConversationModal } = await import('./AIConversationModal.tsx');
+  const root = createRoot(container);
+  let applyCount = 0;
+
+  try {
+    await act(async () => {
+      root.render(
+        <AIConversationModal
+          isOpen
+          onClose={() => {}}
+          lang="en"
+          launchContext={createLaunchContext()}
+          onStartNewConversation={() => {}}
+          onApply={() => {
+            applyCount += 1;
+            return true;
+          }}
+        />,
+      );
+    });
+    await flush();
+    await flush();
+
+    assert.equal(container.textContent?.includes('Persist this exact request'), false);
+    assert.equal(container.textContent?.includes('Recovered response'), false);
+    assert.equal(container.querySelector('[data-agent-activity]'), null);
+    assert.equal(applyCount, 0, 'opening a blank chat must not replay an old modification');
+    assert.equal(
+      (await getAgentSessionStorageStats()).sessionCount,
+      sessionCountBeforeOpen + 1,
+      'the old audit session stays archived while the open chat gets a fresh session',
+    );
+  } finally {
+    await act(async () => {
+      root.unmount();
+    });
+    dom.window.close();
+    await clearAgentSessionStore();
+  }
+});
+
+test('closing and reopening the same conversation context starts another blank session', async () => {
+  const previousApiKey = process.env.API_KEY;
+  process.env.API_KEY = '';
+  await clearAgentSessionStore();
+  const dom = installDom();
+  const container = dom.window.document.getElementById('root');
+  assert.ok(container);
+  const { AIConversationModal } = await import('./AIConversationModal.tsx');
+  const root = createRoot(container);
+  const launchContext = createLaunchContext();
+  const renderModal = async (isOpen: boolean) => {
+    await act(async () => {
+      root.render(
+        <AIConversationModal
+          isOpen={isOpen}
+          onClose={() => {}}
+          lang="en"
+          launchContext={launchContext}
+          onStartNewConversation={() => {}}
+          onApply={() => true}
+        />,
+      );
+    });
+    await flush();
+    await flush();
+  };
+
+  try {
+    await renderModal(true);
+    const [prompt] = buildConversationPromptSuggestions({
+      lang: 'en',
+      isReportFollowup: false,
+      selectedEntityName: null,
+    });
+    assert.ok(prompt);
+    await clickButton(findButtonByText(container, prompt));
+    await flush();
+    assert.equal(container.textContent?.includes(prompt), true);
+
+    await renderModal(false);
+    assert.equal(container.textContent, '');
+    await renderModal(true);
+
+    assert.equal(getCopyButtons(container).length, 0);
+    assert.equal(container.querySelector('[data-agent-activity]'), null);
+    assert.equal((await getAgentSessionStorageStats()).sessionCount, 2);
+  } finally {
+    await act(async () => {
+      root.unmount();
+    });
+    dom.window.close();
+    await clearAgentSessionStore();
+    if (previousApiKey === undefined) {
+      delete process.env.API_KEY;
+    } else {
+      process.env.API_KEY = previousApiKey;
+    }
+  }
+});
+
+test('StrictMode recovery creates only one browser-local session', async () => {
+  const dom = installDom();
+  const container = dom.window.document.getElementById('root');
+  assert.ok(container, 'root container should exist');
+  await clearAgentSessionStore();
+
+  const { AIConversationModal } = await import('./AIConversationModal.tsx');
+  const root = createRoot(container);
+  const launchContext = createLaunchContext();
+
+  try {
+    await act(async () => {
+      root.render(
+        <React.StrictMode>
+          <AIConversationModal
+            isOpen
+            onClose={() => {}}
+            lang="en"
+            launchContext={launchContext}
+            onStartNewConversation={() => {}}
+            onApply={() => true}
+          />
+        </React.StrictMode>,
+      );
+    });
+    await flush();
+    await flush();
+
+    assert.equal((await getAgentSessionStorageStats()).sessionCount, 1);
   } finally {
     await act(async () => {
       root.unmount();
@@ -745,7 +1063,319 @@ test('agent receives the live (post-launch) robot context', async () => {
   }
 });
 
-test('Auto-apply permission applies the agent edit directly without a confirmation card', async () => {
+test('confirmed modification verifies the canonical applied robot without showing its checklist', async () => {
+  const previousApiKey = process.env.API_KEY;
+  process.env.API_KEY = 'test-key';
+  await clearAgentSessionStore();
+
+  let callIndex = 0;
+  const mockOpenAiClient = {
+    chat: {
+      completions: {
+        create: async () => {
+          callIndex += 1;
+          if (callIndex === 1) {
+            return {
+              choices: [{
+                message: {
+                  role: 'assistant',
+                  content: null,
+                  tool_calls: [{
+                    id: 'rename-robot',
+                    type: 'function',
+                    function: {
+                      name: 'write_path',
+                      arguments: JSON.stringify({ path: 'name', value: 'verified-car' }),
+                    },
+                  }],
+                },
+                finish_reason: 'tool_calls',
+              }],
+            };
+          }
+          if (callIndex === 2) {
+            return {
+              choices: [{
+                message: {
+                  role: 'assistant',
+                  content: 'Renamed the robot.',
+                  tool_calls: null,
+                },
+                finish_reason: 'stop',
+              }],
+            };
+          }
+          return {
+            choices: [{
+              message: {
+                role: 'assistant',
+                content: JSON.stringify({
+                  ok: true,
+                  checks: [
+                    { requirement: 'Robot name matches.', status: 'pass', evidence: [1] },
+                    { requirement: 'Robot is structurally valid.', status: 'pass', evidence: [2] },
+                  ],
+                  message: 'Verified from the canonical applied robot.',
+                }),
+                tool_calls: null,
+              },
+              finish_reason: 'stop',
+            }],
+          };
+        },
+      },
+    },
+  };
+  __setAgentOpenAIClientFactoryForTests(() => mockOpenAiClient as never);
+
+  const dom = installDom();
+  const container = dom.window.document.getElementById('root');
+  assert.ok(container);
+  const initialUiState = useUIStore.getState();
+  const initialWorkspaceState = useWorkspaceStore.getState();
+  const initialSelectionState = useSelectionStore.getState();
+  const initialAssetsState = useAssetsStore.getState();
+  const robot = createRobotFixture();
+  const { selection: _selection, ...robotData } = robot;
+  robotData.joints = {};
+  robotData.rootLinkId = 'base_link';
+  useWorkspaceStore.setState({
+    workspace: createSingleComponentWorkspace(robotData, { componentId: 'car' }),
+    activeComponentId: 'car',
+  });
+  useSelectionStore.getState().setSelection(null);
+  useUIStore.setState({ aiAutoApplyEdits: false });
+
+  const { AIConversationModal } = await import('./AIConversationModal.tsx');
+  const root = createRoot(container);
+  try {
+    await act(async () => {
+      root.render(
+        <AIConversationModal
+          isOpen
+          onClose={() => {}}
+          lang="en"
+          launchContext={createLaunchContext()}
+          onStartNewConversation={() => {}}
+          onApply={applyAIUrdfModification}
+        />,
+      );
+    });
+    await flush();
+
+    const [prompt] = buildConversationPromptSuggestions({
+      lang: 'en',
+      isReportFollowup: false,
+      selectedEntityName: null,
+    });
+    assert.ok(prompt);
+    await clickButton(findButtonByText(container, prompt));
+    for (
+      let attempt = 0;
+      attempt < 10 && !container.textContent?.includes('AI modification');
+      attempt += 1
+    ) {
+      await flush();
+    }
+
+    assert.ok(container.querySelector('[data-diff-line="added"]'));
+    assert.ok(container.querySelector('[data-diff-line="removed"]'));
+    await clickButton(findButtonByText(container, 'Apply'));
+    for (
+      let attempt = 0;
+      attempt < 10 && !container.textContent?.includes('Checked the updated result');
+      attempt += 1
+    ) {
+      await flush();
+    }
+
+    assert.equal(
+      useWorkspaceStore.getState().workspace.components.car?.robot.name,
+      'verified-car',
+    );
+    assert.equal(container.textContent?.includes('Checked the updated result'), true);
+    assert.equal(
+      container.textContent?.includes('Robot name matches.'),
+      false,
+      'internal verification checks must remain hidden',
+    );
+    assert.ok(container.querySelector('[data-agent-activity="completed"]'));
+  } finally {
+    await act(async () => {
+      root.unmount();
+    });
+    useUIStore.setState(initialUiState);
+    useWorkspaceStore.setState(initialWorkspaceState);
+    useSelectionStore.setState(initialSelectionState);
+    useAssetsStore.setState(initialAssetsState);
+    __setAgentOpenAIClientFactoryForTests(null);
+    if (previousApiKey === undefined) {
+      delete process.env.API_KEY;
+    } else {
+      process.env.API_KEY = previousApiKey;
+    }
+    dom.window.close();
+  }
+});
+
+test('failed post-apply verification automatically prepares a corrected confirmation card', async () => {
+  const previousApiKey = process.env.API_KEY;
+  process.env.API_KEY = 'test-key';
+  await clearAgentSessionStore();
+
+  let callIndex = 0;
+  const mockOpenAiClient = {
+    chat: {
+      completions: {
+        create: async () => {
+          callIndex += 1;
+          if (callIndex === 1 || callIndex === 4) {
+            return {
+              choices: [{
+                message: {
+                  role: 'assistant',
+                  content: null,
+                  tool_calls: [{
+                    id: callIndex === 1 ? 'initial-edit' : 'automatic-correction',
+                    type: 'function',
+                    function: {
+                      name: 'write_path',
+                      arguments: JSON.stringify({
+                        path: 'name',
+                        value: callIndex === 1 ? 'incorrect-car' : 'corrected-car',
+                      }),
+                    },
+                  }],
+                },
+                finish_reason: 'tool_calls',
+              }],
+            };
+          }
+          if (callIndex === 2 || callIndex === 5) {
+            return {
+              choices: [{
+                message: {
+                  role: 'assistant',
+                  content: callIndex === 2 ? 'Prepared the first edit.' : 'Prepared a correction.',
+                  tool_calls: null,
+                },
+                finish_reason: 'stop',
+              }],
+            };
+          }
+          return {
+            choices: [{
+              message: {
+                role: 'assistant',
+                content: JSON.stringify({
+                  ok: false,
+                  checks: [{
+                    requirement: 'INTERNAL_FAILED_CHECKLIST_SENTINEL',
+                    status: 'fail',
+                    evidence: [1],
+                  }],
+                  message: 'INTERNAL_VERIFIER_MESSAGE_SENTINEL',
+                }),
+                tool_calls: null,
+              },
+              finish_reason: 'stop',
+            }],
+          };
+        },
+      },
+    },
+  };
+  __setAgentOpenAIClientFactoryForTests(() => mockOpenAiClient as never);
+
+  const dom = installDom();
+  const container = dom.window.document.getElementById('root');
+  assert.ok(container);
+  const initialUiState = useUIStore.getState();
+  const initialWorkspaceState = useWorkspaceStore.getState();
+  const initialSelectionState = useSelectionStore.getState();
+  const initialAssetsState = useAssetsStore.getState();
+  const robot = createRobotFixture();
+  const { selection: _selection, ...robotData } = robot;
+  robotData.joints = {};
+  robotData.rootLinkId = 'base_link';
+  useWorkspaceStore.setState({
+    workspace: createSingleComponentWorkspace(robotData, { componentId: 'car' }),
+    activeComponentId: 'car',
+  });
+  useSelectionStore.getState().setSelection(null);
+  useUIStore.setState({ aiAutoApplyEdits: false });
+
+  const { AIConversationModal } = await import('./AIConversationModal.tsx');
+  const root = createRoot(container);
+  try {
+    await act(async () => {
+      root.render(
+        <AIConversationModal
+          isOpen
+          onClose={() => {}}
+          lang="en"
+          launchContext={createLaunchContext()}
+          onStartNewConversation={() => {}}
+          onApply={applyAIUrdfModification}
+        />,
+      );
+    });
+    await flush();
+
+    const [prompt] = buildConversationPromptSuggestions({
+      lang: 'en',
+      isReportFollowup: false,
+      selectedEntityName: null,
+    });
+    assert.ok(prompt);
+    await clickButton(findButtonByText(container, prompt));
+    for (
+      let attempt = 0;
+      attempt < 10 && !container.textContent?.includes('AI modification');
+      attempt += 1
+    ) {
+      await flush();
+    }
+    await clickButton(findButtonByText(container, 'Apply'));
+    for (let attempt = 0; attempt < 20 && callIndex < 5; attempt += 1) {
+      await flush();
+    }
+
+    assert.equal(callIndex, 5, 'failed verification must launch one automatic correction turn');
+    assert.equal(
+      useWorkspaceStore.getState().workspace.components.car?.robot.name,
+      'incorrect-car',
+      'the corrected proposal must wait for a new user confirmation',
+    );
+    assert.ok(findButtonByText(container, 'Apply'));
+    assert.equal(container.textContent?.includes('Generate repair'), false);
+    assert.equal(container.textContent?.includes('Press Undo'), false);
+    assert.equal(container.textContent?.includes('INTERNAL_FAILED_CHECKLIST_SENTINEL'), false);
+    assert.equal(container.textContent?.includes('INTERNAL_VERIFIER_MESSAGE_SENTINEL'), false);
+    assert.equal(
+      container.textContent?.includes('The previously applied result did not satisfy'),
+      false,
+      'the internal correction prompt must not be presented as a user message',
+    );
+  } finally {
+    await act(async () => {
+      root.unmount();
+    });
+    useUIStore.setState(initialUiState);
+    useWorkspaceStore.setState(initialWorkspaceState);
+    useSelectionStore.setState(initialSelectionState);
+    useAssetsStore.setState(initialAssetsState);
+    __setAgentOpenAIClientFactoryForTests(null);
+    if (previousApiKey === undefined) {
+      delete process.env.API_KEY;
+    } else {
+      process.env.API_KEY = previousApiKey;
+    }
+    dom.window.close();
+  }
+});
+
+test('Auto-apply keeps inconclusive background verification out of the conversation', async () => {
   const previousApiKey = process.env.API_KEY;
   process.env.API_KEY = 'test-key';
 
@@ -767,11 +1397,43 @@ test('Auto-apply permission applies the agent edit directly without a confirmati
                         id: 'c1',
                         type: 'function',
                         function: {
-                          name: 'update_link_geometry',
+                          name: 'write_path',
                           arguments: JSON.stringify({
-                            linkId: 'base_link',
-                            geometryType: 'cylinder',
-                            radius: 0.3,
+                            path: 'links.base_link.visual.type',
+                            value: GeometryType.CYLINDER,
+                          }),
+                        },
+                      },
+                      {
+                        id: 'c2',
+                        type: 'function',
+                        function: {
+                          name: 'write_path',
+                          arguments: JSON.stringify({
+                            path: 'links.base_link.visual.dimensions.x',
+                            value: 0.3,
+                          }),
+                        },
+                      },
+                      {
+                        id: 'c3',
+                        type: 'function',
+                        function: {
+                          name: 'write_path',
+                          arguments: JSON.stringify({
+                            path: 'links.base_link.collision.type',
+                            value: GeometryType.CYLINDER,
+                          }),
+                        },
+                      },
+                      {
+                        id: 'c4',
+                        type: 'function',
+                        function: {
+                          name: 'write_path',
+                          arguments: JSON.stringify({
+                            path: 'links.base_link.collision.dimensions.x',
+                            value: 0.3,
                           }),
                         },
                       },
@@ -782,10 +1444,28 @@ test('Auto-apply permission applies the agent edit directly without a confirmati
               ],
             };
           }
+          if (callIndex === 2) {
+            return {
+              choices: [
+                { message: { role: 'assistant', content: 'Updated base_link radius to 0.3.', tool_calls: null }, finish_reason: 'stop' },
+              ],
+            };
+          }
           return {
-            choices: [
-              { message: { role: 'assistant', content: 'Updated base_link radius to 0.3.', tool_calls: null }, finish_reason: 'stop' },
-            ],
+            choices: [{
+              message: {
+                role: 'assistant',
+                content: JSON.stringify({
+                  ok: false,
+                  checks: [
+                    { requirement: 'The radius is 0.3.', status: 'unknown', evidence: [] },
+                  ],
+                  message: 'INTERNAL_INCONCLUSIVE_VERIFICATION_SENTINEL',
+                }),
+                tool_calls: null,
+              },
+              finish_reason: 'stop',
+            }],
           };
         },
       },
@@ -797,6 +1477,10 @@ test('Auto-apply permission applies the agent edit directly without a confirmati
   const container = dom.window.document.getElementById('root');
   assert.ok(container, 'root container should exist');
 
+  const initialUiState = useUIStore.getState();
+  const initialWorkspaceState = useWorkspaceStore.getState();
+  const initialSelectionState = useSelectionStore.getState();
+  const initialAssetsState = useAssetsStore.getState();
   const initialRobot = createRobotFixture();
   const { selection: _initialSelection, ...initialRobotData } = initialRobot;
   initialRobotData.links['world'] = {
@@ -813,9 +1497,6 @@ test('Auto-apply permission applies the agent edit directly without a confirmati
 
   const { AIConversationModal } = await import('./AIConversationModal.tsx');
   const root = createRoot(container);
-  const initialUiState = useUIStore.getState();
-  const initialWorkspaceState = useWorkspaceStore.getState();
-  const initialSelectionState = useSelectionStore.getState();
   const onApplyCalls: Array<{ componentId: string; urdf: string }> = [];
 
   try {
@@ -833,7 +1514,7 @@ test('Auto-apply permission applies the agent edit directly without a confirmati
           onStartNewConversation={() => {}}
           onApply={(componentId, proposedUrdf) => {
             onApplyCalls.push({ componentId, urdf: proposedUrdf });
-            return true;
+            return applyAIUrdfModification(componentId, proposedUrdf);
           }}
         />,
       );
@@ -847,7 +1528,9 @@ test('Auto-apply permission applies the agent edit directly without a confirmati
     });
     assert.ok(prompt, 'expected at least one suggested prompt');
     await clickButton(findButtonByText(container, prompt));
-    await flush();
+    for (let attempt = 0; attempt < 10 && onApplyCalls.length === 0; attempt += 1) {
+      await flush();
+    }
 
     assert.equal(onApplyCalls.length, 1, 'Auto mode must call onApply directly');
     assert.ok(
@@ -862,19 +1545,36 @@ test('Auto-apply permission applies the agent edit directly without a confirmati
       container.textContent?.includes('Updated base_link radius to 0.3.'),
       'Auto mode must surface the agent summary',
     );
+    assert.ok(
+      container.querySelector('[data-agent-activity="completed"]'),
+      'the completed analysis remains available as a collapsed safe summary',
+    );
+    for (let attempt = 0; attempt < 10 && callIndex < 3; attempt += 1) {
+      await flush();
+    }
+    assert.equal(callIndex, 3, 'Auto mode must still run the background verification');
+    assert.equal(container.textContent?.includes('AI could not confirm'), false);
+    assert.equal(container.textContent?.includes('暂时无法确认'), false);
+    assert.equal(container.textContent?.includes('INTERNAL_INCONCLUSIVE_VERIFICATION_SENTINEL'), false);
+    assert.equal(
+      container.textContent?.includes('The radius is 0.3.'),
+      false,
+      'The internal verification requirement must not appear in the conversation UI',
+    );
   } finally {
+    await act(async () => {
+      root.unmount();
+    });
     useUIStore.setState(initialUiState);
     useWorkspaceStore.setState(initialWorkspaceState);
     useSelectionStore.setState(initialSelectionState);
+    useAssetsStore.setState(initialAssetsState);
     __setAgentOpenAIClientFactoryForTests(null);
     if (previousApiKey === undefined) {
       delete process.env.API_KEY;
     } else {
       process.env.API_KEY = previousApiKey;
     }
-    await act(async () => {
-      root.unmount();
-    });
     dom.window.close();
   }
 });

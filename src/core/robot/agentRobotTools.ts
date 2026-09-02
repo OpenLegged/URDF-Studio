@@ -416,81 +416,112 @@ export function getJoint(robot: RobotData, args: GetJointArgs): AgentToolResult 
 //
 // These give the agent a "catch-all" escape hatch for fields not covered by a
 // dedicated capability (color, motor sub-fields, dynamics, etc.). Paths are
-// dot-separated and MUST start with `links.<id>` or `joints.<id>` so the agent
-// can never reach outside the robot draft. Writes shallow-merge at an object
-// leaf (preserving sibling fields) and replace otherwise — the same surgical
-// principle as the dedicated tools.
+// dot-separated and must address an entity collection or an explicitly allowed
+// RobotData root field, so the agent can never reach outside the robot draft.
+// Writes shallow-merge at an object leaf (preserving sibling fields) and replace
+// otherwise — the same surgical principle as the dedicated tools.
 // -------------------------------------------------------------------------------------
 
+const ROBOT_ROOT_PATH_KEYS = new Set([
+  'name',
+  'version',
+  'rootLinkId',
+  'materials',
+  'closedLoopConstraints',
+  'inspectionContext',
+]);
+const UNSAFE_ROBOT_PATH_SEGMENTS = new Set(['__proto__', 'prototype', 'constructor']);
+
+function parseRobotPath(path: string): string[] | null {
+  const segments = path.split('.').map(segment => segment.trim()).filter(Boolean);
+  if (!segments.length || segments.some(segment => UNSAFE_ROBOT_PATH_SEGMENTS.has(segment))) {
+    return null;
+  }
+  if (segments[0] === 'links' || segments[0] === 'joints') {
+    return segments.length >= 2 ? segments : null;
+  }
+  return ROBOT_ROOT_PATH_KEYS.has(segments[0]) ? segments : null;
+}
+
+function hasOwn(target: object, key: string): boolean {
+  return Object.prototype.hasOwnProperty.call(target, key);
+}
+
 export interface ReadRobotPathArgs {
-  /** e.g. `links.base_link.visual.color` or `joints.shoulder_h.axis`. */
+  /** e.g. `name`, `links.base_link.visual.color`, or `joints.shoulder_h.axis`. */
   path: string;
 }
 
-/** Read any scalar/sub-object under `links.*` or `joints.*` as JSON. */
+/** Read a safe RobotData root field or any scalar/sub-object under an entity. */
 export function readRobotPath(robot: RobotData, args: ReadRobotPathArgs): AgentToolResult {
   const path = (args.path || '').trim();
-  const segments = path.split('.').map((s) => s.trim()).filter(Boolean);
-  if (segments.length < 2 || !['links', 'joints'].includes(segments[0])) {
+  const segments = parseRobotPath(path);
+  if (!segments) {
     return fail(
-      'Invalid path. Path must start with "links.<linkId>" or "joints.<jointId>", e.g. links.base_link.visual.color.',
+      'Invalid path. Use a safe robot field such as "name", "rootLinkId", "links.<linkId>", or "joints.<jointId>".',
     );
   }
 
-  const root: Record<string, Record<string, unknown>> =
-    segments[0] === 'links'
-      ? (robot.links as unknown as Record<string, Record<string, unknown>>)
-      : (robot.joints as unknown as Record<string, Record<string, unknown>>);
-  const id = segments[1];
-  const entity = root[id];
-  if (!entity) {
-    return fail(`${segments[0]} "${id}" not found.`);
+  const isEntityPath = segments[0] === 'links' || segments[0] === 'joints';
+  let value: unknown = robot;
+  let startIndex = 0;
+  if (isEntityPath) {
+    const collection = segments[0] === 'links' ? robot.links : robot.joints;
+    const id = segments[1];
+    if (!hasOwn(collection, id)) {
+      return fail(`${segments[0]} "${id}" not found.`);
+    }
+    value = collection[id];
+    startIndex = 2;
   }
 
-  let value: unknown = entity;
-  for (let i = 2; i < segments.length; i += 1) {
+  for (let i = startIndex; i < segments.length; i += 1) {
     if (typeof value !== 'object' || value === null) {
       return fail(`Path segment "${segments[i]}" on non-object value at "${segments.slice(0, i).join('.')}".`);
     }
-    value = (value as Record<string, unknown>)[segments[i]];
-    if (value === undefined) {
+    if (!hasOwn(value, segments[i])) {
       return fail(`Key "${segments[i]}" does not exist at "${segments.slice(0, i).join('.')}".`);
     }
+    value = (value as Record<string, unknown>)[segments[i]];
   }
 
   return ok(JSON.stringify(value));
 }
 
 export interface WriteRobotPathArgs {
-  /** e.g. `links.base_link.visual.color` or `joints.shoulder_h.dynamics.damping`. */
+  /** e.g. `name`, `links.base_link.visual.color`, or `joints.shoulder_h.dynamics.damping`. */
   path: string;
   /** JSON value to write. When the target is an object, it is shallow-merged with existing. */
   value: unknown;
 }
 
-/** Write a scalar or shallow-merge an object under `links.*` / `joints.*`. */
+/** Write a safe RobotData root field or an entity field. */
 export function writeRobotPath(robot: RobotData, args: WriteRobotPathArgs): AgentToolResult {
   const path = (args.path || '').trim();
-  const segments = path.split('.').map((s) => s.trim()).filter(Boolean);
-  if (segments.length < 3 || !['links', 'joints'].includes(segments[0])) {
+  const segments = parseRobotPath(path);
+  const isEntityPath = segments?.[0] === 'links' || segments?.[0] === 'joints';
+  if (!segments || (isEntityPath && segments.length < 3)) {
     return fail(
-      'Invalid path. Path must have at least 3 segments and start with "links.<linkId>" or "joints.<jointId>", e.g. links.base_link.visual.color.',
+      'Invalid path. Write a safe robot field such as "name", or a nested field below "links.<linkId>" / "joints.<jointId>".',
     );
   }
 
-  const root: Record<string, Record<string, unknown>> =
-    segments[0] === 'links'
-      ? (robot.links as unknown as Record<string, Record<string, unknown>>)
-      : (robot.joints as unknown as Record<string, Record<string, unknown>>);
-  const id = segments[1];
-  const entity = root[id];
-  if (!entity) {
-    return fail(`${segments[0]} "${id}" not found.`);
+  let parent = robot as unknown as Record<string, unknown>;
+  let walkStart = 0;
+  let entity: Record<string, unknown> | null = null;
+  if (isEntityPath) {
+    const collection = segments[0] === 'links' ? robot.links : robot.joints;
+    const id = segments[1];
+    if (!hasOwn(collection, id)) {
+      return fail(`${segments[0]} "${id}" not found.`);
+    }
+    entity = collection[id] as unknown as Record<string, unknown>;
+    parent = entity;
+    walkStart = 2;
   }
 
   // Walk to the parent of the leaf segment.
-  let parent: Record<string, unknown> = entity;
-  for (let i = 2; i < segments.length - 1; i += 1) {
+  for (let i = walkStart; i < segments.length - 1; i += 1) {
     const next = parent[segments[i]];
     if (typeof next !== 'object' || next === null) {
       return fail(`Cannot write: "${segments.slice(0, i + 1).join('.')}" is not an object.`);
@@ -518,6 +549,7 @@ export function writeRobotPath(robot: RobotData, args: WriteRobotPathArgs): Agen
     && segments[2] === 'visual'
     && leafKey === 'color'
     && typeof args.value === 'string'
+    && entity
   ) {
     const visual = entity.visual as Record<string, unknown> | undefined;
     const authoredMaterials = visual?.authoredMaterials as Array<Record<string, unknown>> | undefined;

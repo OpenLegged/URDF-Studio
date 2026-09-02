@@ -19,6 +19,7 @@ const STAGE_BASE_COLOR_TEXTURE_INPUTS = [
     'inputs:baseColor_texture',
     'inputs:base_color_texture',
     'inputs:albedo_texture',
+    'inputs:glass_color_texture',
 ];
 const STAGE_EMISSIVE_TEXTURE_INPUTS = [
     'inputs:emissiveColor_texture',
@@ -50,6 +51,22 @@ const STAGE_AO_TEXTURE_INPUTS = [
     'inputs:ao_texture',
     'inputs:ORM_texture',
 ];
+const STAGE_TEXTURE_SHADER_CHILD_NAMES_BY_PROPERTY = Object.freeze({
+    map: [
+        'diffuseTexture',
+        'baseColorTexture',
+        'base_color_texture',
+        'albedoTexture',
+        'DiffuseTexture',
+        'BaseColorTexture',
+    ],
+    emissiveMap: ['emissiveTexture', 'emissiveColorTexture', 'EmissiveTexture'],
+    roughnessMap: ['roughnessTexture', 'reflectionRoughnessTexture', 'RoughnessTexture', 'ORMTexture'],
+    metalnessMap: ['metallicTexture', 'metalnessTexture', 'MetallicTexture', 'ORMTexture'],
+    normalMap: ['normalTexture', 'normalMapTexture', 'NormalTexture'],
+    aoMap: ['occlusionTexture', 'aoTexture', 'OcclusionTexture', 'ORMTexture'],
+    alphaMap: ['opacityTexture', 'opacityMaskTexture', 'OpacityTexture'],
+});
 function normalizeDescriptorSectionName(sectionName) {
     const normalized = String(sectionName || '').trim().toLowerCase();
     if (normalized === 'visual') {
@@ -59,6 +76,53 @@ function normalizeDescriptorSectionName(sectionName) {
         return 'collisions';
     }
     return normalized;
+}
+export function readUsdPrimCollisionMetadata(prim) {
+    if (!prim || typeof prim.GetAttribute !== 'function') {
+        return { collisionEnabled: null, collisionApproximation: null };
+    }
+    let collisionEnabled = null;
+    try {
+        const enabledAttribute = prim.GetAttribute('physics:collisionEnabled');
+        if (enabledAttribute && typeof enabledAttribute.Get === 'function') {
+            const value = enabledAttribute.Get();
+            if (typeof value === 'boolean') {
+                collisionEnabled = value;
+            }
+            else if (value === 0 || value === 1) {
+                // The Emscripten VtValue bridge used by some OpenUSD builds
+                // exposes authored bools as numeric scalars.
+                collisionEnabled = value === 1;
+            }
+        }
+    }
+    catch { }
+    if (collisionEnabled === null) {
+        try {
+            const rawSchemas = prim.GetAppliedSchemas?.();
+            let schemas = toArrayLike(rawSchemas) || [];
+            if (schemas.length === 0
+                && typeof rawSchemas?.size === 'function'
+                && typeof rawSchemas?.get === 'function') {
+                schemas = Array.from(
+                    { length: Number(rawSchemas.size()) || 0 },
+                    (_, index) => rawSchemas.get(index),
+                );
+            }
+            collisionEnabled = schemas.some((schema) => /collisionapi/i.test(String(schema)))
+                ? true
+                : null;
+        }
+        catch { }
+    }
+    let collisionApproximation = null;
+    try {
+        const approximation = prim.GetAttribute('physics:approximation')?.Get?.();
+        const normalized = String(approximation || '').trim();
+        collisionApproximation = normalized || null;
+    }
+    catch { }
+    return { collisionEnabled, collisionApproximation };
 }
 function normalizeNormalDiagnostics(source) {
     if (!source || typeof source !== 'object') {
@@ -175,6 +239,9 @@ function mergeSnapshotMaterialRecordWithFallback(record, fallbackRecord) {
     if (fallbackRecord.isOmniPbr === true && mergedRecord.isOmniPbr !== true) {
         mergedRecord.isOmniPbr = true;
     }
+    if (fallbackRecord.isOmniGlass === true && mergedRecord.isOmniGlass !== true) {
+        mergedRecord.isOmniGlass = true;
+    }
     for (const [key, value] of Object.entries(fallbackRecord)) {
         if (key === 'materialId' || key === 'id') {
             continue;
@@ -198,9 +265,17 @@ function serializePreferredMaterialRecord(material) {
             ? materialUserData.usdEmissiveEnabled
             : null);
     const materialIsOmniPbr = material.isOmniPbr === true || materialUserData.usdIsOmniPbr === true;
+    const materialIsOmniGlass = material.isOmniGlass === true || materialUserData.usdIsOmniGlass === true;
     const normalizeTexturePath = (texture) => {
         const normalized = String(texture?.userData?.usdSourcePath || texture?.name || '').trim();
         return normalized || null;
+    };
+    const normalizeTexturePathOrPending = (texture, materialProperty) => {
+        const loadedTexturePath = normalizeTexturePath(texture);
+        if (loadedTexturePath)
+            return loadedTexturePath;
+        const pendingTexturePath = String(materialUserData.usdPendingTexturePaths?.[materialProperty] || '').trim();
+        return pendingTexturePath || null;
     };
     const normalizeScalar = (value, options = {}) => {
         const numeric = toFiniteNumber(value);
@@ -226,6 +301,7 @@ function serializePreferredMaterialRecord(material) {
     const record = {
         ...(String(material.name || '').trim() ? { name: String(material.name || '').trim() } : {}),
         ...(materialIsOmniPbr ? { isOmniPbr: true } : {}),
+        ...(materialIsOmniGlass ? { isOmniGlass: true } : {}),
         ...(materialEmissiveEnabled !== null ? { emissiveEnabled: materialEmissiveEnabled } : {}),
         ...(normalizeColor(material.color) ? { color: normalizeColor(material.color) } : {}),
         ...(materialEmissiveEnabled !== false && normalizeColor(material.emissive)
@@ -255,13 +331,13 @@ function serializePreferredMaterialRecord(material) {
         ...(normalizeScalar(material.anisotropyRotation) !== null ? { anisotropyRotation: normalizeScalar(material.anisotropyRotation) } : {}),
         ...(materialEmissiveEnabled !== false && normalizeScalar(material.emissiveIntensity, { min: 0 }) !== null ? { emissiveIntensity: normalizeScalar(material.emissiveIntensity, { min: 0 }) } : {}),
         ...(normalizeScalar(material.ior, { min: 1 }) !== null ? { ior: normalizeScalar(material.ior, { min: 1 }) } : {}),
-        ...(normalizeTexturePath(material.map) ? { mapPath: normalizeTexturePath(material.map) } : {}),
-        ...(materialEmissiveEnabled !== false && normalizeTexturePath(material.emissiveMap) ? { emissiveMapPath: normalizeTexturePath(material.emissiveMap) } : {}),
-        ...(normalizeTexturePath(material.roughnessMap) ? { roughnessMapPath: normalizeTexturePath(material.roughnessMap) } : {}),
-        ...(normalizeTexturePath(material.metalnessMap) ? { metalnessMapPath: normalizeTexturePath(material.metalnessMap) } : {}),
-        ...(normalizeTexturePath(material.normalMap) ? { normalMapPath: normalizeTexturePath(material.normalMap) } : {}),
-        ...(normalizeTexturePath(material.aoMap) ? { aoMapPath: normalizeTexturePath(material.aoMap) } : {}),
-        ...(normalizeTexturePath(material.alphaMap) ? { alphaMapPath: normalizeTexturePath(material.alphaMap) } : {}),
+        ...(normalizeTexturePathOrPending(material.map, 'map') ? { mapPath: normalizeTexturePathOrPending(material.map, 'map') } : {}),
+        ...(materialEmissiveEnabled !== false && normalizeTexturePathOrPending(material.emissiveMap, 'emissiveMap') ? { emissiveMapPath: normalizeTexturePathOrPending(material.emissiveMap, 'emissiveMap') } : {}),
+        ...(normalizeTexturePathOrPending(material.roughnessMap, 'roughnessMap') ? { roughnessMapPath: normalizeTexturePathOrPending(material.roughnessMap, 'roughnessMap') } : {}),
+        ...(normalizeTexturePathOrPending(material.metalnessMap, 'metalnessMap') ? { metalnessMapPath: normalizeTexturePathOrPending(material.metalnessMap, 'metalnessMap') } : {}),
+        ...(normalizeTexturePathOrPending(material.normalMap, 'normalMap') ? { normalMapPath: normalizeTexturePathOrPending(material.normalMap, 'normalMap') } : {}),
+        ...(normalizeTexturePathOrPending(material.aoMap, 'aoMap') ? { aoMapPath: normalizeTexturePathOrPending(material.aoMap, 'aoMap') } : {}),
+        ...(normalizeTexturePathOrPending(material.alphaMap, 'alphaMap') ? { alphaMapPath: normalizeTexturePathOrPending(material.alphaMap, 'alphaMap') } : {}),
         ...(normalizeTexturePath(material.clearcoatMap) ? { clearcoatMapPath: normalizeTexturePath(material.clearcoatMap) } : {}),
         ...(normalizeTexturePath(material.clearcoatRoughnessMap) ? { clearcoatRoughnessMapPath: normalizeTexturePath(material.clearcoatRoughnessMap) } : {}),
         ...(normalizeTexturePath(material.clearcoatNormalMap) ? { clearcoatNormalMapPath: normalizeTexturePath(material.clearcoatNormalMap) } : {}),
@@ -546,6 +622,8 @@ export class ThreeRenderDelegateInterface extends ThreeRenderDelegateMaterialOps
     stageShaderRequiresPhysicalMaterial(shaderPrim) {
         if (!shaderPrim)
             return false;
+        if (this.isLikelyOmniGlassShaderPrim(shaderPrim))
+            return true;
         const candidateAttributeNames = [
             'inputs:clearcoat',
             'inputs:coat',
@@ -612,23 +690,31 @@ export class ThreeRenderDelegateInterface extends ThreeRenderDelegateMaterialOps
         ];
         return candidateAttributeNames.some((attributeName) => this.readPrimAttribute(shaderPrim, [attributeName]) !== undefined);
     }
-    applyStageFallbackMaterialParameters(material, shaderPrim) {
+    applyStageFallbackMaterialParameters(material, shaderPrim, options = {}) {
         if (!material || !shaderPrim)
             return;
+        const materialPath = normalizeHydraPath(options.materialPath || material?.userData?.usdMaterialPath || '');
+        if (materialPath && material.userData && typeof material.userData === 'object') {
+            material.userData.usdMaterialPath = materialPath;
+        }
         const treatNamedHexDiffuseAsSrgb = this.shouldTreatNamedHexDiffuseAsSrgb();
         const isOmniPbrShader = this.isLikelyOmniPbrShaderPrim(shaderPrim);
+        const isOmniGlassShader = this.isLikelyOmniGlassShaderPrim(shaderPrim);
         const emissiveEnabled = this.readPrimBooleanAttribute(shaderPrim, [
             'inputs:enable_emission',
             'inputs:enableEmission',
         ]);
         const effectiveEmissiveEnabled = emissiveEnabled === true
             ? true
-            : (emissiveEnabled === false ? false : !isOmniPbrShader);
+            : (emissiveEnabled === false ? false : !isOmniPbrShader && !isOmniGlassShader);
         if (material.userData && typeof material.userData === 'object') {
             if (isOmniPbrShader) {
                 material.userData.usdIsOmniPbr = true;
             }
-            if (emissiveEnabled !== undefined || isOmniPbrShader) {
+            if (isOmniGlassShader) {
+                material.userData.usdIsOmniGlass = true;
+            }
+            if (emissiveEnabled !== undefined || isOmniPbrShader || isOmniGlassShader) {
                 material.userData.usdEmissiveEnabled = effectiveEmissiveEnabled;
             }
         }
@@ -649,6 +735,7 @@ export class ThreeRenderDelegateInterface extends ThreeRenderDelegateMaterialOps
             'inputs:base_color_constant',
             'inputs:albedo',
             'inputs:albedo_constant',
+            'inputs:glass_color',
         ], 'color', {
             treatAsSrgbWhenMatchingMaterialName: treatNamedHexDiffuseAsSrgb,
         });
@@ -658,11 +745,15 @@ export class ThreeRenderDelegateInterface extends ThreeRenderDelegateMaterialOps
             'inputs:reflection_roughness',
             'inputs:reflection_roughness_constant',
             'inputs:specular_roughness',
+            'inputs:frosting_roughness',
         ], 'roughness', { clamp01: true });
         if (!roughnessAssigned && isOmniPbrShader) {
             // OmniPBR often omits explicit roughness attributes in exported USD.
             // Fall back to the shared viewer matte profile so USD matches URDF/MJCF better.
             material.roughness = HYDRA_UNIFIED_MATERIAL_DEFAULTS.roughness;
+        }
+        if (!roughnessAssigned && isOmniGlassShader) {
+            material.roughness = 0;
         }
         this.applyStageFallbackScalarInput(material, shaderPrim, [
             'inputs:metallic',
@@ -673,6 +764,7 @@ export class ThreeRenderDelegateInterface extends ThreeRenderDelegateMaterialOps
         this.applyStageFallbackScalarInput(material, shaderPrim, [
             'inputs:opacity',
             'inputs:opacity_constant',
+            'inputs:cutout_opacity',
         ], 'opacity', {
             clamp01: true,
             onAssigned: (value) => {
@@ -707,21 +799,28 @@ export class ThreeRenderDelegateInterface extends ThreeRenderDelegateMaterialOps
             'inputs:clearcoat_roughness',
             'inputs:coat_roughness',
         ], 'clearcoatRoughness', { clamp01: true });
-        this.applyStageFallbackScalarInput(material, shaderPrim, [
+        const iorAssigned = this.applyStageFallbackScalarInput(material, shaderPrim, [
             'inputs:ior',
             'inputs:indexOfRefraction',
             'inputs:index_of_refraction',
+            'inputs:glass_ior',
         ], 'ior', { min: 1 });
+        if (!iorAssigned && isOmniGlassShader) {
+            material.ior = 1.491;
+        }
         this.applyStageFallbackScalarInput(material, shaderPrim, [
             'inputs:specular',
             'inputs:specular_constant',
             'inputs:specularIntensity',
             'inputs:specular_intensity',
         ], 'specularIntensity', { clamp01: true });
-        this.applyStageFallbackScalarInput(material, shaderPrim, [
+        const transmissionAssigned = this.applyStageFallbackScalarInput(material, shaderPrim, [
             'inputs:transmission',
             'inputs:transmission_weight',
         ], 'transmission', { clamp01: true });
+        if (!transmissionAssigned && isOmniGlassShader) {
+            material.transmission = 1;
+        }
         this.applyStageFallbackScalarInput(material, shaderPrim, [
             'inputs:thickness',
             'inputs:thickness_constant',
@@ -849,6 +948,7 @@ export class ThreeRenderDelegateInterface extends ThreeRenderDelegateMaterialOps
                 'inputs:opacity_texture',
                 'inputs:opacity_mask_texture',
                 'inputs:opacityMask_texture',
+                'inputs:cutout_opacity_texture',
             ], 'alphaMap', {
                 onAssigned: () => {
                     if (!(material.alphaTest > 0))
@@ -953,9 +1053,20 @@ export class ThreeRenderDelegateInterface extends ThreeRenderDelegateMaterialOps
         return color;
     }
     applyStageFallbackTextureInput(material, shaderPrim, attributeNames, materialProperty, options = {}) {
-        const texturePath = this.resolveMaterialTexturePath(shaderPrim, attributeNames);
+        const texturePath = this.resolveMaterialTexturePath(shaderPrim, attributeNames, {
+            materialPath: material?.userData?.usdMaterialPath,
+            materialProperty,
+        });
         if (!texturePath)
             return false;
+        if (material.userData && typeof material.userData === 'object') {
+            const pendingTexturePaths = material.userData.usdPendingTexturePaths
+                && typeof material.userData.usdPendingTexturePaths === 'object'
+                ? material.userData.usdPendingTexturePaths
+                : {};
+            pendingTexturePaths[materialProperty] = texturePath;
+            material.userData.usdPendingTexturePaths = pendingTexturePaths;
+        }
         const texturePromise = typeof this.loadMaterialTexture === 'function'
             ? this.loadMaterialTexture(texturePath, {
                 stageSourcePath: this.getStageSourcePath?.(),
@@ -1061,7 +1172,9 @@ export class ThreeRenderDelegateInterface extends ThreeRenderDelegateMaterialOps
         addCandidate('ND_standard_surface_surfaceshader');
         for (const candidateName of candidateNames) {
             const shaderPath = `${materialPath}/${candidateName}`;
-            const shaderPrim = this.safeGetPrimAtPath(stage, shaderPath);
+            const shaderPrim = typeof this.getPrimAtPathAllowUnknown === 'function'
+                ? this.getPrimAtPathAllowUnknown(stage, shaderPath)
+                : this.safeGetPrimAtPath(stage, shaderPath);
             if (!shaderPrim)
                 continue;
             if (this.isUsableMaterialShaderPrim(shaderPrim)) {
@@ -1171,6 +1284,16 @@ export class ThreeRenderDelegateInterface extends ThreeRenderDelegateMaterialOps
         ];
         return signatures.some((value) => String(value || '').toLowerCase().includes('omnipbr'));
     }
+    isLikelyOmniGlassShaderPrim(shaderPrim) {
+        if (!shaderPrim)
+            return false;
+        const signatures = [
+            this.readPrimAttribute(shaderPrim, ['info:id']),
+            this.readPrimAttribute(shaderPrim, ['info:mdl:sourceAsset:subIdentifier']),
+            this.readPrimAttribute(shaderPrim, ['info:mdl:sourceAsset']),
+        ];
+        return signatures.some((value) => String(value || '').toLowerCase().includes('omniglass'));
+    }
     normalizeMaterialTexturePath(pathValue) {
         if (pathValue === null || pathValue === undefined)
             return null;
@@ -1213,7 +1336,7 @@ export class ThreeRenderDelegateInterface extends ThreeRenderDelegateMaterialOps
         catch { }
         return null;
     }
-    resolveMaterialTexturePath(shaderPrim, attributeNames = null) {
+    resolveMaterialTexturePath(shaderPrim, attributeNames = null, options = {}) {
         const candidateAttributeNames = Array.isArray(attributeNames) && attributeNames.length > 0
             ? attributeNames
             : STAGE_BASE_COLOR_TEXTURE_INPUTS;
@@ -1222,9 +1345,33 @@ export class ThreeRenderDelegateInterface extends ThreeRenderDelegateMaterialOps
             attributeName !== 'inputs:ORM_texture' || ormTextureEnabled !== false
         ));
         const texturePathValue = this.readPrimAttribute(shaderPrim, enabledCandidateAttributeNames);
-        if (!texturePathValue)
+        const directTexturePath = this.extractMaterialTexturePath(texturePathValue);
+        if (directTexturePath)
+            return directTexturePath;
+        const materialPath = normalizeHydraPath(options.materialPath || '');
+        if (!materialPath)
             return null;
-        return this.extractMaterialTexturePath(texturePathValue);
+        const textureShaderChildNames = STAGE_TEXTURE_SHADER_CHILD_NAMES_BY_PROPERTY[options.materialProperty] || [];
+        if (textureShaderChildNames.length === 0)
+            return null;
+        const stage = this.getStage?.();
+        if (!stage)
+            return null;
+        for (const childName of textureShaderChildNames) {
+            // Driver prim indexes can omit auxiliary shader nodes. Use the
+            // direct-stage compatibility lookup before treating the texture
+            // shader as missing.
+            const textureShaderPrim = typeof this.getPrimAtPathAllowUnknown === 'function'
+                ? this.getPrimAtPathAllowUnknown(stage, `${materialPath}/${childName}`)
+                : this.safeGetPrimAtPath(stage, `${materialPath}/${childName}`);
+            if (!textureShaderPrim)
+                continue;
+            const connectedTextureValue = this.readPrimAttribute(textureShaderPrim, ['inputs:file']);
+            const connectedTexturePath = this.extractMaterialTexturePath(connectedTextureValue);
+            if (connectedTexturePath)
+                return connectedTexturePath;
+        }
+        return null;
     }
     getNamedNonDefaultMaterial(materialValue) {
         const materials = Array.isArray(materialValue) ? materialValue : [materialValue];
@@ -4051,7 +4198,9 @@ export class ThreeRenderDelegateInterface extends ThreeRenderDelegateMaterialOps
             if (!materialId) {
                 return record;
             }
-            if (snapshotMaterialRecordHasRenderableData(record)) {
+            const hasRenderableData = snapshotMaterialRecordHasRenderableData(record);
+            const colorSource = String(record?.colorSource || '').trim().toLowerCase();
+            if (hasRenderableData && colorSource !== 'material-name') {
                 return record;
             }
             const fallbackStageMaterial = this.createFallbackMaterialFromStage(materialId);
@@ -4059,9 +4208,17 @@ export class ThreeRenderDelegateInterface extends ThreeRenderDelegateMaterialOps
             if (!fallbackRecord) {
                 return record;
             }
+            const fallbackForMerge = hasRenderableData
+                ? Object.fromEntries(Object.entries(fallbackRecord).filter(([key]) => (
+                    key === 'materialId'
+                    || key === 'id'
+                    || key.endsWith('MapPath')
+                    || key === 'mapPath'
+                )))
+                : fallbackRecord;
             return mergeSnapshotMaterialRecordWithFallback(record, {
                 materialId,
-                ...fallbackRecord,
+                ...fallbackForMerge,
             });
         });
         const normalizedMaterials = this.ingestSnapshotMaterialRecords(snapshotMaterialRecords, {
@@ -4168,7 +4325,18 @@ export class ThreeRenderDelegateInterface extends ThreeRenderDelegateMaterialOps
             framesPerSecond: Number(rawStage.framesPerSecond || 0),
             metersPerUnit: Number(rawStage.metersPerUnit || 0),
         };
-
+        const nativeCollisionByPrimPath = new Map(
+            toPlainArray(rawStage.collisionPrimRecords)
+                .map((record) => ({
+                    path: normalizeHydraPath(record?.path || ''),
+                    collisionEnabled: typeof record?.collisionEnabled === 'boolean'
+                        ? record.collisionEnabled
+                        : null,
+                    collisionApproximation: String(record?.collisionApproximation || '').trim() || null,
+                }))
+                .filter((record) => record.path && record.collisionEnabled !== null)
+                .map((record) => [record.path, record]),
+        );
         // Extract authoredXformOps and layerInfo for USD-free rendering
         const authoredXformOpsByPrimPath = {};
         const primDescriptors = [];
@@ -4351,6 +4519,8 @@ export class ThreeRenderDelegateInterface extends ThreeRenderDelegateMaterialOps
                     const prototype = readFlag('IsPrototype', false);
                     const hasPayload = readFlag('HasPayload', false);
                     const hasAuthoredReferences = readFlag('HasAuthoredReferences', false);
+                    const collisionMetadata = readUsdPrimCollisionMetadata(prim);
+                    const nativeCollisionMetadata = nativeCollisionByPrimPath.get(primPath) || null;
                     let visible = true;
                     try {
                         const visibilityAttribute = typeof prim.GetAttribute === 'function'
@@ -4398,6 +4568,10 @@ export class ThreeRenderDelegateInterface extends ThreeRenderDelegateMaterialOps
                         hasPayload,
                         hasAuthoredReferences,
                         visible,
+                        collisionEnabled: nativeCollisionMetadata?.collisionEnabled
+                            ?? collisionMetadata.collisionEnabled,
+                        collisionApproximation: nativeCollisionMetadata?.collisionApproximation
+                            ?? collisionMetadata.collisionApproximation,
                         transformable,
                         hasAuthoredXformOps,
                         resetsXformStack,

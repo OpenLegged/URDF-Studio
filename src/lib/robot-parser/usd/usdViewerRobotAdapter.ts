@@ -13,6 +13,7 @@ import { resolveUsdDescriptorTargetLinkPath } from './usdDescriptorLinkResolutio
 import { shouldUseUsdCollisionVisualProxy } from './usdCollisionVisualProxy';
 import { isUsdGenericSceneSnapshot } from './usdGenericScenePolicy';
 import { resolveUsdPrimitiveGeometryFromDescriptor } from './usdPrimitiveGeometry';
+import { selectUsdRenderableMeshDescriptors } from './usdRenderableDescriptors';
 import {
   createPlaceholderVisual,
   createUniqueId,
@@ -29,6 +30,7 @@ import {
 import {
   applyVisualGroupMaterialsToLink,
   attachUsdMeshDescriptorRefs,
+  createUsdDescriptorRoleResolver,
   deriveMeshCountsByLinkPath,
   getDescriptorSemanticName,
   getSnapshotMaterialLookup,
@@ -294,10 +296,11 @@ export function adaptUsdViewerSnapshotToRobotData(
 
   const materials: NonNullable<RobotData['materials']> = {};
   const materialLookup = getSnapshotMaterialLookup(snapshot);
-  const descriptors = Array.from(snapshot.render?.meshDescriptors || []);
+  const descriptors = selectUsdRenderableMeshDescriptors(snapshot);
   const visualDescriptorsByLinkPath = new Map<string, DescriptorEntry[]>();
   const collisionDescriptorsByLinkPath = new Map<string, DescriptorEntry[]>();
   const visualDescriptorTargetLinkIds = new Map<string, string>();
+  const resolveDescriptorRoles = createUsdDescriptorRoleResolver(snapshot);
 
   const getDescriptorEntryKey = (descriptor: MeshDescriptor, ordinal: number) =>
     `${normalizeDescriptorSectionName(descriptor.sectionName)}|${normalizeUsdPath(descriptor.meshId)}|${normalizeUsdPath(descriptor.resolvedPrimPath)}|${ordinal}`;
@@ -311,16 +314,20 @@ export function adaptUsdViewerSnapshotToRobotData(
       return;
     }
 
-    const sectionName = normalizeDescriptorSectionName(descriptor.sectionName);
-    const targetMap =
-      sectionName === 'collisions' ? collisionDescriptorsByLinkPath : visualDescriptorsByLinkPath;
-    const entries = targetMap.get(linkPath) || [];
-    entries.push({
-      descriptor,
-      ordinal: parseDescriptorOrdinal(descriptor, entries.length),
-      groupKey: getUsdDescriptorAttachmentGroupKey(descriptor),
-    });
-    targetMap.set(linkPath, entries);
+    const roles = resolveDescriptorRoles(descriptor);
+    const appendDescriptor = (targetMap: Map<string, DescriptorEntry[]>) => {
+      const entries = targetMap.get(linkPath) || [];
+      entries.push({
+        descriptor,
+        ordinal: parseDescriptorOrdinal(descriptor, entries.length),
+        groupKey: getUsdDescriptorAttachmentGroupKey(descriptor, {
+          fallbackToResolvedPrimPath: !isGenericScene,
+        }),
+      });
+      targetMap.set(linkPath, entries);
+    };
+    if (roles.visual) appendDescriptor(visualDescriptorsByLinkPath);
+    if (roles.collision) appendDescriptor(collisionDescriptorsByLinkPath);
   });
 
   visualDescriptorsByLinkPath.forEach((entries) => {
@@ -329,6 +336,45 @@ export function adaptUsdViewerSnapshotToRobotData(
   collisionDescriptorsByLinkPath.forEach((entries) => {
     entries.sort((left, right) => left.ordinal - right.ordinal);
   });
+
+  // Native USD metadata may publish aggregate mesh counts on a component link
+  // while the render snapshot resolves those same meshes onto articulated child
+  // links, or publish generated physics leaf links beneath the render owner.
+  // Leaving either descriptor-less placeholder in place makes the prepared OBJ
+  // hydration mount the geometry twice. Descriptor ownership is authoritative
+  // whenever an ancestor or descendant carries the corresponding render role.
+  const childLinkIdsByParentId = new Map<string, string[]>();
+  const parentLinkIdByChildId = new Map<string, string>();
+  Object.values(joints).forEach((joint) => {
+    const children = childLinkIdsByParentId.get(joint.parentLinkId) || [];
+    if (!children.includes(joint.childLinkId)) {
+      children.push(joint.childLinkId);
+      childLinkIdsByParentId.set(joint.parentLinkId, children);
+    }
+    parentLinkIdByChildId.set(joint.childLinkId, joint.parentLinkId);
+  });
+  const hasDescriptorDescendant = (rootId: string, descriptorLinkIds: Set<string>) => {
+    const pending = [...(childLinkIdsByParentId.get(rootId) || [])];
+    const visited = new Set<string>();
+    while (pending.length > 0) {
+      const childId = pending.pop()!;
+      if (visited.has(childId)) continue;
+      visited.add(childId);
+      if (descriptorLinkIds.has(childId)) return true;
+      pending.push(...(childLinkIdsByParentId.get(childId) || []));
+    }
+    return false;
+  };
+  const hasDescriptorAncestor = (rootId: string, descriptorLinkIds: Set<string>) => {
+    const visited = new Set<string>();
+    let parentId = parentLinkIdByChildId.get(rootId);
+    while (parentId && !visited.has(parentId)) {
+      if (descriptorLinkIds.has(parentId)) return true;
+      visited.add(parentId);
+      parentId = parentLinkIdByChildId.get(parentId);
+    }
+    return false;
+  };
 
   visualDescriptorsByLinkPath.forEach((entries, linkPath) => {
     const parentLinkId = linkIdByPath.get(linkPath);
@@ -521,6 +567,42 @@ export function adaptUsdViewerSnapshotToRobotData(
       collisionBodies[index - 1] = nextCollision;
       link.collisionBodies = collisionBodies;
     });
+  });
+
+  // Run this after descriptor hydration: legacy mesh-count placeholders can be
+  // re-established while visual groups are assigned, so the final ownership
+  // state is the only reliable point at which to remove their duplicate mesh.
+  const hydratedVisualLinkIds = new Set(
+    Object.entries(links)
+      .filter(([, link]) => (link.visual.usdMeshDescriptors?.length ?? 0) > 0)
+      .map(([linkId]) => linkId),
+  );
+  const hydratedCollisionLinkIds = new Set(
+    Object.entries(links)
+      .filter(([, link]) =>
+        (link.collision.usdMeshDescriptors?.length ?? 0) > 0 ||
+        (link.collisionBodies || []).some(
+          (collision) => (collision.usdMeshDescriptors?.length ?? 0) > 0,
+        ),
+      )
+      .map(([linkId]) => linkId),
+  );
+  Object.entries(links).forEach(([linkId, link]) => {
+    if (
+      !hydratedVisualLinkIds.has(linkId) &&
+      (hasDescriptorDescendant(linkId, hydratedVisualLinkIds) ||
+        hasDescriptorAncestor(linkId, hydratedVisualLinkIds))
+    ) {
+      link.visual = createPlaceholderVisual(GeometryType.NONE, DEFAULT_LINK.visual.color);
+    }
+    if (
+      !hydratedCollisionLinkIds.has(linkId) &&
+      (hasDescriptorDescendant(linkId, hydratedCollisionLinkIds) ||
+        hasDescriptorAncestor(linkId, hydratedCollisionLinkIds))
+    ) {
+      link.collision = createPlaceholderVisual(GeometryType.NONE, DEFAULT_LINK.collision.color);
+      link.collisionBodies = [];
+    }
   });
 
   if (shouldUseUsdCollisionVisualProxy(snapshot)) {

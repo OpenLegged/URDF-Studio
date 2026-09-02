@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { isImageAssetPath } from '@/core/utils/assetFileTypes';
 import {
   applyVisualMaterialOverrideToObject,
+  getVisualMaterialTextureRequests,
   hasExplicitGeometryMaterialOverride,
   resolvePrimaryAuthoredVisualMaterialOverride,
   resolveVisualMaterialOverrideFromGeometry,
@@ -18,7 +19,10 @@ import { createMatteMaterial } from '@/core/utils/materialFactory';
 import { applyVisualMeshMaterialGroupsToObject } from '@/core/utils/meshMaterialGroups';
 import { createMainThreadYieldController } from '@/core/utils/yieldToMainThread';
 import { createInlineMJCFMeshObject } from '@/core/parsers/mjcf/mjcfGeometry';
-import { getJointMotionAngleFromActualAngle } from '@/core/robot/kinematics';
+import {
+  getJointMotionAngleFromActualAngle,
+  getUsdJointMotionPivot,
+} from '@/core/robot/kinematics';
 import { normalizeJointLimitOrder } from '@/core/robot/jointLimits';
 import {
   GeometryType,
@@ -113,6 +117,7 @@ export async function buildRuntimeRobotFromState({
   const robot = new URDFRobot();
   const linkMap: Record<string, URDFLink> = {};
   const jointMap: Record<string, URDFJoint> = {};
+  const usdJointChildFrameMap: Record<string, THREE.Group> = {};
   const colliderMap: Record<string, URDFCollider> = {};
   const visualMap: Record<string, URDFVisual> = {};
   const authoredColliderFrameMap: Record<string, URDFCollider> = {};
@@ -396,8 +401,11 @@ export async function buildRuntimeRobotFromState({
   // hand instead of being patched asynchronously by callbacks that each do a
   // tree traversal and set material.needsUpdate = true (GPU jank).
   if (parseVisual) {
-    const texturePaths = new Set<string>();
-    for (const [linkId, linkData] of Object.entries(links)) {
+    const textureRequests = new Map<
+      string,
+      { path: string; isColor: boolean; flipY: boolean }
+    >();
+    for (const linkData of Object.values(links)) {
       const visualEntries = getVisualGeometryEntries(linkData);
       for (const entry of visualEntries) {
         const geometry = entry.geometry;
@@ -412,27 +420,39 @@ export async function buildRuntimeRobotFromState({
           materials,
         });
         const override = resolved.override ?? resolveVisualMaterialOverrideFromGeometry(geometry);
-        const texturePath = override?.texture;
-        if (texturePath) {
-          texturePaths.add(texturePath);
-        }
+        getVisualMaterialTextureRequests(override).forEach((request) => {
+          const existing = textureRequests.get(request.path);
+          textureRequests.set(request.path, {
+            path: request.path,
+            isColor: Boolean(existing?.isColor || request.isColor),
+            flipY: existing ? existing.flipY && request.flipY : request.flipY,
+          });
+        });
       }
     }
 
-    if (texturePaths.size > 0) {
+    if (textureRequests.size > 0) {
       const textureLoader = new THREE.TextureLoader(manager);
-      const paths = Array.from(texturePaths);
+      const requests = Array.from(textureRequests.values());
       // Load in small batches to avoid blocking the main thread.
       const BATCH_SIZE = 4;
-      for (let i = 0; i < paths.length; i += BATCH_SIZE) {
-        const batch = paths.slice(i, i + BATCH_SIZE);
+      for (let i = 0; i < requests.length; i += BATCH_SIZE) {
+        const batch = requests.slice(i, i + BATCH_SIZE);
         const results = await Promise.allSettled(
-          batch.map((path) => textureLoader.loadAsync(path)),
+          batch.map((request) => textureLoader.loadAsync(request.path)),
         );
         results.forEach((result, index) => {
           if (result.status === 'fulfilled') {
-            result.value.colorSpace = THREE.SRGBColorSpace;
-            textureCache.set(batch[index], result.value);
+            const request = batch[index];
+            if (!request) {
+              return;
+            }
+            result.value.colorSpace = request.isColor
+              ? THREE.SRGBColorSpace
+              : THREE.NoColorSpace;
+            result.value.flipY = request.flipY;
+            result.value.needsUpdate = true;
+            textureCache.set(request.path, result.value);
           }
         });
         await yieldIfNeeded();
@@ -511,6 +531,9 @@ export async function buildRuntimeRobotFromState({
     joint.userData.displayName = jointDisplayName;
     joint.userData.jointId = jointKey;
     joint.userData.originalJointType = jointData.type;
+    joint.referencePosition = Number.isFinite(jointData.referencePosition)
+      ? jointData.referencePosition
+      : undefined;
     if (typeof jointData.dynamics?.stiffness === 'number') {
       joint.userData.mjcfJointStiffness = jointData.dynamics.stiffness;
       Object.assign(
@@ -559,6 +582,21 @@ export async function buildRuntimeRobotFromState({
     }
 
     applyOrigin(joint, jointData.origin);
+    const usdMotionPivot = getUsdJointMotionPivot(jointData);
+    if (usdMotionPivot) {
+      // `joint.origin` is the zero-pose parent-to-child body transform. Put the
+      // runtime joint at the authored child-body pivot, then undo that offset
+      // before attaching the child link. This yields:
+      //   origin * T(pivot) * motion * T(-pivot)
+      // which is the USD Physics two-frame motion used by the stage viewer.
+      joint.position.add(usdMotionPivot.clone().applyQuaternion(joint.quaternion));
+
+      const childFrame = new THREE.Group();
+      childFrame.name = '__usd_joint_child_frame__';
+      childFrame.userData.internalUsdJointChildFrame = true;
+      childFrame.position.copy(usdMotionPivot).multiplyScalar(-1);
+      usdJointChildFrameMap[jointKey] = childFrame;
+    }
     attachBallJointQuaternionState(joint, jointData);
     if (
       jointData.type !== JointType.BALL &&
@@ -584,7 +622,13 @@ export async function buildRuntimeRobotFromState({
     }
 
     parentLink.add(joint);
-    joint.add(childLink);
+    const usdChildFrame = usdJointChildFrameMap[jointKey];
+    if (usdChildFrame) {
+      joint.add(usdChildFrame);
+      usdChildFrame.add(childLink);
+    } else {
+      joint.add(childLink);
+    }
     (joint as URDFJoint & { child?: URDFLink; parentLink?: URDFLink }).child = childLink;
     (joint as URDFJoint & { child?: URDFLink; parentLink?: URDFLink }).parentLink = parentLink;
     await yieldIfNeeded();

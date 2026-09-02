@@ -12,11 +12,18 @@ import { computeLinkWorldMatrices, createOriginMatrix } from '@/core/robot/kinem
 import type { UrdfVisual } from '@/types';
 import type { ViewerRobotDataResolution } from '@/lib/robot-parser/usd/viewerRobotData';
 import {
-  getUsdDescriptorSectionChildToken,
   resolveUsdDescriptorTargetLinkPath,
 } from '@/lib/robot-parser/usd/usdDescriptorLinkResolution';
+import {
+  createUsdDescriptorRoleResolver,
+  getUsdDescriptorAttachmentGroupKey,
+} from '@/lib/robot-parser/usd/usdViewerRobotAdapter/usdAdapterDescriptors';
 import { resolveUsdPrimitiveGeometryFromDescriptor } from '@/lib/robot-parser/usd/usdPrimitiveGeometry';
-import { getUsdSourceMetersPerUnit } from '@/lib/robot-parser/usd/usdStageUnits';
+import { isUsdGenericSceneSnapshot } from '@/lib/robot-parser/usd/usdGenericScenePolicy';
+import {
+  getUsdSourceMetersPerUnit,
+  getUsdStageMetersPerUnit,
+} from '@/lib/robot-parser/usd/usdStageUnits';
 
 interface UsdRuntimeTransformInterface {
   getPreferredLinkWorldTransform?: (linkPath: string) => unknown;
@@ -25,8 +32,6 @@ interface UsdRuntimeTransformInterface {
   ) => { angleDeg?: number | null } | null | undefined;
   getWorldTransformForPrimPath?: (primPath: string) => unknown;
 }
-
-type DescriptorRole = 'visual' | 'collision';
 
 interface DescriptorEntry {
   descriptor: UsdSceneMeshDescriptor;
@@ -88,24 +93,6 @@ function degreesToRadians(value: unknown): number | undefined {
   }
 
   return (numeric * Math.PI) / 180;
-}
-
-function getDescriptorRole(descriptor: UsdSceneMeshDescriptor): DescriptorRole {
-  const sectionName = String(descriptor.sectionName || '')
-    .trim()
-    .toLowerCase();
-  if (
-    sectionName === 'collisions' ||
-    sectionName === 'collision' ||
-    sectionName === 'colliders' ||
-    sectionName === 'collider'
-  ) {
-    return 'collision';
-  }
-
-  const candidateText =
-    `${descriptor.meshId || ''} ${descriptor.resolvedPrimPath || ''}`.toLowerCase();
-  return /\/coll(?:isions?|iders?)(?:$|[/.])/.test(candidateText) ? 'collision' : 'visual';
 }
 
 function parseDescriptorOrdinal(descriptor: UsdSceneMeshDescriptor, fallbackIndex: number): number {
@@ -204,6 +191,7 @@ function resolveLinkWorldMatrix(
 
 function resolvePrimWorldMatrix(
   runtime: UsdRuntimeTransformInterface,
+  snapshot: UsdSceneSnapshot | null | undefined,
   descriptor: UsdSceneMeshDescriptor,
   translationScale: number,
 ): THREE.Matrix4 | null {
@@ -222,6 +210,24 @@ function resolvePrimWorldMatrix(
     }
   }
 
+  const transformRange = descriptor.ranges?.transform;
+  const transformBuffer = snapshot?.buffers?.transforms;
+  const offset = Number(transformRange?.offset);
+  const count = Number(transformRange?.count);
+  if (
+    transformBuffer &&
+    Number.isInteger(offset) &&
+    offset >= 0 &&
+    Number.isInteger(count) &&
+    count >= 16 &&
+    offset + 16 <= transformBuffer.length
+  ) {
+    return toMatrix4(
+      Array.from(transformBuffer).slice(offset, offset + 16),
+      getUsdStageMetersPerUnit(snapshot),
+    );
+  }
+
   return null;
 }
 
@@ -232,6 +238,8 @@ function buildDescriptorMap(
   const descriptorsByLinkRole = new Map<string, DescriptorEntry[]>();
   const descriptors = Array.from(snapshot?.render?.meshDescriptors || []);
   const knownLinkPaths = Object.keys(resolution.linkIdByPath);
+  const isGenericScene = isUsdGenericSceneSnapshot(snapshot);
+  const resolveRoles = createUsdDescriptorRoleResolver(snapshot);
 
   descriptors.forEach((descriptor, index) => {
     const linkPath = resolveUsdDescriptorTargetLinkPath({
@@ -243,15 +251,20 @@ function buildDescriptorMap(
     const linkId = resolution.linkIdByPath[linkPath];
     if (!linkId) return;
 
-    const role = getDescriptorRole(descriptor);
-    const key = `${linkId}:${role}`;
-    const entries = descriptorsByLinkRole.get(key) || [];
-    entries.push({
-      descriptor,
-      ordinal: parseDescriptorOrdinal(descriptor, index),
-      groupKey: getUsdDescriptorSectionChildToken(descriptor) || '__default__',
+    const roles = resolveRoles(descriptor);
+    (['visual', 'collision'] as const).forEach((role) => {
+      if (!roles[role]) return;
+      const key = `${linkId}:${role}`;
+      const entries = descriptorsByLinkRole.get(key) || [];
+      entries.push({
+        descriptor,
+        ordinal: parseDescriptorOrdinal(descriptor, index),
+        groupKey: getUsdDescriptorAttachmentGroupKey(descriptor, {
+          fallbackToResolvedPrimPath: !isGenericScene,
+        }),
+      });
+      descriptorsByLinkRole.set(key, entries);
     });
-    descriptorsByLinkRole.set(key, entries);
   });
 
   descriptorsByLinkRole.forEach((entries) => {
@@ -656,6 +669,7 @@ export function hydrateUsdViewerRobotResolutionFromRuntime(
 
       const primWorldMatrix = resolvePrimWorldMatrix(
         runtime,
+        snapshot,
         representativeEntry.descriptor,
         sourceMetersPerUnit,
       );
@@ -690,6 +704,7 @@ export function hydrateUsdViewerRobotResolutionFromRuntime(
 
       const primWorldMatrix = resolvePrimWorldMatrix(
         runtime,
+        snapshot,
         representativeEntry.descriptor,
         sourceMetersPerUnit,
       );

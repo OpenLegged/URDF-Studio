@@ -22,7 +22,18 @@ export interface AgentToolResult {
   message: string;
   /** When set, replaces the agent's working draft (used by async rebuilders). */
   replacement?: RobotData;
+  /** Runtime effect override for generic tools that expose read and command actions. */
+  effect?: AgentCapabilityEffect;
+  /** Prevent later draft mutations in this run after the live component target changes. */
+  blocksDraftMutation?: boolean;
 }
+
+export interface AgentExecutionContext {
+  signal?: AbortSignal;
+}
+
+export type AgentCapabilityEffect = 'read' | 'app-command' | 'draft-mutation' | 'control';
+export type AgentVerificationScope = 'draft' | 'app';
 
 /**
  * A single agent capability. `execute` mutates (or reads) the agent-owned deep
@@ -46,7 +57,12 @@ export interface AgentCapability {
   execute: (
     draft: RobotData,
     args: Record<string, unknown>,
+    context: AgentExecutionContext,
   ) => AgentToolResult | Promise<AgentToolResult>;
   /** true ⇒ a successful call marks the draft as edited. */
   readonly mutates: boolean;
+  /** Classifies non-draft effects without overloading the proposal-card flag. */
+  readonly effect?: AgentCapabilityEffect;
+  /** State surface this capability can read back as completion evidence. */
+  readonly verificationScopes?: readonly AgentVerificationScope[];
 }

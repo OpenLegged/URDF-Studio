@@ -19,6 +19,7 @@ import {
   type ViewerRenderQuality,
 } from '@/store';
 import { SettingsAboutPane } from './SettingsAboutPane';
+import { SettingsAgentDataPane } from './SettingsAgentDataPane';
 import {
   SettingsCodePreview,
   SettingsRow,
@@ -288,6 +289,15 @@ export function SettingsPanes(props: SettingsPaneProps) {
     case 'about':
       return <SettingsAboutPane t={t} />;
 
+    case 'ai':
+      return (
+        <SettingsAgentDataPane
+          lang={props.lang}
+          aiAutoApplyEdits={props.aiAutoApplyEdits}
+          setAiAutoApplyEdits={props.setAiAutoApplyEdits}
+        />
+      );
+
     case 'general':
     default:
       return (
@@ -372,11 +382,6 @@ export function SettingsPanes(props: SettingsPaneProps) {
               label={t.importWarning}
               checked={props.showImportWarning}
               onChange={props.setShowImportWarning}
-            />
-            <ToggleRow
-              label={t.aiAutoApply}
-              checked={props.aiAutoApplyEdits}
-              onChange={props.setAiAutoApplyEdits}
             />
           </SettingsSection>
         </div>
