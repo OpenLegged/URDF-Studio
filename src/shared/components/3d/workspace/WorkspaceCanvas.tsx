@@ -208,7 +208,12 @@ export const WorkspaceCanvas = ({
   const [canvasFailure, setCanvasFailure] = useState(false);
   const [layoutResizeActive, setLayoutResizeActive] = useState(false);
   const [webglSupport, setWebglSupport] = useState<WorkspaceCanvasWebglSupportState | null>(null);
-  const [snapshotRenderActive, setSnapshotRenderActive] = useState(false);
+  const [snapshotRenderActive, setSnapshotRenderActiveState] = useState(false);
+  const snapshotRenderActiveRef = useRef(false);
+  const setSnapshotRenderActive = useCallback((active: boolean) => {
+    snapshotRenderActiveRef.current = active;
+    setSnapshotRenderActiveState(active);
+  }, []);
   const contextMenuCleanupRef = useRef<(() => void) | null>(null);
   const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
   const canvasReadyRef = useRef(false);
@@ -623,6 +628,7 @@ export const WorkspaceCanvas = ({
               <SnapshotRenderStateProvider
                 value={{
                   snapshotRenderActive,
+                  snapshotRenderActiveRef,
                   setSnapshotRenderActive,
                 }}
               >

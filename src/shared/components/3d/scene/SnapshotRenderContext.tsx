@@ -2,6 +2,8 @@ import React from 'react';
 
 export interface SnapshotRenderContextValue {
   snapshotRenderActive: boolean;
+  /** Synchronous mirror used by the render loop before React commits state. */
+  snapshotRenderActiveRef?: React.RefObject<boolean>;
   setSnapshotRenderActive: (active: boolean) => void;
 }
 
@@ -21,9 +23,14 @@ export function SnapshotRenderStateProvider({ value, children }: SnapshotRenderS
   const contextValue = React.useMemo(
     () => ({
       snapshotRenderActive: value.snapshotRenderActive,
+      snapshotRenderActiveRef: value.snapshotRenderActiveRef,
       setSnapshotRenderActive: value.setSnapshotRenderActive,
     }),
-    [value.setSnapshotRenderActive, value.snapshotRenderActive],
+    [
+      value.setSnapshotRenderActive,
+      value.snapshotRenderActive,
+      value.snapshotRenderActiveRef,
+    ],
   );
 
   return (

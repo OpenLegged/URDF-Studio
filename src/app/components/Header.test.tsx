@@ -164,6 +164,45 @@ test('Header renders host-owned file actions for the alternate surface', () => {
   assert.doesNotMatch(markup, /aria-label="File"/);
 });
 
+test('Header renders host-owned view options and snapshot controls for the alternate surface', () => {
+  const markup = renderToStaticMarkup(
+    React.createElement(Header, {
+      onImportFile: () => {},
+      onImportFolder: () => {},
+      onOpenExport: () => {},
+      onPrefetchExport: () => {},
+      onExportProject: () => {},
+      toolboxItems: noopToolboxItems,
+      onOpenCodeViewer: () => {},
+      onPrefetchCodeViewer: () => {},
+      onOpenSettings: () => {},
+      onPrefetchSettings: () => {},
+      onSnapshot: () => {},
+      onPrefetchSnapshot: () => {},
+      surfaceModeSelector: {
+        ...surfaceModeSelector,
+        current: 'alternate',
+        alternateControls: {
+          snapshot: { onSnapshot: () => {} },
+          viewOptions: {
+            visible: true,
+            onVisibilityChange: () => {},
+          },
+        },
+      },
+      viewConfig: {
+        showOptionsPanel: true,
+        showJointPanel: true,
+        showStructureGraph: false,
+      },
+      setViewConfig: () => {},
+    }),
+  );
+
+  assert.match(markup, /aria-label="View"/);
+  assert.match(markup, /aria-label="Snapshot"/);
+});
+
 test('Header links to the feedback form in a new tab', () => {
   const markup = renderHeader();
 

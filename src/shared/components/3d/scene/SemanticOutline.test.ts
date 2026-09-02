@@ -3,7 +3,16 @@ import test from 'node:test';
 
 import * as THREE from 'three';
 
-import { isCameraPoseMoving, shouldRenderSemanticOutlineOverlay } from './SemanticOutline.tsx';
+import {
+  isCameraPoseMoving,
+  shouldRenderSemanticOutlineOverlay,
+  shouldRenderWorkspaceCanvasFrame,
+} from './SemanticOutline.tsx';
+
+test('freezes the visible workspace frame during an offscreen snapshot render', () => {
+  assert.equal(shouldRenderWorkspaceCanvasFrame(true), false);
+  assert.equal(shouldRenderWorkspaceCanvasFrame(false), true);
+});
 
 test('keeps semantic outlines out of a moving-camera render path when only hover targets exist', () => {
   // Hover-only outlines are suppressed during camera movement for performance —

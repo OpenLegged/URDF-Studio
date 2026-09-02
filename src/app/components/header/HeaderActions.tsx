@@ -38,6 +38,7 @@ interface HeaderActionsProps {
   onPrefetchCodeViewer: () => void;
   onSnapshot: () => void;
   onPrefetchSnapshot: () => void;
+  snapshotAvailable?: boolean;
   onOpenSettings: () => void;
   onPrefetchSettings: () => void;
   t: HeaderTranslations;
@@ -251,6 +252,7 @@ export function HeaderActions({
   onPrefetchCodeViewer,
   onSnapshot,
   onPrefetchSnapshot,
+  snapshotAvailable = true,
   onOpenSettings,
   onPrefetchSettings,
   t,
@@ -275,7 +277,7 @@ export function HeaderActions({
         showLabel={showQuickActionLabel}
       />
       <SnapshotButton
-        show={showSnapshotInline}
+        show={snapshotAvailable && showSnapshotInline}
         onSnapshot={onSnapshot}
         onPrefetchSnapshot={onPrefetchSnapshot}
         label={t.snapshot}
@@ -320,7 +322,7 @@ export function HeaderActions({
           showQuickAction={Boolean(quickAction) && !showQuickActionInline}
           showSourceCode={!responsive.showSourceInline}
           showUndoRedo={!responsive.showUndoRedoInline}
-          showSnapshot={!showSnapshotInline}
+          showSnapshot={snapshotAvailable && !showSnapshotInline}
           showSettings={!showSettingsInline}
           showLanguage={!showLanguageInline}
           showTheme={!showThemeInline}
@@ -365,7 +367,7 @@ export function HeaderActions({
         showQuickAction={Boolean(quickAction)}
         showSourceCode
         showUndoRedo
-        showSnapshot
+        showSnapshot={snapshotAvailable}
         showSettings
         showLanguage
         showTheme

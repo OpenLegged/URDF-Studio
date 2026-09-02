@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { useThree } from '@react-three/fiber';
 import { useEnvironment } from '@react-three/drei';
 import * as THREE from 'three';
@@ -167,6 +167,12 @@ export const SnapshotManager = ({
   > | null>(null);
   const { setSnapshotRenderActive } = useSnapshotRenderContext();
 
+  useLayoutEffect(() => {
+    if (activeSnapshotOptions === null) {
+      setSnapshotRenderActive(false);
+    }
+  }, [activeSnapshotOptions, setSnapshotRenderActive]);
+
   useEffect(() => {
     if (!actionRef && !onSnapshotActionChange && !previewActionRef && !onPreviewActionChange) {
       return;
@@ -310,6 +316,7 @@ export const SnapshotManager = ({
       canvas: HTMLCanvasElement,
       options: SnapshotCaptureOptions,
       signal?: AbortSignal,
+      preferDataUrl = false,
     ) => {
       throwIfSnapshotCaptureAborted(signal);
       const mimeType = getSnapshotMimeType(options.imageFormat);
@@ -318,10 +325,19 @@ export const SnapshotManager = ({
           ? undefined
           : Math.min(1, Math.max(0.6, options.imageQuality / 100));
 
-      if (canvas.toBlob) {
-        const blob = await new Promise<Blob>((resolve, reject) => {
+      if (!preferDataUrl && canvas.toBlob) {
+        const blob = await new Promise<Blob | null>((resolve, reject) => {
+          let settled = false;
+          const timeoutId = window.setTimeout(() => {
+            if (settled) return;
+            settled = true;
+            resolve(null);
+          }, 4000);
           canvas.toBlob(
             (blob) => {
+              if (settled) return;
+              settled = true;
+              window.clearTimeout(timeoutId);
               if (!blob) {
                 reject(
                   new Error(
@@ -338,13 +354,21 @@ export const SnapshotManager = ({
           );
         });
         throwIfSnapshotCaptureAborted(signal);
-        return blob;
+        if (blob) return blob;
       }
 
       const dataUrl = canvas.toDataURL(mimeType, quality);
       throwIfSnapshotCaptureAborted(signal);
-      const response = await fetch(dataUrl);
-      const blob = await response.blob();
+      const separatorIndex = dataUrl.indexOf(',');
+      if (separatorIndex < 0) {
+        throw new Error('[Snapshot] Canvas returned an invalid data URL.');
+      }
+      const binary = window.atob(dataUrl.slice(separatorIndex + 1));
+      const bytes = new Uint8Array(binary.length);
+      for (let index = 0; index < binary.length; index += 1) {
+        bytes[index] = binary.charCodeAt(index);
+      }
+      const blob = new Blob([bytes], { type: mimeType });
       throwIfSnapshotCaptureAborted(signal);
       return blob;
     };
@@ -854,7 +878,6 @@ export const SnapshotManager = ({
         return await renderSnapshotCanvas(snapshotOptions, frozenCamera, controls);
       } finally {
         setActiveSnapshotOptions(null);
-        setSnapshotRenderActive(false);
         invalidate();
       }
     };
@@ -878,7 +901,9 @@ export const SnapshotManager = ({
         resolveSnapshotPreviewCaptureOptions,
       );
       return {
-        blob: await canvasToBlob(capture.canvas, capture.options),
+        // The preview canvas is capped at 800px. Encoding it synchronously avoids
+        // WebKit/embedded-browser implementations whose toBlob callback can stall.
+        blob: await canvasToBlob(capture.canvas, capture.options, undefined, true),
         width: capture.width,
         height: capture.height,
         options: capture.options,

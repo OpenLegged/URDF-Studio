@@ -13,6 +13,7 @@ import {
   type SnapshotCaptureAction,
   type SnapshotCaptureOptions,
   type SnapshotCaptureProgress,
+  type SnapshotPreviewAction,
 } from '@/shared/components/3d/scene/snapshotConfig';
 import { translations, type Language, type TranslationKeys } from '@/shared/i18n';
 import { useManagedWindowLayer } from '@/store';
@@ -35,7 +36,7 @@ import {
   useSnapshotDialogLayout,
 } from './snapshot-dialog/useSnapshotDialogLayout';
 
-interface SnapshotDialogProps {
+export interface SnapshotDialogProps {
   isOpen: boolean;
   isCapturing: boolean;
   captureProgress?: SnapshotCaptureProgress | null;
@@ -44,6 +45,8 @@ interface SnapshotDialogProps {
   onCapture: (options: SnapshotCaptureOptions) => Promise<void> | void;
   onCancelCapture?: () => void;
   previewSession?: SnapshotPreviewSession | null;
+  /** Host-owned live canvas preview used when no robot preview session exists. */
+  previewAction?: SnapshotPreviewAction | null;
   previewState?: SnapshotDialogPreviewState;
   onPreviewCaptureActionChange?: (action: SnapshotCaptureAction | null) => void;
 }
@@ -80,6 +83,7 @@ export function SnapshotDialog({
   onCapture,
   onCancelCapture,
   previewSession = null,
+  previewAction = null,
   previewState,
   onPreviewCaptureActionChange,
 }: SnapshotDialogProps) {
@@ -251,6 +255,7 @@ export function SnapshotDialog({
               previewStatusText={previewStatusText}
               captureSummary={captureSummary}
               previewSession={previewSession}
+              previewAction={previewAction}
               effectivePreviewState={effectivePreviewState}
               options={resolvedOptions}
               onInternalPreviewStateChange={setInternalPreviewState}

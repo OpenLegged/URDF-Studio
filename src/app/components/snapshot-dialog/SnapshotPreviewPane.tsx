@@ -3,10 +3,12 @@ import type { RefObject } from 'react';
 import {
   type SnapshotCaptureAction,
   type SnapshotCaptureOptions,
+  type SnapshotPreviewAction,
 } from '@/shared/components/3d/scene/snapshotConfig';
 import type { Language, TranslationKeys } from '@/shared/i18n';
 
 import { SnapshotPreviewRenderer } from '../snapshot-preview/SnapshotPreviewRenderer';
+import { SnapshotActionPreviewRenderer } from '../snapshot-preview/SnapshotActionPreviewRenderer';
 import type { SnapshotDialogPreviewState, SnapshotPreviewSession } from '../snapshot-preview/types';
 
 interface SnapshotPreviewPaneProps {
@@ -20,6 +22,7 @@ interface SnapshotPreviewPaneProps {
   previewStatusText: string;
   captureSummary: string;
   previewSession: SnapshotPreviewSession | null;
+  previewAction?: SnapshotPreviewAction | null;
   effectivePreviewState: SnapshotDialogPreviewState;
   options: SnapshotCaptureOptions;
   onInternalPreviewStateChange: (state: SnapshotDialogPreviewState) => void;
@@ -37,6 +40,7 @@ export function SnapshotPreviewPane({
   previewStatusText,
   captureSummary,
   previewSession,
+  previewAction,
   effectivePreviewState,
   options,
   onInternalPreviewStateChange,
@@ -91,6 +95,29 @@ export function SnapshotPreviewPane({
                 onCaptureActionChange={onPreviewCaptureActionChange}
                 className="h-full w-full"
               />
+            ) : previewAction ? (
+              <>
+                <SnapshotActionPreviewRenderer
+                  action={previewAction}
+                  isOpen={isOpen}
+                  onStateChange={onInternalPreviewStateChange}
+                  options={options}
+                />
+                {effectivePreviewState.imageUrl ? (
+                  <img
+                    src={effectivePreviewState.imageUrl}
+                    alt={t.snapshotPreviewAlt}
+                    draggable={false}
+                    className="h-full w-full object-contain"
+                  />
+                ) : (
+                  <div className="flex h-full min-h-[100px] items-center justify-center px-4 text-center text-[10px] text-text-secondary">
+                    {effectivePreviewState.status === 'error'
+                      ? t.snapshotPreviewFailed
+                      : t.snapshotPreviewLoading}
+                  </div>
+                )}
+              </>
             ) : effectivePreviewState.imageUrl ? (
               // The previous render stays visible while a new one is computed;
               // the top-right status chip already signals "refreshing", so no

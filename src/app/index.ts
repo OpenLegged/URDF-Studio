@@ -31,6 +31,8 @@ export type {
   HeaderSurfaceModeSelectorCopy,
 } from './components/header/types';
 export { SettingsModal } from './components/SettingsModal';
+export { SnapshotDialog } from './components/SnapshotDialog';
+export type { SnapshotDialogProps } from './components/SnapshotDialog';
 
 // Hooks
 export * from './hooks';

@@ -2,7 +2,7 @@ import React, { createContext, useContext, useEffect, useMemo, useRef } from 're
 import { useFrame, useThree } from '@react-three/fiber';
 import * as THREE from 'three';
 
-import { useSnapshotRenderActive } from './SnapshotRenderContext';
+import { useSnapshotRenderContext } from './SnapshotRenderContext';
 import { useWorkspaceCanvasInteractionState } from './interactionQuality';
 import {
   createSemanticOutlineComposer,
@@ -56,6 +56,16 @@ export function shouldRenderSemanticOutlineOverlay({
   // outlines visible so the user always knows what is selected.
   if (cameraMoving && !hasSelectionTargets) return false;
   return true;
+}
+
+/**
+ * Snapshot capture temporarily mutates the live Three.js scene while rendering
+ * into an offscreen target. Keeping the screen renderer paused during that
+ * window prevents export-only lighting, backgrounds, and floors from flashing
+ * in the interactive viewport when another UI action invalidates the canvas.
+ */
+export function shouldRenderWorkspaceCanvasFrame(snapshotRenderActive: boolean): boolean {
+  return !snapshotRenderActive;
 }
 
 // Controls rewrite the camera transform every frame, so an idle camera still
@@ -129,7 +139,8 @@ function SemanticOutlineRenderer({
   const size = useThree((state) => state.size);
   const dpr = useThree((state) => state.viewport.dpr);
   const invalidate = useThree((state) => state.invalidate);
-  const snapshotRenderActive = useSnapshotRenderActive();
+  const snapshotRenderContext = useSnapshotRenderContext();
+  const snapshotRenderActive = snapshotRenderContext.snapshotRenderActive;
   const isInteracting = useWorkspaceCanvasInteractionState();
   const realtimeComposerRef = useRef<RealtimeViewportComposer | null>(null);
   const lastCameraPoseRef = useRef<{
@@ -230,6 +241,15 @@ function SemanticOutlineRenderer({
   useEffect(() => () => outline.dispose(), [outline]);
 
   useFrame((_, deltaTime) => {
+    const synchronousSnapshotRenderActive =
+      snapshotRenderContext.snapshotRenderActiveRef?.current ?? snapshotRenderActive;
+    if (!shouldRenderWorkspaceCanvasFrame(synchronousSnapshotRenderActive)) {
+      if (gl.domElement.dataset.semanticOutlineOverlay !== 'off') {
+        gl.domElement.dataset.semanticOutlineOverlay = 'off';
+      }
+      return;
+    }
+
     const targets: THREE.Object3D[] = [];
     const seenTargets = new Set<THREE.Object3D>();
     let intent: SemanticOutlineIntent = 'selection';

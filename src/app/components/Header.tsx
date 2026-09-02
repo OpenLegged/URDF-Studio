@@ -10,6 +10,7 @@ import { attachContextMenuBlocker } from '@/shared/utils';
 import { useActiveHistory } from '../hooks/useActiveHistory';
 import { HeaderActions } from './header/HeaderActions';
 import { HeaderContextFileMenu } from './header/HeaderContextFileMenu';
+import { HeaderContextViewMenu } from './header/HeaderContextViewMenu';
 import { HeaderMenus } from './header/HeaderMenus';
 import { SurfaceModeSelector } from './header/SurfaceModeSelector';
 import { useHeaderResponsiveLayout } from './header/useHeaderResponsiveLayout';
@@ -104,13 +105,18 @@ export function Header({
   );
   const responsive = useHeaderResponsiveLayout(headerRef, responsiveOptions);
   const isAlternateSurface = surfaceModeSelector?.current === 'alternate';
+  const alternateControls = isAlternateSurface
+    ? surfaceModeSelector?.alternateControls
+    : undefined;
+  const activeSnapshot = alternateControls?.snapshot;
+  const snapshotAvailable = !isAlternateSurface || Boolean(activeSnapshot);
   const actionResponsive = React.useMemo(
     () => isAlternateSurface
       ? {
           ...responsive,
           showQuickActionInline: false,
           showQuickActionLabel: false,
-          showSnapshotInline: false,
+          showSnapshotInline: Boolean(activeSnapshot),
           showDesktopOverflow: false,
           showLanguageInline: true,
           showThemeInline: true,
@@ -119,7 +125,7 @@ export function Header({
           showSecondaryActionLabel: false,
         }
       : responsive,
-    [isAlternateSurface, responsive],
+    [activeSnapshot, isAlternateSurface, responsive],
   );
   const t = translations[lang];
   React.useEffect(() => {
@@ -172,6 +178,18 @@ export function Header({
             isOpen={activeMenu === 'file'}
             showLabel={responsive.showMenuLabels}
             onOpenChange={(isOpen) => setActiveMenu(isOpen ? 'file' : null)}
+          />
+        ) : null}
+
+        {isAlternateSurface && alternateControls?.viewOptions ? (
+          <HeaderContextViewMenu
+            closeLabel={t.close}
+            isOpen={activeMenu === 'view'}
+            onOpenChange={(isOpen) => setActiveMenu(isOpen ? 'view' : null)}
+            onVisibilityChange={alternateControls.viewOptions.onVisibilityChange}
+            showLabel={responsive.showMenuLabels}
+            t={t}
+            visible={alternateControls.viewOptions.visible}
           />
         ) : null}
 
@@ -229,8 +247,9 @@ export function Header({
         secondaryAction={secondaryAction}
         onOpenCodeViewer={onOpenCodeViewer}
         onPrefetchCodeViewer={onPrefetchCodeViewer}
-        onSnapshot={onSnapshot}
-        onPrefetchSnapshot={onPrefetchSnapshot}
+        onSnapshot={activeSnapshot?.onSnapshot ?? onSnapshot}
+        onPrefetchSnapshot={activeSnapshot?.onPrefetchSnapshot ?? onPrefetchSnapshot}
+        snapshotAvailable={snapshotAvailable}
         onOpenSettings={onOpenSettings}
         onPrefetchSettings={onPrefetchSettings}
         t={t}

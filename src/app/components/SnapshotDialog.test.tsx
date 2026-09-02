@@ -5,6 +5,7 @@ import React, { act } from 'react';
 import { createRoot } from 'react-dom/client';
 import { JSDOM } from 'jsdom';
 
+import { DEFAULT_SNAPSHOT_CAPTURE_OPTIONS } from '@/shared/components/3d';
 import { DEFAULT_LINK } from '@/types/constants';
 import type { RobotData } from '@/types';
 import { SnapshotDialog } from './SnapshotDialog';
@@ -771,6 +772,57 @@ test('SnapshotDialog renders an interactive preview canvas when a preview sessio
       null,
       'snapshot dialog should not use a static preview image when a live session is available',
     );
+  } finally {
+    await act(async () => {
+      root.unmount();
+    });
+    dom.window.close();
+  }
+});
+
+test('SnapshotDialog renders a host-owned canvas through the shared preview action', async () => {
+  const dom = installDom();
+  const container = dom.window.document.getElementById('root');
+  assert.ok(container, 'root container should exist');
+
+  const root = createRoot(container);
+  let previewCalls = 0;
+
+  try {
+    await act(async () => {
+      root.render(
+        React.createElement(
+          React.StrictMode,
+          null,
+          React.createElement(SnapshotDialog, {
+            isOpen: true,
+            isCapturing: false,
+            lang: 'en',
+            onClose: () => {},
+            onCapture: () => {},
+            previewAction: async (options) => {
+              previewCalls += 1;
+              return {
+                blob: new Blob(['scene-preview'], { type: 'image/png' }),
+                width: 800,
+                height: 450,
+                options: { ...DEFAULT_SNAPSHOT_CAPTURE_OPTIONS, ...options },
+              };
+            },
+          }),
+        ),
+      );
+    });
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 120));
+    });
+
+    assert.equal(previewCalls, 1);
+    const previewImage = container.querySelector<HTMLImageElement>(
+      'img[alt="Snapshot live preview"]',
+    );
+    assert.ok(previewImage, 'host-owned preview should render as an image');
+    assert.match(previewImage.src, /^blob:/);
   } finally {
     await act(async () => {
       root.unmount();

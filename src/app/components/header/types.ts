@@ -42,6 +42,17 @@ export interface HeaderSurfaceModeSelectorConfig {
   current: HeaderSurfaceMode;
   onChange: (mode: HeaderSurfaceMode) => void;
   translations: Record<'en' | 'zh', HeaderSurfaceModeSelectorCopy>;
+  /** Host-owned controls shown while the alternate workspace is active. */
+  alternateControls?: {
+    snapshot?: {
+      onSnapshot: () => void;
+      onPrefetchSnapshot?: () => void;
+    };
+    viewOptions?: {
+      visible: boolean;
+      onVisibilityChange: (visible: boolean) => void;
+    };
+  };
 }
 
 export interface HeaderContextFileMenuItem {
