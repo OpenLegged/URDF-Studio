@@ -1,6 +1,10 @@
 import * as THREE from 'three';
 import { URDFJoint as RuntimeURDFJoint } from '@/core/parsers/urdf/loader';
-import { hasFiniteJointLimitBounds, normalizeJointLimitOrder } from '@/core/robot';
+import {
+  getJointMotionAngleFromActualAngle,
+  hasFiniteJointLimitBounds,
+  normalizeJointLimitOrder,
+} from '@/core/robot';
 import type { JointPatchCandidate } from './robotLoaderDiff';
 import { applyOriginToJoint } from './robotLoaderPatchUtils';
 
@@ -160,6 +164,9 @@ function applyJointPatch(joint: RuntimeURDFJoint, patch: JointPatchCandidate): v
   joint.name = jointDisplayName;
   jointWithMutableState.urdfName = jointDisplayName;
   joint.userData.displayName = jointDisplayName;
+  joint.referencePosition = Number.isFinite(patch.jointData.referencePosition)
+    ? patch.jointData.referencePosition
+    : undefined;
   if (jointId) {
     joint.userData.jointId = jointId;
   }
@@ -187,8 +194,12 @@ function applyJointPatch(joint: RuntimeURDFJoint, patch: JointPatchCandidate): v
   if (nextLimit) {
     const orderedLimit = normalizeJointLimitOrder(nextLimit);
     if (hasFiniteJointLimitBounds(orderedLimit)) {
-      jointLimit.lower = orderedLimit.lower;
-      jointLimit.upper = orderedLimit.upper;
+      const motionLimit = normalizeJointLimitOrder({
+        lower: getJointMotionAngleFromActualAngle(patch.jointData, orderedLimit.lower),
+        upper: getJointMotionAngleFromActualAngle(patch.jointData, orderedLimit.upper),
+      });
+      jointLimit.lower = motionLimit.lower;
+      jointLimit.upper = motionLimit.upper;
       jointWithMutableState.ignoreLimits = false;
     } else {
       jointLimit.lower = 0;

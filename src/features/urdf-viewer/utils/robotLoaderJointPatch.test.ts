@@ -184,6 +184,44 @@ test('patchJointInPlace orders crossed finite limits before reapplying the curre
   assert.equal(invalidations.length, 1);
 });
 
+test('patchJointInPlace converts authored limits to runtime motion space before clamping', () => {
+  const robot = new THREE.Group() as THREE.Group & {
+    joints?: Record<string, RuntimeURDFJoint>;
+  };
+  const joint = new RuntimeURDFJoint();
+  joint.name = 'joint_1';
+  joint.jointType = JointType.REVOLUTE;
+  joint.axis = new THREE.Vector3(0, 0, 1);
+  joint.limit.lower = -0.6;
+  joint.limit.upper = 0.8;
+  joint.origPosition = joint.position.clone();
+  joint.origQuaternion = joint.quaternion.clone();
+  joint.jointValue = [0.8];
+  robot.joints = { joint_1: joint };
+
+  const applied = patchJointInPlace(
+    robot,
+    {
+      jointName: 'joint_1',
+      previousJointData: makeJointPatchData({
+        referencePosition: 0.4,
+        limit: { lower: -0.2, upper: 1.2, effort: 1, velocity: 1 },
+      }),
+      jointData: makeJointPatchData({
+        referencePosition: 0.4,
+        limit: { lower: -0.2, upper: 0.6, effort: 1, velocity: 1 },
+      }),
+    },
+    () => {},
+  );
+
+  assert.equal(applied, true);
+  assert.equal((joint as RuntimeURDFJoint & { referencePosition?: number }).referencePosition, 0.4);
+  assert.ok(Math.abs(joint.limit.lower - -0.6) < 1e-12);
+  assert.ok(Math.abs(joint.limit.upper - 0.2) < 1e-12);
+  assert.ok(Math.abs(joint.angle - 0.2) < 1e-12);
+});
+
 test('patchJointsInPlace applies batched root-anchor updates without remounting the runtime scene', () => {
   const robot = new THREE.Group() as THREE.Group & {
     joints?: Record<string, RuntimeURDFJoint>;

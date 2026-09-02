@@ -168,10 +168,11 @@ export const JointInteraction: React.FC<JointInteractionProps> = ({
   useEffect(() => {
     if (!isInteractionVisible) return;
     return () => {
+      isDragging.current = false;
       unlockInteraction();
       setIsDragging?.(false);
     };
-  }, [isInteractionVisible, setIsDragging, unlockInteraction]);
+  }, [isInteractionVisible, joint, setIsDragging, unlockInteraction]);
 
   const handleChange = useCallback(() => {
     if (!joint || !controlMode || !dummyRef.current || !isDragging.current) return;
@@ -223,7 +224,13 @@ export const JointInteraction: React.FC<JointInteractionProps> = ({
       const limit = joint.limit;
       const hasFiniteLimit = hasEffectivelyFiniteJointLimits(limit);
       if ((joint.jointType === 'revolute' || joint.jointType === 'prismatic') && hasFiniteLimit) {
-        newValue = clampJointInteractionValue(newValue, limit.lower, limit.upper);
+        const motionValue = getJointMotionAngleFromActualAngle(joint, newValue);
+        const clampedMotionValue = clampJointInteractionValue(
+          motionValue,
+          limit.lower,
+          limit.upper,
+        );
+        newValue = getJointActualAngleFromMotionAngle(joint, clampedMotionValue);
       }
 
       if (Math.abs(newValue - lastValueRef.current) > 0.001) {

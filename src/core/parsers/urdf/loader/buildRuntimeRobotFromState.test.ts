@@ -470,11 +470,19 @@ test('buildRuntimeRobotFromState exposes referenced joint limits in runtime moti
   const joint = robot.joints.hip_joint as {
     jointValue?: number[];
     limit: { lower: number; upper: number };
+    referencePosition?: number;
     setJointValue: (value: number) => boolean;
   };
 
+  assert.equal(joint.referencePosition, referencePosition);
   assert.ok(Math.abs(joint.limit.lower + 0.6) <= 1e-12);
   assert.ok(Math.abs(joint.limit.upper - 0.8) <= 1e-12);
+  assert.equal(
+    ((joint as unknown as THREE.Object3D).clone() as THREE.Object3D & {
+      referencePosition?: number;
+    }).referencePosition,
+    referencePosition,
+  );
 
   joint.setJointValue(0.9);
   assert.ok(Math.abs((joint.jointValue?.[0] ?? Number.NaN) - 0.8) <= 1e-12);

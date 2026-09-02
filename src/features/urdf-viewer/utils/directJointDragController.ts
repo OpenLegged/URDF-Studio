@@ -313,7 +313,13 @@ export function createDirectJointDragController({
       jointDragFrameSync.cancel();
       cancelPendingRevoluteDelta();
       jointDragStoreSync.dispose();
+      const wasDragging = state.isDraggingJoint.current;
+      state.isDraggingJoint.current = false;
+      state.dragJoint.current = null;
       state.runtimeValue.current = null;
+      if (wasDragging) {
+        onDraggingChange(false);
+      }
     },
   };
 }

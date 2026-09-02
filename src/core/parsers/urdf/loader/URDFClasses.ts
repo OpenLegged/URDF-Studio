@@ -55,6 +55,7 @@ export class URDFJoint extends URDFBase {
     axis = new Vector3(1, 0, 0);
     limit: { lower: number; upper: number; effort?: number; velocity?: number } = { lower: 0, upper: 0 };
     ignoreLimits = false;
+    referencePosition?: number;
     origPosition: Vector3 | null = null;
     origQuaternion: Quaternion | null = null;
     mimicJoints: URDFMimicJoint[] = [];
@@ -113,6 +114,7 @@ export class URDFJoint extends URDFBase {
         this.limit.effort = source.limit.effort;
         this.limit.velocity = source.limit.velocity;
         this.ignoreLimits = source.ignoreLimits;
+        this.referencePosition = source.referencePosition;
         this.jointValue = source.jointValue ? [...source.jointValue] : [];
         this.origPosition = source.origPosition ? source.origPosition.clone() : null;
         this.origQuaternion = source.origQuaternion ? source.origQuaternion.clone() : null;

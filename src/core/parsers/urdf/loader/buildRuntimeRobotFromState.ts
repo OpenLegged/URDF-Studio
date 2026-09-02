@@ -531,6 +531,9 @@ export async function buildRuntimeRobotFromState({
     joint.userData.displayName = jointDisplayName;
     joint.userData.jointId = jointKey;
     joint.userData.originalJointType = jointData.type;
+    joint.referencePosition = Number.isFinite(jointData.referencePosition)
+      ? jointData.referencePosition
+      : undefined;
     if (typeof jointData.dynamics?.stiffness === 'number') {
       joint.userData.mjcfJointStiffness = jointData.dynamics.stiffness;
       Object.assign(

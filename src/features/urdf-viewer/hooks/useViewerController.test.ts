@@ -554,6 +554,49 @@ async function nextAnimationFrame(dom: JSDOM) {
   await Promise.resolve();
 }
 
+test('joints panel display metadata updates even while the runtime joint limit is stale', async () => {
+  const initialRobotState = createSimpleRobotFixture();
+  initialRobotState.joints.joint_a.limit.upper = 0.2;
+  initialRobotState.joints.joint_a.angle = 0.2;
+  const runtimeRobot = createRuntimeRobotFixture(initialRobotState);
+  const { dom, root, rerender, getHook } = await mountControllerWithProps({
+    active: false,
+    closedLoopRobotState: initialRobotState,
+  });
+
+  try {
+    await act(async () => {
+      getHook().runtime.handleJointPanelRobotLoaded(runtimeRobot);
+    });
+
+    assert.equal(getHook().jointsPanel.displayRobot?.joints?.joint_a?.limit?.upper, 0.2);
+
+    const expandedRobotState: RobotState = {
+      ...initialRobotState,
+      joints: {
+        ...initialRobotState.joints,
+        joint_a: {
+          ...initialRobotState.joints.joint_a,
+          limit: {
+            ...initialRobotState.joints.joint_a.limit,
+            upper: 1,
+          },
+        },
+      },
+    };
+    await rerender({ active: false, closedLoopRobotState: expandedRobotState });
+
+    assert.equal(runtimeRobot.joints.joint_a.limit.upper, 0.2);
+    assert.equal(getHook().jointsPanel.displayRobot?.joints?.joint_a?.limit?.upper, 1);
+    assert.equal(getHook().jointsPanel.displayRobot?.joints?.joint_a?.angle, 0.2);
+  } finally {
+    await act(async () => {
+      root.unmount();
+    });
+    dom.window.close();
+  }
+});
+
 function assertAlmostEqual(actual: number | undefined, expected: number, epsilon = 1e-3) {
   assert.equal(typeof actual, 'number');
   assert.ok(

@@ -1,4 +1,9 @@
-import type { UrdfJoint, UrdfLink, UrdfOrigin, UrdfVisual } from '@/types';
+import {
+  clampJointInteractionValue,
+  hasFiniteJointLimitBounds,
+  normalizeJointLimitOrder,
+} from '@/core/robot';
+import { JointType, type UrdfJoint, type UrdfLink, type UrdfOrigin, type UrdfVisual } from '@/types';
 
 import type {
   WorkspaceJointPropertyPatch,
@@ -76,7 +81,27 @@ export function applyWorkspaceJointPropertyPatch(
   const next: UrdfJoint = { ...current, ...structuredClone(patch), id: current.id } as UrdfJoint;
   if (patch.origin) next.origin = mergeOrigin(current.origin, patch.origin)!;
   if (patch.axis) next.axis = { ...(current.axis ?? patch.axis), ...patch.axis } as UrdfJoint['axis'];
-  if (patch.limit) next.limit = { ...(current.limit ?? patch.limit), ...patch.limit } as UrdfJoint['limit'];
+  if (patch.limit) {
+    next.limit = normalizeJointLimitOrder({
+      ...(current.limit ?? patch.limit),
+      ...patch.limit,
+    }) as UrdfJoint['limit'];
+
+    if (
+      (next.type === JointType.REVOLUTE || next.type === JointType.PRISMATIC) &&
+      hasFiniteJointLimitBounds(next.limit)
+    ) {
+      const currentAngle = Number.isFinite(next.angle) ? next.angle! : 0;
+      const clampedAngle = clampJointInteractionValue(
+        currentAngle,
+        next.limit.lower,
+        next.limit.upper,
+      );
+      if (clampedAngle !== currentAngle) {
+        next.angle = clampedAngle;
+      }
+    }
+  }
   if (patch.dynamics) next.dynamics = { ...current.dynamics, ...patch.dynamics };
   if (patch.hardware) next.hardware = { ...current.hardware, ...patch.hardware };
   return next;

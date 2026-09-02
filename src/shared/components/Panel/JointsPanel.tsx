@@ -16,6 +16,7 @@ const JOINT_PANEL_COMPACT_ADVANCED_ITEM_ESTIMATED_HEIGHT = 70;
 interface JointsPanelProps {
   showJointPanel: boolean;
   robot: JointPanelRobot | null | undefined;
+  scopeKey?: string | null;
   jointPanelRef: React.RefObject<HTMLDivElement | null>;
   jointPanelPos: { x: number; y: number } | null;
   defaultPosition?: {
@@ -55,6 +56,7 @@ interface JointsPanelProps {
 export const JointsPanel: React.FC<JointsPanelProps> = ({
   showJointPanel,
   robot,
+  scopeKey,
   jointPanelRef,
   jointPanelPos,
   defaultPosition,
@@ -155,6 +157,7 @@ export const JointsPanel: React.FC<JointsPanelProps> = ({
     >
       <JointPanelList
         robot={robot}
+        scopeKey={scopeKey}
         angleUnit={angleUnit}
         jointPanelStore={jointPanelStore}
         setActiveJoint={setActiveJoint}

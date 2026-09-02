@@ -694,6 +694,8 @@ export const useViewerController = ({
     () => ({
       robot,
       jointPanelRobot,
+      displayRobot: effectiveClosedLoopRobotState ?? jointPanelRobot ?? robot,
+      scopeKey: jointStateScopeKey,
       jointPanelStore,
       angleUnit,
       setAngleUnit,
@@ -709,12 +711,14 @@ export const useViewerController = ({
     }),
     [
       angleUnit,
+      effectiveClosedLoopRobotState,
       handleHoverWrapper,
       handleJointAngleChange,
       handleJointChangeCommit,
       handleResetJoints,
       handleSelectWrapper,
       isJointsCollapsed,
+      jointStateScopeKey,
       jointPanelRobot,
       jointPanelStore,
       robot,

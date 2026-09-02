@@ -8,6 +8,8 @@ import { JSDOM } from 'jsdom';
 import { ViewerJointsPanel } from './ViewerJointsPanel';
 import { createJointPanelStore } from '@/shared/utils/jointPanelStore';
 
+type ViewerJointsPanelProps = React.ComponentProps<typeof ViewerJointsPanel>;
+
 function installDom() {
   const dom = new JSDOM('<!doctype html><html><body><div id="root"></div></body></html>', {
     url: 'http://localhost/',
@@ -65,36 +67,44 @@ function createComponentRoot() {
   return { dom, container, root };
 }
 
+function waitForAnimationFrame() {
+  return new Promise<void>((resolve) => {
+    requestAnimationFrame(() => resolve());
+  });
+}
+
 function createViewerJointsPanelProps() {
+  const displayRobot = {
+    joints: {
+      R_thigh_joint: {
+        id: 'R_thigh_joint',
+        name: 'R_thigh_joint',
+        jointType: 'revolute',
+        limit: { lower: -1.57, upper: 3.49, effort: 1, velocity: 1 },
+      },
+    },
+  };
+
   return {
     layout: {
       containerRef: createRef<HTMLDivElement>(),
       optionsPanelRef: createRef<HTMLDivElement>(),
       jointPanelRef: createRef<HTMLDivElement>(),
+      measurePanelRef: createRef<HTMLDivElement>(),
+      paintPanelRef: createRef<HTMLDivElement>(),
+      optionsPanelPos: null,
       jointPanelPos: null,
+      measurePanelPos: null,
+      paintPanelPos: null,
       handleMouseDown: () => {},
+      handleMouseMove: () => {},
+      handleMouseUp: () => {},
     },
     jointsPanel: {
-      robot: {
-        joints: {
-          R_thigh_joint: {
-            id: 'R_thigh_joint',
-            name: 'R_thigh_joint',
-            jointType: 'revolute',
-            limit: { lower: -1.57, upper: 3.49, effort: 1, velocity: 1 },
-          },
-        },
-      },
-      jointPanelRobot: {
-        joints: {
-          R_thigh_joint: {
-            id: 'R_thigh_joint',
-            name: 'R_thigh_joint',
-            jointType: 'revolute',
-            limit: { lower: -1.57, upper: 3.49, effort: 1, velocity: 1 },
-          },
-        },
-      },
+      displayRobot,
+      robot: null,
+      jointPanelRobot: null,
+      scopeKey: 'viewer-joints-panel-test',
       handleResetJoints: () => {},
       angleUnit: 'rad' as const,
       setAngleUnit: () => {},
@@ -104,22 +114,24 @@ function createViewerJointsPanelProps() {
         jointAngles: { R_thigh_joint: 0 },
       }),
       setActiveJoint: () => {},
-      handleJointAngleChange: () => {},
-      handleJointChangeCommit: () => {},
+      handleJointAngleChange: (_jointName: string, _angle: number) => {},
+      handleJointChangeCommit: (_jointName: string, _angle: number) => {},
       handleSelectWrapper: () => {},
       handleHoverWrapper: () => {},
+      setIsDragging: () => {},
     },
-  };
+  } satisfies Pick<ViewerJointsPanelProps, 'layout' | 'jointsPanel'>;
 }
 
-function renderViewerJointsPanel(
+function renderViewerJointsPanelWithProps(
   root: Root,
-  onUpdate: (type: 'link' | 'joint', id: string, data: unknown) => void,
+  props: ReturnType<typeof createViewerJointsPanelProps>,
+  onUpdate: (type: 'link' | 'joint', id: string, data: unknown) => void = () => {},
 ) {
   return act(async () => {
     root.render(
-      React.createElement(ViewerJointsPanel as unknown as React.FC<any>, {
-        ...createViewerJointsPanelProps(),
+      React.createElement(ViewerJointsPanel, {
+        ...props,
         showJointPanel: true,
         setShowJointPanel: () => {},
         lang: 'en',
@@ -127,6 +139,13 @@ function renderViewerJointsPanel(
       }),
     );
   });
+}
+
+function renderViewerJointsPanel(
+  root: Root,
+  onUpdate: (type: 'link' | 'joint', id: string, data: unknown) => void,
+) {
+  return renderViewerJointsPanelWithProps(root, createViewerJointsPanelProps(), onUpdate);
 }
 
 test('viewer joints panel forwards advanced joint limit edits through onUpdate', async () => {
@@ -181,6 +200,72 @@ test('viewer joints panel forwards advanced joint limit edits through onUpdate',
   assert.equal(updates[0]?.type, 'joint');
   assert.equal(updates[0]?.id, 'R_thigh_joint');
   assert.equal(updates[0]?.data.limit?.lower, -0.5);
+
+  await act(async () => {
+    root.unmount();
+  });
+  dom.window.close();
+});
+
+test('viewer joints panel refreshes an expanded upper limit from immutable display metadata', async () => {
+  const { dom, container, root } = createComponentRoot();
+  const props = createViewerJointsPanelProps();
+  const previewAngles: number[] = [];
+  const committedAngles: number[] = [];
+  props.jointsPanel.handleJointAngleChange = (_jointName, angle) => {
+    previewAngles.push(angle);
+  };
+  props.jointsPanel.handleJointChangeCommit = (_jointName, angle) => {
+    committedAngles.push(angle);
+  };
+
+  props.jointsPanel.displayRobot.joints.R_thigh_joint.limit.upper = 0.2;
+  await renderViewerJointsPanelWithProps(root, props);
+
+  const rangeInput = container.querySelector<HTMLInputElement>('input[type="range"]');
+  const sliderShell = container.querySelector<HTMLElement>('[data-testid="joint-slider-shell"]');
+  assert.ok(rangeInput, 'joint range input should render');
+  assert.ok(sliderShell, 'joint slider shell should render');
+  assert.equal(Number(rangeInput.max), 0.2);
+  assert.equal(Number(sliderShell.getAttribute('aria-valuemax')), 0.2);
+
+  props.jointsPanel.displayRobot = {
+    joints: {
+      R_thigh_joint: {
+        ...props.jointsPanel.displayRobot.joints.R_thigh_joint,
+        limit: {
+          ...props.jointsPanel.displayRobot.joints.R_thigh_joint.limit,
+          upper: 1,
+        },
+      },
+    },
+  };
+  await renderViewerJointsPanelWithProps(root, props);
+
+  assert.equal(
+    container.querySelector<HTMLInputElement>('input[type="range"]'),
+    rangeInput,
+    'updating authored metadata should preserve the mounted slider',
+  );
+  assert.equal(Number(rangeInput.max), 1);
+  assert.equal(Number(sliderShell.getAttribute('aria-valuemax')), 1);
+
+  await act(async () => {
+    rangeInput.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
+    rangeInput.value = '0.8';
+    rangeInput.dispatchEvent(new Event('input', { bubbles: true }));
+  });
+  await act(async () => {
+    await waitForAnimationFrame();
+  });
+
+  assert.deepEqual(previewAngles, [0.8]);
+  assert.deepEqual(committedAngles, []);
+
+  await act(async () => {
+    window.dispatchEvent(new PointerEvent('pointerup', { bubbles: true }));
+  });
+  assert.deepEqual(committedAngles, [0.8]);
 
   await act(async () => {
     root.unmount();
