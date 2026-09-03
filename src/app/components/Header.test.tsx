@@ -6,7 +6,7 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { Box } from 'lucide-react';
 
 import { MANAGED_WINDOW_Z_INDEX_BASE } from '@/store/uiStore';
-import { Header } from './Header.tsx';
+import { Header, type HeaderProps } from './Header.tsx';
 
 const noopToolboxItems: import('./header/types').ToolboxItem[] = [];
 
@@ -27,7 +27,7 @@ const surfaceModeSelector: import('./header/types').HeaderSurfaceModeSelectorCon
   },
 };
 
-function renderHeader(withSurfaceModeSelector = false) {
+function renderHeader(withSurfaceModeSelector = false, overrides: Partial<HeaderProps> = {}) {
   return renderToStaticMarkup(
     React.createElement(Header, {
       onImportFile: () => {},
@@ -59,6 +59,7 @@ function renderHeader(withSurfaceModeSelector = false) {
         showStructureGraph: false,
       },
       setViewConfig: () => {},
+      ...overrides,
     }),
   );
 }
@@ -162,6 +163,49 @@ test('Header renders host-owned file actions for the alternate surface', () => {
 
   assert.match(markup, /aria-label="Host file"/);
   assert.doesNotMatch(markup, /aria-label="File"/);
+});
+
+test('Header keeps the host quick action before the snapshot on alternate desktop surfaces', () => {
+  const originalWindow = Object.getOwnPropertyDescriptor(globalThis, 'window');
+
+  try {
+    for (const width of [1600, 1024, 640]) {
+      Object.defineProperty(globalThis, 'window', {
+        configurable: true,
+        value: { innerWidth: width },
+      });
+      const markup = renderHeader(true, {
+        surfaceModeSelector: {
+          ...surfaceModeSelector,
+          current: 'alternate',
+          alternateControls: { snapshot: { onSnapshot: () => {} } },
+        },
+      });
+      const quickAction = markup.match(
+        /<button[^>]*aria-label="Quick action"[^>]*>(.*?)<\/button>/,
+      )?.[1];
+      assert.ok(quickAction, `host quick action should remain inline at ${width}px`);
+      assert.ok(
+        markup.indexOf('aria-label="Quick action"') < markup.indexOf('aria-label="Snapshot"'),
+        'host quick action should occupy the same leading position in the right actions group',
+      );
+      if (width === 1600) {
+        assert.match(quickAction, />Quick action</, 'roomy headers should display the action label');
+      } else {
+        assert.doesNotMatch(
+          quickAction,
+          />Quick action</,
+          'compact headers should retain the icon without the label',
+        );
+      }
+    }
+  } finally {
+    if (originalWindow) {
+      Object.defineProperty(globalThis, 'window', originalWindow);
+    } else {
+      Reflect.deleteProperty(globalThis, 'window');
+    }
+  }
 });
 
 test('Header renders host-owned view options and snapshot controls for the alternate surface', () => {

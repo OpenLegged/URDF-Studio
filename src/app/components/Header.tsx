@@ -114,8 +114,7 @@ export function Header({
     () => isAlternateSurface
       ? {
           ...responsive,
-          showQuickActionInline: false,
-          showQuickActionLabel: false,
+          showQuickActionInline: Boolean(quickAction),
           showSnapshotInline: Boolean(activeSnapshot),
           showDesktopOverflow: false,
           showLanguageInline: true,
@@ -125,7 +124,7 @@ export function Header({
           showSecondaryActionLabel: false,
         }
       : responsive,
-    [activeSnapshot, isAlternateSurface, responsive],
+    [activeSnapshot, isAlternateSurface, quickAction, responsive],
   );
   const t = translations[lang];
   React.useEffect(() => {
@@ -243,7 +242,7 @@ export function Header({
         setTheme={setTheme}
         undo={undo}
         redo={redo}
-        quickAction={isAlternateSurface ? undefined : quickAction}
+        quickAction={quickAction}
         secondaryAction={secondaryAction}
         onOpenCodeViewer={onOpenCodeViewer}
         onPrefetchCodeViewer={onPrefetchCodeViewer}
