@@ -121,7 +121,6 @@ export function Header({
           showThemeInline: true,
           showSettingsInline: true,
           showSecondaryActionInline: true,
-          showSecondaryActionLabel: false,
         }
       : responsive,
     [activeSnapshot, isAlternateSurface, quickAction, responsive],

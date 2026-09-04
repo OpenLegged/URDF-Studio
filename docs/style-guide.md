@@ -1,6 +1,6 @@
 # UI 样式与可访问性
 
-> 最后更新：2026-07-23 | 覆盖源码：`src/styles/`、`src/store/uiStore.ts`、`src/shared/components/ui/`、`src/app/components/header/`、`src/app/components/settings/`
+> 最后更新：2026-09-04 | 覆盖源码：`src/styles/`、`src/store/uiStore.ts`、`src/shared/components/ui/`、`src/app/components/header/`、`src/app/components/settings/`
 > 交叉引用：[architecture.md](architecture.md)
 
 ## 1. 关键入口
@@ -21,6 +21,8 @@
 - 小字号文本避免低对比度颜色
 
 ## 2.1 控件复用边界
+
+- Header 的宿主 secondary action 在 primary / alternate 工作区共用标签宽度规则；宽屏显示文字，紧凑宽度收起文字，不按工作区强制隐藏。
 
 - 基础交互控件统一从 `src/shared/components/ui/` 引用：`Button`、`IconButton`、`ToolbarToggleGroup`、`Checkbox`、`Switch`、`Input`、`Select`、`PanelSelect`、`Slider`、`SegmentedControl`、`Dialog`、`Tooltip`、`ContextMenu`
 - 面板组合控件统一从 `src/shared/components/Panel/` 引用；面板内 overlay / toolbar 小按钮优先使用 `IconButton` 或 `PanelOverlayToggleButton`

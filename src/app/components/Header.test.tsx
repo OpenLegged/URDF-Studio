@@ -185,13 +185,19 @@ test('Header keeps the host quick action before the snapshot on alternate deskto
         /<button[^>]*aria-label="Quick action"[^>]*>(.*?)<\/button>/,
       )?.[1];
       assert.ok(quickAction, `host quick action should remain inline at ${width}px`);
+      const secondaryAction = markup.match(
+        /<button[^>]*aria-label="Secondary action"[^>]*>(.*?)<\/button>/,
+      )?.[1];
+      assert.ok(secondaryAction, `host secondary action should remain inline at ${width}px`);
       assert.ok(
         markup.indexOf('aria-label="Quick action"') < markup.indexOf('aria-label="Snapshot"'),
         'host quick action should occupy the same leading position in the right actions group',
       );
       if (width === 1600) {
         assert.match(quickAction, />Quick action</, 'roomy headers should display the action label');
+        assert.match(secondaryAction, />Secondary action</, 'roomy headers should display the secondary label');
       } else {
+        assert.doesNotMatch(secondaryAction, />Secondary action</, 'compact headers should hide the secondary label');
         assert.doesNotMatch(
           quickAction,
           />Quick action</,
