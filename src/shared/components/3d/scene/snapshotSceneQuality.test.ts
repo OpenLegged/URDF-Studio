@@ -7,6 +7,7 @@ import {
   applySnapshotLightingPreset,
   applySnapshotSceneVisibility,
   applySnapshotShadowQuality,
+  SNAPSHOT_ENVIRONMENT_PRESET_SETTINGS,
   SNAPSHOT_ENVIRONMENT_PRESET_RENDER_SETTINGS,
 } from './snapshotSceneQuality.ts';
 
@@ -172,6 +173,17 @@ test('applySnapshotLightingPreset applies a visible rig change and restores it a
   assert.equal(gl.toneMappingExposure, 1.1);
   assert.equal(main.color.getHexString(), 'ffffff');
   assert.equal(rim.color.getHexString(), 'ffffff');
+});
+
+test('HDRI presets keep the environment key aligned with the shadow-casting light', () => {
+  assert.equal(SNAPSHOT_ENVIRONMENT_PRESET_SETTINGS.city.environmentRotationZ, Math.PI);
+  assert.ok(
+    Math.abs(
+      SNAPSHOT_ENVIRONMENT_PRESET_SETTINGS.contrast.environmentRotationZ -
+        SNAPSHOT_ENVIRONMENT_PRESET_SETTINGS.city.environmentRotationZ -
+        0.7,
+    ) < 1e-12,
+  );
 });
 
 test('applySnapshotShadowQuality switches shadow map strategy for soft captures and restores it', () => {

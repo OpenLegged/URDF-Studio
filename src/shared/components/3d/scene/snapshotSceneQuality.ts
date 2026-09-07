@@ -33,6 +33,10 @@ type Cleanup = () => void;
 
 type ThemeKey = 'light' | 'dark';
 
+// Potsdamer Platz's dominant light faces away from the snapshot rig's
+// shadow-casting key at the texture's native orientation.
+const POTSDAMER_PLAZA_KEY_LIGHT_ALIGNMENT_Z = Math.PI;
+
 export interface SnapshotBackgroundFill {
   kind: 'transparent' | 'solid' | 'linear-gradient';
   colors?: readonly [string, string];
@@ -95,12 +99,12 @@ export const SNAPSHOT_ENVIRONMENT_PRESET_SETTINGS: Record<
   city: {
     kind: 'hdri',
     environmentIntensity: { light: 0.95, dark: 1.08 },
-    environmentRotationZ: 0,
+    environmentRotationZ: POTSDAMER_PLAZA_KEY_LIGHT_ALIGNMENT_Z,
   },
   contrast: {
     kind: 'hdri',
     environmentIntensity: { light: 1.18, dark: 1.26 },
-    environmentRotationZ: 0.7,
+    environmentRotationZ: POTSDAMER_PLAZA_KEY_LIGHT_ALIGNMENT_Z + 0.7,
   },
 };
 
