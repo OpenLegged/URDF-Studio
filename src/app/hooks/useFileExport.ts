@@ -600,7 +600,7 @@ export function useFileExport() {
           replaceTemplate,
           trimProgressFileLabel,
           generateZipBlobWithProgress,
-          downloadBlob,
+          downloadBlob: options.onArchive ?? downloadBlob,
           markCurrentTargetSaved,
         });
       }
@@ -614,7 +614,7 @@ export function useFileExport() {
         config,
         createProgressReporter,
         createZip,
-        downloadBlob,
+        downloadBlob: options.onArchive ?? downloadBlob,
         generateZipBlobWithProgress,
         markCurrentTargetSaved,
         normalizedAssemblyState: workspace,

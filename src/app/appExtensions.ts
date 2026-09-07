@@ -48,6 +48,8 @@ export interface AppExposedActions {
 }
 
 export interface AppContentProps {
+  /** Isolated embedded workspaces must not claim imports from editor tabs. */
+  externalImportEnabled?: boolean;
   extensions?: {
     slots?: AppExtensionSlots;
     config?: AppExtensionConfig;

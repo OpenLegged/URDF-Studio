@@ -1,6 +1,6 @@
 # 代码变更 → 文档更新 & 验证映射
 
-> 最后更新：2026-07-05 | 覆盖范围：变更工作流、验证命令、测试样本索引
+> 最后更新：2026-09-07 | 覆盖范围：变更工作流、验证命令、测试样本索引
 > 交叉引用：[architecture.md](architecture.md)、[viewer.md](viewer.md)、[file-io.md](file-io.md)、[testing.md](testing.md)
 
 ## 1. 代码变更工作流
@@ -100,6 +100,10 @@ npm run build:package:react-robot-canvas
 | `H1-2/h1_2/h1_2.usd`                   | Humanoid：双足/人形链路与 viewer hydration           |
 | `H1-2/h1_2_handless/h1_2_handless.usd` | Handless 变体：资产差异下的 runtime 行为             |
 | `*.viewer_roundtrip.usd`               | 导出后 diff、回归对照与 roundtrip 验证               |
+
+轻量单测 `usdPreparedExportCacheWorkerBridge.test.ts` 验证单资产导出入口的完整二进制依赖闭包、
+完成时序、取消/错误/超时清理；`features/file-io/utils/mjcfExport.test.ts` 验证模型与场景共享
+MJCF 生成选项、网格和贴图打包。上述单测不替代 Unitree 浏览器语料验证。
 
 ### SDF / Gazebo 样本（`test/gazebo_models/`）
 

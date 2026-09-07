@@ -97,6 +97,8 @@ export type {
   ProjectArchiveLimits,
 } from './utils';
 export { collectRawFilesZip } from './utils/rawFilesExport';
+export { prepareMjcfExport, collectMjcfExportFiles } from './utils/mjcfExport';
+export type { PrepareMjcfExportOptions, PreparedMjcfExport } from './utils/mjcfExport';
 
 // Hooks
 export { useSnapshot, usePdfExport } from './hooks';
@@ -105,3 +107,5 @@ export { ExportDialog } from './components/ExportDialog';
 export { EXPORT_FORMATS } from './components/ExportDialog';
 export { ExportProgressDialog } from './components/ExportProgressDialog';
 export { DisconnectedWorkspaceUrdfExportDialog } from './components/DisconnectedWorkspaceUrdfExportDialog';
+
+export { DEFAULT_CONFIG as DEFAULT_EXPORT_CONFIG } from './components/ExportDialog/config';

@@ -2532,7 +2532,7 @@ async function loadUsdStageIntoWorker(message: UsdOffscreenViewerInitRequest): P
           message.sourceFile,
           stageOpenContext.availableFiles,
           stageOpenContext.assets,
-          message.projectionMode === 'scene'
+          message.projectionMode === 'scene' || message.includeAllAvailableFiles
             ? (sourceFile, availableFiles, assets) => prepareUsdStageOpenDataCore(
                 sourceFile,
                 availableFiles,

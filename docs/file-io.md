@@ -1,6 +1,6 @@
 # 导入导出与 Workspace 链路
 
-> 最后更新：2026-07-17 | 覆盖源码：`src/app/hooks/`、`src/app/hooks/file-export/`、`src/app/hooks/workspace-source-sync/`、`src/app/hooks/workspace-mutations/`、`src/app/utils/`、`src/app/workers/`、`src/app/components/BotWorldImportOverlay.tsx`、`src/core/parsers/format_detection.ts`、`src/core/robot/assemblySceneProjection.ts`、`src/features/file-io/`、`src/features/robot-tree/`、`src/features/assembly/`、`src/features/property-editor/`、`src/shared/utils/popupHandoffProtocol.ts`、`src/shared/hostIntegrationState.ts`
+> 最后更新：2026-09-07 | 覆盖源码：`src/app/hooks/`、`src/app/hooks/file-export/`、`src/app/hooks/workspace-source-sync/`、`src/app/hooks/workspace-mutations/`、`src/app/utils/`、`src/app/workers/`、`src/app/components/BotWorldImportOverlay.tsx`、`src/core/parsers/format_detection.ts`、`src/core/robot/assemblySceneProjection.ts`、`src/features/file-io/`、`src/features/robot-tree/`、`src/features/assembly/`、`src/features/property-editor/`、`src/shared/utils/popupHandoffProtocol.ts`、`src/shared/hostIntegrationState.ts`
 > 交叉引用：[viewer.md](viewer.md)、[architecture.md](architecture.md)
 
 ## 1. 职责拆分
@@ -202,3 +202,22 @@ URL 自带凭证且来自已鉴权受信接口，其域名与 API 不同源属�
 - `src/app/hooks/useFileExport.ts`
 - `src/app/AppLayout.tsx`
 - `src/app/hooks/workspaceSourceSyncUtils.ts`（只允许 canonical workspace → source/preview 纯派生）
+
+## 共用 MJCF 模型转换
+
+`features/file-io/utils/mjcfExport.ts` 提供 `prepareMjcfExport`，统一网格准备和 MJCF XML 生成。
+模型导出的 `configuredRobotExport` 保留源格式 overlay、导出选项与 archive/download 编排；
+Pro 场景的源资产适配器复用相同函数，再用 `collectMjcfExportFiles` 打包 `meshes/` 与 `textures/`
+依赖。缺失依赖必须失败，不能生成引用悬空的模型。场景实例的摆放、仿真覆盖与最终编译属于 Pro。
+
+USD 单资产入口 `prepareUsdSourceExportCacheWithWorker` 通过 editor 的 `usd_hydration` facade
+公开，使用现有 robot-mode USD worker 和 prepared export cache；显式完整加载调用方已校验的
+源文件闭包，避免文本扫描遗漏二进制 USDC 内部依赖。默认 viewer 加载策略不变。取消、超时、
+错误与成功均释放一次性 worker 和源对象 URL；只在 complete document-load 后交付 prepared cache。
+
+
+### 宿主接管格式导出（2026-09-07）
+
+`HandleExportWithConfigOptions.onArchive(blob, fileName)` 允许宿主接管生成的 ZIP；配置时不再触发 Core 默认浏览器下载，未配置时行为保持不变。USD 和机器人文本格式共用该交付选择。默认配置经 file-io 公共入口 `DEFAULT_EXPORT_CONFIG` 导出。
+
+隔离嵌入工作区可以传 `AppContent.externalImportEnabled={false}`，关闭自动 URL 导入与 BroadcastChannel 监听，避免后台转换抢占用户其他标签页的导入。默认开启，手动文件导入与导出不受影响。

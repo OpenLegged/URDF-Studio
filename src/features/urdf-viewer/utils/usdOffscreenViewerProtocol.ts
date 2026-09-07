@@ -36,6 +36,8 @@ export interface UsdOffscreenViewerInitRequest {
    * for existing model-editor callers.
    */
   projectionMode?: 'robot' | 'scene';
+  /** Preserve a caller-verified file closure, including dependencies hidden inside binary layers. */
+  includeAllAvailableFiles?: boolean;
   canvas: OffscreenCanvas;
   width: number;
   height: number;

@@ -6,7 +6,7 @@ import type { RobotData, UsdSceneSnapshot } from '@/types';
 import type { UsdPreparedExportCacheWorkerResponse } from './usdPreparedExportCacheWorker.ts';
 import type { ViewerRobotDataResolution } from '@/lib/robot-parser/usd/viewerRobotData';
 import { serializePreparedUsdExportCacheForWorker } from './usdPreparedExportCacheWorkerTransfer.ts';
-import { createUsdPreparedExportCacheWorkerClient } from './usdPreparedExportCacheWorkerBridge.ts';
+import { createUsdPreparedExportCacheWorkerClient, prepareUsdSourceExportCacheWithWorker } from './usdPreparedExportCacheWorkerBridge.ts';
 
 type WorkerEventHandler = (event: { data?: unknown; error?: unknown; message?: string }) => void;
 
@@ -173,5 +173,56 @@ test('USD prepared export cache worker client rejects immediately when Worker is
       writable: true,
       value: originalWorker,
     });
+  }
+});
+
+test('source hydration preserves binary dependencies and disposes workers/URLs on all exits', async (t) => {
+  const originalWorker = globalThis.Worker;
+  const originalCanvas = globalThis.OffscreenCanvas;
+  const workers: SourceWorker[] = [];
+  class SourceWorker extends FakeWorker {
+    constructor() { super(); workers.push(this); }
+    emit(data: unknown) { this.emitMessage(data as UsdPreparedExportCacheWorkerResponse); }
+  }
+  const created: string[] = [];
+  const revoked: string[] = [];
+  t.mock.method(URL, 'createObjectURL', () => { const url = `blob:test-${created.length}`; created.push(url); return url; });
+  t.mock.method(URL, 'revokeObjectURL', (url: string) => revoked.push(url));
+  Object.defineProperty(globalThis, 'Worker', { configurable: true, writable: true, value: SourceWorker });
+  Object.defineProperty(globalThis, 'OffscreenCanvas', { configurable: true, writable: true, value: class {} });
+  try {
+    const files = new Map([['root.usdc', new Blob(['PXR-USDC'])], ['layers/nested.usdc', new Blob(['binary'])], ['textures/wood.png', new Blob(['texture'])]]);
+    const success = prepareUsdSourceExportCacheWithWorker({ rootPath: 'root.usdc', files });
+    const worker = workers[0]!;
+    const request = worker.postedMessages[0] as any;
+    assert.equal(request.projectionMode, 'robot');
+    assert.equal(request.includeAllAvailableFiles, true);
+    assert.deepEqual(request.stageOpenContext.availableFiles.map((file: any) => file.name), ['layers/nested.usdc', 'textures/wood.png']);
+    const serialized = await serializePreparedUsdExportCacheForWorker({ robotData: demoRobotData, resolution: demoResolution, meshFiles: { 'mesh.obj': new Blob(['v 0 0 0']) } });
+    worker.emit({ type: 'prepared-cache', preparedCache: serialized.payload });
+    assert.equal(worker.terminated, false, 'wait for complete hydration');
+    worker.emit({ type: 'document-load', event: { status: 'ready' } });
+    assert.equal(await (await success).meshFiles['mesh.obj']!.text(), 'v 0 0 0');
+    assert.equal(worker.terminated, true);
+    assert.deepEqual(revoked, created);
+    const controller = new AbortController();
+    const abort = prepareUsdSourceExportCacheWithWorker({ rootPath: 'root.usdc', files, signal: controller.signal });
+    controller.abort(new Error('test cancellation'));
+    await assert.rejects(abort, /test cancellation/);
+    assert.equal(workers[1]!.terminated, true);
+    const failure = prepareUsdSourceExportCacheWithWorker({ rootPath: 'root.usdc', files });
+    workers[2]!.emit({ type: 'fatal-error', error: 'unsupported stage' });
+    await assert.rejects(failure, /unsupported stage/);
+    assert.equal(workers[2]!.terminated, true);
+    const missing = prepareUsdSourceExportCacheWithWorker({ rootPath: 'root.usdc', files });
+    workers[3]!.emit({ type: 'document-load', event: { status: 'ready' } });
+    await assert.rejects(missing, /no prepared geometry/);
+    assert.equal(workers[3]!.terminated, true);
+    await assert.rejects(prepareUsdSourceExportCacheWithWorker({ rootPath: 'root.usdc', files, timeoutMs: 1 }), /timed out/);
+    assert.equal(workers[4]!.terminated, true);
+    assert.deepEqual(revoked, created);
+  } finally {
+    Object.defineProperty(globalThis, 'Worker', { configurable: true, writable: true, value: originalWorker });
+    Object.defineProperty(globalThis, 'OffscreenCanvas', { configurable: true, writable: true, value: originalCanvas });
   }
 });

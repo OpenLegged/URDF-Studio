@@ -63,7 +63,7 @@ function preloadOverlay(label: string, preload: () => Promise<unknown>): void {
   });
 }
 
-export function AppContent({ extensions, onExposeActions }: AppContentProps = {}) {
+export function AppContent({ extensions, onExposeActions, externalImportEnabled = true }: AppContentProps = {}) {
   useUnsavedChangesPrompt();
 
   // Refs for file inputs
@@ -161,6 +161,7 @@ export function AppContent({ extensions, onExposeActions }: AppContentProps = {}
     },
   });
   const { importAssetFromBotWorld, ...botWorldImportState } = useAssetImportFromUrl({
+    enabled: externalImportEnabled,
     handleImport,
     onConvertToRequest: ({ convertTo, success }) => {
       // Asset was downloaded+imported; on success open the export dialog

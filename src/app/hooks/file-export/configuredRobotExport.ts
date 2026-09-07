@@ -1,4 +1,5 @@
 import type JSZip from 'jszip';
+import { prepareMjcfExport } from '@/features/file-io';
 
 import type {
   ExportDialogConfig,
@@ -7,7 +8,6 @@ import type {
 } from '@/features/file-io';
 import {
   ensureXacroNamespace,
-  generateMujocoXML,
   generateSDF,
   generateSdfModelConfig,
   generateURDF,
@@ -258,27 +258,20 @@ export async function executeConfiguredRobotExport({
       },
     );
 
-    const mjcfMeshExport = await prepareMjcfMeshExportAssets({
+    const preparedMjcf = await prepareMjcfExport({
       robot,
       assets,
       extraMeshFiles,
       preferSharedMeshReuse,
       meshFormat: config.mjcf.meshFormat,
-    });
-
-    reportProgress(3, t.exportProgressGeneratingFiles, t.exportProgressGeneratingMjcfDetail, {
-      stageProgress: 0.85,
-      indeterminate: false,
-    });
-
-    const generatedMjcfContent = generateMujocoXML(robot, {
-      meshdir,
-      addFloatBase,
-      includeActuators,
-      actuatorType,
-      meshPathOverrides: mjcfMeshExport.meshPathOverrides,
-      visualMeshVariants: mjcfMeshExport.visualMeshVariants,
-    });
+      mujoco: { meshdir, addFloatBase, includeActuators, actuatorType },
+      onMeshesPrepared: () => reportProgress(3, t.exportProgressGeneratingFiles, t.exportProgressGeneratingMjcfDetail, {
+        stageProgress: 0.85,
+        indeterminate: false,
+      }),
+    }, prepareMjcfMeshExportAssets);
+    const mjcfMeshExport = preparedMjcf.meshes;
+    const generatedMjcfContent = preparedMjcf.xml;
     archiveRoot.file(
       `${exportName}.xml`,
       buildSourcePreservingExportContent({

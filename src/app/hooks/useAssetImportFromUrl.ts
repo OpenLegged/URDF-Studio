@@ -144,6 +144,8 @@ interface ImportFromUrlState {
 }
 
 type UseAssetImportFromUrlOptions = {
+  /** Disable automatic URL/channel imports in isolated embedded workspaces. */
+  enabled?: boolean;
   handleImport: (
     files: readonly File[],
     options?: { forceLoadRobot?: boolean },
@@ -231,7 +233,7 @@ export function assertCompletedRemoteImport(result: AppImportResult): void {
  *   - If no existing tab responds, the new tab handles the import itself.
  */
 export function useAssetImportFromUrl(options: UseAssetImportFromUrlOptions) {
-  const { handleImport, onImportComplete, onConvertToRequest } = options;
+  const { handleImport, onImportComplete, onConvertToRequest, enabled = true } = options;
 
   const [state, setState] = useState<ImportFromUrlState>({
     isImporting: false,
@@ -501,7 +503,7 @@ export function useAssetImportFromUrl(options: UseAssetImportFromUrlOptions) {
   //  by sending import-accepted, then performs the import.
   // -----------------------------------------------------------------------
   useEffect(() => {
-    if (typeof window === 'undefined') return;
+    if (!enabled || typeof window === 'undefined') return;
 
     const channel = new BroadcastChannel(HANDOFF_BROADCAST_CHANNEL);
 
@@ -523,14 +525,14 @@ export function useAssetImportFromUrl(options: UseAssetImportFromUrlOptions) {
     };
 
     return () => channel.close();
-  }, [importFromBotWorld, handleArrival]);
+  }, [enabled, importFromBotWorld, handleArrival]);
 
   // -----------------------------------------------------------------------
   //  On mount: if URL has import params, show waiting overlay, try
   //  delegating to an existing tab. If no tab responds, handle here.
   // -----------------------------------------------------------------------
   useEffect(() => {
-    if (typeof window === 'undefined') return;
+    if (!enabled || typeof window === 'undefined') return;
 
     const params = readImportParamsFromUrl(window.location.href);
     if (!params) return;
@@ -587,7 +589,7 @@ export function useAssetImportFromUrl(options: UseAssetImportFromUrlOptions) {
     // No cleanup — the channel is closed by either the import-accepted
     // handler or the timeout. Closing it in cleanup would break Strict
     // Mode (channel dies before import-accepted arrives → double import).
-  }, [importFromBotWorld, handleArrival]);
+  }, [enabled, importFromBotWorld, handleArrival]);
 
   return {
     ...state,

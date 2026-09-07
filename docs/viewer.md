@@ -1,6 +1,6 @@
 # Editor / Viewer 子域
 
-> 最后更新：2026-08-28 | 覆盖源码：`src/core/robot/assemblySceneProjection.ts`、`src/core/robot/assemblyScenePlacement.ts`、`src/features/editor/`、`src/features/urdf-viewer/`、`src/app/components/unified-viewer/`、`src/shared/components/3d/`
+> 最后更新：2026-09-07 | 覆盖源码：`src/core/robot/assemblySceneProjection.ts`、`src/core/robot/assemblyScenePlacement.ts`、`src/features/editor/`、`src/features/urdf-viewer/`、`src/app/components/unified-viewer/`、`src/shared/components/3d/`
 > 交叉引用：[architecture.md](architecture.md)、[file-io.md](file-io.md)、[style-guide.md](style-guide.md)、[wasm-build.md](wasm-build.md)
 
 ## 1. 单模式 Editor
@@ -95,6 +95,9 @@ features/urdf-viewer/
 - 可见 Mesh 同时应用 `PhysicsCollisionAPI` 时，adapter 与 runtime hydration 必须把同一个 descriptor
   投影到 visual 和 collision 两个角色；只有显式 collision section 才保持 collision-only，不能用
   section/path 的单选分类覆盖 composed collision metadata
+- 单资产无界面导出通过 `prepareUsdSourceExportCacheWithWorker` 复用 robot-mode offscreen worker；
+  `includeAllAvailableFiles` 只用于调用方已验证的完整资产闭包，防止二进制层依赖被文本扫描遗漏。
+  宿主等待 prepared-cache 与 complete document-load，不写入 workspace，不启动第二套 USD parser。
 - 禁止新增"worker 结果缺失 -> 主线程重建 metadata -> 静默继续"的 fallback
 - 对 folded fixed link、collision-only semantic child link 的推断只能基于 stage/truth 中的明确证据，不做纯命名猜测
 - `visual_*` / `collision_*` / `group_*` / `xform_*` / `scene` / `root` 这类 roundtrip 容器 prim 不是 link identity；runtime metadata 不得把它们提升为 synthetic link 或 fixed joint

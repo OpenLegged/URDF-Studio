@@ -12,6 +12,8 @@ export interface ExportContext {
 }
 
 export interface HandleExportWithConfigOptions {
+  /** Deliver the archive to the caller instead of triggering a browser download. */
+  onArchive?: (blob: Blob, fileName: string) => void;
   onProgress?: (progress: ExportProgressState) => void;
 }
 

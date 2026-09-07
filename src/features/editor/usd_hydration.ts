@@ -1,4 +1,4 @@
-export { prepareUsdPreparedExportCacheWithWorker } from '../urdf-viewer/utils/usdPreparedExportCacheWorkerBridge';
+export { prepareUsdPreparedExportCacheWithWorker, prepareUsdSourceExportCacheWithWorker } from '../urdf-viewer/utils/usdPreparedExportCacheWorkerBridge';
 export {
   hydratePreparedUsdExportCacheFromWorker,
   serializePreparedUsdExportCacheForWorker,

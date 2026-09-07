@@ -912,3 +912,31 @@ test('useFileExport warns and flattens six-face box textures during SDF export',
     domEnvironment.restore();
   }
 });
+
+
+test('configured export can deliver an archive to its host without starting a browser download', async () => {
+  resetStoresToBaseline();
+  const domEnvironment = installDomEnvironment();
+  installExportTestRobot(createRobotData('base_link', 'host_export'));
+  const downloadMocks = installDownloadMocks();
+  const rendered = renderHook();
+  const archives: { blob: Blob; fileName: string }[] = [];
+  try {
+    const result = await rendered.hook.handleExportWithConfig(createUrdfExportConfig(), { type: 'current' }, {
+      onArchive: (blob, fileName) => { archives.push({ blob, fileName }); },
+    });
+    assert.equal(result.partial, false);
+    assert.equal(downloadMocks.clicked, false);
+    assert.equal(archives.length, 1);
+    assert.match(archives[0].fileName, /\.zip$/);
+    const zip = await JSZip.loadAsync(await archives[0].blob.arrayBuffer());
+    const urdf = Object.values(zip.files).find((file) => file.name.endsWith('.urdf'));
+    assert.ok(urdf);
+    assert.match(await urdf.async('text'), /<robot name="host_export"/);
+  } finally {
+    rendered.cleanup();
+    downloadMocks.restore();
+    await settleDomTasks();
+    domEnvironment.restore();
+  }
+});
