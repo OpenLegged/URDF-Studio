@@ -172,6 +172,7 @@
     "@types/react": "19.2.14",
     "@types/react-dom": "^19.2.3",
     "@types/three": "0.181.0",
+    "@vitejs/plugin-basic-ssl": "^2.3.0",
     "@vitejs/plugin-react": "^5.0.0",
     "autoprefixer": "^10.4.23",
     "eslint": "^9.39.4",

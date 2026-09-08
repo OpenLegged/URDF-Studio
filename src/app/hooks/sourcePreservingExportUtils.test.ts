@@ -109,6 +109,7 @@ test('resolveSourcePreservingExportContent patches MJCF model-owned sections and
   });
 
   assert.equal(result.strategy, 'source-preserved');
+  assert.equal(result.content, source.replace('model="demo"', 'model="demo_updated"'));
   assert.match(result.content, /<mujoco model="demo_updated">/);
   assert.match(result.content, /<option timestep="0\.002" \/>/);
   assert.match(result.content, /keep mjcf option area/);
@@ -279,6 +280,7 @@ test('resolveSourcePreservingExportContent patches SDF model inside an authored 
   });
 
   assert.equal(result.strategy, 'source-preserved');
+  assert.equal(result.content, source.replace('name="demo"', 'name="demo_sdf_updated"'));
   assert.match(result.content, /<world name="default">/);
   assert.match(result.content, /<plugin name="keep_me" filename="libkeep\.so" \/>/);
   assert.match(result.content, /<model name="demo_sdf_updated">/);

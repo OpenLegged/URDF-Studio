@@ -436,6 +436,49 @@ function buildRobotSnapshot(robot: RobotState): string {
   return createRobotSourceSnapshot(normalizeForSnapshot(robot));
 }
 
+function buildRobotSnapshotWithName(robot: RobotState, name: string): string {
+  return buildRobotSnapshot({ ...robot, name });
+}
+
+function patchModelIdentityOnly(
+  format: SourcePreservingExportFormat,
+  sourceContent: string,
+  generatedContent: string,
+): string {
+  if (format === 'sdf') {
+    const generatedModel = findGeneratedSdfModel(generatedContent);
+    const sourceModel = generatedModel
+      ? findSourceSdfModel(sourceContent, null)
+      : null;
+    if (!generatedModel || !sourceModel) {
+      throw new SourcePreservingExportError('Cannot locate <model> for SDF name patch.');
+    }
+    return applyRootAttributePatch({
+      xml: sourceContent,
+      sourceRoot: sourceModel.bounds,
+      generatedRoot: generatedModel.bounds,
+      generatedXml: generatedContent,
+      attrNames: ['name'],
+    });
+  }
+
+  const rootTag = format === 'mjcf' ? 'mujoco' : 'robot';
+  const sourceRoot = findRootElement(sourceContent, rootTag);
+  const generatedRoot = findRootElement(generatedContent, rootTag);
+  if (!sourceRoot || !generatedRoot) {
+    throw new SourcePreservingExportError(
+      `Cannot locate <${rootTag}> for ${format.toUpperCase()} name patch.`,
+    );
+  }
+  return applyRootAttributePatch({
+    xml: sourceContent,
+    sourceRoot,
+    generatedRoot,
+    generatedXml: generatedContent,
+    attrNames: [format === 'mjcf' ? 'model' : 'name'],
+  });
+}
+
 function validatePatchedContent(
   options: ResolveSourcePreservingExportContentOptions,
   patchedContent: string,
@@ -843,6 +886,24 @@ export function resolveSourcePreservingExportContent(
 
   if (sourceRobot && buildRobotSnapshot(sourceRobot) === buildRobotSnapshot(generatedRobot)) {
     return resolveMatchingSourceContent(options, sourceContent);
+  }
+
+  if (
+    sourceRobot
+    && sourceRobot.name !== generatedRobot.name
+    && buildRobotSnapshotWithName(sourceRobot, generatedRobot.name)
+      === buildRobotSnapshot(generatedRobot)
+  ) {
+    const patchedContent = patchModelIdentityOnly(
+      format,
+      sourceFile.content ?? sourceContent,
+      generatedContent,
+    );
+    validatePatchedContent(options, patchedContent);
+    return {
+      content: patchedContent,
+      strategy: 'source-preserved',
+    };
   }
 
   let patchedContent: string;

@@ -59,6 +59,7 @@ async function waitForSourceEditorText(page, expectedText, timeout = 10_000) {
 async function readSelectedSourceState(page) {
   return page.evaluate(() => {
     const assets = window.__URDF_STUDIO_DEBUG__?.__assetsStore__?.getState?.() ?? null;
+    const workspace = window.__URDF_STUDIO_DEBUG__?.__workspaceStore__?.getState?.() ?? null;
     const selectedFile = assets?.selectedFile ?? null;
     const allFileContents = assets?.allFileContents ?? {};
     const selectedAvailableFile = assets?.availableFiles?.find?.(
@@ -67,6 +68,8 @@ async function readSelectedSourceState(page) {
 
     return {
       fileName: selectedFile?.name ?? null,
+      draftContent:
+        assets?.componentSourceDrafts?.[workspace?.activeComponentId]?.content ?? '',
       selectedContent: selectedFile?.content ?? '',
       availableContent: selectedAvailableFile?.content ?? '',
       allFileContent: selectedFile?.name ? (allFileContents[selectedFile.name] ?? '') : '',
@@ -145,24 +148,30 @@ async function main() {
     const sourceState = await readSelectedSourceState(page);
     report.sourceStateAfterRename = {
       fileName: sourceState.fileName,
+      draftLength: sourceState.draftContent.length,
       selectedLength: sourceState.selectedContent.length,
       availableLength: sourceState.availableContent.length,
       allFileLength: sourceState.allFileContent.length,
     };
     assert(
       suite,
-      sourceState.selectedContent.includes('<mujoco model="go2_source_editor_regression"'),
-      'selected MJCF source file reflects robot-state edits',
+      sourceState.draftContent.includes('<mujoco model="go2_source_editor_regression"'),
+      'component-owned MJCF draft reflects robot-state edits',
     );
     assert(
       suite,
-      sourceState.availableContent.includes('<mujoco model="go2_source_editor_regression"'),
-      'availableFiles MJCF source reflects robot-state edits',
+      !sourceState.selectedContent.includes('<mujoco model="go2_source_editor_regression"'),
+      'selected imported MJCF library source remains immutable',
     );
     assert(
       suite,
-      sourceState.allFileContent.includes('<mujoco model="go2_source_editor_regression"'),
-      'allFileContents MJCF source reflects robot-state edits',
+      !sourceState.availableContent.includes('<mujoco model="go2_source_editor_regression"'),
+      'availableFiles MJCF library source remains immutable',
+    );
+    assert(
+      suite,
+      !sourceState.allFileContent.includes('<mujoco model="go2_source_editor_regression"'),
+      'allFileContents MJCF library source remains immutable',
     );
 
     await store.undo(page);

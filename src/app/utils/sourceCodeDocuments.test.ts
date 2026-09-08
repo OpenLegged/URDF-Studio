@@ -126,7 +126,7 @@ test('canonical source contract routes a matching single-component draft explici
   assert.equal(componentTargetId(result.documents[0].changeTarget), 'arm-instance');
 });
 
-test('editor locks make owned source drafts read-only so raw text cannot bypass them', () => {
+test('scene editor locks do not make owned text source read-only', () => {
   const workspace = createSingleComponentWorkspace(robot('arm'), {
     componentId: 'arm-instance',
     sourceFile: 'library/arm.urdf',
@@ -151,8 +151,8 @@ test('editor locks make owned source drafts read-only so raw text cannot bypass 
     allFileContents: {},
   });
 
-  assert.equal(result.documents[0].readOnly, true);
-  assert.equal(result.documents[0].changeTarget, undefined);
+  assert.equal(result.documents[0].readOnly, false);
+  assert.equal(componentTargetId(result.documents[0].changeTarget), 'arm-instance');
 });
 
 test('disconnected component instances each expose an isolated editable tab', () => {
@@ -200,7 +200,7 @@ test('disconnected component instances each expose an isolated editable tab', ()
   assert.equal(componentTargetId(right.directComponentDocument?.changeTarget), 'right');
 });
 
-test('stale single-component drafts remain editable while missing drafts use a read-only projection', () => {
+test('stale and missing single-component drafts both expose an editable component source', () => {
   const workspace = createSingleComponentWorkspace(robot('left_robot'), {
     componentId: 'left',
     sourceFile: 'library/shared.xml',
@@ -243,7 +243,16 @@ test('stale single-component drafts remain editable while missing drafts use a r
     allFileContents: {},
   });
   assert.equal(missingResult.mode, 'component');
-  assert.equal(missingResult.documents[0].readOnly, true);
+  assert.equal(missingResult.documents[0].readOnly, false);
+  assert.equal(componentTargetId(missingResult.documents[0].changeTarget), 'left');
+  assert.equal(missingResult.documents[0].changeTarget?.kind, 'component');
+  if (missingResult.documents[0].changeTarget?.kind === 'component') {
+    assert.equal(missingResult.documents[0].changeTarget.format, 'urdf');
+    assert.equal(
+      missingResult.documents[0].changeTarget.content,
+      missingResult.documents[0].content,
+    );
+  }
   assert.equal(missingResult.directComponentDocument, null);
   assert.notEqual(missingResult.content, libraryTemplate);
   assert.match(missingResult.content, /semantic-edit/);

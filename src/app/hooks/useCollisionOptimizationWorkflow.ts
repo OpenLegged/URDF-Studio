@@ -1,7 +1,7 @@
 import { useCallback, useMemo } from 'react';
 import type { AssemblyState, EntityRef, RobotData, WorkspaceSelection } from '@/types';
-import { useAssetsStore } from '@/store/assetsStore';
 import { useWorkspaceStore } from '@/store/workspaceStore';
+import { synchronizeComponentSourceDraft } from './workspace-source-sync/component_source_draft_sync';
 import { createSourceSemanticRobotHash } from '@/core/robot';
 import { beginCoordinatedWorkspaceTransaction } from '@/app/utils/pendingHistory';
 import type {
@@ -107,7 +107,6 @@ export function useCollisionOptimizationWorkflow({
           useWorkspaceStore.getState().cancelWorkspaceTransaction(operationId);
           throw error;
         }
-        const assets = useAssetsStore.getState();
         replacements.forEach(([componentId, nextRobot]) => {
           const previousRobot = currentWorkspace.components[componentId]?.robot;
           const handled = previousRobot
@@ -118,7 +117,7 @@ export function useCollisionOptimizationWorkflow({
                 nextRobot,
               }) === true
             : false;
-          if (!handled) assets.removeComponentSourceDraft(componentId);
+          synchronizeComponentSourceDraft(componentId, { force: !handled });
         });
       }
     },

@@ -279,6 +279,31 @@ test('component editor locks block transforms and authored subtree mutations', (
   assert.equal(store.renameComponent('left', 'unlocked'), true);
 });
 
+test('revision-checked source replacement remains available through scene editor locks', () => {
+  const store = useWorkspaceStore.getState();
+  assert.equal(store.setComponentEditorLocked('left', true), true);
+  const lockedRevision = useWorkspaceStore.getState().revision;
+  const sourceEditedRobot = createRobot('edited through source');
+
+  assert.equal(
+    useWorkspaceStore.getState().replaceComponentRobotAtRevision(
+      'left',
+      lockedRevision,
+      sourceEditedRobot,
+      { label: 'Apply component source' },
+    ),
+    true,
+  );
+  assert.equal(
+    useWorkspaceStore.getState().workspace.components.left?.robot.name,
+    'edited through source',
+  );
+  assert.equal(
+    useWorkspaceStore.getState().workspace.components.left?.editorLocked,
+    true,
+  );
+});
+
 test('deep property patches preserve nested sibling fields at the store boundary', () => {
   const store = useWorkspaceStore.getState();
   const linkBefore = structuredClone(
