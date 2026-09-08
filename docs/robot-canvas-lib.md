@@ -10,6 +10,10 @@
 
 把“可导入 URDF / MJCF 的 3D 画布核心”先从应用 feature 中抽出来，形成独立可构建的库入口。
 
+USD parser worker 的 stage preload 同时支持 preparation 的字节数组与 Blob 数据。
+二进制 USD 层、未归一化的文本层和纹理不能因为 `bytes` 为空而被跳过；
+`usdPreloadBytes.ts` 按原始字节读取 Blob，worker 在读取后检查取消并确认虚拟文件写入成功。
+
 ## 当前公开 API
 
 ```tsx

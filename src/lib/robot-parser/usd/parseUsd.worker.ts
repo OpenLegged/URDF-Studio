@@ -10,6 +10,7 @@ import { applyMeshVisibilityFilters } from '../../../features/urdf-viewer/runtim
 import { adaptUsdViewerSnapshotToRobotData } from './usdViewerRobotAdapter';
 import { setUsdBindingsBaseUrl } from './usdBindingsAssetPaths';
 import { prepareUsdStageOpenDataCore } from './usdStageOpenPreparationCore';
+import { readUsdPreloadBytes } from './usdPreloadBytes';
 import { normalizeUsdSceneSnapshotToMeters } from './usdStageUnits';
 import { assertUsdSceneSnapshotIntegrity } from './usdSceneSnapshotIntegrity';
 import { createEmbeddedUsdViewerLoadParams } from './usdViewerRenderParams';
@@ -90,12 +91,6 @@ function writeUsdBytesToVirtualPath(
   }
 }
 
-function toUint8(bytes: unknown): Uint8Array | null {
-  if (bytes instanceof Uint8Array) return bytes;
-  if (bytes instanceof ArrayBuffer) return new Uint8Array(bytes);
-  return null;
-}
-
 function collectSnapshotTransferables(snapshot: UsdSceneSnapshot): Transferable[] {
   const buffers = snapshot.buffers;
   const candidates = [
@@ -167,8 +162,12 @@ async function parseSceneInWorker(request: ParseSceneRequest): Promise<{
   assertRequestActive();
   for (const entry of prepared.preloadFiles) {
     assertRequestActive();
-    const bytes = toUint8(entry.bytes);
-    if (bytes) writeUsdBytesToVirtualPath(runtime, entry.path, bytes);
+    // Binary layers and textures remain Blob-backed after stage preparation.
+    const bytes = await readUsdPreloadBytes(entry);
+    assertRequestActive();
+    if (bytes && !writeUsdBytesToVirtualPath(runtime, entry.path, bytes)) {
+      throw new Error(`Failed to preload USD resource: ${entry.path}`);
+    }
   }
 
   const params = createEmbeddedUsdViewerLoadParams(runtime.threadCount, {
