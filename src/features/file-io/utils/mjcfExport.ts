@@ -2,11 +2,13 @@ import { generateMujocoXML, type MujocoExportOptions } from '@/core/parsers/mjcf
 import {
   buildTextureExportPathOverrides,
   normalizeMeshPathForExport,
-  resolveImportedAssetPath,
   resolveTextureExportPath,
 } from '@/core/parsers/meshPathUtils';
 import { collectGeometryTexturePaths, getVisualGeometryEntries } from '@/core/robot';
 import type { RobotState } from '@/types';
+import { prepareMjcfCollisionVolumes } from './mjcfCollisionVolumes';
+import { mjcfCollisionGeometries, needsMjcfInertiaInference } from '@/core/parsers/mjcf/mjcfMassInference';
+import { prepareMjcfTextureBlob, readMjcfExportAsset } from '@/core/loaders/mjcfExportAssets';
 import {
   prepareMjcfMeshExportAssets,
   type PrepareMjcfMeshExportAssetsOptions,
@@ -21,6 +23,7 @@ export interface PrepareMjcfExportOptions extends PrepareMjcfMeshExportAssetsOpt
 export interface PreparedMjcfExport {
   xml: string;
   meshes: PreparedMjcfMeshExportAssets;
+  estimatedLinkNames: string[];
 }
 
 /** Shared model conversion; callers retain download, scene composition and source-overlay ownership. */
@@ -29,14 +32,21 @@ export async function prepareMjcfExport(
   prepareMeshes = prepareMjcfMeshExportAssets,
 ): Promise<PreparedMjcfExport> {
   const meshes = await prepareMeshes(options);
+  const collisionVolumes = options.mujoco?.massMode === 'recompute' ? undefined
+    : await prepareMjcfCollisionVolumes(options, meshes);
   options.onMeshesPrepared?.();
   return {
     xml: generateMujocoXML(options.robot, {
       ...options.mujoco,
+      collisionVolumes,
       meshPathOverrides: meshes.meshPathOverrides,
       visualMeshVariants: meshes.visualMeshVariants,
     }),
     meshes,
+    estimatedLinkNames: Object.values(options.robot.links)
+      .filter((link) => mjcfCollisionGeometries(link).length > 0
+        && (options.mujoco?.massMode === 'recompute' || needsMjcfInertiaInference(link)))
+      .map((link) => link.name),
   };
 }
 
@@ -56,23 +66,10 @@ export async function collectMjcfExportFiles(
     link.collision,
     ...(link.collisionBodies ?? []),
   ]);
-  const candidates = [...sourceFiles.keys(), ...Object.keys(assets)];
-  const readAsset = async (path: string): Promise<Blob> => {
-    const resolved = sourceFiles.has(path) || assets[path]
-      ? path
-      : resolveImportedAssetPath(path, undefined, { candidateAssetPaths: candidates });
-    const file = sourceFiles.get(resolved || path);
-    if (file) return file;
-    const url = assets[resolved || path];
-    if (!url) throw new Error(`MJCF export asset is unavailable: ${path}`);
-    const response = await fetch(url);
-    if (!response.ok) throw new Error(`MJCF export asset failed to load: ${path} (${response.status})`);
-    return response.blob();
-  };
   for (const path of new Set(geometries.flatMap((geometry) => geometry?.meshPath ? [geometry.meshPath] : []))) {
     if (prepared.meshes.convertedSourceMeshPaths.has(path)) continue;
     const target = prepared.meshes.meshPathOverrides.get(path) ?? normalizeMeshPathForExport(path);
-    if (!files.has(`meshes/${target}`)) files.set(`meshes/${target}`, await readAsset(path));
+    if (!files.has(`meshes/${target}`)) files.set(`meshes/${target}`, await readMjcfExportAsset(path, sourceFiles, assets));
   }
   const texturePaths = [
     ...geometries.flatMap((geometry) => geometry ? collectGeometryTexturePaths(geometry) : []),
@@ -80,7 +77,8 @@ export async function collectMjcfExportFiles(
   ];
   const overrides = buildTextureExportPathOverrides(texturePaths);
   for (const path of new Set(texturePaths)) {
-    files.set(`textures/${resolveTextureExportPath(path, overrides)}`, await readAsset(path));
+    const target = resolveTextureExportPath(path, overrides);
+    files.set(`textures/${target}`, await prepareMjcfTextureBlob(target, await readMjcfExportAsset(path, sourceFiles, assets)));
   }
   return files;
 }

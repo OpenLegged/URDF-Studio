@@ -17,6 +17,11 @@ export interface MjcfVisualMeshVariant {
 }
 
 export interface MujocoExportOptions {
+  massMode?: 'auto' | 'recompute';
+  densityKgM3?: number;
+  collisionVolumes?: ReadonlyMap<string, readonly number[]>;
+  /** Source editing preserves authored placeholders; downloadable exports use inference. */
+  preserveInertialData?: boolean;
   meshdir?: string;
   texturedir?: string;
   addFloatBase?: boolean;

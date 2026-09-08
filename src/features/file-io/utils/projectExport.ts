@@ -1,9 +1,9 @@
 import { GeometryType, JointType } from '@/types';
 import type { AssemblyState, BridgeJoint, RobotData, RobotFile, UrdfLink } from '@/types';
-import { generateMujocoXML, generateURDF } from '@/core/parsers';
+import { generateURDF } from '@/core/parsers';
 import { normalizeMeshPathForExport, resolveMeshAssetUrl } from '@/core/parsers/meshPathUtils';
 import { generateBOM } from './bomGenerator';
-import { prepareMjcfMeshExportAssets } from './mjcfMeshExport';
+import { prepareMjcfExport } from './mjcfExport';
 import {
   assertProjectWorkspace,
   assertProjectWorkspaceHistory,
@@ -806,10 +806,12 @@ async function buildProjectArchiveEntries(params: ExportProjectParams): Promise<
       ...mergedRobot,
       selection: { type: null, id: null },
     } as RobotData & { selection: { type: null; id: null } };
-    const mjcfMeshExport = await prepareMjcfMeshExportAssets({
+    const mjcfExport = await prepareMjcfExport({
       robot: robotForExport,
       assets: assets.assetUrls,
+      mujoco: { meshdir: 'meshes/' },
     });
+    const mjcfMeshExport = mjcfExport.meshes;
     const outputMeshCount = Array.from(getReferencedMeshes(mergedRobot)).filter(
       (meshPath) => !mjcfMeshExport.convertedSourceMeshPaths.has(meshPath),
     ).length;
@@ -840,11 +842,7 @@ async function buildProjectArchiveEntries(params: ExportProjectParams): Promise<
     setProjectArchiveEntry(
       archiveEntries,
       joinArchivePath('output', `${mergedRobot.name}.xml`),
-      generateMujocoXML(robotForExport, {
-        meshdir: 'meshes/',
-        meshPathOverrides: mjcfMeshExport.meshPathOverrides,
-        visualMeshVariants: mjcfMeshExport.visualMeshVariants,
-      }),
+      mjcfExport.xml,
     );
     completedOutputTasks += 1;
     emitPhaseProgress('output', completedOutputTasks, totalOutputTasks, `${mergedRobot.name}.xml`);

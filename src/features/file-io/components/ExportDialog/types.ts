@@ -9,6 +9,8 @@ export type MeshExportFormat = Exclude<ExportFormat, 'project'>;
 export type ExportMeshFormat = 'auto' | 'obj' | 'stl';
 
 export interface MjcfExportConfig {
+  massMode?: 'auto' | 'recompute';
+  densityKgM3?: number;
   meshdir: string;
   addFloatBase: boolean;
   preferSharedMeshReuse: boolean;

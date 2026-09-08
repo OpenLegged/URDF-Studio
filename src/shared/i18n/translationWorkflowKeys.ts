@@ -24,6 +24,12 @@ export interface TranslationExportDialogKeys {
   exportMeshFormatStl: string;
   exportMeshFormatDesc: string;
   exportFloatBase: string;
+  exportMassAutoHint: string;
+  exportMassAdvanced: string;
+  exportMassRecompute: string;
+  exportMassDensity: string;
+  exportMassDensityHint: string;
+  exportMassRecomputeHint: string;
   exportFloatBaseDesc: string;
   exportIncludeActuators: string;
   exportActuatorType: string;

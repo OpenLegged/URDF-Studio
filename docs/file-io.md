@@ -209,6 +209,27 @@ URL 自带凭证且来自已鉴权受信接口，其域名与 API 不同源属�
 模型导出的 `configuredRobotExport` 保留源格式 overlay、导出选项与 archive/download 编排；
 Pro 场景的源资产适配器复用相同函数，再用 `collectMjcfExportFiles` 打包 `meshes/` 与 `textures/`
 依赖。缺失依赖必须失败，不能生成引用悬空的模型。场景实例的摆放、仿真覆盖与最终编译属于 Pro。
+工程输出、素材库跨格式转换和 MuJoCo 真值回归也使用此入口。源码编辑保留原始惯性占位值，
+不在编辑文档时读取网格或写入估算结果；自动补参只作用于导出副本。
+
+模型编辑器的 MJCF 导出通过 `targetFormat: mjcf` 将目标格式传入资源打包 worker，
+与场景打包共用 `core/loaders/mjcfExportAssets.ts` 的资源解析及贴图规范化：
+精确路径优先，USD 层相对路径仅接受唯一完整后缀，歧义或缺失依赖显式失败；
+JPEG 内容误标为 PNG 时生成真实 PNG，不改写源文件。其他格式继续保留原始图片字节。
+模型编辑器保留 worker 进度、STL 压缩、源格式 overlay 与用户导出选项。
+共用 MJCF 生成器默认保留已有质量/惯性，缺失值使用碰撞几何推算，编译器为
+`inertiafromgeom="auto"`、`inertiagrouprange="3 3"`；视觉几何不参与计重。
+质量和惯性均缺失时，用可配置密度（默认 1000 kg/m³）让 MuJoCo 估算；只有质量已知时，
+保留总质量，按各碰撞体积给 geom 分配 mass，由 MuJoCo 推算惯性。网格体积来自最终转换
+网格的凸包，与默认 MJCF mesh 惯性约定一致。已知质量的 OBJ/STL/MSH 和 inline mesh
+只在需要补惯性时读取体积；导出不改写源数据。负值或非零错误张量不当作缺失数据吞掉。
+运动 body 缺少碰撞几何时明确失败；零体积几何不能用于估算。XML 标注估算部件，
+`prepareMjcfExport` 返回 `estimatedLinkNames` 供场景报告使用。
+
+模型导出面板和 Pro 场景属性默认显示自动补齐提示，折叠的“质量设置（高级）”允许调整
+估算密度或开启“忽略原参数，重新估算”。此设置独立于固定/可动：固定柜体的内部抽屉也
+需要补齐缺失惯性。模型与 USD/URDF/SDF/Xacro 源资产的场景导出共用 `prepareMjcfExport`。
+完整原生 MJCF 场景仍保留源物理参数，受原生组合契约约束，不自动重写。
 
 USD 单资产入口 `prepareUsdSourceExportCacheWithWorker` 通过 editor 的 `usd_hydration` facade
 公开，使用现有 robot-mode USD worker 和 prepared export cache；显式完整加载调用方已校验的

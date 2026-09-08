@@ -13,6 +13,7 @@ import { useManagedWindowLayer } from '@/store';
 import type { ExportProgressState } from '../../types';
 import type { MjcfActuatorType } from '@/core/parsers/mjcf/mjcfGenerator';
 import { ExportProgressView } from '../ExportProgressView';
+import { MjcfMassFields } from './MjcfMassFields';
 import {
   DEFAULT_CONFIG,
   EXPORT_FORMATS,
@@ -377,6 +378,8 @@ export const ExportDialog: React.FC<ExportDialogProps> = ({
             {/* MJCF Options */}
             {config.format === 'mjcf' && (
               <>
+                <MjcfMassFields config={config.mjcf} lang={lang}
+                  onChange={(patch) => setConfig((current) => ({ ...current, mjcf: { ...current.mjcf, ...patch } }))} />
                 <SectionLabel>{t.exportOptionsSection}</SectionLabel>
                 <div className="bg-element-bg rounded-xl border border-border-black px-3 divide-y divide-border-black">
                   <Row label={t.exportMeshdir} stacked={isStackedLayout}>

@@ -2,7 +2,6 @@ import JSZip from 'jszip';
 import {
   parseSDF,
   parseURDF,
-  generateMujocoXML,
   generateSDF,
   generateSdfModelConfig,
   generateURDF,
@@ -17,7 +16,7 @@ import { parseCanonicalPhysicalMJCF } from '@/core/parsers/mjcf/mjcfCanonicalPhy
 import { getVisualGeometryEntries } from '@/core/robot';
 import { GeometryType, type RobotFile, type RobotState } from '@/types';
 import { downloadBlob } from './assetUtils';
-import { prepareMjcfMeshExportAssets } from './mjcfMeshExport';
+import { prepareMjcfExport } from './mjcfExport';
 
 export type LibraryExportFormat = 'urdf' | 'mjcf' | 'sdf';
 
@@ -152,13 +151,15 @@ export async function exportLibraryRobotFile(
   const baseName = getFileBaseName(file.name);
   const zip = new JSZip();
   const archiveRoot = createArchiveRoot(zip, baseName);
-  const mjcfMeshExport =
+  const mjcfExport =
     targetFormat === 'mjcf' && file.format !== 'mjcf'
-      ? await prepareMjcfMeshExportAssets({
+      ? await prepareMjcfExport({
           robot: robotState,
           assets,
+          mujoco: { meshdir: 'meshes/' },
         })
       : null;
+  const mjcfMeshExport = mjcfExport?.meshes;
 
   if (targetFormat === 'urdf') {
     const urdfContent =
@@ -172,11 +173,7 @@ export async function exportLibraryRobotFile(
     const mjcfContent =
       file.format === 'mjcf'
         ? file.content
-        : generateMujocoXML(robotState, {
-            meshdir: 'meshes/',
-            meshPathOverrides: mjcfMeshExport?.meshPathOverrides,
-            visualMeshVariants: mjcfMeshExport?.visualMeshVariants,
-          });
+        : mjcfExport!.xml;
     archiveRoot.file(`${baseName}.xml`, mjcfContent);
   } else {
     archiveRoot.file('model.sdf', generateSDF(robotState, { packageName: baseName }));

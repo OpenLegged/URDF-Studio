@@ -182,6 +182,22 @@ test('generateEditableRobotSource round-trips MJCF output', () => {
   assertRoundTrip('mjcf', content, /<mujoco\b/i);
 });
 
+test('MJCF source editing retains incomplete authored inertia without loading collision meshes', () => {
+  const robotState = createRobotState();
+  const link = robotState.links.base_link;
+  link.inertial!.mass = 7;
+  link.inertial!.inertia = { ixx: 0, iyy: 0, izz: 0, ixy: 0, ixz: 0, iyz: 0 };
+  link.collision.type = GeometryType.MESH;
+  link.collision.meshPath = 'collision.stl';
+  const before = structuredClone(robotState);
+  const content = generateEditableRobotSource({ format: 'mjcf', robotState });
+  const document = new DOMParser().parseFromString(content, 'text/xml');
+  const inertial = document.querySelector('body[name="base_link"] > inertial');
+  assert.equal(inertial?.getAttribute('mass'), '7');
+  assert.equal(inertial?.getAttribute('diaginertia'), '0 0 0');
+  assert.deepEqual(robotState, before);
+});
+
 test('generateEditableRobotSource normalizes Xacro edits to editable robot XML', () => {
   const content = generateEditableRobotSource({
     format: 'xacro',

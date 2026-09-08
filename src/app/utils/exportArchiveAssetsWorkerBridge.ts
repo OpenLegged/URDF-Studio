@@ -55,6 +55,7 @@ function serializePrepareExportArchiveAssetsArgsForWorker(
   return {
     robot: args.robot,
     assets: args.assets,
+    targetFormat: args.targetFormat,
     compressOptions: args.compressOptions,
     extraMeshFiles: Array.from(args.extraMeshFiles?.entries() ?? []).map(([path, blob]) => ({
       path,

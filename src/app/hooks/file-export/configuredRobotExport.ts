@@ -55,6 +55,7 @@ function resolveRosGazeboProfile(config: ExportDialogConfig['xacro']): RosGazebo
 }
 
 interface AddMeshesToZipOptions {
+  targetFormat?: 'mjcf';
   compressOptions?: { compressSTL: boolean; stlQuality: number };
   extraMeshFiles?: Map<string, Blob>;
   onProgress?: (progress: { completed: number; total: number; currentFile: string }) => void;
@@ -264,7 +265,8 @@ export async function executeConfiguredRobotExport({
       extraMeshFiles,
       preferSharedMeshReuse,
       meshFormat: config.mjcf.meshFormat,
-      mujoco: { meshdir, addFloatBase, includeActuators, actuatorType },
+      mujoco: { meshdir, addFloatBase, includeActuators, actuatorType,
+        massMode: config.mjcf.massMode, densityKgM3: config.mjcf.densityKgM3 },
       onMeshesPrepared: () => reportProgress(3, t.exportProgressGeneratingFiles, t.exportProgressGeneratingMjcfDetail, {
         stageProgress: 0.85,
         indeterminate: false,
@@ -296,6 +298,7 @@ export async function executeConfiguredRobotExport({
       const meshPackagingResult = await addMeshesToZip({
         robot,
         zip: archiveRoot,
+        targetFormat: 'mjcf',
         compressOptions: { compressSTL, stlQuality },
         extraMeshFiles,
         skipMeshPaths: mjcfMeshExport.convertedSourceMeshPaths,

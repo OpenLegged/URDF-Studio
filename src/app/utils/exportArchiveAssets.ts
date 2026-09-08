@@ -26,6 +26,7 @@ interface AddRobotAssetsToZipOptions {
   robot: RobotState;
   zip: JSZip;
   assets: Record<string, string>;
+  targetFormat?: 'mjcf';
   compressOptions?: CompressOptions;
   extraMeshFiles?: Map<string, Blob>;
   skipMeshPaths?: ReadonlySet<string>;
@@ -78,6 +79,7 @@ export async function addRobotAssetsToZip(
   const args = {
     robot: options.robot,
     assets: options.assets,
+    targetFormat: options.targetFormat,
     compressOptions: options.compressOptions,
     extraMeshFiles: options.extraMeshFiles,
     skipMeshPaths: options.skipMeshPaths,

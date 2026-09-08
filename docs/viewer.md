@@ -55,8 +55,15 @@ features/urdf-viewer/
 
 ## 4. 实现约束
 
+- USD prepared export 与 hydration 共用 `createUsdDescriptorRoleResolver`：源 Mesh 直接声明
+  PhysicsCollisionAPI 时同时导出 visual/collision；作者 Collision scope 内的几何只作碰撞。
+  两种角色各自取得真实 OBJ 资源，不能只按路径或 sectionName 把角色归为互斥两类。
+
 - 新能力优先放入 hooks 或新增组件，不要恢复双壳并存
 - 保持 `RobotNode <-> JointNode` 交替递归渲染模式
+- USD prepared export 的材质颜色复用 hydration 的解析规则：连接 base-color 贴图时，
+  材质乘色与 OBJ 顶点乘色均为白色，避免备用色经 MJCF mesh variant 再次染色；
+  无 base-color 贴图的纯色材质继续保留原色，透明度也独立保留。
 - 材质必须通过 `materials.ts` / `urdfMaterials.ts` 复用，不在高频路径直接 `new`
 - viewer backend / load scene sync 归 `features/urdf-viewer/renderers/`；`shared/components/3d/renderers/` 只保留 STL/OBJ/DAE/GLTF 等纯 mesh renderer 组件
 - 使用 `RobotData`、`WorkspaceSelection` 等共享类型，避免 `any`

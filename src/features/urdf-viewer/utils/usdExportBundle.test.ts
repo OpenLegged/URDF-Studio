@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as THREE from 'three';
 import { OBJLoader } from 'three/examples/jsm/loaders/OBJLoader.js';
+import { generateMujocoXML } from '@/core/parsers/mjcf/mjcfGenerator';
 
 import { GeometryType, JointType } from '../../../types/index.ts';
 import type { RobotState, UsdPreparedExportCache, UsdSceneSnapshot } from '../../../types/index.ts';
@@ -47,6 +48,56 @@ function createTriangleBuffers() {
 
   return { positions, indices };
 }
+
+test('exports a visible USD Mesh with PhysicsCollisionAPI as both visual and collision geometry', async () => {
+  const snapshot: UsdSceneSnapshot = {
+    stageSourcePath: '/desk.usda',
+    stage: {
+      defaultPrimPath: '/Desk',
+      primDescriptors: [{ path: '/Desk/top', typeName: 'Mesh', collisionEnabled: true }],
+    },
+    robotTree: { rootLinkPaths: ['/Desk'], linkParentPairs: [['/Desk', null]] },
+    render: { meshDescriptors: [{
+      meshId: '/Desk/visuals.proto_mesh_id0', resolvedPrimPath: '/Desk/top',
+      sectionName: 'visuals', primType: 'Mesh',
+      ranges: { positions: { offset: 0, count: 12, stride: 3 }, indices: { offset: 0, count: 12, stride: 1 } },
+    }] },
+    buffers: {
+      positions: new Float32Array([0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1]),
+      indices: new Uint32Array([0, 2, 1, 0, 1, 3, 0, 3, 2, 1, 2, 3]),
+    },
+  };
+  const cache = prepareUsdExportCacheFromSnapshot(snapshot);
+  assert.ok(cache);
+  const bundle = buildUsdExportBundleFromPreparedCache(cache);
+  const collisions = Object.values(bundle.robot.links).flatMap((link) => [link.collision, ...(link.collisionBodies ?? [])]);
+  const collision = collisions.find((geometry) => geometry.type === GeometryType.MESH);
+  assert.ok(collision?.meshPath, 'authored collision must receive a real export mesh path');
+  const collisionFile = bundle.meshFiles.get(collision.meshPath);
+  assert.ok(collisionFile);
+  assert.match(await collisionFile.text(), /^v /m);
+  assert.match(await collisionFile.text(), /^f /m);
+  assert.ok(Object.values(bundle.robot.links).some((link) => link.visual.meshPath && bundle.meshFiles.has(link.visual.meshPath)));
+});
+
+test('exports authored collision scopes without turning them into visible surfaces', () => {
+  const snapshot: UsdSceneSnapshot = {
+    stageSourcePath: '/desk.usda',
+    stage: { defaultPrimPath: '/Desk' },
+    robotTree: { rootLinkPaths: ['/Desk'], linkParentPairs: [['/Desk', null]] },
+    render: { meshDescriptors: [{
+      meshId: '/Desk/visuals.proto_mesh_id0', resolvedPrimPath: '/Desk/Collisions/top',
+      sectionName: 'visuals', primType: 'Mesh',
+      ranges: { positions: { offset: 0, count: 9, stride: 3 } },
+    }] },
+    buffers: { positions: new Float32Array([0, 0, 0, 1, 0, 0, 0, 1, 0]) },
+  };
+  const cache = prepareUsdExportCacheFromSnapshot(snapshot);
+  assert.ok(cache);
+  const bundle = buildUsdExportBundleFromPreparedCache(cache);
+  assert.ok(Object.values(bundle.robot.links).some((link) => link.collision.meshPath && bundle.meshFiles.has(link.collision.meshPath)));
+  assert.equal([...bundle.meshFiles.keys()].some((path) => path.includes('_visual_')), false);
+});
 
 test('prepared cache maps flattened Hydra descriptor ids back to authored rigid links', () => {
   const triangle = [0, 0, 0, 0.1, 0, 0, 0, 0.1, 0];
@@ -893,7 +944,7 @@ test('buildUsdExportBundleFromSnapshot falls back to preferred live visual mater
   assert.equal(hasVertexColors, true);
 });
 
-test('buildUsdExportBundleFromSnapshot preserves UV coordinates for textured snapshot meshes', async () => {
+test('buildUsdExportBundleFromSnapshot preserves UVs without tinting textures with fallback colors', async () => {
   const positions = new Float32Array([0, 0, 0, 1, 0, 0, 0, 1, 0]);
   const indices = new Uint32Array([0, 1, 2]);
   const uvs = new Float32Array([0, 0, 1, 0, 0, 1]);
@@ -936,7 +987,7 @@ test('buildUsdExportBundleFromSnapshot preserves UV coordinates for textured sna
       materials: [
         {
           materialId: '/Robot/Looks/body',
-          color: [1, 1, 1, 1],
+          color: [0.125, 0.102, 0.571, 1],
           mapPath: 'textures/body_basecolor.png',
         },
       ],
@@ -986,6 +1037,8 @@ test('buildUsdExportBundleFromSnapshot preserves UV coordinates for textured sna
 
   assert.ok(bundle);
   assert.equal(bundle.robot.materials?.base_link?.texture, 'textures/body_basecolor.png');
+  assert.equal(bundle.robot.materials?.base_link?.color, '#ffffff');
+  assert.match(generateMujocoXML(bundle.robot), /<material[^>]*rgba="1 1 1 1"[^>]*texture=/);
   assert.equal(
     bundle.robot.materials?.base_link?.usdMaterial?.mapPath,
     'textures/body_basecolor.png',
@@ -999,6 +1052,9 @@ test('buildUsdExportBundleFromSnapshot preserves UV coordinates for textured sna
   assert.match(meshText, /^f 1\/1 2\/2 3\/3$/m);
 
   const parsedObject = new OBJLoader().parse(meshText);
+  for (const line of meshText.split('\n').filter((line) => line.startsWith('v '))) {
+    assert.deepEqual(line.trim().split(/\s+/).slice(4).map(Number), [1, 1, 1]);
+  }
   let uvCount = 0;
   parsedObject.traverse((child: any) => {
     if (!child.isMesh || uvCount > 0) {
@@ -1009,6 +1065,14 @@ test('buildUsdExportBundleFromSnapshot preserves UV coordinates for textured sna
   });
 
   assert.equal(uvCount, 3);
+
+  // The same RGB value without a connected color texture remains authored
+  // color, including on untextured hardware beside a textured cabinet.
+  const untextured = structuredClone(snapshot);
+  untextured.render!.materials![0].mapPath = null;
+  const solidBundle = buildUsdExportBundleFromSnapshot(untextured, { fileName: 'solid.usd' });
+  assert.equal(solidBundle.robot.materials?.base_link?.color, '#635ac7');
+  assert.match(generateMujocoXML(solidBundle.robot), /rgba="0.3882 0.3529 0.7804 1"/);
 });
 
 test('buildUsdExportBundleFromSnapshot lets snapshot textures replace stale link material textures', () => {
@@ -2164,7 +2228,7 @@ test('prepareUsdExportCacheFromResolvedSnapshot omits OBJ UVs for color-only USD
   assert.match(texturedText, /^vt 0 0$/m);
   assert.match(texturedText, /^f 1\/1 2\/2 3\/3$/m);
   assert.equal(textured.robotData.links.base_link.visual.color, '#ffffff');
-  assert.equal(textured.robotData.materials?.base_link?.color, undefined);
+  assert.equal(textured.robotData.materials?.base_link?.color, '#ffffff');
   assert.equal(textured.robotData.materials?.base_link?.texture, 'textures/base.png');
 });
 

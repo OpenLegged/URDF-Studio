@@ -17,6 +17,7 @@ import {
 import type { ViewerRobotDataResolution } from '@/lib/robot-parser/usd/viewerRobotData';
 import { resolveUsdDescriptorTargetLinkPath } from '@/lib/robot-parser/usd/usdDescriptorLinkResolution';
 import { selectUsdRenderableMeshDescriptors } from '@/lib/robot-parser/usd/usdRenderableDescriptors';
+import { createUsdDescriptorRoleResolver } from '@/lib/robot-parser/usd/usdViewerRobotAdapter/usdAdapterDescriptors';
 
 import {
   cloneRobotState,
@@ -31,7 +32,6 @@ export {
   stripSyntheticWorldRootForExport,
 } from './usdExportRobotMerge.ts';
 import {
-  getDescriptorRole,
   getDescriptorSemanticName,
   normalizeSemanticToken,
   normalizeUsdPath,
@@ -355,16 +355,21 @@ function assignVisualDescriptorToLink(
 
   const descriptorMaterialRecord = getDescriptorMaterialRecord(entry, materialLookup);
   const explicitFallbackColor = colorHexToVertexColor(explicitMaterialFallback?.color);
-  const preferredFallbackColor = colorArrayToVertexColor(preferredMaterialRecord?.color);
+  const preferredFallbackColor = hasNonEmptyTexturePath(preferredMaterialRecord?.mapPath)
+    ? [1, 1, 1] as [number, number, number]
+    : colorArrayToVertexColor(preferredMaterialRecord?.color);
   entry.writeTextureCoordinates =
     snapshotMaterialUsesTextureCoordinates(descriptorMaterialRecord) ||
     snapshotMaterialUsesTextureCoordinates(preferredMaterialRecord) ||
     hasNonEmptyTexturePath(explicitMaterialFallback?.texture) ||
     visualUsesTextureCoordinates(link.visual);
-  entry.displayColor =
-    colorArrayToVertexColor(descriptorMaterialRecord?.color) ||
-    explicitFallbackColor ||
-    preferredFallbackColor;
+  // A connected USD base-color texture replaces the fallback color. OBJ
+  // vertex colors also become MJCF material factors, so neutralize both paths.
+  entry.displayColor = hasNonEmptyTexturePath(descriptorMaterialRecord?.mapPath)
+    ? [1, 1, 1]
+    : colorArrayToVertexColor(descriptorMaterialRecord?.color) ||
+      explicitFallbackColor ||
+      preferredFallbackColor;
 
   const primitiveGeometry = resolvePrimitiveGeometryFromDescriptor(
     entry.descriptor,
@@ -640,6 +645,7 @@ export function createDescriptorExportMap(
     ? mergeCurrentRobotWithSnapshotMeshPaths(currentRobot, snapshotRobot)
     : snapshotRobot;
   const descriptors = selectUsdRenderableMeshDescriptors(snapshot);
+  const resolveDescriptorRoles = createUsdDescriptorRoleResolver(snapshot);
   const descriptorsByLinkRole = new Map<string, ExportDescriptor[]>();
   const materialLookup = getSnapshotMaterialLookup(snapshot);
   const preferredMaterialLookup = getSnapshotPreferredVisualMaterialLookup(snapshot);
@@ -655,23 +661,28 @@ export function createDescriptorExportMap(
     const linkId = resolution.linkIdByPath[linkPath];
     if (!linkId) return;
 
-    const role = getDescriptorRole(descriptor);
     const ordinal = parseDescriptorOrdinal(descriptor, index);
-    const key = `${linkId}:${role}`;
-    const current = descriptorsByLinkRole.get(key) || [];
-    current.push({
-      descriptor,
-      meshId: normalizeUsdPath(descriptor.meshId || ''),
-      linkPath,
-      linkId,
-      role,
-      exportPath: `${sanitizeFileToken(linkId)}_${role}_${ordinal}.obj`,
-      ordinal,
-      subsetIndex: 0,
-      subsetSection: null,
-      materialIdOverride: null,
-    } satisfies ExportDescriptor);
-    descriptorsByLinkRole.set(key, current);
+    // PhysicsCollisionAPI can make the same authored Mesh both visible and
+    // collidable. Match hydration's roles so neither export loses its payload.
+    const roles = resolveDescriptorRoles(descriptor);
+    for (const role of ['visual', 'collision'] as const) {
+      if (!roles[role]) continue;
+      const key = `${linkId}:${role}`;
+      const current = descriptorsByLinkRole.get(key) || [];
+      current.push({
+        descriptor,
+        meshId: normalizeUsdPath(descriptor.meshId || ''),
+        linkPath,
+        linkId,
+        role,
+        exportPath: `${sanitizeFileToken(linkId)}_${role}_${ordinal}.obj`,
+        ordinal,
+        subsetIndex: 0,
+        subsetSection: null,
+        materialIdOverride: null,
+      } satisfies ExportDescriptor);
+      descriptorsByLinkRole.set(key, current);
+    }
   });
 
   descriptorsByLinkRole.forEach((entries) => {

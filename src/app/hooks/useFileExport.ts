@@ -66,6 +66,7 @@ export type {
 type JSZipInstance = JSZip;
 
 interface AddMeshesToZipOptions {
+  targetFormat?: 'mjcf';
   compressOptions?: { compressSTL: boolean; stlQuality: number };
   extraMeshFiles?: Map<string, Blob>;
   onProgress?: (progress: { completed: number; total: number; currentFile: string }) => void;
@@ -201,6 +202,7 @@ export function useFileExport() {
 
   const addMeshesToZip = useCallback(
     async ({
+      targetFormat,
       compressOptions,
       extraMeshFiles,
       onProgress,
@@ -212,6 +214,7 @@ export function useFileExport() {
         robot,
         zip,
         assets: workspaceExportAssets,
+        targetFormat,
         compressOptions,
         extraMeshFiles,
         skipMeshPaths,

@@ -8,11 +8,10 @@ import { JSDOM } from 'jsdom';
 
 import { detectImportFormat } from '../../../src/app/utils/import-preparation/formatDetection.ts';
 import { resolveRobotFileData } from '../../../src/core/parsers/importRobotFile.ts';
-import { generateMujocoXML } from '../../../src/core/parsers/mjcf/mjcfGenerator.ts';
 import { generateSDF } from '../../../src/core/parsers/sdf/sdfGenerator.ts';
 import { generateURDF, ensureXacroNamespace } from '../../../src/core/parsers/urdf/urdfGenerator.ts';
 import { getCollisionGeometryEntries, getVisualGeometryEntries } from '../../../src/core/robot/index.ts';
-import { prepareMjcfMeshExportAssets } from '../../../src/features/file-io/utils/mjcfMeshExport.ts';
+import { prepareMjcfExport } from '../../../src/features/file-io/utils/mjcfExport.ts';
 import { exportRobotToUsd } from '../../../src/features/file-io/utils/usdExport.ts';
 import {
   GeometryType,
@@ -1248,20 +1247,16 @@ async function exportMjcf(
   const outPath = path.join(outDir, 'model.xml');
   const result = createFormatResult(outPath);
   try {
-    const prepared = await prepareMjcfMeshExportAssets({
+    const prepared = await prepareMjcfExport({
       robot,
       assets: context.assets,
       extraMeshFiles: context.extraFiles,
+      mujoco: { meshdir: 'meshes/', includeSceneHelpers: false },
     });
-    const content = generateMujocoXML(robot, {
-      meshdir: 'meshes/',
-      includeSceneHelpers: false,
-      meshPathOverrides: prepared.meshPathOverrides,
-      visualMeshVariants: prepared.visualMeshVariants,
-    });
+    const content = prepared.xml;
     result.sizeBytes = Buffer.byteLength(content);
     await writeTextArtifact(options, outPath, content);
-    const stagedFiles = new Map([...context.extraFiles, ...prepared.archiveFiles]);
+    const stagedFiles = new Map([...context.extraFiles, ...prepared.meshes.archiveFiles]);
     if (options.writeArtifacts) {
       const staged = await stageMujocoAssets(outDir, content, stagedFiles);
       result.checks.stagedMissingMeshes = staged.missingMeshes;

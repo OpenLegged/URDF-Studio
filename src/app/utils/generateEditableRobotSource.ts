@@ -24,6 +24,7 @@ export function generateEditableRobotSource({
       return generateMujocoXML(robotState, {
         meshdir: 'meshes/',
         includeSceneHelpers: false,
+        preserveInertialData: true,
       });
     case 'sdf':
       return generateSDF(robotState);

@@ -23,6 +23,7 @@ import {
   resolveVisualMaterialOverride,
 } from '@/core/robot';
 import { resolveJointKey, resolveLinkKey } from '@/core/robot/identity';
+import { DEFAULT_MJCF_DENSITY, mjcfCollisionGeometries, mjcfCollisionMasses, needsMjcfInertiaInference } from './mjcfMassInference';
 import {
   buildTextureExportPathOverrides,
   normalizeMeshPathForExport,
@@ -85,6 +86,8 @@ export const generateMujocoXML = (robot: RobotState, options: MujocoExportOption
   const includeSceneHelpers = options.includeSceneHelpers ?? false;
   const meshPathOverrides = options.meshPathOverrides;
   const visualMeshVariants = options.visualMeshVariants;
+  const density = options.densityKgM3 ?? DEFAULT_MJCF_DENSITY;
+  if (!Number.isFinite(density) || density <= 0) throw new Error('[MJCF export] Estimated density must be positive.');
   // URDF collision names are link-local, while MuJoCo geom names are model-global.
   const usedGeomNames = new Set<string>();
   const allocateGeomName = (preferredName: string, ownerName: string): string => {
@@ -947,7 +950,10 @@ export const generateMujocoXML = (robot: RobotState, options: MujocoExportOption
   ];
 
   let xml = `<mujoco model="${name}">\n`;
-  const compilerAttrs = [`angle="radian"`, `meshdir="${meshdir}"`];
+  const compilerAttrs = [
+    `angle="radian"`, `meshdir="${meshdir}"`,
+    `inertiafromgeom="auto"`, `inertiagrouprange="3 3"`,
+  ];
   if (textureAssets.size > 0) {
     compilerAttrs.push(`texturedir="${texturedir}"`);
   }
@@ -1155,10 +1161,19 @@ export const generateMujocoXML = (robot: RobotState, options: MujocoExportOption
       }
     }
 
+    const collisionGeoms = mjcfCollisionGeometries(link);
+    const inferInertia = !options.preserveInertialData && (needsMjcfInertiaInference(link)
+      || (options.massMode === 'recompute' && collisionGeoms.length > 0));
+    const moving = (parentJoint && parentJoint.type !== JointType.FIXED) || (linkId === rootLinkId && addFloatBase);
+    if (!options.preserveInertialData && (inferInertia || options.massMode === 'recompute') && moving && collisionGeoms.length === 0) {
+      throw new Error(`[MJCF export] ${link.name}: missing collision geometry for mass/inertia estimation. Add collision shapes in the model editor.`);
+    }
+    const collisionMasses = inferInertia && options.massMode !== 'recompute' && (link.inertial?.mass ?? 0) > 0
+      ? mjcfCollisionMasses(link, options.collisionVolumes?.get(linkId)) : undefined;
     // 2. Inertial
-    // Preserve URDF semantics: links may legitimately omit inertial data.
-    // In that case, do not synthesize arbitrary mass/inertia on MJCF export.
-    if (link.inertial) {
+    // An explicit all-zero placeholder disables MuJoCo's automatic inference.
+    // Omit only missing data; preserve authored nonzero parameters, including errors.
+    if (link.inertial && !inferInertia) {
       const inertialOrigin = link.inertial.origin || {
         xyz: { x: 0, y: 0, z: 0 },
         rpy: { r: 0, p: 0, y: 0 },
@@ -1180,6 +1195,9 @@ export const generateMujocoXML = (robot: RobotState, options: MujocoExportOption
       bodyXml += `${indent}  <inertial pos="${vecStr(inertialOrigin.xyz || { x: 0, y: 0, z: 0 })}" mass="${formatScalar(link.inertial.mass)}"${inertialQuatAttr} ${inertialTensorAttr}/>\n`;
     }
 
+    if (inferInertia && collisionGeoms.length > 0) {
+      bodyXml += `${indent}  <!-- Estimated inertia from collisions; ${collisionMasses ? 'authored mass preserved' : `density ${density} kg/m3`}. -->\n`;
+    }
     const exportedSites = getExportedSites(linkId, link);
     exportedSites.forEach((site) => {
       bodyXml += renderMjcfSite(site, `${indent}  `);
@@ -1207,6 +1225,9 @@ export const generateMujocoXML = (robot: RobotState, options: MujocoExportOption
         rgbaOverride: string = defaultVisualRgba,
       ) => {
         let vGeomAttrs = `pos="${vPos}"${quatAttr(v.origin?.rpy)} group="1" contype="0" conaffinity="0"`;
+        // Prefer collision volume, without counting visual copies/material splits twice.
+        // The compiler uses collision group 3; visuals never contribute to inferred mass.
+        if (collisionGeoms.length > 0) vGeomAttrs += ` mass="0"`;
         if (materialNameOverride) {
           vGeomAttrs += ` material="${materialNameOverride}"`;
         } else {
@@ -1300,16 +1321,15 @@ export const generateMujocoXML = (robot: RobotState, options: MujocoExportOption
     // 4. Collision geoms use a dedicated visualization group so the runtime
     // loader can classify them as collision-only and keep them hidden unless
     // collision display is explicitly enabled.
-    const collisionGeoms = [link.collision, ...(link.collisionBodies || [])].filter(
-      (c) => c && c.type !== GeometryType.NONE,
-    );
-
-    collisionGeoms.forEach((c) => {
+    collisionGeoms.forEach((c, collisionIndex) => {
       let cPos = '0 0 0';
       if (c.origin) {
         cPos = vecStr(c.origin.xyz);
       }
       let cGeomAttrs = `pos="${cPos}"${quatAttr(c.origin?.rpy)} rgba="${hexToRgba(c.color || DEFAULT_LINK.collision.color)}" group="3" contype="1" conaffinity="1"`;
+      if (inferInertia) cGeomAttrs += collisionMasses
+        ? ` mass="${formatInertiaScalar(collisionMasses[collisionIndex])}"`
+        : ` density="${density}"`;
       const collisionName = c.name?.trim();
       if (collisionName) {
         const uniqueCollisionName = allocateGeomName(collisionName, link.name || link.id);

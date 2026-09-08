@@ -4,6 +4,7 @@ import { DEFAULT_LINK, DEFAULT_JOINT, GeometryType, JointType, type RobotState }
 import { generateMujocoXML } from '@/core/parsers/mjcf/mjcfGenerator';
 import { prepareMjcfMeshExportAssets } from './mjcfMeshExport';
 import { collectMjcfExportFiles, prepareMjcfExport } from './mjcfExport';
+import { JSDOM } from 'jsdom';
 
 function cabinet(): RobotState {
   const base = structuredClone({ ...DEFAULT_LINK, id: 'cabinet', name: 'cabinet' });
@@ -25,6 +26,29 @@ function cabinet(): RobotState {
     selection: { type: null, id: null },
   };
 }
+
+test('known mass survives mixed scaled mesh and primitive collision estimation', async () => {
+  const robot = cabinet();
+  const link = robot.links.drawer;
+  link.inertial = { ...link.inertial!, mass: 7,
+    inertia: { ixx: 0, iyy: 0, izz: 0, ixy: 0, ixz: 0, iyz: 0 } };
+  link.collision.type = GeometryType.MESH;
+  link.collision.dimensions = { x: 2, y: 2, z: 2 };
+  link.collision.mjcfMesh = { vertices: [0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1] };
+  const box = structuredClone(link.visual);
+  box.dimensions = { x: 1, y: 1, z: 1 };
+  link.collisionBodies = [box];
+  const before = structuredClone(robot);
+  const prepared = await prepareMjcfExport({ robot, assets: {} });
+  const dom = new JSDOM(prepared.xml, { contentType: 'text/xml' });
+  try {
+    const body = dom.window.document.querySelector('body[name="drawer"]')!;
+    assert.equal(body.querySelector('inertial'), null);
+    assert.deepEqual(Array.from(body.querySelectorAll('geom[group="3"]')).map((g) => Number(g.getAttribute('mass'))), [4, 3]);
+    assert.deepEqual(prepared.estimatedLinkNames, ['drawer']);
+  } finally { dom.window.close(); }
+  assert.deepEqual(robot, before);
+});
 
 test('shared conversion preserves the original model exporter output and options', async () => {
   const robot = cabinet();
@@ -73,4 +97,19 @@ test('missing original geometry or texture blocks packaging', async () => {
   await assert.rejects(collectMjcfExportFiles(prepared, {
     robot, sourceFiles: new Map([['drawer.obj', new Blob(['mesh'])]]),
   }), /wood.png/);
+});
+
+test('packages an unambiguous layer-relative USD texture and rejects ambiguous closures', async () => {
+  const robot = cabinet();
+  robot.links.drawer.visual.authoredMaterials = [{ texture: 'img/wood.png' }];
+  const prepared = await prepareMjcfExport({ robot, assets: {} });
+  const texture = new Blob(['authored texture bytes']);
+  const sourceFiles = new Map([['resource/img/wood.png', texture]]);
+  const files = await collectMjcfExportFiles(prepared, { robot, sourceFiles });
+  assert.equal(files.get('textures/img/wood.png'), texture);
+  sourceFiles.set('other/img/wood.png', new Blob(['different texture']));
+  await assert.rejects(collectMjcfExportFiles(prepared, { robot, sourceFiles }), /asset is ambiguous: img\/wood.png/);
+  sourceFiles.set('img/wood.png', texture);
+  const exact = await collectMjcfExportFiles(prepared, { robot, sourceFiles });
+  assert.equal(exact.get('textures/img/wood.png'), texture);
 });

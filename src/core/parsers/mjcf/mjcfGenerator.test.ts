@@ -704,7 +704,7 @@ test('generated MJCF preserves inline-only mesh assets that have vertex data', (
   assert.match(generated, /<material name="base_link_mat" rgba="[^"]+" specular="0" \/>/);
   assert.match(
     generated,
-    /<geom pos="0 0 0" group="1" contype="0" conaffinity="0" material="base_link_mat" type="mesh" mesh="pyramid" \/>/,
+    /<geom pos="0 0 0" group="1" contype="0" conaffinity="0" mass="0" material="base_link_mat" type="mesh" mesh="pyramid" \/>/,
   );
   assert.match(
     generated,
@@ -1014,6 +1014,7 @@ test('generated MJCF does not inject a duplicate freejoint when the root is alre
           <worldbody>
             <body name="base_link" pos="0 0 0.5">
               <joint name="floating_base_joint" type="free" limited="false" />
+              <geom type="box" size="0.1 0.1 0.1" />
             </body>
           </worldbody>
         </mujoco>

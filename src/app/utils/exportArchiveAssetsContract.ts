@@ -16,6 +16,7 @@ export interface PrepareExportArchiveAssetsProgress {
 export interface PrepareExportArchiveAssetsArgs {
   robot: RobotState;
   assets: Record<string, string>;
+  targetFormat?: 'mjcf';
   compressOptions?: ExportArchiveAssetsCompressOptions;
   extraMeshFiles?: ReadonlyMap<string, Blob>;
   skipMeshPaths?: ReadonlySet<string>;
@@ -63,6 +64,7 @@ export interface ExportArchiveAssetsWorkerInlineFile {
 export interface ExportArchiveAssetsWorkerPayload {
   robot: RobotState;
   assets: Record<string, string>;
+  targetFormat?: 'mjcf';
   compressOptions?: ExportArchiveAssetsCompressOptions;
   extraMeshFiles: ExportArchiveAssetsWorkerInlineFile[];
   skipMeshPaths: string[];

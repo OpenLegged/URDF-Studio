@@ -69,6 +69,7 @@ test('exportArchiveAssets worker client resolves successful worker responses and
   const progressEvents: string[] = [];
   const resultPromise = client.prepare({
     robot: TEST_ROBOT,
+    targetFormat: 'mjcf',
     assets: { 'meshes/base.stl': 'blob:base' },
     extraMeshFiles: new Map([
       ['textures/coat.png', new Blob(['png'], { type: 'image/png' })],
@@ -84,6 +85,7 @@ test('exportArchiveAssets worker client resolves successful worker responses and
 
   const postedRequest = fakeWorker.postedMessages[0] as PrepareExportArchiveAssetsWorkerRequest;
   assert.equal(postedRequest.type, 'prepare-export-archive-assets');
+  assert.equal(postedRequest.payload.targetFormat, 'mjcf');
   assert.equal(postedRequest.payload.extraMeshFiles[0]?.path, 'textures/coat.png');
   assert.deepEqual(postedRequest.payload.skipMeshPaths, ['meshes/replaced.stl']);
 

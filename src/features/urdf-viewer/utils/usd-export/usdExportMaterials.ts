@@ -14,7 +14,10 @@ import {
   getDescriptorRole,
   normalizeUsdPath,
 } from './usdExportPaths.ts';
-import { resolveSnapshotAuthoredMaterial } from '@/lib/robot-parser/usd/usdViewerRobotAdapter/usdAdapterConversions';
+import {
+  resolveSnapshotAuthoredMaterial,
+  resolveSnapshotMaterialColorHex,
+} from '@/lib/robot-parser/usd/usdViewerRobotAdapter/usdAdapterConversions';
 
 import type {
   ExportDescriptor,
@@ -39,50 +42,6 @@ export function getDescriptorMaterialId(
   return normalizeUsdPath(
     materialIdOverride || descriptor.materialId || descriptor.geometry?.materialId || '',
   );
-}
-
-function toHexChannel(value: number): string {
-  const clamped = Math.max(0, Math.min(255, Math.round(value)));
-  return clamped.toString(16).padStart(2, '0');
-}
-
-function colorArrayToHex(
-  value: ArrayLike<number> | null | undefined,
-  opacityOverride?: number | null,
-): string | null {
-  const source = Array.isArray(value)
-    ? value
-    : value && typeof value.length === 'number'
-      ? Array.from(value)
-      : null;
-  if (!source || source.length < 3) {
-    return null;
-  }
-
-  const r = Number(source[0]);
-  const g = Number(source[1]);
-  const b = Number(source[2]);
-  if (!Number.isFinite(r) || !Number.isFinite(g) || !Number.isFinite(b)) {
-    return null;
-  }
-
-  const to255 = (channel: number) => (Math.abs(channel) <= 1 ? channel * 255 : channel);
-
-  const useNormalizedLinearChannels = Math.abs(r) <= 1 && Math.abs(g) <= 1 && Math.abs(b) <= 1;
-  const linearColor = useNormalizedLinearChannels
-    ? new Color(
-        Math.max(0, Math.min(1, r)),
-        Math.max(0, Math.min(1, g)),
-        Math.max(0, Math.min(1, b)),
-      )
-    : null;
-
-  const a = opacityOverride ?? (source.length >= 4 ? Number(source[3]) : null);
-  if (a !== null && Number.isFinite(a) && a < 0.999) {
-    return `#${linearColor?.getHexString() ?? `${toHexChannel(to255(r))}${toHexChannel(to255(g))}${toHexChannel(to255(b))}`}${toHexChannel(to255(a))}`;
-  }
-
-  return `#${linearColor?.getHexString() ?? `${toHexChannel(to255(r))}${toHexChannel(to255(g))}${toHexChannel(to255(b))}`}`;
 }
 
 function normalizeScalarMaterialValue(
@@ -285,27 +244,6 @@ function hasSnapshotMaterialRecordContent(
     }
     return true;
   });
-}
-
-function resolveSnapshotMaterialColorHex(
-  material: SnapshotMaterialRecord | null | undefined,
-): string | null {
-  const authoredColor = colorArrayToHex(material?.color, material?.opacity);
-  if (authoredColor) {
-    return authoredColor;
-  }
-
-  const opacity = normalizeScalarMaterialValue(material?.opacity, { clamp01: true });
-  const hasPrimaryTexture = Boolean(
-    normalizeTextureMaterialPath(material?.mapPath) ||
-    normalizeTextureMaterialPath(material?.alphaMapPath),
-  );
-
-  if (hasPrimaryTexture && opacity !== null && opacity < 0.999) {
-    return colorArrayToHex([1, 1, 1], opacity);
-  }
-
-  return null;
 }
 
 function colorArrayToVertexColor(

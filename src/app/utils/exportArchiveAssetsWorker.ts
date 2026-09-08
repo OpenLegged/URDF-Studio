@@ -1,3 +1,4 @@
+import { prepareMjcfTextureBlob, readMjcfExportAsset } from '@/core/loaders/mjcfExportAssets';
 import { findAssetByPath } from '@/core/loaders';
 import {
   buildTextureExportPathOverrides,
@@ -237,6 +238,7 @@ async function prepareTextureBlob(
 export async function prepareExportArchiveAssets({
   robot,
   assets,
+  targetFormat,
   compressOptions,
   extraMeshFiles,
   skipMeshPaths,
@@ -251,7 +253,7 @@ export async function prepareExportArchiveAssets({
   const failedAssets: RobotAssetPackagingFailure[] = [];
 
   meshPaths.forEach((meshPath) => {
-    const inlineMesh = findInlineAssetBlob(
+    const inlineMesh = targetFormat === 'mjcf' ? null : findInlineAssetBlob(
       meshPath,
       extraMeshFiles,
       normalizeMeshPathForExport,
@@ -266,6 +268,17 @@ export async function prepareExportArchiveAssets({
       return;
     }
     exportedMeshPaths.add(exportPath);
+
+    if (targetFormat === 'mjcf') {
+      tasks.push({
+        assetType: 'mesh', sourcePath: meshPath, exportPath, currentFile: exportPath,
+        run: async (onStage) => prepareMeshBlob(
+          await readMjcfExportAsset(meshPath, extraMeshFiles ?? new Map(), assets),
+          meshPath, exportPath, compressOptions, onStage,
+        ),
+      });
+      return;
+    }
 
     if (inlineMesh) {
       tasks.push({
@@ -305,7 +318,7 @@ export async function prepareExportArchiveAssets({
   });
 
   texturePaths.forEach((texturePath) => {
-    const inlineTexture = findInlineAssetBlob(
+    const inlineTexture = targetFormat === 'mjcf' ? null : findInlineAssetBlob(
       texturePath,
       extraMeshFiles,
       (path) => resolveTextureExportPath(path, texturePathOverrides),
@@ -317,6 +330,18 @@ export async function prepareExportArchiveAssets({
       return;
     }
     exportedTexturePaths.add(exportPath);
+
+    if (targetFormat === 'mjcf') {
+      tasks.push({
+        assetType: 'texture', sourcePath: texturePath, exportPath, currentFile: exportPath,
+        run: async (onStage) => prepareTextureBlob(
+          await prepareMjcfTextureBlob(exportPath,
+            await readMjcfExportAsset(texturePath, extraMeshFiles ?? new Map(), assets)),
+          texturePath, exportPath, onStage,
+        ),
+      });
+      return;
+    }
 
     if (inlineTexture) {
       tasks.push({
@@ -417,6 +442,7 @@ export function serializePrepareExportArchiveAssetsArgsForWorker(
   return {
     robot: args.robot,
     assets: args.assets,
+    targetFormat: args.targetFormat,
     compressOptions: args.compressOptions,
     extraMeshFiles: Array.from(args.extraMeshFiles?.entries() ?? []).map(([path, blob]) => ({
       path,
@@ -433,6 +459,7 @@ export function hydratePrepareExportArchiveAssetsArgsFromWorker(
   return {
     robot: payload.robot,
     assets: payload.assets,
+    targetFormat: payload.targetFormat,
     compressOptions: payload.compressOptions,
     extraMeshFiles: new Map(payload.extraMeshFiles.map((file) => [file.path, file.blob])),
     skipMeshPaths: new Set(payload.skipMeshPaths),
