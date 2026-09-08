@@ -294,7 +294,8 @@ test('missing URDF drafts keep authored joint hardware in the generated fallback
     allFileContents: {},
   });
 
-  assert.equal(result.documents[0].readOnly, true);
+  assert.equal(result.documents[0].readOnly, false);
+  assert.equal(componentTargetId(result.documents[0].changeTarget), 'hardware-instance');
   assert.match(result.content, /<hardware>/);
   assert.match(result.content, /<brand>Acme Robotics<\/brand>/);
   assert.match(result.content, /<motorType>Servo-X<\/motorType>/);
