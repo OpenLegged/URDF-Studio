@@ -19,7 +19,7 @@ import {
   getUsdDescriptorAttachmentGroupKey,
 } from '@/lib/robot-parser/usd/usdViewerRobotAdapter/usdAdapterDescriptors';
 import { resolveUsdPrimitiveGeometryFromDescriptor } from '@/lib/robot-parser/usd/usdPrimitiveGeometry';
-import { isUsdGenericSceneSnapshot } from '@/lib/robot-parser/usd/usdGenericScenePolicy';
+import { selectUsdRenderableMeshDescriptors } from '@/lib/robot-parser/usd/usdRenderableDescriptors';
 import {
   getUsdSourceMetersPerUnit,
   getUsdStageMetersPerUnit,
@@ -236,9 +236,8 @@ function buildDescriptorMap(
   resolution: ViewerRobotDataResolution,
 ): Map<string, DescriptorEntry[]> {
   const descriptorsByLinkRole = new Map<string, DescriptorEntry[]>();
-  const descriptors = Array.from(snapshot?.render?.meshDescriptors || []);
+  const descriptors = selectUsdRenderableMeshDescriptors(snapshot);
   const knownLinkPaths = Object.keys(resolution.linkIdByPath);
-  const isGenericScene = isUsdGenericSceneSnapshot(snapshot);
   const resolveRoles = createUsdDescriptorRoleResolver(snapshot);
 
   descriptors.forEach((descriptor, index) => {
@@ -260,7 +259,9 @@ function buildDescriptorMap(
         descriptor,
         ordinal: parseDescriptorOrdinal(descriptor, index),
         groupKey: getUsdDescriptorAttachmentGroupKey(descriptor, {
-          fallbackToResolvedPrimPath: !isGenericScene,
+          // Flattened Hydra IDs share an owner, but each authored Prim still
+          // needs its own pose when exported as a separate editable mesh.
+          fallbackToResolvedPrimPath: true,
         }),
       });
       descriptorsByLinkRole.set(key, entries);
@@ -376,6 +377,7 @@ function createSyntheticVisualAttachmentLink(
     visual: {
       ...DEFAULT_LINK.visual,
       type: GeometryType.MESH,
+      dimensions: { x: 1, y: 1, z: 1 },
       origin: identityOrigin(),
     },
     collision: {
@@ -434,6 +436,7 @@ function ensureCollisionBodySlot(
   while (collisionBodies.length < collisionIndex) {
     collisionBodies.push({
       ...DEFAULT_LINK.collision,
+      dimensions: { x: 1, y: 1, z: 1 },
       origin: identityOrigin(),
     });
   }
