@@ -5,6 +5,7 @@
 同步提醒：
 
 - 更新 agent 规则时以 `CLAUDE.md` 为主，必要时同步本兼容入口。
+- 分支工作流：本地修改先在 `dev` 提交与验证，再 merge 进 `main` 并双推送，具体以 `CLAUDE.md` 的 `分支工作流` 为准。
 - `scripts/` 已统一为 `build/`、`generate/`、`test/`、`tools/`、`release/` 五类；新增或移动脚本时不要恢复旧目录名，具体结构以 `CLAUDE.md` 的 `scripts/ 目录结构` 为准。
 - 机器人源文件格式检测以 `src/core/parsers/format_detection.ts` 为 canonical source；`app` / `features/file-io` 只保留 workflow wrapper，不重复实现格式判断。
 - 通用 robot renderer kernel/backend 生命周期归 `src/shared/components/3d/robot/`，保持无 store/feature 依赖；`features/urdf-viewer` 注入应用状态并拥有 workspace adapter；`src/shared/components/3d/renderers/` 仍只放纯 mesh renderer 与 Collada helpers，具体边界以 `CLAUDE.md` 为准。

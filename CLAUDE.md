@@ -240,6 +240,12 @@ URDF_STUDIO_DEV_TLS_CERT=./.dev-certs/cert.pem URDF_STUDIO_DEV_TLS_KEY=./.dev-ce
 
 HTTPS 模式下 `host` 默认 `0.0.0.0`，`allowedHosts` 默认 `true`。覆盖：`URDF_STUDIO_DEV_HOST` 和 `URDF_STUDIO_DEV_ALLOWED_HOSTS` 仍然生效（显式值优先）。
 
+## 分支工作流
+
+- 本地修改一律先在 `dev` 上提交与验证，禁止直接在 `main` 上开发提交。
+- dev 验证通过后合并发布：`git checkout main && git merge dev`，先 `git push origin dev` 再 `git push origin main`，保持本地与远端两分支一致。
+- 若 `main` 先出现提交（历史误操作或紧急修复），在 `dev` 上 `git merge --ff-only main` 对齐后再继续开发，保持 dev 不落后 main。
+
 ## 常用命令
 
 ```bash
