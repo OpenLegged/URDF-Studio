@@ -23,14 +23,30 @@
  * appropriate `Content-Encoding` when the client advertises support — see
  * docs/deployment.md for nginx/CDN reference configs.
  *
- * Usage: node scripts/build/precompress.mjs [--check]
+ * Usage: node scripts/build/precompress.mjs [--check] [--dist <path>]
+ *
+ * --dist overrides the target directory (default: this repo's dist/). Used by
+ * URDF-Studio-Pro, which compiles core sources into its own root dist/ and
+ * reuses this script via the core submodule.
  */
 import { brotliCompressSync, constants as zlibConstants, gzipSync } from 'node:zlib';
 import { existsSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import process from 'node:process';
 
-const DIST_DIR = new URL('../../dist/', import.meta.url).pathname;
+function resolveDistDir() {
+  const flagIndex = process.argv.indexOf('--dist');
+  if (flagIndex !== -1) {
+    const value = process.argv[flagIndex + 1];
+    if (!value) {
+      throw new Error('--dist requires a directory path argument.');
+    }
+    return value;
+  }
+  return new URL('../../dist/', import.meta.url).pathname;
+}
+
+const DIST_DIR = resolveDistDir();
 const CHECK_ONLY = process.argv.includes('--check');
 
 const COMPRESSIBLE_EXTENSIONS = new Set([
