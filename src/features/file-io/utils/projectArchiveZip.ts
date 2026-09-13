@@ -1,4 +1,5 @@
-import JSZip from 'jszip';
+// 类型导入：运行时实例在导入/导出函数内动态 import 创建，避免把 export-vendor 拉进启动 chunk。
+import type JSZip from 'jszip';
 
 import { assertProjectArchiveEntryPath } from './projectArchivePath.ts';
 import type { ProjectArchiveEntryData } from './projectArchiveWorkerTransfer.ts';
@@ -88,7 +89,9 @@ export async function loadProjectArchiveZip(
   limits: Readonly<ProjectArchiveLimits> = DEFAULT_PROJECT_ARCHIVE_LIMITS,
 ): Promise<JSZip> {
   assertProjectArchiveWithinLimits(file, undefined, limits);
-  const zip = await JSZip.loadAsync(
+  // 动态加载：导入/导出项目压缩包时才拉 jszip，避免把 export-vendor 拉进启动 chunk。
+  const { default: JSZipRuntime } = await import('jszip');
+  const zip = await JSZipRuntime.loadAsync(
     file instanceof Blob ? await file.arrayBuffer() : file,
   );
   assertProjectArchiveWithinLimits(file, zip, limits);
@@ -119,7 +122,9 @@ export async function buildProjectArchiveBlob(
     onProgress,
   }: BuildProjectArchiveBlobOptions = {},
 ): Promise<Blob> {
-  const zip = new JSZip();
+  // 动态加载：导出项目压缩包时才拉 jszip，避免把 export-vendor 拉进启动 chunk。
+  const { default: JSZipRuntime } = await import('jszip');
+  const zip = new JSZipRuntime();
   appendProjectArchiveEntriesToZip(zip, entries);
 
   return await zip.generateAsync(

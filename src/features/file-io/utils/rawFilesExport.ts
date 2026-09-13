@@ -1,4 +1,5 @@
-import JSZip from 'jszip';
+// 类型导入：运行时实例在各导出函数内动态 import 创建，避免把 export-vendor 拉进启动 chunk。
+import type JSZip from 'jszip';
 import type { RobotFile } from '@/types';
 
 export interface RawFilesCollectOptions {
@@ -66,7 +67,9 @@ async function fetchBlobUrl(url: string, kind: BlobEntryKind, path: string): Pro
 export async function collectRawFilesZip(options: RawFilesCollectOptions): Promise<Blob> {
   const { assets, availableFiles, allFileContents, onProgress } = options;
 
-  const zip = new JSZip();
+  // 动态加载：该函数仅在用户导出时调用，避免把 jszip 拉进启动 chunk。
+  const { default: JSZipRuntime } = await import('jszip');
+  const zip = new JSZipRuntime();
   const addedPaths = new Set<string>();
   let completed = 0;
 

@@ -1,4 +1,5 @@
-import JSZip from 'jszip';
+// 类型导入：zip 实例由调用方传入，避免把 export-vendor 拉进启动 chunk。
+import type JSZip from 'jszip';
 
 import type { AssetFile } from '../types';
 import type {

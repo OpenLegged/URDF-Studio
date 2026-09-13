@@ -1,4 +1,5 @@
-import JSZip from 'jszip';
+// 类型导入：运行时实例在导出函数内动态 import 创建，避免把 export-vendor 拉进启动 chunk。
+import type JSZip from 'jszip';
 import {
   parseSDF,
   parseURDF,
@@ -151,7 +152,9 @@ export async function exportLibraryRobotFile(
 
   const baseName = getFileBaseName(file.name);
   const warnings: string[] = [];
-  const zip = new JSZip();
+  // 动态加载：导出动作触发时才拉 jszip，避免把 export-vendor 拉进启动 chunk。
+  const { default: JSZipRuntime } = await import('jszip');
+  const zip = new JSZipRuntime();
   const archiveRoot = createArchiveRoot(zip, baseName);
   const mjcfExport =
     targetFormat === 'mjcf' && file.format !== 'mjcf'
