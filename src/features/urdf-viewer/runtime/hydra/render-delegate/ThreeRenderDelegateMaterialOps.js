@@ -1,8 +1,15 @@
 // @ts-nocheck
+import { normalizeUsdMdlPreset } from '../../../../../core/utils/usdMdlPreset.ts';
+import { applyUsdTextureArithmetic } from '../../../../../core/utils/usdTextureArithmetic.ts';
 import { Color, Float32BufferAttribute, FrontSide, LinearSRGBColorSpace, Quaternion, SRGBColorSpace, Vector2, Vector3 } from 'three';
 import * as Shared from './shared.js';
 import { ThreeRenderDelegateCore } from './ThreeRenderDelegateCore.js';
 import { createHydraColorFromTuple, createUnifiedHydraPhysicalMaterial, createUnifiedHydraStandardMaterial, hydraMaterialRequiresPhysicalExtensions, HYDRA_UNIFIED_MATERIAL_DEFAULTS } from './material-defaults.js';
+import {
+    USD_TEXTURE_INPUT_SLOTS,
+    applyUsdTextureInputToTexture,
+    normalizeUsdTextureInputs,
+} from '../../../../../core/utils/usdTextureInput.ts';
 const { buildProtoPrimPathCandidates, clamp01, createMatrixFromXformOp, debugInstancer, debugMaterials, debugMeshes, debugPrims, debugTextures, defaultGrayComponent, disableMaterials, disableTextures, extractPrimPathFromMaterialBindingWarning, extractReferencePrimTargets, extractScopeBodyText, extractUsdAssetReferencesFromLayerText, getActiveMaterialBindingWarningOwner, getAngleInRadians, getCollisionGeometryTypeFromUrdfElement, getExpectedPrimTypesForCollisionProto, getExpectedPrimTypesForProtoType, getMatrixMaxElementDelta, getPathBasename, getPathWithoutRoot, getRawConsoleMethod, getRootPathFromPrimPath, getSafePrimTypeName, hasNonZeroTranslation, hydraCallbackErrorCounts, installMaterialBindingApiWarningInterceptor, isIdentityQuaternion, isLikelyDefaultGrayMaterial, isLikelyInverseTransform, isMaterialBindingApiWarningMessage, isMatrixApproximatelyIdentity, isNonZero, isPotentiallyLargeBaseAssetPath, logHydraCallbackError, materialBindingRepairMaxLayerTextLength, materialBindingWarningHandlers, maxHydraCallbackErrorLogsPerMethod, nearlyEqual, normalizeHydraPath, normalizeUsdPathToken, parseGuideCollisionReferencesFromLayerText, parseProtoMeshIdentifier, parseUrdfTruthFromText, parseVector3Text, parseXformOpFallbacksFromLayerText, rawConsoleError, rawConsoleWarn, registerMaterialBindingApiWarningHandler, remapRootPathIfNeeded, resolveUrdfTruthFileNameForStagePath, resolveUsdAssetPath, setActiveMaterialBindingWarningOwner, shouldAllowLargeBaseAssetScan, stringifyConsoleArgs, toArrayLike, toColorArray, toFiniteNumber, toFiniteQuaternionWxyzTuple, toFiniteVector2Tuple, toFiniteVector3Tuple, toMatrixFromUrdfOrigin, toQuaternionWxyzFromRpy, transformEpsilon, wrapHydraCallbackObject } = Shared;
 export class ThreeRenderDelegateMaterialOps extends ThreeRenderDelegateCore {
     snapshotRecordRequiresPhysicalMaterial(record) {
@@ -1793,6 +1800,23 @@ export class ThreeRenderDelegateMaterialOps extends ThreeRenderDelegateCore {
             const normalized = this.normalizeMaterialTexturePath(value);
             return normalized || null;
         };
+        // Per-slot texture metadata (uvTransform / primvar / wrap / color space)
+        // comes from the native snapshot as a nested object keyed by the record's
+        // texture path fields. Normalization keeps only slots whose own record
+        // still carries a path, so dropped texture fields cannot leave orphan
+        // metadata behind.
+        const normalizeTextureInputs = (rawTextureInputs, slotSourceRecord) => {
+            const normalizedInputs = normalizeUsdTextureInputs(rawTextureInputs);
+            if (!normalizedInputs || !slotSourceRecord)
+                return null;
+            const retainedInputs = {};
+            for (const slot of USD_TEXTURE_INPUT_SLOTS) {
+                if (normalizedInputs[slot] && normalizeTexturePath(slotSourceRecord[slot])) {
+                    retainedInputs[slot] = normalizedInputs[slot];
+                }
+            }
+            return Object.keys(retainedInputs).length > 0 ? retainedInputs : null;
+        };
         return records
             .map((rawRecord) => {
             if (!rawRecord || typeof rawRecord !== 'object')
@@ -1812,7 +1836,7 @@ export class ThreeRenderDelegateMaterialOps extends ThreeRenderDelegateCore {
             const isOmniGlass = rawRecord.isOmniGlass === true || shaderSignature.includes('omniglass');
             const authoredOrRawColor = normalizeColor(rawRecord.color);
             const rawColorSource = normalizeColorSource(rawRecord.colorSource);
-            const colorSpace = rawColorSource === 'authored'
+            const colorSpace = rawColorSource === 'authored' || rawColorSource === 'mdl-preset'
                 ? 'linear'
                 : normalizeColorSpace(rawRecord.colorSpace);
             const inferredColorHex = this.inferColorHexFromMaterialName(name);
@@ -1907,12 +1931,20 @@ export class ThreeRenderDelegateMaterialOps extends ThreeRenderDelegateCore {
                 anisotropyMapPath: normalizeTexturePath(rawRecord.anisotropyMapPath),
                 iridescenceMapPath: normalizeTexturePath(rawRecord.iridescenceMapPath),
                 iridescenceThicknessMapPath: normalizeTexturePath(rawRecord.iridescenceThicknessMapPath),
+                textureInputs: normalizeTextureInputs(rawRecord.textureInputs, rawRecord),
+                mdlPreset: normalizeUsdMdlPreset(rawRecord.mdlPreset),
             };
             if (this.resolveSnapshotMaterialEmissionEnabled(normalizedRecord) === false) {
                 normalizedRecord.emissiveEnabled = false;
                 normalizedRecord.emissive = null;
                 normalizedRecord.emissiveIntensity = null;
                 normalizedRecord.emissiveMapPath = null;
+                if (normalizedRecord.textureInputs) {
+                    delete normalizedRecord.textureInputs.emissiveMapPath;
+                    if (Object.keys(normalizedRecord.textureInputs).length === 0) {
+                        normalizedRecord.textureInputs = null;
+                    }
+                }
             }
             if (normalizedRecord.roughness === null && normalizedRecord.isOmniPbr) {
                 normalizedRecord.roughness = HYDRA_UNIFIED_MATERIAL_DEFAULTS.roughness;
@@ -2051,6 +2083,11 @@ export class ThreeRenderDelegateMaterialOps extends ThreeRenderDelegateCore {
                 stageSourcePath: options?.stageSourcePath,
             })
             : this.registry.getTexture(normalizedTexturePath);
+        const textureInputSlot = USD_TEXTURE_INPUT_SLOTS.find((slot) => `${slot.slice(0, -'Path'.length)}Path` === `${materialProperty}Path`)
+            || (materialProperty === 'map' ? 'mapPath' : null);
+        const textureInput = options?.textureInput
+            || (textureInputSlot ? options?.textureInputs?.[textureInputSlot] : null)
+            || null;
         const assignmentPromise = texturePromise.then((texture) => {
             const nextTexture = texture?.clone ? texture.clone() : texture;
             if (!nextTexture)
@@ -2059,8 +2096,16 @@ export class ThreeRenderDelegateMaterialOps extends ThreeRenderDelegateCore {
                 this.clearSnapshotTextureApplyFailure(material, normalizedTexturePath, materialProperty);
             }
             nextTexture.colorSpace = options.colorSpace || LinearSRGBColorSpace;
+            if (textureInput) {
+                // The clone is per-material, so per-slot USD metadata (uv matrix,
+                // wrap modes, color space) can be applied without contaminating the
+                // shared registry texture. Color-slot sRGB fallback lives in the
+                // helper; options.colorSpace above is the legacy default only.
+                applyUsdTextureInputToTexture(nextTexture, textureInputSlot, textureInput);
+            }
             nextTexture.needsUpdate = true;
             material[materialProperty] = nextTexture;
+            applyUsdTextureArithmetic(material, options.textureInputs || (textureInputSlot ? { [textureInputSlot]: textureInput } : null));
             if (typeof options.onAssigned === 'function') {
                 options.onAssigned(nextTexture);
             }
@@ -2216,6 +2261,7 @@ export class ThreeRenderDelegateMaterialOps extends ThreeRenderDelegateCore {
     applySnapshotMaterialRecord(material, record) {
         if (!material || !record || typeof record !== 'object')
             return;
+        applyUsdTextureArithmetic(material, record.textureInputs);
         const assignColor = (recordField, materialField, options = {}) => {
             const color = toColorArray(record?.[recordField]);
             if (!color)
@@ -2265,6 +2311,7 @@ export class ThreeRenderDelegateMaterialOps extends ThreeRenderDelegateCore {
             {
                 ...options,
                 stageSourcePath: record?.stageSourcePath,
+                textureInputs: record?.textureInputs,
             },
         );
         assignColor('color', 'color', {

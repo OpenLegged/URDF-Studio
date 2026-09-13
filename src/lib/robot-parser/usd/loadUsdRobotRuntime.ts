@@ -1,7 +1,15 @@
+import { applyUsdTextureArithmetic } from '@/core/utils/usdTextureArithmetic';
 import * as THREE from 'three';
 
 import type { UsdSceneMaterialRecord, UsdSceneMeshDescriptor } from '@/types';
+import type { UsdMaterialTextureInputSlotPathField } from '@/types/usdMaterial';
 import { URDFCollider, URDFVisual } from '@/core/parsers/urdf/loader/URDFClasses';
+import {
+  USD_COLOR_TEXTURE_INPUT_SLOTS,
+  cloneUsdSlotTexture,
+  getUsdTextureInputSlot,
+  usdTextureInputRequiresSlotState,
+} from '@/core/utils/usdTextureInput';
 import { buildRobotRuntimeFromData, type RobotRuntimeModel } from '../runtime';
 import { resolveUsdDescriptorTargetLinkPath } from './usdDescriptorLinkResolution';
 import { selectUsdRenderableMeshDescriptors } from './usdRenderableDescriptors';
@@ -178,6 +186,11 @@ function createMaterial(record: UsdSceneMaterialRecord | null): THREE.MeshPhysic
     emissiveIntensity: Math.max(0, finite(record?.emissiveIntensity, 1)),
     roughness: THREE.MathUtils.clamp(finite(record?.roughness, 0.7), 0, 1),
     metalness: THREE.MathUtils.clamp(finite(record?.metalness, 0), 0, 1),
+    normalScale: new THREE.Vector2(
+      finite(record?.normalScale?.[0], 1),
+      finite(record?.normalScale?.[1], 1),
+    ),
+    aoMapIntensity: Math.max(0, finite(record?.aoMapIntensity ?? undefined, 1)),
     opacity,
     transparent: opacity < 1 || hasBlendAlphaMap,
     alphaTest,
@@ -186,6 +199,8 @@ function createMaterial(record: UsdSceneMaterialRecord | null): THREE.MeshPhysic
     transmission: THREE.MathUtils.clamp(finite(record?.transmission, 0), 0, 1),
     thickness: Math.max(0, finite(record?.thickness, 0)),
     ior: Math.max(1, finite(record?.ior, 1.5)),
+    specularIntensity: THREE.MathUtils.clamp(finite(record?.specularIntensity ?? undefined, 1), 0, 1),
+    specularColor: toColor(record?.specularColor, 0xffffff),
     side: THREE.DoubleSide,
   });
   material.userData.usdMaterialId = record?.materialId ?? null;
@@ -213,7 +228,13 @@ async function applyMaterialTextures(
 ): Promise<void> {
   if (!record || typeof Image === 'undefined') return;
   const loader = new THREE.TextureLoader();
-  const load = async (path: string | null | undefined, color: boolean) => {
+  // Cached textures are shared across materials; a slot with authored USD
+  // metadata (uv matrix / wrap / color space) is cloned per material so sibling
+  // materials with different transforms cannot contaminate each other.
+  const resolveSlotTexture = async (
+    path: string | null | undefined,
+    slot: UsdMaterialTextureInputSlotPathField,
+  ): Promise<THREE.Texture | null> => {
     if (!path) return null;
     const url = resolveAssetUrl(path, assets);
     if (!url) return null;
@@ -221,23 +242,27 @@ async function applyMaterialTextures(
     if (!pending) {
       pending = loader.loadAsync(url).then((texture) => {
         texture.flipY = false;
-        if (color) texture.colorSpace = THREE.SRGBColorSpace;
+        if (USD_COLOR_TEXTURE_INPUT_SLOTS.has(slot)) texture.colorSpace = THREE.SRGBColorSpace;
         return texture;
       });
       textureCache.set(url, pending);
     }
-    return pending;
+    const texture = await pending;
+    const textureInput = getUsdTextureInputSlot(record.textureInputs, slot);
+    return textureInput && usdTextureInputRequiresSlotState(textureInput)
+      ? cloneUsdSlotTexture(texture, slot, textureInput)
+      : texture;
   };
 
   const [map, emissiveMap, roughnessMap, metalnessMap, normalMap, aoMap, alphaMap] =
     await Promise.all([
-      load(record.mapPath, true),
-      load(record.emissiveMapPath, true),
-      load(record.roughnessMapPath, false),
-      load(record.metalnessMapPath, false),
-      load(record.normalMapPath, false),
-      load(record.aoMapPath, false),
-      load(record.alphaMapPath, false),
+      resolveSlotTexture(record.mapPath, 'mapPath'),
+      resolveSlotTexture(record.emissiveMapPath, 'emissiveMapPath'),
+      resolveSlotTexture(record.roughnessMapPath, 'roughnessMapPath'),
+      resolveSlotTexture(record.metalnessMapPath, 'metalnessMapPath'),
+      resolveSlotTexture(record.normalMapPath, 'normalMapPath'),
+      resolveSlotTexture(record.aoMapPath, 'aoMapPath'),
+      resolveSlotTexture(record.alphaMapPath, 'alphaMapPath'),
     ]);
   material.map = map;
   if (map) {
@@ -259,6 +284,7 @@ async function applyMaterialTextures(
   if (alphaMap && material.alphaTest <= 0) {
     material.transparent = true;
   }
+  applyUsdTextureArithmetic(material, record.textureInputs);
   material.needsUpdate = true;
 }
 

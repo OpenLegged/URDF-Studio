@@ -37,6 +37,8 @@ export interface LoadUsdStageArgs {
   displayName: string;
   pathToLoad: string;
   isLoadActive: () => boolean;
+  /** Synchronous ownership handoff before the loader can yield to a replacement. */
+  onStageResourcesCreated?: () => void;
   debugFileHandling?: boolean;
   onResolvedFilename: (normalizedPath: string, resolvedDisplayName: string) => void;
   applyMeshFilters: () => void;

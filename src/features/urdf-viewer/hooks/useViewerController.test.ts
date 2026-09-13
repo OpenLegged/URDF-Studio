@@ -556,6 +556,7 @@ async function nextAnimationFrame(dom: JSDOM) {
 
 test('joints panel display metadata updates even while the runtime joint limit is stale', async () => {
   const initialRobotState = createSimpleRobotFixture();
+  assert.ok(initialRobotState.joints.joint_a.limit);
   initialRobotState.joints.joint_a.limit.upper = 0.2;
   initialRobotState.joints.joint_a.angle = 0.2;
   const runtimeRobot = createRuntimeRobotFixture(initialRobotState);
@@ -586,6 +587,7 @@ test('joints panel display metadata updates even while the runtime joint limit i
     };
     await rerender({ active: false, closedLoopRobotState: expandedRobotState });
 
+    assert.ok(runtimeRobot.joints.joint_a.limit);
     assert.equal(runtimeRobot.joints.joint_a.limit.upper, 0.2);
     assert.equal(getHook().jointsPanel.displayRobot?.joints?.joint_a?.limit?.upper, 1);
     assert.equal(getHook().jointsPanel.displayRobot?.joints?.joint_a?.angle, 0.2);

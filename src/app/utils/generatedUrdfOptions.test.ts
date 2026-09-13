@@ -53,6 +53,15 @@ test('objTextHasEmbeddedVertexColors detects OBJ vertex color payloads', () => {
   );
 });
 
+test('application export preserves precise transforms and sub-micrometer mesh scales', async () => {
+  const robot = createRoundtripRobot();
+  robot.links.base_link.visual.origin!.rpy.r = Math.PI / 6;
+  robot.links.base_link.visual.dimensions = { x: 1e-9, y: 0.1234567890123456, z: 1 };
+  const urdf = generateURDF(robot, await buildGeneratedUrdfOptions());
+  assert.match(urdf, /rpy="0\.5235987755982988 0 0"/);
+  assert.match(urdf, /scale="1e-9 0\.1234567890123456 1"/);
+});
+
 test('buildGeneratedUrdfOptions keeps URDF materials when generated OBJ has no baked vertex colors', async () => {
   const robot = createRoundtripRobot();
 

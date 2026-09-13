@@ -97,6 +97,7 @@ export function createGeneratedWorkspaceUrdfFile({
       ? generateURDF(robot, {
           includeHardware: 'auto',
           preserveMeshPaths: true,
+          preserveNumericPrecision: true,
         })
       : '',
   };
@@ -203,6 +204,6 @@ export function buildPreviewSceneSourceFromImportResult(
   }
 
   return canGenerateUrdf(previewRobot)
-    ? generateURDF(previewRobot, { preserveMeshPaths: true })
+    ? generateURDF(previewRobot, { preserveMeshPaths: true, preserveNumericPrecision: true })
     : null;
 }

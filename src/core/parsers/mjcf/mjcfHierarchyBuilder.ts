@@ -548,7 +548,7 @@ async function applyCubeMaterialAssetToMesh(
     Array.isArray(inheritedGeomRgba) &&
     inheritedGeomRgba.length >= 4 &&
     Number.isFinite(inheritedGeomRgba[3]) &&
-    (inheritedGeomRgba[3] ?? 1) < 0.999
+    (inheritedGeomRgba[3] ?? 1) < 1
       ? inheritedGeomRgba[3]
       : null;
   const alpha = Math.max(0, Math.min(1, inheritedAlphaOverride ?? rgba[3] ?? 1));
@@ -658,7 +658,7 @@ async function applyMaterialAssetToMesh(
     Array.isArray(inheritedGeomRgba) &&
     inheritedGeomRgba.length >= 4 &&
     Number.isFinite(inheritedGeomRgba[3]) &&
-    (inheritedGeomRgba[3] ?? 1) < 0.999
+    (inheritedGeomRgba[3] ?? 1) < 1
       ? inheritedGeomRgba[3]
       : null;
   const alpha = Math.max(0, Math.min(1, inheritedAlphaOverride ?? rgba[3] ?? 1));
@@ -685,7 +685,7 @@ async function applyMaterialAssetToMesh(
   // this cache the loader allocated one MeshStandardMaterial per geom and
   // every assembly add re-spent that cost — the path the user hit.
   const buildCacheKey = (preferDoubleSide: boolean): string =>
-    `${materialName || materialDef.name || ''}|a=${alpha.toFixed(4)}|d=${preferDoubleSide ? 1 : 0}|${
+    `${materialName || materialDef.name || ''}|a=${alpha}|d=${preferDoubleSide ? 1 : 0}|${
       hasAuthoredRgba ? 'a' : 'g'
     }|tx=${materialDef.texture || ''}`;
 

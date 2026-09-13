@@ -33,7 +33,9 @@ export const DEFAULT_QUATERNION: QuaternionValue = {
   w: 1,
 };
 
-const normalizeZero = (value: number): number => (
+const normalizeSignedZero = (value: number): number => (Object.is(value, -0) ? 0 : value);
+
+const normalizeDisplayZero = (value: number): number => (
   Object.is(value, -0) || Math.abs(value) < Number.EPSILON ? 0 : value
 );
 
@@ -59,6 +61,10 @@ const findApproximatePiFraction = (
 
   for (let denominator = 1; denominator <= PI_DISPLAY_MAX_DENOMINATOR; denominator += 1) {
     const numerator = Math.round(ratio * denominator);
+    if (numerator === 0 && ratio !== 0) {
+      continue;
+    }
+
     const approximation = numerator / denominator;
     const error = Math.abs(ratio - approximation);
 
@@ -90,12 +96,17 @@ const normalizePiDraft = (value: string): string => (
     .replace(/[−–—]/g, '-')
 );
 
-export const formatRadiansForDisplay = (value: number): string => {
+export const formatRadiansForDisplay = (
+  value: number,
+  options?: { activeFocus?: boolean },
+): string => {
   if (!Number.isFinite(value)) {
     return '';
   }
 
-  const normalizedValue = normalizeZero(value);
+  const normalizedValue = options?.activeFocus
+    ? normalizeSignedZero(value)
+    : normalizeDisplayZero(value);
   if (normalizedValue === 0) {
     return '0';
   }
@@ -104,6 +115,10 @@ export const formatRadiansForDisplay = (value: number): string => {
   const symbolicFraction = findApproximatePiFraction(piRatio);
   if (symbolicFraction !== null) {
     return formatPiFraction(symbolicFraction.numerator, symbolicFraction.denominator);
+  }
+
+  if (options?.activeFocus) {
+    return String(normalizedValue);
   }
 
   return formatNumberWithMaxDecimals(normalizedValue, RADIAN_FALLBACK_DECIMALS) || '0';
@@ -117,7 +132,7 @@ export const parseRadiansDisplayValue = (value: string): number | null => {
 
   const numericValue = Number(normalizedDraft);
   if (Number.isFinite(numericValue)) {
-    return normalizeZero(numericValue);
+    return normalizeSignedZero(numericValue);
   }
 
   const symbolicMatch = normalizedDraft.match(
@@ -136,7 +151,7 @@ export const parseRadiansDisplayValue = (value: string): number | null => {
     return null;
   }
 
-  return normalizeZero(sign * coefficient * Math.PI / denominator);
+  return normalizeSignedZero(sign * coefficient * Math.PI / denominator);
 };
 
 export const eulerRadiansToDegrees = (

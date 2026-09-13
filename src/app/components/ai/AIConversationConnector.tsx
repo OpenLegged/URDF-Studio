@@ -5,6 +5,7 @@ import type {
 } from '@/features/ai-assistant';
 import type { StudioAgentPorts } from '@/features/ai-assistant';
 import type { Language } from '@/shared/i18n';
+import type { RobotData } from '@/types';
 
 interface AIConversationConnectorProps {
   isOpen: boolean;
@@ -12,7 +13,12 @@ interface AIConversationConnectorProps {
   lang: Language;
   launchContext: AIConversationLaunchContext | null;
   onStartNewConversation: (launchContext: AIConversationLaunchContext) => void;
-  onApply: (componentId: string, proposedUrdf: string) => AIConversationApplyResult;
+  onApply: (
+    componentId: string,
+    proposedUrdf: string,
+    sourceFormat?: 'urdf' | 'mjcf',
+    proposedRobot?: RobotData,
+  ) => AIConversationApplyResult;
   studioAgentPorts: StudioAgentPorts;
 }
 

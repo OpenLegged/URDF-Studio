@@ -56,7 +56,7 @@ const serializeTransformOps = (lines: string[], depth: number, object: THREE.Obj
   const indent = makeUsdIndent(depth);
   const opOrder: string[] = [];
 
-  const hasTranslate = object.position.lengthSq() > 1e-12;
+  const hasTranslate = object.position.x !== 0 || object.position.y !== 0 || object.position.z !== 0;
   if (hasTranslate) {
     lines.push(
       `${indent}double3 xformOp:translate = ${formatUsdTuple([
@@ -69,19 +69,19 @@ const serializeTransformOps = (lines: string[], depth: number, object: THREE.Obj
   }
 
   const hasOrient =
-    Math.abs(object.quaternion.x) > 1e-9 ||
-    Math.abs(object.quaternion.y) > 1e-9 ||
-    Math.abs(object.quaternion.z) > 1e-9 ||
-    Math.abs(object.quaternion.w - 1) > 1e-9;
+    object.quaternion.x !== 0 ||
+    object.quaternion.y !== 0 ||
+    object.quaternion.z !== 0 ||
+    object.quaternion.w !== 1;
   if (hasOrient) {
     lines.push(`${indent}quatf xformOp:orient = ${quaternionToUsdTuple(object.quaternion)}`);
     opOrder.push('xformOp:orient');
   }
 
   const hasScale =
-    Math.abs(object.scale.x - 1) > 1e-9 ||
-    Math.abs(object.scale.y - 1) > 1e-9 ||
-    Math.abs(object.scale.z - 1) > 1e-9;
+    object.scale.x !== 1 ||
+    object.scale.y !== 1 ||
+    object.scale.z !== 1;
   if (hasScale) {
     lines.push(
       `${indent}double3 xformOp:scale = ${formatUsdTuple([

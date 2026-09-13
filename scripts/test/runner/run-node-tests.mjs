@@ -11,7 +11,7 @@ const TEST_FILE_PATTERN = /\.(?:test|spec)\.(?:cjs|mjs|js|jsx|ts|tsx)$/;
 
 const FAST_APP_TESTS = [
   'src/app/hooks/sourcePreservingExportUtils.test.ts',
-  'src/app/hooks/useEditableSourcePatches.test.ts',
+  'src/app/hooks/workspace-source-sync/component_source_reconcile.test.ts',
   'src/app/hooks/useAppEffects.test.tsx',
   'src/app/hooks/workspaceGeneratedSourceState.test.ts',
   'src/app/utils/canonicalWorkspaceViewerDocument.test.ts',

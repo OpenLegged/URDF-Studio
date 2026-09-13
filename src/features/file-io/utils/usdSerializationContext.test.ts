@@ -57,6 +57,65 @@ test('collectUsdSerializationContext deduplicates shared geometry and shared mat
   assert.equal(context.geometryRecords[0]?.path, '/demo_robot/__MeshLibrary/Geometry_0');
 });
 
+test('USD export keeps meshes separated by a sub-micrometer vertex difference', async () => {
+  const first = createTriangleGeometry();
+  const second = createTriangleGeometry();
+  second.getAttribute('position').setX(0, 1e-8);
+  const material = createUsdBaseMaterial('#ffffff');
+  const root = new THREE.Group();
+  root.add(new THREE.Mesh(first, material), new THREE.Mesh(second, material));
+  try {
+    const context = await collectUsdSerializationContext(root);
+    assert.equal(context.geometryRecords.length, 2);
+  } finally {
+    first.dispose();
+    second.dispose();
+    material.dispose();
+  }
+});
+
+test('USD export verifies geometry equality even when content hashes collide', async () => {
+  const geometries = [0.5, 0.000007641639967914672, 0.5].map((x) => {
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute('position', new THREE.BufferAttribute(new Float64Array([
+      x, 0, 0, 1, 0, 0, 0, 1, 0,
+    ]), 3));
+    return geometry;
+  });
+  const material = createUsdBaseMaterial('#ffffff');
+  const meshes = geometries.map((geometry) => new THREE.Mesh(geometry, material));
+  const root = new THREE.Group();
+  root.add(...meshes);
+  try {
+    const context = await collectUsdSerializationContext(root);
+    assert.equal(context.geometryRecords.length, 2);
+    assert.notEqual(context.geometryByObject.get(meshes[0]!), context.geometryByObject.get(meshes[1]!));
+    assert.equal(context.geometryByObject.get(meshes[0]!), context.geometryByObject.get(meshes[2]!));
+  } finally {
+    geometries.forEach((geometry) => geometry.dispose());
+    material.dispose();
+  }
+});
+
+test('USD export retains small authored color and opacity differences', async () => {
+  const geometry = createTriangleGeometry();
+  const material = createUsdBaseMaterial('#ffffff');
+  const root = new THREE.Group();
+  for (const [color, opacity] of [[0.5, 0.5], [0.50000001, 0.5], [0.5, 0.50000001]]) {
+    const mesh = new THREE.Mesh(geometry, material);
+    mesh.userData.usdAuthoredColor = [color, 0.5, 0.5];
+    mesh.userData.usdOpacity = opacity;
+    root.add(mesh);
+  }
+  try {
+    const context = await collectUsdSerializationContext(root);
+    assert.equal(context.materialRecords.length, 3);
+  } finally {
+    geometry.dispose();
+    material.dispose();
+  }
+});
+
 test('collectUsdSerializationContext builds texture-aware material records from explicit USD display metadata', async () => {
   const mesh = new THREE.Mesh(createTexturedTriangleGeometry(), createUsdBaseMaterial('#ffffff'));
   mesh.name = 'textured';

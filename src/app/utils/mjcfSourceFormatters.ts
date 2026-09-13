@@ -1,3 +1,4 @@
+import { formatNumberPreservingPrecision } from '@/core/utils/numberPrecision';
 import { GeometryType, type UrdfInertial, type UrdfVisual } from '@/types';
 
 /**
@@ -18,8 +19,7 @@ export function formatScalar(value: number | undefined): string | null {
     return null;
   }
 
-  const normalized = Math.abs(value) < 1e-9 ? 0 : Number(value.toFixed(6));
-  return `${normalized}`;
+  return formatNumberPreservingPrecision(value);
 }
 
 export function formatVec3(vector: { x: number; y: number; z: number }): string {
@@ -61,11 +61,7 @@ export function formatColorRgba(color: string | undefined): string {
 
   const [r, g, b, a = 255] = channels.map((value) => Number.parseInt(value, 16));
   return [r, g, b, a]
-    .map((value, index) => {
-      const normalizedChannel = Math.max(0, Math.min(255, value)) / 255;
-      const rounded = Number(normalizedChannel.toFixed(6));
-      return index === 3 ? `${rounded}` : `${rounded}`;
-    })
+    .map(value => formatNumberPreservingPrecision(Math.max(0, Math.min(255, value)) / 255))
     .join(' ');
 }
 

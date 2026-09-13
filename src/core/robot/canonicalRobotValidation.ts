@@ -3,6 +3,9 @@ export interface CanonicalRobotNestedValidationIssue {
   message: string;
 }
 
+import { normalizeUsdMdlPreset } from '@/core/utils/usdMdlPreset';
+import { USD_MATERIAL_TEXTURE_INPUT_SLOTS } from '@/types/usdMaterial';
+
 type Issues = CanonicalRobotNestedValidationIssue[];
 
 const VISUAL_KEYS = new Set([
@@ -58,6 +61,17 @@ const USD_ARRAY_KEYS = [
 ] as const;
 const USD_MATERIAL_KEYS = new Set<string>([
   ...USD_STRING_KEYS, ...USD_BOOLEAN_KEYS, ...USD_NUMBER_KEYS, ...USD_ARRAY_KEYS,
+  'textureInputs', 'mdlPreset',
+]);
+// Slot keys inside `usdMaterial.textureInputs`; each entry carries per-slot
+// texture-reader metadata from the native snapshot (column-major 3x3 uv matrix
+// plus optional string tokens). Sourced from the shared types-layer constant —
+// a local `endsWith('MapPath')` derivation silently drops the lowercase
+// `mapPath` slot, which is the primary texture input.
+const USD_TEXTURE_INPUT_SLOTS = new Set<string>(USD_MATERIAL_TEXTURE_INPUT_SLOTS);
+const USD_TEXTURE_INPUT_KEYS = new Set([
+  'uvTransform', 'uvPrimvar', 'wrapS', 'wrapT', 'sourceColorSpace',
+  'resolvedColorSpace', 'sourceOutput', 'sampleScale', 'sampleBias',
 ]);
 const URDF_INSPECTION_KEYS = new Set([
   'diagnostics', 'diagnosticCounts', 'facts', 'omittedDiagnosticCount',
@@ -540,6 +554,59 @@ function validateUsdMaterial(value: unknown, path: string, issues: Issues): void
       });
     }
   });
+  if (value.mdlPreset !== undefined && value.mdlPreset !== null && !normalizeUsdMdlPreset(value.mdlPreset)) {
+    issue(issues, `${path}.mdlPreset`, 'must be a bounded native MDL preset diagnostic with a consistent status');
+  }
+  const textureInputs = value.textureInputs;
+  if (textureInputs !== undefined && textureInputs !== null) {
+    if (!isRecord(textureInputs)) {
+      issue(issues, `${path}.textureInputs`, 'must be an object keyed by texture slot');
+      return;
+    }
+    Object.keys(textureInputs).forEach((slot) => {
+      const slotPath = `${path}.textureInputs.${slot}`;
+      if (!USD_TEXTURE_INPUT_SLOTS.has(slot)) {
+        issue(issues, slotPath, 'is not a known USD texture input slot');
+        return;
+      }
+      const slotValue = textureInputs[slot];
+      if (slotValue === undefined || slotValue === null) return;
+      if (!isRecord(slotValue)) {
+        issue(issues, slotPath, 'must be a texture input object or null');
+        return;
+      }
+      allowed(slotValue, USD_TEXTURE_INPUT_KEYS, slotPath, issues);
+      ['uvPrimvar', 'wrapS', 'wrapT', 'sourceColorSpace', 'sourceOutput'].forEach((field) => {
+        optionalString(slotValue[field], `${slotPath}.${field}`, issues, true);
+      });
+      if (slotValue.resolvedColorSpace !== undefined && slotValue.resolvedColorSpace !== null
+        && !['srgb', 'raw'].includes(String(slotValue.resolvedColorSpace).toLowerCase())) {
+        issue(issues, `${slotPath}.resolvedColorSpace`, 'must be "srgb" or "raw" when recorded');
+      }
+      for (const field of ['sampleScale', 'sampleBias'] as const) {
+        const tuple = slotValue[field];
+        if (tuple === undefined || tuple === null) continue;
+        finiteArray({ value: tuple, path: `${slotPath}.${field}`, issues, allowTypedArray: true, nullable: true });
+        if ((tuple as ArrayLike<unknown>)?.length !== 4) {
+          issue(issues, `${slotPath}.${field}`, 'must hold four sample-color components');
+        }
+      }
+      if (slotValue.uvTransform !== undefined && slotValue.uvTransform !== null) {
+        finiteArray({
+          value: slotValue.uvTransform,
+          path: `${slotPath}.uvTransform`,
+          issues,
+          allowTypedArray: true,
+          nullable: true,
+        });
+        const uvTransform = slotValue.uvTransform;
+        if (uvTransform && typeof (uvTransform as ArrayLike<unknown>).length === 'number'
+          && (uvTransform as ArrayLike<unknown>).length !== 9) {
+          issue(issues, `${slotPath}.uvTransform`, 'must hold a column-major 3x3 matrix (9 numbers)');
+        }
+      }
+    });
+  }
 }
 
 export function validateCanonicalRobotMaterials(

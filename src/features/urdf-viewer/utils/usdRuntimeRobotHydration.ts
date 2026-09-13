@@ -9,7 +9,7 @@ import {
   type UsdSceneSnapshot,
 } from '@/types';
 import { computeLinkWorldMatrices, createOriginMatrix } from '@/core/robot/kinematics';
-import type { UrdfVisual } from '@/types';
+import type { UrdfJoint, UrdfVisual } from '@/types';
 import type { ViewerRobotDataResolution } from '@/lib/robot-parser/usd/viewerRobotData';
 import {
   resolveUsdDescriptorTargetLinkPath,
@@ -136,6 +136,56 @@ function hasAuthoredUsdPhysicsParentFrame(joint: {
   return !!(frame?.localPos0 || frame?.localRot0Wxyz);
 }
 
+function getUsdPhysicsBodyScale(matrix: THREE.Matrix4): THREE.Vector3 {
+  // USD's GfTransform assigns a reflected TRS basis three negative scale
+  // components; Three.js assigns only X. Physics anchors use the USD frame.
+  return new THREE.Vector3().setFromMatrixScale(matrix)
+    .multiplyScalar(matrix.determinant() < 0 ? -1 : 1);
+}
+
+function scaleAuthoredUsdPhysicsJointFrames(
+  joint: UrdfJoint,
+  parentWorldMatrix: THREE.Matrix4,
+  childWorldMatrix: THREE.Matrix4,
+): void {
+  const frame = joint.usdPhysics;
+  if (!frame) return;
+
+  const parentScale = getUsdPhysicsBodyScale(parentWorldMatrix);
+  const childScale = getUsdPhysicsBodyScale(childWorldMatrix);
+  if ([...parentScale.toArray(), ...childScale.toArray()].every(
+    (value) => Math.abs(value - 1) <= ROOT_TRANSFORM_EPSILON,
+  )) {
+    return;
+  }
+
+  const parentPosition = new THREE.Vector3(
+    frame.localPos0?.x ?? 0, frame.localPos0?.y ?? 0, frame.localPos0?.z ?? 0,
+  );
+  const childPosition = new THREE.Vector3(
+    frame.localPos1?.x ?? 0, frame.localPos1?.y ?? 0, frame.localPos1?.z ?? 0,
+  );
+  const scaledParentPosition = parentPosition.clone().multiply(parentScale);
+  const scaledChildPosition = childPosition.clone().multiply(childScale);
+  const originMatrix = createOriginMatrix(joint.origin);
+  const originRotation = new THREE.Quaternion().setFromRotationMatrix(originMatrix);
+  // The zero-pose body transform is F0 * inverse(F1). Bake body scale into
+  // both frame translations, retaining the authored rotations and joint axis.
+  const originPosition = new THREE.Vector3().setFromMatrixPosition(originMatrix)
+    .add(scaledParentPosition.clone().sub(parentPosition))
+    .sub(scaledChildPosition.clone().sub(childPosition).applyQuaternion(originRotation));
+  joint.origin = {
+    ...joint.origin,
+    xyz: { x: originPosition.x, y: originPosition.y, z: originPosition.z },
+  };
+  if (frame.localPos0) {
+    frame.localPos0 = { x: scaledParentPosition.x, y: scaledParentPosition.y, z: scaledParentPosition.z };
+  }
+  if (frame.localPos1) {
+    frame.localPos1 = { x: scaledChildPosition.x, y: scaledChildPosition.y, z: scaledChildPosition.z };
+  }
+}
+
 function backfillUsdPhysicsParentFrameFromOrigin(joint: {
   origin?: UrdfVisual['origin'];
   usdPhysics?: { axisToken?: unknown; localPos0?: unknown };
@@ -223,7 +273,7 @@ function resolvePrimWorldMatrix(
     offset + 16 <= transformBuffer.length
   ) {
     return toMatrix4(
-      Array.from(transformBuffer).slice(offset, offset + 16),
+      Array.from({ length: 16 }, (_, index) => transformBuffer[offset + index]),
       getUsdStageMetersPerUnit(snapshot),
     );
   }
@@ -259,9 +309,9 @@ function buildDescriptorMap(
       entries.push({
         descriptor,
         ordinal: parseDescriptorOrdinal(descriptor, index),
-        groupKey: getUsdDescriptorAttachmentGroupKey(descriptor, {
-          fallbackToResolvedPrimPath: !isGenericScene,
-        }),
+        groupKey: isGenericScene
+          ? normalizeUsdPath(descriptor.resolvedPrimPath || descriptor.meshId)
+          : getUsdDescriptorAttachmentGroupKey(descriptor, { fallbackToResolvedPrimPath: true }),
       });
       descriptorsByLinkRole.set(key, entries);
     });
@@ -557,6 +607,8 @@ export function hydrateUsdViewerRobotResolutionFromRuntime(
     robotData: structuredClone(resolution.robotData),
   };
   const sourceMetersPerUnit = getUsdSourceMetersPerUnit(snapshot);
+  const hasAuthoredPhysicsFrames = Object.values(nextResolution.robotData.joints)
+    .some(hasAuthoredUsdPhysicsParentFrame);
   Object.values(nextResolution.robotData.joints).forEach((joint) => {
     const childLinkPath =
       resolution.childLinkPathByJointId[joint.id] || resolution.linkPathById[joint.childLinkId];
@@ -580,10 +632,6 @@ export function hydrateUsdViewerRobotResolutionFromRuntime(
       return;
     }
 
-    if (hasAuthoredUsdPhysicsParentFrame(joint)) {
-      return;
-    }
-
     const childWorldMatrix = resolveLinkWorldMatrix(
       runtime,
       nextResolution,
@@ -598,35 +646,51 @@ export function hydrateUsdViewerRobotResolutionFromRuntime(
       return;
     }
 
+    if (hasAuthoredUsdPhysicsParentFrame(joint)) {
+      scaleAuthoredUsdPhysicsJointFrames(joint, parentWorldMatrix, childWorldMatrix);
+      return;
+    }
+
     const jointLocalMatrix = parentWorldMatrix.clone().invert().multiply(childWorldMatrix);
     joint.origin = matrixToOrigin(jointLocalMatrix);
     backfillUsdPhysicsParentFrameFromOrigin(joint);
   });
 
-  createSyntheticWorldRootIfNeeded(
-    nextResolution,
-    resolveLinkWorldMatrix(
-      runtime,
-      nextResolution,
-      {
-        computedLinkWorldMatrices,
-        linkPath: resolution.linkPathById[nextResolution.robotData.rootLinkId],
-        translationScale: sourceMetersPerUnit,
-      },
-    ),
-  );
+  const rootWorldMatrix = resolveLinkWorldMatrix(runtime, nextResolution, {
+    computedLinkWorldMatrices,
+    linkPath: resolution.linkPathById[nextResolution.robotData.rootLinkId],
+    translationScale: sourceMetersPerUnit,
+  });
+  if (rootWorldMatrix && hasAuthoredPhysicsFrames) {
+    const rootScale = getUsdPhysicsBodyScale(rootWorldMatrix);
+    if (rootScale.toArray().every((value) => Math.abs(value) > ROOT_TRANSFORM_EPSILON)) {
+      rootWorldMatrix.scale(new THREE.Vector3(1 / rootScale.x, 1 / rootScale.y, 1 / rootScale.z));
+    }
+  }
+  createSyntheticWorldRootIfNeeded(nextResolution, rootWorldMatrix);
 
   computedLinkWorldMatrices = computeLinkWorldMatrices(nextResolution.robotData);
   const descriptorsByLinkRole = buildDescriptorMap(snapshot, resolution);
 
   Object.entries(resolution.linkIdByPath).forEach(([linkPath, linkId]) => {
-    const ownerLinkWorldMatrix = resolveLinkWorldMatrix(
+    let ownerLinkWorldMatrix = resolveLinkWorldMatrix(
       runtime,
       nextResolution,
       { computedLinkWorldMatrices, linkPath, translationScale: sourceMetersPerUnit },
     );
     if (!ownerLinkWorldMatrix) {
       return;
+    }
+
+    const ownerScale = new THREE.Vector3();
+    ownerLinkWorldMatrix.decompose(new THREE.Vector3(), new THREE.Quaternion(), ownerScale);
+    if (hasAuthoredPhysicsFrames || ownerScale.toArray().some(
+      (value) => Math.abs(value - 1) > ROOT_TRANSFORM_EPSILON,
+    )) {
+      // Physics links carry canonical rigid joint frames, which can differ
+      // from authored body poses. Retain that difference (and body scale) in
+      // geometry so importing the joint frames does not move the source mesh.
+      ownerLinkWorldMatrix = computedLinkWorldMatrices[linkId] || ownerLinkWorldMatrix;
     }
 
     const link = nextResolution.robotData.links[linkId];

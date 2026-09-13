@@ -50,6 +50,7 @@ import { applyBoxFaceMaterialExportFallback } from './file-export/materialFallba
 import { executeConfiguredRobotExport } from './file-export/configuredRobotExport';
 import {
   collectCanonicalWorkspacePreparedMeshFiles,
+  resolveIdentityExportComponent,
 } from './file-export/canonicalExportContext';
 import {
   captureProjectExportPersistenceSnapshot,
@@ -399,7 +400,7 @@ export function useFileExport() {
   ]);
 
   const requiresResolvedUsdContext = useMemo(() => {
-    const identityComponent = getCanonicalExportContext().identityComponent;
+    const identityComponent = resolveIdentityExportComponent(workspace);
     return Object.values(workspace.components)
       .filter((component) => component.visible !== false)
       .some((component) => {
@@ -418,7 +419,6 @@ export function useFileExport() {
   }, [
     availableFiles,
     componentSourceDrafts,
-    getCanonicalExportContext,
     getUsdPreparedExportCache,
     getUsdSceneSnapshot,
     usdPreparedExportCaches,

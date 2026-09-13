@@ -53,17 +53,18 @@ test('createRobotMeshLoader returns an owned Object3D and disposes the session i
   const object = await loader.load('meshes/triangle.stl');
   assert.ok(object instanceof THREE.Object3D);
 
-  let mesh: THREE.Mesh | null = null;
+  const meshes: THREE.Mesh[] = [];
   object.traverse((child) => {
-    if (!mesh && (child as THREE.Mesh).isMesh) mesh = child as THREE.Mesh;
+    if (child instanceof THREE.Mesh) meshes.push(child);
   });
+  const mesh = meshes[0];
   assert.ok(mesh);
   assert.equal(mesh.geometry.getAttribute('position').count, 3);
 
   const obj = await loader.load('meshes/triangle.obj');
   let objMeshCount = 0;
   obj.traverse((child) => {
-    if ((child as THREE.Mesh).isMesh) objMeshCount += 1;
+    if (child instanceof THREE.Mesh) objMeshCount += 1;
   });
   assert.equal(objMeshCount, 1);
 

@@ -9,6 +9,7 @@ import type { RobotImportWorkerResponse } from '@/app/utils/robotImportWorker';
 import {
   applyEditableSourceChangeWithWorker,
   createRobotImportWorkerClient,
+  disposeRobotImportWorker,
   generateEditableRobotSourceWithWorker,
   resolveRobotFileDataWithWorker,
 } from './robotImportWorkerBridge.ts';
@@ -27,6 +28,12 @@ const demoUrdfFile: RobotFile = {
   format: 'urdf',
   content: '<robot name="demo"><link name="base_link" /></robot>',
 };
+
+function createDemoRobotState(): RobotState {
+  const resolved = resolveRobotFileData(demoUrdfFile);
+  if (resolved.status !== 'ready') assert.fail('Expected demo robot to load');
+  return { ...resolved.robotData, selection: { type: null, id: null } };
+}
 
 type WorkerEventHandler = (event: { data?: unknown; error?: unknown; message?: string }) => void;
 
@@ -468,7 +475,97 @@ test('robot import worker client resolves editable source generation responses',
 
   const result = await resultPromise;
 
+  assert.ok(result);
   assert.match(result, /<robot\b/i);
+});
+
+test('robot import worker client accepts unavailable source and remains usable', async (t) => {
+  const fakeWorker = new FakeWorker();
+  const client = createRobotImportWorkerClient({
+    canUseWorker: () => true,
+    createWorker: () => fakeWorker as unknown as Worker,
+    getWorkerCount: () => 1,
+    requestTimeoutMs: 0,
+  });
+  t.after(() => client.dispose());
+  const options = { format: 'urdf' as const, robotState: createDemoRobotState() };
+
+  for (const source of [null, '<robot name="demo"><link name="base_link" /></robot>']) {
+    const resultPromise = client.generateEditableSource(options);
+    const postedRequest = fakeWorker.postedMessages.at(-1) as { requestId: number };
+    fakeWorker.emitMessage({
+      type: 'generate-editable-robot-source-result',
+      requestId: postedRequest.requestId,
+      result: source,
+    });
+    assert.equal(await resultPromise, source);
+    assert.equal(fakeWorker.terminated, false);
+  }
+});
+
+for (const { failure, expectedError } of [
+  { failure: 'worker-error', expectedError: /source worker transport failed/ },
+  { failure: 'messageerror', expectedError: /worker message transfer failed/ },
+  { failure: 'generation-error', expectedError: /source worker transport failed/ },
+  { failure: 'missing-result', expectedError: /worker returned no source/ },
+]) {
+  test(`robot import worker client rejects source generation ${failure}`, async (t) => {
+    const fakeWorker = new FakeWorker();
+    const client = createRobotImportWorkerClient({
+      canUseWorker: () => true,
+      createWorker: () => fakeWorker as unknown as Worker,
+      getWorkerCount: () => 1,
+      requestTimeoutMs: 0,
+    });
+    t.after(() => client.dispose());
+    const resultPromise = client.generateEditableSource({
+      format: 'urdf',
+      robotState: createDemoRobotState(),
+    });
+    const postedRequest = fakeWorker.postedMessages[0] as { requestId: number };
+    const error = new Error('source worker transport failed');
+
+    if (failure === 'worker-error') fakeWorker.emitError(error);
+    else if (failure === 'messageerror') fakeWorker.emitMessageError(error);
+    else {
+      fakeWorker.emitMessage({
+        type: failure === 'generation-error'
+          ? 'generate-editable-robot-source-error'
+          : 'generate-editable-robot-source-result',
+        requestId: postedRequest.requestId,
+        error: error.message,
+      });
+    }
+
+    await assert.rejects(resultPromise, expectedError);
+  });
+}
+
+test('generateEditableRobotSourceWithWorker preserves unavailable source results', async (t) => {
+  const originalWorker = Object.getOwnPropertyDescriptor(globalThis, 'Worker');
+  const fakeWorker = new FakeWorker();
+  disposeRobotImportWorker();
+  Object.defineProperty(globalThis, 'Worker', {
+    configurable: true,
+    value: class { constructor() { return fakeWorker; } },
+  });
+  t.after(() => {
+    disposeRobotImportWorker();
+    if (originalWorker) Object.defineProperty(globalThis, 'Worker', originalWorker);
+    else Reflect.deleteProperty(globalThis, 'Worker');
+  });
+
+  const resultPromise = generateEditableRobotSourceWithWorker({
+    format: 'mjcf',
+    robotState: createDemoRobotState(),
+  });
+  const postedRequest = fakeWorker.postedMessages[0] as { requestId: number };
+  fakeWorker.emitMessage({
+    type: 'generate-editable-robot-source-result',
+    requestId: postedRequest.requestId,
+    result: null,
+  });
+  assert.equal(await resultPromise, null);
 });
 
 test('robot import worker client resolves prepared assembly component responses', async () => {

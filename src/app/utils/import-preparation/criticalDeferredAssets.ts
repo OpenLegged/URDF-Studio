@@ -5,7 +5,7 @@ import { resolveMJCFSource } from '@/core/parsers/mjcf/mjcfSourceResolver';
 import {
   inferUsdBundleVirtualDirectory,
   isUsdPathWithinBundleDirectory,
-  isUsdRuntimeTexturePath,
+  isUsdRuntimeDependencyPath,
 } from '@/core/parsers/usd';
 import { normalizeLibraryPathKey } from '@/core/utils/pathKeys';
 import { GeometryType, type RobotData, type RobotFile, type UrdfLink } from '@/types';
@@ -176,20 +176,20 @@ export function determineCriticalDeferredAssetNames(
     criticalAssetNames,
   );
 
-  if (criticalAssetNames.size > 0) {
-    return criticalAssetNames;
-  }
-
   if (preferredFile?.format === 'usd') {
     const bundleDirectory = inferUsdBundleVirtualDirectory(preferredFile.name);
     deferredAssetFiles.forEach((file) => {
       if (
-        isUsdRuntimeTexturePath(file.name)
+        isUsdRuntimeDependencyPath(file.name)
         && isUsdPathWithinBundleDirectory(file.name, bundleDirectory)
       ) {
         criticalAssetNames.add(file.name);
       }
     });
+    return criticalAssetNames;
+  }
+
+  if (criticalAssetNames.size > 0) {
     return criticalAssetNames;
   }
 

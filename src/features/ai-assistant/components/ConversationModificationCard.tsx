@@ -16,7 +16,7 @@ interface ConversationModificationCardProps {
   card: AIConversationModificationCard;
   t: TranslationKeys;
   onApply: (card: AIConversationModificationCard) => boolean;
-  onDismiss: (proposedUrdf: string) => void;
+  onDismiss: (card: AIConversationModificationCard) => void;
 }
 
 type DiffLineType = 'unchanged' | 'added' | 'removed' | 'collapsed';
@@ -169,7 +169,8 @@ export function ConversationModificationCard({
     });
   };
 
-  const diff = diffLines(card.currentUrdf, card.proposedUrdf);
+  const hasSourceDiff = Boolean(card.currentUrdf || card.proposedUrdf);
+  const diff = hasSourceDiff ? diffLines(card.currentUrdf, card.proposedUrdf) : [];
   const addedCount = diff.filter((line) => line.type === 'added').length;
   const removedCount = diff.filter((line) => line.type === 'removed').length;
   const hasCollapsedSections = diff.some((line) => line.type === 'collapsed');
@@ -181,11 +182,11 @@ export function ConversationModificationCard({
           <Wand2 className="h-3 w-3" />
         </div>
         <span className="text-[11px] font-semibold text-text-primary">{t.aiModificationTitle}</span>
-        <span className="ml-auto text-[9px] font-medium text-text-tertiary">
+        {hasSourceDiff && <span className="ml-auto text-[9px] font-medium text-text-tertiary">
           <span className="text-success">+{addedCount}</span>
           {'  '}
           <span className="text-danger">-{removedCount}</span>
-        </span>
+        </span>}
       </div>
 
       {card.explanation && (
@@ -194,7 +195,7 @@ export function ConversationModificationCard({
         </div>
       )}
 
-      <div className="max-h-56 overflow-auto custom-scrollbar bg-panel-bg/60 font-mono text-[10px] leading-relaxed dark:bg-panel-bg/40">
+      {hasSourceDiff && <div className="max-h-56 overflow-auto custom-scrollbar bg-panel-bg/60 font-mono text-[10px] leading-relaxed dark:bg-panel-bg/40">
         {diff.map((line, index) => {
           if (line.type === 'collapsed') {
             const isExpanded = expandedSections.has(index);
@@ -258,7 +259,7 @@ export function ConversationModificationCard({
             </div>
           );
         })}
-      </div>
+      </div>}
 
       {hasCollapsedSections && (
         <div className="border-t border-border-black bg-element-bg/50 px-2 py-1 text-[9px] text-text-tertiary">
@@ -295,7 +296,7 @@ export function ConversationModificationCard({
           <>
             <button
               type="button"
-              onClick={() => onDismiss(card.proposedUrdf)}
+              onClick={() => onDismiss(card)}
               className="inline-flex h-6 items-center gap-1 rounded-lg border border-border-black bg-panel-bg px-2 text-[11px] font-semibold text-text-secondary transition-colors hover:bg-element-hover"
             >
               <X className="h-3 w-3" />

@@ -208,6 +208,32 @@ test('mjcf mesh export internals bake duplicate coplanar anchor subsets in world
   (bakedAnchorMesh!.material as THREE.Material).dispose();
 });
 
+test('MJCF mesh export retains nearby but distinct material surfaces', () => {
+  const geometry = new THREE.BufferGeometry();
+  geometry.setAttribute('position', new THREE.Float32BufferAttribute([
+    0, 0, 0, 1, 0, 0, 0, 1, 0,
+    0, 0, 1e-8, 1, 0, 1e-8, 0, 1, 1e-8,
+  ], 3));
+  geometry.addGroup(0, 3, 0);
+  geometry.addGroup(3, 3, 1);
+  const firstMaterial = new THREE.MeshStandardMaterial();
+  const secondMaterial = markMaterialAsCoplanarOffset(new THREE.MeshStandardMaterial());
+  const mesh = new THREE.Mesh(geometry, [firstMaterial, secondMaterial]);
+  mesh.updateMatrixWorld(true);
+  const baked = __mjcfMeshExportInternals.createBakedVariantMesh(mesh, secondMaterial, 1);
+  try {
+    assert.ok(baked, 'a distinct surface must not be dropped as a duplicate');
+    assert.equal(baked.geometry.getAttribute('position').count, 3);
+    assert.ok(baked.geometry.getAttribute('position').getZ(0) > 0);
+  } finally {
+    baked?.geometry.dispose();
+    if (baked) (baked.material as THREE.Material).dispose();
+    geometry.dispose();
+    firstMaterial.dispose();
+    secondMaterial.dispose();
+  }
+});
+
 test('mjcf mesh export internals accept Color-like material values from foreign Three runtimes', () => {
   const color = new THREE.Color('#aabbcc');
   const foreignMaterial = {

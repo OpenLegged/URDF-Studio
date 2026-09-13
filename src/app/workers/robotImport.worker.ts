@@ -6,7 +6,7 @@ import {
 } from '@/core/parsers/importRobotFile';
 import { prepareAssemblyRobotData } from '@/core/robot/assemblyComponentPreparation';
 import { parseEditableRobotSourceAsync } from '@/app/utils/parseEditableRobotSource';
-import { generateEditableRobotSource } from '@/app/utils/generateEditableRobotSource';
+import { tryGenerateEditableRobotSource } from '@/app/utils/generateEditableRobotSource';
 import { applyEditableSourceChangeAsync } from '@/app/utils/applyEditableSourceChange';
 import { computeRobotRenderableBoundsFromAssets } from '@/app/utils/assemblyRenderableBounds';
 import type {
@@ -182,7 +182,7 @@ async function handleWorkerMessage(event: MessageEvent<RobotImportWorkerRequest>
       const response: GenerateEditableRobotSourceWorkerResponse = {
         type: 'generate-editable-robot-source-result',
         requestId: message.requestId,
-        result: generateEditableRobotSource(message.options),
+        result: tryGenerateEditableRobotSource(message.options),
       };
       workerScope.postMessage(response);
     }

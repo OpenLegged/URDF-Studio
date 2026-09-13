@@ -12,6 +12,10 @@ import { useWorkspaceStore } from '@/store/workspaceStore';
 
 import { BridgeCreateModal } from './BridgeCreateModal.tsx';
 import type { BridgeCreateModalProps } from './BridgeCreateModal.tsx';
+import {
+  BridgeAxisSpinnerField,
+  BridgeSpinnerField,
+} from './bridge-create/BridgeCreateFields.tsx';
 
 function assertNearlyEqual(actual: number, expected: number, message?: string) {
   assert.ok(Math.abs(actual - expected) < 1e-6, message ?? `${actual} !== ${expected}`);
@@ -302,6 +306,47 @@ function setFormControlValue(
   element.dispatchEvent(new dom.window.Event('change', { bubbles: true }));
 }
 
+function dispatchReactBlur(input: HTMLInputElement) {
+  const reactProps = getReactProps(input);
+  const onBlur = reactProps.onBlur;
+  assert.equal(typeof onBlur, 'function', 'React onBlur handler should exist');
+
+  (onBlur as (event: { target: HTMLInputElement; currentTarget: HTMLInputElement }) => void)({
+    target: input,
+    currentTarget: input,
+  });
+}
+
+function dispatchReactFocus(input: HTMLInputElement) {
+  input.focus();
+  const reactProps = getReactProps(input);
+  const onFocus = reactProps.onFocus;
+  assert.equal(typeof onFocus, 'function', 'React onFocus handler should exist');
+
+  (onFocus as (event: { target: HTMLInputElement; currentTarget: HTMLInputElement }) => void)({
+    target: input,
+    currentTarget: input,
+  });
+}
+
+function dispatchReactKeyDown(input: HTMLInputElement, key: string) {
+  const reactProps = getReactProps(input);
+  const onKeyDown = reactProps.onKeyDown;
+  assert.equal(typeof onKeyDown, 'function', 'React onKeyDown handler should exist');
+
+  (onKeyDown as (event: {
+    key: string;
+    target: HTMLInputElement;
+    currentTarget: HTMLInputElement;
+    preventDefault: () => void;
+  }) => void)({
+    key,
+    target: input,
+    currentTarget: input,
+    preventDefault: () => {},
+  });
+}
+
 function expectInlineFieldRow(
   container: ParentNode,
   fieldKey: string,
@@ -361,6 +406,190 @@ async function selectFlatEndpoint(
     await Promise.resolve();
   });
 }
+
+test('bridge spinner text input preserves raw finite values while blur keeps rounded displays read-only', async () => {
+  const { dom, container, root } = createComponentRoot();
+  try {
+    await act(async () => {
+      function Harness() {
+        const [value, setValue] = React.useState(0.12345678901234568);
+        const [changeCount, setChangeCount] = React.useState(0);
+        return React.createElement(
+          'div',
+          null,
+          React.createElement(BridgeSpinnerField, {
+            label: 'Origin X',
+            value,
+            precision: 4,
+            step: 0.001,
+            onChange: (nextValue: number) => {
+              setValue(nextValue);
+              setChangeCount((count) => count + 1);
+            },
+          }),
+          React.createElement('output', { 'data-testid': 'bridge-value' }, String(value)),
+          React.createElement(
+            'output',
+            { 'data-testid': 'bridge-change-count' },
+            String(changeCount),
+          ),
+        );
+      }
+
+      root.render(React.createElement(Harness));
+    });
+
+    const input = findInputByAriaLabel(container, 'Origin X');
+    assert.ok(input, 'bridge spinner input should render');
+    assert.equal(input.value, '0.1235');
+
+    await act(async () => {
+      dispatchReactFocus(input);
+    });
+    assert.equal(input.value, '0.12345678901234568');
+
+    await act(async () => {
+      dispatchReactBlur(input);
+    });
+    assert.equal(
+      container.querySelector('[data-testid="bridge-value"]')?.textContent,
+      '0.12345678901234568',
+    );
+    assert.equal(container.querySelector('[data-testid="bridge-change-count"]')?.textContent, '0');
+
+    await act(async () => {
+      setFormControlValue(dom, input, '1e-8');
+    });
+
+    assert.equal(container.querySelector('[data-testid="bridge-value"]')?.textContent, '1e-8');
+  } finally {
+    await destroyComponentRoot(dom, root);
+  }
+});
+
+test('bridge axis spinner text input preserves precise finite axis values', async () => {
+  const { dom, container, root } = createComponentRoot();
+  try {
+    await act(async () => {
+      function Harness() {
+        const [value, setValue] = React.useState(0);
+        return React.createElement(
+          'div',
+          null,
+          React.createElement(BridgeAxisSpinnerField, {
+            axis: 'x',
+            label: 'Axis X',
+            value,
+            precision: 4,
+            step: 0.001,
+            onChange: setValue,
+          }),
+          React.createElement('output', { 'data-testid': 'axis-value' }, String(value)),
+        );
+      }
+
+      root.render(React.createElement(Harness));
+    });
+
+    const input = findInputByAriaLabel(container, 'Axis X');
+    assert.ok(input, 'bridge axis input should render');
+
+    await act(async () => {
+      setFormControlValue(dom, input, '0.12345678901234568');
+    });
+
+    assert.equal(
+      container.querySelector('[data-testid="axis-value"]')?.textContent,
+      '0.12345678901234568',
+    );
+  } finally {
+    await destroyComponentRoot(dom, root);
+  }
+});
+
+test('bridge axis spinner arrow steps avoid float tails without erasing tiny offsets', async () => {
+  const { dom, container, root } = createComponentRoot();
+  try {
+    await act(async () => {
+      function Harness() {
+        const [value, setValue] = React.useState(0.12345678901234568);
+        const [step, setStep] = React.useState(1e-17);
+        return React.createElement(
+          'div',
+          null,
+          React.createElement(BridgeAxisSpinnerField, {
+            axis: 'x',
+            label: 'Axis X',
+            value,
+            precision: 4,
+            step,
+            onChange: setValue,
+          }),
+          React.createElement('output', { 'data-testid': 'axis-value' }, String(value)),
+          React.createElement(
+            'button',
+            {
+              type: 'button',
+              'data-testid': 'use-decimal-step',
+              onClick: () => setStep(0.1),
+            },
+            'Use decimal step',
+          ),
+          React.createElement(
+            'button',
+            {
+              type: 'button',
+              'data-testid': 'use-tiny-step',
+              onClick: () => setStep(1e-18),
+            },
+            'Use tiny step',
+          ),
+        );
+      }
+
+      root.render(React.createElement(Harness));
+    });
+
+    const input = findInputByAriaLabel(container, 'Axis X');
+    assert.ok(input, 'bridge axis input should render');
+
+    await act(async () => {
+      dispatchReactKeyDown(input, 'ArrowUp');
+    });
+
+    assert.equal(
+      container.querySelector('[data-testid="axis-value"]')?.textContent,
+      '0.12345678901234569',
+    );
+
+    await act(async () => {
+      container.querySelector<HTMLButtonElement>('[data-testid="use-decimal-step"]')?.click();
+    });
+    await act(async () => {
+      setFormControlValue(dom, input, '1');
+    });
+    await act(async () => {
+      dispatchReactKeyDown(input, 'ArrowUp');
+      dispatchReactKeyDown(input, 'ArrowUp');
+    });
+
+    assert.equal(container.querySelector('[data-testid="axis-value"]')?.textContent, '1.2');
+
+    await act(async () => {
+      container.querySelector<HTMLButtonElement>('[data-testid="use-tiny-step"]')?.click();
+    });
+    await act(async () => {
+      setFormControlValue(dom, input, '1e-18');
+    });
+    await act(async () => {
+      dispatchReactKeyDown(input, 'ArrowUp');
+    });
+
+    assert.equal(container.querySelector('[data-testid="axis-value"]')?.textContent, '2e-18');
+  } finally {
+    await destroyComponentRoot(dom, root);
+  }
+});
 
 test('bridge create modal defaults to a compact geometry-pick workflow with advanced settings expanded', async () => {
   const { dom, container, root } = createComponentRoot();

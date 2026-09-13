@@ -15,7 +15,6 @@ import {
   ISAACSIM_DEFAULT_JOINT_STIFFNESS,
   ISAACSIM_DEFAULT_SOLVER_POSITION_ITERATION_COUNT,
   ISAACSIM_DEFAULT_SOLVER_VELOCITY_ITERATION_COUNT,
-  ZERO_EPSILON,
 } from './usdIsaacSimDefaults.ts';
 import {
   getAxisToken,
@@ -123,11 +122,11 @@ export const serializeJointDefinition = (
     typeName === 'PhysicsJoint' ? getUsdPhysicsAxisKeys(joint.usdPhysics?.driveAxes) : [];
   const shouldUseIsaacDefaults = options.layoutProfile === 'isaacsim' && driveInstanceName !== null;
   const sourceDriveStiffness =
-    Number.isFinite(joint.dynamics?.stiffness) && Math.abs(Number(joint.dynamics?.stiffness)) > 1e-9
+    Number.isFinite(joint.dynamics?.stiffness) && Math.abs(Number(joint.dynamics?.stiffness)) > 0
       ? Number(joint.dynamics?.stiffness)
       : null;
   const sourceDriveDamping =
-    Number.isFinite(joint.dynamics?.damping) && Math.abs(joint.dynamics.damping) > 1e-9
+    Number.isFinite(joint.dynamics?.damping) && Math.abs(joint.dynamics.damping) > 0
       ? joint.dynamics.damping
       : null;
   const shouldConvertAngularDriveGains =
@@ -147,7 +146,7 @@ export const serializeJointDefinition = (
   const jointEffort = joint.limit?.effort;
   const jointVelocity = joint.limit?.velocity;
   const driveMaxForce =
-    typeof jointEffort === 'number' && Number.isFinite(jointEffort) && Math.abs(jointEffort) > 1e-9
+    typeof jointEffort === 'number' && Number.isFinite(jointEffort) && Math.abs(jointEffort) > 0
       ? jointEffort
       : null;
   const maxJointVelocity =
@@ -155,7 +154,7 @@ export const serializeJointDefinition = (
     driveInstanceName !== null &&
     typeof jointVelocity === 'number' &&
     Number.isFinite(jointVelocity) &&
-    Math.abs(jointVelocity) > 1e-9
+    Math.abs(jointVelocity) > 0
       ? driveInstanceName === 'angular'
         ? angularVelocityToUsdUnits(jointVelocity)
         : jointVelocity
@@ -176,14 +175,14 @@ export const serializeJointDefinition = (
     options.layoutProfile === 'isaacsim' &&
     driveInstanceName !== null &&
     Number.isFinite(joint.dynamics?.friction) &&
-    Number(joint.dynamics?.friction) > ZERO_EPSILON
+    Number(joint.dynamics?.friction) > 0
       ? Number(joint.dynamics?.friction)
       : null;
   const jointArmature =
     options.layoutProfile === 'isaacsim' &&
     driveInstanceName !== null &&
     Number.isFinite(joint.hardware?.armature) &&
-    Number(joint.hardware?.armature) > ZERO_EPSILON
+    Number(joint.hardware?.armature) > 0
       ? Number(joint.hardware?.armature)
       : null;
   const jointApiSchemas: string[] = [];

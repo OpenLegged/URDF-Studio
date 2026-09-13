@@ -109,10 +109,10 @@ scripts/
 - Zustand store action 不得直接写另一个 store；跨 store command/同步放 `app/hooks`
 - `core/` 保持纯函数，不引入 React / UI / Feature 依赖
 - 使用 `@/` 指向 `src/`；`src/lib/` 只收稳定通用能力，不当业务 source of truth
-- `src/lib/**` 和 `packages/react-robot-canvas/` 的可发布运行时边界不得新增对 `app/store/features` 的传递依赖；应用状态通过 props/ports + feature adapter 注入。`RobotCanvas -> urdf-viewer` 的两条剩余 allowlist 只能收缩，不得扩大
+- `src/lib/**` 和 `packages/react-robot-canvas/` 的可发布运行时边界不得新增对 `app/store/features` 的传递依赖；应用状态通过 props/ports + feature adapter 注入。发布包可达闭包由 canonical checker 检查，原 `RobotCanvas -> urdf-viewer` 两条例外已删除，不得恢复
 - 优先复用现有 hooks/utils/components，不重复造轮子；类型完整，避免 `any`
 - 机器人源文件格式检测 canonical source 是 `src/core/parsers/format_detection.ts`；`app` / `features/file-io` 只做 workflow wrapper，不复制判断逻辑
-- viewer backend 生命周期归 `src/features/urdf-viewer/renderers/`；`src/shared/components/3d/renderers/` 只保留纯 mesh renderer 组件与 Collada scene helpers
+- 通用 robot renderer kernel、backend load/dispose 和 interaction 原语归 `src/shared/components/3d/robot/`，不得依赖 store/features；`features/urdf-viewer/components/RobotModel.tsx` 注入应用设置与 hover ports，`RobotModelWorkspaceLayer.tsx` 拥有 workspace attachment/grounding adapter；`shared/components/3d/renderers/` 仍只放纯 mesh renderer 与 Collada helpers
 - `AssemblyState` 是应用唯一可写机器人模型；source-local mutation 放 `workspace-mutations/`，component source draft/document 编排放 `app/hooks` 或 `app/utils`，禁止恢复 `useWorkspaceSourceSync` 双写镜像
 - viewer/export 统一从 `createAssemblySceneProjection` / `createAssemblyScenePlacement` 或 canonical export projection 派生 `RobotData`；renderer strategy 不得参与 selection、mutation、history 或 source 路由
 - viewer/renderer hook 只上报 typed renderer facts（例如 measured bounds/offsets/runtime delta），不读取或消费 workspace mutation queue，不决定 history label/skipHistory/transaction；这些由 `app/hooks/workspace-mutations/` coordinator 拥有
@@ -150,9 +150,9 @@ scripts/
 - 循环依赖是边界错位信号：优先把双方共享 DTO/contract 下沉到中性模块，或让组合方注入实现，不新增 barrel/re-export 遮住环。
 - 拆分后必须能用一句话指出每个模块的 owner、输入输出、失败方式和 cleanup 责任；否则说明边界仍不成立。
 
-### 当前状态与债务地图（2026-08-04）
+### 当前状态与债务地图（2026-09-12）
 
-`npm run deps:check` 当前为 0 个分层违规、0 个 app feature deep import、0 个 import cycle，`dependency_boundaries_baseline.json` 两个清单均为空。已完成：
+`npm run deps:check` 当前为 0 个分层违规、0 个发布包向 app/store/features 的可达路径、0 个 app feature deep import、0 个 import cycle，`dependency_boundaries_baseline.json` 两个清单均为空。已完成：
 
 - 7 个存量 cycle 已通过 neutral contract/direct leaf import 解除，共享 protocol/DTO 不再反向依赖编排器。
 - `selectionStore` 不再写 `workspaceStore`，active component 同步由 `app/hooks/useSelectionActiveComponentSync.ts` 所有；hover freeze 使用 owner token，副 viewer cleanup 不会释放主 viewer 的锁。
@@ -162,15 +162,22 @@ scripts/
 - P1 第一批已完成：document load/import 由 `app/hooks/robotLoadWorkflow.ts` + `useRobotLoadWorkflow.ts` 统一 pre-resolved/worker completion；`useClosedLoopPreviewScheduler.ts` 独占闭环预览 worker、RAF、generation/in-flight 与 cleanup；`importPreparation.ts` 已收为线性 facade，payload contract、sidecar reference、archive/loose collector 各自独立；USD offscreen interaction state 独占 selection/hover、mesh/pick/helper index、highlight snapshot 与分层 reset 生命周期。
 - P1 第二批已完成：`useWorkspaceViewerDerivations.ts` 隔离 workspace→scene/viewer/source/joint read model 且保持 live motion 下 projection identity；`useAppLayoutSnapshotWorkflow.ts` 独占 snapshot refs/session/cancel/progress/debug cleanup；`useUnifiedViewerSceneLifecycle.ts` 独占 retained Three.js graph、scope 与 inactive/release timer；USD deferred snapshot owner 独占 pending/timeout/generation/clear/dispose；Snapshot capture form 独占默认值、格式不变量和配置 choices。
 
+本轮边界收敛（2026-09-12）：
+
+- 发布包和 Studio 共用 `shared/components/3d/robot/` kernel；camera projection、render quality、MJCF world visibility 由 props 注入，包内 hover 为实例所有，不再读取应用 store。
+- component source mutation 只提交 `workspace-source-sync/component_source_commands.ts` 的单一 command；reconcile/hash、draft fallback 与 history 分属该目录下的纯策略模块，不恢复每个属性一条 patch/sync 回调链。
+- 文件 include/reference 图归 `core/parsers/sourceReferenceGraph.ts`，USD layer reference 归 `core/parsers/usd/usdLayerReferences.ts`；`app/utils/sourceCodeDocuments.ts` 只编排 editor documents/只读状态。
+- export target/step/progress/confirmation/并发保护归 `useExportSession.ts`；AI 窗口/context/session ID 归 `useAIWorkspaceSession.ts`，overlay 只消费状态与 commands。
+- UI 与 debug bridge 统一调用 `useToolModeController.ts` 的切换/关闭 commands；paint/measure cleanup 不在两条入口中重复。
+- USD worker 的 stage session、worker cache、preload/open、mesh index 与 picking 分属 `workers/offscreen/`；stage generation 拒绝迟到结果，cache 与 stage 分开释放。
+
 下列是**定向重构候选**，不要单独发起“降行数”式大拆分：
 
 P0 内部的执行顺序是：可能导致错误 mutation/history 或多 viewer 状态串扰的正确性边界 > 触及发布包时的 package/store 边界 > 本次改动正好触及的存量 cycle。P0 不代表脱离需求一次性重写全部。
 
-- P0 `src/lib/components/RobotCanvas.tsx` / `packages/react-robot-canvas/`：当前还剩 `RobotModel` / `JointInteraction` 两条 feature allowlist；继续抽取 store-free renderer kernel 和通用 joint interaction primitive，将 camera projection、MJCF world visibility 与 selection 作为显式 props/ports，`urdf-viewer` 只保留 Zustand adapter。
-- P1 `src/features/urdf-viewer/hooks/useViewerController.ts`：闭环预览 scheduler 已抽离；继续按 selection/tool state、projection-derived state、camera/snapshot 等独立生命周期抽可测试 controller/纯派生，保留薄 facade，禁止重新散落 worker/RAF refs。
-- P1 `src/app/App.tsx` / `AppLayout.tsx`：document load/import、viewer derivation 与 snapshot workflow 已抽离，`AppContent` 当前约 594 代码行、`AppLayout` 约 731 代码行；下一步只抽有明确 owner 的 overlay/panel 组合，不把状态机切成互相捕获 ref 的碎 hook。
+- P1 `src/features/urdf-viewer/hooks/useViewerController.ts`：闭环预览 scheduler 与 tool mode command 已抽离；继续按 selection、projection-derived state、camera 等独立生命周期抽可测试 controller/纯派生，保留薄 facade，禁止重新散落 worker/RAF refs。
+- P1 `src/app/App.tsx` / `AppLayout.tsx`：document load/import、viewer derivation、snapshot、export/AI session 与 component source command 已抽离；下一步只抽有明确 owner 的 overlay/panel 组合，不把状态机切成互相捕获 ref 的碎 hook。
 - P1 `src/app/components/UnifiedViewer.tsx`：retained scene 生命周期已抽离；继续把 scene/view mode 派生和 overlays/panels render 分开，但 backend strategy 继续不得接触 mutation/selection/history。
-- P1 `src/features/urdf-viewer/workers/usdOffscreenViewer.worker.ts`：interaction state 与 deferred snapshot owner 已抽离；后续再按独立生命周期抽 stage/cache、picking 算法与 preload/load pipeline，entry 保留 dispatch 和统一销毁，不引入万能 manager/class。
 - P1 `SnapshotDialog.tsx`：Settings pane model 与 Snapshot capture config model 已抽离；`SettingsModal.tsx` 已收敛至约 257 行，`SnapshotDialog.tsx` 约 730 行；继续分离 Snapshot preview/layout render，让 UI 只消费窄 props 和稳定 command；共享是因为真实合约，不是因为 JSX 长得像。
 - P2 `src/store/workspace/runtime.ts`：`createWorkspaceRuntime` 约 561 行但共享 transaction/history/joint-motion 不变量；只在能以窄 command contract 分开且不复制可变闭包状态时拆分。
 
@@ -208,7 +215,13 @@ P0 内部的执行顺序是：可能导致错误 mutation/history 或多 viewer 
 
 需要远程开发端口转发、容器或局域网访问时，显式运行 `URDF_STUDIO_DEV_HOST=0.0.0.0 npm run dev`。如果预览 / 隧道域名被 Vite host check 拒绝，再按需设置 `URDF_STUDIO_DEV_ALLOWED_HOSTS=preview.example.test,.tunnel.example.test npm run dev`。
 
-**局域网 HTTPS 模式（USD WASM 需要安全上下文）：** `http://<LAN-IP>` 不是安全上下文，`SharedArrayBuffer` 不可用，USD WASM 加载会失败。启用 HTTPS：
+**局域网访问与 USD WASM：** 应用层不再对"安全上下文"做硬性拦截（`getUsdRuntimeEnvironmentError()` 现在始终返回 `null`，只保留一次性 `console.warn` 提示）。但 USD WASM 是 pthread / shared-memory 构建，仍依赖 `SharedArrayBuffer`，而 `SharedArrayBuffer` 是否可用由浏览器自身决定（安全上下文 + cross-origin isolation），局域网访问有三种方式：
+
+1. **局域网 HTTPS（推荐）：** 见下方 mkcert / 自签名证书配置。
+2. **纯 HTTP + Chrome 信任源：** 打开 `chrome://flags/#unsafely-treat-insecure-origin-as-secure`，把 `http://<LAN-IP>:3000` 标记为信任源并重启。现在可行是因为 dev server 会向私有局域网主机名（RFC1918 `10/8`、`172.16/12`、`192.168/16` + link-local `169.254/16`）也发送 COOP/COEP 隔离头，标记信任源后该源即满足 cross-origin isolated。
+3. **SSH 端口转发到 localhost：** `ssh -L 3000:127.0.0.1:3000 <remote>` 后用 `http://localhost:3000` 访问，天然安全上下文。
+
+启用局域网 HTTPS：
 
 ```bash
 # 快速：自签名证书（浏览器点"高级→继续"即可）

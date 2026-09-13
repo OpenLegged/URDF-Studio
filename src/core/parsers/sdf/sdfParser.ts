@@ -277,7 +277,7 @@ function matrixToPose(matrix: THREE.Matrix4): Pose {
   };
 }
 
-function isIdentityPose(pose: Pose, epsilon = 1e-9): boolean {
+function isIdentityPose(pose: Pose, epsilon = 0): boolean {
   return (
     Math.abs(pose.xyz.x) <= epsilon &&
     Math.abs(pose.xyz.y) <= epsilon &&
@@ -515,10 +515,8 @@ function parseSdfGeometry(
 
   const meshEl = getFirstDirectChild(geometryEl, 'mesh');
   if (meshEl) {
-    const scale = parseVec3(getFirstDirectChild(meshEl, 'scale')?.textContent);
-    const normalizedScale = isIdentityPose({ xyz: scale, rpy: ZERO_EULER })
-      ? { x: 1, y: 1, z: 1 }
-      : scale;
+    const scaleText = getFirstDirectChild(meshEl, 'scale')?.textContent?.trim();
+    const normalizedScale = scaleText ? parseVec3(scaleText) : { x: 1, y: 1, z: 1 };
 
     const submeshEl = getFirstDirectChild(meshEl, 'submesh');
     const submeshName =
@@ -651,6 +649,11 @@ function resolvePoseRelativeToFrame(
   targetFrame: string,
   resolveFrameWorldMatrix: (frame: string) => THREE.Matrix4,
 ): Pose {
+  // A local pose already belongs to the requested frame. Matrix decomposition
+  // here would change authored RPY values even though no conversion is needed.
+  if ((pose.relativeTo || defaultFrame) === targetFrame) {
+    return { xyz: { ...pose.pose.xyz }, rpy: { ...pose.pose.rpy } };
+  }
   const targetMatrix = resolveFrameWorldMatrix(targetFrame);
   const worldMatrix = resolvePoseWorldMatrix(pose, defaultFrame, resolveFrameWorldMatrix);
   return matrixToPose(targetMatrix.clone().invert().multiply(worldMatrix));
@@ -1740,8 +1743,16 @@ function parseSdfModel(
         ? (graph.linkRecords.get(parentLinkId)?.worldMatrix ??
           resolveFrameWorldMatrix(parentLinkId))
         : new THREE.Matrix4().identity();
-      const relativeMatrix = parentWorldMatrix.clone().invert().multiply(jointWorldMatrix);
-      const origin = matrixToPose(relativeMatrix);
+      const jointParsedPose = parsePoseElement(jointEl);
+      const childPoseFrame = qualifyScopedReference(childRecord.parsedPose.relativeTo, namespacePrefix) || MODEL_FRAME;
+      const jointPoseFrame = qualifyScopedReference(jointParsedPose.relativeTo, namespacePrefix) || childLinkId;
+      const childPoseIsLocal = childPoseFrame === parentFrameId ||
+        (childPoseFrame === MODEL_FRAME && parentWorldMatrix.equals(modelMatrix));
+      const hasDirectLocalPose = childPoseIsLocal && jointPoseFrame === childLinkId &&
+        (!jointParsedPose.specified || isIdentityPose(jointParsedPose.pose, 0));
+      const origin = hasDirectLocalPose
+        ? { xyz: { ...childRecord.pose.xyz }, rpy: { ...childRecord.pose.rpy } }
+        : matrixToPose(parentWorldMatrix.clone().invert().multiply(jointWorldMatrix));
 
       const jointType = mapSdfJointType(jointEl.getAttribute('type'));
       const axisEl = getFirstDirectChild(jointEl, 'axis');
@@ -1859,7 +1870,6 @@ function parseSdfModel(
       // the link frame.  To compensate, bake the inverse joint-pose into the
       // child link's geometry origins so they render at the correct SDF link
       // position even though the link Object3D sits at the joint frame.
-      const jointParsedPose = parsePoseElement(jointEl);
       if (jointParsedPose.specified && !isIdentityPose(jointParsedPose.pose)) {
         const inverseJointPose = poseToMatrix(jointParsedPose.pose).invert();
         const childLink = graph.links[childLinkId];

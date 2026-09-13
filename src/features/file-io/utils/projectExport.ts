@@ -1,9 +1,11 @@
 import { GeometryType, JointType } from '@/types';
 import type { AssemblyState, BridgeJoint, RobotData, RobotFile, UrdfLink } from '@/types';
-import { generateURDF } from '@/core/parsers';
+import { generateMujocoXML, generateURDF } from '@/core/parsers';
+import { canGenerateUrdf } from '@/core/parsers/urdf/urdfExportSupport';
+import { canPreserveGeometryInSource } from '@/core/parsers/sourceGeometrySupport';
 import { normalizeMeshPathForExport, resolveMeshAssetUrl } from '@/core/parsers/meshPathUtils';
 import { generateBOM } from './bomGenerator';
-import { prepareMjcfExport } from './mjcfExport';
+import { canGenerateOptionalMjcfOutput } from './project_optional_mjcf';
 import {
   assertProjectWorkspace,
   assertProjectWorkspaceHistory,
@@ -95,7 +97,7 @@ The .usp file is a ZIP-compressed package that contains the full URDF Studio wor
 - library/: Asset library source files and extra text content.
 - history/: Undo/redo checkpoints and change logs.
 - bridges/: Multi-robot assembly connection data.
-- output/: Auto-generated export artifacts.
+- output/: Optional URDF, MJCF, and BOM artifacts. MJCF is included only when joint types and original meshes can be preserved without additional conversion.
 `;
 
 const USP_README_ZH = `# URDF Studio 工程文件 (.usp) 3.0 格式说明
@@ -111,7 +113,7 @@ const USP_README_ZH = `# URDF Studio 工程文件 (.usp) 3.0 格式说明
 - library/: 素材库源文件与额外文本内容。
 - history/: 撤销/重做快照与变更日志。
 - bridges/: 多机器人装配连接数据。
-- output/: 自动生成的导出产物。
+- output/: 可选 URDF、MJCF 和 BOM 产物；MJCF 仅在无需额外转换且能保留关节与原始 mesh 时生成。
 `;
 
 const COMPONENT_README_EN = `# URDF Studio Component Format
@@ -279,87 +281,25 @@ const setProjectArchiveEntry = (
   archiveEntries.set(normalizeArchivePath(archivePath), data);
 };
 
-const writeReferencedMeshesToFolder = async (
-  archiveEntries: ProjectArchiveEntries,
-  folderPath: string,
+/** Optional artifacts reuse the bytes already validated by native project packaging. */
+const collectPackedOutputMeshes = (
   robot: RobotData,
   assets: Record<string, string>,
-  skipMeshPaths?: ReadonlySet<string>,
-  onProgress?: ProjectPhaseProgressReporter,
-): Promise<ProjectExportWarning[]> => {
-  const writtenPaths = new Set<string>();
-  const warnings: ProjectExportWarning[] = [];
-  const meshPaths = Array.from(getReferencedMeshes(robot)).filter(
-    (meshPath) => !skipMeshPaths?.has(meshPath),
-  );
-  const totalMeshes = meshPaths.length;
-  let completedMeshes = 0;
-
-  if (totalMeshes > 0) {
-    onProgress?.({
-      completed: 0,
-      total: totalMeshes,
-      label: formatProjectProgressLabel(meshPaths[0]),
-    });
+  packedBlobsByUrl: ReadonlyMap<string, Blob>,
+): Map<string, Blob> | null => {
+  const files = new Map<string, Blob>();
+  for (const meshPath of getReferencedMeshes(robot)) {
+    const path = normalizeMeshPathForExport(meshPath);
+    const url = resolveMeshAssetUrl(meshPath, assets);
+    const blob = url ? packedBlobsByUrl.get(url) : undefined;
+    if (!path || !blob) return null;
+    const existing = files.get(path);
+    if (existing && existing !== blob) return null;
+    files.set(path, blob);
   }
-
-  await Promise.all(
-    meshPaths.map(async (meshPath) => {
-      const exportPath = normalizeMeshPathForExport(meshPath);
-      if (!exportPath || writtenPaths.has(exportPath)) {
-        completedMeshes += 1;
-        onProgress?.({
-          completed: completedMeshes,
-          total: totalMeshes,
-          label: formatProjectProgressLabel(meshPath),
-        });
-        return;
-      }
-      writtenPaths.add(exportPath);
-
-      const blobUrl = resolveMeshAssetUrl(meshPath, assets);
-      try {
-        if (!blobUrl) {
-          warnings.push({
-            code: 'project_mesh_asset_missing',
-            message: `Missing mesh asset for project export: ${meshPath}`,
-            context: {
-              meshPath,
-              exportPath,
-            },
-          });
-          return;
-        }
-
-        const response = await fetch(blobUrl);
-        if (!response.ok) {
-          throw new Error(`HTTP ${response.status}`);
-        }
-        const blob = await response.blob();
-        setProjectArchiveEntry(archiveEntries, joinArchivePath(folderPath, exportPath), blob);
-      } catch (error) {
-        console.error(`[ProjectExport] Failed to package mesh "${meshPath}"`, error);
-        warnings.push({
-          code: 'project_mesh_package_failed',
-          message: `Failed to package mesh "${meshPath}": ${error instanceof Error ? error.message : String(error)}`,
-          context: {
-            meshPath,
-            exportPath,
-          },
-        });
-      } finally {
-        completedMeshes += 1;
-        onProgress?.({
-          completed: completedMeshes,
-          total: totalMeshes,
-          label: formatProjectProgressLabel(meshPath),
-        });
-      }
-    }),
-  );
-
-  return warnings;
+  return files;
 };
+
 
 const assertNoProjectExportWarnings = (warnings: ProjectExportWarning[]): void => {
   const [firstWarning] = warnings;
@@ -453,7 +393,11 @@ const writePackedAssets = async (
   archiveEntries: ProjectArchiveEntries,
   assetMap: Record<string, string>,
   onProgress?: ProjectPhaseProgressReporter,
-): Promise<{ assetEntries: ProjectAssetEntry[]; warnings: ProjectExportWarning[] }> => {
+): Promise<{
+  assetEntries: ProjectAssetEntry[];
+  warnings: ProjectExportWarning[];
+  packedBlobsByUrl: Map<string, Blob>;
+}> => {
   const urlToKeys = new Map<string, string[]>();
   Object.entries(assetMap).forEach(([key, url]) => {
     if (!url) return;
@@ -463,6 +407,7 @@ const writePackedAssets = async (
   });
 
   const usedLogicalPaths = new Set<string>();
+  const packedBlobsByUrl = new Map<string, Blob>();
   const assetEntries: ProjectAssetEntry[] = [];
   const warnings: ProjectExportWarning[] = [];
   const assetJobs = Array.from(urlToKeys.entries());
@@ -490,6 +435,7 @@ const writePackedAssets = async (
         }
         const blob = await response.blob();
         setProjectArchiveEntry(archiveEntries, archivePath, blob);
+        packedBlobsByUrl.set(url, blob);
         assetEntries.push({ logicalPath, archivePath });
       } catch (error) {
         console.error('[ProjectExport] Failed to pack asset', keys[0] ?? url, error);
@@ -515,7 +461,75 @@ const writePackedAssets = async (
   return {
     assetEntries,
     warnings,
+    packedBlobsByUrl,
   };
+};
+
+interface OptionalProjectOutputsOptions {
+  archiveEntries: ProjectArchiveEntries;
+  workspace: AssemblyState;
+  assetUrls: Record<string, string>;
+  packedBlobsByUrl: ReadonlyMap<string, Blob>;
+  lang: ExportProjectParams['lang'];
+  onProgress: ProjectPhaseProgressReporter;
+}
+
+const writeOptionalProjectOutputs = async ({
+  archiveEntries,
+  workspace,
+  assetUrls,
+  packedBlobsByUrl,
+  lang,
+  onProgress,
+}: OptionalProjectOutputsOptions): Promise<void> => {
+  try {
+    const mergedRobot = buildExportableAssemblyRobotData(workspace);
+    const robotForExport = { ...mergedRobot, selection: { type: null, id: null } };
+    const outputMeshes = collectPackedOutputMeshes(
+      mergedRobot,
+      assetUrls,
+      packedBlobsByUrl,
+    );
+    const outputs: Array<{ path: string; generate: () => string }> = [];
+    if (outputMeshes && canGenerateUrdf(robotForExport) && canPreserveGeometryInSource(robotForExport, 'urdf')) {
+      for (const extended of [false, true]) {
+        outputs.push({
+          path: `${mergedRobot.name}${extended ? '_extended' : ''}.urdf`,
+          generate: () => generateURDF(robotForExport, { extended, preserveNumericPrecision: true }),
+        });
+      }
+    }
+    if (outputMeshes && await canGenerateOptionalMjcfOutput(robotForExport, outputMeshes)) {
+      outputs.push({
+        path: `${mergedRobot.name}.xml`,
+        generate: () => generateMujocoXML(robotForExport, { meshdir: 'meshes/', preserveNumericPrecision: true }),
+      });
+    }
+    outputs.push({
+      path: 'bom.csv',
+      generate: () => generateBOM(robotForExport, lang as 'en' | 'zh'),
+    });
+    const totalOutputTasks = outputs.length + (outputMeshes?.size ?? 0);
+    let completedOutputTasks = 0;
+    onProgress({ completed: 0, total: totalOutputTasks, label: mergedRobot.name });
+    for (const output of outputs) {
+      try {
+        setProjectArchiveEntry(archiveEntries, joinArchivePath('output', output.path), output.generate());
+      } catch {
+        // A failed optional format must not discard valid artifacts or canonical state.
+      }
+      completedOutputTasks += 1;
+      onProgress({ completed: completedOutputTasks, total: totalOutputTasks, label: output.path });
+    }
+    outputMeshes?.forEach((blob, path) => {
+      setProjectArchiveEntry(archiveEntries, joinArchivePath('output', 'meshes', path), blob);
+      completedOutputTasks += 1;
+      onProgress({ completed: completedOutputTasks, total: totalOutputTasks, label: path });
+    });
+  } catch {
+    // Native saves also support transient editing states without a serializable projection.
+    onProgress({ completed: 1, total: 1, label: 'output' });
+  }
 };
 
 async function buildProjectArchiveEntries(params: ExportProjectParams): Promise<{
@@ -681,7 +695,6 @@ async function buildProjectArchiveEntries(params: ExportProjectParams): Promise<
       (sum, plan) => sum + 1 + plan.meshPaths.length,
       0,
     );
-    const componentAssetTasks: Promise<void>[] = [];
     let completedComponentTasks = 0;
 
     if (totalComponentTasks > 0) {
@@ -742,44 +755,22 @@ async function buildProjectArchiveEntries(params: ExportProjectParams): Promise<
           );
           return;
         }
-        const task = fetch(blobUrl)
-          .then((response) => {
-            if (!response.ok) {
-              throw new Error(`HTTP ${response.status}`);
-            }
-            return response.blob();
-          })
-          .then(async (blob) => {
-            setProjectArchiveEntry(
-              archiveEntries,
-              joinArchivePath(componentFolderPath, 'meshes', meshPath.split('/').pop() || meshPath),
-              blob,
-            );
-          })
-          .catch((error) => {
-            console.error(
-              `[ProjectExport] Failed to package component mesh "${meshPath}" for ${component.id}`,
-              error,
-            );
-            warnings.push({
-              code: 'project_component_mesh_package_failed',
-              message: `Failed to package component mesh "${meshPath}" for ${component.id}: ${error instanceof Error ? error.message : String(error)}`,
-              context: {
-                componentId: component.id,
-                meshPath,
-              },
-            });
-          })
-          .finally(() => {
-            completedComponentTasks += 1;
-            emitPhaseProgress(
-              'components',
-              completedComponentTasks,
-              Math.max(totalComponentTasks, 1),
-              meshPath,
-            );
-          });
-        componentAssetTasks.push(task);
+        const blob = packedAssets.packedBlobsByUrl.get(blobUrl);
+        if (!blob) {
+          throw new Error(`Missing packed component mesh "${meshPath}" for ${component.id}`);
+        }
+        setProjectArchiveEntry(
+          archiveEntries,
+          joinArchivePath(componentFolderPath, 'meshes', meshPath.split('/').pop() || meshPath),
+          blob,
+        );
+        completedComponentTasks += 1;
+        emitPhaseProgress(
+          'components',
+          completedComponentTasks,
+          Math.max(totalComponentTasks, 1),
+          meshPath,
+        );
       });
     });
 
@@ -787,7 +778,6 @@ async function buildProjectArchiveEntries(params: ExportProjectParams): Promise<
       emitPhaseProgress('components', 1, 1, 'components');
     }
 
-    await Promise.all(componentAssetTasks);
     assertNoProjectExportWarnings(warnings);
   }
 
@@ -799,86 +789,16 @@ async function buildProjectArchiveEntries(params: ExportProjectParams): Promise<
     );
   }
 
-  const mergedRobot = buildExportableAssemblyRobotData(currentWorkspace);
-  {
-    emitPhaseProgress('output', 0, 1, mergedRobot.name);
-    const robotForExport = {
-      ...mergedRobot,
-      selection: { type: null, id: null },
-    } as RobotData & { selection: { type: null; id: null } };
-    const mjcfExport = await prepareMjcfExport({
-      robot: robotForExport,
-      assets: assets.assetUrls,
-      mujoco: { meshdir: 'meshes/' },
-    });
-    const mjcfMeshExport = mjcfExport.meshes;
-    const outputMeshCount = Array.from(getReferencedMeshes(mergedRobot)).filter(
-      (meshPath) => !mjcfMeshExport.convertedSourceMeshPaths.has(meshPath),
-    ).length;
-    const totalOutputTasks = 4 + outputMeshCount + mjcfMeshExport.archiveFiles.size;
-    let completedOutputTasks = 0;
-
-    emitPhaseProgress('output', 0, totalOutputTasks, `${mergedRobot.name}.urdf`);
-
-    setProjectArchiveEntry(
-      archiveEntries,
-      joinArchivePath('output', `${mergedRobot.name}.urdf`),
-      generateURDF(robotForExport, false),
-    );
-    completedOutputTasks += 1;
-    emitPhaseProgress('output', completedOutputTasks, totalOutputTasks, `${mergedRobot.name}.urdf`);
-    setProjectArchiveEntry(
-      archiveEntries,
-      joinArchivePath('output', `${mergedRobot.name}_extended.urdf`),
-      generateURDF(robotForExport, true),
-    );
-    completedOutputTasks += 1;
-    emitPhaseProgress(
-      'output',
-      completedOutputTasks,
-      totalOutputTasks,
-      `${mergedRobot.name}_extended.urdf`,
-    );
-    setProjectArchiveEntry(
-      archiveEntries,
-      joinArchivePath('output', `${mergedRobot.name}.xml`),
-      mjcfExport.xml,
-    );
-    completedOutputTasks += 1;
-    emitPhaseProgress('output', completedOutputTasks, totalOutputTasks, `${mergedRobot.name}.xml`);
-    setProjectArchiveEntry(
-      archiveEntries,
-      joinArchivePath('output', 'bom.csv'),
-      generateBOM(robotForExport, params.lang as 'en' | 'zh'),
-    );
-    completedOutputTasks += 1;
-    emitPhaseProgress('output', completedOutputTasks, totalOutputTasks, 'bom.csv');
-
-    const outputMeshWarnings = await writeReferencedMeshesToFolder(
-      archiveEntries,
-      joinArchivePath('output', 'meshes'),
-      mergedRobot,
-      assets.assetUrls,
-      mjcfMeshExport.convertedSourceMeshPaths,
-      ({ completed, label }) => {
-        emitPhaseProgress('output', completedOutputTasks + completed, totalOutputTasks, label);
-      },
-    );
-    warnings.push(...outputMeshWarnings);
-    assertNoProjectExportWarnings(outputMeshWarnings);
-    completedOutputTasks += outputMeshCount;
-    await Promise.all(
-      Array.from(mjcfMeshExport.archiveFiles.entries()).map(async ([relativePath, blob]) => {
-        setProjectArchiveEntry(
-          archiveEntries,
-          joinArchivePath('output', 'meshes', relativePath),
-          blob,
-        );
-        completedOutputTasks += 1;
-        emitPhaseProgress('output', completedOutputTasks, totalOutputTasks, relativePath);
-      }),
-    );
-  }
+  await writeOptionalProjectOutputs({
+    archiveEntries,
+    workspace: currentWorkspace,
+    assetUrls: assets.assetUrls,
+    packedBlobsByUrl: packedAssets.packedBlobsByUrl,
+    lang: params.lang,
+    onProgress: ({ completed, total, label }) => {
+      emitPhaseProgress('output', completed, total, label);
+    },
+  });
 
   return {
     archiveEntries,

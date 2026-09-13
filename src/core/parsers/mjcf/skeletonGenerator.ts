@@ -11,14 +11,14 @@ import {
 } from '@/types';
 import { getTreeDisplayRootLinkIds } from '@/core/robot';
 import {
-  MAX_GEOMETRY_DIMENSION_DECIMALS,
-  MAX_PROPERTY_DECIMALS,
   formatNumberWithMaxDecimals,
 } from '@/core/utils/numberPrecision';
 import { escapeXmlAttribute } from '@/core/utils/xmlSourceTextUtils';
+import { createMjcfNumberFormatters } from './mjcfGeneratorFormatting';
 import { normalizeMeshPathForExport } from '../meshPathUtils';
 
 export interface SkeletonExportOptions {
+  preserveNumericPrecision?: boolean;
   meshdir?: string;
   includeMeshes?: boolean;
   includeActuators?: boolean;
@@ -29,12 +29,13 @@ const ZERO_EULER: Euler = { r: 0, p: 0, y: 0 };
 const MIN_INERTIAL_MASS = 1e-6;
 const MIN_INERTIAL_DIAG = 1e-8;
 
-function hasRotation(rotation?: Euler): boolean {
+function hasRotation(rotation?: Euler, preserveNumericPrecision = false): boolean {
   if (!rotation) {
     return false;
   }
 
-  return Math.abs(rotation.r) > 1e-9 || Math.abs(rotation.p) > 1e-9 || Math.abs(rotation.y) > 1e-9;
+  const threshold = preserveNumericPrecision ? 0 : 1e-9;
+  return Math.abs(rotation.r) > threshold || Math.abs(rotation.p) > threshold || Math.abs(rotation.y) > threshold;
 }
 
 function hexToRgba(color: string | undefined): string {
@@ -230,8 +231,8 @@ export const generateSkeletonXML = (robot: RobotState, options: SkeletonExportOp
   const meshdir = options.meshdir ?? 'meshes/';
   const includeMeshes = options.includeMeshes ?? true;
   const includeActuators = options.includeActuators ?? true;
-  const formatScalar = (value: number) => formatNumberWithMaxDecimals(value, MAX_PROPERTY_DECIMALS);
-  const formatShape = (value: number) => formatNumberWithMaxDecimals(value, MAX_GEOMETRY_DIMENSION_DECIMALS);
+  const { formatScalar, formatShape, formatInertiaScalar } =
+    createMjcfNumberFormatters(options.preserveNumericPrecision);
   const vecStr = (vector: Vector3 = ZERO_VECTOR) =>
     `${formatScalar(vector.x ?? 0)} ${formatScalar(vector.y ?? 0)} ${formatScalar(vector.z ?? 0)}`;
   const quatStr = (rotation: Euler = ZERO_EULER) => {
@@ -282,9 +283,9 @@ export const generateSkeletonXML = (robot: RobotState, options: SkeletonExportOp
     const ixx = Math.max(Math.abs(inertial.inertia.ixx || 0), MIN_INERTIAL_DIAG);
     const iyy = Math.max(Math.abs(inertial.inertia.iyy || 0), MIN_INERTIAL_DIAG);
     const izz = Math.max(Math.abs(inertial.inertia.izz || 0), MIN_INERTIAL_DIAG);
-    const quatAttribute = hasRotation(origin.rpy) ? ` quat="${quatStr(origin.rpy)}"` : '';
+    const quatAttribute = hasRotation(origin.rpy, options.preserveNumericPrecision) ? ` quat="${quatStr(origin.rpy)}"` : '';
 
-    return `${indent}<inertial pos="${vecStr(origin.xyz)}"${quatAttribute} mass="${formatScalar(mass)}" diaginertia="${formatScalar(ixx)} ${formatScalar(iyy)} ${formatScalar(izz)}"/>\n`;
+    return `${indent}<inertial pos="${vecStr(origin.xyz)}"${quatAttribute} mass="${formatScalar(mass)}" diaginertia="${formatInertiaScalar(ixx)} ${formatInertiaScalar(iyy)} ${formatInertiaScalar(izz)}"/>\n`;
   };
 
   const buildJointXml = (joint: UrdfJoint, indent: string): string => {
@@ -325,7 +326,7 @@ export const generateSkeletonXML = (robot: RobotState, options: SkeletonExportOp
     const rotation = geometry.origin?.rpy ?? ZERO_EULER;
     const attributes = [
       `pos="${vecStr(position)}"`,
-      hasRotation(rotation) ? `quat="${quatStr(rotation)}"` : '',
+      hasRotation(rotation, options.preserveNumericPrecision) ? `quat="${quatStr(rotation)}"` : '',
       'contype="0"',
       'conaffinity="0"',
       'group="1"',
@@ -409,7 +410,7 @@ export const generateSkeletonXML = (robot: RobotState, options: SkeletonExportOp
       bodyAttributes.push(`pos="${vecStr(bodyPosition)}"`);
     }
 
-    if (hasRotation(bodyRotation)) {
+    if (hasRotation(bodyRotation, options.preserveNumericPrecision)) {
       bodyAttributes.push(`quat="${quatStr(bodyRotation)}"`);
     }
 

@@ -80,8 +80,35 @@ test('getRegressionSnapshot summarizes joint-only runtime proxies without requir
   setRegressionRuntimeRobot(null);
 });
 
-test('getRegressionSnapshot includes runtime visual mesh shadow state', () => {
+test('runtime material summary reports actual linear RGB, not hex-quantized reconstruction', () => {
+  // A color whose exact float channels differ from anything the 8-bit hex
+  // round-trip can express: setRGB stores the raw floats and colorLinear must
+  // read them back verbatim, while getHexString quantizes through the sRGB
+  // grid (a hex-derived reconstruction would lose up to 0.5/255 per channel).
   const robot = new THREE.Group();
+  robot.name = 'linear_probe';
+  const material = new THREE.MeshStandardMaterial();
+  material.color.setRGB(0.627451, 0.627451, 0.627451);
+  const visualMesh = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), material);
+  visualMesh.name = 'linear_visual';
+  visualMesh.userData.parentLinkName = 'base';
+  visualMesh.userData.isVisualMesh = true;
+  robot.add(visualMesh);
+
+  setRegressionRuntimeRobot(robot as Parameters<typeof setRegressionRuntimeRobot>[0]);
+
+  try {
+    const summary = getRegressionSnapshot().runtime?.visualMeshes?.[0]?.materials?.[0];
+    assert.ok(summary);
+    assert.deepEqual(summary.colorLinear, [0.627451, 0.627451, 0.627451]);
+    // The hex path coexists and is quantized (#d0d0d0 ≠ exact 0.627451).
+    assert.equal(summary.color, '#d0d0d0');
+  } finally {
+    setRegressionRuntimeRobot(null);
+  }
+});
+
+test('getRegressionSnapshot includes runtime visual mesh shadow state', () => {  const robot = new THREE.Group();
   robot.name = 'shadow_robot';
   const visualMesh = new THREE.Mesh(
     new THREE.BoxGeometry(1, 1, 1),
@@ -113,10 +140,39 @@ test('getRegressionSnapshot includes runtime visual mesh shadow state', () => {
           name: null,
           hasTexture: false,
           color: '#808080',
+          colorLinear: [0.21586050010324415, 0.21586050010324415, 0.21586050010324415],
           transparent: false,
           opacity: 1,
+          roughness: 1,
+          metalness: 0,
+          hasNormalMap: false,
+          hasRoughnessMap: false,
+          hasMetalnessMap: false,
+          vertexColors: false,
+          textureArithmetic: null,
+          baseColorTexture: null,
+          normalTexture: null, roughnessTexture: null, metalnessTexture: null, aoTexture: null,
+          normalScale: [1, 1], aoMapIntensity: 1, ior: null, transmission: null, thickness: null,
+          specularIntensity: null, specularColorLinear: null,
+          attenuationColorLinear: null, attenuationDistance: null,
         },
       ],
+      // BoxGeometry carries a 24-vertex uv attribute; the summary captures
+      // mesh-level UV and vertex-color diagnostics for material acceptance.
+      uvCount: 24,
+      uvSamples: [
+        [0, 1],
+        [1, 1],
+        [0, 0],
+        [1, 0],
+        [0, 1],
+        [1, 1],
+        [0, 0],
+        [1, 0],
+      ],
+      vertexColorsApplied: false,
+      vertexColorCount: 0,
+      vertexColorSamples: [],
     },
   ]);
 

@@ -221,7 +221,7 @@ function serializeBridgeJointXml(
     selection: { type: null, id: null },
   } as const;
 
-  const full = generateURDF(tempRobot, { preserveMeshPaths: true });
+  const full = generateURDF(tempRobot, { preserveMeshPaths: true, preserveNumericPrecision: true });
   const match = full.match(/[ \t]*<joint\b[\s\S]*?<\/joint>/);
   if (!match) {
     throw new Error(`Failed to serialize bridge joint "${bridge.id}"`);
@@ -459,7 +459,7 @@ function graftSlaveComponent(
   const childRootLink = namespaced.robot.links[bridge.childLinkId];
   const slaveUrdf = generateURDF(
     { ...namespaced.robot, selection: { type: null, id: null } },
-    { preserveMeshPaths: true },
+    { preserveMeshPaths: true, preserveNumericPrecision: true },
   );
   const parsedSlave = parseURDF(slaveUrdf);
   if (!parsedSlave) return fail(`failed to parse grafted component "${childComponentId}"`);

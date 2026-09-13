@@ -1,45 +1,125 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
-import { fileURLToPath } from 'node:url';
-import { dirname, join } from 'node:path';
+import {
+  createUsdWorkerStageSession,
+  type UsdWorkerStageBindings,
+} from './offscreen/usdWorkerStageSession.ts';
 
-const workerSource = readFileSync(
-  join(dirname(fileURLToPath(import.meta.url)), 'usdOffscreenViewer.worker.ts'),
-  'utf8',
-);
+function createHarness() {
+  const released: string[] = [];
+  const bindings: UsdWorkerStageBindings<{ dispose: () => void }> = {};
+  const owner = createUsdWorkerStageSession(bindings, (driver) => released.push(String(driver)));
+  const install = (name: string) => {
+    bindings.driver = name;
+    bindings.renderInterface = { dispose: () => released.push(`${name}:render`) };
+    bindings.usdStage = `${name}:stage`;
+  };
+  return { bindings, owner, install, released };
+}
 
-test('USD offscreen worker keeps a newer stage when an older generation finishes later', () => {
-  const loadCommitStart = workerSource.indexOf('loadedStageGlobals = {');
-  const staleCheckStart = workerSource.indexOf(
-    'if (!isLoadGenerationActive(loadGeneration)) {',
-    loadCommitStart,
-  );
-  const staleCheckEnd = workerSource.indexOf('if (!loadState?.driver)', staleCheckStart);
-  const commitStart = workerSource.indexOf('commitCurrentWorkerStageGlobals(loadState.driver);');
-  const catchStart = workerSource.indexOf('} catch (error) {', commitStart);
-  const catchStaleCheckStart = workerSource.indexOf(
-    'if (!isLoadGenerationActive(loadGeneration)) {',
-    catchStart,
-  );
-  const catchDisposeStart = workerSource.indexOf('disposeStageResources();', catchStaleCheckStart);
+function deferred() {
+  let resolve = () => {};
+  const promise = new Promise<void>((complete) => { resolve = complete; });
+  return { promise, resolve };
+}
 
-  assert.ok(loadCommitStart > 0, 'the worker must capture load-owned globals after loadUsdStage');
-  assert.ok(staleCheckStart > loadCommitStart, 'stale generation must be checked after capture');
-  assert.ok(commitStart > staleCheckEnd, 'global commit must happen only after stale generation check');
+test('a slower stage completion releases its handles and restores the newer committed stage', async () => {
+  const { bindings, owner, install, released } = createHarness();
+  const first = owner.beginLoad();
+  const gate = deferred();
+  const firstCompletion = gate.promise.then(() => {
+    install('first');
+    first.captureResources?.();
+    return first.adopt('first');
+  });
+  const second = owner.beginLoad();
+  install('second');
+  second.captureResources?.();
+  assert.equal(second.adopt('second'), true);
+  const secondRender = bindings.renderInterface;
 
-  const staleBlock = workerSource.slice(loadCommitStart, staleCheckEnd);
-  assert.match(staleBlock, /driver:\s*loadState\?\.driver/, 'stale cleanup must own loadState.driver');
-  assert.match(staleBlock, /disposeAbandonedWorkerStageGlobals/, 'stale load must clean local resources');
-  assert.match(staleBlock, /restoreCommittedWorkerStageGlobals/, 'stale load must restore the active stage');
-  assert.doesNotMatch(
-    staleBlock,
-    /disposeStageResources/,
-    'stale load must not dispose the active stage resources',
-  );
+  gate.resolve();
+  assert.equal(await firstCompletion, false);
+  assert.equal(bindings.driver, 'second');
+  assert.equal(bindings.renderInterface, secondRender);
+  assert.equal(bindings.usdStage, 'second:stage');
+  assert.deepEqual(released, ['first', 'first:render']);
+  owner.releaseStage();
+  assert.deepEqual(released, ['first', 'first:render', 'second', 'second:render']);
+});
 
-  assert.ok(
-    catchStaleCheckStart > catchStart && catchDisposeStart > catchStaleCheckStart,
-    'catch path must reject stale generations before global stage disposal',
-  );
+test('a rejected stale load clears transient globals without disposing the newer stage', async () => {
+  const { bindings, owner, install, released } = createHarness();
+  const first = owner.beginLoad();
+  const gate = deferred();
+  const failure = gate.promise.then(() => {
+    install('failed');
+    first.captureResources?.();
+    throw new Error('stage open failed');
+  }).catch(() => first.discardIfStale());
+  const second = owner.beginLoad();
+  install('second');
+  second.captureResources?.();
+  second.adopt('second');
+  gate.resolve();
+
+  assert.equal(await failure, true);
+  assert.equal(bindings.driver, 'second');
+  assert.deepEqual(released, ['failed', 'failed:render']);
+});
+
+test('stale rejection before acquiring resources leaves shared committed handles alive', () => {
+  const { bindings, owner, install, released } = createHarness();
+  const first = owner.beginLoad();
+  const second = owner.beginLoad();
+  install('second');
+  second.captureResources?.();
+  second.adopt('second');
+  assert.equal(first.discardIfStale(), true);
+  assert.equal(bindings.driver, 'second');
+  assert.deepEqual(released, []);
+});
+
+test('stage replacement invalidates in-flight work while release remains idempotent', async () => {
+  const { bindings, owner, install, released } = createHarness();
+  const load = owner.beginLoad();
+  install('committed');
+  load.captureResources?.();
+  load.adopt('committed');
+  owner.invalidate();
+  owner.releaseStage();
+  owner.releaseStage();
+  assert.equal(load.isActive(), false);
+  assert.deepEqual(released, ['committed', 'committed:render']);
+  assert.equal(bindings.driver, undefined);
+  assert.equal(bindings.renderInterface, undefined);
+});
+
+test('worker disposal rejects later asynchronous completion and frees its handles', async () => {
+  const { bindings, owner, install, released } = createHarness();
+  const load = owner.beginLoad();
+  const gate = deferred();
+  const completion = gate.promise.then(() => {
+    install('late');
+    load.captureResources?.();
+    return load.adopt('late');
+  });
+  owner.dispose();
+  gate.resolve();
+  assert.equal(await completion, false);
+  assert.equal(owner.disposed, true);
+  assert.equal(bindings.driver, undefined);
+  assert.deepEqual(released, ['late', 'late:render']);
+});
+
+test('current stage failure is reported to the caller before normal stage cleanup', () => {
+  const { owner, install, released } = createHarness();
+  const load = owner.beginLoad();
+  install('current');
+  load.captureResources?.();
+  load.adopt('current');
+  assert.equal(load.discardIfStale(), false);
+  assert.deepEqual(released, []);
+  owner.releaseStage();
+  assert.deepEqual(released, ['current', 'current:render']);
 });

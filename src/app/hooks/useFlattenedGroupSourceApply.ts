@@ -1,6 +1,5 @@
 import { useCallback } from 'react';
 
-import { generateURDF } from '@/core/parsers';
 import {
   createComponentSourceDraft,
   createSourceSemanticRobotHash,
@@ -17,6 +16,10 @@ import { useWorkspaceStore } from '@/store/workspaceStore';
 import type { GroupSourceCodeDocumentChangeTarget } from '@/app/utils/sourceCodeDocuments';
 import { beginCoordinatedWorkspaceTransaction } from '@/app/utils/pendingHistory';
 import { partitionFlattenedGroupEdit } from '@/app/utils/assemblyUrdfSourcePartition';
+import {
+  tryGenerateEditableRobotSource,
+  resolveEditableRobotSourceFormat,
+} from '@/app/utils/generateEditableRobotSource';
 import { logRegressionError } from '@/shared/debug/consoleDiagnostics';
 import { commitPreparedComponentSourceApply } from './useEditableSourceCodeApply';
 
@@ -50,6 +53,32 @@ function provenanceMatchesCurrentWorkspace(
   return true;
 }
 
+interface PreparedGroupSourceComponent {
+  componentId: string;
+  robot: RobotData;
+  draft: ComponentSourceDraft | null;
+}
+
+function applyPreparedGroupComponent(prepared: PreparedGroupSourceComponent, operationId: string): boolean {
+  const workspace = useWorkspaceStore.getState();
+  if (prepared.draft) {
+    return commitPreparedComponentSourceApply({
+      ...prepared,
+      draft: prepared.draft,
+      expectedWorkspaceRevision: workspace.revision,
+      workspaceMutationOptions: { operationId },
+    });
+  }
+  const applied = workspace.replaceComponentRobotAtRevision(
+    prepared.componentId,
+    workspace.revision,
+    prepared.robot,
+    { operationId },
+  );
+  if (applied) useAssetsStore.getState().removeComponentSourceDraft(prepared.componentId);
+  return applied;
+}
+
 /** Applies one flattened master/bridge edit as one compensating cross-store transaction. */
 export function applyFlattenedGroupSourceEdit(
   editedText: string,
@@ -58,25 +87,23 @@ export function applyFlattenedGroupSourceEdit(
   const partitioned = partitionFlattenedGroupEdit(editedText, target.provenance);
   if (!partitioned.ok || !provenanceMatchesCurrentWorkspace(target)) return false;
 
-  let preparedComponents: Array<{
-    componentId: string;
-    robot: RobotData;
-    draft: ComponentSourceDraft;
-  }>;
+  let preparedComponents: PreparedGroupSourceComponent[];
   try {
     preparedComponents = Array.from(partitioned.componentRobots ?? []).map(
       ([componentId, robot]) => {
         const normalizedRobot = normalizeComponentRobot(robot);
-        const content = generateURDF(
-          { ...normalizedRobot, selection: { type: null, id: null } },
-          { preserveMeshPaths: true },
-        );
+        const format = resolveEditableRobotSourceFormat(normalizedRobot);
+        const content = tryGenerateEditableRobotSource({
+          format,
+          robotState: { ...normalizedRobot, selection: { type: null, id: null } },
+          preserveMeshPaths: true,
+        });
         return {
           componentId,
           robot: normalizedRobot,
-          draft: createComponentSourceDraft({
+          draft: content === null ? null : createComponentSourceDraft({
             componentId,
-            format: 'urdf',
+            format,
             content,
             robot: normalizedRobot,
           }),
@@ -95,12 +122,7 @@ export function applyFlattenedGroupSourceEdit(
   try {
     operationId = beginCoordinatedWorkspaceTransaction('Apply flattened group source');
     for (const prepared of preparedComponents) {
-      const expectedWorkspaceRevision = useWorkspaceStore.getState().revision;
-      if (!commitPreparedComponentSourceApply({
-        ...prepared,
-        expectedWorkspaceRevision,
-        workspaceMutationOptions: { operationId },
-      })) {
+      if (!applyPreparedGroupComponent(prepared, operationId)) {
         throw new Error(`Failed to apply component "${prepared.componentId}"`);
       }
     }

@@ -1434,3 +1434,33 @@ test('safeOpenUsdStage does not cache failed opens as a permanent null result', 
         globalThis.window = previousWindow;
     }
 });
+
+
+test('disabled stage text fallback keeps driver metadata without exporting large root layers', () => {
+    const previousWindow = globalThis.window;
+    let layerExportCount = 0;
+    globalThis.window = { driver: {
+        GetRootLayerText() { layerExportCount += 1; return exportedRootLayerText; },
+        GetPhysicsJointRecords: () => [],
+        GetPhysicsLinkDynamicsRecords: () => [],
+        GetRobotMetadataSnapshot: () => ({
+            source: 'usd-stage-cpp',
+            linkParentPairs: [['/Robot/base_link/link1', '/Robot/base_link']],
+            jointCatalogEntries: [{
+                linkPath: '/Robot/base_link/link1', parentLinkPath: '/Robot/base_link',
+                jointName: 'handle', jointTypeName: 'revolute', axisToken: 'Z',
+            }],
+            linkDynamicsEntries: [],
+        }),
+    } };
+    try {
+        const delegate = createFallbackMetadataDelegate();
+        delegate.disableStageLayerTextFallbacks = true;
+        const snapshot = delegate.buildRobotMetadataSnapshotForStage('/robots/two_link_robot.usd', null);
+        assert.equal(layerExportCount, 0);
+        assert.equal(snapshot.source, 'usd-stage-cpp');
+        assert.equal(snapshot.jointCatalogEntries[0].jointName, 'handle');
+    } finally {
+        globalThis.window = previousWindow;
+    }
+});

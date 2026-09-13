@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { Color, MeshPhysicalMaterial, Texture } from 'three';
+import { BufferGeometry, Color, Float32BufferAttribute, Mesh, MeshPhysicalMaterial, Texture } from 'three';
 
 import * as SharedBasic from './shared-basic.js';
 import {
@@ -2302,6 +2302,51 @@ test('normalizeRobotSceneSnapshot skips stage text recovery when packed snapshot
         assert.equal(snapshot.robotMetadataSnapshot.jointCatalogEntries.length, 1);
     }
     finally {
+        globalThis.window = previousWindow;
+    }
+});
+
+
+test('complete packed geometry does not duplicate an already represented live prim or trigger stage text recovery', () => {
+    const previousWindow = globalThis.window;
+    globalThis.window = { location: { search: '' } };
+    const primPath = '/root/body/Part';
+    const meshId = '/root/visuals.proto_mesh_id0';
+    const positions = new Float32Array([0, 0, 0, 1, 0, 0, 0, 1, 0]);
+    const geometry = new BufferGeometry();
+    geometry.setAttribute('position', new Float32BufferAttribute(positions, 3));
+    const material = new MeshPhysicalMaterial();
+    try {
+        const delegate = new ThreeRenderDelegateInterface({
+            stage: () => null, driver: () => null, allowDriverStageLookup: false,
+        });
+        delegate.meshes[primPath] = { _mesh: new Mesh(geometry, material) };
+        delegate.getStageMetadataLayerTexts = () => {
+            throw new Error('complete packed prim must not recover its duplicate from layer text');
+        };
+        const ranges = { positions: { offset: 0, count: 9, stride: 3 } };
+        const snapshot = delegate.normalizeRobotSceneSnapshot({
+            stage: { stageSourcePath: '/basket.usda', defaultPrimPath: '/root' },
+            robotMetadataSnapshot: {
+                source: 'usd-stage-cpp',
+                jointCatalogEntries: [{ jointName: 'handle', linkPath: '/root/body' }],
+            },
+            render: {
+                meshDescriptors: [{
+                    meshId, resolvedPrimPath: primPath, sectionName: 'visuals', primType: 'mesh', ranges,
+                    geometry: { numVertices: 3, numIndices: 0, materialId: '/root/materials/red' },
+                }],
+                materials: [{ materialId: '/root/materials/red', color: [1, 0, 0] }],
+            },
+            buffers: { positions, rangesByMeshId: { [meshId]: ranges } },
+        });
+        assert.ok(snapshot);
+        assert.equal(snapshot.render.meshDescriptors.length, 1);
+        assert.equal(snapshot.render.meshDescriptors[0].resolvedPrimPath, primPath);
+        assert.deepEqual(Array.from(snapshot.buffers.positions), Array.from(positions));
+    } finally {
+        geometry.dispose();
+        material.dispose();
         globalThis.window = previousWindow;
     }
 });

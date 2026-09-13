@@ -10,7 +10,6 @@ export { useAppState } from './useAppState';
 export { useActiveHistory } from './useActiveHistory';
 export { useCollisionOptimizationWorkflow } from './useCollisionOptimizationWorkflow';
 export { useEditableSourceCodeApply } from './useEditableSourceCodeApply';
-export { useEditableSourcePatches } from './useEditableSourcePatches';
 export { useFileImport } from './useFileImport';
 export { useFileExport } from './useFileExport';
 export { useImportInputBinding } from './useImportInputBinding';

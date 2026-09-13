@@ -7,27 +7,23 @@ import type {
 import { buildExportableAssemblyRobotData } from '@/core/robot/assemblyTransforms';
 import { analyzeAssemblyConnectivity } from '@/core/robot/assemblyConnectivity';
 import type { SourceCodeDocumentFlavor } from './sourceCodeDisplay';
-import { detectImportFormat } from './import-preparation/formatDetection.ts';
 import {
-  extractUsdLayerReferencesFromText,
-  resolveUsdLayerReferencePath,
-} from '@/features/editor/usd_documents';
+  collectRelatedSourceEntries,
+  getSourceFileName,
+  normalizeSourcePath,
+  type SourceFileFormat,
+  type SourceTextFileEntry,
+} from '@/core/parsers/sourceReferenceGraph';
 import { getSourceCodeDocumentFlavor, isSourceCodeDocumentReadOnly } from './sourceCodeDisplay.ts';
 import {
   graftAssemblyGroupUrdfSource,
   resolveAssemblyGroupMasterComponentId,
 } from './assemblyUrdfSourceGraft.ts';
 import type { GraftAssemblyGroupUrdfSourceProvenance } from './assemblyUrdfSourceGraft.ts';
-import { generateEditableRobotSource } from './generateEditableRobotSource.ts';
-
-type SourceFileFormat = RobotFile['format'] | null;
-
-interface SourceTextFileEntry {
-  path: string;
-  content: string;
-  format: SourceFileFormat;
-  blobUrl?: string;
-}
+import {
+  tryGenerateEditableRobotSource,
+  resolveEditableRobotSourceFormat,
+} from './generateEditableRobotSource.ts';
 
 export interface ComponentSourceCodeDocumentChangeTarget {
   kind: 'component';
@@ -90,9 +86,6 @@ interface BuildSourceCodeDocumentsParams {
   allFileContents: Record<string, string>;
 }
 
-const XACRO_INCLUDE_REGEX =
-  /<!--[\s\S]*?-->|<xacro:include\b([^>]*?)(?:\/>|>\s*<\/xacro:include>)/g;
-const MJCF_INCLUDE_REGEX = /<!--[\s\S]*?-->|<include\b([^>]*?)(?:\/>|>\s*<\/include>)/g;
 const SOURCE_ROOT_PATTERNS: Partial<Record<SourceCodeDocumentFlavor, RegExp>> = {
   urdf: /<robot\b/i,
   xacro: /<\s*(?:xacro:)?robot\b/i,
@@ -101,257 +94,6 @@ const SOURCE_ROOT_PATTERNS: Partial<Record<SourceCodeDocumentFlavor, RegExp>> = 
   'equivalent-mjcf': /<mujoco\b/i,
   usd: /#usda\b/i,
 };
-
-function normalizeSourcePath(filePath: string): string {
-  return filePath
-    .replace(/\\/g, '/')
-    .replace(/\/+/g, '/')
-    .replace(/^\.\/+/, '')
-    .replace(/^\/+/, '');
-}
-
-function getSourceBasePath(filePath: string): string {
-  const normalizedPath = normalizeSourcePath(filePath);
-  const lastSlashIndex = normalizedPath.lastIndexOf('/');
-  return lastSlashIndex === -1 ? '' : normalizedPath.slice(0, lastSlashIndex);
-}
-
-function getSourceFileName(filePath: string): string {
-  const normalizedPath = normalizeSourcePath(filePath);
-  const lastSlashIndex = normalizedPath.lastIndexOf('/');
-  return lastSlashIndex === -1 ? normalizedPath : normalizedPath.slice(lastSlashIndex + 1);
-}
-
-function parseXmlAttributeMap(attrs: string): Map<string, string> {
-  const parsed = new Map<string, string>();
-  const attrRegex = /([A-Za-z_][\w:.-]*)\s*=\s*(["'])(.*?)\2/g;
-  let match: RegExpExecArray | null;
-  while ((match = attrRegex.exec(attrs)) !== null) {
-    parsed.set(match[1], match[3]);
-  }
-  return parsed;
-}
-
-function extractXmlAttributeReferences(
-  content: string,
-  tagRegex: RegExp,
-  attributeName: string,
-): string[] {
-  return Array.from(content.matchAll(tagRegex), (match) => {
-    if (match[0].startsWith('<!--')) {
-      return null;
-    }
-    return parseXmlAttributeMap(match[1] ?? '').get(attributeName)?.trim() ?? null;
-  }).filter((value): value is string => Boolean(value));
-}
-
-function buildSourceFileIndex(
-  availableFiles: RobotFile[],
-  allFileContents: Record<string, string>,
-): Map<string, SourceTextFileEntry> {
-  const index = new Map<string, SourceTextFileEntry>();
-
-  availableFiles.forEach((file) => {
-    if (file.format === 'mesh' || file.format === 'asset') {
-      return;
-    }
-
-    const normalizedPath = normalizeSourcePath(file.name);
-    index.set(normalizedPath, {
-      path: file.name,
-      content: file.content,
-      format: file.format,
-      blobUrl: file.blobUrl,
-    });
-  });
-
-  Object.entries(allFileContents).forEach(([path, content]) => {
-    if (typeof content !== 'string') {
-      return;
-    }
-
-    const normalizedPath = normalizeSourcePath(path);
-    const existingEntry = index.get(normalizedPath);
-    index.set(normalizedPath, {
-      path: existingEntry?.path ?? path,
-      content,
-      format: existingEntry?.format ?? detectImportFormat(content, path),
-      blobUrl: existingEntry?.blobUrl,
-    });
-  });
-
-  return index;
-}
-
-function extractIncludeReferences(format: SourceFileFormat, content: string): string[] {
-  if (format === 'xacro') {
-    return extractXmlAttributeReferences(content, XACRO_INCLUDE_REGEX, 'filename');
-  }
-
-  if (format === 'mjcf') {
-    return extractXmlAttributeReferences(content, MJCF_INCLUDE_REGEX, 'file');
-  }
-
-  if (format === 'usd') {
-    return extractUsdLayerReferencesFromText(content);
-  }
-
-  return [];
-}
-
-function resolveXacroReference(
-  reference: string,
-  fileIndex: Map<string, SourceTextFileEntry>,
-  basePath: string,
-): string | null {
-  const trimmedReference = reference.trim();
-  if (!trimmedReference) {
-    return null;
-  }
-
-  const normalizedKeys = Array.from(fileIndex.keys());
-  const packageReferenceMatch = trimmedReference.match(/^\$\(find\s+([^)]+)\)(?:\/(.*))?$/);
-  if (packageReferenceMatch) {
-    const packageName = packageReferenceMatch[1]?.trim();
-    const relativePath = normalizeSourcePath(packageReferenceMatch[2] ?? '');
-    const searchPattern = normalizeSourcePath(
-      relativePath ? `${packageName}/${relativePath}` : packageName,
-    );
-
-    return (
-      normalizedKeys.find(
-        (candidate) => candidate === searchPattern || candidate.endsWith(`/${searchPattern}`),
-      ) ?? null
-    );
-  }
-
-  const normalizedReference = normalizeSourcePath(trimmedReference);
-  if (!normalizedReference) {
-    return null;
-  }
-
-  const normalizedBasePath = normalizeSourcePath(basePath);
-  if (normalizedBasePath) {
-    const baseParts = normalizedBasePath.split('/').filter(Boolean);
-    for (let index = baseParts.length; index >= 0; index -= 1) {
-      const prefix = baseParts.slice(0, index).join('/');
-      const candidatePath = normalizeSourcePath(
-        prefix ? `${prefix}/${normalizedReference}` : normalizedReference,
-      );
-      if (fileIndex.has(candidatePath)) {
-        return candidatePath;
-      }
-    }
-  }
-
-  if (fileIndex.has(normalizedReference)) {
-    return normalizedReference;
-  }
-
-  const fuzzyMatch = normalizedKeys.find(
-    (candidate) =>
-      candidate === normalizedReference || candidate.endsWith(`/${normalizedReference}`),
-  );
-  if (fuzzyMatch) {
-    return fuzzyMatch;
-  }
-
-  const fileName = getSourceFileName(normalizedReference);
-  if (!fileName || !fileName.includes('.')) {
-    return null;
-  }
-
-  return (
-    normalizedKeys.find(
-      (candidate) => candidate === fileName || candidate.endsWith(`/${fileName}`),
-    ) ?? null
-  );
-}
-
-function resolveMjcfReference(
-  reference: string,
-  fileIndex: Map<string, SourceTextFileEntry>,
-  basePath: string,
-): string | null {
-  const normalizedReference = normalizeSourcePath(reference.trim());
-  if (!normalizedReference) {
-    return null;
-  }
-
-  const normalizedBasePath = normalizeSourcePath(basePath);
-  if (normalizedBasePath) {
-    const baseParts = normalizedBasePath.split('/').filter(Boolean);
-    for (let index = baseParts.length; index >= 0; index -= 1) {
-      const prefix = baseParts.slice(0, index).join('/');
-      const candidatePath = normalizeSourcePath(
-        prefix ? `${prefix}/${normalizedReference}` : normalizedReference,
-      );
-      if (fileIndex.has(candidatePath)) {
-        return candidatePath;
-      }
-    }
-  }
-
-  if (fileIndex.has(normalizedReference)) {
-    return normalizedReference;
-  }
-
-  return null;
-}
-
-function resolveUsdReference(
-  reference: string,
-  fileIndex: Map<string, SourceTextFileEntry>,
-  parentPath: string,
-): string | null {
-  const resolvedVirtualPath = resolveUsdLayerReferencePath(parentPath, reference);
-  if (!resolvedVirtualPath) {
-    return null;
-  }
-
-  const normalizedResolvedPath = normalizeSourcePath(resolvedVirtualPath);
-  if (fileIndex.has(normalizedResolvedPath)) {
-    return normalizedResolvedPath;
-  }
-
-  const normalizedReference = normalizeSourcePath(reference);
-  if (fileIndex.has(normalizedReference)) {
-    return normalizedReference;
-  }
-
-  const normalizedKeys = Array.from(fileIndex.keys());
-  return (
-    normalizedKeys.find(
-      (candidate) =>
-        candidate === normalizedResolvedPath ||
-        candidate.endsWith(`/${normalizedResolvedPath}`) ||
-        candidate === normalizedReference ||
-        candidate.endsWith(`/${normalizedReference}`),
-    ) ?? null
-  );
-}
-
-function resolveIncludedFilePath(
-  parentFormat: SourceFileFormat,
-  reference: string,
-  fileIndex: Map<string, SourceTextFileEntry>,
-  basePath: string,
-  parentPath: string,
-): string | null {
-  if (parentFormat === 'xacro') {
-    return resolveXacroReference(reference, fileIndex, basePath);
-  }
-
-  if (parentFormat === 'mjcf') {
-    return resolveMjcfReference(reference, fileIndex, basePath);
-  }
-
-  if (parentFormat === 'usd') {
-    return resolveUsdReference(reference, fileIndex, parentPath);
-  }
-
-  return null;
-}
 
 function resolveRelatedDocumentFlavor(
   entry: SourceTextFileEntry,
@@ -458,48 +200,6 @@ function buildDisplayNames(filePaths: string[]): Map<string, string> {
   return displayNames;
 }
 
-function collectRelatedSourceEntries(
-  rootFile: RobotFile,
-  rootContent: string,
-  fileIndex: Map<string, SourceTextFileEntry>,
-): SourceTextFileEntry[] {
-  const visitedPaths = new Set<string>([normalizeSourcePath(rootFile.name)]);
-  const relatedEntries: SourceTextFileEntry[] = [];
-
-  const visitEntry = (entryPath: string, entryContent: string, entryFormat: SourceFileFormat) => {
-    const includeReferences = extractIncludeReferences(entryFormat, entryContent);
-    if (includeReferences.length === 0) {
-      return;
-    }
-
-    const basePath = getSourceBasePath(entryPath);
-    includeReferences.forEach((reference) => {
-      const resolvedPath = resolveIncludedFilePath(
-        entryFormat,
-        reference,
-        fileIndex,
-        basePath,
-        entryPath,
-      );
-      if (!resolvedPath || visitedPaths.has(resolvedPath)) {
-        return;
-      }
-
-      const relatedEntry = fileIndex.get(resolvedPath);
-      if (!relatedEntry) {
-        return;
-      }
-
-      visitedPaths.add(resolvedPath);
-      relatedEntries.push(relatedEntry);
-      visitEntry(relatedEntry.path, relatedEntry.content, relatedEntry.format ?? entryFormat);
-    });
-  };
-
-  visitEntry(rootFile.name, rootContent, rootFile.format);
-  return relatedEntries;
-}
-
 export function buildSourceCodeDocuments({
   componentId,
   activeSourceFile,
@@ -571,12 +271,11 @@ export function buildSourceCodeDocuments({
     return primaryDocuments;
   }
 
-  const sourceFileIndex = buildSourceFileIndex(availableFiles, allFileContents);
-  const relatedEntries = collectRelatedSourceEntries(
-    activeSourceFile,
-    activeSourceFile.content,
-    sourceFileIndex,
-  );
+  const relatedEntries = collectRelatedSourceEntries({
+    rootFile: activeSourceFile,
+    availableFiles,
+    allFileContents,
+  });
 
   if (relatedEntries.length === 0) {
     return primaryDocuments;
@@ -611,9 +310,9 @@ export function buildSourceCodeDocuments({
   return [...primaryDocuments, ...relatedDocuments];
 }
 
-function getGeneratedWorkspaceSourceFileName(workspace: AssemblyState): string {
+function getGeneratedWorkspaceSourceFileName(workspace: AssemblyState, extension = 'urdf'): string {
   const baseName = workspace.name.trim().replace(/[^a-zA-Z0-9_-]+/g, '_') || 'workspace';
-  return `${baseName}.urdf`;
+  return `${baseName}.${extension}`;
 }
 
 function sanitizeSourceFileBaseName(name: string): string {
@@ -683,31 +382,33 @@ function buildComponentGeneratedFallbackDocument(
   component: AssemblyComponent,
   disambiguate: boolean,
 ): SourceCodeDocumentDescriptor {
+  const format = resolveEditableRobotSourceFormat(component.robot);
   const content = component.robot
-    ? generateEditableRobotSource({
-        format: 'urdf',
+    ? tryGenerateEditableRobotSource({
+        format,
         robotState: { ...component.robot, selection: { type: null, id: null } },
         includeHardware: 'auto',
         preserveMeshPaths: true,
       })
     : '';
+  const extension = format === 'mjcf' ? 'xml' : format;
   const fileName = disambiguate
-    ? `${sanitizeSourceFileBaseName(component.name)}.urdf`
-    : getGeneratedWorkspaceSourceFileName(workspace);
+    ? `${sanitizeSourceFileBaseName(component.name)}.${extension}`
+    : getGeneratedWorkspaceSourceFileName(workspace, extension);
   return {
     id: disambiguate ? `comp:${component.id}:generated` : 'source:workspace-projection',
     fileName,
     tabLabel: disambiguate ? component.name : fileName,
     filePath: null,
-    content,
-    documentFlavor: 'urdf',
-    readOnly: false,
+    content: content ?? '',
+    documentFlavor: format,
+    readOnly: content === null,
     validationEnabled: true,
-    changeTarget: {
+    changeTarget: content === null ? undefined : {
       kind: 'component',
       componentId: component.id,
       name: fileName,
-      format: 'urdf',
+      format,
       content,
       persistContent: false,
     },
@@ -733,7 +434,7 @@ function buildGroupSubAssembly(workspace: AssemblyState, componentIds: string[])
 }
 
 /**
- * One URDF document per bridge-connected group. A source-preserving graft is
+ * One source document per bridge-connected group. A source-preserving URDF graft is
  * editable through provenance partitioning; unsupported shapes fall back to a
  * fully re-serialized read-only projection.
  */
@@ -745,10 +446,13 @@ function buildGroupMergedDocument(
   const masterComponentId = resolveAssemblyGroupMasterComponentId(workspace, componentIds);
   const masterComponent = masterComponentId ? workspace.components[masterComponentId] : null;
   const groupName = masterComponent?.name || workspace.name;
-  const documentId = `group:${masterComponentId ?? componentIds[0]}:urdf`;
-  const fileName = `${sanitizeSourceFileBaseName(groupName)}.urdf`;
+  const subAssembly = buildGroupSubAssembly(workspace, componentIds);
+  const projectedRobot = buildExportableAssemblyRobotData(subAssembly);
+  const format = resolveEditableRobotSourceFormat(projectedRobot);
+  const documentId = `group:${masterComponentId ?? componentIds[0]}:${format}`;
+  const fileName = `${sanitizeSourceFileBaseName(groupName)}.${format === 'mjcf' ? 'xml' : format}`;
 
-  if (masterComponentId && masterComponent) {
+  if (format === 'urdf' && masterComponentId && masterComponent) {
     const masterDraft = componentSourceDrafts[masterComponentId];
     if (masterDraft?.componentId === masterComponentId && masterDraft.format === 'urdf') {
       const grafted = graftAssemblyGroupUrdfSource({
@@ -778,11 +482,9 @@ function buildGroupMergedDocument(
     }
   }
 
-  const subAssembly = buildGroupSubAssembly(workspace, componentIds);
-  const projectedRobot = buildExportableAssemblyRobotData(subAssembly);
   const content = projectedRobot
-    ? generateEditableRobotSource({
-        format: 'urdf',
+    ? tryGenerateEditableRobotSource({
+        format,
         robotState: { ...projectedRobot, selection: { type: null, id: null } },
         includeHardware: 'auto',
         preserveMeshPaths: true,
@@ -793,8 +495,8 @@ function buildGroupMergedDocument(
     fileName,
     tabLabel: groupName,
     filePath: null,
-    content,
-    documentFlavor: 'urdf',
+    content: content ?? '',
+    documentFlavor: format,
     readOnly: true,
     validationEnabled: true,
   };
@@ -802,7 +504,7 @@ function buildGroupMergedDocument(
 
 /**
  * Canonical source-editor contract. Components with no bridge each get their own
- * editable tab; bridge-connected components collapse into one flattened URDF tab
+ * editable tab; bridge-connected components collapse into one flattened source tab
  * per connected group. Successful grafts route edits through group provenance;
  * fallback projections remain read-only.
  */

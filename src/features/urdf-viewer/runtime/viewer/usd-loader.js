@@ -103,7 +103,7 @@ async function ensureRootPathIsLoadable(pathToLoad, usdFsHelper) {
     }
 }
 export async function loadUsdStage(args) {
-    const { USD, usdFsHelper, messageLog, progressBar, progressLabel, showLoadUi = true, readStageMetadata, loadCollisionPrims, loadVisualPrims: requestedLoadVisualPrims, loadPassLabel, params, displayName, pathToLoad, isLoadActive, debugFileHandling = false, onResolvedFilename, applyMeshFilters, rebuildLinkAxes, renderFrame, onProgress, } = args;
+    const { USD, usdFsHelper, messageLog, progressBar, progressLabel, showLoadUi = true, readStageMetadata, loadCollisionPrims, loadVisualPrims: requestedLoadVisualPrims, loadPassLabel, params, displayName, pathToLoad, isLoadActive, debugFileHandling = false, onResolvedFilename, applyMeshFilters, rebuildLinkAxes, renderFrame, onProgress, onStageResourcesCreated, } = args;
     const nonBlockingLoad = parseBooleanFlag(params.get("nonBlockingLoad"), false);
     const fastLoad = parseBooleanFlag(params.get("fastLoad"), true);
     const forceDependencyPreload = parseBooleanFlag(params.get("forceDependencyPreload"), false);
@@ -769,10 +769,11 @@ export async function loadUsdStage(args) {
         maxVisualPrims,
         stage: () => window.usdStage || null,
         setStage: (resolvedStage) => {
-            window.usdStage = resolvedStage || null;
+            if (isLoadStillActive()) window.usdStage = resolvedStage || null;
         },
         driver: () => driver,
     }));
+    onStageResourcesCreated?.();
     let driverOpenPath = normalizedPath;
     const materialBindingOpenPreparation = {
         attempted: false,
@@ -781,10 +782,14 @@ export async function loadUsdStage(args) {
         repairedCount: 0,
         preparedPath: null,
     };
+    // New drivers apply compatibility schemas to the composed stage's session
+    // layer before Hydra population. Keep the source binary and its asset anchors.
+    const nativeMaterialBindingRepairAvailable =
+        typeof USD.HdWebSyncDriver?.prototype?.GetMaterialBindingRepairProfile === "function";
     let sourceRootLayer = null;
     try {
         const sdfLayerApi = usdModule?.SdfLayer;
-        if (sdfLayerApi && typeof sdfLayerApi.FindOrOpen === "function" && typeof TextEncoder !== "undefined") {
+        if (!nativeMaterialBindingRepairAvailable && sdfLayerApi && typeof sdfLayerApi.FindOrOpen === "function" && typeof TextEncoder !== "undefined") {
             materialBindingOpenPreparation.attempted = true;
             sourceRootLayer = sdfLayerApi.FindOrOpen(normalizedPath, {});
             const sourceRootLayerText = sourceRootLayer?.ExportToString?.() || "";
@@ -917,6 +922,25 @@ export async function loadUsdStage(args) {
     }
     catch { }
     state.driver = window.driver = driver;
+    if (nativeMaterialBindingRepairAvailable) {
+        try {
+            const repairProfile = driver.GetMaterialBindingRepairProfile();
+            if (repairProfile?.attempted === true
+                && repairProfile.failedCount === 0
+                && repairProfile.unsupportedInstanceCount === 0) {
+                renderInterface._materialBindingSchemaRepairAttempted = true;
+                renderInterface._materialBindingSchemaRepairSucceeded = repairProfile.repairedCount > 0;
+                renderInterface._materialBindingSchemaWriteSupported = true;
+                renderInterface._materialBindingSchemaRepairCandidateCount = repairProfile.candidateCount;
+                renderInterface._materialBindingSchemaRepairCount = repairProfile.repairedCount;
+            }
+        }
+        catch (error) {
+            // Retain the existing post-open repair if a mixed/older runtime cannot
+            // provide a successful native repair result.
+            console.warn("[usd-loader] Native material binding repair profile unavailable.", error);
+        }
+    }
     try {
         const stageCandidate = typeof driver.GetStage === "function"
             ? driver.GetStage()
@@ -924,6 +948,7 @@ export async function loadUsdStage(args) {
         const resolvedStage = stageCandidate && typeof stageCandidate.then === "function"
             ? await stageCandidate
             : stageCandidate;
+        if (!isLoadStillActive()) return state;
         if (resolvedStage) {
             window.usdStage = resolvedStage;
             renderInterface._resolvedDriverStage = resolvedStage;

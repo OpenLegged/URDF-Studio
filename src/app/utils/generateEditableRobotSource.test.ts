@@ -3,10 +3,14 @@ import assert from 'node:assert/strict';
 import { JSDOM } from 'jsdom';
 
 import { parseURDF } from '@/core/parsers';
-import { DEFAULT_LINK, GeometryType, type RobotFile, type RobotState } from '@/types';
+import { DEFAULT_LINK, GeometryType, type RobotFile, type RobotState, type UrdfVisual } from '@/types';
 
 import { parseEditableRobotSource } from './parseEditableRobotSource.ts';
-import { generateEditableRobotSource } from './generateEditableRobotSource.ts';
+import {
+  generateEditableRobotSource,
+  tryGenerateEditableRobotSource,
+  type GenerateEditableRobotSourceFormat,
+} from './generateEditableRobotSource.ts';
 
 const { window } = new JSDOM();
 
@@ -206,4 +210,99 @@ test('generateEditableRobotSource normalizes Xacro edits to editable robot XML',
 
   assert.doesNotMatch(content, /xacro:/i);
   assertRoundTrip('xacro', content, /<robot\b/i);
+});
+
+const unavailableGeometries: {
+  format: GenerateEditableRobotSourceFormat;
+  geometry: Partial<UrdfVisual>;
+}[] = [
+  { format: 'urdf', geometry: { type: GeometryType.PLANE } },
+  { format: 'urdf', geometry: { type: GeometryType.ELLIPSOID } },
+  { format: 'xacro', geometry: { type: GeometryType.HFIELD } },
+  { format: 'urdf', geometry: { type: GeometryType.MESH, meshPath: '' } },
+  { format: 'sdf', geometry: { type: GeometryType.ELLIPSOID } },
+  { format: 'sdf', geometry: { type: GeometryType.SDF, meshPath: 'shape.obj' } },
+  { format: 'sdf', geometry: { type: GeometryType.MESH, meshPath: '' } },
+  { format: 'sdf', geometry: { type: GeometryType.HFIELD } },
+  { format: 'sdf', geometry: { type: GeometryType.POLYLINE, polylinePoints: [] } },
+  { format: 'mjcf', geometry: { type: GeometryType.POLYLINE } },
+];
+
+for (const { format, geometry } of unavailableGeometries) {
+  test(`editable ${format} source cannot silently replace ${geometry.type} geometry`, (t) => {
+    const warn = t.mock.method(console, 'warn', () => {});
+    const error = t.mock.method(console, 'error', () => {});
+
+    for (const slot of ['visual', 'collision', 'visualBodies', 'collisionBodies'] as const) {
+      const robotState = createRobotState();
+      const link = robotState.links.base_link;
+      const shape = { ...structuredClone(DEFAULT_LINK.visual), ...geometry };
+      if (slot === 'visual' || slot === 'collision') link[slot] = shape;
+      else link[slot] = [shape];
+      const before = structuredClone(robotState);
+
+      assert.equal(tryGenerateEditableRobotSource({ format, robotState }), null, slot);
+      assert.deepEqual(robotState, before);
+    }
+
+    assert.equal(warn.mock.callCount(), 0);
+    assert.equal(error.mock.callCount(), 0);
+  });
+}
+
+test('editable MJCF source still preserves an inline mesh without an external file', () => {
+  const robotState = createRobotState();
+  robotState.links.base_link.visual = {
+    ...structuredClone(DEFAULT_LINK.visual),
+    type: GeometryType.MESH,
+    dimensions: { x: 1, y: 1, z: 1 },
+    assetRef: 'inline_mesh',
+    mjcfMesh: { vertices: [0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1] },
+  };
+
+  const content = tryGenerateEditableRobotSource({ format: 'mjcf', robotState });
+  assert.ok(content);
+  assert.match(content, /vertex="0 0 0 1 0 0 0 1 0 0 0 1"/);
+  assert.match(content, /type="mesh"/);
+});
+
+const preservedGeometries: {
+  format: GenerateEditableRobotSourceFormat;
+  geometry: Partial<UrdfVisual>;
+}[] = [
+  { format: 'urdf', geometry: { type: GeometryType.CAPSULE } },
+  { format: 'xacro', geometry: { type: GeometryType.CAPSULE } },
+  { format: 'mjcf', geometry: { type: GeometryType.ELLIPSOID } },
+  {
+    format: 'sdf',
+    geometry: {
+      type: GeometryType.POLYLINE,
+      polylinePoints: [{ x: 0, y: 0 }, { x: 1, y: 0 }, { x: 0, y: 1 }],
+      polylineHeight: 1,
+    },
+  },
+];
+
+for (const { format, geometry } of preservedGeometries) {
+  test(`editable ${format} source preserves supported ${geometry.type} geometry`, () => {
+    const robotState = createRobotState();
+    robotState.links.base_link.visual = { ...structuredClone(DEFAULT_LINK.visual), ...geometry };
+    const content = tryGenerateEditableRobotSource({ format, robotState });
+    assert.ok(content);
+    const parsed = parseEditableRobotSource({
+      file: { name: `model.${format}`, format },
+      content,
+      availableFiles: [],
+      allFileContents: {},
+    });
+    assert.ok(parsed);
+    assert.equal(parsed.links.base_link.visual.type, geometry.type);
+  });
+}
+
+test('explicit generation can still produce a supported export approximation', () => {
+  const robotState = createRobotState();
+  robotState.links.base_link.visual.type = GeometryType.ELLIPSOID;
+  assert.match(generateEditableRobotSource({ format: 'sdf', robotState }), /<box>/);
+  assert.equal(tryGenerateEditableRobotSource({ format: 'sdf', robotState }), null);
 });

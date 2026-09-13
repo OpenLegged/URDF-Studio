@@ -35,6 +35,11 @@ URL.createObjectURL = ((blob: Blob) => {
 }) as typeof URL.createObjectURL;
 URL.revokeObjectURL = (() => undefined) as typeof URL.revokeObjectURL;
 
+async function readDownloadedArchive(): Promise<JSZip> {
+  assert.ok(downloadedBlob);
+  return JSZip.loadAsync(await downloadedBlob.arrayBuffer());
+}
+
 const meshRobotUrdf = `<?xml version="1.0"?>
 <robot name="mesh_bot">
   <link name="base_link">
@@ -118,10 +123,57 @@ test('exportLibraryRobotFile fits MJCF mesh-backed collision primitives before c
   });
 
   assert.equal(result.success, true);
-  assert.ok(downloadedBlob);
-  const archive = await JSZip.loadAsync(await downloadedBlob.arrayBuffer());
+  const archive = await readDownloadedArchive();
   const urdf = await archive.file('physical/physical.urdf')?.async('string');
   assert.match(urdf ?? '', /data-urdf-studio-geometry="capsule"/);
-  assert.match(urdf ?? '', /radius="0\.2" length="1"/);
+  const cylinder = new DOMParser().parseFromString(urdf ?? '', 'text/xml').querySelector('cylinder');
+  assert.ok(cylinder);
+  // Mesh fitting reads Float32 vertices; exporting must retain that fitted value.
+  assert.equal(Number(cylinder.getAttribute('radius')), Math.fround(0.2));
+  assert.equal(Number(cylinder.getAttribute('length')), 1);
   assert.doesNotMatch(urdf ?? '', /<mesh\b/);
 });
+
+for (const { targetFormat, jointType, expectedWarning } of [
+  { targetFormat: 'mjcf', jointType: 'planar', expectedWarning: /unsupported planar type/ },
+  { targetFormat: 'sdf', jointType: 'floating', expectedWarning: /unsupported floating type/ },
+] as const) {
+  test(`library ${targetFormat} export returns compatibility warnings alongside the generated archive`, async (t) => {
+    downloadedBlob = null;
+    globalThis.fetch = originalFetch;
+    const warn = t.mock.method(console, 'warn', () => {});
+    const source = `<robot name="joint_robot">
+      <link name="base"><visual><geometry><box size="0.2 0.2 0.2" /></geometry></visual></link>
+      <link name="tip"><visual><geometry><sphere radius="0.1" /></geometry></visual></link>
+      <joint name="mount" type="${jointType}"><parent link="base" /><child link="tip" /></joint>
+    </robot>`;
+
+    const result = await exportLibraryRobotFile({
+      file: { name: 'robots/joint_robot.urdf', format: 'urdf', content: source },
+      targetFormat,
+      assets: {},
+    });
+
+    assert.equal(result.success, true);
+    assert.equal(result.zipFileName, `joint_robot_${targetFormat}.zip`);
+    assert.deepEqual(result.missingMeshPaths, []);
+    assert.ok(result.warnings);
+    assert.equal(result.warnings.length, 1);
+    assert.match(result.warnings[0], expectedWarning);
+    assert.equal(warn.mock.callCount(), 0);
+    const archive = await readDownloadedArchive();
+    const outputPath = targetFormat === 'mjcf' ? 'joint_robot/joint_robot.xml' : 'joint_robot/model.sdf';
+    const output = await archive.file(outputPath)?.async('string');
+    assert.ok(output);
+    const document = new DOMParser().parseFromString(output, 'text/xml');
+    assert.equal(document.getElementsByTagName('parsererror').length, 0);
+    if (targetFormat === 'mjcf') {
+      assert.equal(document.getElementsByTagName('freejoint').item(0)?.getAttribute('name'), 'mount');
+      assert.equal(document.getElementsByTagName('body').length, 2);
+    } else {
+      assert.equal(document.getElementsByTagName('joint').length, 0);
+      assert.equal(document.getElementsByTagName('link').length, 2);
+      assert.ok(archive.file('joint_robot/model.config'));
+    }
+  });
+}

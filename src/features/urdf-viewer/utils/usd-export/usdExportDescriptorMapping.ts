@@ -111,7 +111,7 @@ export function resolveUsdSnapshotMeshDimensions(
     return current;
   }
 
-  const snapshotScale = getUsdDescriptorTransformScale(descriptor, snapshot);
+  const snapshotScale = getUsdDescriptorTransformScale(descriptor, snapshot, { preserveSign: true });
   return snapshotScale
     ? { x: snapshotScale[0], y: snapshotScale[1], z: snapshotScale[2] }
     : current;
@@ -165,6 +165,19 @@ function getLinkSemanticCandidates(link: UrdfLink): string[] {
 }
 
 function scoreDescriptorAgainstLink(descriptor: SnapshotMeshDescriptor, link: UrdfLink): number {
+  const meshId = normalizeUsdPath(descriptor.meshId);
+  const primPath = normalizeUsdPath(descriptor.resolvedPrimPath);
+  const hasMatchingDescriptor = link.visual.usdMeshDescriptors?.some((reference) =>
+    meshId
+      ? normalizeUsdPath(reference.meshId) === meshId
+      : Boolean(primPath) && normalizeUsdPath(reference.resolvedPrimPath) === primPath,
+  );
+  // Repeated CAD part names are common. Their descriptor identity must win over
+  // name/order heuristics or prepared OBJ files inherit a different part's pose.
+  if (hasMatchingDescriptor) {
+    return Number.POSITIVE_INFINITY;
+  }
+
   const descriptorToken = normalizeSemanticToken(getDescriptorSemanticName(descriptor));
   if (!descriptorToken) {
     return 0;
@@ -335,6 +348,28 @@ function createSyntheticVisualAttachmentLink(
   return linkId;
 }
 
+function resolvePreferredMaterialFallbackColor(
+  material: SnapshotMaterialRecord | null | undefined,
+): [number, number, number] | null {
+  if (hasNonEmptyTexturePath(material?.mapPath)) {
+    return [1, 1, 1];
+  }
+  return colorArrayToVertexColor(material?.color);
+}
+
+function resolveDescriptorDisplayColor(
+  descriptorMaterialRecord: SnapshotMaterialRecord | null | undefined,
+  explicitFallbackColor: [number, number, number] | null,
+  preferredFallbackColor: [number, number, number] | null,
+): [number, number, number] | null {
+  if (hasNonEmptyTexturePath(descriptorMaterialRecord?.mapPath)) {
+    return [1, 1, 1];
+  }
+  return colorArrayToVertexColor(descriptorMaterialRecord?.color) ||
+    explicitFallbackColor ||
+    preferredFallbackColor;
+}
+
 function assignVisualDescriptorToLink(
   snapshot: UsdExportSnapshot,
   robot: RobotState,
@@ -355,9 +390,7 @@ function assignVisualDescriptorToLink(
 
   const descriptorMaterialRecord = getDescriptorMaterialRecord(entry, materialLookup);
   const explicitFallbackColor = colorHexToVertexColor(explicitMaterialFallback?.color);
-  const preferredFallbackColor = hasNonEmptyTexturePath(preferredMaterialRecord?.mapPath)
-    ? [1, 1, 1] as [number, number, number]
-    : colorArrayToVertexColor(preferredMaterialRecord?.color);
+  const preferredFallbackColor = resolvePreferredMaterialFallbackColor(preferredMaterialRecord);
   entry.writeTextureCoordinates =
     snapshotMaterialUsesTextureCoordinates(descriptorMaterialRecord) ||
     snapshotMaterialUsesTextureCoordinates(preferredMaterialRecord) ||
@@ -365,11 +398,11 @@ function assignVisualDescriptorToLink(
     visualUsesTextureCoordinates(link.visual);
   // A connected USD base-color texture replaces the fallback color. OBJ
   // vertex colors also become MJCF material factors, so neutralize both paths.
-  entry.displayColor = hasNonEmptyTexturePath(descriptorMaterialRecord?.mapPath)
-    ? [1, 1, 1]
-    : colorArrayToVertexColor(descriptorMaterialRecord?.color) ||
-      explicitFallbackColor ||
-      preferredFallbackColor;
+  entry.displayColor = resolveDescriptorDisplayColor(
+    descriptorMaterialRecord,
+    explicitFallbackColor,
+    preferredFallbackColor,
+  );
 
   const primitiveGeometry = resolvePrimitiveGeometryFromDescriptor(
     entry.descriptor,

@@ -320,9 +320,11 @@ export function adaptUsdViewerSnapshotToRobotData(
       entries.push({
         descriptor,
         ordinal: parseDescriptorOrdinal(descriptor, entries.length),
-        groupKey: getUsdDescriptorAttachmentGroupKey(descriptor, {
-          fallbackToResolvedPrimPath: !isGenericScene,
-        }),
+        // Generic CAD/environment descriptors have independent world frames even
+        // when their synthetic Hydra ids all share the default-prim owner.
+        groupKey: isGenericScene
+          ? normalizeUsdPath(descriptor.resolvedPrimPath || descriptor.meshId)
+          : getUsdDescriptorAttachmentGroupKey(descriptor, { fallbackToResolvedPrimPath: true }),
       });
       targetMap.set(linkPath, entries);
     };

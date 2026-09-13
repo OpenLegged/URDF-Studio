@@ -2,8 +2,8 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 
-const robotModelSourceUrl = new URL('../components/RobotModel.tsx', import.meta.url);
-const useRendererBackendSourceUrl = new URL('./useRendererBackend.ts', import.meta.url);
+const robotModelSourceUrl = new URL('../../../shared/components/3d/robot/components/RobotModelKernel.tsx', import.meta.url);
+const useRendererBackendSourceUrl = new URL('../../../shared/components/3d/robot/hooks/useRendererBackend.ts', import.meta.url);
 
 test('renderer backend path forwards URDF XML fallback policy to backend.load', async () => {
   const [robotModelSource, hookSource] = await Promise.all([

@@ -231,9 +231,9 @@ export function shouldPreserveSyntheticWorldRoot(worldBody: MJCFBody): boolean {
   const rootRotation = onlyChild.euler || toRPYObjectFromQuat(onlyChild.quat);
   return (
     !!rootRotation &&
-    (Math.abs(rootRotation.r) > 1e-9 ||
-      Math.abs(rootRotation.p) > 1e-9 ||
-      Math.abs(rootRotation.y) > 1e-9)
+    (Math.abs(rootRotation.r) > 0 ||
+      Math.abs(rootRotation.p) > 0 ||
+      Math.abs(rootRotation.y) > 0)
   );
 }
 

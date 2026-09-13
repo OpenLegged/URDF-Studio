@@ -5,7 +5,7 @@ import {
   collectDirectChildren,
   getElementAttribute,
 } from '@/app/hooks/source-preserving-export/xmlSourcePatch';
-import { generateEditableRobotSource } from './generateEditableRobotSource';
+import { tryGenerateEditableRobotSource } from './generateEditableRobotSource';
 import { parseEditableRobotSource } from './parseEditableRobotSource';
 import {
   applyFineGrainedUrdfPatches,
@@ -153,13 +153,14 @@ function unsafe(reason: string): ReconcileXacroEditableSourceResult {
   return { status: 'unsafe', reason };
 }
 
-function buildGeneratedAfter(afterRobot: RobotData): string {
-  return ensureXacroNamespace(generateEditableRobotSource({
+function buildGeneratedAfter(afterRobot: RobotData): string | null {
+  const content = tryGenerateEditableRobotSource({
     format: 'xacro',
     robotState: asRobotState(afterRobot),
     includeHardware: 'auto',
     preserveMeshPaths: true,
-  }));
+  });
+  return content === null ? null : ensureXacroNamespace(content);
 }
 
 export function reconcileXacroEditableSource({
@@ -188,6 +189,9 @@ export function reconcileXacroEditableSource({
     }
 
     const generatedAfter = buildGeneratedAfter(afterRobot);
+    if (generatedAfter === null) {
+      return unsafe('The robot mutation does not currently have a lossless Xacro source representation.');
+    }
     const unsafeChangedEntity = assertChangedEntitiesAreDirect(
       sourceContent,
       generatedAfter,

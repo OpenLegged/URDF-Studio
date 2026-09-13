@@ -31,6 +31,27 @@ test('extracts mesh scale while leaving descriptor translation out of geometry d
   assert.deepEqual(getUsdDescriptorTransformScale(descriptor, snapshot), [200, 15, 100]);
 });
 
+test('preserves reflected mesh scales while primitive dimensions stay positive', () => {
+  const descriptor: UsdSceneMeshDescriptor = {
+    primType: 'cube',
+    size: 2,
+    ranges: { transform: { offset: 0, count: 16, stride: 16 } },
+  };
+  const snapshot: UsdSceneSnapshot = {
+    buffers: { transforms: [
+      -2, 0, 0, 0,
+      0, 3, 0, 0,
+      0, 0, 4, 0,
+      5, 6, 7, 1,
+    ] },
+  };
+  assert.deepEqual(getUsdDescriptorTransformScale(descriptor, snapshot, { preserveSign: true }), [-2, 3, 4]);
+  assert.deepEqual(getUsdDescriptorTransformScale(descriptor, snapshot), [2, 3, 4]);
+  assert.deepEqual(resolveUsdPrimitiveGeometryFromDescriptor(descriptor, null, snapshot)?.dimensions, {
+    x: 4, y: 6, z: 8,
+  });
+});
+
 test('resolves USD primitive dimensions without baking descriptor world transforms into RobotState geometry', () => {
   const descriptor: UsdSceneMeshDescriptor = {
     meshId: '/Robot/base_link/collisions.proto_box_id0',

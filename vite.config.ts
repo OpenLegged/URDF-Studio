@@ -174,7 +174,8 @@ const OPTIMIZE_DEPS_INCLUDE = [
 ];
 
 function resolveAiRuntimeEnv(env: Record<string, string | undefined>): Record<string, string> {
-  const apiKey = env.API_KEY?.trim() || env.OPENAI_API_KEY?.trim() || env.GEMINI_API_KEY?.trim() || '';
+  const apiKey =
+    env.API_KEY?.trim() || env.OPENAI_API_KEY?.trim() || env.GEMINI_API_KEY?.trim() || '';
 
   return {
     API_KEY: apiKey,
@@ -235,10 +236,16 @@ function resolveDevServerAllowedHosts(
  *
  * WHY HTTPS for LAN: The USD WASM runtime depends on SharedArrayBuffer, which
  * requires (a) cross-origin isolation (COOP + COEP headers) AND (b) a secure
- * context. http://<LAN-IP> is NOT a secure context, so SAB is unavailable even
- * with isolation headers. Only https://<LAN-IP> satisfies both conditions.
+ * context. Plain http://<LAN-IP> is NOT a secure context, so SAB is still
+ * unavailable there even though the app itself no longer refuses to boot USD
+ * (the app-level secure-context gate was removed) and the dev server now also
+ * emits COOP/COEP headers for private LAN hostnames. HTTPS mode remains the
+ * recommended, warning-free path: mark the origin as trusted under
+ * chrome://flags/#unsafely-treat-insecure-origin-as-secure if you want to run
+ * USD WASM over plain HTTP without certs instead.
  * The existing createConditionalIsolationHeadersPlugin already emits COOP/COEP
- * when isHttpsDevRequest() detects socket.encrypted === true on HTTPS.
+ * when isHttpsDevRequest() detects socket.encrypted === true on HTTPS, and now
+ * also for private LAN hostnames (RFC1918 + link-local IPv4).
  */
 async function resolveDevServerHttps(
   env: Record<string, string | undefined>,
@@ -322,6 +329,25 @@ function isTrustedLocalDevHostname(hostname: string): boolean {
   );
 }
 
+function isPrivateLanHostname(hostname: string): boolean {
+  const normalizedHostname = hostname.replace(/\.$/, '').toLowerCase();
+
+  if (/^10(?:\.\d{1,3}){3}$/.test(normalizedHostname)) {
+    return true;
+  }
+
+  if (/^192\.168(?:\.\d{1,3}){2}$/.test(normalizedHostname)) {
+    return true;
+  }
+
+  if (/^172\.(\d{1,3})(?:\.\d{1,3}){2}$/.test(normalizedHostname)) {
+    const secondOctet = Number(normalizedHostname.split('.')[1]);
+    return secondOctet >= 16 && secondOctet <= 31;
+  }
+
+  return /^169\.254(?:\.\d{1,3}){2}$/.test(normalizedHostname);
+}
+
 function isHttpsDevRequest(request: IsolationHeaderRequestLike): boolean {
   if (request.socket?.encrypted) {
     return true;
@@ -348,9 +374,8 @@ function shouldApplyIsolatedDocumentHeaders(request: IsolationHeaderRequestLike)
     return true;
   }
 
-  return isTrustedLocalDevHostname(
-    normalizeRequestHostname(readFirstHeaderValue(request.headers?.host)),
-  );
+  const hostname = normalizeRequestHostname(readFirstHeaderValue(request.headers?.host));
+  return isTrustedLocalDevHostname(hostname) || isPrivateLanHostname(hostname);
 }
 
 function createConditionalIsolationHeadersPlugin() {
@@ -398,12 +423,12 @@ export default defineConfig(async ({ mode }) => {
   const env = loadEnv(mode, '.', '');
   const devServerHttps = await resolveDevServerHttps(env);
   const devServerHost = devServerHttps
-    ? (env.URDF_STUDIO_DEV_HOST?.trim() || '0.0.0.0')
+    ? env.URDF_STUDIO_DEV_HOST?.trim() || '0.0.0.0'
     : resolveDevServerHost(env);
   const devServerAllowedHosts = devServerHttps
-    ? (env.URDF_STUDIO_DEV_ALLOWED_HOSTS?.trim()
-        ? resolveDevServerAllowedHosts(env)
-        : true)
+    ? env.URDF_STUDIO_DEV_ALLOWED_HOSTS?.trim()
+      ? resolveDevServerAllowedHosts(env)
+      : true
     : resolveDevServerAllowedHosts(env);
   const aiRuntimeEnv = resolveAiRuntimeEnv(env);
   const viteCacheDir = resolveViteCacheDir(env);

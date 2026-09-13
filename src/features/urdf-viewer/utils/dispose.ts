@@ -1,7 +1,1 @@
-export {
-    cancelAnimationFrameSafe,
-    cleanupScene,
-    disposeMaterial,
-    disposeObject3D,
-    disposeTexturesFromMaterial,
-} from '@/shared/utils/three/dispose';
+export * from '@/shared/components/3d/robot/utils/dispose';

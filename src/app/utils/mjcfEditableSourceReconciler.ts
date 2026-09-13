@@ -1,6 +1,9 @@
 import type { RobotData } from '@/types';
 
-import { generateEditableRobotSource } from './generateEditableRobotSource';
+import { alignMJCFJointLimitRoundoff } from './mjcfEditableSourceJointLimitRoundoff';
+import { resolveMJCFSourceAngleUnit } from './mjcfEditableSourcePatchHelpers';
+import { alignMJCFRotationRoundoff } from './mjcfEditableSourceRotation';
+import { tryGenerateEditableRobotSource } from './generateEditableRobotSource';
 import {
   applyMJCFAttributePatches,
   applyMJCFEntityPatches,
@@ -31,10 +34,17 @@ export type ReconcileMJCFEditableSourceResult =
 function validateCandidate(
   sourceFileName: string,
   content: string,
-  expectedHash: string,
+  expected: RobotData,
 ): boolean {
   const parsed = parseMJCFEditableSource(sourceFileName, content);
-  return Boolean(parsed && mjcfSourceSemanticHash(parsed) === expectedHash);
+  return Boolean(parsed && sourceMatches(parsed, expected, content));
+}
+
+function sourceMatches(actual: RobotData, expected: RobotData, content: string): boolean {
+  const aligned = resolveMJCFSourceAngleUnit(content) === 'degree'
+    ? alignMJCFJointLimitRoundoff(actual, expected) : actual;
+  return mjcfSourceSemanticHash(alignMJCFRotationRoundoff(aligned, expected))
+    === mjcfSourceSemanticHash(expected);
 }
 
 function unsafe(reason: string): ReconcileMJCFEditableSourceResult {
@@ -59,36 +69,39 @@ export function reconcileMJCFEditableSource({
   try {
     const parsedSource = parseMJCFEditableSource(sourceFileName, sourceContent);
     if (!parsedSource) return unsafe('The editable source is not valid MJCF.');
-    if (mjcfSourceSemanticHash(parsedSource) !== mjcfSourceSemanticHash(beforeRobot)) {
+    if (!sourceMatches(parsedSource, beforeRobot, sourceContent)) {
       return unsafe('The editable source no longer matches the robot before this mutation.');
     }
     if (mjcfEncodingMetadataChanged(beforeRobot, afterRobot)) {
       return unsafe('The mutation changes MJCF encoding metadata without a safe local patch.');
     }
 
-    const generatedBefore = generateEditableRobotSource({
+    const generatedBefore = tryGenerateEditableRobotSource({
       format: 'mjcf',
       robotState: asMJCFRobotState(beforeRobot),
     });
-    const generatedAfter = generateEditableRobotSource({
+    const generatedAfter = tryGenerateEditableRobotSource({
       format: 'mjcf',
       robotState: asMJCFRobotState(afterRobot),
     });
+    if (generatedBefore === null || generatedAfter === null) {
+      return unsafe('The robot mutation does not currently have a lossless MJCF source representation.');
+    }
     const parsedGeneratedAfter = parseMJCFEditableSource(sourceFileName, generatedAfter);
     if (
       !parsedGeneratedAfter ||
-      mjcfCoreSemanticHash(parsedGeneratedAfter) !== mjcfCoreSemanticHash(afterRobot)
+      mjcfCoreSemanticHash(alignMJCFRotationRoundoff(parsedGeneratedAfter, afterRobot))
+        !== mjcfCoreSemanticHash(afterRobot)
     ) {
       return unsafe('The robot mutation cannot be represented losslessly as MJCF.');
     }
-    const expectedHash = mjcfSourceSemanticHash(afterRobot);
 
     const attributeCandidate = applyMJCFAttributePatches(
       sourceContent,
       beforeRobot,
       afterRobot,
     );
-    if (validateCandidate(sourceFileName, attributeCandidate, expectedHash)) {
+    if (validateCandidate(sourceFileName, attributeCandidate, afterRobot)) {
       return { status: 'patched', content: attributeCandidate, level: 'attribute' };
     }
 
@@ -97,7 +110,7 @@ export function reconcileMJCFEditableSource({
       beforeRobot,
       afterRobot,
     );
-    if (validateCandidate(sourceFileName, nodeCandidate, expectedHash)) {
+    if (validateCandidate(sourceFileName, nodeCandidate, afterRobot)) {
       return { status: 'patched', content: nodeCandidate, level: 'node' };
     }
 
@@ -107,7 +120,7 @@ export function reconcileMJCFEditableSource({
       beforeRobot,
       afterRobot,
     });
-    if (validateCandidate(sourceFileName, entityCandidate, expectedHash)) {
+    if (validateCandidate(sourceFileName, entityCandidate, afterRobot)) {
       return { status: 'patched', content: entityCandidate, level: 'entity' };
     }
 
@@ -120,7 +133,7 @@ export function reconcileMJCFEditableSource({
     });
     if (
       sectionCandidate !== sourceContent &&
-      validateCandidate(sourceFileName, sectionCandidate, expectedHash)
+      validateCandidate(sourceFileName, sectionCandidate, afterRobot)
     ) {
       return { status: 'patched', content: sectionCandidate, level: 'section' };
     }

@@ -6,8 +6,8 @@ import type {
   RuntimeJointObject,
   RuntimeRobotObject,
 } from '../../shared/components/3d/runtimeRobotTypes';
-import { JointInteraction } from '../../features/urdf-viewer/components/JointInteraction';
-import { RobotModel } from '../../features/urdf-viewer/components/RobotModel';
+import { JointInteraction } from '../../shared/components/3d/robot/components/JointInteraction';
+import { RobotModelKernel } from '../../shared/components/3d/robot/components/RobotModelKernel';
 import { isSingleDofJoint } from '../../shared/utils/jointTypes';
 import { useControllableState } from '../hooks/useControllableState';
 import {
@@ -59,6 +59,7 @@ export const RobotCanvas = memo(function RobotCanvas({
   onJointChange,
   display,
   allowUrdfXmlFallback = true,
+  robotData,
   robotLinks,
   robotJoints,
   focusTarget,
@@ -268,6 +269,8 @@ export const RobotCanvas = memo(function RobotCanvas({
     <div className={rootClassName} style={style} data-lang={lang} data-theme={resolvedTheme}>
       <RobotCanvasViewport
         lang={lang}
+        cameraProjection={resolvedDisplay.cameraProjection}
+        renderQuality={resolvedDisplay.renderQuality}
         resolvedTheme={resolvedTheme}
         groundOffset={groundPlaneOffset}
         snapshotAction={snapshotAction}
@@ -284,13 +287,17 @@ export const RobotCanvas = memo(function RobotCanvas({
         onPointerMissed={handlePointerMissedInternal}
         showUsageGuide={showUsageGuide}
       >
-        <RobotModel
+        <RobotModelKernel
+          jointControlsEnabled={false}
           urdfContent={source.content}
           assets={assets}
           sourceFormat={source.format}
           allowUrdfXmlFallback={allowUrdfXmlFallback}
           sourceFilePath={source.sourceFilePath}
           onRobotLoaded={handleRobotLoaded}
+          cameraProjection={resolvedDisplay.cameraProjection}
+          renderQuality={resolvedDisplay.renderQuality}
+          showMjcfWorldLink={resolvedDisplay.showMjcfWorldLink}
           showCollision={resolvedDisplay.showCollision}
           showVisual={resolvedDisplay.showVisual}
           onSelect={handleSelect}
@@ -319,8 +326,9 @@ export const RobotCanvas = memo(function RobotCanvas({
           showJointAxesOverlay={resolvedDisplay.showJointAxesOverlay}
           jointAxisSize={resolvedDisplay.jointAxisSize}
           modelOpacity={resolvedDisplay.modelOpacity}
-          robotLinks={robotLinks}
-          robotJoints={robotJoints}
+          robotData={robotData}
+          robotLinks={robotData?.links ?? robotLinks}
+          robotJoints={robotData?.joints ?? robotJoints}
           focusTarget={focusTarget}
           transformMode={resolvedDisplay.transformMode}
           toolMode={resolvedDisplay.toolMode}
@@ -332,18 +340,19 @@ export const RobotCanvas = memo(function RobotCanvas({
           isMeshPreview={isMeshPreview}
           groundPlaneOffset={groundPlaneOffset}
         />
-      </RobotCanvasViewport>
 
-      {enableJointInteraction && activeJoint && robot?.joints?.[activeJoint] ? (
-        <JointInteraction
-          joint={robot.joints[activeJoint]}
-          value={resolvedJointAngles[activeJoint] || 0}
-          onChange={(value) => handleJointAngleChange(activeJoint, value)}
-          onCommit={(value) => handleJointChangeCommit(activeJoint, value)}
-          setIsDragging={setIsDragging}
-          onInteractionLockChange={handleTransformPending}
-        />
-      ) : null}
+        {enableJointInteraction && activeJoint && robot?.joints?.[activeJoint] ? (
+          <JointInteraction
+            joint={robot.joints[activeJoint]}
+            value={resolvedJointAngles[activeJoint] || 0}
+            transformMode={resolvedDisplay.transformMode}
+            onChange={(value) => handleJointAngleChange(activeJoint, value)}
+            onCommit={(value) => handleJointChangeCommit(activeJoint, value)}
+            setIsDragging={setIsDragging}
+            onInteractionLockChange={handleTransformPending}
+          />
+        ) : null}
+      </RobotCanvasViewport>
     </div>
   );
 });

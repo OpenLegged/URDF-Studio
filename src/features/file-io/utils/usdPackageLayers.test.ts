@@ -295,8 +295,11 @@ test('usd package layers serialize articulation and joint paths without duplicat
   );
   assert.match(physicsLayer, /uniform token physics:axis = "Y"/);
   assert.match(physicsLayer, /custom float3 urdf:axisLocal = \(0, 1, 0\)/);
-  assert.match(physicsLayer, /float physics:lowerLimit = -30/);
-  assert.match(physicsLayer, /float physics:upperLimit = 60/);
+  for (const [attribute, expected] of [['lowerLimit', -30], ['upperLimit', 60]] as const) {
+    const match = physicsLayer.match(new RegExp(`float physics:${attribute} = ([^\\s]+)`));
+    assert.ok(match, `expected angular ${attribute} in degrees`);
+    assert.ok(Math.abs(Number(match[1]) - expected) <= 1e-10);
+  }
   assert.match(physicsLayer, /prepend apiSchemas = \["PhysicsDriveAPI:angular"\]/);
   assert.match(physicsLayer, /uniform token drive:angular:physics:type = "force"/);
   assert.match(physicsLayer, /float drive:angular:physics:damping = 0\.2/);
@@ -551,6 +554,18 @@ test('isaacsim mjcf package layers omit an empty floating world anchor from robo
   assert.match(robotLayer, /<\/mjcf_go2\/base>/);
   assert.match(robotLayer, /<\/mjcf_go2\/hip>/);
   assert.match(robotLayer, /<\/mjcf_go2\/joints\/hip_joint>/);
+});
+
+test('Isaac USD catalogs retain tiny nonzero inertia on an otherwise empty root', () => {
+  const robot = createMjcfFloatingRootRobot();
+  robot.links.world.inertial!.inertia.ixx = 1e-12;
+  const pathMaps = buildUsdLinkPathMaps(robot, 'tiny_root', { layoutProfile: 'isaacsim' });
+  const physicsLayer = buildUsdPhysicsLayerContent(robot, pathMaps, 'tiny_root', 'tiny_root', {
+    layoutProfile: 'isaacsim', fileFormat: 'usda',
+  });
+  const robotLayer = buildUsdRobotLayerContent(robot, pathMaps, 'tiny_root', { layoutProfile: 'isaacsim' });
+  assert.match(physicsLayer, /over "world"/);
+  assert.match(robotLayer, /<\/tiny_root\/world>/);
 });
 
 test('isaacsim robot layer serializes empty relationship targets without invalid list editing', () => {

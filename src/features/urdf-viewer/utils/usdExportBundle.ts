@@ -12,6 +12,7 @@ import type {
   UsdExportSnapshot,
 } from './usd-export/internalTypes.ts';
 import { buildUsdSnapshotLookupPaths } from './usd-export/usdExportPaths.ts';
+import { preserveUsdAffineGeometry } from './usd-export/usdAffineGeometry.ts';
 import {
   getDescriptorRanges,
   hasSnapshotBufferValues,
@@ -145,6 +146,7 @@ export function prepareUsdExportCacheFromResolvedSnapshot(
     snapshot,
     resolution,
   );
+  preserveUsdAffineGeometry(snapshot, snapshotRobot, descriptorByPath);
   const meshFiles: Record<string, Blob> = {};
   const meshFileBytes: Record<string, Uint8Array> = {};
 
@@ -263,6 +265,10 @@ export function buildUsdExportBundleFromSnapshot(
     resolution,
     options.currentRobot,
   );
+  const sourceRobot = options.currentRobot
+    ? createDescriptorExportMap(snapshot, resolution).robot
+    : robot;
+  preserveUsdAffineGeometry(snapshot, sourceRobot, descriptorByPath);
   const meshFiles = new Map<string, Blob>();
 
   collectReferencedMeshPaths(robot).forEach((meshPath) => {

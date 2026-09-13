@@ -436,6 +436,12 @@ test('compiled OBJ parser WASM generates OBJLoader-compatible normals and vertex
   }
 });
 
+// The full export -> parse round-trip for vertex colors (real serializer
+// output fed to the compiled WASM parser, including the mutation proof that
+// reverting the serializer's sRGB encoding fails the test) lives next to the
+// serializer under usd-export/objGeometrySerializer.test.ts — keeping the
+// core loader test free of a hand-rolled re-encoding of serializer logic.
+
 test('compiled OBJ parser WASM matches OBJLoader geometry for Leap Hand assets', async () => {
   const modulePath = path.resolve('public/wasm/obj-parser/objParser.js');
   assert.equal(fs.existsSync(modulePath), true);

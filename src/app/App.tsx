@@ -7,11 +7,10 @@ import { useShallow } from 'zustand/react/shallow';
 import { Providers } from './Providers';
 import { AppLayout } from './AppLayout';
 import type { AppContentProps, AppExposedActions } from './appExtensions';
-import {
-  AppOverlayLayer,
-  type DisconnectedWorkspaceUrdfDialogState,
-} from './components/AppOverlayLayer';
+import { AppOverlayLayer } from './components/AppOverlayLayer';
 import { useAppShellState } from './hooks/useAppShellState';
+import { useAIWorkspaceSession } from './hooks/useAIWorkspaceSession';
+import { useExportSession, type ExportSessionSurface } from './hooks/useExportSession';
 import { useComponentSourceDraftCleanup } from './hooks/useAppEffects';
 import { useFileImport } from './hooks/useFileImport';
 import { useFileExport } from './hooks/useFileExport';
@@ -21,15 +20,12 @@ import { usePluginLaunch } from './hooks/usePluginLaunch';
 import { useRegressionDebugApi } from './hooks/useRegressionDebugApi';
 import { useRobotLoadWorkflow } from './hooks/useRobotLoadWorkflow';
 import { scheduleUsdRuntimeStartupIdlePrewarm } from './utils/usdRuntimeStartupPrewarm';
-import { resolveExportErrorMessage } from './utils/exportErrorMessage';
 import { useUIStore, useAssetsStore } from '@/store';
-import type { InspectionReport, RobotFile, RobotState } from '@/types';
+import type { RobotFile } from '@/types';
 import { translations } from '@/shared/i18n';
 import {
   EXPORT_FORMATS,
-  type ExportDialogConfig,
   type ExportFormat,
-  type ExportProgressState,
 } from '@/features/file-io';
 import type { ImportPreparationOverlayState } from './hooks/useFileImport';
 import { useAssetImportFromUrl } from './hooks/useAssetImportFromUrl';
@@ -37,23 +33,12 @@ import {
   preloadAIConversationConnector,
   preloadAIInspectionConnector,
   preloadDisconnectedWorkspaceUrdfExportDialog,
-  loadExportDialogConnectorModule,
   preloadExportDialogConnector,
   preloadExportProgressDialog,
   preloadSettingsModal,
 } from './components/lazyAppOverlays';
 import { resolveCurrentAIRobotSnapshot } from '@/features/ai-assistant';
-import type {
-  AIConversationFocusedIssue,
-  AIConversationLaunchContext,
-  AIConversationMode,
-  AIConversationSelection,
-} from '@/features/ai-assistant';
-import type { ExportTarget } from './hooks/file-export/types';
-import { createConversationLaunchContext } from './utils/aiConversationLaunch';
 import { applyAIUrdfModification } from './utils/applyAIUrdfModification';
-import { waitForNextPaint } from './utils/waitForNextPaint';
-import { waitForAnimationFrame } from './utils/waitForAnimationFrame';
 import { logRegressionError } from '@/shared/debug/consoleDiagnostics';
 import { createStudioAgentPorts } from './components/ai/studioAgentPorts';
 import { installStudioAgentConsoleApi } from './components/ai/studioAgentConsoleApi';
@@ -64,6 +49,27 @@ function preloadOverlay(label: string, preload: () => Promise<unknown>): void {
   });
 }
 
+function prefetchAIInspection(): void {
+  preloadOverlay('AI inspection connector', preloadAIInspectionConnector);
+}
+
+function prefetchAIConversation(): void {
+  preloadOverlay('AI conversation connector', preloadAIConversationConnector);
+}
+
+const EXPORT_SURFACE_PRELOADS = {
+  configure: { label: 'export dialog connector', preload: preloadExportDialogConnector },
+  progress: { label: 'export progress dialog', preload: preloadExportProgressDialog },
+  disconnected: {
+    label: 'disconnected workspace export dialog', preload: preloadDisconnectedWorkspaceUrdfExportDialog,
+  },
+};
+
+function preloadExportSurface(surface: ExportSessionSurface): void {
+  const resource = EXPORT_SURFACE_PRELOADS[surface];
+  preloadOverlay(resource.label, resource.preload);
+}
+
 export function AppContent({ extensions, onExposeActions, externalImportEnabled = true }: AppContentProps = {}) {
   useUnsavedChangesPrompt();
   useComponentSourceDraftCleanup();
@@ -71,23 +77,6 @@ export function AppContent({ extensions, onExposeActions, externalImportEnabled 
   // Refs for file inputs
   const importInputRef = useRef<HTMLInputElement>(null);
   const importFolderInputRef = useRef<HTMLInputElement>(null);
-  const aiConversationSessionIdRef = useRef(0);
-  const [shouldRenderAIInspectionModal, setShouldRenderAIInspectionModal] = useState(false);
-  const [shouldRenderAIConversationModal, setShouldRenderAIConversationModal] = useState(false);
-  const [aiConversationLaunchContext, setAIConversationLaunchContext] =
-    useState<AIConversationLaunchContext | null>(null);
-  const [exportDialogTarget, setExportDialogTarget] = useState<ExportTarget>({
-    type: 'current',
-  });
-  // Initial export format to preselect (set by a `convertTo` handoff). Undefined
-  // → the connector falls back to its default ('mjcf').
-  const [exportDialogDefaultFormat, setExportDialogDefaultFormat] = useState<
-    ExportFormat | undefined
-  >(undefined);
-  const [disconnectedWorkspaceUrdfDialog, setDisconnectedWorkspaceUrdfDialog] =
-    useState<DisconnectedWorkspaceUrdfDialogState | null>(null);
-  const [isDisconnectedWorkspaceUrdfExporting, setIsDisconnectedWorkspaceUrdfExporting] =
-    useState(false);
   const [viewerReloadKey, setViewerReloadKey] = useState(0);
   const [importPreparationOverlay, setImportPreparationOverlay] =
     useState<ImportPreparationOverlayState | null>(null);
@@ -107,24 +96,18 @@ export function AppContent({ extensions, onExposeActions, externalImportEnabled 
     toast,
     closeToast,
     showToast,
-    isAIInspectionOpen,
-    setIsAIInspectionOpen,
-    isAIConversationOpen,
-    setIsAIConversationOpen,
-    setAILaunchMode,
-    openAIInspection,
-    openAIConversation,
     isCodeViewerOpen,
     setIsCodeViewerOpen,
-    isExportDialogOpen,
-    setIsExportDialogOpen,
-    isExporting,
-    setIsExporting,
-    projectExportProgress,
-    setProjectExportProgress,
     viewConfig,
     setViewConfig,
   } = useAppShellState();
+  const exportOperations = useFileExport();
+  const exportSession = useExportSession({
+    operations: exportOperations,
+    preload: preloadExportSurface,
+    showToast,
+    labels: t,
+  });
   const viewConfigRef = useRef(viewConfig);
   viewConfigRef.current = viewConfig;
 
@@ -162,72 +145,18 @@ export function AppContent({ extensions, onExposeActions, externalImportEnabled 
       setViewerReloadKey((value) => value + 1);
     },
   });
-  const { importAssetFromBotWorld, ...botWorldImportState } = useAssetImportFromUrl({
-    enabled: externalImportEnabled,
-    handleImport,
-    onConvertToRequest: ({ convertTo, success }) => {
-      // Asset was downloaded+imported; on success open the export dialog
-      // preselected to the requested format so the user can export/convert.
-      if (!success) return;
-      if (!EXPORT_FORMATS.includes(convertTo as (typeof EXPORT_FORMATS)[number])) return;
-      setExportDialogDefaultFormat(convertTo as ExportFormat);
-      setExportDialogTarget({ type: 'current' });
-      void loadExportDialogConnectorModule();
-      setIsExportDialogOpen(true);
-    },
-  });
-  const {
-    handleExportProject: runProjectExport,
-    handleExportWithConfig,
-    handleExportDisconnectedWorkspaceUrdfBundle,
-  } = useFileExport();
-  const projectExportInFlightRef = useRef(false);
-
-  const handleExportProject = useCallback(() => {
-    if (projectExportInFlightRef.current || isExporting) {
-      return;
-    }
-
-    projectExportInFlightRef.current = true;
-    void (async () => {
-      preloadOverlay('export progress dialog', preloadExportProgressDialog);
-      setIsExporting(true);
-      setProjectExportProgress({
-        stepLabel: t.exportProgressPreparing,
-        detail: t.exportProgressPreparingDetail,
-        progress: 0.05,
-        currentStep: 1,
-        totalSteps: 6,
-        indeterminate: true,
-      });
-      await waitForNextPaint();
-      try {
-        const result = await runProjectExport({
-          onProgress: setProjectExportProgress,
-        });
-        if (result.partial && result.warnings.length > 0) {
-          showToast(result.warnings[0], 'info');
-        }
-      } catch (error) {
-        showToast(resolveExportErrorMessage(error, t), 'error');
-      } finally {
-        setProjectExportProgress(null);
-        setIsExporting(false);
-        projectExportInFlightRef.current = false;
-      }
-    })();
-  }, [
-    isExporting,
-    runProjectExport,
-    setIsExporting,
-    setProjectExportProgress,
-    showToast,
-    t.exportFailedParse,
-    t.exportUrdfJointUnsupported,
-    t.exportProgressPreparing,
-    t.exportProgressPreparingDetail,
-  ]);
-
+  const { importAssetFromBotWorld: _importAssetFromBotWorld, ...botWorldImportState } =
+    useAssetImportFromUrl({
+      enabled: externalImportEnabled,
+      handleImport,
+      onConvertToRequest: ({ convertTo, success }) => {
+        // Asset was downloaded+imported; on success open the export dialog
+        // preselected to the requested format so the user can export/convert.
+        if (!success) return;
+        if (!EXPORT_FORMATS.includes(convertTo as (typeof EXPORT_FORMATS)[number])) return;
+        exportSession.open({ type: 'current' }, convertTo as ExportFormat);
+      },
+    });
   // AI changes handler
   useImportInputBinding({
     importInputRef,
@@ -251,153 +180,29 @@ export function AppContent({ extensions, onExposeActions, externalImportEnabled 
     return true;
   }, [showToast, t.usdLoadInProgress]);
 
-  const createConversationLaunchContextFromSnapshot = useCallback(
-    (
-      mode: AIConversationMode,
-      robotSnapshot: RobotState,
-      inspectionReportSnapshot: InspectionReport | null = null,
-      options: {
-        selectedEntity?: AIConversationSelection | null;
-        focusedIssue?: AIConversationFocusedIssue | null;
-      } = {},
-    ) => {
-      aiConversationSessionIdRef.current += 1;
-      return createConversationLaunchContext({
-        sessionId: aiConversationSessionIdRef.current,
-        mode,
-        robotSnapshot,
-        inspectionReportSnapshot,
-        selectedEntity: options.selectedEntity,
-        focusedIssue: options.focusedIssue,
-      });
-    },
-    [],
+  const aiSession = useAIWorkspaceSession({
+    canEnter: ensureAIEntryAvailable,
+    readRobotSnapshot: resolveCurrentAIRobotSnapshot,
+    prefetchInspection: prefetchAIInspection,
+    prefetchConversation: prefetchAIConversation,
+  });
+  const { openInspection } = aiSession;
+  const { open: openExport } = exportSession;
+  const handleOpenAIInspection = useCallback(() => openInspection(), [openInspection]);
+  const handleAgentOpenAIInspection = useCallback(
+    () => openInspection({ coexist: true }),
+    [openInspection],
   );
-
-  const handleOpenAIInspection = useCallback(() => {
-    if (!ensureAIEntryAvailable()) {
-      return;
-    }
-
-    setShouldRenderAIInspectionModal(true);
-    preloadOverlay('AI inspection connector', preloadAIInspectionConnector);
-    openAIInspection();
-  }, [ensureAIEntryAvailable, openAIInspection]);
-
-  const handlePrefetchAIInspection = useCallback(() => {
-    preloadOverlay('AI inspection connector', preloadAIInspectionConnector);
-  }, []);
-
-  const handleAgentOpenAIInspection = useCallback((): boolean => {
-    if (!ensureAIEntryAvailable()) {
-      return false;
-    }
-    setShouldRenderAIInspectionModal(true);
-    preloadOverlay('AI inspection connector', preloadAIInspectionConnector);
-    // Keep the conversation running; the inspection window opens alongside it.
-    setIsAIInspectionOpen(true);
-    return true;
-  }, [ensureAIEntryAvailable, setIsAIInspectionOpen]);
-
-  const handleOpenAIConversation = useCallback(() => {
-    if (!ensureAIEntryAvailable()) {
-      return;
-    }
-
-    if (isAIConversationOpen && aiConversationLaunchContext?.mode === 'general') {
-      setShouldRenderAIConversationModal(true);
-      preloadOverlay('AI conversation connector', preloadAIConversationConnector);
-      openAIConversation();
-      return;
-    }
-
-    const launchContext = createConversationLaunchContextFromSnapshot(
-      'general',
-      resolveCurrentAIRobotSnapshot(),
-    );
-
-    setAIConversationLaunchContext(launchContext);
-    setShouldRenderAIConversationModal(true);
-    preloadOverlay('AI conversation connector', preloadAIConversationConnector);
-    openAIConversation();
-  }, [
-    aiConversationLaunchContext,
-    createConversationLaunchContextFromSnapshot,
-    ensureAIEntryAvailable,
-    isAIConversationOpen,
-    openAIConversation,
-  ]);
-
-  const handlePrefetchAIConversation = useCallback(() => {
-    preloadOverlay('AI conversation connector', preloadAIConversationConnector);
-  }, []);
-
-  const handleOpenConversationWithReport = useCallback(
-    (
-      report: InspectionReport,
-      robotSnapshot: RobotState,
-      options: {
-        selectedEntity?: AIConversationSelection | null;
-        focusedIssue?: AIConversationFocusedIssue | null;
-      } = {},
-    ) => {
-      if (!ensureAIEntryAvailable()) {
-        return;
-      }
-
-      const launchContext = createConversationLaunchContextFromSnapshot(
-        'inspection-followup',
-        robotSnapshot,
-        report,
-        options,
-      );
-
-      setAIConversationLaunchContext(launchContext);
-      setShouldRenderAIConversationModal(true);
-      preloadOverlay('AI conversation connector', preloadAIConversationConnector);
-      setIsAIConversationOpen(true);
-      setAILaunchMode('conversation');
-    },
-    [
-      createConversationLaunchContextFromSnapshot,
-      ensureAIEntryAvailable,
-      setAILaunchMode,
-      setIsAIConversationOpen,
-    ],
+  const handleOpenExportDialog = useCallback(() => openExport(), [openExport]);
+  const handleOpenLibraryExportDialog = useCallback(
+    (file: RobotFile) => openExport({ type: 'library-file', file }),
+    [openExport],
   );
-
-  const handleStartNewAIConversation = useCallback(
-    (currentLaunchContext: AIConversationLaunchContext) => {
-      const nextLaunchContext = createConversationLaunchContextFromSnapshot(
-        currentLaunchContext.mode,
-        resolveCurrentAIRobotSnapshot(),
-        currentLaunchContext.inspectionReportSnapshot ?? null,
-        {
-          selectedEntity: currentLaunchContext.selectedEntity,
-          focusedIssue: currentLaunchContext.focusedIssue,
-        },
-      );
-
-      setAIConversationLaunchContext(nextLaunchContext);
-    },
-    [createConversationLaunchContextFromSnapshot],
-  );
-
-  const handleOpenExportDialog = useCallback(() => {
-    preloadOverlay('export dialog connector', preloadExportDialogConnector);
-    void loadExportDialogConnectorModule();
-    setExportDialogDefaultFormat(undefined);
-    setExportDialogTarget({ type: 'current' });
-    setIsExportDialogOpen(true);
-  }, [setIsExportDialogOpen]);
 
   const studioAgentPorts = useMemo(
     () => createStudioAgentPorts({
       openInspection: handleAgentOpenAIInspection,
-      openExport: () => {
-        handleOpenExportDialog();
-        return true;
-      },
+      openExport: handleOpenExportDialog,
       readPanelConfig: () => viewConfigRef.current,
       updatePanelConfig: updateAgentPanelConfig,
     }),
@@ -405,76 +210,6 @@ export function AppContent({ extensions, onExposeActions, externalImportEnabled 
   );
 
   useEffect(() => installStudioAgentConsoleApi(window, studioAgentPorts), [studioAgentPorts]);
-
-  const handlePrefetchExportDialog = useCallback(() => {
-    preloadOverlay('export dialog connector', preloadExportDialogConnector);
-  }, []);
-
-  const handleOpenLibraryExportDialog = useCallback(
-    (file: RobotFile) => {
-      preloadOverlay('export dialog connector', preloadExportDialogConnector);
-      setExportDialogDefaultFormat(undefined);
-      setExportDialogTarget({ type: 'library-file', file });
-      setIsExportDialogOpen(true);
-    },
-    [setIsExportDialogOpen],
-  );
-
-  const handleExportDialogExport = useCallback(
-    async (
-      config: ExportDialogConfig,
-      options?: { onProgress?: (progress: ExportProgressState) => void },
-    ) => {
-      setIsExporting(true);
-      await waitForAnimationFrame();
-      try {
-        const result =
-          config.format === 'project'
-            ? await runProjectExport({
-                onProgress: options?.onProgress,
-              })
-            : await handleExportWithConfig(config, exportDialogTarget, {
-                onProgress: options?.onProgress,
-              });
-        if (result.actionRequired?.type === 'disconnected-workspace-urdf') {
-          preloadOverlay(
-            'disconnected workspace export dialog',
-            preloadDisconnectedWorkspaceUrdfExportDialog,
-          );
-          setDisconnectedWorkspaceUrdfDialog({
-            config,
-            request: result.actionRequired,
-          });
-          setIsExportDialogOpen(false);
-          return;
-        }
-        if (result.partial && result.warnings.length > 0) {
-          showToast(result.warnings[0], 'info');
-        }
-        setIsExportDialogOpen(false);
-      } catch (error) {
-        showToast(
-          resolveExportErrorMessage(error, {
-            exportFailedParse: t.exportFailedParse,
-            exportUrdfJointUnsupported: t.exportUrdfJointUnsupported,
-          }),
-          'error',
-        );
-      } finally {
-        setIsExporting(false);
-      }
-    },
-    [
-      exportDialogTarget,
-      handleExportWithConfig,
-      runProjectExport,
-      setIsExportDialogOpen,
-      setIsExporting,
-      showToast,
-      t.exportFailedParse,
-      t.exportUrdfJointUnsupported,
-    ],
-  );
 
   // Expose internal actions to external consumers (ref keeps the reference fresh)
   const layoutActionsRef = useRef<{
@@ -485,14 +220,6 @@ export function AppContent({ extensions, onExposeActions, externalImportEnabled 
   const hasExposedLayoutActionsRef = useRef(false);
 
   const [layoutReady, setLayoutReady] = useState(false);
-
-  const handleExportProjectBlob = useCallback(async (): Promise<Blob> => {
-    const result = await runProjectExport({ skipDownload: true });
-    if (!result.blob) {
-      throw new Error('Project export did not produce an archive blob.');
-    }
-    return result.blob;
-  }, [runProjectExport]);
 
   const handleCollectRawFilesBlob = useCallback(async (): Promise<Blob> => {
     const { collectRawFilesZip } = await import('@/features/file-io');
@@ -510,11 +237,11 @@ export function AppContent({ extensions, onExposeActions, externalImportEnabled 
     importFiles: handleImport,
     openLibraryExport: handleOpenLibraryExportDialog,
     openAIInspection: handleOpenAIInspection,
-    openAIConversation: handleOpenAIConversation,
+    openAIConversation: aiSession.openConversation,
     openIkTool: () => layoutActionsRef.current.openIkTool(),
     openCollisionOptimizer: () => layoutActionsRef.current.openCollisionOptimizer(),
     openTool: (key: string) => layoutActionsRef.current.openTool(key),
-    exportProjectBlob: handleExportProjectBlob,
+    exportProjectBlob: exportSession.exportProjectBlob,
     collectRawFilesBlob: handleCollectRawFilesBlob,
   };
 
@@ -542,33 +269,6 @@ export function AppContent({ extensions, onExposeActions, externalImportEnabled 
     [],
   );
 
-  const handleConfirmDisconnectedWorkspaceUrdfExport = useCallback(async () => {
-    if (!disconnectedWorkspaceUrdfDialog) {
-      return;
-    }
-
-    setIsDisconnectedWorkspaceUrdfExporting(true);
-    try {
-      const result = await handleExportDisconnectedWorkspaceUrdfBundle(
-        disconnectedWorkspaceUrdfDialog.config,
-      );
-      if (result.partial && result.warnings.length > 0) {
-        showToast(result.warnings[0], 'info');
-      }
-      setDisconnectedWorkspaceUrdfDialog(null);
-    } catch (error) {
-      showToast(resolveExportErrorMessage(error, t), 'error');
-    } finally {
-      setIsDisconnectedWorkspaceUrdfExporting(false);
-    }
-  }, [
-    disconnectedWorkspaceUrdfDialog,
-    handleExportDisconnectedWorkspaceUrdfBundle,
-    showToast,
-    t.exportFailedParse,
-    t.exportUrdfJointUnsupported,
-  ]);
-
   const loadingLabel = t.loadingPanel;
 
   const handleOpenSettings = useCallback(() => {
@@ -589,15 +289,15 @@ export function AppContent({ extensions, onExposeActions, externalImportEnabled 
           void handleImport(files);
         }}
         onOpenExport={handleOpenExportDialog}
-        onPrefetchExport={handlePrefetchExportDialog}
+        onPrefetchExport={exportSession.prefetch}
         onOpenLibraryExport={handleOpenLibraryExportDialog}
-        onExportProject={handleExportProject}
-        isExportingProject={isExporting}
+        onExportProject={exportSession.exportProject}
+        isExportingProject={exportSession.busy}
         showToast={showToast}
         onOpenAIInspection={handleOpenAIInspection}
-        onPrefetchAIInspection={handlePrefetchAIInspection}
-        onOpenAIConversation={handleOpenAIConversation}
-        onPrefetchAIConversation={handlePrefetchAIConversation}
+        onPrefetchAIInspection={aiSession.prefetchInspection}
+        onOpenAIConversation={aiSession.openConversation}
+        onPrefetchAIConversation={aiSession.prefetchConversation}
         isCodeViewerOpen={isCodeViewerOpen}
         setIsCodeViewerOpen={setIsCodeViewerOpen}
         onOpenSettings={handleOpenSettings}
@@ -616,33 +316,15 @@ export function AppContent({ extensions, onExposeActions, externalImportEnabled 
       />
 
       <AppOverlayLayer
-        aiConversationLaunchContext={aiConversationLaunchContext}
+        aiSession={aiSession}
+        exportSession={exportSession}
         botWorldImportState={botWorldImportState}
         closeToast={closeToast}
-        disconnectedWorkspaceUrdfDialog={disconnectedWorkspaceUrdfDialog}
-        exportDialogTarget={exportDialogTarget}
-        exportDialogDefaultFormat={exportDialogDefaultFormat}
         extensions={extensions}
-        handleConfirmDisconnectedWorkspaceUrdfExport={handleConfirmDisconnectedWorkspaceUrdfExport}
-        handleExportDialogExport={handleExportDialogExport}
-        handleOpenConversationWithReport={handleOpenConversationWithReport}
-        handleStartNewAIConversation={handleStartNewAIConversation}
-        isAIConversationOpen={isAIConversationOpen}
         onApplyAIUrdfModification={applyAIUrdfModification}
-        isAIInspectionOpen={isAIInspectionOpen}
-        isDisconnectedWorkspaceUrdfExporting={isDisconnectedWorkspaceUrdfExporting}
-        isExportDialogOpen={isExportDialogOpen}
-        isExporting={isExporting}
         isSettingsOpen={isSettingsOpen}
         lang={lang}
         loadingLabel={loadingLabel}
-        projectExportProgress={projectExportProgress}
-        setDisconnectedWorkspaceUrdfDialog={setDisconnectedWorkspaceUrdfDialog}
-        setIsAIConversationOpen={setIsAIConversationOpen}
-        setIsAIInspectionOpen={setIsAIInspectionOpen}
-        setIsExportDialogOpen={setIsExportDialogOpen}
-        shouldRenderAIConversationModal={shouldRenderAIConversationModal}
-        shouldRenderAIInspectionModal={shouldRenderAIInspectionModal}
         studioAgentPorts={studioAgentPorts}
         toast={toast}
       />

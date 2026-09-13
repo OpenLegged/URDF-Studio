@@ -11,19 +11,11 @@ import type {
   EntityRef,
   JointEntityRef,
   LinkEntityRef,
-  RobotData,
-  UrdfJoint,
-  UrdfLink,
   UrdfOrigin,
   WorkspaceSelection,
 } from '@/types';
 import type { UpdateCommitOptions } from '@/types/viewer';
-import type { MJCFRenameOperation } from '../utils/mjcfEditableSourcePatch';
-
-export interface ComponentSourcePatchTarget {
-  componentId: string;
-  expectedRobotSnapshotHash: string;
-}
+import type { ComponentSourceMutationCommand } from './workspace-source-sync/component_source_commands';
 
 export interface UseWorkspaceMutationsParams {
   focusOn: (ref: EntityRef) => void;
@@ -31,64 +23,7 @@ export interface UseWorkspaceMutationsParams {
   setPendingCollisionTransform: (transform: PendingCollisionTransform) => void;
   clearPendingCollisionTransform: () => void;
   handleTransformPendingChange: (pending: boolean) => void;
-  /**
-   * Reconcile one component-owned MJCF/URDF/Xacro/SDF draft from the complete robot
-   * mutation. Returning true also covers safe invalidation on patch failure.
-   */
-  patchEditableSourceRobot?: (
-    args: ComponentSourcePatchTarget & {
-      previousRobot: RobotData;
-      nextRobot: RobotData;
-    },
-  ) => boolean;
-  patchEditableSourceAddChild?: (
-    args: ComponentSourcePatchTarget & {
-      parentLinkName: string;
-      linkName: string;
-      joint: UrdfJoint;
-    },
-  ) => void;
-  patchEditableSourceDeleteSubtree?: (
-    args: ComponentSourcePatchTarget & { linkName: string },
-  ) => void;
-  patchEditableSourceAddCollisionBody?: (
-    args: ComponentSourcePatchTarget & {
-      linkName: string;
-      geometry: UrdfLink['collision'];
-    },
-  ) => void;
-  patchEditableSourceDeleteCollisionBody?: (
-    args: ComponentSourcePatchTarget & {
-      linkName: string;
-      objectIndex: number;
-    },
-  ) => void;
-  patchEditableSourceUpdateCollisionBody?: (
-    args: ComponentSourcePatchTarget & {
-      linkName: string;
-      objectIndex: number;
-      geometry: UrdfLink['collision'];
-    },
-  ) => void;
-  patchEditableSourceUpdateJointLimit?: (
-    args: ComponentSourcePatchTarget & {
-      jointName: string;
-      jointType: UrdfJoint['type'];
-      limit: NonNullable<UrdfJoint['limit']>;
-    },
-  ) => void;
-  patchEditableSourceUpdateLinkInertial?: (
-    args: ComponentSourcePatchTarget & {
-      linkName: string;
-      inertial: NonNullable<UrdfLink['inertial']>;
-    },
-  ) => void;
-  patchEditableSourceRobotName?: (
-    args: ComponentSourcePatchTarget & { name: string },
-  ) => void;
-  patchEditableSourceRenameEntities?: (
-    args: ComponentSourcePatchTarget & { operations: MJCFRenameOperation[] },
-  ) => void;
+  synchronizeComponentSource?: ComponentSourceMutationCommand;
 }
 
 export type WorkspacePropertyRef = EntityRef;

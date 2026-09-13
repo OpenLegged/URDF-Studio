@@ -6,6 +6,20 @@ import { createUsdBaseMaterial } from './usdMaterialNormalization.ts';
 import { collectUsdSerializationContext } from './usdSerializationContext.ts';
 import { applyUsdMaterialMetadata, buildUsdBaseLayerContent } from './usdSceneSerialization.ts';
 
+// Scene-linear reference values from the standard sRGB transfer function.
+const LINEAR_GREEN_COLOR = [0.006048833022857055, 0.4072402119017367, 0.03433980680868217];
+const LINEAR_ORANGE_COLOR = [1, 0.14995978981082975, 0.003035269835487616];
+
+function assertTupleClose(content: string, attributeName: string, expected: readonly number[]): void {
+  const escapedName = attributeName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const match = content.match(new RegExp(`${escapedName} = (?:\\[)?\\(([^)]+)\\)`));
+  assert.ok(match, `expected ${attributeName} to be serialized`);
+  const values = match[1].split(',').map(Number);
+  assert.equal(values.length, expected.length);
+  values.forEach((value, index) => assert.ok(Math.abs(value - expected[index]) <= 1e-10,
+    `expected ${attributeName}[${index}] near ${expected[index]}, got ${value}`));
+}
+
 const createTexturedTriangleGeometry = () => {
   const geometry = new THREE.BufferGeometry();
   geometry.setAttribute(
@@ -159,9 +173,9 @@ test('buildUsdBaseLayerContent converts Unitree-style source RGBA to USD scene-l
     materialProfile: 'isaacsim',
   });
 
-  assert.match(content, /primvars:displayColor = \[\(1, 0\.14996, 0\.003035\)\]/);
-  assert.match(content, /color3f inputs:diffuseColor = \(1, 0\.14996, 0\.003035\)/);
-  assert.match(content, /color3f inputs:diffuse_color_constant = \(1, 0\.14996, 0\.003035\)/);
+  assertTupleClose(content, 'primvars:displayColor', LINEAR_ORANGE_COLOR);
+  assertTupleClose(content, 'color3f inputs:diffuseColor', LINEAR_ORANGE_COLOR);
+  assertTupleClose(content, 'color3f inputs:diffuse_color_constant', LINEAR_ORANGE_COLOR);
   assert.doesNotMatch(content, /\(1, 0\.423529, 0\.039216\)/);
 });
 
@@ -180,8 +194,8 @@ test('buildUsdBaseLayerContent keeps UV texture fallback constants in USD scene-
   });
   const content = await buildUsdBaseLayerContent(root, context);
 
-  assert.match(content, /primvars:displayColor = \[\(0\.006049, 0\.40724, 0\.03434\)\]/);
-  assert.match(content, /float4 inputs:fallback = \(0\.006049, 0\.40724, 0\.03434, 1\)/);
+  assertTupleClose(content, 'primvars:displayColor', LINEAR_GREEN_COLOR);
+  assertTupleClose(content, 'float4 inputs:fallback', [...LINEAR_GREEN_COLOR, 1]);
   assert.match(content, /token inputs:sourceColorSpace = "sRGB"/);
 });
 
@@ -210,3 +224,24 @@ test('buildUsdBaseLayerContent preserves explicit opacity independently from col
   assert.match(content, /float inputs:opacity_constant = 0\.35/);
   assert.match(content, /bool inputs:enable_opacity = true/);
 });
+
+for (const operation of ['translate', 'orient', 'scale'] as const) {
+  test(`USD scene serialization retains tiny non-default ${operation} operations`, async () => {
+    const root = new THREE.Group();
+    root.name = 'precision';
+    const child = new THREE.Group();
+    child.name = 'tiny_transform';
+    root.add(child);
+    const expected = operation === 'translate' ? [1e-12, 0, 0]
+      : operation === 'scale' ? [1 + 1e-12, 1, 1] : [1, 0, 0, 5e-13];
+    if (operation === 'translate') child.position.x = 1e-12;
+    if (operation === 'scale') child.scale.x = 1 + 1e-12;
+    if (operation === 'orient') child.quaternion.setFromAxisAngle(new THREE.Vector3(0, 0, 1), 1e-12);
+    const context = await collectUsdSerializationContext(root, { rootPrimName: root.name });
+    const content = await buildUsdBaseLayerContent(root, context);
+    const match = content.match(new RegExp(`xformOp:${operation} = \\(([^)]+)\\)`));
+    assert.ok(match, `expected tiny ${operation} to be authored`);
+    assert.deepEqual(match[1].split(',').map(Number), expected);
+    assert.match(content, new RegExp(`xformOpOrder = \\["xformOp:${operation}"\\]`));
+  });
+}

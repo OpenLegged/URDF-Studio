@@ -15,8 +15,7 @@
 
 import type { Language } from '@/shared/i18n';
 import type { RobotData } from '@/types';
-import { canGenerateUrdf } from '@/core/parsers/urdf/urdfExportSupport';
-import { generateURDF, parseURDF } from '@/core/parsers';
+import { validateCanonicalRobotData } from '@/core/robot/canonicalWorkspace';
 import {
   addLinkJoint,
   deleteLink,
@@ -37,19 +36,14 @@ import { runAgentScript } from '../sandbox/scriptSandboxWorkerBridge';
 /** External-JSON-boundary cast: model args are untyped JSON; typed tools validate. */
 const typed = <T>(args: Record<string, unknown>): T => args as unknown as T;
 
-/** Validate the draft can round-trip through URDF (generate → parse). */
+/** Validate editable robot data without imposing a particular export format. */
 export function validateRobotDraft(draft: RobotData): AgentToolResult {
-  if (!canGenerateUrdf(draft)) {
-    return { ok: false, message: 'Cannot export to URDF: unsupported joint type or structure.' };
-  }
-  let urdf: string;
-  try {
-    urdf = generateURDF({ ...draft, selection: { type: null, id: null } }, { preserveMeshPaths: true });
-  } catch (e) {
-    return { ok: false, message: `URDF generation failed: ${(e as Error).message}` };
-  }
-  if (!parseURDF(urdf)) {
-    return { ok: false, message: 'Generated URDF failed to re-parse; the draft is not a valid robot.' };
+  const validation = validateCanonicalRobotData(draft);
+  if (!validation.valid) {
+    return {
+      ok: false,
+      message: validation.issues.map(issue => `${issue.path}: ${issue.message}`).join('; '),
+    };
   }
   return {
     ok: true,
@@ -258,7 +252,7 @@ export function buildRobotCapabilities(_lang: Language): AgentCapability[] {
     },
     {
       name: 'validate_robot',
-      description: 'Verify that the draft exports and parses as a valid URDF tree. Does not modify it.',
+      description: 'Verify the draft has valid robot fields, link references, and acyclic joint topology. Does not modify it.',
       parameters: { type: 'object', properties: {} },
       execute: (draft) => validateRobotDraft(draft),
       mutates: false,

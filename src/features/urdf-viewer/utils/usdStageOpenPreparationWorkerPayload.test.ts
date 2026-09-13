@@ -44,6 +44,18 @@ test('buildUsdStageOpenPreparationWorkerDispatch keeps USD layer candidates for 
         format: 'asset',
       },
       {
+        name: 'robots/go2/Materials/Surface.mdl',
+        content: 'mdl 1.7;',
+        blobUrl: 'blob:mdl',
+        format: 'asset',
+      },
+      {
+        name: 'robots/h1/Materials/Surface.mdl',
+        content: 'mdl 1.7;',
+        blobUrl: 'blob:other-mdl',
+        format: 'asset',
+      },
+      {
         name: 'robots/go2/textures/body.png',
         content: '',
         blobUrl: 'blob:texture',
@@ -54,6 +66,8 @@ test('buildUsdStageOpenPreparationWorkerDispatch keeps USD layer candidates for 
       'robots/go2/configuration/base.usda': 'blob:base',
       'shared/common_layers/materials.usda': 'blob:shared-materials',
       'robots/go2/textures/body.png': 'blob:texture',
+      'robots/go2/Materials/Surface.mdl': 'blob:mdl',
+      'robots/h1/Materials/Surface.mdl': 'blob:other-mdl',
     },
   );
 
@@ -62,6 +76,7 @@ test('buildUsdStageOpenPreparationWorkerDispatch keeps USD layer candidates for 
     [
       'robots/go2/configuration/base.usda',
       'shared/common_layers/materials.usda',
+      'robots/go2/Materials/Surface.mdl',
       'robots/go2/textures/body.png',
     ],
   );
@@ -69,5 +84,6 @@ test('buildUsdStageOpenPreparationWorkerDispatch keeps USD layer candidates for 
     'robots/go2/configuration/base.usda': 'blob:base',
     'shared/common_layers/materials.usda': 'blob:shared-materials',
     'robots/go2/textures/body.png': 'blob:texture',
+    'robots/go2/Materials/Surface.mdl': 'blob:mdl',
   });
 });

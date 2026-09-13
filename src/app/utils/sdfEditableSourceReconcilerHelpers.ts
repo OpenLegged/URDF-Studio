@@ -26,6 +26,13 @@ export interface SdfKeyedElement {
   text: string;
 }
 
+function reindentSdfElement(xml: string, element: SdfKeyedElement, targetIndent: string): string {
+  // Element bounds begin at '<', so restore its source indentation before
+  // rebasing nested lines. Replacement callers retain the existing first-line prefix.
+  const sourceIndent = getIndentAt(xml, element.bounds.startOffset);
+  return reindentFragment(`${sourceIndent}${element.text}`, targetIndent);
+}
+
 const MODEL_OWNED_TAGS = new Set(['pose', 'static', 'self_collide', 'link', 'joint']);
 const ENTITY_TAGS = new Set(['link', 'joint']);
 
@@ -94,9 +101,30 @@ export function validateSdfCandidate(
   sourceFileName: string,
   content: string,
   expectedRobot: RobotData,
+  representedRobot?: RobotData | null,
 ): boolean {
   const parsed = parseSdf(sourceFileName, content);
-  return Boolean(parsed && semanticSnapshot(parsed) === semanticSnapshot(expectedRobot));
+  if (!parsed) return false;
+  const snapshot = semanticSnapshot(parsed);
+  return snapshot === semanticSnapshot(expectedRobot) ||
+    Boolean(representedRobot && snapshot === semanticSnapshot(representedRobot));
+}
+
+/** Older SDF schemas require world poses; only accept their deterministic frame-conversion result. */
+export function getSdfJointOriginRepresentation(
+  sourceFileName: string,
+  generatedContent: string | null,
+  expectedRobot: RobotData,
+): RobotData | null {
+  const represented = generatedContent && parseSdf(sourceFileName, generatedContent);
+  if (!represented) return null;
+  return {
+    ...expectedRobot,
+    joints: Object.fromEntries(Object.entries(expectedRobot.joints).map(([id, joint]) => [
+      id,
+      represented.joints[id] ? { ...joint, origin: represented.joints[id].origin } : joint,
+    ])),
+  };
 }
 
 export function findGeneratedSdfModel(generatedContent: string): SdfKeyedElement | null {
@@ -340,9 +368,21 @@ export function patchSdfLinkNodes({
     if (!sameSemanticValue(beforeLink.inertial, afterLink.inertial)) {
       changedTags.add('inertial');
     }
+    const beforeParent = Object.values(beforeRobot.joints).find(
+      (joint) => joint.childLinkId === beforeLink.id,
+    );
+    const afterParent = Object.values(afterRobot.joints).find(
+      (joint) => joint.childLinkId === afterLink.id,
+    );
+    if (afterParent && (
+      !sameSemanticValue(beforeParent?.origin, afterParent.origin) ||
+      beforeParent?.parentLinkId !== afterParent.parentLinkId
+    )) {
+      changedTags.add('pose');
+    }
     if (changedTags.size === 0) return;
 
-    const sourceLink = collectXmlElementBounds(content).find(
+    let sourceLink = collectXmlElementBounds(content).find(
       (element) =>
         element.tagName === 'link' && getElementAttribute(content, element, 'name') === linkName,
     );
@@ -352,6 +392,17 @@ export function patchSdfLinkNodes({
         getElementAttribute(generatedContent, element, 'name') === linkName,
     );
     if (!sourceLink || !generatedLink) return;
+
+    const sourceLinkText = content.slice(sourceLink.startOffset, sourceLink.endOffset);
+    if (/\/\s*>$/.test(sourceLinkText)) {
+      const expandedLink = sourceLinkText.replace(/\/\s*>$/, '></link>');
+      content = applyTextReplacements(content, [{
+        startOffset: sourceLink.startOffset, endOffset: sourceLink.endOffset, text: expandedLink,
+      }]);
+      sourceLink = {
+        ...sourceLink, endOffset: sourceLink.startOffset + expandedLink.length,
+      };
+    }
 
     const sourceNodes = collectDirectChildrenWithin(content, sourceLink, (tagName) =>
       changedTags.has(tagName),
@@ -368,10 +419,11 @@ export function patchSdfLinkNodes({
         startOffset: sourceNode.bounds.startOffset,
         endOffset: sourceNode.bounds.endOffset,
         text: generatedNode
-          ? reindentFragment(
-              generatedNode.text,
+          ? reindentSdfElement(
+              generatedContent,
+              generatedNode,
               getIndentAt(content, sourceNode.bounds.startOffset),
-            )
+            ).trimStart()
           : '',
       });
     });
@@ -386,7 +438,7 @@ export function patchSdfLinkNodes({
         startOffset: insertAt,
         endOffset: insertAt,
         text: `${newline}${missingGeneratedNodes
-          .map((node) => reindentFragment(node.text, childIndent))
+          .map((node) => reindentSdfElement(generatedContent, node, childIndent))
           .join(newline)}${newline}${getIndentAt(content, insertAt)}`,
       });
     }
@@ -435,10 +487,11 @@ export function patchSdfModelEntities({
       replacements.push({
         startOffset: sourceChild.bounds.startOffset,
         endOffset: sourceChild.bounds.endOffset,
-        text: reindentFragment(
-          generatedChild.text,
+        text: reindentSdfElement(
+          generatedContent,
+          generatedChild,
           getIndentAt(sourceContent, sourceChild.bounds.startOffset),
-        ),
+        ).trimStart(),
       });
     }
   });
@@ -459,7 +512,7 @@ export function patchSdfModelEntities({
       startOffset: insertAt,
       endOffset: insertAt,
       text: `${newline}${missingGeneratedChildren
-        .map((child) => reindentFragment(child.text, insertionIndent))
+        .map((child) => reindentSdfElement(generatedContent, child, insertionIndent))
         .join(newline)}${newline}${getIndentAt(sourceContent, insertAt)}`,
     });
   }
@@ -494,10 +547,11 @@ export function patchControlledSdfModelSections({
       startOffset: sourceSection.bounds.startOffset,
       endOffset: sourceSection.bounds.endOffset,
       text: generatedSection
-        ? reindentFragment(
-            generatedSection.text,
+        ? reindentSdfElement(
+            generatedContent,
+            generatedSection,
             getIndentAt(sourceContent, sourceSection.bounds.startOffset),
-          )
+          ).trimStart()
         : '',
     });
   });
@@ -517,7 +571,7 @@ export function patchControlledSdfModelSections({
       startOffset: insertAt,
       endOffset: insertAt,
       text: `${newline}${missingGeneratedSections
-        .map((section) => reindentFragment(section.text, childIndent))
+        .map((section) => reindentSdfElement(generatedContent, section, childIndent))
         .join(newline)}${newline}${getIndentAt(sourceContent, insertAt)}`,
     });
   }

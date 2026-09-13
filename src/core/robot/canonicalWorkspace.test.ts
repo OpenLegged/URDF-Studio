@@ -474,6 +474,108 @@ test('canonical validation rejects non-boolean OmniGlass material metadata', () 
   );
 });
 
+test('canonical validation accepts textureInputs on every USD texture slot including mapPath', () => {
+  // `mapPath` is the primary base-color slot and does not end with the
+  // capitalized `MapPath` suffix; a naive `endsWith` derivation of the slot
+  // whitelist rejects exactly this slot (see the shared types-layer constant).
+  const textureInputs: Record<string, unknown> = {
+    mapPath: {
+      uvTransform: [39.370079, 0, 0, 0, 39.370079, 0, 0, 0, 1],
+      uvPrimvar: 'st',
+      sourceOutput: 'rgb', sampleScale: [1, -1, 2, 0.5], sampleBias: [0.001, 0.02, 0.01, 0.4],
+      wrapS: 'repeat',
+      wrapT: 'repeat',
+    },
+  };
+  const otherSlots = [
+    'emissiveMapPath', 'roughnessMapPath', 'metalnessMapPath', 'normalMapPath',
+    'aoMapPath', 'alphaMapPath', 'clearcoatMapPath', 'clearcoatRoughnessMapPath',
+    'clearcoatNormalMapPath', 'specularColorMapPath', 'specularIntensityMapPath',
+    'transmissionMapPath', 'thicknessMapPath', 'sheenColorMapPath',
+    'sheenRoughnessMapPath', 'anisotropyMapPath', 'iridescenceMapPath',
+    'iridescenceThicknessMapPath',
+  ];
+  for (const slot of otherSlots) {
+    textureInputs[slot] = { uvTransform: [1, 0, 0, 0, 1, 0, 0, 0, 1] };
+  }
+
+  const workspace = createSingleComponentWorkspace(createRobot('usd_texture_inputs')) as unknown;
+  asRecord(getFirstComponent(workspace).robot).materials = {
+    base_link: {
+      usdMaterial: {
+        materialId: '/root/materials/mat_62',
+        mapPath: 'resource/img/keyboard.png',
+        textureInputs,
+      },
+    },
+  };
+
+  assert.equal(validateCanonicalWorkspace(workspace).valid, true);
+  assert.doesNotThrow(() => assertCanonicalWorkspace(workspace));
+});
+
+test('canonical validation rejects unknown textureInputs slots and malformed matrices', () => {
+  const unknownSlotWorkspace = createSingleComponentWorkspace(createRobot('usd_bad_slot')) as unknown;
+  asRecord(getFirstComponent(unknownSlotWorkspace).robot).materials = {
+    base_link: {
+      usdMaterial: {
+        textureInputs: {
+          bogusMapPath: { uvPrimvar: 'st' },
+        },
+      },
+    },
+  };
+  assertInvalid(
+    unknownSlotWorkspace,
+    'components.component_1.robot.materials.base_link.usdMaterial.textureInputs.bogusMapPath',
+  );
+
+  const shortMatrixWorkspace = createSingleComponentWorkspace(createRobot('usd_short_matrix')) as unknown;
+  asRecord(getFirstComponent(shortMatrixWorkspace).robot).materials = {
+    base_link: {
+      usdMaterial: {
+        textureInputs: {
+          mapPath: { uvTransform: [1, 0, 0, 0, 1, 0] },
+        },
+      },
+    },
+  };
+  assertInvalid(
+    shortMatrixWorkspace,
+    'components.component_1.robot.materials.base_link.usdMaterial.textureInputs.mapPath.uvTransform',
+  );
+
+  const nonFiniteMatrixWorkspace = createSingleComponentWorkspace(createRobot('usd_nan_matrix')) as unknown;
+  asRecord(getFirstComponent(nonFiniteMatrixWorkspace).robot).materials = {
+    base_link: {
+      usdMaterial: {
+        textureInputs: {
+          roughnessMapPath: { uvTransform: [1, 0, 0, 0, 'x', 0, 0, 0, 1] },
+        },
+      },
+    },
+  };
+  assertInvalid(
+    nonFiniteMatrixWorkspace,
+    'components.component_1.robot.materials.base_link.usdMaterial.textureInputs.roughnessMapPath.uvTransform.4',
+  );
+
+  const badTokenWorkspace = createSingleComponentWorkspace(createRobot('usd_bad_token')) as unknown;
+  asRecord(getFirstComponent(badTokenWorkspace).robot).materials = {
+    base_link: {
+      usdMaterial: {
+        textureInputs: {
+          mapPath: { wrapS: 5 },
+        },
+      },
+    },
+  };
+  assertInvalid(
+    badTokenWorkspace,
+    'components.component_1.robot.materials.base_link.usdMaterial.textureInputs.mapPath.wrapS',
+  );
+});
+
 test('canonical validation rejects malformed URDF inspection collections before runtime use', () => {
   const invalidDiagnostics = structuredClone(createDefaultWorkspace()) as unknown;
   asRecord(getFirstComponent(invalidDiagnostics).robot).inspectionContext = {
@@ -834,4 +936,19 @@ test('canonical validation rejects invalid bridge keys, endpoints, and joint end
     },
   };
   assert.doesNotThrow(() => assertCanonicalWorkspace(fixedCycle));
+});
+
+test('canonical USD materials retain bounded MDL evidence and reject false resolved diagnostics', () => {
+  const workspace = createSingleComponentWorkspace(createRobot('mdl_material')) as unknown;
+  const mdlPreset = {
+    family: 'GlassWithVolume', status: 'partial', sourceAsset: 'Glass_Clear.mdl',
+    subIdentifier: 'Glass_Clear', inputs: { thin_walled: true, ior: 1.52 },
+    unsupportedInputs: ['connected_transmission_color'],
+  };
+  asRecord(getFirstComponent(workspace).robot).materials = {
+    glass: { usdMaterial: { mdlPreset } },
+  };
+  assert.equal(validateCanonicalWorkspace(workspace).valid, true);
+  mdlPreset.status = 'resolved';
+  assertInvalid(workspace, 'components.component_1.robot.materials.glass.usdMaterial.mdlPreset');
 });

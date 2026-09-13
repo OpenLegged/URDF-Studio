@@ -11,7 +11,6 @@ import { useAppLayoutSnapshotWorkflow } from './hooks/useAppLayoutSnapshotWorkfl
 import { useCollisionOptimizationWorkflow } from './hooks/useCollisionOptimizationWorkflow';
 import { useEditableSourceCodeApply } from './hooks/useEditableSourceCodeApply';
 import { useFlattenedGroupSourceApply } from './hooks/useFlattenedGroupSourceApply';
-import { useEditableSourcePatches } from './hooks/useEditableSourcePatches';
 import { useIkToolController } from './hooks/useIkToolController';
 import { useIkDragPanelActions } from './hooks/use_ik_drag_panel_actions';
 import { useLibraryFileActions } from './hooks/useLibraryFileActions';
@@ -264,18 +263,6 @@ export function AppLayout({
   });
 
   const {
-    patchEditableSourceRobot,
-    patchEditableSourceAddChild,
-    patchEditableSourceDeleteSubtree,
-    patchEditableSourceAddCollisionBody,
-    patchEditableSourceDeleteCollisionBody,
-    patchEditableSourceUpdateCollisionBody,
-    patchEditableSourceUpdateJointLimit,
-    patchEditableSourceUpdateLinkInertial,
-    patchEditableSourceRobotName,
-    patchEditableSourceRenameEntities,
-  } = useEditableSourcePatches({ showToast });
-  const {
     handleUpdate,
     handleCollisionTransformPreview,
     handleCollisionTransform,
@@ -296,16 +283,6 @@ export function AppLayout({
     setPendingCollisionTransform,
     clearPendingCollisionTransform,
     handleTransformPendingChange,
-    patchEditableSourceRobot,
-    patchEditableSourceAddChild,
-    patchEditableSourceDeleteSubtree,
-    patchEditableSourceAddCollisionBody,
-    patchEditableSourceDeleteCollisionBody,
-    patchEditableSourceUpdateCollisionBody,
-    patchEditableSourceUpdateJointLimit,
-    patchEditableSourceUpdateLinkInertial,
-    patchEditableSourceRobotName,
-    patchEditableSourceRenameEntities,
   });
   const handleJointPreview = useCallback(
     (ref: JointEntityRef | BridgeEntityRef, angle: number) =>
@@ -365,7 +342,6 @@ export function AppLayout({
   } = useCollisionOptimizationWorkflow({
     assemblyState: workspace,
     focusOn,
-    patchEditableSourceRobot,
     pulseSelection,
     setSelection,
   });

@@ -3,8 +3,7 @@ import assert from 'node:assert/strict';
 import type OpenAI from 'openai';
 import { JSDOM } from 'jsdom';
 
-// validate_robot calls parseURDF, which needs a DOMParser (native in the browser,
-// polyfilled via jsdom in Node). Mirrors the pattern in core/parsers *.test.ts.
+// URDF round-trip regression coverage needs the browser's DOMParser in Node.
 globalThis.DOMParser = new JSDOM().window.DOMParser as typeof DOMParser;
 
 import { createLink, createSourceSemanticRobotHash } from '@/core/robot';

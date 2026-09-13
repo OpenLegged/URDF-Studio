@@ -19,6 +19,7 @@
 - 应用内部不要把 `src/lib/` 当业务逻辑 source of truth
 - 若能力强依赖 `workspaceStore`、app overlays 或特定业务流程，不要抽进 `src/lib/`
 - `packages/react-robot-canvas/` 是对外发布包工作区；`dist/` 由构建脚本维护，禁止手改
+- `src/lib/**` 的依赖闭包不得到达 app/store/features；canonical checker 遍历传递路径，不允许通过 shared facade 隐藏上层依赖。原 RobotCanvas 两条 feature 例外已删除
 
 Host App 可以通过 `AppExtensionConfig.contextFileMenu` 为替代工作区 surface 注入一组
 文件动作。Core Header 只拥有菜单的呈现、焦点和关闭行为；文件句柄、保存策略、预检、
@@ -38,8 +39,6 @@ Core 据此切换默认工作区与宿主工作区的壳层呈现，但不知道
 
 - `src/features/editor/index.ts` -> `src/features/urdf-viewer/index.ts`（Editor facade）
 - `src/features/editor/{ik_selection,panels,usd_bindings,usd_documents,usd_export,usd_hydration,usd_offscreen_runtime,usd_prewarm,usd_runtime}.ts` -> `src/features/urdf-viewer/...`（Editor 窄 facade；精确 importer / specifier / target 以 `dependency_boundaries.mjs` allowlist 为准）
-- `src/lib/components/RobotCanvas.tsx` -> `src/features/urdf-viewer/components/JointInteraction.tsx`
-- `src/lib/components/RobotCanvas.tsx` -> `src/features/urdf-viewer/components/RobotModel.tsx`
 
 上述例外由 `scripts/tools/dependency_boundaries.mjs` 按 importer + specifier + resolved target 精确匹配，禁止扩大为整层或整 feature 例外。
 
@@ -67,13 +66,20 @@ Core 据此切换默认工作区与宿主工作区的壳层呈现，但不知道
 - component 内 `RobotData` 始终使用 source-local ID；跨 component ID 只由 `assemblySceneProjection.ts` 显式映射
 - selection canonical source：`src/store/selectionStore.ts` 的 `WorkspaceSelection`；禁止恢复 robot/assembly 两套 selection
 - project archive canonical source：`.usp 3.0` 的 `workspace/state.json` 与 `history/workspace.json`；旧版本直接拒绝
+- component source command：`app/hooks/workspace-source-sync/component_source_commands.ts` 在 mutation commit 后读取 canonical robot，统一 reconcile/hash 拒绝与 draft fallback；source history/state 策略同目录所有
+- source include/reference 图：`core/parsers/sourceReferenceGraph.ts`；USD 纯路径规则：`core/parsers/usd/usdLayerReferences.ts`；app documents 层仅组合 editor tab、只读与 validation 信息
+- export 与 AI 临时会话：`app/hooks/useExportSession.ts`、`useAIWorkspaceSession.ts`；不在 App/shell/overlay 各存一份 step/context
+- tool lifecycle commands：`features/urdf-viewer/hooks/useToolModeController.ts`；UI/debug bridge 共用切换及 paint/measure cleanup
+- USD worker stage generation/dispose、worker cache、preload/open、mesh index 与 picking：`features/urdf-viewer/workers/offscreen/`；worker entry 负责 protocol dispatch/组合，迟到 stage 结果不能覆盖当前 session
 
 ## 6. Shared Three.js 工具
 
 - `vite.config.ts` 从 Node 当前可解析的依赖图定位 Three：Core 独立安装时使用自身 `node_modules`，被宿主仓直接编译或运行配置测试时可使用上层锁定安装，不要求伪造 `core/node_modules`
 - 通用 THREE 释放：`src/shared/utils/three/dispose.ts`
 - `src/features/urdf-viewer/utils/dispose.ts`：兼容层 re-export
-- viewer backend lifecycle：`src/features/urdf-viewer/renderers/`，包括 `ThreeJsBackend`、`createRendererBackend`、`loadedRobotSceneSync`、source format / metadata / fallback policy
+- 通用 robot renderer kernel/backend lifecycle：`src/shared/components/3d/robot/`，包括 `RobotModelKernel`、`ThreeJsBackend`、source format/metadata 与通用 load/dispose；使用明确 props/ports，不读取应用 store
+- Studio adapter：`features/urdf-viewer/components/RobotModel.tsx` 注入设置、selection/hover ports；`RobotModelWorkspaceLayer.tsx` 保留 workspace controls/grounding；workspace mutation/history 仍由 app command 所有
+- public Canvas：`src/lib/components/RobotCanvas.tsx` 使用同一 kernel，拥有实例 hover 和 joint interaction cleanup，相机/质量/world visibility 为显式 display options
 - shared mesh renderer：`src/shared/components/3d/renderers/` 只放纯 mesh renderer 组件（STL/OBJ/DAE/GLTF）与 Collada scene helpers，不承载 viewer backend 状态
 - collision overlay material：`src/shared/utils/three/collisionOverlayMaterial.ts`
 - MJCF parser material：`src/core/utils/materialFactory.ts`
@@ -92,6 +98,7 @@ Core 据此切换默认工作区与宿主工作区的壳层呈现，但不知道
 - `src/app/utils/sourceCodeDocuments.ts`：按 active component 构造可编辑 document；multi/bridge workspace 只提供只读 projection
 - `src/app/hooks/workspace-mutations/*`：所有业务 mutation 显式携带 component/entity target
 - structured mutation 后只允许 patch 对应 component draft 或使其失效；禁止回写共享 library template
+- URDF / Xacro / MJCF / SDF 编辑源码和应用导出启用 `preserveNumericPrecision`，避免小数位截断及把微小有效值当成默认值。独立 generator 保留默认格式化选项；UI 短格式只用于非聚焦显示，不写回模型。不得放宽全局 semantic hash：MJCF 旋转及 degree 限位只接受精确原值或确定的序列化往返结果，SDF 1.6 仅接受同版本生成并重解析所得的确定 joint origin 表示，其他字段继续精确比较。
 - source full apply 在 store 外 parse/validate，再以 revision CAS 原子替换目标 component robot + matching draft
 - 不得恢复 `useWorkspaceSourceSync`、single-component reuse/reseed、source-scene mirror 或 renderer-strategy mutation 分支
 
@@ -172,11 +179,11 @@ Core 据此切换默认工作区与宿主工作区的壳层呈现，但不知道
 分层红线、`app` feature deep import surface 与 import 循环由 `scripts/tools/dependency_boundaries.mjs` 机器化把关（零依赖，复用 `@/* -> src/*` alias）：
 
 ```bash
-npm run deps:audit   # 报告越层 import、app feature deep import 与循环依赖
+npm run deps:audit   # 报告越层 import、发布包可达路径、app feature deep import 与循环依赖
 npm run deps:check    # CI 阻断门（当前 cycles/deep-import baseline 均为空）
 ```
 
-该脚本编码 §1 的方向（core 禁 React/越层、features 禁互相 import、shared/store/lib 禁向上、types 为 leaf），也会拦截非 `.cjs` 产品源中可绕过 ESM 图的 `require()`。§3 的存量例外只按精确 importer/specifier/target allowlist。`app` 对 feature 子路径的 deep import 和 import cycle 新增或 baseline stale 都会让 `--check` 失败；当前两个 baseline 清单均为空。`npm run lint` 已串联 `deps:check`。下列 `rg` 命令仅作快速人工排查备用：
+该脚本编码 §1 的方向（core 禁 React/越层、features 禁互相 import、shared/store/lib 禁向上、types 为 leaf），也会拦截非 `.cjs` 产品源中可绕过 ESM 图的 `require()`，并复用同一依赖提取与路径解析检查发布包对 app/store/features 的传递可达路径。发布边界包含静态 worker module URL；URL 不代表同一执行环境中的 ESM import，因此不作为 import cycle 边。§3 的存量例外只按精确 importer/specifier/target allowlist。`app` 对 feature 子路径的 deep import 和 import cycle 新增或 baseline stale 都会让 `--check` 失败；当前两个 baseline 清单均为空。`npm run lint` 已串联 `deps:check`。下列 `rg` 命令仅作快速人工排查备用：
 
 ```bash
 # 检查潜在反向依赖（core/shared/store 对 features 的引用）

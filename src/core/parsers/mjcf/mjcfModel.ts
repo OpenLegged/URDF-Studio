@@ -1136,11 +1136,13 @@ function isIdentityTransform(transform: MJCFLocalTransform | undefined): boolean
   }
 
   return (
-    transform.position.lengthSq() <= 1e-12 &&
-    Math.abs(transform.quaternion.x) <= 1e-12 &&
-    Math.abs(transform.quaternion.y) <= 1e-12 &&
-    Math.abs(transform.quaternion.z) <= 1e-12 &&
-    Math.abs(transform.quaternion.w - 1) <= 1e-12
+    transform.position.x === 0 &&
+    transform.position.y === 0 &&
+    transform.position.z === 0 &&
+    transform.quaternion.x === 0 &&
+    transform.quaternion.y === 0 &&
+    transform.quaternion.z === 0 &&
+    transform.quaternion.w === 1
   );
 }
 

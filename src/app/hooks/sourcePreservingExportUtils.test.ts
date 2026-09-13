@@ -88,10 +88,10 @@ test('resolveSourcePreservingExportContent patches URDF from RobotState while pr
 
 test('resolveSourcePreservingExportContent patches MJCF model-owned sections and keeps top-level solver settings', () => {
   const robot = parseURDF(URDF_SOURCE);
-  const source = generateMujocoXML(robot, { includeSceneHelpers: false }).replace(
-    '<worldbody>',
-    '<option timestep="0.002" />\n  <!-- keep mjcf option area -->\n  <worldbody>',
-  );
+  const source = generateMujocoXML(robot, {
+    includeSceneHelpers: false,
+    preserveInertialData: true,
+  }).replace('<worldbody>', '<option timestep="0.002" />\n  <!-- keep mjcf option area -->\n  <worldbody>');
   const nextRobot = {
     ...robot,
     name: 'demo_updated',
@@ -105,7 +105,10 @@ test('resolveSourcePreservingExportContent patches MJCF model-owned sections and
       format: 'mjcf',
       content: source,
     },
-    generatedContent: generateMujocoXML(nextRobot, { includeSceneHelpers: false }),
+    generatedContent: generateMujocoXML(nextRobot, {
+      includeSceneHelpers: false,
+      preserveInertialData: true,
+    }),
   });
 
   assert.equal(result.strategy, 'source-preserved');
@@ -178,11 +181,14 @@ test('resolveSourcePreservingExportContent patches MJCF compiler settings with g
       format: 'mjcf',
       content: source,
     },
-    generatedContent: generateMujocoXML(robot, { meshdir: 'meshes/' }),
+    generatedContent: generateMujocoXML(robot, {
+      meshdir: 'meshes/',
+      preserveInertialData: true,
+    }),
   });
 
   assert.equal(result.strategy, 'source-preserved');
-  assert.match(result.content, /<compiler angle="radian" meshdir="meshes\/" \/>/);
+  assert.match(result.content, /<compiler[^>]*angle="radian"[^>]*meshdir="meshes\/"[^>]*\/>/);
   assert.equal(parseMJCF(result.content)?.links.base.visual.meshPath, 'meshes/assets/base.stl');
 });
 

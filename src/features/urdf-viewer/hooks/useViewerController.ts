@@ -16,7 +16,6 @@ import type {
   ViewerProps,
 } from '../types';
 import { resolveActiveViewerJointKeyFromSelection } from '../utils/activeJointSelection';
-import { createEmptyMeasureState } from '../utils/measurements';
 import type { RuntimeViewerRobot } from '../utils/runtimeRobotMotion';
 import { useRuntimeJointLimitOverride } from './useRuntimeJointLimitOverride';
 import { useViewerSettings } from './useViewerSettings';
@@ -164,10 +163,9 @@ export const useViewerController = ({
   );
 
   const {
-    normalizedToolModeScopeKey,
-    toolModeState,
-    setToolModeState,
-    resolvedToolModeState,
+    changeMode: handleToolModeChange,
+    closeMeasure,
+    closePaint: handleClosePaintTool,
     toolMode,
     transformMode,
     measureState,
@@ -209,12 +207,6 @@ export const useViewerController = ({
     },
     [setGroundPlaneOffset],
   );
-
-  useEffect(() => {
-    if (resolvedToolModeState !== toolModeState) {
-      setToolModeState(resolvedToolModeState);
-    }
-  }, [resolvedToolModeState, setToolModeState, toolModeState]);
 
   useEffect(() => {
     if (selection?.subType === 'collision') {
@@ -341,11 +333,11 @@ export const useViewerController = ({
     highlightMode,
     jointAxisSize,
     modelOpacity,
-    normalizedToolModeScopeKey,
     originSize,
     requestSceneRefresh,
     robot,
     toolMode,
+    changeToolMode: handleToolModeChange,
     jointAnglesRef,
     activeJointRef,
     patchJointPanelAngles,
@@ -353,10 +345,8 @@ export const useViewerController = ({
     setCenterOfMassSize,
     setHighlightMode,
     setJointAxisSize,
-    setMeasureState,
     setModelOpacity,
     setOriginSize,
-    setPaintStatus,
     setShowCenterOfMass,
     setShowCoMOverlay,
     setShowCollision,
@@ -368,7 +358,6 @@ export const useViewerController = ({
     setShowOrigins,
     setShowOriginsOverlay,
     setShowVisual,
-    setToolModeState,
     showCenterOfMass,
     showCoMOverlay,
     showCollision,
@@ -432,43 +421,10 @@ export const useViewerController = ({
     [onHover],
   );
 
-  const handleToolModeChange = useCallback(
-    (nextMode: ToolMode) => {
-      setToolModeState({
-        scopeKey: normalizedToolModeScopeKey,
-        explicit: true,
-        mode: nextMode,
-      });
-      if (nextMode !== 'measure') {
-        setMeasureState((previous) =>
-          previous.hoverTarget ? { ...previous, hoverTarget: null } : previous,
-        );
-      }
-      if (nextMode !== 'paint') {
-        setPaintStatus(null);
-      }
-    },
-    [normalizedToolModeScopeKey, setMeasureState, setPaintStatus, setToolModeState],
-  );
-
   const handleCloseMeasureTool = useCallback(() => {
-    setMeasureState(createEmptyMeasureState());
-    setToolModeState({
-      scopeKey: normalizedToolModeScopeKey,
-      explicit: true,
-      mode: 'select',
-    });
+    closeMeasure();
     onHover?.(null, null);
-  }, [normalizedToolModeScopeKey, onHover, setMeasureState, setToolModeState]);
-
-  const handleClosePaintTool = useCallback(() => {
-    setPaintStatus(null);
-    setToolModeState({
-      scopeKey: normalizedToolModeScopeKey,
-      explicit: true,
-      mode: 'select',
-    });
-  }, [normalizedToolModeScopeKey, setPaintStatus, setToolModeState]);
+  }, [closeMeasure, onHover]);
 
   const handlePointerMissed = useCallback(() => {
     if (justSelectedRef.current || transformPendingRef.current) {

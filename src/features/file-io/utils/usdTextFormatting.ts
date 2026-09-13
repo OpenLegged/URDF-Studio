@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 
 import type { JointQuaternion } from '@/types';
+import { formatNumberPreservingPrecision } from '@/core/utils/numberPrecision';
 
 const USD_INDENT_UNIT = '    ';
 const usdIndentCache = [''];
@@ -13,43 +14,8 @@ export const makeUsdIndent = (depth: number): string => {
   return usdIndentCache[normalizedDepth]!;
 };
 
-const trimFixedUsdFloat = (value: string): string => {
-  if (!value.includes('.')) {
-    return value;
-  }
-
-  let end = value.length;
-  while (end > 0 && value[end - 1] === '0') {
-    end -= 1;
-  }
-  if (end > 0 && value[end - 1] === '.') {
-    end -= 1;
-  }
-  return end > 0 ? value.slice(0, end) : '0';
-};
-
-const trimExponentialUsdFloat = (value: string): string => {
-  return value
-    .replace(/(\.\d*?[1-9])0+e/, '$1e')
-    .replace(/\.0+e/, 'e')
-    .replace(/e\+?/, 'e')
-    .replace(/e(-?)0+(\d+)/, 'e$1$2');
-};
-
 export const formatUsdFloat = (value: number): string => {
-  if (!Number.isFinite(value)) return '0';
-  const normalized = Object.is(value, -0) ? 0 : value;
-  const absolute = Math.abs(normalized);
-
-  if (absolute === 0) {
-    return '0';
-  }
-
-  if (absolute >= 1e-6 && absolute < 1e9) {
-    return trimFixedUsdFloat(normalized.toFixed(6));
-  }
-
-  return trimExponentialUsdFloat(normalized.toExponential(6));
+  return formatNumberPreservingPrecision(value) || '0';
 };
 
 export const formatUsdTuple = (values: number[]): string => {

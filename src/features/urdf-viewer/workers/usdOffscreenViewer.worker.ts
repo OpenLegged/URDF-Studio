@@ -1,9 +1,11 @@
 /// <reference lib="webworker" />
 
 import * as THREE from 'three';
-import { getCollisionGeometryEntries } from '@/core/robot';
+import { preloadUsdDependencies, ensureCriticalUsdDependenciesLoaded } from './offscreen/usdWorkerPreload.ts';
+import { buildUsdWorkerMeshIndex, applyUsdWorkerMeshIndexMetadata } from './offscreen/usdWorkerMeshIndex.ts';
+import { pickUsdWorkerInteractionTarget, type RuntimeInteractionTarget } from './offscreen/usdWorkerPicking.ts';
+import { createUsdWorkerStageSession } from './offscreen/usdWorkerStageSession.ts';
 import type {
-  RobotFile,
   UsdMeshDescriptorRanges,
   UsdSceneMaterialRecord,
   UsdSceneMeshDescriptor,
@@ -26,20 +28,12 @@ import {
 } from '@/shared/components/3d/scene/workspaceOrbitPan.ts';
 import { LinkAxesController } from '../runtime/viewer/link-axes.js';
 import { LinkRotationController } from '../runtime/viewer/link-rotation.js';
-import type { PreparedUsdPreloadFile } from '@/lib/robot-parser/usd/usdStageOpenPreparation';
-import { preloadUsdStageEntries } from '../utils/usdStagePreloadExecution.ts';
 import { shouldUseUsdCollisionVisualProxy } from '@/lib/robot-parser/usd/usdCollisionVisualProxy';
-import {
-  buildPreparedUsdStageOpenCacheKey,
-  clearPreparedUsdStageOpenCache,
-  loadPreparedUsdStageOpenDataInline,
-} from '../utils/preparedUsdStageOpenCache.ts';
-import { prepareUsdStageOpenDataCore } from '@/lib/robot-parser/usd/usdStageOpenPreparationCore';
+import { createUsdWorkerStageCache } from './offscreen/usdWorkerStageCache.ts';
 import type { ViewerDocumentLoadEvent, UsdLoadingProgress } from '../types';
 import { hydrateUsdViewerRobotResolutionFromRuntime } from '../utils/usdRuntimeRobotHydration.ts';
 import { resolveUsdSceneRobotResolution } from '../utils/usdSceneRobotResolution.ts';
 import { resolveUsdSceneSnapshot } from '../utils/usdSceneSnapshotResolution.ts';
-import { toVirtualUsdPath } from '@/lib/robot-parser/usd/usdPreloadSources';
 import { resolveUsdGroundAlignmentSettleDelaysMs } from '../utils/usdGroundAlignmentDelays.ts';
 import { alignUsdSceneRootToGround } from '../utils/usdGroundAlignment.ts';
 import { shouldSettleUsdGroundAlignmentAfterInitialLoad } from '../utils/usdGroundAlignmentPolicy.ts';
@@ -51,27 +45,14 @@ import {
 } from '@/lib/robot-parser/usd/usdWasmRuntime';
 import { createHighlightOverrideMaterial, disposeMaterial } from '../utils/materials.ts';
 import {
-  hasPickableMaterial,
-  isInternalHelperObject,
   isVisibleInHierarchy,
 } from '../utils/pickFilter.ts';
 import { collectSelectableHelperTargets } from '../utils/pickTargets.ts';
-import { reconcileUsdCollisionMeshAssignments } from '../utils/usdCollisionMeshAssignments.ts';
 import { resolveUsdStageInteractionPolicy } from '../utils/usdInteractionPolicy.ts';
 import {
   resolvePreferredUsdGeometryRole,
-  resolveUsdHelperHit,
-  sortUsdInteractionCandidates,
-  type ResolvedUsdHelperHit,
 } from '../utils/usdInteractionPicking.ts';
-import { resolveScreenSpaceUsdHelperHit } from '../utils/usdScreenSpaceHelperInteraction.ts';
-import { resolveUsdRuntimeLinkPathForMesh } from '../utils/usdRuntimeMeshMapping.ts';
-import { resolveUsdVisualMeshObjectOrder } from '../utils/usdRuntimeMeshObjectOrder.ts';
-import { prepareUsdVisualMesh } from '../utils/usdVisualRendering.ts';
-import {
-  createEmbeddedUsdViewerLoadParams,
-  shouldForceHydraFullDrawForStandaloneAsset,
-} from '@/lib/robot-parser/usd/usdViewerRenderParams';
+import { openUsdWorkerStage } from './offscreen/usdWorkerStageOpen.ts';
 import { prepareUsdExportCacheFromResolvedSnapshot } from '../utils/usdExportBundle.ts';
 import { serializePreparedUsdExportCacheForWorker } from '../utils/usdPreparedExportCacheWorkerTransfer.ts';
 import {
@@ -126,7 +107,6 @@ import {
   cloneUsdOffscreenSelection,
   createUsdOffscreenInteractionState,
   type UsdOffscreenMeshRole,
-  type UsdOffscreenRuntimeMeshMeta,
 } from '../utils/usdOffscreenInteractionState.ts';
 import type { ViewerRobotDataResolution } from '@/lib/robot-parser/usd/viewerRobotData';
 import type { ToolMode, ViewerInteractiveLayer } from '../types.ts';
@@ -201,22 +181,11 @@ interface ActivePointerState {
 }
 
 type UsdMeshRole = UsdOffscreenMeshRole;
-type RuntimeMeshMeta = UsdOffscreenRuntimeMeshMeta;
 type UsdOffscreenViewerWorkerResponsePayload = UsdOffscreenViewerWorkerResponse extends infer T
   ? T extends { sessionId: UsdOffscreenViewerSessionId }
     ? Omit<T, 'sessionId'> & { sessionId?: UsdOffscreenViewerSessionId }
     : T
   : never;
-
-type RuntimeInteractionTarget =
-  | {
-      kind: 'geometry';
-      meta: RuntimeMeshMeta;
-    }
-  | {
-      kind: 'helper';
-      selection: ResolvedUsdHelperHit;
-    };
 
 type HighlightedMaterialState = {
   depthTest: boolean;
@@ -235,19 +204,15 @@ type HighlightedMeshSnapshot = {
   activeRole: UsdMeshRole | null;
 };
 
-type WorkerStageGlobals = {
-  driver: unknown;
-  renderInterface: UsdWorkerRenderInterface | null;
-  usdStage: unknown;
-};
-
-const USD_VISUAL_SEGMENT_PATTERN = /(?:^|\/)visuals?(?:$|[/.])/i;
-const USD_COLLISION_SEGMENT_PATTERN = /(?:^|\/)coll(?:isions?|iders?)(?:$|[/.])/i;
-
 const workerScope = globalThis as unknown as DedicatedWorkerGlobalScope;
 const runtimeWindow = globalThis as RuntimeWindow;
 
 let runtime: UsdWasmRuntime | null = null;
+const stageSession = createUsdWorkerStageSession(runtimeWindow, (driver) => {
+  if (runtime) {
+    disposeUsdDriver(runtime, driver);
+  }
+});
 let renderer: THREE.WebGLRenderer | null = null;
 let scene: THREE.Scene | null = null;
 let camera: THREE.PerspectiveCamera | null = null;
@@ -259,14 +224,9 @@ let offscreenLightRig: UsdOffscreenLightRig | null = null;
 let offscreenStudioEnvironment: UsdOffscreenStudioEnvironmentHandle | null = null;
 let offscreenGroundShadowPlane: THREE.Mesh | null = null;
 let offscreenSemanticOutline: SemanticOutlineComposer | null = null;
-let currentDriver: unknown = null;
-let currentRenderInterface: UsdWorkerRenderInterface | null = null;
-let currentUsdStage: unknown = undefined;
 let activePointer: ActivePointerState | null = null;
 let activeSessionId: UsdOffscreenViewerSessionId | null = null;
 let lastInteractionAt = 0;
-let currentLoadGeneration = 0;
-let disposed = false;
 let viewerActive = true;
 let interactionToolMode: ToolMode = 'select';
 let interactionLayerPriority: ViewerInteractiveLayer[] = [];
@@ -308,15 +268,7 @@ const deferredSceneSnapshotLifecycle = createUsdDeferredSceneSnapshotLifecycle<
 });
 let linkAxesController: InstanceType<typeof LinkAxesController> | null = null;
 let linkRotationController: InstanceType<typeof LinkRotationController> | null = null;
-const stageOpenContextSnapshots = new Map<
-  string,
-  NonNullable<UsdOffscreenViewerInitRequest['stageOpenContext']>
->();
-const stageOpenContextOrder: string[] = [];
-const STAGE_OPEN_CONTEXT_CACHE_LIMIT = 24;
-const preparedStageOpenCacheKeys = new Set<string>();
-const preparedStageOpenCacheKeyOrder: string[] = [];
-const PREPARED_STAGE_OPEN_CACHE_LIMIT = 8;
+const stageCache = createUsdWorkerStageCache();
 let useCollisionVisualProxyMode = false;
 
 interface PublishedWorkerRobotData {
@@ -385,88 +337,6 @@ function postWorkerMessage(
   }
 
   workerScope.postMessage(messageWithSession);
-}
-
-function cacheStageOpenContext(
-  contextKey: string | undefined,
-  context: UsdOffscreenViewerInitRequest['stageOpenContext'],
-): void {
-  if (!contextKey || !context) {
-    return;
-  }
-
-  stageOpenContextSnapshots.set(contextKey, context);
-  const existingIndex = stageOpenContextOrder.indexOf(contextKey);
-  if (existingIndex >= 0) {
-    stageOpenContextOrder.splice(existingIndex, 1);
-  }
-  stageOpenContextOrder.push(contextKey);
-
-  while (stageOpenContextOrder.length > STAGE_OPEN_CONTEXT_CACHE_LIMIT) {
-    const oldestContextKey = stageOpenContextOrder.shift();
-    if (oldestContextKey) {
-      stageOpenContextSnapshots.delete(oldestContextKey);
-    }
-  }
-}
-
-function recordPreparedStageOpenCacheKey(cacheKey: string): void {
-  if (preparedStageOpenCacheKeys.has(cacheKey)) {
-    return;
-  }
-
-  preparedStageOpenCacheKeys.add(cacheKey);
-  preparedStageOpenCacheKeyOrder.push(cacheKey);
-
-  while (preparedStageOpenCacheKeyOrder.length > PREPARED_STAGE_OPEN_CACHE_LIMIT) {
-    const oldestCacheKey = preparedStageOpenCacheKeyOrder.shift();
-    if (oldestCacheKey) {
-      preparedStageOpenCacheKeys.delete(oldestCacheKey);
-    }
-  }
-}
-
-function resolveStageOpenContext(
-  message: Extract<UsdOffscreenViewerWorkerRequest, { type: 'init' }>,
-): {
-  availableFiles: Array<Pick<RobotFile, 'name' | 'content' | 'blobUrl' | 'format'>>;
-  assets: Record<string, string>;
-  source: 'init-context' | 'worker-cache';
-  cacheHit: boolean;
-} {
-  if (message.stageOpenContext) {
-    cacheStageOpenContext(message.stageOpenContextKey, message.stageOpenContext);
-    return {
-      availableFiles: message.stageOpenContext.availableFiles ?? [],
-      assets: message.stageOpenContext.assets ?? {},
-      source: 'init-context',
-      cacheHit: Boolean(message.stageOpenContextCacheHit),
-    };
-  }
-
-  if (message.stageOpenContextKey) {
-    const cachedContext = stageOpenContextSnapshots.get(message.stageOpenContextKey);
-    if (!cachedContext) {
-      throw new Error(
-        `USD offscreen worker is missing cached stage-open context "${message.stageOpenContextKey}" ` +
-          `for "${message.sourceFile.name}".`,
-      );
-    }
-
-    return {
-      availableFiles: cachedContext.availableFiles ?? [],
-      assets: cachedContext.assets ?? {},
-      source: 'worker-cache',
-      cacheHit: true,
-    };
-  }
-
-  return {
-    availableFiles: [],
-    assets: {},
-    source: 'init-context',
-    cacheHit: false,
-  };
 }
 
 function emitLoadDebugEntry(
@@ -655,7 +525,7 @@ function installRuntimeWindowAlias(): void {
 }
 
 function isLoadGenerationActive(loadGeneration: number): boolean {
-  return !disposed && loadGeneration === currentLoadGeneration;
+  return stageSession.isActive(loadGeneration);
 }
 
 function emitDocumentLoadEvent(
@@ -915,182 +785,14 @@ function revertInteractionHighlights(): void {
   interactionState.clearHighlights();
 }
 
-function getPathBasename(path: string | null | undefined): string {
-  const normalized = String(path || '')
-    .trim()
-    .replace(/[<>]/g, '');
-  if (!normalized) {
-    return '';
-  }
-
-  const segments = normalized.split('/').filter(Boolean);
-  return segments[segments.length - 1] || '';
-}
-
-function resolveUsdCollisionMeshAuthoredOrder({
-  renderInterface,
-  linkPath,
-  meshId,
-  fallbackOrder,
-}: {
-  renderInterface: UsdWorkerRenderInterface | null | undefined;
-  linkPath: string;
-  meshId: string;
-  fallbackOrder: number;
-}): number {
-  const truth = renderInterface?.getUrdfTruthForCurrentStage?.();
-  const runtimeEntry = renderInterface?.getUrdfCollisionEntryForMeshId?.(meshId);
-  const linkName = getPathBasename(linkPath);
-  const authoredEntries = linkName ? truth?.collisionsByLinkName?.get?.(linkName)?.all : null;
-
-  if (runtimeEntry && Array.isArray(authoredEntries)) {
-    const authoredIndex = authoredEntries.indexOf(runtimeEntry);
-    if (authoredIndex >= 0) {
-      return authoredIndex;
-    }
-  }
-
-  return fallbackOrder;
-}
-
-function isUsdVisualMeshId(meshId: string, meshName = ''): boolean {
-  return (
-    USD_VISUAL_SEGMENT_PATTERN.test(String(meshId || '').toLowerCase()) ||
-    USD_VISUAL_SEGMENT_PATTERN.test(String(meshName || '').toLowerCase())
-  );
-}
-
-function isUsdCollisionMeshId(meshId: string, meshName = ''): boolean {
-  return (
-    USD_COLLISION_SEGMENT_PATTERN.test(String(meshId || '').toLowerCase()) ||
-    USD_COLLISION_SEGMENT_PATTERN.test(String(meshName || '').toLowerCase())
-  );
-}
-
-function getUsdMeshRole(meshId: string, meshName = ''): UsdMeshRole {
-  if (isUsdCollisionMeshId(meshId, meshName)) {
-    return 'collision';
-  }
-
-  return isUsdVisualMeshId(meshId, meshName) ? 'visual' : 'visual';
-}
-
 function rebuildRuntimeMeshIndex(): void {
-  const renderInterface = runtimeWindow.renderInterface;
-  const currentRobotLinks = resolvedRobotData?.robotData.links || {};
-  const nextMeshMetaByObject = new Map<THREE.Object3D, RuntimeMeshMeta>();
-  const nextMeshesByLinkKey = new Map<string, THREE.Mesh[]>();
-  const nextPickMeshes: THREE.Mesh[] = [];
-  const nextHelperTargets = collectSelectableHelperTargets(usdRoot);
-  const nextCollisionMeshGroups = new Map<
-    string,
-    Array<{ mesh: THREE.Mesh; meta: RuntimeMeshMeta }>
-  >();
-  const collisionMeshFallbackOrderByLinkPath = new Map<string, number>();
-  const visualMeshFallbackOrderByLinkPath = new Map<string, number>();
-
-  for (const [meshId, hydraMesh] of Object.entries(renderInterface?.meshes || {})) {
-    const meshRecord = hydraMesh ?? null;
-    const mesh = meshRecord?._mesh;
-    if (!mesh) {
-      continue;
-    }
-
-    const resolvedPrimPath =
-      renderInterface?.getResolvedVisualTransformPrimPathForMeshId?.(meshId) ||
-      renderInterface?.getResolvedPrimPathForMeshId?.(meshId) ||
-      null;
-    const linkPath = resolveUsdRuntimeLinkPathForMesh({
-      meshId,
-      resolution: resolvedRobotData,
-      resolvedPrimPath,
-    });
-    if (!linkPath) {
-      continue;
-    }
-
-    const role = getUsdMeshRole(meshId, mesh.name || '');
-    const collisionFallbackOrder = collisionMeshFallbackOrderByLinkPath.get(linkPath) ?? 0;
-    if (role === 'collision') {
-      collisionMeshFallbackOrderByLinkPath.set(linkPath, collisionFallbackOrder + 1);
-    }
-    const visualFallbackOrder = visualMeshFallbackOrderByLinkPath.get(linkPath) ?? 0;
-    const authoredOrder =
-      role === 'collision'
-        ? resolveUsdCollisionMeshAuthoredOrder({
-            renderInterface,
-            linkPath,
-            meshId,
-            fallbackOrder: collisionFallbackOrder,
-          })
-        : resolveUsdVisualMeshObjectOrder({
-            renderInterface,
-            meshId,
-            fallbackOrder: visualFallbackOrder,
-          });
-    if (role === 'visual') {
-      visualMeshFallbackOrderByLinkPath.set(
-        linkPath,
-        Math.max(visualFallbackOrder, authoredOrder + 1),
-      );
-      prepareUsdVisualMesh(mesh);
-    }
-
-    mesh.userData = mesh.userData || {};
-    mesh.userData.geometryRole = role;
-    mesh.userData.isCollisionMesh = role === 'collision';
-    mesh.userData.isVisualMesh = role === 'visual';
-    mesh.userData.usdObjectIndex = role === 'collision' ? undefined : authoredOrder;
-    mesh.userData.usdLinkPath = linkPath;
-    mesh.userData.usdMeshId = meshId;
-
-    const meta: RuntimeMeshMeta = {
-      linkPath,
-      meshId,
-      authoredOrder,
-      objectIndex: role === 'collision' ? undefined : authoredOrder,
-      role,
-    };
-    nextMeshMetaByObject.set(mesh, meta);
-    nextPickMeshes.push(mesh);
-
-    const key = `${linkPath}:${role}`;
-    const meshes = nextMeshesByLinkKey.get(key) || [];
-    meshes.push(mesh);
-    nextMeshesByLinkKey.set(key, meshes);
-
-    if (role === 'collision') {
-      const collisionMeshes = nextCollisionMeshGroups.get(linkPath) || [];
-      collisionMeshes.push({ mesh, meta });
-      nextCollisionMeshGroups.set(linkPath, collisionMeshes);
-    }
-  }
-
-  nextCollisionMeshGroups.forEach((collisionMeshes, linkPath) => {
-    const linkId = resolvedRobotData?.linkIdByPath[linkPath];
-    const linkData = linkId ? currentRobotLinks[linkId] : undefined;
-    const currentCount = linkData ? getCollisionGeometryEntries(linkData).length : 0;
-    const reconciledAssignments = reconcileUsdCollisionMeshAssignments({
-      meshes: collisionMeshes.map(({ meta }) => ({
-        meshId: meta.meshId,
-        authoredOrder: meta.authoredOrder ?? 0,
-      })),
-      currentCount,
-    });
-
-    collisionMeshes.forEach(({ mesh, meta }) => {
-      const objectIndex = reconciledAssignments.get(meta.meshId);
-      meta.objectIndex = objectIndex;
-      mesh.userData.usdObjectIndex = objectIndex;
-    });
+  const index = buildUsdWorkerMeshIndex({
+    renderInterface: runtimeWindow.renderInterface,
+    resolution: resolvedRobotData,
+    root: usdRoot,
   });
-
-  interactionState.replaceMeshIndex({
-    meshMetaByObject: nextMeshMetaByObject,
-    meshesByLinkKey: nextMeshesByLinkKey,
-    pickMeshes: nextPickMeshes,
-    helperTargets: nextHelperTargets,
-  });
+  applyUsdWorkerMeshIndexMetadata(index);
+  interactionState.replaceMeshIndex(index);
 }
 
 function getRuntimeMeshRoleCounts(): { visualMeshCount: number; collisionMeshCount: number } {
@@ -1243,119 +945,17 @@ function pickRuntimeInteractionTargetAtLocalPoint(
   localX: number,
   localY: number,
 ): RuntimeInteractionTarget | null {
-  if (!camera) {
-    return null;
-  }
-
-  const width = Math.max(1, runtimeWindow.innerWidth || 1);
-  const height = Math.max(1, runtimeWindow.innerHeight || 1);
-  if (localX < 0 || localX > width || localY < 0 || localY > height) {
-    return null;
-  }
-
-  interactionState.pointer.set((localX / width) * 2 - 1, -(localY / height) * 2 + 1);
-  interactionState.raycaster.setFromCamera(interactionState.pointer, camera);
-
-  const rawHits = interactionState.raycaster.intersectObjects(interactionState.pickMeshes, false);
-  const geometryCandidates: Array<{
-    kind: 'geometry';
-    distance: number;
-    layer: UsdMeshRole;
-    meta: RuntimeMeshMeta;
-    object: THREE.Object3D;
-  }> = [];
-
-  for (const hit of rawHits) {
-    if (
-      hit.object.visible === false ||
-      isInternalHelperObject(hit.object) ||
-      !isVisibleInHierarchy(hit.object) ||
-      ((hit.object as THREE.Mesh).isMesh &&
-        !hasPickableMaterial((hit.object as THREE.Mesh).material))
-    ) {
-      continue;
-    }
-
-    const meta = interactionState.meshMetaByObject.get(hit.object);
-    if (!meta) {
-      continue;
-    }
-    if (meta.role === 'collision' && !Number.isInteger(meta.objectIndex)) {
-      continue;
-    }
-
-    geometryCandidates.push({
-      kind: 'geometry',
-      meta,
-      layer: meta.role,
-      object: hit.object,
-      distance: hit.distance,
-    });
-  }
-
-  const helperCandidates =
-    interactionState.helperTargets.length > 0
-      ? interactionState.raycaster
-          .intersectObjects(interactionState.helperTargets, false)
-          .flatMap((hit) => {
-            const resolvedHelperHit = resolveUsdHelperHit(hit.object, resolvedRobotData);
-            if (!resolvedHelperHit) {
-              return [];
-            }
-
-            return [
-              {
-                kind: 'helper' as const,
-                distance: hit.distance,
-                layer: resolvedHelperHit.layer,
-                object: hit.object,
-                selection: resolvedHelperHit,
-              },
-            ];
-          })
-      : [];
-
-  const exactCandidates = sortUsdInteractionCandidates(
-    [...geometryCandidates, ...helperCandidates],
-    interactionLayerPriority,
-  );
-  const exactCandidate = exactCandidates[0] ?? null;
-  if (exactCandidate?.kind === 'helper') {
-    return {
-      kind: 'helper',
-      selection: exactCandidate.selection,
-    };
-  }
-
-  if (exactCandidate?.kind === 'geometry') {
-    return {
-      kind: 'geometry',
-      meta: exactCandidate.meta,
-    };
-  }
-
-  const screenSpaceHelperHit = resolveScreenSpaceUsdHelperHit({
-    pointerClientX: localX,
-    pointerClientY: localY,
-    helperTargets: interactionState.helperTargets,
-    resolution: resolvedRobotData,
+  return camera ? pickUsdWorkerInteractionTarget({
+    localX,
+    localY,
     camera,
-    canvasRect: {
-      x: 0,
-      y: 0,
-      width: runtimeWindow.innerWidth,
-      height: runtimeWindow.innerHeight,
-    },
+    viewport: { width: runtimeWindow.innerWidth, height: runtimeWindow.innerHeight },
+    index: interactionState,
+    resolution: resolvedRobotData,
     interactionLayerPriority,
-  });
-  if (screenSpaceHelperHit) {
-    return {
-      kind: 'helper',
-      selection: screenSpaceHelperHit,
-    };
-  }
-
-  return null;
+    raycaster: interactionState.raycaster,
+    pointer: interactionState.pointer,
+  }) : null;
 }
 
 function commitRuntimeHoverTarget(pickedTarget: RuntimeInteractionTarget | null): void {
@@ -1400,47 +1000,6 @@ function disposeUsdRootChildren(rootGroup: THREE.Group): void {
   });
 }
 
-function captureWorkerStageGlobals(): WorkerStageGlobals {
-  return {
-    driver: runtimeWindow.driver ?? null,
-    renderInterface: runtimeWindow.renderInterface ?? null,
-    usdStage: runtimeWindow.usdStage,
-  };
-}
-
-function restoreCommittedWorkerStageGlobals(): void {
-  if (currentDriver) {
-    runtimeWindow.driver = currentDriver;
-  } else {
-    runtimeWindow.driver = undefined;
-  }
-
-  if (currentRenderInterface) {
-    runtimeWindow.renderInterface = currentRenderInterface;
-  } else {
-    runtimeWindow.renderInterface = undefined;
-  }
-
-  runtimeWindow.usdStage = currentUsdStage;
-}
-
-function disposeAbandonedWorkerStageGlobals(resources: WorkerStageGlobals): void {
-  if (runtime && resources.driver && resources.driver !== currentDriver) {
-    disposeUsdDriver(runtime, resources.driver);
-  }
-
-  if (resources.renderInterface && resources.renderInterface !== currentRenderInterface) {
-    resources.renderInterface?.dispose?.();
-  }
-}
-
-function commitCurrentWorkerStageGlobals(driver: unknown): void {
-  currentDriver = driver ?? null;
-  currentRenderInterface = runtimeWindow.renderInterface ?? null;
-  currentUsdStage = runtimeWindow.usdStage;
-  runtimeWindow.driver = currentDriver;
-}
-
 function disposeStageResources(): void {
   clearScheduledAutoFrame();
   clearScheduledGroundAlignmentPasses();
@@ -1456,18 +1015,7 @@ function disposeStageResources(): void {
   linkRotationController?.setEnabled(false);
   linkRotationController?.setRenderInterface(null);
 
-  if (runtime && currentDriver) {
-    disposeUsdDriver(runtime, currentDriver);
-  }
-
-  const renderInterfaceToDispose = currentRenderInterface ?? runtimeWindow.renderInterface;
-  renderInterfaceToDispose?.dispose?.();
-  currentDriver = null;
-  currentRenderInterface = null;
-  currentUsdStage = undefined;
-  runtimeWindow.driver = undefined;
-  runtimeWindow.renderInterface = undefined;
-  runtimeWindow.usdStage = undefined;
+  stageSession.releaseStage();
 
   if (usdRoot) {
     disposeUsdRootChildren(usdRoot);
@@ -1810,11 +1358,12 @@ function buildLiveMeshSceneSnapshotFallback(
         : null,
       transform: { offset: transformPool.length, count: transform.length, stride: 16 },
     };
-    positionPool.push(...positions);
-    indexPool.push(...indices);
-    normalPool.push(...normals);
-    uvPool.push(...uvs);
-    transformPool.push(...transform);
+    // Large USD meshes can exceed the engine's function argument limit.
+    for (const value of positions) positionPool.push(value);
+    for (const value of indices) indexPool.push(value);
+    for (const value of normals) normalPool.push(value);
+    for (const value of uvs) uvPool.push(value);
+    for (const value of transform) transformPool.push(value);
     rangesByMeshId[meshId] = ranges;
     meshDescriptors.push({
       meshId,
@@ -1893,6 +1442,10 @@ function validateWorkerRenderedScene(sourceFileName: string): void {
     return;
   }
 
+  // Ground alignment and snapshot export can finish before the deferred
+  // auto-frame samples settle. Frame the current bounds before requiring
+  // them to intersect the camera frustum at initial readiness.
+  applyWorkerCameraFrame(sampleWorkerAutoFrameBounds());
   const summary = summarizeWorkerRenderedScene();
   if (
     summary.loadedMeshCount > 0 &&
@@ -1966,251 +1519,6 @@ function applyRuntimeVisibility(): void {
   refreshOriginAxes();
   refreshRuntimeHelperTargets();
   syncInteractionHighlights();
-}
-
-function normalizePreparedUsdPreloadBytes(
-  bytes: PreparedUsdPreloadFile['bytes'],
-): Uint8Array | null {
-  if (!bytes) {
-    return null;
-  }
-
-  if (bytes instanceof Uint8Array) {
-    return bytes.byteLength > 0 ? bytes : null;
-  }
-
-  if (bytes instanceof ArrayBuffer) {
-    return bytes.byteLength > 0 ? new Uint8Array(bytes) : null;
-  }
-
-  return null;
-}
-
-function getSharedConfigurationVirtualPath(path: string): string | null {
-  const normalizedPath = toVirtualUsdPath(path);
-  if (!normalizedPath.toLowerCase().includes('/configuration/')) {
-    return null;
-  }
-
-  const fileName = normalizedPath.split('/').pop();
-  return fileName ? `/configuration/${fileName}` : null;
-}
-
-async function writeUsdBytesToVirtualPath(
-  activeRuntime: UsdWasmRuntime,
-  virtualPath: string,
-  bytes: Uint8Array,
-  isActive: () => boolean,
-): Promise<boolean> {
-  if (!isActive() || !activeRuntime.usdFsHelper.canOperateOnUsdFilesystem()) {
-    return false;
-  }
-
-  const normalizedVirtualPath = toVirtualUsdPath(virtualPath);
-  const fileName = normalizedVirtualPath.split('/').pop() || 'resource.usd';
-  const lastSlashIndex = normalizedVirtualPath.lastIndexOf('/');
-  const directory = lastSlashIndex >= 0 ? normalizedVirtualPath.slice(0, lastSlashIndex + 1) : '/';
-
-  if (
-    typeof activeRuntime.USD.FS_createPath !== 'function' ||
-    (typeof activeRuntime.USD.FS_writeFile !== 'function' &&
-      (typeof activeRuntime.USD.FS_createDataFile !== 'function' ||
-        typeof activeRuntime.USD.FS_unlink !== 'function'))
-  ) {
-    return false;
-  }
-
-  activeRuntime.USD.FS_createPath('', directory, true, true);
-  if (typeof activeRuntime.USD.FS_writeFile === 'function') {
-    try {
-      activeRuntime.USD.FS_writeFile(normalizedVirtualPath, bytes);
-      activeRuntime.usdFsHelper.trackVirtualFilePath?.(normalizedVirtualPath);
-      return activeRuntime.usdFsHelper.hasVirtualFilePath(normalizedVirtualPath);
-    } catch {
-      // Fall back to the older unlink/createDataFile path if direct writes fail.
-    }
-  }
-
-  const unlinkUsdFile = activeRuntime.USD.FS_unlink;
-  const createUsdDataFile = activeRuntime.USD.FS_createDataFile;
-  if (typeof unlinkUsdFile !== 'function' || typeof createUsdDataFile !== 'function') {
-    return false;
-  }
-
-  try {
-    unlinkUsdFile(normalizedVirtualPath);
-  } catch {}
-  activeRuntime.usdFsHelper.untrackVirtualFilePath?.(normalizedVirtualPath);
-  createUsdDataFile(directory, fileName, bytes, true, true, true);
-  activeRuntime.usdFsHelper.trackVirtualFilePath?.(normalizedVirtualPath);
-
-  return activeRuntime.usdFsHelper.hasVirtualFilePath(normalizedVirtualPath);
-}
-
-async function readUsdBlobBytes(blob: Blob, isActive: () => boolean): Promise<Uint8Array | null> {
-  if (!isActive()) {
-    return null;
-  }
-
-  const arrayBuffer = await blob.arrayBuffer();
-  if (!isActive() || arrayBuffer.byteLength <= 0) {
-    return null;
-  }
-
-  return new Uint8Array(arrayBuffer);
-}
-
-async function resolvePreparedUsdPreloadWriteBytes(
-  entry: PreparedUsdPreloadFile,
-  isActive: () => boolean,
-): Promise<Uint8Array | null> {
-  const normalizedBytes = normalizePreparedUsdPreloadBytes(entry.bytes);
-  if (normalizedBytes) {
-    return normalizedBytes;
-  }
-
-  if (!entry.blob) {
-    return null;
-  }
-
-  const blobBytes = await readUsdBlobBytes(entry.blob, isActive);
-  if (!blobBytes) {
-    return null;
-  }
-
-  const blobMimeType = entry.blob.type || null;
-  entry.bytes = blobBytes;
-  entry.blob = null;
-  entry.mimeType = entry.mimeType ?? blobMimeType;
-  return blobBytes;
-}
-
-async function preloadUsdEntry(
-  activeRuntime: UsdWasmRuntime,
-  entry: PreparedUsdPreloadFile,
-  isActive: () => boolean,
-): Promise<boolean> {
-  if (!isActive()) {
-    return false;
-  }
-
-  const resolvedBytes = await resolvePreparedUsdPreloadWriteBytes(entry, isActive);
-  if (!resolvedBytes) {
-    return false;
-  }
-
-  const loaded = await writeUsdBytesToVirtualPath(
-    activeRuntime,
-    entry.path,
-    resolvedBytes,
-    isActive,
-  );
-
-  if (!loaded) {
-    return false;
-  }
-
-  const sharedConfigurationPath = getSharedConfigurationVirtualPath(entry.path);
-  if (
-    sharedConfigurationPath &&
-    sharedConfigurationPath !== entry.path &&
-    !activeRuntime.usdFsHelper.hasVirtualFilePath(sharedConfigurationPath)
-  ) {
-    await writeUsdBytesToVirtualPath(
-      activeRuntime,
-      sharedConfigurationPath,
-      resolvedBytes,
-      isActive,
-    );
-  }
-
-  return activeRuntime.usdFsHelper.hasVirtualFilePath(entry.path);
-}
-
-async function preloadUsdDependencies(
-  activeRuntime: UsdWasmRuntime,
-  stageSourcePath: string,
-  entries: PreparedUsdPreloadFile[],
-  isActive: () => boolean,
-): Promise<void> {
-  await preloadUsdStageEntries({
-    stageSourcePath,
-    entries,
-    isActive,
-    preloadEntry: async (entry, entryIsActive) => {
-      await preloadUsdEntry(activeRuntime, entry, entryIsActive);
-    },
-  });
-}
-
-async function ensureCriticalUsdDependenciesLoaded(
-  activeRuntime: UsdWasmRuntime,
-  stagePath: string,
-  requiredPaths: string[],
-  entries: PreparedUsdPreloadFile[],
-  isActive: () => boolean,
-): Promise<void> {
-  const entryByPath = new Map(entries.map((entry) => [entry.path, entry]));
-  const missingPaths: string[] = [];
-
-  for (const requiredPath of requiredPaths) {
-    if (!isActive()) {
-      return;
-    }
-
-    if (activeRuntime.usdFsHelper.hasVirtualFilePath(requiredPath)) {
-      continue;
-    }
-
-    let loaded = false;
-    const exactEntry = entryByPath.get(requiredPath);
-    if (exactEntry) {
-      loaded = await preloadUsdEntry(activeRuntime, exactEntry, isActive);
-    }
-
-    if (!loaded) {
-      const fileName = requiredPath.split('/').pop();
-      const sharedConfigurationPath = fileName ? `/configuration/${fileName}` : null;
-
-      if (sharedConfigurationPath) {
-        try {
-          const response = await fetch(sharedConfigurationPath);
-          if (response.ok) {
-            const blob = await response.blob();
-            const sharedConfigurationBytes = await readUsdBlobBytes(blob, isActive);
-            if (sharedConfigurationBytes) {
-              loaded = await writeUsdBytesToVirtualPath(
-                activeRuntime,
-                sharedConfigurationPath,
-                sharedConfigurationBytes,
-                isActive,
-              );
-            }
-            if (loaded) {
-              loaded = await writeUsdBytesToVirtualPath(
-                activeRuntime,
-                requiredPath,
-                sharedConfigurationBytes!,
-                isActive,
-              );
-            }
-          }
-        } catch (error) {
-          console.error(`Skipping shared USD configuration preload for ${requiredPath}`, error);
-        }
-      }
-    }
-
-    if (!loaded) {
-      missingPaths.push(requiredPath);
-    }
-  }
-
-  if (missingPaths.length > 0) {
-    throw new Error(
-      `Critical USD dependencies are missing for "${stagePath}": ${missingPaths.join(', ')}`,
-    );
-  }
 }
 
 function publishSceneSnapshot(
@@ -2378,7 +1686,7 @@ async function publishResolvedRobotData(
 
   const { snapshot: resolvedSnapshot, resolution: initialRobotResolution } = resolveUsdSceneRobotResolution({
     renderInterface: runtimeWindow.renderInterface,
-    driver: currentDriver,
+    driver: stageSession.driver,
     stageSourcePath: currentSourceFileName,
     fileName: currentSourceFileName,
     allowWarmup: true,
@@ -2445,9 +1753,9 @@ async function publishResolvedRobotData(
 
 async function loadUsdStageIntoWorker(message: UsdOffscreenViewerInitRequest): Promise<void> {
   const sessionId = message.sessionId;
-  const loadGeneration = ++currentLoadGeneration;
+  const stageLoad = stageSession.beginLoad();
+  const loadGeneration = stageLoad.generation;
   const completionMode = resolveWorkerCompletionMode(message.completionMode);
-  let loadedStageGlobals: WorkerStageGlobals | null = null;
   currentSourceFileName = message.sourceFile.name;
   viewerActive = message.active;
   showVisual = message.showVisual;
@@ -2472,6 +1780,9 @@ async function loadUsdStageIntoWorker(message: UsdOffscreenViewerInitRequest): P
   );
 
   try {
+    // The client can send a key-only replacement as soon as this request is
+    // posted. Accept its worker-lifetime context before any cancellable await.
+    const preparation = stageCache.prepare(message);
     emitWorkerLoadingStep('checking-path', 'Initializing USD runtime...', 1, sessionId);
     const runtimeCacheHit = Boolean(runtime);
     runtime = await trackWorkerLoadDebugStep({
@@ -2507,14 +1818,9 @@ async function loadUsdStageIntoWorker(message: UsdOffscreenViewerInitRequest): P
     );
     disposeStageResources();
 
-    const stageOpenContext = resolveStageOpenContext(message);
+    const stageOpenContext = preparation.context;
     const stageOpenSource = stageOpenContext.source;
-    const preparedStageOpenCacheKey = buildPreparedUsdStageOpenCacheKey(
-      message.sourceFile,
-      stageOpenContext.availableFiles,
-      stageOpenContext.assets,
-    );
-    const preparedStageOpenCacheHit = preparedStageOpenCacheKeys.has(preparedStageOpenCacheKey);
+    const preparedStageOpenCacheHit = preparation.cacheHit;
     const preparedStageOpenData = await trackWorkerLoadDebugStep({
       sourceFileName: message.sourceFile.name,
       step: 'prepare-stage-open-data',
@@ -2527,20 +1833,7 @@ async function loadUsdStageIntoWorker(message: UsdOffscreenViewerInitRequest): P
         stageOpenContextCacheHit: stageOpenContext.cacheHit,
         preparedStageOpenCacheHit,
       },
-      run: async () =>
-        await loadPreparedUsdStageOpenDataInline(
-          message.sourceFile,
-          stageOpenContext.availableFiles,
-          stageOpenContext.assets,
-          message.projectionMode === 'scene' || message.includeAllAvailableFiles
-            ? (sourceFile, availableFiles, assets) => prepareUsdStageOpenDataCore(
-                sourceFile,
-                availableFiles,
-                assets,
-                { includeAllAvailableFiles: true },
-              )
-            : undefined,
-        ),
+      run: preparation.load,
       resolveDetail: (result) => ({
         stagePreparationMode: 'worker',
         rendererMode: 'offscreen-worker',
@@ -2556,7 +1849,6 @@ async function loadUsdStageIntoWorker(message: UsdOffscreenViewerInitRequest): P
       }),
       sessionId,
     });
-    recordPreparedStageOpenCacheKey(preparedStageOpenCacheKey);
     if (!isLoadGenerationActive(loadGeneration)) {
       return;
     }
@@ -2588,13 +1880,13 @@ async function loadUsdStageIntoWorker(message: UsdOffscreenViewerInitRequest): P
           12,
           sessionId,
         );
-        await ensureCriticalUsdDependenciesLoaded(
-          activeRuntime,
-          preparedStageOpenData.stageSourcePath,
-          preparedStageOpenData.criticalDependencyPaths,
-          preparedStageOpenData.preloadFiles,
-          () => isLoadGenerationActive(loadGeneration),
-        );
+        await ensureCriticalUsdDependenciesLoaded({
+          runtime: activeRuntime,
+          stagePath: preparedStageOpenData.stageSourcePath,
+          requiredPaths: preparedStageOpenData.criticalDependencyPaths,
+          entries: preparedStageOpenData.preloadFiles,
+          isActive: stageLoad.isActive,
+        });
         return preparedStageOpenData;
       },
       resolveDetail: () => ({
@@ -2612,18 +1904,6 @@ async function loadUsdStageIntoWorker(message: UsdOffscreenViewerInitRequest): P
       18,
       sessionId,
     );
-    const params = createEmbeddedUsdViewerLoadParams(activeRuntime.threadCount, {
-      preferWorkerResolvedRobotData: true,
-      dependenciesPreloadedToVirtualFs: true,
-      // Vendor USDs can be fully renderable while lacking complete robot
-      // joint/dynamics metadata. Keep the one-shot render drain strict, but do
-      // not fail the worker after the scene is visually complete.
-      allowIncompleteWorkerRobotMetadata: true,
-      forceHydraFullDraw:
-        message.forceHydraFullDraw === true ||
-        shouldForceHydraFullDrawForStandaloneAsset(message.sourceFile.name),
-    });
-
     const loadState = await trackWorkerLoadDebugStep({
       sourceFileName: message.sourceFile.name,
       step: 'load-usd-stage',
@@ -2631,41 +1911,18 @@ async function loadUsdStageIntoWorker(message: UsdOffscreenViewerInitRequest): P
         rendererMode: 'offscreen-worker',
         stageSourcePath: preparedStageOpenData.stageSourcePath,
       },
-      run: async () =>
-        await activeRuntime.loadUsdStage({
-          USD: activeRuntime.USD,
-          usdFsHelper: activeRuntime.usdFsHelper,
-          messageLog: null,
-          progressBar: null,
-          progressLabel: null,
-          showLoadUi: false,
-          readStageMetadata: true,
-          loadCollisionPrims: true,
-          loadVisualPrims: true,
-          loadPassLabel: 'offscreen-worker',
-          params,
-          displayName: message.sourceFile.name,
-          pathToLoad: preparedStageOpenData.stageSourcePath,
-          isLoadActive: () => isLoadGenerationActive(loadGeneration),
-          onResolvedFilename: (normalizedPath: string) => {
-            if (isLoadGenerationActive(loadGeneration)) {
-              currentSourceFileName = normalizedPath;
-            }
-          },
-          applyMeshFilters: () => {
-            applyRuntimeVisibility();
-          },
-          rebuildLinkAxes: () => {},
-          renderFrame: () => {
-            renderScene();
-          },
-          onProgress: (progress) => {
-            if (!isLoadGenerationActive(loadGeneration)) {
-              return;
-            }
-            emitLoadingProgress(progress, sessionId);
-          },
-        }),
+      run: () => openUsdWorkerStage({
+        runtime: activeRuntime,
+        sourceFileName: message.sourceFile.name,
+        stageSourcePath: preparedStageOpenData.stageSourcePath,
+        forceHydraFullDraw: message.forceHydraFullDraw,
+        isActive: stageLoad.isActive,
+        onStageResourcesCreated: stageLoad.captureResources,
+        onResolvedFilename: (path) => { currentSourceFileName = path; },
+        onProgress: (progress) => emitLoadingProgress(progress, sessionId),
+        applyVisibility: applyRuntimeVisibility,
+        renderFrame: renderScene,
+      }),
       resolveDetail: (result) => {
         const runtimeWarmupSummary = (
           result as
@@ -2721,13 +1978,7 @@ async function loadUsdStageIntoWorker(message: UsdOffscreenViewerInitRequest): P
       sessionId,
     });
 
-    loadedStageGlobals = {
-      ...captureWorkerStageGlobals(),
-      driver: loadState?.driver ?? runtimeWindow.driver ?? null,
-    };
-    if (!isLoadGenerationActive(loadGeneration)) {
-      disposeAbandonedWorkerStageGlobals(loadedStageGlobals);
-      restoreCommittedWorkerStageGlobals();
+    if (!stageLoad.adopt(loadState?.driver)) {
       return;
     }
 
@@ -2737,8 +1988,6 @@ async function loadUsdStageIntoWorker(message: UsdOffscreenViewerInitRequest): P
           `(${preparedStageOpenData.stageSourcePath}).`,
       );
     }
-
-    commitCurrentWorkerStageGlobals(loadState.driver);
 
     if (loadState.drawFailed) {
       const reason = String(loadState.drawFailureReason || '').trim();
@@ -2766,7 +2015,7 @@ async function loadUsdStageIntoWorker(message: UsdOffscreenViewerInitRequest): P
       }
       const resolved = resolveUsdSceneSnapshot({
         renderInterface: runtimeWindow.renderInterface,
-        driver: currentDriver,
+        driver: stageSession.driver,
         stageSourcePath: currentSourceFileName || preparedStageOpenData.stageSourcePath,
       });
       const sceneSnapshot = resolved.snapshot
@@ -2977,9 +2226,7 @@ async function loadUsdStageIntoWorker(message: UsdOffscreenViewerInitRequest): P
       );
     }
   } catch (error) {
-    if (!isLoadGenerationActive(loadGeneration)) {
-      disposeAbandonedWorkerStageGlobals(loadedStageGlobals ?? captureWorkerStageGlobals());
-      restoreCommittedWorkerStageGlobals();
+    if (stageLoad.discardIfStale()) {
       return;
     }
     disposeStageResources();
@@ -3263,7 +2510,7 @@ function handleSetDecorationState(
 }
 
 function disposeWorkerStage(): void {
-  currentLoadGeneration += 1;
+  stageSession.invalidate();
   activePointer = null;
   disposeStageResources();
   disposeUsdOffscreenLightRig(scene, offscreenLightRig);
@@ -3302,14 +2549,10 @@ function disposeWorkerStage(): void {
 }
 
 function disposeWorker(): void {
-  disposed = true;
   disposeWorkerStage();
+  stageSession.dispose();
   deferredSceneSnapshotLifecycle.dispose();
-  clearPreparedUsdStageOpenCache();
-  preparedStageOpenCacheKeys.clear();
-  preparedStageOpenCacheKeyOrder.length = 0;
-  stageOpenContextSnapshots.clear();
-  stageOpenContextOrder.length = 0;
+  stageCache.dispose();
 
   workerScope.close();
 }
@@ -3348,7 +2591,7 @@ installWorkerViewerGlobals();
 
 workerScope.addEventListener('message', (event: MessageEvent<UsdOffscreenViewerWorkerRequest>) => {
   const message = event.data;
-  if (!message || disposed) {
+  if (!message || stageSession.disposed) {
     return;
   }
 
@@ -3455,7 +2698,7 @@ workerScope.addEventListener('message', (event: MessageEvent<UsdOffscreenViewerW
       groundPlaneOffset = message.groundPlaneOffset;
       syncUsdOffscreenGroundShadowPlane(offscreenGroundShadowPlane, groundPlaneOffset);
       if (shouldSettleGroundAlignmentAfterLoad) {
-        scheduleGroundAlignmentSettlePasses(currentLoadGeneration, currentSourceFileName);
+        scheduleGroundAlignmentSettlePasses(stageSession.generation, currentSourceFileName);
       } else {
         renderScene();
       }
@@ -3468,7 +2711,7 @@ workerScope.addEventListener('message', (event: MessageEvent<UsdOffscreenViewerW
       applyGroundAlignment();
       renderScene();
       if (shouldSettleGroundAlignmentAfterLoad) {
-        scheduleGroundAlignmentSettlePasses(currentLoadGeneration, currentSourceFileName);
+        scheduleGroundAlignmentSettlePasses(stageSession.generation, currentSourceFileName);
       }
       return;
     }

@@ -5,11 +5,11 @@ import test from 'node:test';
 const files = [
   new URL('../components/RobotModel.tsx', import.meta.url),
   new URL('../components/ViewerScene.tsx', import.meta.url),
-  new URL('../hooks/useMouseInteraction.ts', import.meta.url),
+  new URL('../../../shared/components/3d/robot/hooks/useMouseInteraction.ts', import.meta.url),
   new URL('../hooks/useRobotLoader.ts', import.meta.url),
   new URL('../hooks/useViewerController.ts', import.meta.url),
-  new URL('./activeJointSelection.ts', import.meta.url),
-  new URL('./robotLoaderGeometryPatch.ts', import.meta.url),
+  new URL('../../../shared/components/3d/robot/utils/activeJointSelection.ts', import.meta.url),
+  new URL('../../../shared/components/3d/robot/utils/robotLoaderGeometryPatch.ts', import.meta.url),
   new URL('../../../lib/components/RobotCanvas.tsx', import.meta.url),
 ];
 
@@ -28,7 +28,7 @@ test('viewer and package entrypoints import shared/core helper implementations d
 test('viewer runtime does not import the MJCF-specific Three.js loader', async () => {
   const runtimeFiles = [
     new URL('../hooks/useRobotLoader.ts', import.meta.url),
-    new URL('../renderers/ThreeJsBackend.ts', import.meta.url),
+    new URL('../../../shared/components/3d/robot/renderers/ThreeJsBackend.ts', import.meta.url),
   ];
 
   for (const fileUrl of runtimeFiles) {

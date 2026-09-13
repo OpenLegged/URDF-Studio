@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Link2, Minus, Plus } from 'lucide-react';
 import { PanelSelect, type SelectOption } from '@/shared/components/ui';
 import { usePressAndHoldRepeat } from '@/shared/hooks/usePressAndHoldRepeat';
-import { roundToMaxDecimals } from '@/core/utils/numberPrecision';
+import { addNumberStep } from '@/core/utils/numberStep';
 import type { BridgePickTarget } from '../../utils/bridgeSelection';
 import {
   BRIDGE_AXIS_TONE_STYLES,
@@ -202,6 +202,22 @@ interface BridgeSpinnerFieldProps {
   labelClassName?: string;
 }
 
+const formatBridgeFocusedNumber = (value: number): string =>
+  Number.isFinite(value) ? String(Object.is(value, -0) ? 0 : value) : '';
+
+const bridgeDraftMatchesCurrentValue = (
+  draftValue: string,
+  currentValue: number,
+  precision: number,
+): boolean => {
+  if (draftValue === formatBridgeNumber(currentValue, precision)) {
+    return true;
+  }
+
+  const parsedValue = Number.parseFloat(draftValue);
+  return Number.isFinite(parsedValue) && Object.is(parsedValue, currentValue);
+};
+
 export function BridgeSpinnerField({
   label,
   value,
@@ -231,12 +247,14 @@ export function BridgeSpinnerField({
 
   const commitValue = useCallback(
     (nextValue: number) => {
-      const normalizedValue = roundToMaxDecimals(clampValue(nextValue, min, max), precision);
+      const normalizedValue = clampValue(nextValue, min, max);
       currentValueRef.current = normalizedValue;
-      onChange(normalizedValue);
+      if (!Object.is(normalizedValue, value)) {
+        onChange(normalizedValue);
+      }
       setDraftValue(formatBridgeNumber(normalizedValue, precision));
     },
-    [max, min, onChange, precision],
+    [max, min, onChange, precision, value],
   );
 
   const handleInputChange = useCallback(
@@ -249,12 +267,25 @@ export function BridgeSpinnerField({
         return;
       }
 
-      onChange(roundToMaxDecimals(clampValue(parsedValue, min, max), precision));
+      const normalizedValue = clampValue(parsedValue, min, max);
+      currentValueRef.current = normalizedValue;
+      onChange(normalizedValue);
     },
-    [max, min, onChange, precision],
+    [max, min, onChange],
   );
 
+  const handleFocus = useCallback((event: React.FocusEvent<HTMLInputElement>) => {
+    const focusedValue = formatBridgeFocusedNumber(currentValueRef.current);
+    event.currentTarget.value = focusedValue;
+    setDraftValue(focusedValue);
+  }, []);
+
   const handleBlur = useCallback(() => {
+    if (bridgeDraftMatchesCurrentValue(draftValue, currentValueRef.current, precision)) {
+      setDraftValue(formatBridgeNumber(currentValueRef.current, precision));
+      return;
+    }
+
     const parsedValue = Number.parseFloat(draftValue);
     if (!Number.isFinite(parsedValue)) {
       setDraftValue(formatBridgeNumber(value, precision));
@@ -265,10 +296,10 @@ export function BridgeSpinnerField({
   }, [commitValue, draftValue, precision, value]);
 
   const { buttonProps: increaseButtonProps } = useBridgePressAndHoldAction(() =>
-    commitValue(currentValueRef.current + step),
+    commitValue(addNumberStep(currentValueRef.current, step, 1)),
   );
   const { buttonProps: decreaseButtonProps } = useBridgePressAndHoldAction(() =>
-    commitValue(currentValueRef.current - step),
+    commitValue(addNumberStep(currentValueRef.current, step, -1)),
   );
 
   const inputControl = (
@@ -280,6 +311,7 @@ export function BridgeSpinnerField({
         inputMode="decimal"
         value={draftValue}
         onChange={handleInputChange}
+        onFocus={handleFocus}
         onBlur={handleBlur}
         onKeyDown={(event) => {
           if (event.key === 'Enter') {
@@ -287,11 +319,11 @@ export function BridgeSpinnerField({
           }
           if (event.key === 'ArrowUp') {
             event.preventDefault();
-            commitValue(currentValueRef.current + step);
+            commitValue(addNumberStep(currentValueRef.current, step, 1));
           }
           if (event.key === 'ArrowDown') {
             event.preventDefault();
-            commitValue(currentValueRef.current - step);
+            commitValue(addNumberStep(currentValueRef.current, step, -1));
           }
         }}
         aria-label={label}
@@ -383,12 +415,14 @@ export function BridgeAxisSpinnerField({
 
   const commitValue = useCallback(
     (nextValue: number) => {
-      const normalizedValue = roundToMaxDecimals(clampValue(nextValue, min, max), precision);
+      const normalizedValue = clampValue(nextValue, min, max);
       currentValueRef.current = normalizedValue;
-      onChange(normalizedValue);
+      if (!Object.is(normalizedValue, value)) {
+        onChange(normalizedValue);
+      }
       setDraftValue(formatBridgeNumber(normalizedValue, precision));
     },
-    [max, min, onChange, precision],
+    [max, min, onChange, precision, value],
   );
 
   const handleInputChange = useCallback(
@@ -401,12 +435,25 @@ export function BridgeAxisSpinnerField({
         return;
       }
 
-      onChange(roundToMaxDecimals(clampValue(parsedValue, min, max), precision));
+      const normalizedValue = clampValue(parsedValue, min, max);
+      currentValueRef.current = normalizedValue;
+      onChange(normalizedValue);
     },
-    [max, min, onChange, precision],
+    [max, min, onChange],
   );
 
+  const handleFocus = useCallback((event: React.FocusEvent<HTMLInputElement>) => {
+    const focusedValue = formatBridgeFocusedNumber(currentValueRef.current);
+    event.currentTarget.value = focusedValue;
+    setDraftValue(focusedValue);
+  }, []);
+
   const handleBlur = useCallback(() => {
+    if (bridgeDraftMatchesCurrentValue(draftValue, currentValueRef.current, precision)) {
+      setDraftValue(formatBridgeNumber(currentValueRef.current, precision));
+      return;
+    }
+
     const parsedValue = Number.parseFloat(draftValue);
     if (!Number.isFinite(parsedValue)) {
       setDraftValue(formatBridgeNumber(value, precision));
@@ -417,10 +464,10 @@ export function BridgeAxisSpinnerField({
   }, [commitValue, draftValue, precision, value]);
 
   const { buttonProps: increaseButtonProps } = useBridgePressAndHoldAction(() =>
-    commitValue(currentValueRef.current + step),
+    commitValue(addNumberStep(currentValueRef.current, step, 1)),
   );
   const { buttonProps: decreaseButtonProps } = useBridgePressAndHoldAction(() =>
-    commitValue(currentValueRef.current - step),
+    commitValue(addNumberStep(currentValueRef.current, step, -1)),
   );
 
   return (
@@ -445,6 +492,7 @@ export function BridgeAxisSpinnerField({
               inputMode="decimal"
               value={draftValue}
               onChange={handleInputChange}
+              onFocus={handleFocus}
               onBlur={handleBlur}
               onKeyDown={(event) => {
                 if (event.key === 'Enter') {
@@ -452,11 +500,11 @@ export function BridgeAxisSpinnerField({
                 }
                 if (event.key === 'ArrowUp') {
                   event.preventDefault();
-                  commitValue(currentValueRef.current + step);
+                  commitValue(addNumberStep(currentValueRef.current, step, 1));
                 }
                 if (event.key === 'ArrowDown') {
                   event.preventDefault();
-                  commitValue(currentValueRef.current - step);
+                  commitValue(addNumberStep(currentValueRef.current, step, -1));
                 }
               }}
               aria-label={label}

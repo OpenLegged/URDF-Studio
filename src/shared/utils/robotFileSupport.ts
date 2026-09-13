@@ -68,6 +68,7 @@ export const ROBOT_IMPORT_ASSET_EXTENSIONS = [
   '.ply',
   '.vtk',
   '.bin',
+  '.mdl',
   '.png',
   '.jpg',
   '.jpeg',

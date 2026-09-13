@@ -305,6 +305,7 @@ test('parseMJCFModel treats a blank optional rgba as unset without omitting the 
     </mujoco>
   `);
 
+  assert.ok(model, 'blank optional rgba should leave the model parseable');
   assert.equal(model.worldBody.children[0]?.geoms.length, 1);
   assert.equal(model.worldBody.children[0]?.geoms[0]?.rgba, undefined);
   assert.deepEqual(model.recoveryDiagnostics, []);

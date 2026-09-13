@@ -82,3 +82,16 @@ test('shared utils expose robot file support helpers for library export and impo
     'support',
   );
 });
+
+
+test('MDL dependencies are collected as support assets without becoming library models', () => {
+  for (const name of ['Surface.mdl', 'materials/Templates/GlassWithVolume.MDL']) {
+    assert.equal(sharedUtils.isRobotImportCandidatePath(name), true);
+    assert.equal(sharedUtils.isRobotImportAssetPath(name), true);
+    assert.equal(sharedUtils.isVisibleLibraryAssetPath(name), false);
+    assert.equal(sharedUtils.isLibraryPreviewableFile({ name, format: 'asset' }), false);
+    assert.equal(sharedUtils.isLibraryComponentAddableFile({ name, format: 'asset' }), false);
+    assert.equal(sharedUtils.classifyLibraryFileKind({ name, format: 'asset' }), 'support');
+  }
+  assert.doesNotMatch(sharedUtils.ROBOT_IMPORT_ACCEPT_ATTRIBUTE, /(^|,)\.mdl(,|$)/i);
+});

@@ -79,16 +79,6 @@ const ALLOWLIST = [
     specifier: '../urdf-viewer/utils/usdBlobBackedUsda',
     resolved: 'src/features/urdf-viewer/utils/usdBlobBackedUsda.ts',
   },
-  {
-    importer: 'src/lib/components/RobotCanvas.tsx',
-    specifier: '../../features/urdf-viewer/components/JointInteraction',
-    resolved: 'src/features/urdf-viewer/components/JointInteraction.tsx',
-  },
-  {
-    importer: 'src/lib/components/RobotCanvas.tsx',
-    specifier: '../../features/urdf-viewer/components/RobotModel',
-    resolved: 'src/features/urdf-viewer/components/RobotModel.tsx',
-  },
 ];
 
 const PUBLIC_APP_FEATURE_FACADES = new Set([
@@ -118,12 +108,14 @@ const fileSet = new Set(files);
 
 const boundaryViolations = [];
 const observedFeatureDeepImports = new Map(); // importer -> specifier key -> entry
-const graph = new Map(); // importerRel -> Set<targetRel>
+const graph = new Map();
+const runtimeGraph = new Map(); // importerRel -> Set<targetRel>
 
 for (const relPath of files) {
   const text = await readFile(path.join(ROOT, relPath), 'utf8');
   const importerLayer = classifyLayer(relPath);
   const edges = new Set();
+  const runtimeEdges = new Set();
 
   for (const dependency of extractDependencies(text)) {
     const spec = dependency.specifier;
@@ -152,12 +144,16 @@ for (const relPath of files) {
       boundaryViolations.push(violation);
     }
     if (resolvedRel && resolvedRel !== relPath) {
-      edges.add(resolvedRel);
+      runtimeEdges.add(resolvedRel);
+      // A worker URL reaches runtime code in another realm, not an ESM import cycle.
+      if (dependency.syntax !== 'module-url') edges.add(resolvedRel);
     }
   }
   graph.set(relPath, edges);
+  runtimeGraph.set(relPath, runtimeEdges);
 }
 
+const publishableBoundaryViolations = findPublishableBoundaryViolations(runtimeGraph);
 const allCycles = findCycles(graph).map((cycle) => ({ cycle, signature: cycleSignature(cycle) }));
 const newCycles = allCycles.filter((entry) => !knownCycles.has(entry.signature));
 const knownCycleCount = allCycles.length - newCycles.length;
@@ -175,6 +171,7 @@ const staleFeatureDeepImports = [...knownFeatureDeepImportKeys]
   .sort();
 const report = {
   boundaryViolations,
+  publishableBoundaryViolations,
   featureDeepImports: {
     known: knownFeatureDeepImports,
     new: newFeatureDeepImports,
@@ -200,6 +197,7 @@ if (options.json) {
 if (
   options.check &&
   (boundaryViolations.length > 0 ||
+    publishableBoundaryViolations.length > 0 ||
     newFeatureDeepImports.length > 0 ||
     staleFeatureDeepImports.length > 0 ||
     newCycles.length > 0)
@@ -290,6 +288,11 @@ function extractDependencies(text) {
   // dynamic import('x')
   for (const match of text.matchAll(/\bimport\s*\(\s*['"]([^'"]+)['"]\s*\)/g)) {
     dependencies.push({ specifier: match[1], syntax: 'esm' });
+  }
+  // Worker module URLs are runtime dependencies too. Non-source assets are
+  // ignored by resolveInternal because they are absent from the source graph.
+  for (const match of text.matchAll(/\bnew\s+URL\s*\(\s*['"]([^'"]+)['"]\s*,\s*import\.meta\.url\s*\)/g)) {
+    dependencies.push({ specifier: match[1], syntax: 'module-url' });
   }
   // Static CommonJS require calls still create dependency edges, but are rejected in
   // ESM product files so they cannot bypass the architecture gate.
@@ -488,6 +491,31 @@ function findCycles(adjacency) {
   return found;
 }
 
+// All lib modules can be package entrypoints. Traverse the canonical graph so
+// a facade or neutral adapter cannot hide application state behind it.
+function findPublishableBoundaryViolations(adjacency) {
+  const pending = [...adjacency.keys()]
+    .filter((entry) => classifyLayer(entry) === 'lib')
+    .map((entry) => [entry]);
+  const visited = new Set(pending.map(([entry]) => entry));
+  const violations = [];
+  for (let index = 0; index < pending.length; index += 1) {
+    const chain = pending[index];
+    for (const target of adjacency.get(chain.at(-1)) ?? []) {
+      if (visited.has(target)) continue;
+      visited.add(target);
+      const dependencyPath = [...chain, target];
+      const layer = classifyLayer(target);
+      if (layer === 'app' || layer === 'store' || layer?.startsWith('feature:')) {
+        violations.push({ entry: chain[0], target, dependencyPath });
+      } else {
+        pending.push(dependencyPath);
+      }
+    }
+  }
+  return violations;
+}
+
 function printReport(report) {
   console.log('Dependency boundaries');
   console.log(`Scanned files: ${report.scannedFiles}`);
@@ -499,6 +527,13 @@ function printReport(report) {
   for (const v of report.boundaryViolations.slice(0, 30)) {
     console.log(`  ${v.importer} -> ${v.target}`);
     console.log(`    ${v.reason}`);
+  }
+
+  console.log(
+    `[${report.publishableBoundaryViolations.length === 0 ? 'OK' : 'FAIL'}] publishable dependencies: ${report.publishableBoundaryViolations.length} application dependency path(s)`,
+  );
+  for (const violation of report.publishableBoundaryViolations.slice(0, 15)) {
+    console.log(`  ${violation.dependencyPath.join(' -> ')}`);
   }
 
   const featureDeepImports = report.featureDeepImports;
@@ -539,6 +574,7 @@ function printReport(report) {
 
   if (
     report.boundaryViolations.length > 0 ||
+    report.publishableBoundaryViolations.length > 0 ||
     featureDeepImportFailed ||
     report.newCycles.length > 0
   ) {

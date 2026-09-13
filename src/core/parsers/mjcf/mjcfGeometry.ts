@@ -4,6 +4,7 @@ import { findAssetByPath } from '@/core/loaders';
 import { createMatteMaterial } from '@/core/utils/materialFactory';
 import type { MJCFMesh } from './mjcfUtils';
 import { loadMJCFMeshObject, type MJCFMeshCache } from './mjcfMeshAssetLoader';
+import { createMuJoCoFromToQuaternion, mjcfQuatToThreeQuat } from './mjcfMath';
 import {
   disposeTransientObject3D,
   type MJCFLoadAbortSignal,
@@ -30,24 +31,6 @@ function createDefaultMaterial(): THREE.MeshStandardMaterial {
     color: 0x888888,
     name: 'mjcf_default',
   });
-}
-
-function mjcfQuatToThreeQuat(quat: [number, number, number, number]): THREE.Quaternion {
-  return new THREE.Quaternion(quat[1], quat[2], quat[3], quat[0]);
-}
-
-function createMuJoCoFromToQuaternion(direction: THREE.Vector3): THREE.Quaternion {
-  const normalizedDirection = direction.clone().normalize();
-  const localNegativeZ = new THREE.Vector3(0, 0, -1);
-  const dot = localNegativeZ.dot(normalizedDirection);
-
-  // MuJoCo uses a deterministic 180deg rotation around +X when fromto points
-  // exactly opposite the canonical local -Z axis.
-  if (dot <= -1 + 1e-9) {
-    return new THREE.Quaternion(1, 0, 0, 0);
-  }
-
-  return new THREE.Quaternion().setFromUnitVectors(localNegativeZ, normalizedDirection);
 }
 
 function normalizeScale(scale?: number[]): [number, number, number] | null {
@@ -240,7 +223,7 @@ function createFromToGeometry(geom: MJCFGeometryDef, type: 'cylinder' | 'capsule
   const to = new THREE.Vector3(fromto[3], fromto[4], fromto[5]);
 
   const direction = new THREE.Vector3().subVectors(to, from);
-  const length = direction.length();
+  const length = Math.hypot(direction.x, direction.y, direction.z);
   const center = new THREE.Vector3().addVectors(from, to).multiplyScalar(0.5);
   const radius = geom.size?.[0] || 0.05;
 
@@ -287,10 +270,7 @@ function createFromToGeometry(geom: MJCFGeometryDef, type: 'cylinder' | 'capsule
 
   // MuJoCo canonicalizes fromto cylinder/capsule primitives so local -Z points
   // from the first endpoint to the second.
-  if (length > 0.0001) {
-    const quaternion = createMuJoCoFromToQuaternion(direction);
-    group.quaternion.copy(quaternion);
-  }
+  group.quaternion.copy(createMuJoCoFromToQuaternion(direction));
 
   return group;
 }

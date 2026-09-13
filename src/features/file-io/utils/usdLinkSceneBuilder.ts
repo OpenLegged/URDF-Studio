@@ -39,28 +39,23 @@ export type BuildUsdLinkSceneRootOptions = {
 
 type DeferredSceneMutation = Promise<void>;
 const ISAAC_OMITTED_PLACEHOLDER_VISUAL_MAX_DIMENSION = 0.002;
-const USD_GEOMETRY_COMPARE_EPSILON = 1e-6;
-
-const hasNearlyEqualNumber = (left: number, right: number): boolean => {
-  return Math.abs(left - right) <= USD_GEOMETRY_COMPARE_EPSILON;
-};
 
 const hasMatchingVisualOrigin = (left: UrdfVisual, right: UrdfVisual): boolean => {
   return (
-    hasNearlyEqualNumber(left.origin?.xyz?.x ?? 0, right.origin?.xyz?.x ?? 0) &&
-    hasNearlyEqualNumber(left.origin?.xyz?.y ?? 0, right.origin?.xyz?.y ?? 0) &&
-    hasNearlyEqualNumber(left.origin?.xyz?.z ?? 0, right.origin?.xyz?.z ?? 0) &&
-    hasNearlyEqualNumber(left.origin?.rpy?.r ?? 0, right.origin?.rpy?.r ?? 0) &&
-    hasNearlyEqualNumber(left.origin?.rpy?.p ?? 0, right.origin?.rpy?.p ?? 0) &&
-    hasNearlyEqualNumber(left.origin?.rpy?.y ?? 0, right.origin?.rpy?.y ?? 0)
+    (left.origin?.xyz?.x ?? 0) === (right.origin?.xyz?.x ?? 0) &&
+    (left.origin?.xyz?.y ?? 0) === (right.origin?.xyz?.y ?? 0) &&
+    (left.origin?.xyz?.z ?? 0) === (right.origin?.xyz?.z ?? 0) &&
+    (left.origin?.rpy?.r ?? 0) === (right.origin?.rpy?.r ?? 0) &&
+    (left.origin?.rpy?.p ?? 0) === (right.origin?.rpy?.p ?? 0) &&
+    (left.origin?.rpy?.y ?? 0) === (right.origin?.rpy?.y ?? 0)
   );
 };
 
 const hasMatchingVisualDimensions = (left: UrdfVisual, right: UrdfVisual): boolean => {
   return (
-    hasNearlyEqualNumber(left.dimensions.x ?? 0, right.dimensions.x ?? 0) &&
-    hasNearlyEqualNumber(left.dimensions.y ?? 0, right.dimensions.y ?? 0) &&
-    hasNearlyEqualNumber(left.dimensions.z ?? 0, right.dimensions.z ?? 0)
+    (left.dimensions.x ?? 0) === (right.dimensions.x ?? 0) &&
+    (left.dimensions.y ?? 0) === (right.dimensions.y ?? 0) &&
+    (left.dimensions.z ?? 0) === (right.dimensions.z ?? 0)
   );
 };
 
@@ -241,10 +236,11 @@ const createJointLocalMatrix = (joint: UrdfJoint): THREE.Matrix4 => {
 
   const motionMatrix = new THREE.Matrix4();
   const axis = new THREE.Vector3(joint.axis?.x ?? 1, joint.axis?.y ?? 0, joint.axis?.z ?? 0);
-  if (axis.lengthSq() <= 1e-12) {
+  const axisLength = Math.hypot(axis.x, axis.y, axis.z);
+  if (axisLength === 0) {
     axis.set(1, 0, 0);
   } else {
-    axis.normalize();
+    axis.set(axis.x / axisLength, axis.y / axisLength, axis.z / axisLength);
   }
 
   const jointType = String(joint.type || '').toLowerCase();

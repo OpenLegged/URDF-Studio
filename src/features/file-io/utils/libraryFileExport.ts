@@ -29,6 +29,7 @@ export interface ExportLibraryRobotFileOptions {
 export interface ExportLibraryRobotFileResult {
   success: boolean;
   zipFileName?: string;
+  warnings?: string[];
   missingMeshPaths: string[];
   reason?: 'unsupported-file-format' | 'parse-failed' | 'missing-mesh-assets';
 }
@@ -149,6 +150,7 @@ export async function exportLibraryRobotFile(
   }
 
   const baseName = getFileBaseName(file.name);
+  const warnings: string[] = [];
   const zip = new JSZip();
   const archiveRoot = createArchiveRoot(zip, baseName);
   const mjcfExport =
@@ -156,7 +158,11 @@ export async function exportLibraryRobotFile(
       ? await prepareMjcfExport({
           robot: robotState,
           assets,
-          mujoco: { meshdir: 'meshes/' },
+          mujoco: {
+            meshdir: 'meshes/',
+            preserveNumericPrecision: true,
+            onWarning: (message) => warnings.push(message),
+          },
         })
       : null;
   const mjcfMeshExport = mjcfExport?.meshes;
@@ -167,7 +173,7 @@ export async function exportLibraryRobotFile(
         ? rewriteUrdfAssetPathsForExport(file.content, {
             exportRobotName: baseName,
           })
-        : generateURDF(robotState, false);
+        : generateURDF(robotState, { preserveNumericPrecision: true });
     archiveRoot.file(`${baseName}.urdf`, urdfContent);
   } else if (targetFormat === 'mjcf') {
     const mjcfContent =
@@ -176,7 +182,11 @@ export async function exportLibraryRobotFile(
         : mjcfExport!.xml;
     archiveRoot.file(`${baseName}.xml`, mjcfContent);
   } else {
-    archiveRoot.file('model.sdf', generateSDF(robotState, { packageName: baseName }));
+    archiveRoot.file('model.sdf', generateSDF(robotState, {
+      preserveNumericPrecision: true,
+      packageName: baseName,
+      onWarning: (message) => warnings.push(message),
+    }));
     archiveRoot.file('model.config', generateSdfModelConfig(robotState.name || baseName));
   }
 
@@ -209,5 +219,6 @@ export async function exportLibraryRobotFile(
     success: true,
     zipFileName,
     missingMeshPaths,
+    warnings,
   };
 }

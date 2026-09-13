@@ -1,12 +1,7 @@
 import * as THREE from 'three';
 
 import type { RobotState, UrdfLink, UrdfMjcfSite } from '@/types';
-import {
-  MAX_GEOMETRY_DIMENSION_DECIMALS,
-  MAX_PROPERTY_DECIMALS,
-  formatNumberWithMaxDecimals,
-} from '@/core/utils/numberPrecision';
-import { normalizeColorRgbaTuple, type ColorRgbaTuple } from '@/core/utils/color';
+import type { ColorRgbaTuple } from '@/core/utils/color';
 
 export type MjcfActuatorType = 'position' | 'velocity' | 'motor';
 
@@ -22,6 +17,8 @@ export interface MujocoExportOptions {
   collisionVolumes?: ReadonlyMap<string, readonly number[]>;
   /** Source editing preserves authored placeholders; downloadable exports use inference. */
   preserveInertialData?: boolean;
+  /** Editable source serialization retains every finite input digit. */
+  preserveNumericPrecision?: boolean;
   meshdir?: string;
   texturedir?: string;
   addFloatBase?: boolean;
@@ -30,28 +27,11 @@ export interface MujocoExportOptions {
   includeSceneHelpers?: boolean;
   meshPathOverrides?: ReadonlyMap<string, string>;
   visualMeshVariants?: ReadonlyMap<string, readonly MjcfVisualMeshVariant[]>;
+  /** Explicit export callers collect compatibility warnings; internal serialization stays silent. */
+  onWarning?: (message: string) => void;
 }
 
 export const LOCKED_JOINT_RANGE_EPSILON = 1e-6;
-
-// ---------------------------------------------------------------------------
-// Number / string formatting
-// ---------------------------------------------------------------------------
-
-export const formatScalar = (n: number) => formatNumberWithMaxDecimals(n, MAX_PROPERTY_DECIMALS);
-export const formatShape = (n: number) =>
-  formatNumberWithMaxDecimals(n, MAX_GEOMETRY_DIMENSION_DECIMALS);
-export const formatInertiaScalar = (n: number) => formatNumberWithMaxDecimals(n, 10);
-export const vecStr = (v: { x: number; y: number; z: number }) =>
-  `${formatScalar(v.x)} ${formatScalar(v.y)} ${formatScalar(v.z)}`;
-export const quatStr = (v: { r: number; p: number; y: number }) => {
-  const quaternion = new THREE.Quaternion().setFromEuler(new THREE.Euler(v.r, v.p, v.y, 'ZYX'));
-  return `${formatScalar(quaternion.w)} ${formatScalar(quaternion.x)} ${formatScalar(quaternion.y)} ${formatScalar(quaternion.z)}`;
-};
-export const hasRotation = (v: { r: number; p: number; y: number } | undefined) =>
-  Boolean(v && (Math.abs(v.r) > 1e-9 || Math.abs(v.p) > 1e-9 || Math.abs(v.y) > 1e-9));
-export const quatAttr = (v: { r: number; p: number; y: number } | undefined) =>
-  hasRotation(v) ? ` quat="${quatStr(v!)}"` : '';
 
 export const hasFiniteJointRange = (joint: RobotState['joints'][string] | undefined): boolean =>
   Boolean(
@@ -219,24 +199,6 @@ export const hasInvalidMujocoInertia = (link: UrdfLink): boolean => {
 // Color / XML helpers
 // ---------------------------------------------------------------------------
 
-export const clampUnitForRgba = (value: number) => Math.max(0, Math.min(1, Number(value)));
-
-export const hexToRgba = (hex: string, opacityOverride?: number) => {
-  const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})?$/i.exec(
-    String(hex || '').trim(),
-  );
-  if (!result) return '0.8 0.8 0.8 1.0';
-  const r = parseInt(result[1], 16) / 255;
-  const g = parseInt(result[2], 16) / 255;
-  const b = parseInt(result[3], 16) / 255;
-  const a = Number.isFinite(opacityOverride)
-    ? clampUnitForRgba(Number(opacityOverride))
-    : result[4]
-      ? parseInt(result[4], 16) / 255
-      : 1;
-  return `${formatNumberWithMaxDecimals(r, 4)} ${formatNumberWithMaxDecimals(g, 4)} ${formatNumberWithMaxDecimals(b, 4)} ${formatNumberWithMaxDecimals(a, 4)}`;
-};
-
 export const escapeXmlAttribute = (value: string) =>
   value.replace(/[<>&"']/g, (char) => {
     switch (char) {
@@ -277,12 +239,6 @@ export const ensureFiniteVector3 = (
   }
 };
 
-export const formatVectorTuple = (values: readonly number[]) =>
-  values.map((value) => formatScalar(value)).join(' ');
-
-export const formatRgbaTuple = (values: readonly number[]) =>
-  values.map((value) => formatNumberWithMaxDecimals(value, 4)).join(' ');
-
 export const convertMjcfSite = (site: UrdfMjcfSite): ExportedMjcfSite => ({
   name: site.sourceName || site.name,
   type: site.type || 'sphere',
@@ -300,27 +256,6 @@ export const convertMjcfSite = (site: UrdfMjcfSite): ExportedMjcfSite => ({
   ...(site.quat?.length ? { quat: site.quat } : {}),
   ...(Number.isFinite(site.group) ? { group: site.group } : {}),
 });
-
-export const renderMjcfSite = (site: ExportedMjcfSite, indent: string): string => {
-  const attrs = [`name="${escapeXmlAttribute(site.name)}"`];
-  attrs.push(`type="${escapeXmlAttribute(site.type || 'sphere')}"`);
-  if (site.pos) {
-    attrs.push(`pos="${vecStr(site.pos)}"`);
-  }
-  if (site.quat && site.quat.length >= 4) {
-    attrs.push(`quat="${formatVectorTuple(site.quat.slice(0, 4))}"`);
-  }
-  if (site.size?.length) {
-    attrs.push(`size="${formatVectorTuple(site.size)}"`);
-  }
-  if (site.rgba?.length) {
-    attrs.push(`rgba="${formatRgbaTuple(site.rgba.slice(0, 4))}"`);
-  }
-  if (Number.isFinite(site.group)) {
-    attrs.push(`group="${site.group}"`);
-  }
-  return `${indent}<site ${attrs.join(' ')} />\n`;
-};
 
 // ---------------------------------------------------------------------------
 // Mesh asset helpers
@@ -350,12 +285,14 @@ export interface MeshAssetEntry {
  */
 export const negativeScaleCompensationQuat = (
   dimensions?: { x: number; y: number; z: number },
+  preserveNumericPrecision = false,
 ): MeshRefQuatTuple | null => {
   if (!dimensions) return null;
 
-  const negX = Number.isFinite(dimensions.x) && dimensions.x < -1e-9;
-  const negY = Number.isFinite(dimensions.y) && dimensions.y < -1e-9;
-  const negZ = Number.isFinite(dimensions.z) && dimensions.z < -1e-9;
+  const threshold = preserveNumericPrecision ? 0 : 1e-9;
+  const negX = Number.isFinite(dimensions.x) && dimensions.x < -threshold;
+  const negY = Number.isFinite(dimensions.y) && dimensions.y < -threshold;
+  const negZ = Number.isFinite(dimensions.z) && dimensions.z < -threshold;
   const count = (negX ? 1 : 0) + (negY ? 1 : 0) + (negZ ? 1 : 0);
 
   // Zero or three negative components cannot be compensated by rotation.
@@ -380,9 +317,10 @@ export const negativeScaleCompensationQuat = (
 
 export const normalizeMeshScale = (
   dimensions?: { x: number; y: number; z: number },
+  preserveNumericPrecision = false,
 ): { scale: MeshScaleTuple; compensationQuat: MeshRefQuatTuple | null } => {
   const normalize = (value: number | undefined) => {
-    if (Number.isFinite(value) && Math.abs(value as number) > 1e-9) {
+    if (Number.isFinite(value) && Math.abs(value as number) > (preserveNumericPrecision ? 0 : 1e-9)) {
       return Math.abs(value as number);
     }
     return 1;
@@ -390,12 +328,9 @@ export const normalizeMeshScale = (
 
   return {
     scale: [normalize(dimensions?.x), normalize(dimensions?.y), normalize(dimensions?.z)],
-    compensationQuat: negativeScaleCompensationQuat(dimensions),
+    compensationQuat: negativeScaleCompensationQuat(dimensions, preserveNumericPrecision),
   };
 };
-
-export const meshScaleKey = (scale: MeshScaleTuple) =>
-  `${formatShape(scale[0])} ${formatShape(scale[1])} ${formatShape(scale[2])}`;
 
 export const normalizeMeshRefpos = (refpos?: readonly number[] | null): MeshRefPosTuple | null => {
   if (!refpos || refpos.length < 3) {
@@ -421,6 +356,7 @@ export const normalizeMeshRefquat = (refquat?: readonly number[] | null): MeshRe
 export const normalizeMjcfMeshScale = (
   mjcfMesh?: UrdfLink['visual']['mjcfMesh'],
   dimensions?: { x: number; y: number; z: number },
+  preserveNumericPrecision = false,
 ): { scale: MeshScaleTuple; compensationQuat: MeshRefQuatTuple | null } => {
   if (mjcfMesh?.scale && mjcfMesh.scale.length >= 3) {
     return {
@@ -433,11 +369,11 @@ export const normalizeMjcfMeshScale = (
         x: Number(mjcfMesh.scale[0] ?? 1),
         y: Number(mjcfMesh.scale[1] ?? 1),
         z: Number(mjcfMesh.scale[2] ?? 1),
-      }),
+      }, preserveNumericPrecision),
     };
   }
 
-  return normalizeMeshScale(dimensions);
+  return normalizeMeshScale(dimensions, preserveNumericPrecision);
 };
 
 export const buildMeshAssetKey = (entry: Omit<MeshAssetEntry, 'key'>) =>
@@ -517,27 +453,6 @@ export const clampUnitScalar = (value: number | null | undefined): number | unde
 
   return Math.max(0, Math.min(1, Number(value)));
 };
-
-export const colorRgbaToMjcfRgba = (
-  colorRgba?: readonly number[] | null,
-  opacityOverride?: number,
-): string | null => {
-  const normalized = normalizeColorRgbaTuple(colorRgba);
-  if (!normalized) {
-    return null;
-  }
-
-  const opacity = clampUnitScalar(opacityOverride) ?? normalized[3];
-  return [normalized[0], normalized[1], normalized[2], opacity]
-    .map((value) => formatNumberWithMaxDecimals(value, 4))
-    .join(' ');
-};
-
-export const materialToMjcfRgba = (
-  color: string,
-  colorRgba?: readonly number[] | null,
-  opacity?: number,
-): string => colorRgbaToMjcfRgba(colorRgba, opacity) ?? hexToRgba(color, opacity);
 
 export const sanitizeMaterialAssetName = (value: string): string =>
   value.replace(/[^a-zA-Z0-9_]/g, '_').replace(/^_+|_+$/g, '') || 'material';

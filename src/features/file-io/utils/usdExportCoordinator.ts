@@ -44,7 +44,6 @@ export type { UsdLayerFileFormat, UsdPackageLayoutProfile } from './usdPackageLa
 
 const USD_EXPORT_RECORD_YIELD_INTERVAL = 4;
 const MJCF_SYNTHETIC_GEOM_LINK_RE = /^(.*)_geom_(\d+)$/;
-const ZERO_EPSILON = 1e-9;
 const TEMP_COMPOSE_EULER = new THREE.Euler(0, 0, 0, 'ZYX');
 
 const createUsdExportRobot = (robot: RobotState): RobotState => {
@@ -70,8 +69,8 @@ const hasMeaningfulGeometryBodies = (bodies: UrdfVisual[] | null | undefined): b
   return (bodies || []).some((geometry) => isMeaningfulGeometry(geometry));
 };
 
-const isNearZero = (value: number | null | undefined): boolean => {
-  return Math.abs(Number(value || 0)) <= ZERO_EPSILON;
+const isZero = (value: number | null | undefined): boolean => {
+  return value == null || value === 0;
 };
 
 const isMasslessLink = (link: UrdfLink | undefined): boolean => {
@@ -80,13 +79,13 @@ const isMasslessLink = (link: UrdfLink | undefined): boolean => {
   }
 
   return (
-    isNearZero(link.inertial.mass) &&
-    isNearZero(link.inertial.inertia?.ixx) &&
-    isNearZero(link.inertial.inertia?.ixy) &&
-    isNearZero(link.inertial.inertia?.ixz) &&
-    isNearZero(link.inertial.inertia?.iyy) &&
-    isNearZero(link.inertial.inertia?.iyz) &&
-    isNearZero(link.inertial.inertia?.izz)
+    isZero(link.inertial.mass) &&
+    isZero(link.inertial.inertia?.ixx) &&
+    isZero(link.inertial.inertia?.ixy) &&
+    isZero(link.inertial.inertia?.ixz) &&
+    isZero(link.inertial.inertia?.iyy) &&
+    isZero(link.inertial.inertia?.iyz) &&
+    isZero(link.inertial.inertia?.izz)
   );
 };
 
@@ -346,12 +345,12 @@ const collapseSyntheticMjcfGeomLinksForUsdExport = (robot: RobotState): RobotSta
     }
     const childLink = robot.links[childJoint.childLinkId];
     if (childLink && childJoint.origin) {
-      const hasJointOrigin = !isNearZero(childJoint.origin.xyz?.x)
-        || !isNearZero(childJoint.origin.xyz?.y)
-        || !isNearZero(childJoint.origin.xyz?.z)
-        || !isNearZero(childJoint.origin.rpy?.r)
-        || !isNearZero(childJoint.origin.rpy?.p)
-        || !isNearZero(childJoint.origin.rpy?.y);
+      const hasJointOrigin = !isZero(childJoint.origin.xyz?.x)
+        || !isZero(childJoint.origin.xyz?.y)
+        || !isZero(childJoint.origin.xyz?.z)
+        || !isZero(childJoint.origin.rpy?.r)
+        || !isZero(childJoint.origin.rpy?.p)
+        || !isZero(childJoint.origin.rpy?.y);
       if (hasJointOrigin) {
         const prependOrigin = (target: UrdfVisual | null | undefined): void => {
           if (!target || target.type === GeometryType.NONE) return;

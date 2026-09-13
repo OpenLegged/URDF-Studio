@@ -3,7 +3,7 @@ import test from 'node:test';
 import { JSDOM } from 'jsdom';
 
 import { parseMJCF } from '@/core/parsers';
-import type { RobotState } from '@/types';
+import { GeometryType, JointType, type RobotState } from '@/types';
 import {
   reconcileMJCFEditableSource,
   type ReconcileMJCFEditableSourceResult,
@@ -75,6 +75,42 @@ function assertUnchangedSections(content: string): void {
   assert.match(content, /<jointpos name="shoulder_position" joint="shoulder" \/>/);
   assert.match(content, /<numeric name="vendor_extension" data="1 2 3" \/>/);
 }
+
+test('MJCF reconciliation keeps planar edits canonical without generating a degraded source or export warning', context => {
+  const warning = context.mock.method(console, 'warn', () => {});
+  const beforeRobot = parseRobot();
+  const afterRobot = structuredClone(beforeRobot);
+  afterRobot.joints.shoulder.type = JointType.PLANAR;
+  const before = structuredClone(beforeRobot);
+  const after = structuredClone(afterRobot);
+
+  const result = reconcileMJCFEditableSource({
+    sourceContent: SOURCE, beforeRobot, afterRobot, sourceFileName: 'robots/demo.xml',
+  });
+
+  assert.equal(result.status, 'unsafe');
+  assert.doesNotMatch(result.reason, /\[MJCF export\]/);
+  assert.equal(warning.mock.callCount(), 0);
+  assert.deepEqual(beforeRobot, before);
+  assert.deepEqual(afterRobot, after);
+});
+
+test('MJCF reconciliation defers unfinished mesh requirements to export', context => {
+  const warning = context.mock.method(console, 'warn', () => {});
+  const beforeRobot = parseRobot();
+  const afterRobot = structuredClone(beforeRobot);
+  afterRobot.links.arm.collision.type = GeometryType.MESH;
+  afterRobot.links.arm.collision.meshPath = undefined;
+
+  const result = reconcileMJCFEditableSource({
+    sourceContent: SOURCE, beforeRobot, afterRobot, sourceFileName: 'robots/demo.xml',
+  });
+
+  assert.equal(result.status, 'unsafe');
+  assert.doesNotMatch(result.reason, /\[MJCF export\]/);
+  assert.equal(warning.mock.callCount(), 0);
+  assert.equal(afterRobot.links.arm.collision.type, GeometryType.MESH);
+});
 
 test('reconcileMJCFEditableSource stops at attribute patches for names and joint limits', () => {
   const beforeRobot = parseRobot();
@@ -183,6 +219,25 @@ test('reconcileMJCFEditableSource widens to worldbody section for reparenting', 
   const toolStart = result.content.indexOf('<body name="tool"');
   assert.ok(toolStart > armClose, 'expected tool to move outside the arm body');
   assertUnchangedSections(result.content);
+});
+
+test('repeated MJCF entity patches retain the existing body indentation', () => {
+  let beforeRobot = parseRobot();
+  let sourceContent = SOURCE;
+  for (const x of [0.6, 0.8, 1]) {
+    const afterRobot = structuredClone(beforeRobot);
+    afterRobot.links.arm.visual.dimensions.x = x;
+    const result = reconcileMJCFEditableSource({
+      sourceContent, beforeRobot, afterRobot, sourceFileName: 'robots/demo.xml',
+    });
+    assert.equal(result.status, 'patched', result.status === 'unsafe' ? result.reason : undefined);
+    if (result.status !== 'patched') return;
+    assert.equal(result.level, 'entity');
+    assert.match(result.content, /^ {6}<body name="arm"/m);
+    assert.match(result.content, /^ {8}<geom[^>]*type="box"/m);
+    sourceContent = result.content;
+    beforeRobot = afterRobot;
+  }
 });
 
 test('reconcileMJCFEditableSource returns unsafe for stale, invalid, and include sources', () => {

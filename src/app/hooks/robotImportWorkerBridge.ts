@@ -71,7 +71,7 @@ interface PendingEditableSourceChangeWorkerRequest {
 }
 
 interface PendingEditableSourceGenerationWorkerRequest {
-  resolve: (value: string) => void;
+  resolve: (value: string | null) => void;
   reject: (error: unknown) => void;
   workerEntry: WorkerPoolEntry;
   timeoutId?: ReturnType<typeof setTimeout>;
@@ -99,7 +99,7 @@ interface CreateRobotImportWorkerClientOptions {
 
 export interface RobotImportWorkerClient {
   dispose: (rejectPendingWith?: unknown) => void;
-  generateEditableSource: (options: GenerateEditableRobotSourceOptions) => Promise<string>;
+  generateEditableSource: (options: GenerateEditableRobotSourceOptions) => Promise<string | null>;
   resolve: (
     file: RobotFile,
     options?: ResolveRobotFileDataOptions,
@@ -334,7 +334,7 @@ export function createRobotImportWorkerClient({
         return;
       }
 
-      if (typeof message.result !== 'string') {
+      if (message.result !== null && typeof message.result !== 'string') {
         pendingRequest.reject(new Error('Editable source generation worker returned no source'));
         return;
       }
@@ -740,7 +740,7 @@ export function createRobotImportWorkerClient({
 
   const generateEditableSource = async (
     options: GenerateEditableRobotSourceOptions,
-  ): Promise<string> => {
+  ): Promise<string | null> => {
     if (workerUnavailable && workerPool.length > 0) {
       throw new Error('Robot import worker is unavailable');
     }
@@ -749,7 +749,7 @@ export function createRobotImportWorkerClient({
       throw new Error('Web Worker is not available in this environment');
     }
 
-    return new Promise<string>((resolveRequest, rejectRequest) => {
+    return new Promise<string | null>((resolveRequest, rejectRequest) => {
       const requestId = ++requestIdCounter;
       let workerEntry: WorkerPoolEntry;
 
@@ -903,7 +903,7 @@ export function applyEditableSourceChangeWithWorker(
 
 export function generateEditableRobotSourceWithWorker(
   options: GenerateEditableRobotSourceOptions,
-): Promise<string> {
+): Promise<string | null> {
   return sharedRobotImportWorkerClient.generateEditableSource(options);
 }
 

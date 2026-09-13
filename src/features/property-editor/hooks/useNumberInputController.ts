@@ -4,11 +4,11 @@
  * testable and reusable. No UI rendering.
  *
  * Boundary: feature hook (property-editor). Imports React +
- * `@/core/utils/numberPrecision`.
+ * core numeric formatting/stepping helpers.
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { addNumberStep } from '@/core/utils/numberStep';
 import {
-  MAX_PROPERTY_DECIMALS,
   formatNumberWithMaxDecimals,
   roundToMaxDecimals,
 } from '@/core/utils/numberPrecision';
@@ -69,10 +69,16 @@ const clampNumberToBounds = (value: number, min?: number, max?: number): number 
   return nextValue;
 };
 
-const areNumberInputValuesEqual = (left: number, right: number, precision: number): boolean =>
-  roundToMaxDecimals(left, precision) === roundToMaxDecimals(right, precision);
+const areNumberInputValuesEqual = (left: number, right: number): boolean => Object.is(left, right);
 
-export type NumberInputDisplayFormatter = (value: number) => string;
+export interface NumberInputDisplayFormatterOptions {
+  activeFocus: boolean;
+}
+
+export type NumberInputDisplayFormatter = (
+  value: number,
+  options?: NumberInputDisplayFormatterOptions,
+) => string;
 export type NumberInputDisplayParser = (value: string) => number | null;
 
 export interface UseNumberInputControllerArgs {
@@ -97,7 +103,6 @@ export const useNumberInputController = ({
   onChange,
   step,
   precision,
-  commitPrecision = precision,
   trimTrailingZeros,
   minimumIntegerDigits = 1,
   formatDisplayValue,
@@ -117,10 +122,14 @@ export const useNumberInputController = ({
       }
 
       if (formatDisplayValue) {
-        return formatDisplayValue(nextValue ?? 0);
+        return formatDisplayValue(nextValue ?? 0, { activeFocus });
       }
 
-      const activePrecision = activeFocus ? MAX_PROPERTY_DECIMALS : precision;
+      if (activeFocus) {
+        return String(Object.is(nextValue, -0) ? 0 : nextValue);
+      }
+
+      const activePrecision = precision;
 
       const roundedValue = roundToMaxDecimals(nextValue ?? 0, activePrecision);
 
@@ -162,21 +171,9 @@ export const useNumberInputController = ({
     const pendingLocalCommit = pendingLocalCommitRef.current;
 
     if (pendingLocalCommit) {
-      if (
-        areNumberInputValuesEqual(
-          boundedValue,
-          pendingLocalCommit.normalizedValue,
-          commitPrecision,
-        )
-      ) {
+      if (areNumberInputValuesEqual(boundedValue, pendingLocalCommit.normalizedValue)) {
         pendingLocalCommitRef.current = null;
-      } else if (
-        areNumberInputValuesEqual(
-          boundedValue,
-          pendingLocalCommit.previousValue,
-          commitPrecision,
-        )
-      ) {
+      } else if (areNumberInputValuesEqual(boundedValue, pendingLocalCommit.previousValue)) {
         return;
       } else {
         pendingLocalCommitRef.current = null;
@@ -190,22 +187,18 @@ export const useNumberInputController = ({
       draftValueRef.current = formattedValue;
       setLocalValue(formattedValue);
     }
-  }, [commitPrecision, formatValue, inputRef, max, min, value, isFocused]);
+  }, [formatValue, inputRef, max, min, value, isFocused]);
 
   const commitValue = useCallback(
     (nextValue: number, options?: { preserveDraftDisplay?: boolean }) => {
       const previousValue = valueRef.current;
-      const roundedInput = roundToMaxDecimals(nextValue, commitPrecision);
-      const normalizedValue = roundToMaxDecimals(
-        clampNumberToBounds(roundedInput, min, max),
-        commitPrecision,
-      );
+      const normalizedValue = clampNumberToBounds(nextValue, min, max);
       const formattedValue = formatValue(normalizedValue);
 
       latestCommittedValueRef.current = normalizedValue;
       draftValueRef.current = formattedValue;
 
-      if (!areNumberInputValuesEqual(normalizedValue, previousValue, commitPrecision)) {
+      if (!areNumberInputValuesEqual(normalizedValue, previousValue)) {
         valueRef.current = normalizedValue;
         pendingLocalCommitRef.current = {
           previousValue,
@@ -221,10 +214,10 @@ export const useNumberInputController = ({
       return {
         formattedValue,
         normalizedValue,
-        wasClamped: normalizedValue !== roundedInput,
+        wasClamped: normalizedValue !== nextValue,
       };
     },
-    [commitPrecision, formatValue, max, min, onChange],
+    [formatValue, max, min, onChange],
   );
 
   const revertToCommittedValue = useCallback(
@@ -236,10 +229,13 @@ export const useNumberInputController = ({
     [formatValue, isFocused],
   );
 
-  const handleFocus = useCallback(() => {
+  const handleFocus = useCallback((input?: HTMLInputElement) => {
     setIsFocused(true);
     const formattedValue = formatValue(valueRef.current, true);
     draftValueRef.current = formattedValue;
+    if (input && input.value !== formattedValue) {
+      input.value = formattedValue;
+    }
     setLocalValue(formattedValue);
   }, [formatValue]);
 
@@ -271,11 +267,16 @@ export const useNumberInputController = ({
 
       collapseInputSelection();
       const parsed = parseValue(draftValueRef.current);
+      const draftMatchesCommittedDisplay =
+        draftValueRef.current === formatValue(valueRef.current, true) ||
+        draftValueRef.current === formatValue(valueRef.current, false);
       const baseValue =
-        parsed !== null ? clampNumberToBounds(parsed, min, max) : latestCommittedValueRef.current;
-      commitValue(baseValue + stepCount * step);
+        parsed !== null && !draftMatchesCommittedDisplay
+          ? clampNumberToBounds(parsed, min, max)
+          : latestCommittedValueRef.current;
+      commitValue(addNumberStep(baseValue, step, stepCount));
     },
-    [collapseInputSelection, commitValue, max, min, parseValue, step],
+    [collapseInputSelection, commitValue, formatValue, max, min, parseValue, step],
   );
   const applyStep = useCallback(
     (direction: 1 | -1) => applyStepDelta(direction),

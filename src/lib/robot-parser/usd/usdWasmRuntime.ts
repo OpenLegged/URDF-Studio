@@ -93,49 +93,65 @@ export function resolvePreferredUsdThreadCount(preferredConcurrency?: number): n
   return Math.max(1, Math.min(4, Math.floor(resolvedConcurrency) || 1));
 }
 
+/**
+ * The USD runtime environment is intentionally no longer hard-gated at the app level.
+ *
+ * The bundled USD WASM is a pthread/shared-memory build, so `SharedArrayBuffer` is still
+ * required — but whether the browser actually exposes it is decided by the browser itself
+ * (secure context + cross-origin isolation), not by this pre-check. This means browsers that
+ * surface `SharedArrayBuffer` for an origin marked trusted via
+ * `chrome://flags/#unsafely-treat-insecure-origin-as-secure` now work too. Any real failure
+ * surfaces from the WASM boot layer instead of an artificial refusal here.
+ */
 export function getUsdRuntimeEnvironmentError(
   globalScope: typeof globalThis = globalThis,
 ): Error | null {
-  const scope = globalScope as typeof globalThis & {
-    document?: Document;
-    isSecureContext?: boolean;
-    window?: unknown;
-  };
-  const hasRuntimeEnvironmentSignals =
-    typeof scope.window !== 'undefined' ||
-    typeof scope.document !== 'undefined' ||
-    typeof scope.isSecureContext === 'boolean' ||
-    typeof scope.crossOriginIsolated === 'boolean';
-
-  if (!hasRuntimeEnvironmentSignals) {
-    return null;
-  }
-
-  if (scope.isSecureContext !== true) {
-    return new Error(
-      'USD loading requires a secure context. Open the app from `http://localhost:<port>` or `http://127.0.0.1:<port>`, ' +
-        'or serve it over HTTPS. Accessing the Vite dev server from a LAN IP address or another non-HTTPS URL is not enough, ' +
-        'even when `npm run dev` is sending COOP/COEP headers.',
-    );
-  }
-
-  if (scope.crossOriginIsolated === true) {
-    return null;
-  }
-
-  return new Error(
-    'USD loading requires a cross-origin isolated page because the bundled USD WASM runtime uses SharedArrayBuffer. ' +
-      'Start the app with `npm run dev` or `npm run preview`, open it from `localhost`/`127.0.0.1` (or HTTPS), ' +
-      'and make sure the server sends `Cross-Origin-Opener-Policy: same-origin` and ' +
-      '`Cross-Origin-Embedder-Policy: require-corp`.',
-  );
+  void globalScope;
+  return null;
 }
 
-function assertUsdRuntimeEnvironment(): void {
-  const environmentError = getUsdRuntimeEnvironmentError();
-  if (environmentError) {
-    throw environmentError;
+let hasWarnedUsdRuntimeEnvironment = false;
+
+/**
+ * Emits a single actionable warning when the current scope looks like it cannot provide
+ * `SharedArrayBuffer` (i.e. it is not a secure context and/or not cross-origin isolated).
+ *
+ * The guard fires at most once per module instance, and only when the scope signals
+ * non-capability. In Node (where `isSecureContext` and `crossOriginIsolated` are both
+ * `undefined`) this stays silent. Loading is still attempted afterwards; the WASM layer
+ * owns the actual error if `SharedArrayBuffer` ends up unavailable.
+ */
+export function warnUsdRuntimeEnvironment(globalScope: typeof globalThis = globalThis): void {
+  const scope = globalScope as typeof globalThis & {
+    isSecureContext?: boolean;
+    crossOriginIsolated?: boolean;
+  };
+
+  if (hasWarnedUsdRuntimeEnvironment) {
+    return;
   }
+
+  const isNonCapableScope =
+    (typeof scope.isSecureContext === 'boolean' && scope.isSecureContext !== true) ||
+    (typeof scope.crossOriginIsolated === 'boolean' && scope.crossOriginIsolated !== true);
+
+  if (!isNonCapableScope) {
+    return;
+  }
+
+  hasWarnedUsdRuntimeEnvironment = true;
+
+  console.warn(
+    '[usd-wasm] This page is not a fully capable USD WASM environment ' +
+      `(isSecureContext=${String(scope.isSecureContext)}, crossOriginIsolated=${String(
+        scope.crossOriginIsolated,
+      )}). ` +
+      'The USD WASM runtime needs SharedArrayBuffer, which browsers only expose on secure, ' +
+      'cross-origin isolated pages. Loading will still be attempted, but it may fail. To fix: ' +
+      'open the app from http://localhost:<port>; run `URDF_STUDIO_DEV_HTTPS=true npm run dev` ' +
+      'for LAN HTTPS; or mark this origin as trusted under ' +
+      'chrome://flags/#unsafely-treat-insecure-origin-as-secure and reload.',
+  );
 }
 
 let getUsdModuleFnPromise: Promise<UsdModuleFactoryFn> | null = null;
@@ -172,7 +188,7 @@ function ensureUsdWasmRuntimeWithLoader(
 ): Promise<UsdWasmRuntime> {
   if (!usdRuntimePromise) {
     usdRuntimePromise = (async () => {
-      assertUsdRuntimeEnvironment();
+      warnUsdRuntimeEnvironment();
 
       const [getUsdModuleFn, modules] = await Promise.all([
         loadEmHdBindingsGetUsdModuleFn(),

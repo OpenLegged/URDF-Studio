@@ -861,7 +861,7 @@ export const zh: TranslationKeys = {
   exportClosedLoopUrdfUnsupported:
     '无法将 {name} 导出为 URDF：检测到 {count} 个闭链约束。核心 URDF 只支持树形拓扑，请改用 MJCF、Xacro、SDF 或 .usp。',
   exportUrdfJointUnsupported:
-    '无法将 {name} 导出为 URDF：检测到不受支持的 {type} 关节。请改用 MJCF、SDF 或 Xacro，或将其改写为可表达的关节组合。',
+    '无法导出为 URDF/Xacro：关节 {name} 使用了不受支持的 {type} 类型。可以继续编辑，或导出为 MJCF、SDF，或保存为 .usp 项目。',
   exportLibraryParseFailed: '解析素材库文件失败：{file}',
   exportLibraryUnsupportedFormat: '素材库导出不支持该格式：{format}',
   usdExportRequiresLoadedStage: '当前 USD 导出仅支持在当前 3D 场景中导出已加载完成的 USD 模型。',

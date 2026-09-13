@@ -353,6 +353,7 @@ test('matches MuJoCo mesh scale, refpos, and refquat ordering when fitting a pri
   // MuJoCo 3.8 compiles this exact mesh to geom_pos/mesh_pos = [2, 6, -12].
   // The equivalent authored-frame operation is S * (Q^-1 * (center - refpos)).
   assertVectorClose(fittedCenter, [2, 6, -12], 1e-6);
+  assert.ok(geom.size, 'fitted capsule should publish its radius');
   assertVectorClose(geom.size, [0.6], 1e-6);
   assert.ok(
     Math.abs(

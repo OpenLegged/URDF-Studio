@@ -103,6 +103,42 @@ const createTwoLinkRobot = (): RobotState => {
   };
 };
 
+for (const difference of ['position', 'rotation', 'size'] as const) {
+  test(`USD keeps a small visual whose ${difference} differs from its collision`, async () => {
+    const robot = createTwoLinkRobot();
+    const link = robot.links.base_link;
+    link.visual = {
+      ...link.visual, dimensions: { x: 0.001, y: 0.001, z: 0.001 }, color: '#ffffff',
+      origin: { xyz: { x: 0, y: 0, z: 0 }, rpy: { r: 0, p: 0, y: 0 } },
+      authoredMaterials: [{ name: 'white_material', color: '#ffffff' }],
+    };
+    link.collision = structuredClone(link.visual);
+    link.visualBodies = [];
+    if (difference === 'position') link.collision.origin.xyz.x = 1e-8;
+    if (difference === 'rotation') link.collision.origin.rpy.r = 1e-8;
+    if (difference === 'size') link.collision.dimensions.x += 1e-8;
+    robot.materials = {};
+    const { registry } = createUsdAssetRegistry({});
+    const root = await buildUsdLinkSceneRoot({ robot, registry });
+    const visuals = root.children.find(child => child.name === 'visuals');
+    assert.ok(visuals?.children.some(child => child.name === 'visual_0'));
+  });
+}
+
+test('USD link transforms retain the direction of a tiny non-unit joint axis', async () => {
+  const robot = createTwoLinkRobot();
+  const joint = robot.joints.joint_link1;
+  joint.axis = { x: 0, y: 1e-20, z: 0 };
+  joint.origin.rpy = { r: 0, p: 0, y: 0 };
+  joint.angle = Math.PI / 2;
+  const { registry } = createUsdAssetRegistry({});
+  const root = await buildUsdLinkSceneRoot({ robot, registry });
+  const child = root.getObjectByName('link1');
+  assert.ok(child);
+  const rotatedX = new THREE.Vector3(1, 0, 0).applyQuaternion(child.quaternion);
+  assert.ok(rotatedX.distanceTo(new THREE.Vector3(0, 0, -1)) <= 1e-12);
+});
+
 test('buildUsdLinkSceneRoot builds visual and collision scopes with joint-authored child transforms', async () => {
   const robot = createTwoLinkRobot();
   const visitedLinks: string[] = [];

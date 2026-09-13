@@ -1,4 +1,4 @@
-import { MAX_PROPERTY_DECIMALS, formatNumberWithMaxDecimals } from '@/core/utils/numberPrecision';
+import { formatNumberPreservingPrecision } from '@/core/utils/numberPrecision';
 import {
   escapeXmlAttribute,
   getIndentAt,
@@ -100,7 +100,7 @@ function patchOneSection(content: string, generatedContent: string, tagName: str
 }
 
 function formatNumber(value: number): string {
-  return formatNumberWithMaxDecimals(value, MAX_PROPERTY_DECIMALS);
+  return formatNumberPreservingPrecision(value);
 }
 
 function formatNumberList(values: readonly number[]): string {

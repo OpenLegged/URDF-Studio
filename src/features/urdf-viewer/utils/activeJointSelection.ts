@@ -1,1 +1,1 @@
-export { resolveActiveViewerJointKeyFromSelection } from '@/shared/utils/active_joint_selection';
+export * from '@/shared/components/3d/robot/utils/activeJointSelection';

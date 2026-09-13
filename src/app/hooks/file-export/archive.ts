@@ -40,6 +40,7 @@ export function addSkeletonToZip(
       meshdir: 'meshes/',
       includeMeshes,
       includeActuators: true,
+      preserveNumericPrecision: true,
     }),
   );
 }

@@ -2,6 +2,7 @@ import * as THREE from 'three';
 
 import { buildTextureExportPathOverrides } from '@/core/parsers/meshPathUtils.ts';
 import { parseThreeColorWithOpacity } from '@/core/utils/color.ts';
+import { hasSameUsdGeometry, hashUsdGeometryNumber as hashGeometryNumber } from './usdGeometryIdentity';
 
 import { type UsdMaterialMetadata } from './usdSceneNodeFactory.ts';
 import { isUsdMeshObject } from './usdMaterialNormalization.ts';
@@ -119,12 +120,6 @@ export const getUsdNumericAttributeSource = (
   }
 
   return null;
-};
-
-const hashGeometryNumber = (hash: number, value: number): number => {
-  const normalized = Number.isFinite(value) ? Math.round(value * 1_000_000) : 0;
-  hash ^= normalized >>> 0;
-  return Math.imul(hash, 16777619) >>> 0;
 };
 
 const parseDisplayColor = (
@@ -632,10 +627,8 @@ export const extractUsdMeshGeometryData = async (
 
 const createUsdMaterialSignature = (appearance: UsdRenderableAppearance): string => {
   return [
-    appearance.authoredColor[0].toFixed(6),
-    appearance.authoredColor[1].toFixed(6),
-    appearance.authoredColor[2].toFixed(6),
-    appearance.opacity.toFixed(6),
+    ...appearance.authoredColor,
+    appearance.opacity,
     appearance.texture?.exportPath || '',
   ].join(':');
 };
@@ -693,7 +686,7 @@ export const collectUsdSerializationContext = async (
   const materialBySignature = new Map<string, UsdPreviewMaterialRecord>();
   const materialRecords: UsdPreviewMaterialRecord[] = [];
   const geometryByObject = new WeakMap<THREE.Object3D, UsdMeshGeometryRecord>();
-  const geometryBySignature = new Map<string, UsdMeshGeometryRecord>();
+  const geometryBySignature = new Map<string, UsdMeshGeometryRecord[]>();
   const geometryByBuffer = new WeakMap<THREE.BufferGeometry, UsdMeshGeometryRecord>();
   const geometryRecords: UsdMeshGeometryRecord[] = [];
   const objects: THREE.Object3D[] = [];
@@ -810,7 +803,8 @@ export const collectUsdSerializationContext = async (
         const geometryData = await extractUsdMeshGeometryData(object, vertexYieldInterval);
         if (geometryData) {
           const geometrySignature = createUsdGeometrySignature(geometryData);
-          let geometryRecord = geometryBySignature.get(geometrySignature);
+          const candidates = geometryBySignature.get(geometrySignature) ?? [];
+          let geometryRecord = candidates.find((candidate) => hasSameUsdGeometry(candidate.data, geometryData));
           if (!geometryRecord) {
             const name = `Geometry_${geometryRecords.length}`;
             geometryRecord = {
@@ -818,7 +812,8 @@ export const collectUsdSerializationContext = async (
               path: `/${effectiveRootPrimName}/__MeshLibrary/${name}`,
               data: geometryData,
             };
-            geometryBySignature.set(geometrySignature, geometryRecord);
+            candidates.push(geometryRecord);
+            geometryBySignature.set(geometrySignature, candidates);
             geometryRecords.push(geometryRecord);
           }
 

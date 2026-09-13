@@ -12,7 +12,6 @@ import {
   JointType,
   UrdfLink,
 } from '@/types';
-import { formatNumberWithMaxDecimals } from '@/core/utils/numberPrecision';
 import { colorRgbaTupleToHex, type ColorRgbaTuple } from '@/core/utils/color';
 import {
   getGeometryAuthoredMaterials,
@@ -31,22 +30,13 @@ import {
 } from '../meshPathUtils';
 
 import {
-  formatScalar,
-  formatShape,
-  formatInertiaScalar,
-  vecStr,
-  quatStr,
-  quatAttr,
   getMujocoJointRange,
   normalizeExportRelativePath,
   hasInvalidMujocoInertia,
-  hexToRgba,
   escapeXmlAttribute,
   sanitizeMjcfIdentifier,
   ensureFiniteVector3,
   convertMjcfSite,
-  renderMjcfSite,
-  meshScaleKey,
   normalizeMeshRefpos,
   normalizeMeshRefquat,
   normalizeMjcfMeshScale,
@@ -55,7 +45,6 @@ import {
   normalizeHfieldSize,
   buildHfieldAssetKey,
   clampUnitScalar,
-  materialToMjcfRgba,
   sanitizeMaterialAssetName,
   normalizeMaterialIdentifier,
   resolveVisualEntryKey,
@@ -71,9 +60,17 @@ import {
   type VisualVariantMaterialAssetEntry,
 } from './mjcfGeneratorUtils';
 
+import { createMjcfNumberFormatters } from './mjcfGeneratorFormatting';
+
 export type { MjcfActuatorType, MjcfVisualMeshVariant, MujocoExportOptions };
 
 export const generateMujocoXML = (robot: RobotState, options: MujocoExportOptions = {}): string => {
+  const {
+    formatScalar, formatShape, formatInertiaScalar, formatColorScalar, vecStr,
+    quatStr, quatAttr, hexToRgba, renderMjcfSite, meshScaleKey, materialToMjcfRgba,
+  } = createMjcfNumberFormatters(options.preserveNumericPrecision);
+  const negligibleRotation = options.preserveNumericPrecision ? 0 : 1e-9;
+  const negligibleScalar = options.preserveNumericPrecision ? 0 : 1e-12;
   const FIXED_SPATIAL_TENDON_RANGE_EPSILON = 1e-6;
   const { name, links, joints, rootLinkId } = robot;
   const meshdir = options.meshdir ?? '../meshes/';
@@ -178,7 +175,7 @@ export const generateMujocoXML = (robot: RobotState, options: MujocoExportOption
       return;
     }
 
-    const { scale, compensationQuat } = normalizeMjcfMeshScale(mjcfMesh, geometry.dimensions);
+    const { scale, compensationQuat } = normalizeMjcfMeshScale(mjcfMesh, geometry.dimensions, options.preserveNumericPrecision);
     const entryWithoutKey: Omit<MeshAssetEntry, 'key'> = {
       path: normalizedPath || null,
       sourceAssetName: mjcfMesh?.name || geometry.assetRef || null,
@@ -270,7 +267,7 @@ export const generateMujocoXML = (robot: RobotState, options: MujocoExportOption
       return null;
     }
 
-    const { scale, compensationQuat } = normalizeMjcfMeshScale(mjcfMesh, dimensions);
+    const { scale, compensationQuat } = normalizeMjcfMeshScale(mjcfMesh, dimensions, options.preserveNumericPrecision);
     const key = buildMeshAssetKey({
       path: normalizedPath || null,
       sourceAssetName: mjcfMesh?.name || assetRef || null,
@@ -1031,14 +1028,14 @@ export const generateMujocoXML = (robot: RobotState, options: MujocoExportOption
       const textureAssetName = resolveTextureAssetName(texture);
       const cubeTextureAssetName = resolveCubeTextureAssetName(cubeTextureKey);
       const pbrAttrs = [
-        Number.isFinite(specular) ? ` specular="${formatNumberWithMaxDecimals(specular!, 4)}"` : '',
+        Number.isFinite(specular) ? ` specular="${formatColorScalar(specular!)}"` : '',
         Number.isFinite(shininess)
-          ? ` shininess="${formatNumberWithMaxDecimals(shininess!, 4)}"`
+          ? ` shininess="${formatColorScalar(shininess!)}"`
           : '',
         Number.isFinite(reflectance)
-          ? ` reflectance="${formatNumberWithMaxDecimals(reflectance!, 4)}"`
+          ? ` reflectance="${formatColorScalar(reflectance!)}"`
           : '',
-        Number.isFinite(emission) ? ` emission="${formatNumberWithMaxDecimals(emission!, 4)}"` : '',
+        Number.isFinite(emission) ? ` emission="${formatColorScalar(emission!)}"` : '',
       ].join('');
       const rgba = materialToMjcfRgba(color, colorRgba, opacity);
       xml += cubeTextureAssetName
@@ -1056,7 +1053,7 @@ export const generateMujocoXML = (robot: RobotState, options: MujocoExportOption
 
     const textureAssetName = resolveTextureAssetName(texture);
     const specularAttr = Number.isFinite(specular)
-      ? ` specular="${formatNumberWithMaxDecimals(specular!, 4)}"`
+      ? ` specular="${formatColorScalar(specular!)}"`
       : '';
     const rgba = materialToMjcfRgba(color, colorRgba, opacity);
     xml += textureAssetName
@@ -1083,7 +1080,7 @@ export const generateMujocoXML = (robot: RobotState, options: MujocoExportOption
     if (!link) return '';
 
     if (path.has(linkId)) {
-      console.error(`[MJCFGenerator] Skipping cyclic link reference at "${linkId}"`);
+      options.onWarning?.(`[MJCF export] Skipping cyclic link reference at "${linkId}".`);
       return '';
     }
 
@@ -1113,7 +1110,7 @@ export const generateMujocoXML = (robot: RobotState, options: MujocoExportOption
       if (parentJoint.type === JointType.FLOATING) {
         bodyXml += `${indent}  <freejoint name="${parentJoint.name}"/>\n`;
       } else if (parentJoint.type === JointType.PLANAR) {
-        console.warn(
+        options.onWarning?.(
           `[MJCF export] Joint "${parentJoint.name}" uses unsupported planar type, degrading to freejoint.`,
         );
         bodyXml += `${indent}  <freejoint name="${parentJoint.name}"/>\n`;
@@ -1153,7 +1150,7 @@ export const generateMujocoXML = (robot: RobotState, options: MujocoExportOption
             : '';
         const armature = parentJoint.hardware?.armature;
         const armatureStr =
-          Number.isFinite(armature) && Math.abs(armature as number) > 1e-12
+          Number.isFinite(armature) && Math.abs(armature as number) > negligibleScalar
             ? ` armature="${formatScalar(armature as number)}"`
             : '';
 
@@ -1180,14 +1177,14 @@ export const generateMujocoXML = (robot: RobotState, options: MujocoExportOption
       };
       const inertialRPY = inertialOrigin.rpy || { r: 0, p: 0, y: 0 };
       const hasInertialRotation =
-        Math.abs(inertialRPY.r) > 1e-9 ||
-        Math.abs(inertialRPY.p) > 1e-9 ||
-        Math.abs(inertialRPY.y) > 1e-9;
+        Math.abs(inertialRPY.r) > negligibleRotation ||
+        Math.abs(inertialRPY.p) > negligibleRotation ||
+        Math.abs(inertialRPY.y) > negligibleRotation;
       const inertia = link.inertial.inertia;
       const hasOffDiagonalInertia =
-        Math.abs(inertia.ixy) > 1e-12 ||
-        Math.abs(inertia.ixz) > 1e-12 ||
-        Math.abs(inertia.iyz) > 1e-12;
+        Math.abs(inertia.ixy) > negligibleScalar ||
+        Math.abs(inertia.ixz) > negligibleScalar ||
+        Math.abs(inertia.iyz) > negligibleScalar;
       const inertialTensorAttr = hasOffDiagonalInertia
         ? `fullinertia="${formatInertiaScalar(inertia.ixx)} ${formatInertiaScalar(inertia.iyy)} ${formatInertiaScalar(inertia.izz)} ${formatInertiaScalar(inertia.ixy)} ${formatInertiaScalar(inertia.ixz)} ${formatInertiaScalar(inertia.iyz)}"`
         : `diaginertia="${formatInertiaScalar(inertia.ixx)} ${formatInertiaScalar(inertia.iyy)} ${formatInertiaScalar(inertia.izz)}"`;
@@ -1467,7 +1464,7 @@ export const generateMujocoXML = (robot: RobotState, options: MujocoExportOption
           ? Math.abs(Number(j.limit?.effort))
           : 0;
         const forceRangeStr =
-          effortLimit > 1e-12
+          effortLimit > negligibleScalar
             ? ` forcelimited="true" forcerange="${formatScalar(-effortLimit)} ${formatScalar(effortLimit)}"`
             : '';
 
@@ -1492,7 +1489,7 @@ export const generateMujocoXML = (robot: RobotState, options: MujocoExportOption
           ? Math.abs(Number(j.limit?.effort))
           : 0;
         const controlRangeStr =
-          effortLimit > 1e-12
+          effortLimit > negligibleScalar
             ? ` ctrllimited="true" ctrlrange="${formatScalar(-effortLimit)} ${formatScalar(effortLimit)}"`
             : '';
         xml += `    <motor name="${j.name}_motor" joint="${j.name}" gear="${j.hardware?.motorDirection === -1 ? '-1' : '1'}"${controlRangeStr} />\n`;

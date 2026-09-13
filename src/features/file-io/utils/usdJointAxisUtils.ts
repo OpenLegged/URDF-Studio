@@ -24,15 +24,14 @@ export const getAxisToken = (
 ): UsdJointAxisToken => {
   const vector = getAxisVector(axis);
 
-  if (!Number.isFinite(vector.lengthSq()) || vector.lengthSq() <= 1e-12) {
-    return 'X';
-  }
-
   const abs = {
     x: Math.abs(vector.x),
     y: Math.abs(vector.y),
     z: Math.abs(vector.z),
   };
+
+  const magnitude = Math.max(abs.x, abs.y, abs.z);
+  if (!Number.isFinite(magnitude) || magnitude === 0) return 'X';
 
   if (abs.y >= abs.x && abs.y >= abs.z) return 'Y';
   if (abs.z >= abs.x && abs.z >= abs.y) return 'Z';
@@ -55,10 +54,13 @@ export const createJointAxisAlignmentQuaternion = (
 ): THREE.Quaternion => {
   const canonicalAxis = getAxisTokenVector(axisToken);
   const targetAxis = getAxisVector(axis);
-  if (!Number.isFinite(targetAxis.lengthSq()) || targetAxis.lengthSq() <= 1e-12) {
+  const scale = Math.max(Math.abs(targetAxis.x), Math.abs(targetAxis.y), Math.abs(targetAxis.z));
+  if (!Number.isFinite(scale) || scale === 0) {
     targetAxis.copy(canonicalAxis);
   } else {
-    targetAxis.normalize();
+    // Scale first so valid non-unit axes neither underflow nor overflow when
+    // Three.js computes the squared length during normalization.
+    targetAxis.set(targetAxis.x / scale, targetAxis.y / scale, targetAxis.z / scale).normalize();
   }
 
   return new THREE.Quaternion().setFromUnitVectors(canonicalAxis, targetAxis).normalize();

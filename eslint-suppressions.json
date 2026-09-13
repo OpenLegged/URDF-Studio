@@ -49,14 +49,6 @@
       "count": 1
     }
   },
-  "src/app/App.tsx": {
-    "@typescript-eslint/no-unused-vars": {
-      "count": 1
-    },
-    "react-hooks/exhaustive-deps": {
-      "count": 2
-    }
-  },
   "src/app/components/SettingsModal.test.tsx": {
     "@typescript-eslint/no-unused-vars": {
       "count": 1
@@ -69,11 +61,6 @@
   },
   "src/app/components/header/types.ts": {
     "@typescript-eslint/no-unused-vars": {
-      "count": 1
-    }
-  },
-  "src/app/components/unified-viewer/ViewerJointsPanel.test.tsx": {
-    "@typescript-eslint/no-explicit-any": {
       "count": 1
     }
   },
@@ -376,62 +363,12 @@
       "count": 2
     }
   },
-  "src/features/urdf-viewer/components/CollisionTransformControls.tsx": {
-    "@typescript-eslint/no-explicit-any": {
-      "count": 5
-    },
-    "react-hooks/exhaustive-deps": {
-      "count": 3
-    }
-  },
-  "src/features/urdf-viewer/components/JointInteraction.tsx": {
-    "@typescript-eslint/no-explicit-any": {
-      "count": 1
-    }
-  },
-  "src/features/urdf-viewer/components/OriginTransformControls.tsx": {
-    "@typescript-eslint/no-explicit-any": {
-      "count": 2
-    },
-    "@typescript-eslint/no-unused-vars": {
-      "count": 1
-    },
-    "react-hooks/exhaustive-deps": {
-      "count": 1
-    }
-  },
   "src/features/urdf-viewer/components/ViewerOptionsPanel.tsx": {
     "@typescript-eslint/no-explicit-any": {
       "count": 1
     }
   },
   "src/features/urdf-viewer/components/ViewerScene.tsx": {
-    "react-hooks/exhaustive-deps": {
-      "count": 1
-    }
-  },
-  "src/features/urdf-viewer/hooks/useCameraFocus.ts": {
-    "@typescript-eslint/no-explicit-any": {
-      "count": 7
-    }
-  },
-  "src/features/urdf-viewer/hooks/useHighlightManager.ts": {
-    "@typescript-eslint/no-explicit-any": {
-      "count": 18
-    }
-  },
-  "src/features/urdf-viewer/hooks/useHoverDetection.ts": {
-    "@typescript-eslint/no-explicit-any": {
-      "count": 20
-    },
-    "react-hooks/exhaustive-deps": {
-      "count": 1
-    }
-  },
-  "src/features/urdf-viewer/hooks/useMouseInteraction.ts": {
-    "@typescript-eslint/no-explicit-any": {
-      "count": 11
-    },
     "react-hooks/exhaustive-deps": {
       "count": 1
     }
@@ -460,32 +397,9 @@
       "count": 1
     }
   },
-  "src/features/urdf-viewer/hooks/useVisualizationEffects.ts": {
-    "@typescript-eslint/no-explicit-any": {
-      "count": 7
-    },
-    "react-hooks/exhaustive-deps": {
-      "count": 4
-    }
-  },
-  "src/features/urdf-viewer/types.ts": {
-    "@typescript-eslint/no-explicit-any": {
-      "count": 1
-    }
-  },
   "src/features/urdf-viewer/utils/capsulePostProcessor.ts": {
     "@typescript-eslint/no-explicit-any": {
       "count": 7
-    }
-  },
-  "src/features/urdf-viewer/utils/collisionVisibilitySync.test.ts": {
-    "@typescript-eslint/no-explicit-any": {
-      "count": 7
-    }
-  },
-  "src/features/urdf-viewer/utils/collisionVisibilitySync.ts": {
-    "@typescript-eslint/no-explicit-any": {
-      "count": 3
     }
   },
   "src/features/urdf-viewer/utils/loadedRobotSceneSync.test.ts": {
@@ -493,79 +407,14 @@
       "count": 27
     }
   },
-  "src/features/urdf-viewer/utils/measurements.ts": {
-    "@typescript-eslint/no-explicit-any": {
-      "count": 7
-    }
-  },
   "src/features/urdf-viewer/utils/originTransformControlsShared.test.ts": {
     "@typescript-eslint/no-explicit-any": {
       "count": 7
     }
   },
-  "src/features/urdf-viewer/utils/pickTargets.ts": {
-    "@typescript-eslint/no-explicit-any": {
-      "count": 1
-    }
-  },
-  "src/features/urdf-viewer/utils/raycast.ts": {
-    "@typescript-eslint/no-explicit-any": {
-      "count": 2
-    }
-  },
-  "src/features/urdf-viewer/utils/robotGeometryVisibilitySync.test.ts": {
-    "@typescript-eslint/no-explicit-any": {
-      "count": 6
-    }
-  },
-  "src/features/urdf-viewer/utils/robotGeometryVisibilitySync.ts": {
-    "@typescript-eslint/no-explicit-any": {
-      "count": 5
-    }
-  },
-  "src/features/urdf-viewer/utils/robotLoaderJointPatch.ts": {
-    "@typescript-eslint/no-explicit-any": {
-      "count": 1
-    }
-  },
-  "src/features/urdf-viewer/utils/robotLoaderPatchUtils.ts": {
-    "@typescript-eslint/no-explicit-any": {
-      "count": 17
-    }
-  },
   "src/features/urdf-viewer/utils/robotSceneNodeIndex.test.ts": {
     "@typescript-eslint/no-explicit-any": {
       "count": 7
-    }
-  },
-  "src/features/urdf-viewer/utils/robotSceneNodeIndex.ts": {
-    "@typescript-eslint/no-explicit-any": {
-      "count": 4
-    }
-  },
-  "src/features/urdf-viewer/utils/robotVisualMeshIndex.ts": {
-    "@typescript-eslint/no-explicit-any": {
-      "count": 3
-    }
-  },
-  "src/features/urdf-viewer/utils/runtimeSceneMetadata.test.ts": {
-    "@typescript-eslint/no-explicit-any": {
-      "count": 6
-    }
-  },
-  "src/features/urdf-viewer/utils/runtimeVisibility.test.ts": {
-    "@typescript-eslint/no-explicit-any": {
-      "count": 3
-    }
-  },
-  "src/features/urdf-viewer/utils/runtimeVisibility.ts": {
-    "@typescript-eslint/no-explicit-any": {
-      "count": 5
-    }
-  },
-  "src/features/urdf-viewer/utils/selectionTargets.ts": {
-    "@typescript-eslint/no-explicit-any": {
-      "count": 8
     }
   },
   "src/features/urdf-viewer/utils/transformGizmo.ts": {
@@ -598,39 +447,9 @@
       "count": 1
     }
   },
-  "src/features/urdf-viewer/utils/visualizationFactories.ts": {
-    "@typescript-eslint/no-explicit-any": {
-      "count": 1
-    }
-  },
   "src/features/urdf-viewer/utils/visualizationObjectSync.test.ts": {
     "@typescript-eslint/no-explicit-any": {
       "count": 7
-    }
-  },
-  "src/features/urdf-viewer/utils/visualizationSync/interactionPrimitives.ts": {
-    "@typescript-eslint/no-explicit-any": {
-      "count": 4
-    }
-  },
-  "src/features/urdf-viewer/utils/visualizationSync/interactionStateSync.ts": {
-    "@typescript-eslint/no-explicit-any": {
-      "count": 4
-    }
-  },
-  "src/features/urdf-viewer/utils/visualizationSync/mjcfSiteTendonSync.ts": {
-    "@typescript-eslint/no-explicit-any": {
-      "count": 1
-    }
-  },
-  "src/features/urdf-viewer/utils/visualizationSync/objectPrimitives.ts": {
-    "@typescript-eslint/no-explicit-any": {
-      "count": 1
-    }
-  },
-  "src/features/urdf-viewer/utils/visualizationSync/structuralHelperSync.ts": {
-    "@typescript-eslint/no-explicit-any": {
-      "count": 17
     }
   },
   "src/shared/components/3d/LinkIkTransformControls.tsx": {
@@ -662,6 +481,164 @@
     },
     "@typescript-eslint/no-unused-vars": {
       "count": 5
+    }
+  },
+  "src/shared/components/3d/robot/components/CollisionTransformControls.tsx": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 5
+    },
+    "react-hooks/exhaustive-deps": {
+      "count": 3
+    }
+  },
+  "src/shared/components/3d/robot/components/OriginTransformControls.tsx": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 2
+    },
+    "@typescript-eslint/no-unused-vars": {
+      "count": 1
+    },
+    "react-hooks/exhaustive-deps": {
+      "count": 1
+    }
+  },
+  "src/shared/components/3d/robot/hooks/useCameraFocus.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 7
+    }
+  },
+  "src/shared/components/3d/robot/hooks/useHighlightManager.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 18
+    }
+  },
+  "src/shared/components/3d/robot/hooks/useHoverDetection.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 20
+    },
+    "react-hooks/exhaustive-deps": {
+      "count": 1
+    }
+  },
+  "src/shared/components/3d/robot/hooks/useMouseInteraction.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 11
+    },
+    "react-hooks/exhaustive-deps": {
+      "count": 1
+    }
+  },
+  "src/shared/components/3d/robot/hooks/useVisualizationEffects.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 7
+    },
+    "react-hooks/exhaustive-deps": {
+      "count": 4
+    }
+  },
+  "src/shared/components/3d/robot/utils/collisionVisibilitySync.test.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 7
+    }
+  },
+  "src/shared/components/3d/robot/utils/collisionVisibilitySync.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 3
+    }
+  },
+  "src/shared/components/3d/robot/utils/measurements.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 7
+    }
+  },
+  "src/shared/components/3d/robot/utils/pickTargets.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 1
+    }
+  },
+  "src/shared/components/3d/robot/utils/raycast.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 2
+    }
+  },
+  "src/shared/components/3d/robot/utils/robotGeometryVisibilitySync.test.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 6
+    }
+  },
+  "src/shared/components/3d/robot/utils/robotGeometryVisibilitySync.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 5
+    }
+  },
+  "src/shared/components/3d/robot/utils/robotLoaderJointPatch.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 1
+    }
+  },
+  "src/shared/components/3d/robot/utils/robotLoaderPatchUtils.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 17
+    }
+  },
+  "src/shared/components/3d/robot/utils/robotSceneNodeIndex.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 4
+    }
+  },
+  "src/shared/components/3d/robot/utils/robotVisualMeshIndex.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 3
+    }
+  },
+  "src/shared/components/3d/robot/utils/runtimeSceneMetadata.test.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 6
+    }
+  },
+  "src/shared/components/3d/robot/utils/runtimeVisibility.test.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 3
+    }
+  },
+  "src/shared/components/3d/robot/utils/runtimeVisibility.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 5
+    }
+  },
+  "src/shared/components/3d/robot/utils/selectionTargets.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 8
+    }
+  },
+  "src/shared/components/3d/robot/utils/visualizationFactories.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 1
+    }
+  },
+  "src/shared/components/3d/robot/utils/visualizationSync/interactionPrimitives.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 4
+    }
+  },
+  "src/shared/components/3d/robot/utils/visualizationSync/interactionStateSync.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 4
+    }
+  },
+  "src/shared/components/3d/robot/utils/visualizationSync/mjcfSiteTendonSync.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 1
+    }
+  },
+  "src/shared/components/3d/robot/utils/visualizationSync/objectPrimitives.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 1
+    }
+  },
+  "src/shared/components/3d/robot/utils/visualizationSync/structuralHelperSync.ts": {
+    "@typescript-eslint/no-explicit-any": {
+      "count": 17
     }
   },
   "src/shared/components/3d/scene/snapshotSceneQuality.ts": {
