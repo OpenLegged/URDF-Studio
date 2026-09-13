@@ -200,10 +200,11 @@ test('normalizeUsdTextureInputSlot passes resolvedColorSpace through and rejects
     normalizeUsdTextureInputs({ mapPath: { resolvedColorSpace: 42 } })?.mapPath?.resolvedColorSpace,
     undefined,
   );
-  // A resolved hint alone is not authored USD slot state: it classifies the
-  // color space at resolve time but must not force per-material cloning the
-  // way an explicit sourceColorSpace token does.
-  assert.equal(usdTextureInputRequiresSlotState({ resolvedColorSpace: 'raw' }), false);
+  // A resolved 'raw' hint forces slot state: the shared cache texture is
+  // SRGB by loader default, so the linear decode must land on a per-material
+  // clone. A resolved 'srgb' hint mirrors that default and stays shareable.
+  assert.equal(usdTextureInputRequiresSlotState({ resolvedColorSpace: 'raw' }), true);
+  assert.equal(usdTextureInputRequiresSlotState({ resolvedColorSpace: 'srgb' }), false);
 });
 
 test('applyUsdTextureInputToTexture sets the resolved linear color space on color slots', () => {

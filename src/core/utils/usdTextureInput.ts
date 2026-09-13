@@ -200,8 +200,12 @@ export function resolveUsdTextureColorSpace(
  * Whether a slot record carries state that must isolate the material's texture
  * instance from the shared cache: any authored matrix (identity included —
  * see `usdTextureInputHasUvTransform`), wrap mode, or explicit color space.
- * `resolvedColorSpace` deliberately does not count: it classifies the color
- * space at resolve time but mirrors the loader default for the dominant
+ * `resolvedColorSpace: 'raw'` also counts: it classifies an auto
+ * (unauthored) base-color image as linear data, which deviates from the
+ * loader's SRGB cache default, so the slot must clone before the linear
+ * decode lands on the texture — returning the shared instance would keep the
+ * color-space fix from ever reaching `material.map`. A resolved `srgb`
+ * deliberately does not count: it mirrors the loader default for the dominant
  * 8-bit RGB/RGBA corpus, so cloning on it would clone every shared texture
  * for no behavioral difference.
  */
@@ -213,7 +217,8 @@ export function usdTextureInputRequiresSlotState(
       && (usdTextureInputHasUvTransform(input)
         || input.wrapS
         || input.wrapT
-        || input.sourceColorSpace),
+        || input.sourceColorSpace
+        || normalizeResolvedColorSpace(input.resolvedColorSpace) === 'raw'),
   );
 }
 

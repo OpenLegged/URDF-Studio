@@ -199,7 +199,7 @@ test('source hydration preserves binary dependencies and disposes workers/URLs o
     assert.equal(request.projectionMode, 'robot');
     assert.equal(request.includeAllAvailableFiles, true);
     assert.ok(request.stageOpenContext);
-    assert.deepEqual(request.stageOpenContext.availableFiles.map((file) => file.name), ['layers/nested.usdc', 'textures/wood.png']);
+    assert.deepEqual((request.stageOpenContext.availableFiles ?? []).map((file) => file.name), ['layers/nested.usdc', 'textures/wood.png']);
     const serialized = await serializePreparedUsdExportCacheForWorker({ robotData: demoRobotData, resolution: demoResolution, meshFiles: { 'mesh.obj': new Blob(['v 0 0 0']) } });
     worker.emit({ type: 'prepared-cache', preparedCache: serialized.payload });
     assert.equal(worker.terminated, false, 'wait for complete hydration');

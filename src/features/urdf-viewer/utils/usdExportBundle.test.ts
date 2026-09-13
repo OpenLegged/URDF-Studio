@@ -54,7 +54,13 @@ test('exports a visible USD Mesh with PhysicsCollisionAPI as both visual and col
     stageSourcePath: '/desk.usda',
     stage: {
       defaultPrimPath: '/Desk',
-      primDescriptors: [{ path: '/Desk/top', typeName: 'Mesh', collisionEnabled: true }],
+      primDescriptors: [{
+        path: '/Desk/top', parentPath: '/Desk', name: 'top', typeName: 'Mesh',
+        active: true, loaded: true, defined: true, instance: false, instanceProxy: false,
+        prototype: false, hasPayload: false, hasAuthoredReferences: false,
+        transformable: true, hasAuthoredXformOps: false, resetsXformStack: false,
+        collisionEnabled: true,
+      }],
     },
     robotTree: { rootLinkPaths: ['/Desk'], linkParentPairs: [['/Desk', null]] },
     render: { meshDescriptors: [{
