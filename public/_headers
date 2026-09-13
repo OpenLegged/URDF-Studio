@@ -23,6 +23,17 @@
 /assets/*
   Cache-Control: public, max-age=31536000, immutable
 
+# These libarchive runtime files use fixed URLs. Cloudflare Pages combines
+# duplicate headers from overlapping rules, so detach the broad /assets/*
+# Cache-Control before attaching an explicit bounded policy.
+/assets/worker-bundle.js
+  ! Cache-Control
+  Cache-Control: public, max-age=86400, must-revalidate
+
+/assets/libarchive.wasm
+  ! Cache-Control
+  Cache-Control: public, max-age=86400, must-revalidate
+
 /fonts/*
   Cache-Control: public, max-age=31536000, immutable
 
