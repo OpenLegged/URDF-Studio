@@ -24,7 +24,6 @@ import {
 } from '@/core/loaders/mshGeometryData.ts';
 import { loadSerializedStlGeometryData } from '@/core/loaders/stlParseWorkerBridge.ts';
 import { applyVisualMeshMaterialGroupsToObject } from '@/core/utils/meshMaterialGroups';
-import { ensureWorkerXmlDomApis } from '@/core/utils/ensureWorkerXmlDomApis.ts';
 import { disposeMaterial } from '@/shared/utils/three/dispose.ts';
 
 import {
@@ -271,7 +270,10 @@ const loadUsdGltfSceneAsset = async (
   assetUrl: string,
   registry: UsdAssetRegistry,
 ): Promise<CachedUsdGltfSceneAsset> => {
-  ensureWorkerXmlDomApis();
+  const { ensureWorkerImageDomApis } = await import(
+    '@/core/utils/ensureWorkerImageDomApis.ts'
+  );
+  ensureWorkerImageDomApis();
   const cache = getUsdGltfSceneAssetCache(registry);
   const cached = cache.get(assetUrl);
   if (cached) {
@@ -798,6 +800,7 @@ const loadUsdColladaSceneInProcess = async (
   assetUrl: string,
   registry: UsdAssetRegistry,
 ): Promise<THREE.Object3D> => {
+  const { ensureWorkerXmlDomApis } = await import('@/core/utils/ensureWorkerXmlDomApis.ts');
   ensureWorkerXmlDomApis();
   const response = await fetch(assetUrl);
   if (!response.ok) {

@@ -1,5 +1,5 @@
 import type JSZip from 'jszip';
-import { prepareMjcfExport } from '@/features/file-io';
+import { prepareMjcfExport } from '@/features/file-io/mjcf_export';
 
 import type {
   ExportDialogConfig,

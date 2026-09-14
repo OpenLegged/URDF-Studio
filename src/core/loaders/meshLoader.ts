@@ -25,7 +25,6 @@ import {
 } from '@/core/utils/runtimeDiagnostics';
 import { MATERIAL_CONFIG } from '@/core/utils/materialFactory';
 import { createMainThreadYieldController } from '@/core/utils/yieldToMainThread';
-import { ensureWorkerXmlDomApis } from '@/core/utils/ensureWorkerXmlDomApis';
 import { createGeometryFromSerializedMshData } from './mshGeometryData';
 import { loadSerializedMshGeometryData } from './mshParseWorkerBridge';
 import {
@@ -149,6 +148,7 @@ async function loadColladaSceneForMeshLoader(
     }
   }
 
+  const { ensureWorkerXmlDomApis } = await import('@/core/utils/ensureWorkerXmlDomApis');
   ensureWorkerXmlDomApis();
   const response = await fetch(assetUrl);
   if (!response.ok) {

@@ -47,7 +47,6 @@ import {
   createBoxFaceTextureFallbackWarnings,
 } from './file-export/urdfSupport';
 import { applyBoxFaceMaterialExportFallback } from './file-export/materialFallbacks';
-import { executeConfiguredRobotExport } from './file-export/configuredRobotExport';
 import {
   collectCanonicalWorkspacePreparedMeshFiles,
   resolveIdentityExportComponent,
@@ -92,7 +91,7 @@ async function createZip(): Promise<JSZipInstance> {
 async function prepareMjcfMeshExportAssetsLazy(
   params: PrepareMjcfMeshExportAssetsOptions,
 ) {
-  const { prepareMjcfMeshExportAssets } = await import('@/features/file-io');
+  const { prepareMjcfMeshExportAssets } = await import('@/features/file-io/mjcf_export');
   return prepareMjcfMeshExportAssets(params);
 }
 
@@ -608,6 +607,9 @@ export function useFileExport() {
         });
       }
 
+      const { executeConfiguredRobotExport } = await import(
+        './file-export/configuredRobotExport'
+      );
       return executeConfiguredRobotExport({
         addMeshesToZip,
         assets: workspaceExportAssets,
