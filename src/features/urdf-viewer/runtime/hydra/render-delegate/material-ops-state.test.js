@@ -1,4 +1,5 @@
 import { getUsdTextureArithmeticSummary } from '../../../../../core/utils/usdTextureArithmetic.ts';
+import { captureUsdMaterialTextureInputs } from '../../../../../core/utils/usdTextureInput.ts';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
@@ -983,6 +984,32 @@ test('normalizeSnapshotMaterialRecords drops textureInputs for missing texture p
     assert.equal(records[0].textureInputs, null);
     assert.equal(records[1].textureInputs.emissiveMapPath, undefined);
     assert.deepEqual(records[1].textureInputs.mapPath.uvTransform, [1, 0, 0, 0, 1, 0, 0, 0, 1]);
+});
+
+test('snapshot sampling metadata survives serialization before and after the texture loads', async () => {
+    const material = new MeshPhysicalMaterial();
+    let finishLoad;
+    const registryTexture = new Texture();
+    const context = {
+        ...createMaterialOpsContext(),
+        registry: { getTexture: () => new Promise((resolve) => { finishLoad = resolve; }) },
+    };
+    const input = {
+        uvTransform: [0, 2, 0, -1, 0, 0, 0.25, 0.5, 1],
+        uvPrimvar: 'st1', wrapS: 'black', wrapT: 'repeat',
+        sourceColorSpace: 'auto', resolvedColorSpace: 'raw',
+        sourceOutput: 'rgb', sampleScale: [0.2, 0.3, 0.4, 1],
+    };
+    applySnapshotTextureInput.call(context, material, 'img/checker.png', 'map', {
+        textureInputs: { mapPath: input },
+    });
+    assert.equal(material.map, null);
+    assert.equal(material.userData.usdPendingTexturePaths.map, 'img/checker.png');
+    assert.deepEqual(captureUsdMaterialTextureInputs(material), { mapPath: input });
+    finishLoad(registryTexture);
+    await Promise.all(context._pendingSnapshotTextureLoads);
+    assert.deepEqual(captureUsdMaterialTextureInputs(material), { mapPath: input });
+    assert.deepEqual(captureUsdMaterialTextureInputs(material.clone()), { mapPath: input });
 });
 
 test('applySnapshotTextureInput applies per-slot uv transform, wrap, and sRGB fallback to the cloned texture', async () => {

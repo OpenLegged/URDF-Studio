@@ -2880,6 +2880,12 @@ test('resolveUsdExportSceneSnapshot enriches cached snapshots with live preferre
   preferredMaterial.name = 'Body';
   preferredMaterial.map = new THREE.Texture();
   preferredMaterial.map.name = 'textures/body_basecolor.png';
+  preferredMaterial.map.matrixAutoUpdate = false;
+  preferredMaterial.map.matrix.fromArray([0, 2, 0, -1, 0, 0, 0.25, 0.5, 1]);
+  preferredMaterial.map.wrapS = THREE.RepeatWrapping;
+  preferredMaterial.userData.usdTextureInputs = {
+    mapPath: { uvPrimvar: 'st1', sourceOutput: 'rgb', sampleBias: [0.1, 0, 0, 0] },
+  };
   preferredMaterial.roughnessMap = new THREE.Texture();
   preferredMaterial.roughnessMap.name = 'textures/body_roughness.png';
   preferredMaterial.normalMap = new THREE.Texture();
@@ -2937,6 +2943,11 @@ test('resolveUsdExportSceneSnapshot enriches cached snapshots with live preferre
   assert.equal(preferredRecord.clearcoat, 0.22);
   assert.equal(preferredRecord.clearcoatRoughness, 0.41);
   assert.equal(preferredRecord.mapPath, 'textures/body_basecolor.png');
+  assert.deepEqual(preferredRecord.textureInputs?.mapPath, {
+    uvTransform: [0, 2, 0, -1, 0, 0, 0.25, 0.5, 1],
+    wrapS: 'repeat', wrapT: 'clamp',
+    uvPrimvar: 'st1', sourceOutput: 'rgb', sampleBias: [0.1, 0, 0, 0],
+  });
   assert.equal(preferredRecord.roughnessMapPath, 'textures/body_roughness.png');
   assert.equal(preferredRecord.normalMapPath, 'textures/body_normal.png');
   assert.equal(preferredRecord.alphaMapPath, 'textures/body_opacity.png');

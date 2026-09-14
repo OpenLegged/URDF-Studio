@@ -1,4 +1,5 @@
 // @ts-nocheck
+import { captureUsdMaterialTextureInputs } from '../../../../../core/utils/usdTextureInput.ts';
 import { Color, LinearSRGBColorSpace, Matrix4, SRGBColorSpace, Vector2, } from 'three';
 import * as Shared from './shared.js';
 import { ThreeRenderDelegateMaterialOps } from './ThreeRenderDelegateMaterialOps.js';
@@ -298,7 +299,10 @@ function serializePreferredMaterialRecord(material) {
         const tuple = toFiniteVector2Tuple(value);
         return tuple ? [tuple[0], tuple[1]] : null;
     };
+    const textureInputs = captureUsdMaterialTextureInputs(material);
+    if (materialEmissiveEnabled === false && textureInputs) delete textureInputs.emissiveMapPath;
     const record = {
+        ...(textureInputs && Object.keys(textureInputs).length ? { textureInputs } : {}),
         ...(String(material.name || '').trim() ? { name: String(material.name || '').trim() } : {}),
         ...(materialIsOmniPbr ? { isOmniPbr: true } : {}),
         ...(materialIsOmniGlass ? { isOmniGlass: true } : {}),
@@ -4223,6 +4227,7 @@ export class ThreeRenderDelegateInterface extends ThreeRenderDelegateMaterialOps
                     || key === 'id'
                     || key.endsWith('MapPath')
                     || key === 'mapPath'
+                    || key === 'textureInputs'
                 )))
                 : fallbackRecord;
             return mergeSnapshotMaterialRecordWithFallback(record, {

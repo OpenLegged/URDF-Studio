@@ -1,4 +1,5 @@
 import { parseThreeColorWithOpacity } from '@/core/utils/color';
+import { captureUsdMaterialTextureInputs } from '@/core/utils/usdTextureInput';
 
 import {
   DEFAULT_LINK,
@@ -364,7 +365,10 @@ function copyLiveMaterialFields(
     );
   });
   LIVE_TEXTURE_MATERIAL_FIELDS.forEach(([target, source]) => {
-    setLiveMaterialRecordValue(record, target, normalizeTextureMaterialPath(candidate[source]));
+    const userData = candidate.userData as { usdPendingTexturePaths?: Record<string, string> } | undefined;
+    setLiveMaterialRecordValue(record, target,
+      normalizeTextureMaterialPath(candidate[source])
+        || normalizeTextureMaterialPath(userData?.usdPendingTexturePaths?.[source]));
   });
 }
 
@@ -380,6 +384,8 @@ function serializeLivePreferredMaterialRecord(material: unknown): SnapshotMateri
     record.name = name;
   }
   copyLiveMaterialFields(record, candidate);
+  const textureInputs = captureUsdMaterialTextureInputs(material);
+  if (textureInputs) record.textureInputs = textureInputs;
 
   if (!hasSnapshotMaterialRecordContent(record)) {
     return null;
