@@ -16,9 +16,7 @@ import {
 import { resolveRobotFileDataWithWorker } from './robotImportWorkerBridge';
 import { hydrateDeferredArchiveAssetsInBackground } from './deferred_import_hydration';
 import { createAssetUrls } from './import_blob_urls';
-import {
-  detectImportFormat,
-} from '@/app/utils/importPreparation';
+import { detectImportFormat } from '@/app/utils/import-preparation/formatDetection';
 import { primePreResolvedRobotImports } from '@/app/utils/preResolvedRobotImportCache';
 import { prewarmUsdSelectionInBackground } from '@/app/utils/usdSelectionPrewarm';
 import { markUnsavedChangesBaselineSaved } from '@/app/utils/unsavedChangesBaseline';

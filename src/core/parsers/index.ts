@@ -32,10 +32,14 @@ export { generateSDF, generateSdfModelConfig } from './sdf/sdfGenerator';
 
 // File Preview - Convert various robot file formats to URDF for preview
 export { computePreviewUrdf } from './filePreview';
-export {
-  createUsdPlaceholderRobotData,
-  describeRobotImportFailure,
-  resolveRobotFileData,
-  resolveRobotFileDataAsync,
-} from './importRobotFile';
+export { createUsdPlaceholderRobotData } from './importRobotFileLightweight';
 export type { RobotImportErrorReason, RobotImportResult } from './importRobotFile';
+
+// Keep the async production import boundary lazy. Re-exporting the implementation
+// directly evaluates every format parser when this broad parser barrel is loaded.
+export async function resolveRobotFileDataAsync(
+  ...args: Parameters<typeof import('./importRobotFile').resolveRobotFileDataAsync>
+): ReturnType<typeof import('./importRobotFile').resolveRobotFileDataAsync> {
+  const { resolveRobotFileDataAsync: resolve } = await import('./importRobotFile');
+  return resolve(...args);
+}

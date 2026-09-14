@@ -1,4 +1,4 @@
-import { isStandaloneXacroEntry } from '@/core/parsers/importRobotFile';
+import { isStandaloneXacroEntry } from '@/core/parsers/importRobotFileLightweight';
 import { pickPreferredUsdRootFile } from '@/core/parsers/usd/usdFormatUtils';
 import { isSourceOnlyMJCFDocument } from '@/core/parsers/mjcf/mjcfXml';
 import { isAssetLibraryOnlyFormat, isVisibleLibraryEntry } from '@/shared/utils/robotFileSupport';

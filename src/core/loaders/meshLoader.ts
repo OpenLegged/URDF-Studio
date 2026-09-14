@@ -15,7 +15,6 @@ import { buildExplicitlyScaledMeshPathHints, hasExplicitMeshScaleHint } from './
 import { mitigateCoplanarMaterialZFighting } from './coplanarMaterialOffset';
 import { type ColladaRootNormalizationHints } from './colladaRootNormalization';
 import { loadSerializedColladaSceneData } from './colladaParseWorkerBridge';
-import { createSceneFromSerializedColladaData } from './colladaWorkerSceneData';
 import { parseColladaMeshDataWithWasm } from './colladaWasmParser';
 import { registerManagedTextureHandlers } from './textureLoaderHandlers';
 import { cleanFilePath } from './pathNormalization';
@@ -42,7 +41,6 @@ import {
   createObjectFromSerializedObjDataAsync,
   loadSerializedObjModelData,
 } from './objParseWorkerBridge';
-import { createGeometryFromSerializedStlData } from './stlGeometryData';
 import { loadSerializedStlGeometryData } from './stlParseWorkerBridge';
 import {
   buildAssetIndex,
@@ -137,9 +135,10 @@ async function loadColladaSceneForMeshLoader(
   if (typeof Worker !== 'undefined') {
     try {
       const serializedScene = await loadSerializedColladaSceneData(assetUrl);
-      return await runMainThreadTask(() =>
-        createSceneFromSerializedColladaData(serializedScene, { manager }),
-      );
+      return await runMainThreadTask(async () => {
+        const { createSceneFromSerializedColladaData } = await import('./colladaWorkerSceneData');
+        return createSceneFromSerializedColladaData(serializedScene, { manager });
+      });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       if (!/collada parse worker is (?:unavailable|not available)/i.test(message)) {
@@ -160,9 +159,10 @@ async function loadColladaSceneForMeshLoader(
     await response.arrayBuffer(),
     extractColladaUrlBase(assetUrl),
   );
-  return await runMainThreadTask(() =>
-    createSceneFromSerializedColladaData(serializedScene, { manager }),
-  );
+  return await runMainThreadTask(async () => {
+    const { createSceneFromSerializedColladaData } = await import('./colladaWorkerSceneData');
+    return createSceneFromSerializedColladaData(serializedScene, { manager });
+  });
 }
 
 const tryResolveManagedAssetUrl = (
@@ -493,6 +493,7 @@ export const createMeshLoader = (
     const pendingPromise = (async (): Promise<CachedMeshAsset> => {
       if (ext === 'stl') {
         const serializedGeometry = await loadSerializedStlGeometryData(assetUrl);
+        const { createGeometryFromSerializedStlData } = await import('./stlGeometryData');
         const geometry = createGeometryFromSerializedStlData(serializedGeometry);
         await yieldIfNeeded();
 
