@@ -1,8 +1,4 @@
 import { findAssetByPath, isCoplanarOffsetMaterial, postProcessColladaScene } from '@/core/loaders';
-import {
-  createSceneFromSerializedColladaData,
-  parseColladaSceneData,
-} from '@/core/loaders/colladaWorkerSceneData';
 import { normalizeMeshPathForExport } from '@/core/parsers/meshPathUtils';
 import { getVisualGeometryEntries } from '@/core/robot';
 import { GeometryType, type RobotState } from '@/types';
@@ -1155,6 +1151,8 @@ export async function loadColladaMeshInProcessForMjcfExport(
   }
 
   const colladaText = await response.text();
+  const { createSceneFromSerializedColladaData, parseColladaSceneData } =
+    await import('@/core/loaders/colladaWorkerSceneData');
   const serializedScene = parseColladaSceneData(colladaText, assetUrl);
   const scene = createSceneFromSerializedColladaData(serializedScene, { manager });
   const maxDimension = postProcessColladaScene(scene);

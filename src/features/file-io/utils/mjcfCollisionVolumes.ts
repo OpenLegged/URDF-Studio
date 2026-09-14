@@ -1,6 +1,5 @@
 import { Mesh, Vector3 } from 'three';
 import { OBJLoader } from 'three/addons/loaders/OBJLoader.js';
-import { STLLoader } from 'three/addons/loaders/STLLoader.js';
 import { ConvexGeometry } from 'three/addons/geometries/ConvexGeometry.js';
 import { readMjcfExportAsset } from '@/core/loaders/mjcfExportAssets';
 import { mjcfCollisionGeometries, mjcfPrimitiveVolume, needsMjcfInertiaInference } from '@/core/parsers/mjcf/mjcfMassInference';
@@ -33,6 +32,7 @@ async function meshVolume(
         });
       } finally { disposeObject3D(object); }
     } else if (/\.stl$/i.test(converted)) {
+      const { STLLoader } = await import('three/addons/loaders/STLLoader.js');
       const mesh = new STLLoader().parse(await blob.arrayBuffer());
       try { push(mesh.getAttribute('position').array); } finally { mesh.dispose(); }
     } else if (/\.msh$/i.test(converted)) {

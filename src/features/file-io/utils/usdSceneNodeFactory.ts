@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { GLTFLoader, type GLTF } from 'three/addons/loaders/GLTFLoader.js';
+import type { GLTF } from 'three/addons/loaders/GLTFLoader.js';
 import { clone as cloneSkeleton } from 'three/examples/jsm/utils/SkeletonUtils.js';
 
 import type { UrdfVisual } from '@/types';
@@ -15,10 +15,6 @@ import {
 } from '@/core/loaders/colladaRootNormalization.ts';
 import { loadColladaScene } from '@/core/loaders/colladaParseWorkerBridge.ts';
 import {
-  createSceneFromSerializedColladaData,
-  parseColladaSceneData,
-} from '@/core/loaders/colladaWorkerSceneData.ts';
-import {
   createObjectFromSerializedObjData,
   loadSerializedObjModelData,
 } from '@/core/loaders/objParseWorkerBridge.ts';
@@ -26,7 +22,6 @@ import {
   createGeometryFromSerializedMshData,
   parseMshGeometryData,
 } from '@/core/loaders/mshGeometryData.ts';
-import { createGeometryFromSerializedStlData } from '@/core/loaders/stlGeometryData.ts';
 import { loadSerializedStlGeometryData } from '@/core/loaders/stlParseWorkerBridge.ts';
 import { applyVisualMeshMaterialGroupsToObject } from '@/core/utils/meshMaterialGroups';
 import { ensureWorkerXmlDomApis } from '@/core/utils/ensureWorkerXmlDomApis.ts';
@@ -284,6 +279,7 @@ const loadUsdGltfSceneAsset = async (
   }
 
   const pendingLoad = (async (): Promise<CachedUsdGltfSceneAsset> => {
+    const { GLTFLoader } = await import('three/addons/loaders/GLTFLoader.js');
     const loader = new GLTFLoader(getUsdTextureLoadingManager(registry));
     const gltf = await loader.loadAsync(assetUrl);
     applyUsdGltfTextureSourcePaths(gltf);
@@ -697,6 +693,8 @@ const buildCachedUsdStlGeometry = async (
 
   const pendingGeometry = (async () => {
     const serializedGeometry = await loadSerializedStlGeometryData(assetUrl);
+    const { createGeometryFromSerializedStlData } =
+      await import('@/core/loaders/stlGeometryData.ts');
     const geometry = createGeometryFromSerializedStlData(serializedGeometry);
     if (meshCompression?.enabled && meshCompression.quality < 100) {
       const mesh = new THREE.Mesh(geometry, createUsdBaseMaterial('#ffffff'));
@@ -807,6 +805,8 @@ const loadUsdColladaSceneInProcess = async (
   }
 
   const colladaText = await response.text();
+  const { createSceneFromSerializedColladaData, parseColladaSceneData } =
+    await import('@/core/loaders/colladaWorkerSceneData.ts');
   const serializedScene = parseColladaSceneData(colladaText, assetUrl);
   return createSceneFromSerializedColladaData(serializedScene, {
     manager: getUsdTextureLoadingManager(registry),

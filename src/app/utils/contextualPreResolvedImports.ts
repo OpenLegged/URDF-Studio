@@ -1,7 +1,5 @@
-import {
-  isStandaloneXacroEntry,
-  type ResolveRobotFileDataOptions,
-} from '@/core/parsers/importRobotFile';
+import type { ResolveRobotFileDataOptions } from '@/core/parsers/importRobotFile';
+import { isStandaloneXacroEntry } from '@/core/parsers/importRobotFileLightweight';
 import { resolveRobotFileDataWithWorker } from '@/app/hooks/robotImportWorkerBridge';
 import type { RobotFile } from '@/types';
 import type { PreResolvedImportEntry } from './importPreparation';

@@ -1,4 +1,4 @@
-import { parseStlGeometryData, type SerializedStlGeometryData } from './stlGeometryData';
+import type { SerializedStlGeometryData } from './stlGeometryData';
 import type { ParseStlWorkerRequest, StlParseWorkerResponse } from './stlParseWorkerProtocol';
 import {
   createWorkerPoolClient,
@@ -31,6 +31,7 @@ async function loadSerializedStlGeometryDataInline(
     throw new Error(`Failed to fetch STL asset: ${response.status} ${response.statusText}`);
   }
 
+  const { parseStlGeometryData } = await import('./stlGeometryData');
   return parseStlGeometryData(await response.arrayBuffer());
 }
 
