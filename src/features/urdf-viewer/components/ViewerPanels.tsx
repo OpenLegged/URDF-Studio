@@ -1,6 +1,4 @@
 import React from 'react';
-import { MeasurePanel } from './MeasurePanel';
-import { PaintPanel } from './PaintPanel';
 import { ViewerOptionsPanel } from './ViewerOptionsPanel';
 import { ViewerToolbar } from './ViewerToolbar';
 import { translations, type Language } from '@/shared/i18n';
@@ -17,6 +15,12 @@ import { useResponsivePanelLayout } from '../hooks/useResponsivePanelLayout';
 
 const LazyJointsPanel = React.lazy(async () => ({
   default: (await import('@/shared/components/Panel/JointsPanel')).JointsPanel,
+}));
+const LazyMeasurePanel = React.lazy(async () => ({
+  default: (await import('./MeasurePanel')).MeasurePanel,
+}));
+const LazyPaintPanel = React.lazy(async () => ({
+  default: (await import('./PaintPanel')).PaintPanel,
 }));
 
 interface ViewerPanelsProps {
@@ -165,45 +169,53 @@ export const ViewerPanels = ({
         </React.Suspense>
       ) : null}
 
-      <MeasurePanel
-        toolMode={measureTool.toolMode}
-        measurePanelRef={layout.measurePanelRef}
-        measurePanelPos={layout.measurePanelPos}
-        onMouseDown={(event) => layout.handleMouseDown('measure', event)}
-        onClose={measureTool.handleCloseMeasureTool}
-        measureState={measureTool.measureState}
-        setMeasureState={measureTool.setMeasureState}
-        measureMode={measureTool.measureState.mode}
-        setMeasureMode={measureTool.setMeasureMode}
-        measureAnchorMode={measureTool.measureAnchorMode}
-        setMeasureAnchorMode={measureTool.setMeasureAnchorMode}
-        showMeasureDecomposition={measureTool.showMeasureDecomposition}
-        setShowMeasureDecomposition={measureTool.setShowMeasureDecomposition}
-        measurePoseRepresentation={measureTool.measurePoseRepresentation}
-        setMeasurePoseRepresentation={measureTool.setMeasurePoseRepresentation}
-        lang={lang}
-        zIndex={measureToolLayer.zIndex}
-        onActivate={measureToolLayer.onActivate}
-      />
+      {measureTool.toolMode === 'measure' ? (
+        <React.Suspense fallback={null}>
+          <LazyMeasurePanel
+            toolMode={measureTool.toolMode}
+            measurePanelRef={layout.measurePanelRef}
+            measurePanelPos={layout.measurePanelPos}
+            onMouseDown={(event) => layout.handleMouseDown('measure', event)}
+            onClose={measureTool.handleCloseMeasureTool}
+            measureState={measureTool.measureState}
+            setMeasureState={measureTool.setMeasureState}
+            measureMode={measureTool.measureState.mode}
+            setMeasureMode={measureTool.setMeasureMode}
+            measureAnchorMode={measureTool.measureAnchorMode}
+            setMeasureAnchorMode={measureTool.setMeasureAnchorMode}
+            showMeasureDecomposition={measureTool.showMeasureDecomposition}
+            setShowMeasureDecomposition={measureTool.setShowMeasureDecomposition}
+            measurePoseRepresentation={measureTool.measurePoseRepresentation}
+            setMeasurePoseRepresentation={measureTool.setMeasurePoseRepresentation}
+            lang={lang}
+            zIndex={measureToolLayer.zIndex}
+            onActivate={measureToolLayer.onActivate}
+          />
+        </React.Suspense>
+      ) : null}
 
-      <PaintPanel
-        lang={lang}
-        toolMode={paintTool.toolMode}
-        paintColor={paintTool.paintColor}
-        onPaintColorChange={paintTool.setPaintColor}
-        paintSelectionScope={paintTool.paintSelectionScope}
-        onPaintSelectionScopeChange={paintTool.setPaintSelectionScope}
-        paintOperation={paintTool.paintOperation}
-        onPaintOperationChange={paintTool.setPaintOperation}
-        paintStatus={paintTool.paintStatus}
-        supported={paintModeSupported}
-        onClose={paintTool.handleClosePaintTool}
-        paintPanelRef={layout.paintPanelRef}
-        paintPanelPos={layout.paintPanelPos}
-        onMouseDown={(event) => layout.handleMouseDown('paint', event)}
-        zIndex={paintToolLayer.zIndex}
-        onActivate={paintToolLayer.onActivate}
-      />
+      {paintTool.toolMode === 'paint' ? (
+        <React.Suspense fallback={null}>
+          <LazyPaintPanel
+            lang={lang}
+            toolMode={paintTool.toolMode}
+            paintColor={paintTool.paintColor}
+            onPaintColorChange={paintTool.setPaintColor}
+            paintSelectionScope={paintTool.paintSelectionScope}
+            onPaintSelectionScopeChange={paintTool.setPaintSelectionScope}
+            paintOperation={paintTool.paintOperation}
+            onPaintOperationChange={paintTool.setPaintOperation}
+            paintStatus={paintTool.paintStatus}
+            supported={paintModeSupported}
+            onClose={paintTool.handleClosePaintTool}
+            paintPanelRef={layout.paintPanelRef}
+            paintPanelPos={layout.paintPanelPos}
+            onMouseDown={(event) => layout.handleMouseDown('paint', event)}
+            zIndex={paintToolLayer.zIndex}
+            onActivate={paintToolLayer.onActivate}
+          />
+        </React.Suspense>
+      ) : null}
     </>
   );
 };

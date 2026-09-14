@@ -7,6 +7,8 @@ import { SMAAPass } from 'three/examples/jsm/postprocessing/SMAAPass.js';
 
 import { runWithShadowMapUpdatesPaused } from './shadowMapRefresh';
 
+export { shouldRenderRealtimeAmbientOcclusion } from './realtimeViewportPolicy';
+
 export const REALTIME_GTAO_PIXEL_RATIO_CAP = 1.5;
 export const REALTIME_GTAO_MAX_PIXELS = 2_500_000;
 
@@ -55,18 +57,6 @@ export interface RealtimeViewportComposer {
   setSize: (width: number, height: number, rendererPixelRatio: number) => void;
   getDiagnostics: () => RealtimeViewportDiagnostics;
   dispose: () => void;
-}
-
-export function shouldRenderRealtimeAmbientOcclusion({
-  composerAvailable,
-  isInteracting,
-  snapshotRenderActive,
-}: {
-  composerAvailable: boolean;
-  isInteracting: boolean;
-  snapshotRenderActive: boolean;
-}): boolean {
-  return composerAvailable && !isInteracting && !snapshotRenderActive;
 }
 
 function resolvePositiveFinite(value: number, fallback: number): number {

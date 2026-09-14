@@ -24,10 +24,9 @@ import { waitForAnimationFrame } from '@/app/utils/waitForAnimationFrame';
 import { logRegressionInfo } from '@/shared/debug/consoleDiagnostics';
 import { clearPreparedUsdStageOpenCache } from '@/features/editor/usd_prewarm';
 import type { ImportPreparationOverlayState } from './file-import/importPreparationOverlay';
-import {
-  executePreparedFileImportWorkflow,
-  type HandleImportResult,
-  type ImportInputFiles,
+import type {
+  HandleImportResult,
+  ImportInputFiles,
 } from './file-import/executePreparedFileImportWorkflow';
 
 export type { ImportPreparationOverlayState } from './file-import/importPreparationOverlay';
@@ -115,6 +114,9 @@ export function useFileImport(options: UseFileImportOptions = {}) {
           return importProjectWithWorker(file, lang);
         });
 
+      const { executePreparedFileImportWorkflow } = await import(
+        './file-import/executePreparedFileImportWorkflow'
+      );
       return executePreparedFileImportWorkflow({
         files,
         forceLoadRobot,
