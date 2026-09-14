@@ -68,7 +68,10 @@ function readRangeValues(
   return values;
 }
 
-function getTransformScaleFromMatrixValues(values: number[] | null): PrimitiveScale | null {
+function getTransformScaleFromMatrixValues(
+  values: number[] | null,
+  preserveSign = false,
+): PrimitiveScale | null {
   if (!values || values.length < 16) {
     return null;
   }
@@ -80,11 +83,11 @@ function getTransformScaleFromMatrixValues(values: number[] | null): PrimitiveSc
   matrix.decompose(position, rotation, scale);
 
   const dimensions: PrimitiveScale = [
-    Math.abs(scale.x),
-    Math.abs(scale.y),
-    Math.abs(scale.z),
+    preserveSign ? scale.x : Math.abs(scale.x),
+    preserveSign ? scale.y : Math.abs(scale.y),
+    preserveSign ? scale.z : Math.abs(scale.z),
   ];
-  if (dimensions.some((value) => !Number.isFinite(value) || value <= 1e-9)) {
+  if (dimensions.some((value) => !Number.isFinite(value) || Math.abs(value) <= 1e-9)) {
     return null;
   }
 
@@ -94,18 +97,20 @@ function getTransformScaleFromMatrixValues(values: number[] | null): PrimitiveSc
 export function getUsdDescriptorTransformScale(
   descriptor: UsdSceneMeshDescriptor,
   snapshot: UsdSceneSnapshot | null | undefined,
+  options: { preserveSign?: boolean } = {},
 ): PrimitiveScale | null {
   const inlineTransform = readArrayValues(
     (descriptor as UsdSceneMeshDescriptor & { worldTransform?: ArrayLike<number> | null })
       .worldTransform,
   );
-  const inlineScale = getTransformScaleFromMatrixValues(inlineTransform);
+  const inlineScale = getTransformScaleFromMatrixValues(inlineTransform, options.preserveSign);
   if (inlineScale) {
     return inlineScale;
   }
 
   return getTransformScaleFromMatrixValues(
     readRangeValues(snapshot?.buffers?.transforms, descriptor.ranges?.transform),
+    options.preserveSign,
   );
 }
 

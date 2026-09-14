@@ -1,3 +1,12 @@
+import {
+  extractUsdLayerReferencesFromText,
+  isUsdLayerPath,
+  resolveUsdLayerReferencePath,
+} from '@/core/parsers/usd/usdLayerReferences';
+export {
+  extractUsdLayerReferencesFromText,
+  resolveUsdLayerReferencePath,
+} from '@/core/parsers/usd/usdLayerReferences';
 import type { RobotFile } from '@/types';
 import {
   normalizeLibraryPathKey,
@@ -6,7 +15,7 @@ import {
 import {
   inferUsdBundleVirtualDirectory,
   isUsdPathWithinBundleDirectory,
-  isUsdRuntimeTexturePath,
+  isUsdRuntimeDependencyPath,
 } from '@/core/parsers/usd/usdAssetPaths';
 import { USD_INSTANCEABLE_VISUAL_SCOPE_NORMALIZATION_VERSION } from './usdStageOpenTextNormalization.ts';
 import {
@@ -56,10 +65,6 @@ export {
   inferUsdBundleVirtualDirectory,
   isUsdPathWithinBundleDirectory,
 } from '@/core/parsers/usd/usdAssetPaths';
-
-function isUsdLayerPath(path: string): boolean {
-  return /\.usd(?:a|c|z)?$/i.test(normalizeUsdAssetPath(path));
-}
 
 export function isTextualUsdLayerCandidatePath(path: string): boolean {
   const normalizedPath = normalizeUsdAssetPath(path).toLowerCase();
@@ -164,67 +169,6 @@ function buildUsdStageOpenFileIndex(
   registerFile(sourceFile);
 
   return fileIndex;
-}
-
-export function extractUsdLayerReferencesFromText(layerText: string): string[] {
-  if (!layerText) {
-    return [];
-  }
-
-  const references = new Set<string>();
-  const referenceRegex = /@([^@]+)@/g;
-  let match: RegExpExecArray | null = null;
-  while ((match = referenceRegex.exec(layerText))) {
-    const assetPath = String(match[1] || '').trim();
-    const packageSeparatorIndex = assetPath.indexOf('[');
-    const referencePath = (
-      packageSeparatorIndex >= 0 ? assetPath.slice(0, packageSeparatorIndex) : assetPath
-    ).trim();
-    if (!isUsdLayerPath(referencePath)) {
-      continue;
-    }
-    references.add(referencePath);
-  }
-
-  return Array.from(references);
-}
-
-export function resolveUsdLayerReferencePath(
-  baseUsdPath: string,
-  referencedPath: string,
-): string | null {
-  const normalizedReferencePath = String(referencedPath || '')
-    .trim()
-    .replace(/\\/g, '/');
-  if (!normalizedReferencePath) {
-    return null;
-  }
-
-  if (/^[a-z]+:\/\//i.test(normalizedReferencePath)) {
-    return null;
-  }
-
-  if (normalizedReferencePath.startsWith('/')) {
-    return toVirtualUsdPath(normalizedReferencePath);
-  }
-
-  const baseSegments = normalizeUsdAssetPath(baseUsdPath).split('/').filter(Boolean);
-  baseSegments.pop();
-
-  normalizedReferencePath.split('/').forEach((segment) => {
-    if (!segment || segment === '.') {
-      return;
-    }
-    if (segment === '..') {
-      if (baseSegments.length > 0) {
-        baseSegments.pop();
-      }
-      return;
-    }
-    baseSegments.push(segment);
-  });
-
-  return baseSegments.length > 0 ? `/${baseSegments.join('/')}` : '/';
 }
 
 interface UsdLayerDependencyTraversal {
@@ -512,7 +456,7 @@ export function buildUsdBundlePreloadEntries(
 
   availableFiles.forEach((file) => {
     if (
-      !isUsdRuntimeTexturePath(file.name)
+      !isUsdRuntimeDependencyPath(file.name)
       || !isUsdPathWithinBundleDirectory(file.name, bundleDirectory)
     ) {
       return;
@@ -534,7 +478,7 @@ export function buildUsdBundlePreloadEntries(
   Object.entries(assets).forEach(([path, blobUrl]) => {
     if (
       !blobUrl
-      || !isUsdRuntimeTexturePath(path)
+      || !isUsdRuntimeDependencyPath(path)
       || !isUsdPathWithinBundleDirectory(path, bundleDirectory)
     ) {
       return;

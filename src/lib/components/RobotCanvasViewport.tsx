@@ -1,5 +1,6 @@
 import { memo, type ReactNode, type RefObject } from 'react';
 import * as THREE from 'three';
+import { VIEWER_RENDER_QUALITY_PROFILES, type ViewerRenderQuality } from '../../shared/utils/viewerRenderQuality';
 
 import type { Language } from '../../shared/i18n';
 import {
@@ -9,6 +10,8 @@ import {
 } from '../../shared/components/3d';
 
 interface RobotCanvasViewportProps {
+  cameraProjection?: 'perspective' | 'orthographic';
+  renderQuality?: ViewerRenderQuality;
   children: ReactNode;
   groundOffset?: number;
   lang: Language;
@@ -25,6 +28,8 @@ interface RobotCanvasViewportProps {
 /** Store-free viewport used by the public RobotCanvas package boundary. */
 export const RobotCanvasViewport = memo(function RobotCanvasViewport({
   children,
+  cameraProjection = 'perspective',
+  renderQuality = 'high',
   groundOffset = 0,
   lang,
   onOrbitEnd,
@@ -36,9 +41,14 @@ export const RobotCanvasViewport = memo(function RobotCanvasViewport({
   showUsageGuide = true,
   snapshotAction,
 }: RobotCanvasViewportProps) {
+  const quality = VIEWER_RENDER_QUALITY_PROFILES[renderQuality];
   return (
     <WorkspaceCanvas
       theme={resolvedTheme}
+      cameraProjection={cameraProjection}
+      minDpr={quality.minDpr}
+      maxDpr={quality.maxDpr}
+      shadowMapSize={quality.shadowMapSize}
       lang={lang}
       className="relative h-full w-full"
       snapshotAction={snapshotAction}

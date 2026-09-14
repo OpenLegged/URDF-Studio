@@ -1,10 +1,11 @@
-import { parseURDF } from '@/core/parsers';
+import { parseMJCF, parseURDF } from '@/core/parsers';
 import {
   createComponentSourceDraft,
   createSourceSemanticRobotHash,
   normalizeComponentRobot,
+  validateCanonicalRobotData,
 } from '@/core/robot';
-import type { RobotData, RobotState } from '@/types';
+import type { ComponentSourceDraft, RobotData, RobotState } from '@/types';
 import type { AIConversationApplyResult } from '@/features/ai-assistant';
 import { useAssetsStore } from '@/store/assetsStore';
 import { useWorkspaceStore } from '@/store/workspaceStore';
@@ -15,13 +16,9 @@ function toRobotData(state: RobotState): RobotData {
 }
 
 /**
- * Apply an AI-proposed URDF modification to the active component.
- *
- * Re-parses `proposedUrdf` into a RobotState, builds a `urdf` source draft,
- * and commits with the same CAS pattern as `commitPreparedComponentSourceApply`:
- * the component robot is replaced through `replaceComponentRobotAtRevision`
- * (which pushes a workspace history entry, so the change is undoable) and the
- * source draft is updated so the source-code editor reflects the new URDF.
+ * Apply the canonical AI proposal with workspace history. Source synchronization
+ * follows the workspace mutation; preview text never replaces the proposed data.
+ * Legacy saved cards without a robot snapshot still parse and apply their source.
  *
  * Lives in `app/` (not `features/ai-assistant/`) because it orchestrates
  * workspace + assets-store mutation; the feature modal receives it as an
@@ -34,19 +31,29 @@ function toRobotData(state: RobotState): RobotData {
 export function applyAIUrdfModification(
   componentId: string,
   proposedUrdf: string,
+  sourceFormat: 'urdf' | 'mjcf' = 'urdf',
+  proposedRobot?: RobotData,
 ): AIConversationApplyResult {
-  const parsed = parseURDF(proposedUrdf);
-  if (!parsed) {
-    return { ok: false, reason: 'invalid-urdf' };
+  let robot: RobotData;
+  let draft: ComponentSourceDraft | undefined;
+  if (proposedRobot !== undefined) {
+    if (!validateCanonicalRobotData(proposedRobot).valid) {
+      return { ok: false, reason: 'invalid-robot' };
+    }
+    robot = normalizeComponentRobot(structuredClone(proposedRobot));
+  } else {
+    const parsed = sourceFormat === 'mjcf' ? parseMJCF(proposedUrdf) : parseURDF(proposedUrdf);
+    if (!parsed) {
+      return { ok: false, reason: sourceFormat === 'mjcf' ? 'invalid-mjcf' : 'invalid-urdf' };
+    }
+    robot = normalizeComponentRobot(toRobotData(parsed));
+    draft = createComponentSourceDraft({
+      componentId,
+      format: sourceFormat,
+      content: proposedUrdf,
+      robot,
+    });
   }
-
-  const robot = normalizeComponentRobot(toRobotData(parsed));
-  const draft = createComponentSourceDraft({
-    componentId,
-    format: 'urdf',
-    content: proposedUrdf,
-    robot,
-  });
 
   const workspaceState = useWorkspaceStore.getState();
   const component = workspaceState.workspace.components[componentId];
@@ -55,7 +62,7 @@ export function applyAIUrdfModification(
   }
 
   const robotChanged =
-    createSourceSemanticRobotHash(component.robot) !== draft.robotSnapshotHash;
+    createSourceSemanticRobotHash(component.robot) !== createSourceSemanticRobotHash(robot);
   if (robotChanged) {
     const replaced = workspaceState.replaceComponentRobotAtRevision(
       componentId,
@@ -68,7 +75,7 @@ export function applyAIUrdfModification(
     }
   }
 
-  useAssetsStore.getState().setComponentSourceDraft(draft);
+  if (draft) useAssetsStore.getState().setComponentSourceDraft(draft);
   const committedState = useWorkspaceStore.getState();
   const committedRobot = committedState.workspace.components[componentId]?.robot;
   if (!committedRobot) {

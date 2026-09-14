@@ -1,1 +1,1 @@
-export * from '@/core/robot/runtime_patch_diff';
+export * from '@/shared/components/3d/robot/utils/robotLoaderDiff';

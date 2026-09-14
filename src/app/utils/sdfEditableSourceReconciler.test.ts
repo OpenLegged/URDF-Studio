@@ -3,7 +3,7 @@ import test from 'node:test';
 import { JSDOM } from 'jsdom';
 
 import { parseSDF } from '@/core/parsers';
-import type { RobotData } from '@/types';
+import { JointType, type RobotData } from '@/types';
 import { reconcileSdfEditableSource } from './sdfEditableSourceReconciler';
 
 const { window } = new JSDOM();
@@ -58,6 +58,25 @@ function parseRobot(source: string): RobotData {
 function assertIncludesSource(content: string, expectedSource: string): void {
   assert.ok(content.includes(expectedSource));
 }
+
+test('SDF reconciliation keeps floating edits canonical without skipping a joint or warning about export', context => {
+  const warning = context.mock.method(console, 'warn', () => {});
+  const beforeRobot = parseRobot(WORLD_SOURCE);
+  const afterRobot = structuredClone(beforeRobot);
+  afterRobot.joints.wrist.type = JointType.FLOATING;
+  const before = structuredClone(beforeRobot);
+  const after = structuredClone(afterRobot);
+
+  const result = reconcileSdfEditableSource({
+    sourceContent: WORLD_SOURCE, beforeRobot, afterRobot, sourceFileName: 'demo/model.sdf',
+  });
+
+  assert.equal(result.status, 'unsafe');
+  assert.doesNotMatch(result.reason, /\[SDF export\]/);
+  assert.equal(warning.mock.callCount(), 0);
+  assert.deepEqual(beforeRobot, before);
+  assert.deepEqual(afterRobot, after);
+});
 
 test('reconcileSdfEditableSource patches a changed link while preserving world plugins and unrelated sections', () => {
   const beforeRobot = parseRobot(WORLD_SOURCE);
@@ -150,7 +169,7 @@ test('reconcileSdfEditableSource preserves the authored SDF schema version', () 
 test('reconcileSdfEditableSource falls back to joint entity replacement for type changes', () => {
   const beforeRobot = parseRobot(WORLD_SOURCE);
   const afterRobot = structuredClone(beforeRobot);
-  afterRobot.joints.wrist.type = 'fixed';
+  afterRobot.joints.wrist.type = JointType.FIXED;
   afterRobot.joints.wrist.axis = undefined;
   afterRobot.joints.wrist.limit = undefined;
 
@@ -233,7 +252,7 @@ test('reconcileSdfEditableSource entity fallback preserves nested model source',
     </model>`;
   const beforeRobot = parseRobot(source);
   const afterRobot = structuredClone(beforeRobot);
-  afterRobot.joints.anchor.type = 'fixed';
+  afterRobot.joints.anchor.type = JointType.FIXED;
   afterRobot.joints.anchor.axis = undefined;
   afterRobot.joints.anchor.limit = undefined;
 

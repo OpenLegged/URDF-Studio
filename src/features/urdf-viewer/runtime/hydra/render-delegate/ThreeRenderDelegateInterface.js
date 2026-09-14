@@ -3651,6 +3651,10 @@ export class ThreeRenderDelegateInterface extends ThreeRenderDelegateMaterialOps
             const descriptorMeshIds = new Set(rawMeshDescriptors
                 .map((rawDescriptor) => normalizeHydraPath(rawDescriptor?.meshId || ''))
                 .filter(Boolean));
+            const packedPrimPathsWithPayload = new Set(rawMeshDescriptors
+                .filter((descriptor) => descriptorHasMeshPayload(descriptor))
+                .map((descriptor) => normalizeHydraPath(descriptor?.resolvedPrimPath || ''))
+                .filter(Boolean));
             const packedRuntimeCandidateMeshIds = new Set([
                 ...Object.keys(bufferRangesByMeshId),
                 ...Object.keys(this.meshes || {}).map((meshId) => normalizeHydraPath(meshId || '')).filter(Boolean),
@@ -3660,6 +3664,11 @@ export class ThreeRenderDelegateInterface extends ThreeRenderDelegateMaterialOps
                     continue;
                 const syntheticDescriptor = synthesizeRawMeshDescriptorFromRuntime(meshId, new Map());
                 if (!syntheticDescriptor)
+                    continue;
+                // Stage-direct descriptors and Hydra live meshes can name the
+                // same prim differently. Duplicating complete packed geometry
+                // also invents missing bindings and forces large layer-text scans.
+                if (packedPrimPathsWithPayload.has(normalizeHydraPath(syntheticDescriptor.resolvedPrimPath || '')))
                     continue;
                 let ranges = normalizeMeshRanges(bufferRangesByMeshId[meshId]) || null;
                 const livePackedEntry = extractPackedProtoPayloadEntryFromLiveMesh(meshId);

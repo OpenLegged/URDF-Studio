@@ -54,7 +54,13 @@ test('exports a visible USD Mesh with PhysicsCollisionAPI as both visual and col
     stageSourcePath: '/desk.usda',
     stage: {
       defaultPrimPath: '/Desk',
-      primDescriptors: [{ path: '/Desk/top', typeName: 'Mesh', collisionEnabled: true }],
+      primDescriptors: [{
+        path: '/Desk/top', parentPath: '/Desk', name: 'top', typeName: 'Mesh',
+        active: true, loaded: true, defined: true, instance: false, instanceProxy: false,
+        prototype: false, hasPayload: false, hasAuthoredReferences: false,
+        transformable: true, hasAuthoredXformOps: false, resetsXformStack: false,
+        collisionEnabled: true,
+      }],
     },
     robotTree: { rootLinkPaths: ['/Desk'], linkParentPairs: [['/Desk', null]] },
     render: { meshDescriptors: [{
@@ -930,18 +936,32 @@ test('buildUsdExportBundleFromSnapshot falls back to preferred live visual mater
 
   const meshText = await bundle.meshFiles.get('base_link_visual_0.obj')?.text();
   assert.ok(meshText);
-  assert.match(meshText, /^v 0 0 0 0\.6717 0\.6924 0\.7743$/m);
 
+  // Vertex colors are serialized in the sRGB domain (readers linearize them
+  // on parse), so the OBJ text is NOT the authored linear values. Parse the
+  // real product output back with OBJLoader and assert the buffer equals the
+  // preferred live visual source linear color — proving the fallback took
+  // the preferred material (not the currentRobot #3b82f6 override and not a
+  // re-quantized constant).
+  const preferredLinear = [0.6717, 0.6924, 0.7743];
   const parsedObject = new OBJLoader().parse(meshText);
-  let hasVertexColors = false;
+  const vertexColorMeshes: THREE.Mesh[] = [];
   parsedObject.traverse((child) => {
-    if (!(child instanceof THREE.Mesh)) {
-      return;
+    if (child instanceof THREE.Mesh && child.geometry.getAttribute('color')) {
+      vertexColorMeshes.push(child);
     }
-
-    hasVertexColors = Boolean(child.geometry.getAttribute('color'));
   });
-  assert.equal(hasVertexColors, true);
+  assert.ok(vertexColorMeshes.length > 0, 'expected vertex colors in the exported OBJ');
+  const colorAttribute = vertexColorMeshes[0].geometry.getAttribute('color');
+  const roundTripped = [colorAttribute.getX(0), colorAttribute.getY(0), colorAttribute.getZ(0)];
+  for (let channel = 0; channel < 3; channel += 1) {
+    // Tolerance covers the three LinearToSRGB exponent-truncation
+    // approximation (~5e-6 per channel), not a semantic drift.
+    assert.ok(
+      Math.abs(roundTripped[channel] - preferredLinear[channel]) < 1e-4,
+      `vertex color channel ${channel}: expected preferred linear ${preferredLinear[channel]}, got ${roundTripped[channel]}`,
+    );
+  }
 });
 
 test('buildUsdExportBundleFromSnapshot preserves UVs without tinting textures with fallback colors', async () => {

@@ -1,13 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { translations } from '@/shared/i18n';
 
 import { resolveExportErrorMessage } from './exportErrorMessage';
 
-const labels = {
-  exportFailedParse: '导出失败：文件解析失败',
-  exportUrdfJointUnsupported:
-    '无法将 {name} 导出为 URDF：检测到不受支持的 {type} 关节。请改用 MJCF、SDF 或 Xacro，或将其改写为可表达的关节组合。',
-};
+const labels = translations.zh;
 
 test('resolveExportErrorMessage maps unsupported URDF ball joint errors to friendly copy', () => {
   const message = resolveExportErrorMessage(
@@ -17,7 +14,7 @@ test('resolveExportErrorMessage maps unsupported URDF ball joint errors to frien
 
   assert.equal(
     message,
-    '无法将 joint_1 导出为 URDF：检测到不受支持的 ball 关节。请改用 MJCF、SDF 或 Xacro，或将其改写为可表达的关节组合。',
+    '无法导出为 URDF/Xacro：关节 joint_1 使用了不受支持的 ball 类型。可以继续编辑，或导出为 MJCF、SDF，或保存为 .usp 项目。',
   );
 });
 
@@ -29,7 +26,7 @@ test('resolveExportErrorMessage localizes unsupported URDF free joints', () => {
 
   assert.equal(
     message,
-    '无法将 floating_base 导出为 URDF：检测到不受支持的 free 关节。请改用 MJCF、SDF 或 Xacro，或将其改写为可表达的关节组合。',
+    '无法导出为 URDF/Xacro：关节 floating_base 使用了不受支持的 free 类型。可以继续编辑，或导出为 MJCF、SDF，或保存为 .usp 项目。',
   );
 });
 

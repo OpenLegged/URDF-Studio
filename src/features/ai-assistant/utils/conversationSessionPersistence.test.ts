@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
+import { createLink } from '@/core/robot'
 
 import { AgentSessionRepository, MemoryAgentSessionBackend } from '../persistence'
 import type { AIConversationMessage } from '../types'
@@ -80,4 +81,50 @@ test('marks non-terminal restored Agent activity as aborted without replaying to
     reason: 'aborted',
     step: 2,
   })
+})
+
+test('MJCF proposal format survives session persistence and replay', async () => {
+  const repository = new AgentSessionRepository(new MemoryAgentSessionBackend())
+  const session = await createAgentConversationSession(repository, 'general')
+  const timeline: AIConversationMessage[] = [{
+    kind: 'modification-card',
+    role: 'assistant',
+    explanation: 'Adjust the collision.',
+    currentUrdf: '<mujoco model="before"/>',
+    proposedUrdf: '<mujoco model="after"/>',
+    sourceFormat: 'mjcf',
+    componentId: 'model',
+    status: 'pending',
+  }]
+
+  await persistConversationTimeline(repository, session.id, timeline)
+  const restored = await restoreLatestAgentConversation(repository, 'general')
+
+  assert.deepEqual(restored?.messages, timeline)
+})
+
+test('canonical proposals without source previews survive persistence and replay', async () => {
+  const repository = new AgentSessionRepository(new MemoryAgentSessionBackend())
+  const session = await createAgentConversationSession(repository, 'general')
+  const timeline: AIConversationMessage[] = [{
+    kind: 'modification-card',
+    role: 'assistant',
+    explanation: 'Rename the unfinished robot.',
+    currentUrdf: '',
+    proposedUrdf: '',
+    proposedRobot: {
+      name: 'edited',
+      rootLinkId: 'base',
+      links: { base: createLink({ id: 'base' }) },
+      joints: {},
+    },
+    componentId: 'model',
+    proposalId: 'proposal-without-source',
+    status: 'pending',
+  }]
+
+  await persistConversationTimeline(repository, session.id, timeline)
+  const restored = await restoreLatestAgentConversation(repository, 'general')
+
+  assert.deepEqual(restored?.messages, timeline)
 })

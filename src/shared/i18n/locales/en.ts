@@ -891,7 +891,7 @@ export const en: TranslationKeys = {
   exportClosedLoopUrdfUnsupported:
     'URDF export is unavailable for {name}: detected {count} closed-loop constraint(s). Core URDF only supports tree topologies. Use MJCF, Xacro, SDF, or .usp instead.',
   exportUrdfJointUnsupported:
-    'URDF export is unavailable for {name}: detected an unsupported {type} joint. Use MJCF, SDF, or Xacro instead, or replace it with an equivalent supported joint chain.',
+    'Cannot export URDF/Xacro: joint {name} uses the unsupported {type} type. You can continue editing, export MJCF or SDF, or save a .usp project.',
   exportLibraryParseFailed: 'Failed to parse library file: {file}',
   exportLibraryUnsupportedFormat: 'Library export does not support format: {format}',
   usdExportRequiresLoadedStage:

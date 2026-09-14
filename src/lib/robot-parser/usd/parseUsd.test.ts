@@ -33,9 +33,10 @@ class FailingParseUsdWorker {
   }
 
   postMessage(): void {
-    if (FailingParseUsdWorker.behavior === 'pending') return;
+    const behavior = FailingParseUsdWorker.behavior;
+    if (behavior === 'pending') return;
     queueMicrotask(() => {
-      this.emitFailure(FailingParseUsdWorker.behavior);
+      this.emitFailure(behavior);
     });
   }
 

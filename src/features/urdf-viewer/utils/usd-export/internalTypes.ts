@@ -42,6 +42,7 @@ export type ExportDescriptor = {
     color: [number, number, number];
   }> | null;
   bakeTransformIntoMesh?: boolean;
+  geometryTransform?: number[];
   writeTextureCoordinates?: boolean;
 };
 

@@ -23,6 +23,7 @@ import {
 import {
   MAX_GEOMETRY_DIMENSION_DECIMALS,
   MAX_PROPERTY_DECIMALS,
+  formatNumberPreservingPrecision,
   formatNumberWithMaxDecimals,
 } from '@/core/utils/numberPrecision';
 import {
@@ -62,8 +63,11 @@ const serializeHexRgbChannel = (channelHex: string): string => {
   return (Math.min(255, channel + URDF_RGB_ROUNDTRIP_BIAS) / 255).toFixed(8);
 };
 
-const serializeHexAlphaChannel = (channelHex: string): string => {
-  return (parseInt(channelHex, 16) / 255).toFixed(8);
+const serializeHexAlphaChannel = (
+  channelHex: string,
+  formatAlpha: (value: number) => string = formatUnitInterval,
+): string => {
+  return formatAlpha(parseInt(channelHex, 16) / 255);
 };
 
 const hexToRgba = (hex: string): string => {
@@ -86,6 +90,7 @@ const formatUnitInterval = (value: number): string => clampUnitInterval(value).t
 const colorRgbaToUrdfRgba = (
   colorRgba: readonly number[] | undefined,
   opacityOverride?: number,
+  formatColor: (value: number) => string = formatUnitInterval,
 ): string | null => {
   if (
     !Array.isArray(colorRgba) ||
@@ -97,10 +102,10 @@ const colorRgbaToUrdfRgba = (
 
   const alpha = Number.isFinite(opacityOverride) ? Number(opacityOverride) : Number(colorRgba[3]);
   return [
-    formatUnitInterval(Number(colorRgba[0])),
-    formatUnitInterval(Number(colorRgba[1])),
-    formatUnitInterval(Number(colorRgba[2])),
-    formatUnitInterval(alpha),
+    formatColor(Number(colorRgba[0])),
+    formatColor(Number(colorRgba[1])),
+    formatColor(Number(colorRgba[2])),
+    formatColor(alpha),
   ].join(' ');
 };
 
@@ -131,12 +136,16 @@ const colorMatchesQuantizedRgba = (
   });
 };
 
-const hexToRgbaWithOpacity = (hex: string, opacityOverride?: number): string => {
+const hexToRgbaWithOpacity = (
+  hex: string,
+  opacityOverride?: number,
+  formatAlpha: (value: number) => string = formatUnitInterval,
+): string => {
   const normalized = String(hex || '').trim();
   const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})?$/i.exec(normalized);
   if (!result) {
     return Number.isFinite(opacityOverride)
-      ? `0.5 0.5 0.5 ${formatUnitInterval(Number(opacityOverride))}`
+      ? `0.5 0.5 0.5 ${formatAlpha(Number(opacityOverride))}`
       : hexToRgba(hex);
   }
 
@@ -144,9 +153,9 @@ const hexToRgbaWithOpacity = (hex: string, opacityOverride?: number): string => 
   const g = serializeHexRgbChannel(result[2]);
   const b = serializeHexRgbChannel(result[3]);
   const a = Number.isFinite(opacityOverride)
-    ? formatUnitInterval(Number(opacityOverride))
+    ? formatAlpha(Number(opacityOverride))
     : result[4]
-      ? serializeHexAlphaChannel(result[4])
+      ? serializeHexAlphaChannel(result[4], formatAlpha)
       : '1.00000000';
   return `${r} ${g} ${b} ${a}`;
 };
@@ -210,21 +219,26 @@ function generateUrdfMaterialXml(
   useRelativePaths: boolean,
   preserveMeshPaths: boolean,
   texturePathOverrides?: ReadonlyMap<string, string>,
+  preserveNumericPrecision = false,
 ): string {
   const nameAttr = material.name ? ` name="${material.name}"` : '';
   let xml = `${indent}<material${nameAttr}>\n`;
+  const formatColor = preserveNumericPrecision
+    ? (value: number) => formatNumberPreservingPrecision(clampUnitInterval(value))
+    : formatUnitInterval;
 
   const colorRgba =
     material.color && material.color.trim()
       ? colorMatchesQuantizedRgba(material.color, material.colorRgba) &&
-        material.opacity === undefined
-        ? colorRgbaToUrdfRgba(material.colorRgba) ||
-          hexToRgbaWithOpacity(material.color, material.colorRgba?.[3])
+        (material.opacity === undefined || preserveNumericPrecision)
+        ? colorRgbaToUrdfRgba(material.colorRgba, material.opacity, formatColor) ||
+          hexToRgbaWithOpacity(material.color, material.colorRgba?.[3], formatColor)
         : hexToRgbaWithOpacity(
             material.color,
             material.opacity ?? material.colorRgba?.[3],
+            formatColor,
           )
-      : colorRgbaToUrdfRgba(material.colorRgba, material.opacity);
+      : colorRgbaToUrdfRgba(material.colorRgba, material.opacity, formatColor);
 
   if (colorRgba) {
     xml += `${indent}  <color rgba="${colorRgba}"/>\n`;
@@ -474,6 +488,8 @@ export interface UrdfGeneratorOptions {
   useRelativePaths?: boolean;
   preserveMeshPaths?: boolean;
   omitMeshMaterialPaths?: Iterable<string>;
+  /** Keep editable numeric values exact during source reconciliation. */
+  preserveNumericPrecision?: boolean;
 }
 
 const DEFAULT_PARSED_HARDWARE = {
@@ -542,11 +558,15 @@ export const generateURDF = (
   let xml = `<?xml version="1.0"?>\n<robot name="${name}"${robotVersionAttr}>\n\n`;
 
   // Helper to format numbers
-  const formatScalar = (n: number) => formatNumberWithMaxDecimals(n, MAX_PROPERTY_DECIMALS);
-  const formatQuaternionScalar = (n: number) =>
-    formatNumberWithMaxDecimals(n, MAX_PROPERTY_DECIMALS + 1);
-  const formatShape = (n: number) =>
-    formatNumberWithMaxDecimals(n, MAX_GEOMETRY_DIMENSION_DECIMALS);
+  const formatScalar = opts.preserveNumericPrecision
+    ? formatNumberPreservingPrecision
+    : (n: number) => formatNumberWithMaxDecimals(n, MAX_PROPERTY_DECIMALS);
+  const formatQuaternionScalar = opts.preserveNumericPrecision
+    ? formatNumberPreservingPrecision
+    : (n: number) => formatNumberWithMaxDecimals(n, MAX_PROPERTY_DECIMALS + 1);
+  const formatShape = opts.preserveNumericPrecision
+    ? formatNumberPreservingPrecision
+    : (n: number) => formatNumberWithMaxDecimals(n, MAX_GEOMETRY_DIMENSION_DECIMALS);
   const vecStr = (v: { x: number; y: number; z: number }) =>
     `${formatScalar(v.x)} ${formatScalar(v.y)} ${formatScalar(v.z)}`;
   const rotStr = (v: { r: number; p: number; y: number }) =>
@@ -610,6 +630,7 @@ export const generateURDF = (
             useRelativePaths,
             preserveMeshPaths,
             texturePathOverrides,
+            opts.preserveNumericPrecision,
           );
         });
       } else if (
@@ -629,6 +650,7 @@ export const generateURDF = (
           useRelativePaths,
           preserveMeshPaths,
           texturePathOverrides,
+          opts.preserveNumericPrecision,
         );
       }
       xml += `    </visual>\n`;

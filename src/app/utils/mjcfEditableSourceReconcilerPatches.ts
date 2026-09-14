@@ -21,6 +21,7 @@ import {
   type MJCFRenameOperation,
 } from './mjcfEditableSourcePatch';
 import { findNamedStartTagOccurrenceForTags } from './mjcfEditableSourcePatchHelpers';
+import { patchMJCFBodyOriginInSource } from './mjcfEditableSourceOriginPatch';
 import {
   collectMJCFEntityPairs,
   findMJCFEntityPair,
@@ -61,13 +62,18 @@ export function applyMJCFAttributePatches(
 
   collectMJCFEntityPairs(beforeRobot.joints, afterRobot.joints).forEach(
     ({ before, after }) => {
-      if (!after.limit || mjcfValuesEqual(before.limit, after.limit)) return;
-      content = patchMJCFJointLimitInSource({
-        sourceContent: content,
-        jointName: after.name,
-        jointType: after.type,
-        limit: after.limit,
-      });
+      if (after.limit && !mjcfValuesEqual(before.limit, after.limit)) {
+        content = patchMJCFJointLimitInSource({
+          sourceContent: content,
+          jointName: after.name,
+          jointType: after.type,
+          limit: after.limit,
+        });
+      }
+      const child = afterRobot.links[after.childLinkId];
+      if (child && !mjcfValuesEqual(before.origin, after.origin)) {
+        content = patchMJCFBodyOriginInSource(content, child.name, before.origin, after.origin);
+      }
     },
   );
   return content;
@@ -258,13 +264,16 @@ function replaceAffectedBodies(
     const sourceBody = sourceBounds.get(name);
     const generatedBody = generatedBounds.get(name);
     if (!sourceBody || !generatedBody) return;
+    const sourceIndent = getIndentAt(sourceContent, sourceBody.startOffset);
+    const generatedIndent = getIndentAt(generatedContent, generatedBody.startOffset);
     replacements.push({
       startOffset: sourceBody.startOffset,
       endOffset: sourceBody.endOffset,
+      // Element bounds start at '<'; the source already owns the first indent.
       text: reindentFragment(
-        generatedContent.slice(generatedBody.startOffset, generatedBody.endOffset),
-        getIndentAt(sourceContent, sourceBody.startOffset),
-      ),
+        generatedIndent + generatedContent.slice(generatedBody.startOffset, generatedBody.endOffset),
+        sourceIndent,
+      ).slice(sourceIndent.length),
     });
   });
   return applyTextReplacements(sourceContent, replacements);

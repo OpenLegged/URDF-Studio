@@ -8,7 +8,7 @@ import type { RuntimeRobotObject } from '@/shared/components/3d/runtimeRobotType
 import { isSingleDofJoint } from '@/shared/utils/jointTypes';
 import { resolveViewerJointKey } from '@/shared/utils/jointPanelState';
 import type { RuntimeViewerJoint } from '../../utils/runtimeRobotMotion';
-import type { MeasureState, ToolMode, ViewerPaintStatus } from '../../types';
+import type { ToolMode } from '../../types';
 
 type HighlightMode = 'link' | 'collision';
 type BooleanSetter = Dispatch<SetStateAction<boolean>>;
@@ -23,7 +23,6 @@ interface UseRegressionBridgeParams {
   highlightMode: HighlightMode;
   jointAxisSize: number;
   modelOpacity: number;
-  normalizedToolModeScopeKey: string | null;
   originSize: number;
   requestSceneRefresh: (options?: { force?: boolean }) => void;
   robot: RuntimeRobotObject | null;
@@ -39,10 +38,8 @@ interface UseRegressionBridgeParams {
   setCenterOfMassSize: NumberSetter;
   setHighlightMode: Dispatch<SetStateAction<HighlightMode>>;
   setJointAxisSize: NumberSetter;
-  setMeasureState: Dispatch<SetStateAction<MeasureState>>;
   setModelOpacity: NumberSetter;
   setOriginSize: NumberSetter;
-  setPaintStatus: Dispatch<SetStateAction<ViewerPaintStatus | null>>;
   setShowCenterOfMass: BooleanSetter;
   setShowCoMOverlay: BooleanSetter;
   setShowCollision: BooleanSetter;
@@ -54,13 +51,7 @@ interface UseRegressionBridgeParams {
   setShowOrigins: BooleanSetter;
   setShowOriginsOverlay: BooleanSetter;
   setShowVisual: Dispatch<SetStateAction<boolean>>;
-  setToolModeState: Dispatch<
-    SetStateAction<{
-      explicit: boolean;
-      mode: ToolMode;
-      scopeKey: string | null;
-    }>
-  >;
+  changeToolMode: (mode: ToolMode) => void;
   showCenterOfMass: boolean;
   showCoMOverlay: boolean;
   showCollision: boolean;
@@ -81,7 +72,6 @@ export function useRegressionBridge({
   highlightMode,
   jointAxisSize,
   modelOpacity,
-  normalizedToolModeScopeKey,
   originSize,
   requestSceneRefresh,
   robot,
@@ -93,10 +83,8 @@ export function useRegressionBridge({
   setCenterOfMassSize,
   setHighlightMode,
   setJointAxisSize,
-  setMeasureState,
   setModelOpacity,
   setOriginSize,
-  setPaintStatus,
   setShowCenterOfMass,
   setShowCoMOverlay,
   setShowCollision,
@@ -108,7 +96,7 @@ export function useRegressionBridge({
   setShowOrigins,
   setShowOriginsOverlay,
   setShowVisual,
-  setToolModeState,
+  changeToolMode,
   showCenterOfMass,
   showCoMOverlay,
   showCollision,
@@ -203,17 +191,7 @@ export function useRegressionBridge({
         const changed = resolvedMode !== toolMode;
 
         if (changed) {
-          setToolModeState({
-            scopeKey: normalizedToolModeScopeKey,
-            explicit: true,
-            mode: resolvedMode,
-          });
-          if (resolvedMode !== 'measure') {
-            setMeasureState((prev) => (!prev.hoverTarget ? prev : { ...prev, hoverTarget: null }));
-          }
-          if (resolvedMode !== 'paint') {
-            setPaintStatus(null);
-          }
+          changeToolMode(resolvedMode);
         }
 
         return {
@@ -268,7 +246,6 @@ export function useRegressionBridge({
     jointAnglesRef,
     jointAxisSize,
     modelOpacity,
-    normalizedToolModeScopeKey,
     originSize,
     patchJointPanelAngles,
     requestSceneRefresh,
@@ -277,10 +254,8 @@ export function useRegressionBridge({
     setCenterOfMassSize,
     setHighlightMode,
     setJointAxisSize,
-    setMeasureState,
     setModelOpacity,
     setOriginSize,
-    setPaintStatus,
     setShowCenterOfMass,
     setShowCoMOverlay,
     setShowCollision,
@@ -292,7 +267,7 @@ export function useRegressionBridge({
     setShowOrigins,
     setShowOriginsOverlay,
     setShowVisual,
-    setToolModeState,
+    changeToolMode,
     showCenterOfMass,
     showCoMOverlay,
     showCollision,

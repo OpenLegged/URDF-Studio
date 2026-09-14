@@ -19,12 +19,12 @@
       "note": "Cyclomatic complexity over 20 in src/**. Exact count tightened on 2026-08-09 after viewer adapter simplification; ratchet down only."
     },
     "too-many-params": {
-      "max": 123,
-      "note": "Functions with more than 4 params in src/**. Exact count synchronized on 2026-08-09 after export and viewer lifecycle ports moved to options objects. Prefer an options object; ratchet down only."
+      "max": 120,
+      "note": "Functions with more than 4 params in src/**. Exact count tightened after native project saves stopped repeating mesh packaging for optional exports. Prefer an options object; ratchet down only. Tightened on 2026-09-12 after source command and worker ownership extraction."
     },
     "too-deep": {
-      "max": 7,
-      "note": "Block nesting deeper than 4 in src/**. Exact count tightened on 2026-08-09 after workflow extraction; ratchet down only."
+      "max": 6,
+      "note": "Block nesting deeper than 4 in src/**. Exact count tightened on 2026-08-09 after workflow extraction; ratchet down only. Tightened on 2026-09-12 after source command and worker ownership extraction."
     },
     "nullable-undefined-type-alias": {
       "max": 5,

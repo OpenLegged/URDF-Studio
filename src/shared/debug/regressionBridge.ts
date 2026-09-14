@@ -1,3 +1,5 @@
+import { summarizeRuntimeMaterialDiagnostics, type RuntimeMaterialDiagnostics } from './runtimeMaterialDiagnostics';
+import { getUsdTextureArithmeticSummary, type UsdTextureArithmeticSummary } from '@/core/utils/usdTextureArithmetic';
 import {
   Box3,
   Color,
@@ -8,6 +10,7 @@ import {
   type Material,
   type Mesh,
   type Object3D,
+  type Texture,
 } from 'three';
 import {
   getMeshLoadPerformanceHistory,
@@ -63,10 +66,18 @@ interface RuntimeJointProxy {
 }
 
 interface RuntimeDebugMaterial extends Material {
-  map?: unknown;
+  map?: Texture | null;
+  normalMap?: Texture | null;
+  roughnessMap?: Texture | null;
+  metalnessMap?: Texture | null;
+  roughness?: number;
+  metalness?: number;
   color?: {
     isColor?: boolean;
     getHexString: () => string;
+    r?: number;
+    g?: number;
+    b?: number;
   };
 }
 
@@ -195,13 +206,22 @@ interface RuntimeLinkSummary {
   texturedVisualMeshCount: number;
 }
 
-interface RuntimeMaterialSummary {
+interface RuntimeMaterialSummary extends RuntimeMaterialDiagnostics {
+  textureArithmetic: UsdTextureArithmeticSummary | null;
   type: string;
   name: string | null;
   hasTexture: boolean;
   color: string | null;
+  colorLinear: number[] | null;
   transparent: boolean;
   opacity: number | null;
+  roughness: number | null;
+  metalness: number | null;
+  hasNormalMap: boolean;
+  hasRoughnessMap: boolean;
+  hasMetalnessMap: boolean;
+  vertexColors: boolean;
+
 }
 
 interface RuntimeVisualMeshSummary {
@@ -215,6 +235,11 @@ interface RuntimeVisualMeshSummary {
   isPlaceholder: boolean;
   missingMeshPath: string | null;
   materials: RuntimeMaterialSummary[];
+  uvCount: number;
+  uvSamples: number[][];
+  vertexColorsApplied: boolean;
+  vertexColorCount: number;
+  vertexColorSamples: number[][];
 }
 
 interface RegressionDocumentLoadState {
@@ -447,7 +472,9 @@ export interface RegressionDebugApi {
   getSelectedUsdNormalDiagnostics: () => RegressionSelectedUsdNormalDiagnosticsSummary | null;
   getLastEditableSourceApplyResult: () => typeof regressionDebugState.lastEditableSourceApplyResult;
   getMeshLoadPerformanceHistory: () => MeshLoadPerformanceEntry[];
-  getRuntimeSceneTransforms: () => ReturnType<typeof summarizeRuntimeSceneTransforms> | null;
+  getRuntimeSceneTransforms: (options?: {
+    preciseBounds?: boolean;
+  }) => ReturnType<typeof summarizeRuntimeSceneTransforms> | null;
   setBeforeUnloadPromptEnabled: (enabled: boolean) => { ok: boolean; enabled: boolean };
   resetFixtureFiles: () => { ok: boolean; availableFileCount: number };
   seedFixtureFile: (file: {
@@ -1330,6 +1357,41 @@ function summarizeUsdRobotMetadata(snapshot: UsdSceneSnapshot): RegressionUsdRob
   };
 }
 
+function createUnavailableSelectedUsdSceneSummary(
+  fileName: string,
+  robotState: Pick<RobotState, 'links' | 'joints' | 'rootLinkId'> | null,
+): RegressionSelectedUsdSceneSummary {
+  return {
+    available: false,
+    fileName,
+    stageSourcePath: null,
+    defaultPrimPath: null,
+    rootLinkId: robotState?.rootLinkId ?? null,
+    meshDescriptorCount: 0,
+    materialCount: 0,
+    linkPoses: summarizeStoreLinkPoses(robotState),
+    bindingSummary: summarizeUsdDescriptorBindings([]),
+    collisionSummary: summarizeUsdCollisionDescriptors([]),
+    baseLink: {
+      found: false,
+      linkPath: null,
+      visualDescriptorCount: 0,
+      collisionDescriptorCount: 0,
+      primPaths: [],
+      materialIds: [],
+      geometryMaterialIds: [],
+      geomSubsetMaterialIds: [],
+      geomSubsetSectionCount: 0,
+      bindingSummary: summarizeUsdDescriptorBindings([]),
+      bounds: { min: null, max: null, size: null, center: null },
+      transform: null,
+      runtimeLinkTransform: null,
+      runtimeVisualMeshTransforms: [],
+      descriptors: [],
+    },
+  };
+}
+
 function summarizeSelectedUsdScene(): RegressionSelectedUsdSceneSummary | null {
   const selectedFile = regressionDebugState.appHandlers?.getSelectedFile() ?? null;
   if (!selectedFile || selectedFile.format !== 'usd') {
@@ -1339,35 +1401,7 @@ function summarizeSelectedUsdScene(): RegressionSelectedUsdSceneSummary | null {
   const snapshot = regressionDebugState.appHandlers?.getUsdSceneSnapshot(selectedFile.name) ?? null;
   const robotState = regressionDebugState.appHandlers?.getRobotState() ?? null;
   if (!snapshot) {
-    return {
-      available: false,
-      fileName: selectedFile.name,
-      stageSourcePath: null,
-      defaultPrimPath: null,
-      rootLinkId: regressionDebugState.appHandlers?.getRobotState()?.rootLinkId ?? null,
-      meshDescriptorCount: 0,
-      materialCount: 0,
-      linkPoses: summarizeStoreLinkPoses(robotState),
-      bindingSummary: summarizeUsdDescriptorBindings([]),
-      collisionSummary: summarizeUsdCollisionDescriptors([]),
-      baseLink: {
-        found: false,
-        linkPath: null,
-        visualDescriptorCount: 0,
-        collisionDescriptorCount: 0,
-        primPaths: [],
-        materialIds: [],
-        geometryMaterialIds: [],
-        geomSubsetMaterialIds: [],
-        geomSubsetSectionCount: 0,
-        bindingSummary: summarizeUsdDescriptorBindings([]),
-        bounds: { min: null, max: null, size: null, center: null },
-        transform: null,
-        runtimeLinkTransform: null,
-        runtimeVisualMeshTransforms: [],
-        descriptors: [],
-      },
-    };
+    return createUnavailableSelectedUsdSceneSummary(selectedFile.name, robotState);
   }
 
   const rootLinkId = regressionDebugState.appHandlers?.getRobotState()?.rootLinkId ?? null;
@@ -1991,12 +2025,29 @@ function summarizeRuntimeRobot(robot: RegressionRuntimeRobot | null) {
     const color = material?.color?.isColor ? `#${material.color.getHexString()}` : null;
 
     return {
+      textureArithmetic: getUsdTextureArithmeticSummary(material),
       type: typeof material?.type === 'string' ? material.type : 'UnknownMaterial',
       name: typeof material?.name === 'string' && material.name.trim() ? material.name : null,
       hasTexture,
       color,
+      // Actual working-space float RGB read straight off the THREE.Color —
+      // never re-derived from the quantized hex string (which rounds to the
+      // 8-bit grid and loses up to 0.5/255 per channel in sRGB).
+      colorLinear: material?.color?.isColor
+        && Number.isFinite(material.color.r)
+        && Number.isFinite(material.color.g)
+        && Number.isFinite(material.color.b)
+        ? [material.color.r!, material.color.g!, material.color.b!]
+        : null,
       transparent: material?.transparent === true,
       opacity: typeof material?.opacity === 'number' ? material.opacity : null,
+      roughness: typeof material?.roughness === 'number' ? material.roughness : null,
+      metalness: typeof material?.metalness === 'number' ? material.metalness : null,
+      hasNormalMap: Boolean(material.normalMap),
+      hasRoughnessMap: Boolean(material.roughnessMap),
+      hasMetalnessMap: Boolean(material.metalnessMap),
+      vertexColors: (material as { vertexColors?: boolean })?.vertexColors === true,
+      ...summarizeRuntimeMaterialDiagnostics(material),
     };
   };
 
@@ -2067,6 +2118,28 @@ function summarizeRuntimeRobot(robot: RegressionRuntimeRobot | null) {
             entry.texturedVisualMeshCount += 1;
           }
 
+          const uv = (runtimeChild as Mesh).geometry?.getAttribute('uv');
+          const uvSamples: number[][] = [];
+          for (let index = 0; uv && index < Math.min(8, uv.count); index += 1) {
+            uvSamples.push([uv.getX(index), uv.getY(index)]);
+          }
+          // Vertex colors decide whether material.color participates in the
+          // final base color: OBJ-baked vertex colors replace it (material is
+          // forced white), so color acceptance needs both flags plus samples.
+          const vertexColorAttribute = (runtimeChild as Mesh).geometry?.getAttribute('color');
+          const vertexColorSamples: number[][] = [];
+          for (
+            let index = 0;
+            vertexColorAttribute && index < Math.min(8, vertexColorAttribute.count);
+            index += 1
+          ) {
+            vertexColorSamples.push([
+              vertexColorAttribute.getX(index),
+              vertexColorAttribute.getY(index),
+              vertexColorAttribute.getZ(index),
+            ]);
+          }
+          const vertexColorsApplied = summarizedMaterials.some((material) => material.vertexColors);
           const visualMeshSummary: RuntimeVisualMeshSummary = {
             link: linkName,
             name: typeof runtimeChild.name === 'string' ? runtimeChild.name : '',
@@ -2081,6 +2154,11 @@ function summarizeRuntimeRobot(robot: RegressionRuntimeRobot | null) {
                 ? runtimeChild.userData.missingMeshPath
                 : null,
             materials: summarizedMaterials,
+            uvCount: uv?.count ?? 0,
+            uvSamples,
+            vertexColorsApplied,
+            vertexColorCount: vertexColorAttribute?.count ?? 0,
+            vertexColorSamples,
           };
           visualMeshes.push(visualMeshSummary);
 
@@ -2169,7 +2247,10 @@ function summarizeRuntimeRobot(robot: RegressionRuntimeRobot | null) {
   };
 }
 
-function summarizeRuntimeSceneTransforms(robot: RegressionRuntimeRobot | null) {
+function summarizeRuntimeSceneTransforms(
+  robot: RegressionRuntimeRobot | null,
+  options: { preciseBounds?: boolean } = {},
+) {
   if (!robot) {
     return null;
   }
@@ -2292,7 +2373,8 @@ function summarizeRuntimeSceneTransforms(robot: RegressionRuntimeRobot | null) {
           return;
         }
 
-        const bounds = new Box3().setFromObject(runtimeChild);
+        // Truth comparisons need transformed vertices, not a rotated local AABB.
+        const bounds = new Box3().setFromObject(runtimeChild, options.preciseBounds === true);
         const hasFiniteBounds =
           !bounds.isEmpty()
           && Number.isFinite(bounds.min.x)
@@ -2546,8 +2628,8 @@ export function installRegressionDebugApi(targetWindow: Window): void {
     getSelectedUsdNormalDiagnostics: () => summarizeSelectedUsdNormalDiagnostics(),
     getLastEditableSourceApplyResult: () => regressionDebugState.lastEditableSourceApplyResult,
     getMeshLoadPerformanceHistory: () => getMeshLoadPerformanceHistory(targetWindow),
-    getRuntimeSceneTransforms: () =>
-      summarizeRuntimeSceneTransforms(regressionDebugState.runtimeRobot),
+    getRuntimeSceneTransforms: (options) =>
+      summarizeRuntimeSceneTransforms(regressionDebugState.runtimeRobot, options),
     setBeforeUnloadPromptEnabled: (enabled: boolean) => {
       setRegressionBeforeUnloadPromptSuppressed(!enabled);
       return { ok: true, enabled };

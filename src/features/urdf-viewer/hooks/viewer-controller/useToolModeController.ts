@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type {
   MeasureAnchorMode,
   MeasureMode,
@@ -10,7 +10,10 @@ import type {
   ViewerPaintSelectionScope,
   ViewerPaintStatus,
 } from '../../types';
-import { createEmptyMeasureState, setMeasureMode as applyMeasureMode } from '../../utils/measurements';
+import {
+  createEmptyMeasureState,
+  setMeasureMode as applyMeasureMode,
+} from '../../utils/measurements';
 import { createScopedToolModeState, resolveScopedToolModeState } from '../../utils/scopedToolMode';
 
 interface UseToolModeControllerParams {
@@ -31,6 +34,11 @@ export function useToolModeController({
     [defaultToolMode, normalizedToolModeScopeKey, toolModeState],
   );
   const toolMode = resolvedToolModeState.mode;
+  useEffect(() => {
+    if (resolvedToolModeState !== toolModeState) {
+      setToolModeState(resolvedToolModeState);
+    }
+  }, [resolvedToolModeState, toolModeState]);
   const [measureState, setMeasureState] = useState<MeasureState>(createEmptyMeasureState);
   const setMeasureMode = useCallback(
     (mode: MeasureMode) => setMeasureState((prev) => applyMeasureMode(prev, mode)),
@@ -45,6 +53,27 @@ export function useToolModeController({
     useState<ViewerPaintSelectionScope>('island');
   const [paintOperation, setPaintOperation] = useState<ViewerPaintOperation>('paint');
   const [paintStatus, setPaintStatus] = useState<ViewerPaintStatus | null>(null);
+  // Every tool entry point uses these commands so exit cleanup stays owned here.
+  const changeMode = useCallback(
+    (nextMode: ToolMode) => {
+      setToolModeState({ scopeKey: normalizedToolModeScopeKey, explicit: true, mode: nextMode });
+      if (nextMode !== 'measure') {
+        setMeasureState((previous) =>
+          previous.hoverTarget ? { ...previous, hoverTarget: null } : previous,
+        );
+      }
+      if (nextMode !== 'paint') {
+        setPaintStatus(null);
+      }
+    },
+    [normalizedToolModeScopeKey],
+  );
+  const closeMeasure = useCallback(() => {
+    setMeasureState(createEmptyMeasureState());
+    changeMode('select');
+  }, [changeMode]);
+  const closePaint = useCallback(() => changeMode('select'), [changeMode]);
+
   const paintInteractionRef = useRef<ViewerPaintInteractionState>({
     color: paintColor,
     operation: paintOperation,
@@ -60,10 +89,9 @@ export function useToolModeController({
   ) as 'select' | 'translate' | 'rotate' | 'universal';
 
   return {
-    normalizedToolModeScopeKey,
-    toolModeState,
-    setToolModeState,
-    resolvedToolModeState,
+    changeMode,
+    closeMeasure,
+    closePaint,
     toolMode,
     transformMode,
     measureState,

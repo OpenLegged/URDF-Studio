@@ -79,6 +79,17 @@ function requirePatched(result: ReconcileXacroEditableSourceResult): string {
   return result.content;
 }
 
+test('Xacro reconciliation keeps ball edits canonical without exposing export errors', () => {
+  const beforeRobot = parseXacro();
+  const afterRobot = structuredClone(beforeRobot);
+  afterRobot.joints.hinge.type = JointType.BALL;
+  const snapshot = structuredClone(afterRobot);
+  const result = reconcile(beforeRobot, afterRobot);
+  assert.equal(result.status, 'unsafe');
+  assert.doesNotMatch(result.reason, /\[URDF export\]/);
+  assert.deepEqual(afterRobot, snapshot);
+});
+
 function reconcile(
   beforeRobot: RobotData,
   afterRobot: RobotData,
@@ -100,6 +111,21 @@ function assertXacroControlsPreserved(content: string): void {
   assert.match(content, /<xacro:macro name="unused_macro" params="name">/);
   assert.match(content, /<vendor:metadata key="retain-me" \/>/);
 }
+
+test('successive direct joint origin edits retain exact precision and Xacro controls', () => {
+  let content = SOURCE;
+  let beforeRobot = parseXacro();
+  for (const angle of [Math.PI / 6, Math.PI / 2]) {
+    const afterRobot = structuredClone(beforeRobot);
+    afterRobot.joints.hinge.origin.xyz.x = 0.1234567890123456;
+    afterRobot.joints.hinge.origin.rpy.r = angle;
+    content = requirePatched(reconcile(beforeRobot, afterRobot, content));
+    assert.deepEqual(parseXacro(content).joints.hinge.origin, afterRobot.joints.hinge.origin);
+    assertXacroControlsPreserved(content);
+    assert.match(content, /<vendor:joint-note>keep me<\/vendor:joint-note>/);
+    beforeRobot = afterRobot;
+  }
+});
 
 test('attribute stage patches the root robot name without touching xacro controls', () => {
   const beforeRobot = parseXacro();

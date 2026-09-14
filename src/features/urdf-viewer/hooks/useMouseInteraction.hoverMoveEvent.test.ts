@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { resolveHoverMoveEventName } from '../utils/hoverMoveEventName.ts';
+import { resolveHoverMoveEventName } from '@/shared/components/3d/robot/utils/hoverMoveEventName';
 
 test('resolveHoverMoveEventName prefers pointermove when PointerEvent exists', () => {
   const windowLike = {

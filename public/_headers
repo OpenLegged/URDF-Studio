@@ -5,11 +5,34 @@
   X-Content-Type-Options: nosniff
   Referrer-Policy: strict-origin-when-cross-origin
 
+# Documents must revalidate every visit: they reference hashed assets that
+# change on every deploy, so caching the HTML would pin users to old chunks.
+/
+  Cache-Control: no-cache
+
+/zh/
+  Cache-Control: no-cache
+
+/en/
+  Cache-Control: no-cache
+
 /index.html
   Cache-Control: no-cache
 
+# Content-addressed (hash) or version-keyed (?v=) assets: safe to cache hard.
 /assets/*
   Cache-Control: public, max-age=31536000, immutable
+
+# These libarchive runtime files use fixed URLs. Cloudflare Pages combines
+# duplicate headers from overlapping rules, so detach the broad /assets/*
+# Cache-Control before attaching an explicit bounded policy.
+/assets/worker-bundle.js
+  ! Cache-Control
+  Cache-Control: public, max-age=86400, must-revalidate
+
+/assets/libarchive.wasm
+  ! Cache-Control
+  Cache-Control: public, max-age=86400, must-revalidate
 
 /fonts/*
   Cache-Control: public, max-age=31536000, immutable
@@ -19,3 +42,15 @@
 
 /usd/bindings/*
   Cache-Control: public, max-age=31536000, immutable
+
+# /wasm/* files are referenced by fixed public paths with no cache key, so a
+# short TTL bounds staleness after a parser update while still skipping the
+# revalidation round-trip on repeat visits.
+/wasm/*
+  Cache-Control: public, max-age=86400
+
+/sitemap.xml
+  Cache-Control: public, max-age=86400
+
+/manifest.webmanifest
+  Cache-Control: public, max-age=86400

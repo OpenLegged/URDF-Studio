@@ -5,7 +5,7 @@ import React, { act } from 'react';
 import { createRoot } from 'react-dom/client';
 import { JSDOM } from 'jsdom';
 
-import { createSingleComponentWorkspace } from '@/core/robot';
+import { createJoint, createLink, createSingleComponentWorkspace } from '@/core/robot';
 import { applyAIUrdfModification } from '@/app/utils/applyAIUrdfModification';
 import { __setAgentOpenAIClientFactoryForTests } from '../services/aiAgent';
 import { DEFAULT_MANAGED_WINDOW_ORDER, useSelectionStore, useUIStore, useWorkspaceStore } from '@/store';
@@ -142,6 +142,91 @@ const createLaunchContext = (): AIConversationLaunchContext => ({
   selectedEntity: null,
   focusedIssue: null,
 });
+
+for (const autoApply of [false, true]) {
+  test(`AI ${autoApply ? 'auto' : 'confirmed'} apply keeps canonical edits without a source preview`, async () => {
+    const previousApiKey = process.env.API_KEY;
+    process.env.API_KEY = 'test-key';
+    const dom = installDom();
+    const container = dom.window.document.getElementById('root');
+    assert.ok(container);
+    const initialUiState = useUIStore.getState();
+    const initialWorkspaceState = useWorkspaceStore.getState();
+    const initialSelectionState = useSelectionStore.getState();
+    const initialAssetsState = useAssetsStore.getState();
+    let callIndex = 0;
+    const client = { chat: { completions: { create: async () => {
+      callIndex += 1;
+      return {
+        choices: [{
+          message: callIndex === 1 ? {
+            role: 'assistant', content: null,
+            tool_calls: [{
+              id: 'rename', type: 'function',
+              function: { name: 'write_path', arguments: JSON.stringify({ path: 'name', value: 'edited' }) },
+            }],
+          } : {
+            role: 'assistant', tool_calls: null,
+            content: callIndex === 2 ? 'Renamed the robot.' : JSON.stringify({ ok: true, checks: [], message: '' }),
+          },
+          finish_reason: callIndex === 1 ? 'tool_calls' : 'stop',
+        }],
+      };
+    } } } };
+    __setAgentOpenAIClientFactoryForTests(() => client as never);
+    const { selection: _selection, ...robot } = createRobotFixture();
+    robot.links.world = createLink({ id: 'world' });
+    robot.links.tip = createLink({ id: 'tip' });
+    robot.rootLinkId = 'world';
+    robot.joints.hip_joint.type = JointType.BALL;
+    robot.joints.planar = createJoint({
+      id: 'planar', parentLinkId: 'base_link', childLinkId: 'tip', type: JointType.PLANAR,
+    });
+    robot.links.base_link.collision.type = GeometryType.MESH;
+    useWorkspaceStore.setState({
+      workspace: createSingleComponentWorkspace(robot, { componentId: 'model' }),
+      activeComponentId: 'model',
+    });
+    useAssetsStore.setState({ componentSourceDrafts: {} });
+    useSelectionStore.getState().setSelection(null);
+    useUIStore.setState({ aiAutoApplyEdits: autoApply });
+    const { AIConversationModal } = await import('./AIConversationModal.tsx');
+    const root = createRoot(container);
+    try {
+      await act(async () => {
+        root.render(<AIConversationModal
+          isOpen onClose={() => {}} lang="en" launchContext={createLaunchContext()}
+          onStartNewConversation={() => {}} onApply={applyAIUrdfModification}
+        />);
+      });
+      await flush();
+      const [prompt] = buildConversationPromptSuggestions({ lang: 'en', isReportFollowup: false, selectedEntityName: null });
+      assert.ok(prompt);
+      await clickButton(findButtonByText(container, prompt));
+      for (let attempt = 0; attempt < 10 && callIndex < 2; attempt += 1) await flush();
+      assert.equal(container.querySelector('[data-diff-line]'), null);
+      if (!autoApply) await clickButton(findButtonByText(container, 'Apply'));
+      const applied = useWorkspaceStore.getState().workspace.components.model.robot;
+      assert.equal(applied.name, 'edited');
+      assert.equal(applied.joints.hip_joint.type, JointType.BALL);
+      assert.equal(applied.joints.planar.type, JointType.PLANAR);
+      assert.equal(applied.links.base_link.collision.type, GeometryType.MESH);
+      assert.equal(applied.links.base_link.collision.meshPath, undefined);
+      assert.equal(container.textContent?.includes('[MJCF export]'), false);
+      assert.equal(container.textContent?.includes('[URDF export]'), false);
+    } finally {
+      await act(async () => { root.unmount(); });
+      useUIStore.setState(initialUiState);
+      useWorkspaceStore.setState(initialWorkspaceState);
+      useSelectionStore.setState(initialSelectionState);
+      useAssetsStore.setState(initialAssetsState);
+      __setAgentOpenAIClientFactoryForTests(null);
+      if (previousApiKey === undefined) delete process.env.API_KEY;
+      else process.env.API_KEY = previousApiKey;
+      dom.window.close();
+    }
+  });
+}
 
 const findButtonByText = (scope: ParentNode, text: string): HTMLButtonElement => {
   const match = Array.from(scope.querySelectorAll('button')).find((button) =>

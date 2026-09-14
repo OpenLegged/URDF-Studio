@@ -3,7 +3,7 @@ import test from 'node:test';
 import { JSDOM } from 'jsdom';
 
 import { parseURDF } from '@/core/parsers';
-import { GeometryType, type RobotData, type RobotState } from '@/types';
+import { GeometryType, JointType, type RobotData, type RobotState } from '@/types';
 import {
   reconcileUrdfEditableSource,
   type ReconcileUrdfEditableSourceResult,
@@ -78,6 +78,19 @@ function requirePatched(result: ReconcileUrdfEditableSourceResult): string {
   assert.equal(result.status, 'patched', result.status === 'unsafe' ? result.reason : undefined);
   return result.content;
 }
+
+test('URDF reconciliation keeps ball edits canonical without exposing export errors', () => {
+  const beforeRobot = parseRobot();
+  const afterRobot = structuredClone(beforeRobot);
+  afterRobot.joints.old_joint.type = JointType.BALL;
+  const snapshot = structuredClone(afterRobot);
+  const result = reconcileUrdfEditableSource({
+    sourceContent: SOURCE, beforeRobot, afterRobot, sourceFileName: 'robots/demo.urdf',
+  });
+  assert.equal(result.status, 'unsafe');
+  assert.doesNotMatch(result.reason, /\[URDF export\]/);
+  assert.deepEqual(afterRobot, snapshot);
+});
 
 test('reconcileUrdfEditableSource uses fine patches and retains authored XML extensions', () => {
   const beforeRobot = parseRobot();
@@ -160,7 +173,7 @@ test('reconcileUrdfEditableSource replaces only affected link, joint, and materi
   assert.match(content, /<material name="legacy">/);
   assert.match(
     content,
-    /<material name="inline">\s*<color rgba="0\.00000000 0\.00000000 1\.00000000 1\.00000000"\/>/,
+    /<material name="inline">\s*<color rgba="0 0 1 1"\/>/,
   );
 
   // Standard extensions with deleted entity references are cleaned up, while
@@ -309,6 +322,80 @@ test('reconcileUrdfEditableSource rejects stale and invalid sources', () => {
   assert.equal(invalid.status, 'unsafe');
 });
 
+test('successive joint XYZ and degree-derived RPY edits preserve exact values and authored XML', () => {
+  let content = SOURCE;
+  let beforeRobot = parseRobot();
+  const origins = [
+    { xyz: { x: 0.1234567890123456, y: -0.9876543210987654, z: 1e-9 }, rpy: { r: 0, p: 0, y: 0 } },
+    { xyz: { x: 0.1234567890123456, y: -0.9876543210987654, z: 1e-9 }, rpy: { r: Math.PI / 6, p: Math.PI / 2, y: -Math.PI / 4 } },
+    { xyz: { x: 0.5, y: 0.2, z: 0.3 }, rpy: { r: Math.PI / 2, p: Math.PI / 6, y: Math.PI / 3 } },
+  ];
+
+  for (const origin of origins) {
+    const afterRobot = structuredClone(beforeRobot);
+    afterRobot.joints.old_joint.origin = origin;
+    content = requirePatched(reconcileUrdfEditableSource({
+      sourceContent: content, beforeRobot, afterRobot, sourceFileName: 'demo.urdf',
+    }));
+    assert.deepEqual(parseRobot(content).joints.old_joint.origin, origin);
+    assert.match(content, /<!-- keep authored header -->/);
+    assert.match(content, /<vendor:joint-note>keep inside fine patch<\/vendor:joint-note>/);
+    assert.match(content, /<transmission name="authored_transmission">/);
+    // Keep the unrounded workspace model for the next edit, as the UI does.
+    beforeRobot = afterRobot;
+  }
+});
+
+test('joint edits retain unrelated high-precision geometry, mass, and material source verbatim', () => {
+  const source = SOURCE
+    .replace('size="1 2 3"', 'size="0.1234567890123456 2 3"')
+    .replace('mass value="1"', 'mass value="3.141592653589793"')
+    .replace('rgba="0 1 0 1"', 'rgba="0.1234567890123456 1 0 0.9876543210987654"');
+  const beforeRobot = parseRobot(source);
+  const afterRobot = structuredClone(beforeRobot);
+  afterRobot.joints.old_joint.origin.rpy.r = Math.PI / 6;
+
+  const content = requirePatched(reconcileUrdfEditableSource({
+    sourceContent: source, beforeRobot, afterRobot, sourceFileName: 'demo.urdf',
+  }));
+  assert.equal(
+    content.match(/<link name="base_link">[\s\S]*?<\/link>/)?.[0],
+    source.match(/<link name="base_link">[\s\S]*?<\/link>/)?.[0],
+  );
+  assert.equal(parseRobot(content).joints.old_joint.origin.rpy.r, Math.PI / 6);
+});
+
+test('high-precision limit and inertial patches retain vendor children and comments', () => {
+  const source = SOURCE.replace('<inertial>', '<inertial>\n      <!-- retain inertia note -->');
+  const beforeRobot = parseRobot(source);
+  const afterRobot = structuredClone(beforeRobot);
+  afterRobot.joints.old_joint.limit!.upper = Math.PI / 2;
+  const inertial = afterRobot.links.base_link.inertial;
+  assert.ok(inertial?.origin);
+  inertial.mass = 1.2345678901234567;
+  inertial.origin.rpy.r = Math.PI / 6;
+
+  const content = requirePatched(reconcileUrdfEditableSource({
+    sourceContent: source, beforeRobot, afterRobot, sourceFileName: 'demo.urdf',
+  }));
+  const parsed = parseRobot(content);
+  assert.equal(parsed.joints.old_joint.limit!.upper, Math.PI / 2);
+  assert.deepEqual(parsed.links.base_link.inertial, afterRobot.links.base_link.inertial);
+  assert.match(content, /<!-- retain inertia note -->/);
+  assert.match(content, /acceleration="9"/);
+  assert.match(content, /<vendor:joint-note>keep inside fine patch<\/vendor:joint-note>/);
+});
+
+test('sub-rounding numeric differences still reject a stale source', () => {
+  const beforeRobot = parseRobot();
+  beforeRobot.joints.old_joint.origin.xyz.x = 1e-9;
+  const result = reconcileUrdfEditableSource({
+    sourceContent: SOURCE, beforeRobot, afterRobot: beforeRobot, sourceFileName: 'demo.urdf',
+  });
+  assert.equal(result.status, 'unsafe');
+  assert.match(result.reason, /no longer matches/);
+});
+
 test('reconcileUrdfEditableSource rejects Xacro and lossy URDF generation', () => {
   const beforeRobot = parseRobot();
   const xacro = reconcileUrdfEditableSource({
@@ -332,5 +419,5 @@ test('reconcileUrdfEditableSource rejects Xacro and lossy URDF generation', () =
     sourceFileName: 'robots/demo.urdf',
   });
   assert.equal(lossy.status, 'unsafe');
-  assert.match(lossy.reason, /cannot be represented losslessly/i);
+  assert.match(lossy.reason, /lossless/i);
 });

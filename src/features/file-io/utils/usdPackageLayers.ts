@@ -14,7 +14,6 @@ import {
   ISAACSIM_DEFAULT_PHYSX_SCENE_ENABLE_GPU_DYNAMICS,
   ISAACSIM_DEFAULT_PHYSX_SCENE_ENABLE_STABILIZATION,
   ISAACSIM_DEFAULT_PHYSX_SCENE_SOLVER_TYPE,
-  ZERO_EPSILON,
 } from './usdIsaacSimDefaults.ts';
 import { supportsPhysxMimicJoint } from './usdJointAttributeWriters.ts';
 import {
@@ -100,8 +99,8 @@ const linkHasExportablePayload = (link: UrdfLink | undefined): boolean => {
   );
 };
 
-const isNearZero = (value: number | null | undefined): boolean => {
-  return Math.abs(Number(value || 0)) <= ZERO_EPSILON;
+const isZero = (value: number | null | undefined): boolean => {
+  return value == null || value === 0;
 };
 
 const isMasslessLink = (link: UrdfLink | undefined): boolean => {
@@ -110,13 +109,13 @@ const isMasslessLink = (link: UrdfLink | undefined): boolean => {
   }
 
   return (
-    isNearZero(link.inertial.mass) &&
-    isNearZero(link.inertial.inertia?.ixx) &&
-    isNearZero(link.inertial.inertia?.ixy) &&
-    isNearZero(link.inertial.inertia?.ixz) &&
-    isNearZero(link.inertial.inertia?.iyy) &&
-    isNearZero(link.inertial.inertia?.iyz) &&
-    isNearZero(link.inertial.inertia?.izz)
+    isZero(link.inertial.mass) &&
+    isZero(link.inertial.inertia?.ixx) &&
+    isZero(link.inertial.inertia?.ixy) &&
+    isZero(link.inertial.inertia?.ixz) &&
+    isZero(link.inertial.inertia?.iyy) &&
+    isZero(link.inertial.inertia?.iyz) &&
+    isZero(link.inertial.inertia?.izz)
   );
 };
 

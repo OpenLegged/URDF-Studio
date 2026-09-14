@@ -6,6 +6,9 @@ import { GeometryType, JointType, type RobotState } from '@/types';
 import { computeUsdInertiaProperties } from '@/shared/utils/inertiaUsd.ts';
 import { exportRobotToUsd } from './usdExport.ts';
 
+// Scene-linear values for sRGB #12ab34 using the standard transfer function.
+const LINEAR_GREEN_COLOR = [0.006048833022857055, 0.4072402119017367, 0.03433980680868217];
+
 const BASE_COLOR_TEXTURE_DATA_URL =
   'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFAAH/e+m+7wAAAABJRU5ErkJggg==';
 
@@ -462,9 +465,16 @@ function extractTriangleCount(baseLayer: string) {
 
 function extractTuples(text: string, attributeName: string): number[][] {
   const escapedName = attributeName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  return Array.from(text.matchAll(new RegExp(`${escapedName} = \\(([^)]+)\\)`, 'g'))).map((match) =>
+  return Array.from(text.matchAll(new RegExp(`${escapedName} = (?:\\[)?\\(([^)]+)\\)`, 'g'))).map((match) =>
     match[1].split(',').map((value) => Number(value.trim())),
   );
+}
+
+function assertContainsTuple(text: string, attributeName: string, expected: readonly number[]): void {
+  const tuples = extractTuples(text, attributeName);
+  assert.ok(tuples.some(tuple => tuple.length === expected.length && tuple.every((value, index) =>
+    Math.abs(value - expected[index]) <= 1e-10)),
+  `expected ${attributeName} to contain ${expected}, got ${JSON.stringify(tuples)}`);
 }
 
 function assertQuaternionClose(
@@ -584,10 +594,7 @@ test('isaacsim USDA export writes OmniPBR material outputs for IsaacSim viewport
   );
   assert.match(baseLayer, /uniform asset info:mdl:sourceAsset = @OmniPBR\.mdl@/);
   assert.match(baseLayer, /uniform token info:mdl:sourceAsset:subIdentifier = "OmniPBR"/);
-  assert.match(
-    baseLayer,
-    /color3f inputs:diffuse_color_constant = \(0\.006049, 0\.40724, 0\.03434\)/,
-  );
+  assertContainsTuple(baseLayer, 'color3f inputs:diffuse_color_constant', LINEAR_GREEN_COLOR);
 });
 
 test('isaacsim USDA export flattens link prim hierarchy for external articulation consumers', async () => {
@@ -714,6 +721,19 @@ test('MJCF USD export collapses synthetic geom attachment links before legacy se
   assert.doesNotMatch(physicsLayer, /def PhysicsFixedJoint "world_to_base"/);
   assert.doesNotMatch(physicsLayer, /def PhysicsFixedJoint "base_to_base_geom_1"/);
   assert.doesNotMatch(physicsLayer, /rel physics:body1 = <\/mjcf_legacy_description\/base_geom_1>/);
+});
+
+test('MJCF USD export retains a root with tiny nonzero physical mass', async () => {
+  const robot = createMjcfSyntheticAttachmentRobot();
+  robot.links.world.inertial!.mass = 1e-12;
+  const payload = await exportRobotToUsd({
+    robot, exportName: 'tiny_root', assets: {}, fileFormat: 'usda', layoutProfile: 'isaacsim',
+  });
+  const baseLayer = await readArchiveText(payload, 'tiny_root/configuration/tiny_root_base.usda');
+  const physicsLayer = await readArchiveText(payload, 'tiny_root/configuration/tiny_root_physics.usda');
+  assert.match(baseLayer, /def Xform "world"/);
+  assert.match(physicsLayer, /over "world"/);
+  assert.match(physicsLayer, /float physics:mass = 1e-12/);
 });
 
 test('isaacsim USDA export hides mesh library prototypes and collision guide scopes from renderers', async () => {
@@ -871,7 +891,11 @@ test('preserves link transforms and writes physics joints into separate USD laye
   assert.match(baseLayer, /def Xform "base_link"/);
   assert.match(baseLayer, /def Xform "link1"/);
   assert.match(baseLayer, /double3 xformOp:translate = \(1, 2, 3\)/);
-  assert.match(baseLayer, /quatf xformOp:orient = \(0\.707107, 0, 0, 0\.707107\)/);
+  assert.ok(includesQuaternionClose(
+    extractTuples(baseLayer, 'quatf xformOp:orient'),
+    new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), Math.PI / 2),
+    1e-7,
+  ), 'expected the link rotation to remain a quarter-turn around Z');
   assert.match(baseLayer, /double3 xformOp:translate = \(0\.25, 0\.5, 0\.75\)/);
   assert.match(baseLayer, /double3 xformOp:scale = \(0\.4, 0\.2, 0\.1\)/);
   assert.match(baseLayer, /def Cube "box"/);
@@ -914,8 +938,12 @@ test('preserves link transforms and writes physics joints into separate USD laye
     /rel physics:body1 = <\/two_link_robot_description\/base_link\/link1>/,
   );
   assert.match(physicsLayer, /uniform token physics:axis = "Z"/);
-  assert.match(physicsLayer, /float physics:lowerLimit = -90/);
-  assert.match(physicsLayer, /float physics:upperLimit = 60/);
+  for (const [attribute, expected] of [['lowerLimit', -90], ['upperLimit', 60]] as const) {
+    const match = physicsLayer.match(new RegExp(`float physics:${attribute} = ([^\\s]+)`));
+    assert.ok(match, `expected angular ${attribute} in degrees`);
+    assert.ok(Math.abs(Number(match[1]) - expected) <= 1e-10,
+      `expected ${attribute} near ${expected} degrees, got ${match[1]}`);
+  }
   assert.match(physicsLayer, /prepend apiSchemas = \["PhysicsDriveAPI:angular"\]/);
   assert.match(physicsLayer, /uniform token drive:angular:physics:type = "force"/);
   assert.match(physicsLayer, /float drive:angular:physics:damping = 0\.1/);
@@ -1094,11 +1122,11 @@ test('serializes internal material metadata and display colors into the base lay
 
   assert.match(baseLayer, /custom string urdf:materialColor = "#12ab34"/);
   assert.match(baseLayer, /custom string urdf:materialTexture = "textures\/base_color\.png"/);
-  assert.match(baseLayer, /primvars:displayColor = \[\(0\.006049, 0\.40724, 0\.03434\)\]/);
+  assertContainsTuple(baseLayer, 'primvars:displayColor', LINEAR_GREEN_COLOR);
   assert.match(baseLayer, /def Scope "Looks"/);
   assert.match(baseLayer, /def Material "Material_0"/);
   assert.match(baseLayer, /uniform token info:id = "UsdPreviewSurface"/);
-  assert.match(baseLayer, /color3f inputs:diffuseColor = \(0\.006049, 0\.40724, 0\.03434\)/);
+  assertContainsTuple(baseLayer, 'color3f inputs:diffuseColor', LINEAR_GREEN_COLOR);
   assert.match(
     baseLayer,
     /rel material:binding = <\/two_link_robot_description\/Looks\/Material_0>/,
@@ -1128,8 +1156,8 @@ test('exports explicit mesh material colors into USD preview materials instead o
   );
 
   assert.match(baseLayer, /custom string urdf:materialColor = "#12ab34"/);
-  assert.match(baseLayer, /primvars:displayColor = \[\(0\.006049, 0\.40724, 0\.03434\)\]/);
-  assert.match(baseLayer, /color3f inputs:diffuseColor = \(0\.006049, 0\.40724, 0\.03434\)/);
+  assertContainsTuple(baseLayer, 'primvars:displayColor', LINEAR_GREEN_COLOR);
+  assertContainsTuple(baseLayer, 'color3f inputs:diffuseColor', LINEAR_GREEN_COLOR);
   assert.doesNotMatch(baseLayer, /color3f inputs:diffuseColor = \(1, 1, 1\)/);
 });
 

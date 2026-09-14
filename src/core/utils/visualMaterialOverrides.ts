@@ -1,3 +1,4 @@
+import { applyUsdTextureArithmetic } from './usdTextureArithmetic';
 import * as THREE from 'three';
 import { createCanonicalMjcfBuiltinTexture } from '@/core/parsers/mjcf/mjcfBuiltinTextures';
 import { createMatteMaterial } from './materialFactory';
@@ -8,7 +9,15 @@ import {
   parseThreeColorWithOpacity,
 } from './color.ts';
 import type { MjcfBuiltinTexture, UrdfVisual } from '@/types';
-import type { UsdSceneMaterialRecord } from '@/types/usdMaterial';
+import type {
+  UsdMaterialTextureInputSlotPathField,
+  UsdSceneMaterialRecord,
+} from '@/types/usdMaterial';
+import {
+  cloneUsdSlotTexture,
+  getUsdTextureInputSlot,
+  usdTextureInputRequiresSlotState,
+} from './usdTextureInput';
 
 export interface VisualMaterialOverride {
   color?: string;
@@ -75,6 +84,28 @@ function usdColorToThreeColor(
   }
 
   return new THREE.Color().setRGB(red, green, blue);
+}
+
+function requiresUsdPhysicalMaterial(material: UsdSceneMaterialRecord | null | undefined): boolean {
+  if (!material) return false;
+  const hasDielectricParameters = normalizePositiveValue(material.ior) !== undefined
+    || normalizeUnitIntervalValue(material.specularIntensity ?? undefined) !== undefined
+    || usdColorToThreeColor(material.specularColor) !== null;
+  const hasPhysicalTextures = [
+    material.clearcoatMapPath,
+    material.clearcoatRoughnessMapPath,
+    material.clearcoatNormalMapPath,
+    material.specularColorMapPath,
+    material.specularIntensityMapPath,
+    material.transmissionMapPath,
+    material.thicknessMapPath,
+  ].some((path) => Boolean(normalizeMaterialValue(path)));
+  return Boolean(
+    material.isOmniGlass || hasDielectricParameters || hasPhysicalTextures
+      || normalizeUnitIntervalValue(material.transmission ?? undefined)
+      || normalizeUnitIntervalValue(material.clearcoat ?? undefined)
+      || normalizeNonNegativeValue(material.thickness ?? undefined),
+  );
 }
 
 export function getVisualMaterialTextureRequests(
@@ -146,6 +177,39 @@ function isImplicitDefaultVisualColor(value: string | undefined): boolean {
 
 function isNearWhiteTextureBaseColor(color: THREE.Color | null): boolean {
   return Boolean(color && color.r > 0.95 && color.g > 0.95 && color.b > 0.95);
+}
+
+/**
+ * Resolve the per-material texture for one USD slot from the shared cache.
+ *
+ * The cache holds loader-default textures shared across every material that
+ * references the same image. A slot with authored USD metadata (uv matrix, wrap
+ * modes, or an explicit color space) must clone before configuration, otherwise
+ * two materials sharing one image contaminate each other's transforms. Cloning
+ * re-links `source` so the image is not re-downloaded.
+ */
+function resolveUsdSlotTexture(
+  textureCache: Map<string, THREE.Texture> | undefined,
+  usdMaterial: UsdSceneMaterialRecord,
+  slot: UsdMaterialTextureInputSlotPathField,
+): THREE.Texture | null {
+  const path = usdMaterial[slot];
+  const normalizedPath = normalizeMaterialValue(path);
+  if (!normalizedPath) {
+    return null;
+  }
+  const cachedTexture = textureCache?.get(normalizedPath) ?? null;
+  if (!cachedTexture) {
+    return null;
+  }
+  const textureInput = getUsdTextureInputSlot(usdMaterial.textureInputs, slot);
+  if (!textureInput) {
+    return cachedTexture;
+  }
+  if (!usdTextureInputRequiresSlotState(textureInput)) {
+    return cachedTexture;
+  }
+  return cloneUsdSlotTexture(cachedTexture, slot, textureInput);
 }
 
 function disposeTransientMaterial(material: THREE.Material | undefined): void {
@@ -393,12 +457,7 @@ export function applyVisualMaterialOverrideToObject(
     (hasTextureOverride ? new THREE.Color('#ffffff') : null);
   const nextOpacity = opacityOverride ?? parsedColor?.opacity;
   const nextEmissive = parsedEmissive?.color ?? usdEmissive ?? undefined;
-  const usePhysicalMaterial = Boolean(
-    usdMaterial?.isOmniGlass ||
-      normalizeUnitIntervalValue(usdMaterial?.transmission ?? undefined) ||
-      normalizeUnitIntervalValue(usdMaterial?.clearcoat ?? undefined) ||
-      normalizeNonNegativeValue(usdMaterial?.thickness ?? undefined),
-  );
+  const usePhysicalMaterial = requiresUsdPhysicalMaterial(usdMaterial);
   const replacementMaterials: THREE.MeshStandardMaterial[] = [];
 
   if (
@@ -410,7 +469,8 @@ export function applyVisualMaterialOverrideToObject(
     !nextEmissive &&
     emissiveIntensityOverride === undefined &&
     alphaTestOverride === undefined &&
-    !hasTextureOverride
+    !hasTextureOverride &&
+    !usePhysicalMaterial
   ) {
     return;
   }
@@ -422,6 +482,8 @@ export function applyVisualMaterialOverrideToObject(
   // distinct named materials, and the cost compounded on every assembly add.
   const hasExplicitOverrideColor = Boolean(parsedColor);
   const baseCachedTexture = (texturePath && textureCache?.get(texturePath)) ?? null;
+  const mapTextureInput = getUsdTextureInputSlot(usdMaterial?.textureInputs, 'mapPath');
+  const hasUsdMapTextureMetadata = usdTextureInputRequiresSlotState(mapTextureInput);
   const hasPerMaterialTextureSettings = Boolean(textureRepeat) || Boolean(
     override?.textureRotation !== undefined && override.textureRotation !== 0,
   );
@@ -445,7 +507,12 @@ export function applyVisualMaterialOverrideToObject(
           texture.needsUpdate = true;
           return texture;
         })()
-      : baseCachedTexture
+      // USD slot metadata requires its own clone: the registry/cache texture is
+      // shared by every material referencing the image, and the per-slot uv
+      // matrix / wrap modes must not leak into those materials.
+      : hasUsdMapTextureMetadata && mapTextureInput
+        ? cloneUsdSlotTexture(baseCachedTexture, 'mapPath', mapTextureInput)
+        : baseCachedTexture
     : null;
   const cacheKeyBase =
     cache && (hasExplicitOverrideColor || hasTextureOverride || usdMaterial)
@@ -525,6 +592,7 @@ export function applyVisualMaterialOverrideToObject(
           ior: Math.max(1, normalizePositiveValue(usdMaterial?.ior) ?? 1.5),
           specularIntensity:
             normalizeUnitIntervalValue(usdMaterial?.specularIntensity ?? undefined) ?? 1,
+          specularColor: usdColorToThreeColor(usdMaterial?.specularColor) ?? new THREE.Color(1, 1, 1),
           name: nextMaterial.name,
         });
         physicalMaterial.toneMapped = nextMaterial.toneMapped;
@@ -543,17 +611,15 @@ export function applyVisualMaterialOverrideToObject(
         nextMaterial = physicalMaterial;
       }
 
-      const cachedUsdTexture = (path: string | null | undefined): THREE.Texture | null => {
-        const normalizedPath = normalizeMaterialValue(path);
-        return normalizedPath ? (textureCache?.get(normalizedPath) ?? null) : null;
-      };
+      const cachedUsdTexture = (slot: UsdMaterialTextureInputSlotPathField): THREE.Texture | null =>
+        usdMaterial ? resolveUsdSlotTexture(textureCache, usdMaterial, slot) : null;
       if (usdMaterial) {
-        nextMaterial.emissiveMap = cachedUsdTexture(usdMaterial.emissiveMapPath);
-        nextMaterial.roughnessMap = cachedUsdTexture(usdMaterial.roughnessMapPath);
-        nextMaterial.metalnessMap = cachedUsdTexture(usdMaterial.metalnessMapPath);
-        nextMaterial.normalMap = cachedUsdTexture(usdMaterial.normalMapPath);
-        nextMaterial.aoMap = cachedUsdTexture(usdMaterial.aoMapPath);
-        nextMaterial.alphaMap = cachedUsdTexture(usdMaterial.alphaMapPath);
+        nextMaterial.emissiveMap = cachedUsdTexture('emissiveMapPath');
+        nextMaterial.roughnessMap = cachedUsdTexture('roughnessMapPath');
+        nextMaterial.metalnessMap = cachedUsdTexture('metalnessMapPath');
+        nextMaterial.normalMap = cachedUsdTexture('normalMapPath');
+        nextMaterial.aoMap = cachedUsdTexture('aoMapPath');
+        nextMaterial.alphaMap = cachedUsdTexture('alphaMapPath');
         const normalScale = usdMaterial.normalScale;
         if (normalScale && normalScale.length >= 2) {
           const x = Number(normalScale[0]);
@@ -567,19 +633,13 @@ export function applyVisualMaterialOverrideToObject(
           nextMaterial.aoMapIntensity;
 
         if (nextMaterial instanceof THREE.MeshPhysicalMaterial) {
-          nextMaterial.clearcoatMap = cachedUsdTexture(usdMaterial.clearcoatMapPath);
-          nextMaterial.clearcoatRoughnessMap = cachedUsdTexture(
-            usdMaterial.clearcoatRoughnessMapPath,
-          );
-          nextMaterial.clearcoatNormalMap = cachedUsdTexture(
-            usdMaterial.clearcoatNormalMapPath,
-          );
-          nextMaterial.specularColorMap = cachedUsdTexture(usdMaterial.specularColorMapPath);
-          nextMaterial.specularIntensityMap = cachedUsdTexture(
-            usdMaterial.specularIntensityMapPath,
-          );
-          nextMaterial.transmissionMap = cachedUsdTexture(usdMaterial.transmissionMapPath);
-          nextMaterial.thicknessMap = cachedUsdTexture(usdMaterial.thicknessMapPath);
+          nextMaterial.clearcoatMap = cachedUsdTexture('clearcoatMapPath');
+          nextMaterial.clearcoatRoughnessMap = cachedUsdTexture('clearcoatRoughnessMapPath');
+          nextMaterial.clearcoatNormalMap = cachedUsdTexture('clearcoatNormalMapPath');
+          nextMaterial.specularColorMap = cachedUsdTexture('specularColorMapPath');
+          nextMaterial.specularIntensityMap = cachedUsdTexture('specularIntensityMapPath');
+          nextMaterial.transmissionMap = cachedUsdTexture('transmissionMapPath');
+          nextMaterial.thicknessMap = cachedUsdTexture('thicknessMapPath');
         }
 
         nextMaterial.userData.usdMaterialApplied = true;
@@ -630,6 +690,7 @@ export function applyVisualMaterialOverrideToObject(
         nextMaterial.userData.urdfEmissiveIntensity = emissiveIntensityOverride;
       }
 
+      applyUsdTextureArithmetic(nextMaterial, usdMaterial?.textureInputs);
       if (fullCacheKey && cache) {
         cache.set(fullCacheKey, nextMaterial);
       }
@@ -695,7 +756,14 @@ export function applyVisualMaterialOverrideToObject(
       // the live materials from the object and match on the marker written above.
       collectOverrideTargetMaterials(object, texturePath, replacementMaterials).forEach(
         (material) => {
-          material.map = texture;
+          // USD per-slot metadata (uv matrix / wrap / color space) is applied to a
+          // per-material clone: the loaded texture instance would otherwise be
+          // shared by every target material and contaminate their transforms.
+          const assignedTexture = hasUsdMapTextureMetadata && mapTextureInput
+            ? cloneUsdSlotTexture(texture, 'mapPath', mapTextureInput)
+            : texture;
+          material.map = assignedTexture;
+          applyUsdTextureArithmetic(material, usdMaterial?.textureInputs);
           if (!hasExplicitColor && material.color?.isColor) {
             material.color.set('#ffffff');
           }

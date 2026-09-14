@@ -7,9 +7,10 @@
 ```
 scripts/build/
 ├── rebuild-usd-wasm.sh                   # OpenUSD 主编译脚本
-├── sync-openusd-source.sh                # 同步 OpenUSD 源码脚本
+├── sync-openusd-source.sh                # OpenUSD 源码同步脚本
 ├── rebuild-collada-mesh-parser-wasm.sh   # Collada(.dae) mesh 解析器（独立 C-ABI 模块）
 ├── rebuild-obj-parser-wasm.sh            # OBJ(.obj) mesh 解析器（独立 C-ABI 模块）
+├── precompress.mjs                       # 构建后对 dist/ 产物预生成 .br/.gz（npm run build 自动执行）
 └── README.md                             # 本文档
 ```
 

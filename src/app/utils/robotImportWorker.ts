@@ -103,7 +103,7 @@ export interface ApplyEditableSourceChangeWorkerResponse {
 export interface GenerateEditableRobotSourceWorkerResponse {
   type: 'generate-editable-robot-source-result' | 'generate-editable-robot-source-error';
   requestId: number;
-  result?: string;
+  result?: string | null;
   error?: string;
 }
 

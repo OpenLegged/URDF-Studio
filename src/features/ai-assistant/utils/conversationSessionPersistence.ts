@@ -1,4 +1,5 @@
 import type { AgentRunEvent, AgentRunStatus } from '../agentRuntimeTypes'
+import { validateCanonicalRobotData } from '@/core/robot/canonicalWorkspace'
 import type {
   AgentSessionRecord,
   AgentSessionReplayEvent,
@@ -89,6 +90,8 @@ const CONVERSATION_MESSAGE_VALIDATORS: Record<string, RecordValidator> = {
   'modification-card': value => value.role === 'assistant' &&
     typeof value.explanation === 'string' && typeof value.proposedUrdf === 'string' &&
     typeof value.currentUrdf === 'string' && typeof value.componentId === 'string' &&
+    (value.sourceFormat === undefined || value.sourceFormat === 'urdf' || value.sourceFormat === 'mjcf') &&
+    (value.proposedRobot === undefined || validateCanonicalRobotData(value.proposedRobot).valid) &&
     (value.status === 'pending' || value.status === 'applied' || value.status === 'dismissed'),
 }
 

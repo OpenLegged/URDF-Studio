@@ -130,9 +130,12 @@ test('collision optimization reconciles each complete URDF robot when supported'
   const reconciled: Array<{ previousRobot: RobotData; nextRobot: RobotData }> = [];
 
   await renderWorkflow({
-    patchEditableSourceRobot: (args) => {
-      reconciled.push(args);
-      return true;
+    synchronizeComponentSource: (args) => {
+      assert.ok(args.previousRobot);
+      reconciled.push({
+        previousRobot: args.previousRobot,
+        nextRobot: useWorkspaceStore.getState().workspace.components[args.componentId].robot,
+      });
     },
   }).handleApplyCollisionOptimization([operation('left')]);
 

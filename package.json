@@ -21,7 +21,9 @@
   "scripts": {
     "ai-prompts:generate": "node scripts/generate/generate_ai_prompt_templates.mjs",
     "dev": "vite",
-    "build": "npm run generate:check && npm run build:app && npm run seo:prerender",
+    "build": "npm run generate:check && npm run build:app && npm run seo:prerender && npm run precompress",
+    "precompress": "node scripts/build/precompress.mjs",
+    "precompress:check": "node scripts/build/precompress.mjs --check",
     "seo:prerender": "node scripts/generate/seo_prerender.mjs",
     "lint": "npm run lint:eslint && npm run lint:style && npm run lint:google-style && npm run deps:check",
     "lint:eslint": "eslint . --cache --max-warnings=0",

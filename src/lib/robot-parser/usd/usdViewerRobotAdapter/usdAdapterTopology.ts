@@ -33,6 +33,41 @@ import {
 const ZERO_INERTIA = { ixx: 0, ixy: 0, ixz: 0, iyy: 0, iyz: 0, izz: 0 } as const;
 const UNIT_SCALE = new THREE.Vector3(1, 1, 1);
 
+function completeAuthoredHierarchy({
+  linkPaths,
+  linkParentPairs,
+  jointCatalogEntries,
+  rootLinkPaths,
+}: {
+  linkPaths: Set<string>;
+  linkParentPairs: Array<[string | null | undefined, string | null | undefined]>;
+  jointCatalogEntries: JointCatalogEntry[];
+  rootLinkPaths: string[];
+}): Array<[string | null, string | null]> {
+  const pairs: Array<[string | null, string | null]> = linkParentPairs.map(([child, parent]) => [
+    normalizeUsdPath(child), normalizeUsdPath(parent) || null,
+  ]);
+  const authoredPaths = new Set([
+    ...pairs.flatMap(([child, parent]) => [child, parent]),
+    ...rootLinkPaths.map(normalizeUsdPath),
+    ...jointCatalogEntries.flatMap((entry) => [
+      normalizeUsdPath(entry.linkPath || entry.childLinkPath),
+      normalizeUsdPath(entry.parentLinkPath),
+    ]),
+  ]);
+  for (const linkPath of linkPaths) {
+    if (authoredPaths.has(linkPath)) continue;
+    let parentPath = getPathParent(linkPath);
+    while (parentPath && !linkPaths.has(parentPath)) {
+      parentPath = getPathParent(parentPath);
+    }
+    // MassAPI can contribute inertia on a descendant mesh without creating a
+    // separate rigid body or joint. Its authored ancestor still owns its pose.
+    if (parentPath) pairs.push([linkPath, parentPath]);
+  }
+  return pairs;
+}
+
 export function buildMeshOnlyHierarchyFallback({
   defaultPrimPath,
   linkPaths,
@@ -55,10 +90,9 @@ export function buildMeshOnlyHierarchyFallback({
   if (hasAuthoredHierarchy || linkPaths.size === 0) {
     return {
       linkPaths,
-      linkParentPairs: linkParentPairs.map(([childPath, parentPath]) => [
-        normalizeUsdPath(childPath),
-        normalizeUsdPath(parentPath) || null,
-      ]),
+      linkParentPairs: completeAuthoredHierarchy({
+        linkPaths, linkParentPairs, jointCatalogEntries, rootLinkPaths,
+      }),
       rootLinkPaths,
     };
   }

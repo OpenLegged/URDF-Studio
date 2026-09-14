@@ -1,19 +1,8 @@
 import * as THREE from 'three';
 
-const USD_BRIGHT_NEUTRAL_SNAP_MIN = 0.8;
-const USD_BRIGHT_NEUTRAL_SNAP_DELTA = 0.01;
-
 export const clampUsdColorChannel = (value: number): number => {
   if (!Number.isFinite(value)) {
     return 0;
-  }
-
-  if (Math.abs(value) <= 1e-6) {
-    return 0;
-  }
-
-  if (Math.abs(value - 1) <= 1e-6) {
-    return 1;
   }
 
   return Math.max(0, Math.min(1, value));
@@ -22,25 +11,12 @@ export const clampUsdColorChannel = (value: number): number => {
 export const normalizeUsdAuthoredColorTuple = (
   color: readonly [number, number, number],
 ): [number, number, number] => {
-  const normalizedColor: [number, number, number] = [
+  return [
     clampUsdColorChannel(color[0]),
     clampUsdColorChannel(color[1]),
     clampUsdColorChannel(color[2]),
   ];
 
-  const minChannel = Math.min(...normalizedColor);
-  const maxChannel = Math.max(...normalizedColor);
-  if (
-    minChannel >= USD_BRIGHT_NEUTRAL_SNAP_MIN &&
-    maxChannel - minChannel <= USD_BRIGHT_NEUTRAL_SNAP_DELTA
-  ) {
-    const snappedChannel = clampUsdColorChannel(
-      Number(((normalizedColor[0] + normalizedColor[1] + normalizedColor[2]) / 3).toFixed(2)),
-    );
-    return [snappedChannel, snappedChannel, snappedChannel];
-  }
-
-  return normalizedColor;
 };
 
 /**

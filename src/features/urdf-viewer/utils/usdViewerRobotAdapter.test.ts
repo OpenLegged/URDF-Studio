@@ -19,7 +19,20 @@ test('does not duplicate aggregate parent visuals when descriptors resolve to ch
       primDescriptors: [
         {
           path: '/Robot/cabinet/visuals/top',
-          primType: 'Mesh',
+          parentPath: '/Robot/cabinet/visuals',
+          name: 'top',
+          typeName: 'Mesh',
+          active: true,
+          loaded: true,
+          defined: true,
+          instance: false,
+          instanceProxy: false,
+          prototype: false,
+          hasPayload: false,
+          hasAuthoredReferences: false,
+          transformable: true,
+          hasAuthoredXformOps: false,
+          resetsXformStack: false,
           collisionEnabled: true,
         },
       ],
@@ -1003,7 +1016,7 @@ test('adapts generic mesh-only CAD USD assemblies into a browseable hierarchy ro
   );
 });
 
-test('keeps generic scene fallback meshes grouped at the synthetic default-prim link', () => {
+test('keeps generic scene fallback meshes in separate visual frames beneath the default prim', () => {
   const result = adaptUsdViewerSnapshotToRobotData(
     {
       stageSourcePath: '/lab/scene.usd',
@@ -1062,9 +1075,14 @@ test('keeps generic scene fallback meshes grouped at the synthetic default-prim 
 
   assert.ok(result);
   assert.equal(result.robotData.rootLinkId, 'World');
-  assert.deepEqual(Object.keys(result.robotData.links), ['World']);
-  assert.deepEqual(Object.keys(result.robotData.joints), []);
-  assert.equal(result.robotData.links.World.visual.usdMeshDescriptors?.length, 2);
+  assert.deepEqual(result.linkIdByPath, { '/World': 'World' });
+  assert.equal(Object.keys(result.robotData.links).length, 2);
+  const [attachmentJoint] = Object.values(result.robotData.joints);
+  assert.equal(attachmentJoint.type, JointType.FIXED);
+  assert.equal(attachmentJoint.parentLinkId, 'World');
+  assert.ok(Object.values(result.robotData.links).every(
+    (link) => link.visual.usdMeshDescriptors?.length === 1,
+  ));
 });
 
 test('keeps authored visual and collision slots grouped when a single USD visual scope expands into multiple mesh descriptors', () => {
@@ -1220,6 +1238,17 @@ test('keeps native-render descriptors below an authored Collisions scope out of 
           parentPath: '/Stove/Collisions',
           name: 'body_box',
           typeName: 'Cube',
+          active: true,
+          loaded: true,
+          defined: true,
+          instance: false,
+          instanceProxy: false,
+          prototype: false,
+          hasPayload: false,
+          hasAuthoredReferences: false,
+          transformable: true,
+          hasAuthoredXformOps: false,
+          resetsXformStack: false,
           collisionEnabled: true,
         }],
       },

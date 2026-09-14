@@ -193,7 +193,13 @@ The Vite dev server listens on `127.0.0.1` by default for local IPv4 loopback ac
 For remote-dev port forwarding, containers, or LAN access, run `URDF_STUDIO_DEV_HOST=0.0.0.0 npm run dev`.
 If a preview/tunnel hostname is rejected by Vite's host check, set a comma-separated allow-list with `URDF_STUDIO_DEV_ALLOWED_HOSTS=preview.example.test,.tunnel.example.test npm run dev`.
 
-**LAN access with USD WASM (HTTPS dev server):** `http://<LAN-IP>:3000` can load the app shell but USD WASM requires a _secure context_ for `SharedArrayBuffer`. Enable HTTPS mode:
+**LAN access with USD WASM:** The app no longer hard-blocks USD loading on a non-secure context — the browser itself still gates `SharedArrayBuffer` (the USD WASM is a pthread/shared-memory build). Three ways to use USD over LAN:
+
+- **(a) HTTPS dev server (recommended):** no browser warnings with mkcert, full secure context. See below.
+- **(b) Plain HTTP + Chrome trusted-origin flag:** open `chrome://flags/#unsafely-treat-insecure-origin-as-secure`, add `http://<LAN-IP>:3000` as a trusted origin, and reload. This now works because the dev server also sends COOP/COEP isolation headers to private LAN hostnames.
+- **(c) SSH port-forward to localhost:** `ssh -L 3000:127.0.0.1:3000 <remote>`, then open `http://localhost:3000` (naturally a secure context).
+
+Enable HTTPS mode (option a):
 
 ```bash
 # Quick: self-signed cert (accept browser warning)
@@ -221,7 +227,7 @@ USD loading depends on `SharedArrayBuffer`, so the page must be cross-origin iso
 - Use `npm run dev` for development
 - Use `npm run preview` to validate the production build locally
 - Prefer `127.0.0.1` / `localhost` or HTTPS
-- Direct `http://<LAN-IP>:3000` access can load the app shell, but USD import / stage open requires HTTPS or a trusted localhost-style forwarded origin. Use `URDF_STUDIO_DEV_HTTPS=true npm run dev` for LAN HTTPS (see "Run the App" above).
+- Direct `http://<LAN-IP>:3000` access can load the app shell and USD boot is now attempted (the app no longer hard-gates on a secure context) — but it still needs `SharedArrayBuffer`, so the browser must provide it: HTTPS, a Chrome trusted-origin flag, or a localhost forwarded origin (see "Run the App" above).
 - Do not serve `dist/` with a plain static server that omits these headers:
 
 ```http

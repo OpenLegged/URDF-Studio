@@ -171,12 +171,15 @@ export function normalizeVector3OrNull(values: number[] | null): THREE.Vector3 |
     return null;
   }
 
-  const vector = new THREE.Vector3(values[0] ?? 0, values[1] ?? 0, values[2] ?? 0);
-  if (vector.lengthSq() <= 1e-12) {
+  const components = values.slice(0, 3);
+  if (!components.every(Number.isFinite)) {
     return null;
   }
-
-  return vector.normalize();
+  const scale = Math.max(...components.map(Math.abs));
+  if (scale === 0) return null;
+  // Scale first so finite axes remain normalizable even at subnormal or huge magnitudes.
+  const vector = new THREE.Vector3(components[0] / scale, components[1] / scale, components[2] / scale);
+  return vector.divideScalar(Math.hypot(vector.x, vector.y, vector.z));
 }
 
 export function quaternionFromAxisAngle(

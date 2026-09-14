@@ -1,4 +1,4 @@
-import { Color } from 'three';
+import { parseThreeColorWithOpacity } from '@/core/utils/color';
 
 import {
   DEFAULT_LINK,
@@ -18,6 +18,13 @@ import {
   resolveSnapshotAuthoredMaterial,
   resolveSnapshotMaterialColorHex,
 } from '@/lib/robot-parser/usd/usdViewerRobotAdapter/usdAdapterConversions';
+import {
+  normalizeBooleanMaterialValue,
+  normalizeColorMaterialValue,
+  normalizeScalarMaterialValue,
+  normalizeTextureMaterialPath,
+  normalizeVector2MaterialValue,
+} from './usdMaterialValueNormalization.ts';
 
 import type {
   ExportDescriptor,
@@ -42,126 +49,6 @@ export function getDescriptorMaterialId(
   return normalizeUsdPath(
     materialIdOverride || descriptor.materialId || descriptor.geometry?.materialId || '',
   );
-}
-
-function normalizeScalarMaterialValue(
-  value: unknown,
-  options: { clamp01?: boolean; min?: number } = {},
-): number | null {
-  // Optional OpenUSD inputs are represented as null when they are not
-  // authored. Number(null) is 0, which would incorrectly turn an absent
-  // opacity into fully transparent in the prepared render cache.
-  if (value === null || value === undefined || value === '') {
-    return null;
-  }
-
-  const numeric = Number(value);
-  if (!Number.isFinite(numeric)) {
-    return null;
-  }
-
-  let nextValue = numeric;
-  if (typeof options.min === 'number') {
-    nextValue = Math.max(options.min, nextValue);
-  }
-  if (options.clamp01) {
-    nextValue = Math.max(0, Math.min(1, nextValue));
-  }
-
-  return nextValue;
-}
-
-function normalizeBooleanMaterialValue(value: unknown): boolean | null {
-  return typeof value === 'boolean' ? value : null;
-}
-
-function normalizeColorMaterialValue(value: unknown): [number, number, number] | null {
-  if (!value || typeof value !== 'object') {
-    return null;
-  }
-
-  const candidate = value as {
-    isColor?: unknown;
-    r?: unknown;
-    g?: unknown;
-    b?: unknown;
-    length?: unknown;
-  };
-
-  if (candidate.isColor === true) {
-    const r = Number(candidate.r);
-    const g = Number(candidate.g);
-    const b = Number(candidate.b);
-    if (Number.isFinite(r) && Number.isFinite(g) && Number.isFinite(b)) {
-      return [r, g, b];
-    }
-  }
-
-  if (typeof candidate.length === 'number') {
-    const source = Array.from(value as ArrayLike<number>);
-    if (source.length >= 3) {
-      const normalized = source.slice(0, 3).map((channel) => Number(channel));
-      if (normalized.every((channel) => Number.isFinite(channel))) {
-        return normalized as [number, number, number];
-      }
-    }
-  }
-
-  return null;
-}
-
-function normalizeVector2MaterialValue(value: unknown): [number, number] | null {
-  if (!value || typeof value !== 'object') {
-    return null;
-  }
-
-  const candidate = value as {
-    x?: unknown;
-    y?: unknown;
-    length?: unknown;
-  };
-
-  const x = Number(candidate.x);
-  const y = Number(candidate.y);
-  if (Number.isFinite(x) && Number.isFinite(y)) {
-    return [x, y];
-  }
-
-  if (typeof candidate.length === 'number') {
-    const source = Array.from(value as ArrayLike<number>);
-    if (source.length >= 2) {
-      const normalized = source.slice(0, 2).map((channel) => Number(channel));
-      if (normalized.every((channel) => Number.isFinite(channel))) {
-        return normalized as [number, number];
-      }
-    }
-  }
-
-  return null;
-}
-
-function normalizeTextureMaterialPath(value: unknown): string | null {
-  if (!value) {
-    return null;
-  }
-
-  if (typeof value === 'string') {
-    const normalized = value.trim();
-    return normalized || null;
-  }
-
-  if (typeof value !== 'object') {
-    return null;
-  }
-
-  const candidate = value as {
-    name?: unknown;
-    userData?: {
-      usdSourcePath?: unknown;
-    } | null;
-  };
-  const normalized = String(candidate.userData?.usdSourcePath || candidate.name || '').trim();
-  return normalized || null;
 }
 
 export function hasNonEmptyTexturePath(value: unknown): boolean {
@@ -281,8 +168,9 @@ function colorHexToVertexColor(value: string | null | undefined): [number, numbe
     return null;
   }
 
-  const color = new Color(normalized);
-  return [color.r, color.g, color.b];
+  // OBJ vertex colors contain RGB only; alpha remains in authored materials.
+  const parsed = parseThreeColorWithOpacity(normalized);
+  return parsed ? [parsed.color.r, parsed.color.g, parsed.color.b] : null;
 }
 
 export function shouldAdoptSnapshotColor(color: string | null | undefined): boolean {
@@ -373,6 +261,113 @@ export function getSnapshotPreferredVisualMaterialLookup(
   return lookup;
 }
 
+type LiveMaterialScalarOptions = { clamp01?: boolean; min?: number };
+
+const LIVE_BOOLEAN_MATERIAL_FIELDS = [
+  ['opacityEnabled', 'opacityEnabled'],
+  ['opacityTextureEnabled', 'opacityTextureEnabled'],
+  ['emissiveEnabled', 'emissiveEnabled'],
+] as const satisfies readonly [keyof SnapshotMaterialRecord, string][];
+
+const LIVE_COLOR_MATERIAL_FIELDS = [
+  ['color', 'color'],
+  ['emissive', 'emissive'],
+  ['specularColor', 'specularColor'],
+  ['attenuationColor', 'attenuationColor'],
+  ['sheenColor', 'sheenColor'],
+] as const satisfies readonly [keyof SnapshotMaterialRecord, string][];
+
+const LIVE_VECTOR2_MATERIAL_FIELDS = [
+  ['normalScale', 'normalScale'],
+  ['clearcoatNormalScale', 'clearcoatNormalScale'],
+] as const satisfies readonly [keyof SnapshotMaterialRecord, string][];
+
+const LIVE_SCALAR_MATERIAL_FIELDS = [
+  { target: 'roughness', source: 'roughness', options: { clamp01: true } },
+  { target: 'metalness', source: 'metalness', options: { clamp01: true } },
+  { target: 'opacity', source: 'opacity', options: { clamp01: true } },
+  { target: 'alphaTest', source: 'alphaTest', options: { clamp01: true } },
+  { target: 'clearcoat', source: 'clearcoat', options: { clamp01: true } },
+  { target: 'clearcoatRoughness', source: 'clearcoatRoughness', options: { clamp01: true } },
+  { target: 'specularIntensity', source: 'specularIntensity', options: { clamp01: true } },
+  { target: 'transmission', source: 'transmission', options: { clamp01: true } },
+  { target: 'thickness', source: 'thickness', options: { min: 0 } },
+  { target: 'attenuationDistance', source: 'attenuationDistance', options: { min: 0 } },
+  { target: 'aoMapIntensity', source: 'aoMapIntensity', options: { clamp01: true } },
+  { target: 'sheen', source: 'sheen', options: { clamp01: true } },
+  { target: 'sheenRoughness', source: 'sheenRoughness', options: { clamp01: true } },
+  { target: 'iridescence', source: 'iridescence', options: { clamp01: true } },
+  { target: 'iridescenceIOR', source: 'iridescenceIOR', options: { min: 1 } },
+  { target: 'anisotropy', source: 'anisotropy', options: { clamp01: true } },
+  { target: 'anisotropyRotation', source: 'anisotropyRotation' },
+  { target: 'emissiveIntensity', source: 'emissiveIntensity', options: { min: 0 } },
+  { target: 'ior', source: 'ior', options: { min: 1 } },
+] as const satisfies readonly {
+  target: keyof SnapshotMaterialRecord;
+  source: string;
+  options?: LiveMaterialScalarOptions;
+}[];
+
+const LIVE_TEXTURE_MATERIAL_FIELDS = [
+  ['mapPath', 'map'],
+  ['emissiveMapPath', 'emissiveMap'],
+  ['roughnessMapPath', 'roughnessMap'],
+  ['metalnessMapPath', 'metalnessMap'],
+  ['normalMapPath', 'normalMap'],
+  ['aoMapPath', 'aoMap'],
+  ['alphaMapPath', 'alphaMap'],
+  ['clearcoatMapPath', 'clearcoatMap'],
+  ['clearcoatRoughnessMapPath', 'clearcoatRoughnessMap'],
+  ['clearcoatNormalMapPath', 'clearcoatNormalMap'],
+  ['specularColorMapPath', 'specularColorMap'],
+  ['specularIntensityMapPath', 'specularIntensityMap'],
+  ['transmissionMapPath', 'transmissionMap'],
+  ['thicknessMapPath', 'thicknessMap'],
+  ['sheenColorMapPath', 'sheenColorMap'],
+  ['sheenRoughnessMapPath', 'sheenRoughnessMap'],
+  ['anisotropyMapPath', 'anisotropyMap'],
+  ['iridescenceMapPath', 'iridescenceMap'],
+  ['iridescenceThicknessMapPath', 'iridescenceThicknessMap'],
+] as const satisfies readonly [keyof SnapshotMaterialRecord, string][];
+
+function setLiveMaterialRecordValue(
+  record: SnapshotMaterialRecord,
+  key: keyof SnapshotMaterialRecord,
+  value: SnapshotMaterialRecord[keyof SnapshotMaterialRecord] | null | undefined,
+): void {
+  if (value !== null && value !== undefined) {
+    (record as Record<string, unknown>)[key] = value;
+  }
+}
+
+function copyLiveMaterialFields(
+  record: SnapshotMaterialRecord,
+  candidate: Record<string, unknown>,
+): void {
+  LIVE_BOOLEAN_MATERIAL_FIELDS.forEach(([target, source]) => {
+    setLiveMaterialRecordValue(record, target, normalizeBooleanMaterialValue(candidate[source]));
+  });
+  LIVE_COLOR_MATERIAL_FIELDS.forEach(([target, source]) => {
+    setLiveMaterialRecordValue(record, target, normalizeColorMaterialValue(candidate[source]));
+  });
+  LIVE_VECTOR2_MATERIAL_FIELDS.forEach(([target, source]) => {
+    setLiveMaterialRecordValue(record, target, normalizeVector2MaterialValue(candidate[source]));
+  });
+  LIVE_SCALAR_MATERIAL_FIELDS.forEach((field) => {
+    setLiveMaterialRecordValue(
+      record,
+      field.target,
+      normalizeScalarMaterialValue(
+        candidate[field.source],
+        'options' in field ? field.options : undefined,
+      ),
+    );
+  });
+  LIVE_TEXTURE_MATERIAL_FIELDS.forEach(([target, source]) => {
+    setLiveMaterialRecordValue(record, target, normalizeTextureMaterialPath(candidate[source]));
+  });
+}
+
 function serializeLivePreferredMaterialRecord(material: unknown): SnapshotMaterialRecord | null {
   if (!material || typeof material !== 'object') {
     return null;
@@ -380,173 +375,11 @@ function serializeLivePreferredMaterialRecord(material: unknown): SnapshotMateri
 
   const candidate = material as Record<string, unknown>;
   const name = String(candidate.name || '').trim();
-  const record: SnapshotMaterialRecord = {
-    ...(name ? { name } : {}),
-    ...(normalizeBooleanMaterialValue(candidate.opacityEnabled) !== null
-      ? { opacityEnabled: normalizeBooleanMaterialValue(candidate.opacityEnabled) }
-      : {}),
-    ...(normalizeBooleanMaterialValue(candidate.opacityTextureEnabled) !== null
-      ? { opacityTextureEnabled: normalizeBooleanMaterialValue(candidate.opacityTextureEnabled) }
-      : {}),
-    ...(normalizeBooleanMaterialValue(candidate.emissiveEnabled) !== null
-      ? { emissiveEnabled: normalizeBooleanMaterialValue(candidate.emissiveEnabled) }
-      : {}),
-    ...(normalizeColorMaterialValue(candidate.color)
-      ? { color: normalizeColorMaterialValue(candidate.color) }
-      : {}),
-    ...(normalizeColorMaterialValue(candidate.emissive)
-      ? { emissive: normalizeColorMaterialValue(candidate.emissive) }
-      : {}),
-    ...(normalizeColorMaterialValue(candidate.specularColor)
-      ? { specularColor: normalizeColorMaterialValue(candidate.specularColor) }
-      : {}),
-    ...(normalizeColorMaterialValue(candidate.attenuationColor)
-      ? { attenuationColor: normalizeColorMaterialValue(candidate.attenuationColor) }
-      : {}),
-    ...(normalizeColorMaterialValue(candidate.sheenColor)
-      ? { sheenColor: normalizeColorMaterialValue(candidate.sheenColor) }
-      : {}),
-    ...(normalizeVector2MaterialValue(candidate.normalScale)
-      ? { normalScale: normalizeVector2MaterialValue(candidate.normalScale) }
-      : {}),
-    ...(normalizeVector2MaterialValue(candidate.clearcoatNormalScale)
-      ? { clearcoatNormalScale: normalizeVector2MaterialValue(candidate.clearcoatNormalScale) }
-      : {}),
-    ...(normalizeScalarMaterialValue(candidate.roughness, { clamp01: true }) !== null
-      ? { roughness: normalizeScalarMaterialValue(candidate.roughness, { clamp01: true }) }
-      : {}),
-    ...(normalizeScalarMaterialValue(candidate.metalness, { clamp01: true }) !== null
-      ? { metalness: normalizeScalarMaterialValue(candidate.metalness, { clamp01: true }) }
-      : {}),
-    ...(normalizeScalarMaterialValue(candidate.opacity, { clamp01: true }) !== null
-      ? { opacity: normalizeScalarMaterialValue(candidate.opacity, { clamp01: true }) }
-      : {}),
-    ...(normalizeScalarMaterialValue(candidate.alphaTest, { clamp01: true }) !== null
-      ? { alphaTest: normalizeScalarMaterialValue(candidate.alphaTest, { clamp01: true }) }
-      : {}),
-    ...(normalizeScalarMaterialValue(candidate.clearcoat, { clamp01: true }) !== null
-      ? { clearcoat: normalizeScalarMaterialValue(candidate.clearcoat, { clamp01: true }) }
-      : {}),
-    ...(normalizeScalarMaterialValue(candidate.clearcoatRoughness, { clamp01: true }) !== null
-      ? {
-          clearcoatRoughness: normalizeScalarMaterialValue(candidate.clearcoatRoughness, {
-            clamp01: true,
-          }),
-        }
-      : {}),
-    ...(normalizeScalarMaterialValue(candidate.specularIntensity, { clamp01: true }) !== null
-      ? {
-          specularIntensity: normalizeScalarMaterialValue(candidate.specularIntensity, {
-            clamp01: true,
-          }),
-        }
-      : {}),
-    ...(normalizeScalarMaterialValue(candidate.transmission, { clamp01: true }) !== null
-      ? { transmission: normalizeScalarMaterialValue(candidate.transmission, { clamp01: true }) }
-      : {}),
-    ...(normalizeScalarMaterialValue(candidate.thickness, { min: 0 }) !== null
-      ? { thickness: normalizeScalarMaterialValue(candidate.thickness, { min: 0 }) }
-      : {}),
-    ...(normalizeScalarMaterialValue(candidate.attenuationDistance, { min: 0 }) !== null
-      ? {
-          attenuationDistance: normalizeScalarMaterialValue(candidate.attenuationDistance, {
-            min: 0,
-          }),
-        }
-      : {}),
-    ...(normalizeScalarMaterialValue(candidate.aoMapIntensity, { clamp01: true }) !== null
-      ? {
-          aoMapIntensity: normalizeScalarMaterialValue(candidate.aoMapIntensity, { clamp01: true }),
-        }
-      : {}),
-    ...(normalizeScalarMaterialValue(candidate.sheen, { clamp01: true }) !== null
-      ? { sheen: normalizeScalarMaterialValue(candidate.sheen, { clamp01: true }) }
-      : {}),
-    ...(normalizeScalarMaterialValue(candidate.sheenRoughness, { clamp01: true }) !== null
-      ? {
-          sheenRoughness: normalizeScalarMaterialValue(candidate.sheenRoughness, { clamp01: true }),
-        }
-      : {}),
-    ...(normalizeScalarMaterialValue(candidate.iridescence, { clamp01: true }) !== null
-      ? { iridescence: normalizeScalarMaterialValue(candidate.iridescence, { clamp01: true }) }
-      : {}),
-    ...(normalizeScalarMaterialValue(candidate.iridescenceIOR, { min: 1 }) !== null
-      ? { iridescenceIOR: normalizeScalarMaterialValue(candidate.iridescenceIOR, { min: 1 }) }
-      : {}),
-    ...(normalizeScalarMaterialValue(candidate.anisotropy, { clamp01: true }) !== null
-      ? { anisotropy: normalizeScalarMaterialValue(candidate.anisotropy, { clamp01: true }) }
-      : {}),
-    ...(normalizeScalarMaterialValue(candidate.anisotropyRotation) !== null
-      ? { anisotropyRotation: normalizeScalarMaterialValue(candidate.anisotropyRotation) }
-      : {}),
-    ...(normalizeScalarMaterialValue(candidate.emissiveIntensity, { min: 0 }) !== null
-      ? { emissiveIntensity: normalizeScalarMaterialValue(candidate.emissiveIntensity, { min: 0 }) }
-      : {}),
-    ...(normalizeScalarMaterialValue(candidate.ior, { min: 1 }) !== null
-      ? { ior: normalizeScalarMaterialValue(candidate.ior, { min: 1 }) }
-      : {}),
-    ...(normalizeTextureMaterialPath(candidate.map)
-      ? { mapPath: normalizeTextureMaterialPath(candidate.map) }
-      : {}),
-    ...(normalizeTextureMaterialPath(candidate.emissiveMap)
-      ? { emissiveMapPath: normalizeTextureMaterialPath(candidate.emissiveMap) }
-      : {}),
-    ...(normalizeTextureMaterialPath(candidate.roughnessMap)
-      ? { roughnessMapPath: normalizeTextureMaterialPath(candidate.roughnessMap) }
-      : {}),
-    ...(normalizeTextureMaterialPath(candidate.metalnessMap)
-      ? { metalnessMapPath: normalizeTextureMaterialPath(candidate.metalnessMap) }
-      : {}),
-    ...(normalizeTextureMaterialPath(candidate.normalMap)
-      ? { normalMapPath: normalizeTextureMaterialPath(candidate.normalMap) }
-      : {}),
-    ...(normalizeTextureMaterialPath(candidate.aoMap)
-      ? { aoMapPath: normalizeTextureMaterialPath(candidate.aoMap) }
-      : {}),
-    ...(normalizeTextureMaterialPath(candidate.alphaMap)
-      ? { alphaMapPath: normalizeTextureMaterialPath(candidate.alphaMap) }
-      : {}),
-    ...(normalizeTextureMaterialPath(candidate.clearcoatMap)
-      ? { clearcoatMapPath: normalizeTextureMaterialPath(candidate.clearcoatMap) }
-      : {}),
-    ...(normalizeTextureMaterialPath(candidate.clearcoatRoughnessMap)
-      ? { clearcoatRoughnessMapPath: normalizeTextureMaterialPath(candidate.clearcoatRoughnessMap) }
-      : {}),
-    ...(normalizeTextureMaterialPath(candidate.clearcoatNormalMap)
-      ? { clearcoatNormalMapPath: normalizeTextureMaterialPath(candidate.clearcoatNormalMap) }
-      : {}),
-    ...(normalizeTextureMaterialPath(candidate.specularColorMap)
-      ? { specularColorMapPath: normalizeTextureMaterialPath(candidate.specularColorMap) }
-      : {}),
-    ...(normalizeTextureMaterialPath(candidate.specularIntensityMap)
-      ? { specularIntensityMapPath: normalizeTextureMaterialPath(candidate.specularIntensityMap) }
-      : {}),
-    ...(normalizeTextureMaterialPath(candidate.transmissionMap)
-      ? { transmissionMapPath: normalizeTextureMaterialPath(candidate.transmissionMap) }
-      : {}),
-    ...(normalizeTextureMaterialPath(candidate.thicknessMap)
-      ? { thicknessMapPath: normalizeTextureMaterialPath(candidate.thicknessMap) }
-      : {}),
-    ...(normalizeTextureMaterialPath(candidate.sheenColorMap)
-      ? { sheenColorMapPath: normalizeTextureMaterialPath(candidate.sheenColorMap) }
-      : {}),
-    ...(normalizeTextureMaterialPath(candidate.sheenRoughnessMap)
-      ? { sheenRoughnessMapPath: normalizeTextureMaterialPath(candidate.sheenRoughnessMap) }
-      : {}),
-    ...(normalizeTextureMaterialPath(candidate.anisotropyMap)
-      ? { anisotropyMapPath: normalizeTextureMaterialPath(candidate.anisotropyMap) }
-      : {}),
-    ...(normalizeTextureMaterialPath(candidate.iridescenceMap)
-      ? { iridescenceMapPath: normalizeTextureMaterialPath(candidate.iridescenceMap) }
-      : {}),
-    ...(normalizeTextureMaterialPath(candidate.iridescenceThicknessMap)
-      ? {
-          iridescenceThicknessMapPath: normalizeTextureMaterialPath(
-            candidate.iridescenceThicknessMap,
-          ),
-        }
-      : {}),
-  };
+  const record: SnapshotMaterialRecord = {};
+  if (name) {
+    record.name = name;
+  }
+  copyLiveMaterialFields(record, candidate);
 
   if (!hasSnapshotMaterialRecordContent(record)) {
     return null;

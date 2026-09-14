@@ -40,9 +40,26 @@ export function Demo() {
 
 - `source.format` supports `auto | urdf | mjcf`
 - `selection`, `hoveredSelection`, `jointAngles` support controlled usage
-- `display` supports visual/collision toggles, highlight mode, transform mode, and viewer overlays
+- `display` supports visual/collision toggles, highlight mode, transform mode, viewer overlays, `cameraProjection`, `renderQuality`, and `showMjcfWorldLink`
+- `robotData` accepts a complete preparsed `RobotData` model and takes precedence over the compatible `robotLinks` / `robotJoints` maps
 - viewer overlays already include inertia, center of mass, origins, and joint axes
 - `groundPlaneOffset` is prop-driven
+
+## MJCF and preparsed models
+
+MJCF rendering requires a canonical model. Parse it before mounting the canvas with `parseRobotDefinitionAsync` from `@urdf-studio/robot-runtime/parser`, then pass the ready result:
+
+```tsx
+const result = await parseRobotDefinitionAsync(mjcfText, 'robot.xml');
+if (result.status === 'ready') {
+  return <RobotCanvas
+    source={{ format: 'mjcf', content: mjcfText, sourceFilePath: 'robot.xml' }}
+    robotData={result.robotData}
+  />;
+}
+```
+
+The canvas package exports the `RobotData` type. Passing the complete model preserves materials, the root link, constraints, and MJCF site/tendon metadata. URDF source content can still use the default XML fallback. Each canvas owns its interaction state and receives display configuration through props.
 
 ## Current limitation
 

@@ -24,6 +24,7 @@ EMSCRIPTEN_BINDINGS(test_usd_imaging_emscripten) {
     .function("GetRootLayerText", &pxr::HdWebSyncDriver::GetRootLayerText)
     .function("GetRobotMetadataSnapshot", &pxr::HdWebSyncDriver::GetRobotMetadataSnapshot)
     .function("GetLastInitProfile", &pxr::HdWebSyncDriver::GetLastInitProfile)
+    .function("GetMaterialBindingRepairProfile", &pxr::HdWebSyncDriver::GetMaterialBindingRepairProfile)
     .function(
       "GetLastRobotSceneSnapshotProfile",
       &pxr::HdWebSyncDriver::GetLastRobotSceneSnapshotProfile)

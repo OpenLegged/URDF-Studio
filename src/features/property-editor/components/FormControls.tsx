@@ -349,7 +349,7 @@ export const NumberInput = ({
             handleBlur();
           }}
           onFocus={(e) => {
-            handleFocus();
+            handleFocus(e.currentTarget);
             handleInputFocus(e);
           }}
           onKeyDown={handleKeyDown}
@@ -485,7 +485,7 @@ export const InlineNumberInput = ({
             handleBlur();
           }}
           onFocus={(e) => {
-            handleFocus();
+            handleFocus(e.currentTarget);
             handleInputFocus(e);
           }}
           onKeyDown={handleKeyDown}

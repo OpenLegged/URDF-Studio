@@ -79,10 +79,8 @@ export interface AIConversationContextCheckpoint {
 }
 
 /**
- * A proposed URDF modification returned by the AI. The user previews the diff
- * against `currentUrdf` and applies it; apply re-parses `proposedUrdf` and
- * commits via `commitPreparedComponentSourceApply` so the robot and source
- * draft update together (undoable via workspace history).
+ * A canonical robot edit with an optional source diff. Legacy cards without a robot
+ * snapshot still apply their source text; an absent sourceFormat means URDF for them.
  */
 export interface AIConversationModificationCard {
   kind: 'modification-card';
@@ -90,6 +88,8 @@ export interface AIConversationModificationCard {
   explanation: string;
   proposedUrdf: string;
   currentUrdf: string;
+  sourceFormat?: 'urdf' | 'mjcf';
+  proposedRobot?: RobotData;
   componentId: string;
   status: 'pending' | 'applied' | 'dismissed';
   /** Stable identity for exactly one proposal/apply/verification lifecycle. */
@@ -116,7 +116,7 @@ export type AIConversationApplyResult =
     }
   | {
       ok: false;
-      reason: 'invalid-urdf' | 'component-missing' | 'revision-conflict';
+      reason: 'invalid-robot' | 'invalid-urdf' | 'invalid-mjcf' | 'component-missing' | 'revision-conflict';
     };
 
 export type AIConversationMessage =

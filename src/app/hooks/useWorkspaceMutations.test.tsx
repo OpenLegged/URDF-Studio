@@ -24,6 +24,7 @@ import {
 } from '@/types';
 
 import { useWorkspaceMutations } from './useWorkspaceMutations';
+import type { ComponentSourceMutation } from './workspace-source-sync/component_source_commands';
 import type { UseWorkspaceMutationsParams } from './useWorkspaceMutationsTypes';
 
 const IDENTITY_TRANSFORM = {
@@ -156,14 +157,9 @@ function renderMutations(
 beforeEach(() => installWorkspace());
 
 test('explicit refs isolate same-local-ID mutations and source patch targets', () => {
-  const inertialPatches: Array<{
-    componentId: string;
-    expectedRobotSnapshotHash: string;
-    linkName: string;
-    inertial: UrdfInertial;
-  }> = [];
+  const sourceMutations: ComponentSourceMutation[] = [];
   const mutations = renderMutations({
-    patchEditableSourceUpdateLinkInertial: (args) => inertialPatches.push(args),
+    synchronizeComponentSource: (args) => sourceMutations.push(args),
   });
 
   mutations.handleUpdate(
@@ -182,11 +178,9 @@ test('explicit refs isolate same-local-ID mutations and source patch targets', (
     2,
   );
   assert.equal(state.history.past.length, 1);
-  assert.equal(inertialPatches.length, 1);
-  assert.equal(inertialPatches[0]?.componentId, 'left');
-  assert.match(inertialPatches[0]?.expectedRobotSnapshotHash ?? '', /^robot-semantic-v1:/);
-  assert.equal(inertialPatches[0]?.linkName, 'shared_link');
-  assert.deepEqual(inertialPatches[0]?.inertial, createInertial(12.34));
+  assert.equal(sourceMutations.length, 1);
+  assert.equal(sourceMutations[0]?.componentId, 'left');
+  assert.equal(sourceMutations[0]?.previousRobot?.links.shared_link?.inertial?.mass, 1);
 });
 
 test('debounced property edits share one workspace transaction and one history entry', () => {
@@ -233,17 +227,14 @@ test('unhandled visual and joint properties stay synchronized to editable source
   assert.equal(isComponentSourceDraftMatchingComponent(draft, component), true);
 });
 
-test('complete robot reconciliation owns source joint updates and suppresses partial patches', () => {
-  const reconciliations: NonNullable<
-    UseWorkspaceMutationsParams['patchEditableSourceRobot']
-  > extends (args: infer Args) => boolean ? Args[] : never = [];
+test('one source command observes the complete committed joint mutation', () => {
+  const reconciliations: Array<ComponentSourceMutation & { nextRobot: RobotData }> = [];
   const mutations = renderMutations({
-    patchEditableSourceRobot: (args) => {
-      reconciliations.push(args);
-      return true;
-    },
-    patchEditableSourceUpdateJointLimit: () => {
-      assert.fail('legacy limit patch must not run after complete source reconciliation');
+    synchronizeComponentSource: (args) => {
+      reconciliations.push({
+        ...args,
+        nextRobot: useWorkspaceStore.getState().workspace.components[args.componentId].robot,
+      });
     },
   });
 
@@ -265,7 +256,7 @@ test('complete robot reconciliation owns source joint updates and suppresses par
   assert.equal(reconciliations.length, 1);
   const reconciliation = reconciliations[0]!;
   assert.notDeepEqual(
-    reconciliation.previousRobot.joints.shared_joint,
+    reconciliation.previousRobot?.joints.shared_joint,
     reconciliation.nextRobot.joints.shared_joint,
   );
   assert.deepEqual(
@@ -300,25 +291,26 @@ test('MJCF tendon property updates use complete source reconciliation', () => {
     },
   };
   installWorkspace(workspace);
-  const reconciliations: NonNullable<
-    UseWorkspaceMutationsParams['patchEditableSourceRobot']
-  > extends (args: infer Args) => boolean ? Args[] : never = [];
+  const reconciliations: Array<ComponentSourceMutation & { nextRobot: RobotData }> = [];
   const mutations = renderMutations({
-    patchEditableSourceRobot: (args) => {
-      reconciliations.push(args);
-      return true;
+    synchronizeComponentSource: (args) => {
+      reconciliations.push({
+        ...args,
+        nextRobot: useWorkspaceStore.getState().workspace.components[args.componentId].robot,
+      });
     },
   });
 
+  const updatedTendon = { ...tendon, width: 0.02, rgba: [0, 1, 0, 1] as [number, number, number, number] };
   mutations.handleUpdate(
     { type: 'tendon', componentId: 'left', entityId: 'cable' },
-    { ...tendon, width: 0.02, rgba: [0, 1, 0, 1] },
+    updatedTendon,
     { commitMode: 'immediate' },
   );
 
   assert.equal(reconciliations.length, 1);
   assert.equal(
-    reconciliations[0]?.previousRobot.inspectionContext?.mjcf?.tendons[0]?.width,
+    reconciliations[0]?.previousRobot?.inspectionContext?.mjcf?.tendons[0]?.width,
     0.01,
   );
   assert.equal(
@@ -357,16 +349,13 @@ test('a failed transactional mutation cancels its exact token and restores parti
   assert.equal(state.history.activity.length, 0);
 });
 
-test('source-less components carry null to source patch callbacks without fallback routing', () => {
+test('source-less components report their explicit owner to the source command', () => {
   const workspace = createWorkspace(false);
   workspace.components.left!.sourceFile = null;
   installWorkspace(workspace);
-  const patches: Array<{ componentId: string; expectedRobotSnapshotHash: string }> = [];
+  const patches: ComponentSourceMutation[] = [];
   const mutations = renderMutations({
-    patchEditableSourceUpdateLinkInertial: (args) => patches.push({
-      componentId: args.componentId,
-      expectedRobotSnapshotHash: args.expectedRobotSnapshotHash,
-    }),
+    synchronizeComponentSource: (args) => patches.push(args),
   });
 
   mutations.handleUpdate(
@@ -377,7 +366,7 @@ test('source-less components carry null to source patch callbacks without fallba
 
   assert.equal(patches.length, 1);
   assert.equal(patches[0]?.componentId, 'left');
-  assert.match(patches[0]?.expectedRobotSnapshotHash ?? '', /^robot-semantic-v1:/);
+  assert.equal(patches[0]?.previousRobot?.links.shared_link?.inertial?.mass, 1);
 });
 
 test('renderer strategy changes never alter explicit mutation routing', () => {

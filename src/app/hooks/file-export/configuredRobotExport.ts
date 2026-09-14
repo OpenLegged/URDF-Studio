@@ -239,6 +239,7 @@ export async function executeConfiguredRobotExport({
   }
 
   if (config.format === 'mjcf') {
+    const warnings: string[] = [];
     const {
       meshdir,
       addFloatBase,
@@ -265,12 +266,21 @@ export async function executeConfiguredRobotExport({
       extraMeshFiles,
       preferSharedMeshReuse,
       meshFormat: config.mjcf.meshFormat,
-      mujoco: { meshdir, addFloatBase, includeActuators, actuatorType,
-        massMode: config.mjcf.massMode, densityKgM3: config.mjcf.densityKgM3 },
-      onMeshesPrepared: () => reportProgress(3, t.exportProgressGeneratingFiles, t.exportProgressGeneratingMjcfDetail, {
-        stageProgress: 0.85,
-        indeterminate: false,
-      }),
+      mujoco: {
+        meshdir,
+        addFloatBase,
+        includeActuators,
+        actuatorType,
+        massMode: config.mjcf.massMode,
+        densityKgM3: config.mjcf.densityKgM3,
+        preserveNumericPrecision: true,
+        onWarning: (message) => warnings.push(message),
+      },
+      onMeshesPrepared: () =>
+        reportProgress(3, t.exportProgressGeneratingFiles, t.exportProgressGeneratingMjcfDetail, {
+          stageProgress: 0.85,
+          indeterminate: false,
+        }),
     }, prepareMjcfMeshExportAssets);
     const mjcfMeshExport = preparedMjcf.meshes;
     const generatedMjcfContent = preparedMjcf.xml;
@@ -312,8 +322,8 @@ export async function executeConfiguredRobotExport({
     downloadBlob(content, `${exportName}_mjcf.zip`);
     markCurrentTargetSaved();
     return {
-      partial: false,
-      warnings: [],
+      partial: warnings.length > 0,
+      warnings,
       issues: [],
     };
   }
@@ -415,7 +425,9 @@ export async function executeConfiguredRobotExport({
     });
 
     const generatedSdfContent = generateSDF(sdfRobot, {
+      preserveNumericPrecision: true,
       packageName: exportName,
+      onWarning: (message) => warnings.push(message),
     });
     archiveRoot.file(
       'model.sdf',

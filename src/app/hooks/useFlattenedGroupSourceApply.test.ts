@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { JSDOM } from 'jsdom';
 
-import { parseURDF } from '@/core/parsers';
+import { parseMJCF, parseURDF } from '@/core/parsers';
 import { createComponentSourceDraft, createSourceSemanticRobotHash } from '@/core/robot';
 import { useAssetsStore } from '@/store/assetsStore';
 import { useWorkspaceStore } from '@/store/workspaceStore';
@@ -161,6 +161,26 @@ test('applies master and bridge edits atomically with one undo step', () => {
   assert.equal(undone.workspace.components.master.robot.name, 'master');
   assert.deepEqual(undone.workspace.bridges.mount.joint.origin.xyz, { x: 0, y: 0, z: 0 });
   assert.equal(undone.history.past.length, 0);
+});
+
+test('changing a group joint to ball preserves the edit in an MJCF draft', () => {
+  const target = reset();
+  const editedText = editMasterAndBridge().replace(
+    '<joint name="master_joint" type="fixed">',
+    '<joint name="master_joint" type="ball">',
+  );
+
+  assert.equal(applyFlattenedGroupSourceEdit(editedText, target), true);
+  const applied = useWorkspaceStore.getState();
+  assert.equal(applied.workspace.components.master.robot.joints.master_joint.type, JointType.BALL);
+  const draft = useAssetsStore.getState().componentSourceDrafts.master;
+  assert.equal(draft.format, 'mjcf');
+  assert.equal(parseMJCF(draft.content)?.joints.master_joint.type, JointType.BALL);
+  assert.equal(applied.undo(), true);
+  assert.equal(
+    useWorkspaceStore.getState().workspace.components.master.robot.joints.master_joint.type,
+    JointType.FIXED,
+  );
 });
 
 test('rolls back the component and draft when a later bridge apply fails', () => {

@@ -1,4 +1,4 @@
 export {
   extractUsdLayerReferencesFromText,
   resolveUsdLayerReferencePath,
-} from '@/lib/robot-parser/usd/usdPreloadSources';
+} from '@/core/parsers/usd/usdLayerReferences';

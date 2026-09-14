@@ -115,11 +115,11 @@ export function getLineEnd(sourceContent: string, index: number): number {
 }
 
 export function isZeroVec3(vector: { x: number; y: number; z: number }): boolean {
-  return Math.abs(vector.x) < 1e-9 && Math.abs(vector.y) < 1e-9 && Math.abs(vector.z) < 1e-9;
+  return vector.x === 0 && vector.y === 0 && vector.z === 0;
 }
 
 export function isZeroRpy(rpy: { r: number; p: number; y: number }): boolean {
-  return Math.abs(rpy.r) < 1e-9 && Math.abs(rpy.p) < 1e-9 && Math.abs(rpy.y) < 1e-9;
+  return rpy.r === 0 && rpy.p === 0 && rpy.y === 0;
 }
 
 export function replaceOutsideXmlComments(

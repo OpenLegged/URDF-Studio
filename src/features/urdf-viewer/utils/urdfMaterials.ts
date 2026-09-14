@@ -1,1 +1,1 @@
-export * from '@/shared/components/3d/urdfMaterials';
+export * from '@/shared/components/3d/robot/utils/urdfMaterials';

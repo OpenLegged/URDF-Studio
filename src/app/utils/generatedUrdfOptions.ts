@@ -48,6 +48,7 @@ export async function buildGeneratedUrdfOptions(
   const omitMeshMaterialPaths = await resolveEmbeddedMeshMaterialPaths(extraMeshFiles);
 
   return {
+    preserveNumericPrecision: true,
     ...(options.extended ? { extended: true } : {}),
     ...(options.useRelativePaths ? { useRelativePaths: true } : {}),
     ...(omitMeshMaterialPaths.length > 0

@@ -40,10 +40,9 @@ import type {
   AIConversationMessage,
   AIConversationModificationCard,
 } from '../types';
-import type { RobotState } from '@/types';
-import { generateURDF } from '@/core/parsers';
+import type { RobotData, RobotState } from '@/types';
 import { createSourceSemanticRobotHash } from '@/core/robot';
-import { canGenerateUrdf } from '@/core/parsers/urdf/urdfExportSupport';
+import { createAIProposalSource } from '../utils/createAIProposalSource';
 import { resolveModificationProposal } from '../utils/resolveModificationProposal';
 import { resolveAIWorkspaceRobotTarget } from '../utils/aiWorkspaceTarget';
 import { useAssetsStore } from '@/store/assetsStore';
@@ -66,6 +65,8 @@ interface AIConversationModalProps {
   onApply: (
     componentId: string,
     proposedUrdf: string,
+    sourceFormat?: 'urdf' | 'mjcf',
+    proposedRobot?: RobotData,
   ) => AIConversationApplyResult | boolean;
   studioAgentPorts?: StudioAgentPorts;
 }
@@ -674,6 +675,8 @@ export function AIConversationModal({
       }
 
       const proposedRobotState: RobotState = {
+        ...currentRobot,
+        ...proposal.robot,
         name: proposal.robot.name ?? currentRobot.name,
         links: proposal.robot.links ?? currentRobot.links,
         joints: proposal.robot.joints ?? currentRobot.joints,
@@ -681,23 +684,15 @@ export function AIConversationModal({
         selection: { type: null, id: null },
       };
 
-      if (!canGenerateUrdf(proposedRobotState)) {
-        setMessages((prev) => appendTurnOutcome(
-          prev,
-          proposal.historyCheckpoint,
-          createConversationMessage('assistant', t.aiModificationUnsupportedJoint),
-        ));
-        return;
-      }
-
-      const proposedUrdf = generateURDF(proposedRobotState, { preserveMeshPaths: true });
       const currentDraft = useAssetsStore.getState().componentSourceDrafts[componentId];
-      const currentUrdf =
-        currentDraft?.format === 'urdf'
-          ? currentDraft.content
-          : generateURDF(currentRobot, { preserveMeshPaths: true });
+      const { selection: _selection, ...proposedRobot } = proposedRobotState;
+      const { sourceFormat, proposedUrdf, currentUrdf } = createAIProposalSource(
+        currentRobot,
+        proposedRobotState,
+        currentDraft,
+      );
 
-      if (proposedUrdf === currentUrdf) {
+      if (createSourceSemanticRobotHash(proposedRobot) === createSourceSemanticRobotHash(currentRobot)) {
         setMessages((prev) => appendTurnOutcome(
           prev,
           proposal.historyCheckpoint,
@@ -713,7 +708,10 @@ export function AIConversationModal({
 
       if (aiAutoApply && !options.forceConfirmation) {
         // Highest permission: apply immediately and surface a summary.
-        const applyResult = normalizeApplyResult(onApply(componentId, proposedUrdf), componentId);
+        const applyResult = normalizeApplyResult(
+          onApply(componentId, proposedUrdf, sourceFormat, proposedRobot),
+          componentId,
+        );
         const summary = applyResult.ok
           ? t.aiAutoAppliedSummary.replace(
               '{explanation}',
@@ -740,6 +738,8 @@ export function AIConversationModal({
         explanation: proposal.explanation,
         proposedUrdf,
         currentUrdf,
+        sourceFormat,
+        proposedRobot,
         componentId,
         status: 'pending',
         proposalId: `${submission.launchContext.sessionId}:${requestId}`,
@@ -789,7 +789,10 @@ export function AIConversationModal({
   };
 
   const handleApplyModification = (card: AIConversationModificationCard): boolean => {
-    const result = normalizeApplyResult(onApply(card.componentId, card.proposedUrdf), card.componentId);
+    const result = normalizeApplyResult(
+      onApply(card.componentId, card.proposedUrdf, card.sourceFormat, card.proposedRobot),
+      card.componentId,
+    );
     if (result.ok) {
       setMessages((prev) =>
         prev.map((message) =>
@@ -814,10 +817,13 @@ export function AIConversationModal({
     return result.ok;
   };
 
-  const handleDismissModification = useCallback((proposedUrdf: string) => {
+  const handleDismissModification = useCallback((card: AIConversationModificationCard) => {
     setMessages((prev) =>
       prev.map((message) =>
-        message.kind === 'modification-card' && message.proposedUrdf === proposedUrdf
+        message.kind === 'modification-card' &&
+          (card.proposalId
+            ? message.proposalId === card.proposalId
+            : message.proposedUrdf === card.proposedUrdf)
           ? { ...message, status: 'dismissed' as const }
           : message,
       ),

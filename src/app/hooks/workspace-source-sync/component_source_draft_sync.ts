@@ -12,7 +12,10 @@ import type {
   RobotFile,
   RobotState,
 } from '@/types';
-import { generateEditableRobotSource } from '@/app/utils/generateEditableRobotSource';
+import {
+  tryGenerateEditableRobotSource,
+  resolveEditableRobotSourceFormat,
+} from '@/app/utils/generateEditableRobotSource';
 import {
   patchSdfModelNameInSource,
   patchUrdfRobotNameInSource,
@@ -79,10 +82,11 @@ function resolveEditableSourceSeed(
 
   if (component.robot.inspectionContext?.sourceFormat === 'usd') return null;
 
+  const format = resolveEditableRobotSourceFormat(component.robot);
   return {
     content: '',
-    format: 'urdf',
-    name: getGeneratedSourceName(component, 'urdf'),
+    format,
+    name: getGeneratedSourceName(component, format),
   };
 }
 
@@ -117,8 +121,10 @@ function patchSourceModelName(
 
 function synchronizeNameOnlyDraft(
   component: AssemblyComponent,
-  draft: ComponentSourceDraft,
+  draft: ComponentSourceDraft | undefined,
+  format: ComponentSourceFormat,
 ): ComponentSourceDraft | null {
+  if (!draft || draft.format !== format) return null;
   const sourceName = readSourceModelName(draft);
   if (!sourceName || sourceName === component.robot.name) return null;
 
@@ -176,24 +182,24 @@ export function synchronizeComponentSourceDraft(
     ...component.robot,
     selection: { type: null, id: null },
   };
+  const format = resolveEditableRobotSourceFormat(robotState, seed.format);
 
   try {
-    if (currentDraft && isEditableSourceFormat(currentDraft.format)) {
-      const nameOnlyDraft = synchronizeNameOnlyDraft(component, currentDraft);
-      if (nameOnlyDraft) {
-        assets.setComponentSourceDraft(nameOnlyDraft);
-        return 'synchronized';
-      }
+    const nameOnlyDraft = synchronizeNameOnlyDraft(component, currentDraft, format);
+    if (nameOnlyDraft) {
+      assets.setComponentSourceDraft(nameOnlyDraft);
+      return 'synchronized';
     }
 
-    const generatedContent = generateEditableRobotSource({
-      format: seed.format,
+    const generatedContent = tryGenerateEditableRobotSource({
+      format,
       robotState,
       preserveMeshPaths: true,
     });
+    if (generatedContent === null) return 'failed';
     let content = generatedContent;
 
-    if (seed.content.trim() && typeof DOMParser !== 'undefined') {
+    if (format === seed.format && seed.content.trim() && typeof DOMParser !== 'undefined') {
       try {
         content = resolveSourcePreservingExportContent({
           format: seed.format,
@@ -216,7 +222,7 @@ export function synchronizeComponentSourceDraft(
 
     const nextDraft = createComponentSourceDraft({
       componentId,
-      format: seed.format,
+      format,
       content,
       robot: component.robot,
     });

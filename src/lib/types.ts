@@ -3,8 +3,9 @@ import type { Object3D } from 'three';
 import type { Language } from '../shared/i18n';
 import type { SnapshotCaptureAction } from '../shared/components/3d';
 import { DEFAULT_ORIGIN_AXES_SIZE } from '../shared/components/3d/helpers/coordinateAxesSizing';
-import type { AppMode, Theme, UrdfJoint, UrdfLink } from '../types';
+import type { AppMode, RobotData, Theme, UrdfJoint, UrdfLink } from '../types';
 import type { ToolMode } from '../shared/components/3d/viewerInteractionTypes';
+import type { ViewerRenderQuality } from '../shared/utils/viewerRenderQuality';
 
 export type RobotCanvasSourceFormat = 'auto' | 'urdf' | 'mjcf';
 
@@ -22,6 +23,9 @@ export interface RobotCanvasSelection {
 }
 
 export interface RobotCanvasDisplayOptions {
+  cameraProjection: 'perspective' | 'orthographic';
+  renderQuality: ViewerRenderQuality;
+  showMjcfWorldLink: boolean;
   showVisual: boolean;
   showCollision: boolean;
   highlightMode: 'link' | 'collision';
@@ -47,6 +51,9 @@ export const DEFAULT_ROBOT_CANVAS_SELECTION: RobotCanvasSelection = {
 };
 
 export const DEFAULT_ROBOT_CANVAS_DISPLAY_OPTIONS: RobotCanvasDisplayOptions = {
+  cameraProjection: 'perspective',
+  renderQuality: 'high',
+  showMjcfWorldLink: true,
   showVisual: true,
   showCollision: false,
   highlightMode: 'link',
@@ -91,6 +98,8 @@ export interface RobotCanvasProps {
   onJointChange?: (jointName: string, angle: number) => void;
   display?: Partial<RobotCanvasDisplayOptions>;
   allowUrdfXmlFallback?: boolean;
+  /** Preparsed canonical model; required for MJCF and preferred over separate maps. */
+  robotData?: RobotData;
   robotLinks?: Record<string, UrdfLink>;
   robotJoints?: Record<string, UrdfJoint>;
   focusTarget?: string | null;

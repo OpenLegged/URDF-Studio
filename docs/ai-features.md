@@ -233,5 +233,5 @@ RobotData 顶层字段；`__proto__` / `constructor` / `prototype` 路径和 `so
 如果后续需要 DSH 的 Shell、skills、MCP 或子 agent，正确拓扑是一个仅监听 loopback 的本机
 sidecar（不一定是云后端），再通过带鉴权的 SSE / WebSocket 适配到现有 modification proposal
 流程。不应 iframe DSH Web UI，也不应让 DSH 直接修改 Zustand/workspace；最终变更仍必须经过
-URDF 生成/解析校验、diff card、CAS/history 和用户 apply 边界。DSH 当前是 developer preview，若引入
+canonical RobotData 字段与拓扑校验、diff card、CAS/history 和用户 apply 边界。新修改直接应用 canonical RobotData；源码 diff 仅为可选预览，未完成的 mesh 或暂不能无损表达的关节组合不会阻止编辑。导出兼容性仅在实际导出时提示，旧会话卡片仍兼容原源码应用路径。DSH 当前是 developer preview，若引入
 sidecar 需锁定精确版本并跟踪破坏性变更。

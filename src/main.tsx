@@ -8,6 +8,7 @@ import {
   hideSeoLanguagePathFromUserUrl,
 } from '@/app/utils/initialLanguage';
 import { getRuntimeLanguageTranslations } from '@/shared/i18n';
+import { isExpectedUsdWasmSharedArrayBufferRejection } from '@/app/utils/usdWasmRejectionNoise';
 import '@/styles/index.css';
 
 // ponytail: 全局安全网 —— React 渲染期之外的错误（未 await 的 Promise reject、
@@ -25,6 +26,14 @@ function handleGlobalError(event: ErrorEvent): void {
 }
 
 function handleUnhandledRejection(event: PromiseRejectionEvent): void {
+  // 该 rejection 来自 vendored emHdBindings 的内部 Promise（无法从调用链 catch），
+  // 仅在浏览器确实不提供 SharedArrayBuffer 时出现，此时 [usd-wasm] 一次性警告
+  // 已给出原因与修复方式，这里静默去重避免重复噪音。
+  if (isExpectedUsdWasmSharedArrayBufferRejection(event.reason)) {
+    // preventDefault() 同时抑制 Chrome 自带的 "Uncaught (in promise)" 控制台条目。
+    event.preventDefault();
+    return;
+  }
   logGlobalError(getRuntimeLanguageTranslations().t.globalUnhandledRejection, event.reason);
 }
 

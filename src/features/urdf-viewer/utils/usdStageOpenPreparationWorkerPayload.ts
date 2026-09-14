@@ -2,7 +2,7 @@ import type { RobotFile } from '@/types';
 import {
   inferUsdBundleVirtualDirectory,
   isUsdPathWithinBundleDirectory,
-  isUsdRuntimeTexturePath,
+  isUsdRuntimeDependencyPath,
 } from '@/core/parsers/usd/usdAssetPaths';
 import { compactBlobBackedLargeTextUsdForWorker } from '@/lib/robot-parser/usd/usdStageOpenLargeText';
 import { collectUsdStageOpenRelevantVirtualPaths, toVirtualUsdPath } from '@/lib/robot-parser/usd/usdPreloadSources';
@@ -74,7 +74,7 @@ function filterStageOpenAvailableFiles(
 
   return availableFiles.filter((file) => {
     if (
-      isUsdRuntimeTexturePath(file.name)
+      isUsdRuntimeDependencyPath(file.name)
       && isUsdPathWithinBundleDirectory(file.name, bundleDirectory)
     ) {
       return file.name !== sourceFile.name;
@@ -103,7 +103,7 @@ function filterStageOpenAssets(
     Object.entries(assets).filter(([path]) => (
       (isUsdStageOpenLayerPath(path) && relevantPathSet.has(toVirtualUsdPath(path)))
       || (
-        isUsdRuntimeTexturePath(path)
+        isUsdRuntimeDependencyPath(path)
         && isUsdPathWithinBundleDirectory(path, bundleDirectory)
       )
     )),

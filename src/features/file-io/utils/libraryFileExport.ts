@@ -1,4 +1,5 @@
-import JSZip from 'jszip';
+// 类型导入：运行时实例在导出函数内动态 import 创建，避免把 export-vendor 拉进启动 chunk。
+import type JSZip from 'jszip';
 import {
   parseSDF,
   parseURDF,
@@ -29,6 +30,7 @@ export interface ExportLibraryRobotFileOptions {
 export interface ExportLibraryRobotFileResult {
   success: boolean;
   zipFileName?: string;
+  warnings?: string[];
   missingMeshPaths: string[];
   reason?: 'unsupported-file-format' | 'parse-failed' | 'missing-mesh-assets';
 }
@@ -149,14 +151,21 @@ export async function exportLibraryRobotFile(
   }
 
   const baseName = getFileBaseName(file.name);
-  const zip = new JSZip();
+  const warnings: string[] = [];
+  // 动态加载：导出动作触发时才拉 jszip，避免把 export-vendor 拉进启动 chunk。
+  const { default: JSZipRuntime } = await import('jszip');
+  const zip = new JSZipRuntime();
   const archiveRoot = createArchiveRoot(zip, baseName);
   const mjcfExport =
     targetFormat === 'mjcf' && file.format !== 'mjcf'
       ? await prepareMjcfExport({
           robot: robotState,
           assets,
-          mujoco: { meshdir: 'meshes/' },
+          mujoco: {
+            meshdir: 'meshes/',
+            preserveNumericPrecision: true,
+            onWarning: (message) => warnings.push(message),
+          },
         })
       : null;
   const mjcfMeshExport = mjcfExport?.meshes;
@@ -167,7 +176,7 @@ export async function exportLibraryRobotFile(
         ? rewriteUrdfAssetPathsForExport(file.content, {
             exportRobotName: baseName,
           })
-        : generateURDF(robotState, false);
+        : generateURDF(robotState, { preserveNumericPrecision: true });
     archiveRoot.file(`${baseName}.urdf`, urdfContent);
   } else if (targetFormat === 'mjcf') {
     const mjcfContent =
@@ -176,7 +185,11 @@ export async function exportLibraryRobotFile(
         : mjcfExport!.xml;
     archiveRoot.file(`${baseName}.xml`, mjcfContent);
   } else {
-    archiveRoot.file('model.sdf', generateSDF(robotState, { packageName: baseName }));
+    archiveRoot.file('model.sdf', generateSDF(robotState, {
+      preserveNumericPrecision: true,
+      packageName: baseName,
+      onWarning: (message) => warnings.push(message),
+    }));
     archiveRoot.file('model.config', generateSdfModelConfig(robotState.name || baseName));
   }
 
@@ -209,5 +222,6 @@ export async function exportLibraryRobotFile(
     success: true,
     zipFileName,
     missingMeshPaths,
+    warnings,
   };
 }

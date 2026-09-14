@@ -95,3 +95,72 @@ test('dependency check rejects require calls in ESM product source', async () =>
     },
   );
 });
+
+test('publishable dependency check traces application state through a shared adapter', async () => {
+  await withFixture({
+    'src/lib/index.ts': "export { value } from '@/shared/adapter';",
+    'src/shared/adapter.ts': "export { value } from '@/store/state';",
+    'src/store/state.ts': 'export const value = 1;',
+    'scripts/tools/dependency_boundaries_baseline.json': emptyDependencyBaseline,
+  }, async (fixtureRoot) => {
+    const result = runChecker(dependencyChecker, fixtureRoot, ['--check', '--json']);
+    assert.equal(result.status, 1, result.stderr || result.stdout);
+    const report = JSON.parse(result.stdout);
+    assert.deepEqual(report.publishableBoundaryViolations, [{
+      entry: 'src/lib/index.ts',
+      target: 'src/store/state.ts',
+      dependencyPath: ['src/lib/index.ts', 'src/shared/adapter.ts', 'src/store/state.ts'],
+    }]);
+  });
+});
+
+test('worker URLs do not create false ESM cycles through shared worker algorithms', async () => {
+  await withFixture({
+    'src/lib/index.ts': "export { preview } from '@/shared/preview';",
+    'src/shared/preview.ts': "import { workerUrl } from './bridge'; export const preview = () => workerUrl;",
+    'src/shared/bridge.ts': "export const workerUrl = new URL('./preview.worker.ts', import.meta.url);",
+    'src/shared/preview.worker.ts': "import { preview } from './preview'; export const result = preview();",
+    'scripts/tools/dependency_boundaries_baseline.json': emptyDependencyBaseline,
+  }, async (fixtureRoot) => {
+    const result = runChecker(dependencyChecker, fixtureRoot, ['--check', '--json']);
+    assert.equal(result.status, 0, result.stderr || result.stdout);
+    const report = JSON.parse(result.stdout);
+    assert.deepEqual(report.publishableBoundaryViolations, []);
+    assert.deepEqual(report.newCycles, []);
+  });
+});
+
+test('publishable dependency check includes worker module URL dependencies', async () => {
+  await withFixture({
+    'src/lib/index.ts': "export { workerUrl } from '@/shared/loader';",
+    'src/shared/loader.ts': "export const workerUrl = new URL('../features/alpha/runtime.worker.ts', import.meta.url);",
+    'src/features/alpha/runtime.worker.ts': 'export const value = 1;',
+    'scripts/tools/dependency_boundaries_baseline.json': emptyDependencyBaseline,
+  }, async (fixtureRoot) => {
+    const result = runChecker(dependencyChecker, fixtureRoot, ['--check', '--json']);
+    assert.equal(result.status, 1, result.stderr || result.stdout);
+    assert.deepEqual(JSON.parse(result.stdout).publishableBoundaryViolations, [{
+      entry: 'src/lib/index.ts',
+      target: 'src/features/alpha/runtime.worker.ts',
+      dependencyPath: [
+        'src/lib/index.ts',
+        'src/shared/loader.ts',
+        'src/features/alpha/runtime.worker.ts',
+      ],
+    }]);
+  });
+});
+
+test('publishable dependency check accepts shared rendering built on core and types', async () => {
+  await withFixture({
+    'src/lib/index.ts': "export { value } from '@/shared/renderer';",
+    'src/shared/renderer.ts': "export { value } from '@/core/value';",
+    'src/core/value.ts': "export { value } from '@/types/value';",
+    'src/types/value.ts': 'export const value = 1;',
+    'scripts/tools/dependency_boundaries_baseline.json': emptyDependencyBaseline,
+  }, async (fixtureRoot) => {
+    const result = runChecker(dependencyChecker, fixtureRoot, ['--check', '--json']);
+    assert.equal(result.status, 0, result.stderr || result.stdout);
+    assert.deepEqual(JSON.parse(result.stdout).publishableBoundaryViolations, []);
+  });
+});

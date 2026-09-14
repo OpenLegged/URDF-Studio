@@ -19,7 +19,7 @@ import {
   patchUrdfLinkInertialInSource,
   patchUrdfRobotNameInSource,
 } from './jointEditableSourcePatch';
-import { generateEditableRobotSource } from './generateEditableRobotSource';
+import { tryGenerateEditableRobotSource } from './generateEditableRobotSource';
 import { parseEditableRobotSource } from './parseEditableRobotSource';
 import {
   patchUrdfJointFieldsInSource,
@@ -681,12 +681,15 @@ export function reconcileUrdfEditableSource({
       return unsafe('The editable source no longer matches the robot before this mutation.');
     }
 
-    const generatedAfterWithoutSourceEnvelope = generateEditableRobotSource({
+    const generatedAfterWithoutSourceEnvelope = tryGenerateEditableRobotSource({
       format: 'urdf',
       robotState: asRobotState(afterRobot),
       includeHardware: 'auto',
       preserveMeshPaths: true,
     });
+    if (generatedAfterWithoutSourceEnvelope === null) {
+      return unsafe('The robot mutation does not currently have a lossless URDF source representation.');
+    }
     const parsedGeneratedAfterWithoutSourceEnvelope = parseUrdf(
       sourceFileName,
       generatedAfterWithoutSourceEnvelope,

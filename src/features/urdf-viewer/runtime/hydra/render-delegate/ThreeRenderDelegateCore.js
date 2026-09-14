@@ -985,7 +985,8 @@ export class ThreeRenderDelegateCore {
             });
         };
         let metadataLayerTexts = [];
-        if (activeDriver && typeof activeDriver.GetRootLayerText === 'function') {
+        if (this.disableStageLayerTextFallbacks !== true
+            && activeDriver && typeof activeDriver.GetRootLayerText === 'function') {
             try {
                 const rootLayerText = activeDriver.GetRootLayerText();
                 if (typeof rootLayerText === 'string' && rootLayerText.length > 0) {

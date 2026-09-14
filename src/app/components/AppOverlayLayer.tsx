@@ -1,4 +1,4 @@
-import { Suspense, type Dispatch, type SetStateAction } from 'react';
+import { Suspense } from 'react';
 import { LazyOverlayFallback } from './LazyOverlayFallback';
 import { AppToast } from './AppToast';
 import { BotWorldImportOverlay } from './BotWorldImportOverlay';
@@ -12,28 +12,15 @@ import {
   SettingsModal,
 } from './lazyAppOverlays';
 import type { AppToastState } from '../hooks/useAppShellState';
-import type { ExportTarget } from '../hooks/file-export/types';
+import type { AIWorkspaceSession } from '../hooks/useAIWorkspaceSession';
+import type { ExportSession } from '../hooks/useExportSession';
 import type { ImportFromUrlProgress, ImportPhase } from '../hooks/useAssetImportFromUrl';
 import type {
-  AIConversationFocusedIssue,
   AIConversationApplyResult,
-  AIConversationLaunchContext,
-  AIConversationSelection,
   StudioAgentPorts,
 } from '@/features/ai-assistant';
-import type { ExportDialogConfig, ExportProgressState } from '@/features/file-io';
-import type { InspectionReport, RobotState } from '@/types';
+import type { RobotData } from '@/types';
 import type { Language } from '@/shared/i18n';
-
-export interface DisconnectedWorkspaceUrdfDialogState {
-  config: ExportDialogConfig;
-  request: {
-    type: 'disconnected-workspace-urdf';
-    componentCount: number;
-    connectedGroupCount: number;
-    exportName: string;
-  };
-}
 
 interface BotWorldImportOverlayState {
   isImporting: boolean;
@@ -42,81 +29,34 @@ interface BotWorldImportOverlayState {
 }
 
 interface AppOverlayLayerProps {
-  aiConversationLaunchContext: AIConversationLaunchContext | null;
+  aiSession: AIWorkspaceSession;
+  exportSession: ExportSession;
   botWorldImportState: BotWorldImportOverlayState;
   closeToast: () => void;
-  disconnectedWorkspaceUrdfDialog: DisconnectedWorkspaceUrdfDialogState | null;
-  exportDialogTarget: ExportTarget;
-  /** Optional initial export format (e.g. from a `convertTo` handoff). */
-  exportDialogDefaultFormat?: ExportDialogConfig['format'];
   extensions?: { slots?: AppExtensionSlots };
-  handleConfirmDisconnectedWorkspaceUrdfExport: () => void;
-  handleExportDialogExport: (
-    config: ExportDialogConfig,
-    options?: { onProgress?: (progress: ExportProgressState) => void },
-  ) => Promise<void>;
-  handleOpenConversationWithReport: (
-    report: InspectionReport,
-    robotSnapshot: RobotState,
-    options?: {
-      selectedEntity?: AIConversationSelection | null;
-      focusedIssue?: AIConversationFocusedIssue | null;
-    },
-  ) => void;
-  handleStartNewAIConversation: (currentLaunchContext: AIConversationLaunchContext) => void;
-  isAIConversationOpen: boolean;
   onApplyAIUrdfModification: (
     componentId: string,
     proposedUrdf: string,
+    sourceFormat?: 'urdf' | 'mjcf',
+    proposedRobot?: RobotData,
   ) => AIConversationApplyResult;
-  isAIInspectionOpen: boolean;
-  isDisconnectedWorkspaceUrdfExporting: boolean;
-  isExportDialogOpen: boolean;
-  isExporting: boolean;
   isSettingsOpen: boolean;
   lang: Language;
   loadingLabel: string;
-  projectExportProgress: ExportProgressState | null;
-  setDisconnectedWorkspaceUrdfDialog: Dispatch<
-    SetStateAction<DisconnectedWorkspaceUrdfDialogState | null>
-  >;
-  setIsAIConversationOpen: Dispatch<SetStateAction<boolean>>;
-  setIsAIInspectionOpen: Dispatch<SetStateAction<boolean>>;
-  setIsExportDialogOpen: Dispatch<SetStateAction<boolean>>;
-  shouldRenderAIConversationModal: boolean;
-  shouldRenderAIInspectionModal: boolean;
   studioAgentPorts: StudioAgentPorts;
   toast: AppToastState;
 }
 
 export function AppOverlayLayer({
-  aiConversationLaunchContext,
+  aiSession,
+  exportSession,
   botWorldImportState,
   closeToast,
-  disconnectedWorkspaceUrdfDialog,
-  exportDialogTarget,
-  exportDialogDefaultFormat,
   extensions,
-  handleConfirmDisconnectedWorkspaceUrdfExport,
-  handleExportDialogExport,
-  handleOpenConversationWithReport,
-  handleStartNewAIConversation,
-  isAIConversationOpen,
   onApplyAIUrdfModification,
-  isAIInspectionOpen,
-  isDisconnectedWorkspaceUrdfExporting,
-  isExportDialogOpen,
-  isExporting,
   isSettingsOpen,
   lang,
   loadingLabel,
-  projectExportProgress,
-  setDisconnectedWorkspaceUrdfDialog,
-  setIsAIConversationOpen,
-  setIsAIInspectionOpen,
-  setIsExportDialogOpen,
-  shouldRenderAIConversationModal,
-  shouldRenderAIInspectionModal,
   studioAgentPorts,
   toast,
 }: AppOverlayLayerProps) {
@@ -127,75 +67,61 @@ export function AppOverlayLayer({
           <SettingsModal />
         </Suspense>
       )}
-      {shouldRenderAIInspectionModal && (
+      {aiSession.inspectionMounted && (
         <Suspense fallback={<LazyOverlayFallback label={loadingLabel} />}>
           {/* Keep the modal mounted after first open so inspection results survive close/reopen. */}
           <AIInspectionConnector
-            isOpen={isAIInspectionOpen}
-            onClose={() => {
-              setIsAIInspectionOpen(false);
-            }}
+            isOpen={aiSession.inspectionOpen}
+            onClose={aiSession.closeInspection}
             lang={lang}
-            onOpenConversationWithReport={handleOpenConversationWithReport}
+            onOpenConversationWithReport={aiSession.followUpReport}
           />
         </Suspense>
       )}
-      {shouldRenderAIConversationModal && (
+      {aiSession.conversationMounted && (
         <Suspense fallback={<LazyOverlayFallback label={loadingLabel} />}>
           <AIConversationConnector
-            isOpen={isAIConversationOpen}
-            onClose={() => {
-              setIsAIConversationOpen(false);
-            }}
+            isOpen={aiSession.conversationOpen}
+            onClose={aiSession.closeConversation}
             lang={lang}
-            launchContext={aiConversationLaunchContext}
-            onStartNewConversation={handleStartNewAIConversation}
+            launchContext={aiSession.conversationContext}
+            onStartNewConversation={aiSession.startNewConversation}
             onApply={onApplyAIUrdfModification}
             studioAgentPorts={studioAgentPorts}
           />
         </Suspense>
       )}
 
-      {isExportDialogOpen && (
+      {exportSession.step === 'configure' && (
         <Suspense fallback={<LazyOverlayFallback label={loadingLabel} />}>
           <ExportDialogConnector
-            target={exportDialogTarget}
+            target={exportSession.target}
             lang={lang}
-            isExporting={isExporting}
-            defaultFormat={exportDialogDefaultFormat}
-            onClose={() => {
-              if (!isExporting) {
-                setIsExportDialogOpen(false);
-              }
-            }}
-            onExport={handleExportDialogExport}
+            isExporting={exportSession.busy}
+            defaultFormat={exportSession.defaultFormat}
+            onClose={exportSession.close}
+            onExport={exportSession.submit}
           />
         </Suspense>
       )}
 
-      {disconnectedWorkspaceUrdfDialog && (
+      {exportSession.step === 'disconnected' && exportSession.disconnectedDialog && (
         <Suspense fallback={<LazyOverlayFallback label={loadingLabel} />}>
           <DisconnectedWorkspaceUrdfExportDialog
             isOpen={true}
             lang={lang}
-            componentCount={disconnectedWorkspaceUrdfDialog.request.componentCount}
-            connectedGroupCount={disconnectedWorkspaceUrdfDialog.request.connectedGroupCount}
-            isExporting={isDisconnectedWorkspaceUrdfExporting}
-            onClose={() => {
-              if (!isDisconnectedWorkspaceUrdfExporting) {
-                setDisconnectedWorkspaceUrdfDialog(null);
-              }
-            }}
-            onExportMultiple={() => {
-              handleConfirmDisconnectedWorkspaceUrdfExport();
-            }}
+            componentCount={exportSession.disconnectedDialog.request.componentCount}
+            connectedGroupCount={exportSession.disconnectedDialog.request.connectedGroupCount}
+            isExporting={exportSession.busy}
+            onClose={exportSession.close}
+            onExportMultiple={exportSession.confirmDisconnected}
           />
         </Suspense>
       )}
 
-      {projectExportProgress && !isExportDialogOpen && (
+      {exportSession.progress && exportSession.step === 'closed' && (
         <Suspense fallback={<LazyOverlayFallback label={loadingLabel} />}>
-          <ExportProgressDialog lang={lang} progress={projectExportProgress} />
+          <ExportProgressDialog lang={lang} progress={exportSession.progress} />
         </Suspense>
       )}
 

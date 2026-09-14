@@ -215,10 +215,7 @@ test('dev server ignores non-runtime and test-only files during watch', async ()
     ignored(path.resolve('.venv/genesis-truth/lib/python3.11/site-packages/pkg/module.py')),
     true,
   );
-  assert.equal(
-    ignored(path.resolve('scripts/test/browser/test_urdf_source_editor.mjs')),
-    true,
-  );
+  assert.equal(ignored(path.resolve('scripts/test/browser/test_urdf_source_editor.mjs')), true);
   assert.equal(ignored(path.resolve('src/app/App.test.tsx')), true);
   assert.equal(ignored(path.resolve('vite.config.test.ts')), true);
   assert.equal(ignored(path.resolve('src/app/App.tsx')), false);
@@ -234,7 +231,7 @@ test('dev server revalidates optimized deps and accepts an isolated cache direct
   assert.equal(config.server?.headers?.['Cache-Control'], 'no-cache');
 });
 
-test('dev server only sends isolation headers to trustworthy local origins', async () => {
+test('dev server sends isolation headers to local and private LAN origins only', async () => {
   const loaded = await loadConfigFromFile(
     {
       command: 'serve',
@@ -275,8 +272,20 @@ test('dev server only sends isolation headers to trustworthy local origins', asy
     assert.equal(localhostHeaders['cross-origin-embedder-policy'], 'require-corp');
 
     const lanHeaders = await requestDevServerHeaders(address.port, '10.19.125.173:3000');
-    assert.equal(lanHeaders['cross-origin-opener-policy'], undefined);
-    assert.equal(lanHeaders['cross-origin-embedder-policy'], undefined);
+    assert.equal(lanHeaders['cross-origin-opener-policy'], 'same-origin');
+    assert.equal(lanHeaders['cross-origin-embedder-policy'], 'require-corp');
+
+    const classCLanHeaders = await requestDevServerHeaders(address.port, '192.168.1.23:3000');
+    assert.equal(classCLanHeaders['cross-origin-opener-policy'], 'same-origin');
+    assert.equal(classCLanHeaders['cross-origin-embedder-policy'], 'require-corp');
+
+    const nonPrivateIpHeaders = await requestDevServerHeaders(address.port, '198.18.0.1:3000');
+    assert.equal(nonPrivateIpHeaders['cross-origin-opener-policy'], undefined);
+    assert.equal(nonPrivateIpHeaders['cross-origin-embedder-policy'], undefined);
+
+    const untrustedHostHeaders = await requestDevServerHeaders(address.port, 'example.test:3000');
+    assert.equal(untrustedHostHeaders['cross-origin-opener-policy'], undefined);
+    assert.equal(untrustedHostHeaders['cross-origin-embedder-policy'], undefined);
   } finally {
     if (viteServer) {
       await viteServer.close();

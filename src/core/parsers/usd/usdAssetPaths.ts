@@ -11,6 +11,10 @@ export function isUsdRuntimeTexturePath(path: string): boolean {
   return USD_RUNTIME_TEXTURE_EXTENSIONS.has(getAssetFileExtension(path));
 }
 
+export function isUsdRuntimeDependencyPath(path: string): boolean {
+  return isUsdRuntimeTexturePath(path) || getAssetFileExtension(path) === 'mdl';
+}
+
 export function inferUsdBundleVirtualDirectory(sourcePath: string): string {
   const normalizedSourcePath = normalizeLibraryPathKey(sourcePath);
   if (!normalizedSourcePath) {

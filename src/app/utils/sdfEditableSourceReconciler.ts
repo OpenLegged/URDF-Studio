@@ -1,9 +1,11 @@
 import type { RobotData } from '@/types';
-import { generateEditableRobotSource } from './generateEditableRobotSource';
+import { collectXmlElementBounds, getElementAttribute } from '@/app/hooks/source-preserving-export/xmlSourcePatch';
+import { tryGenerateEditableRobotSource } from './generateEditableRobotSource';
 import {
   asSdfRobotState,
   findGeneratedSdfModel,
   findSourceSdfModel,
+  getSdfJointOriginRepresentation,
   patchControlledSdfModelSections,
   patchSdfFineGrainedAttributes,
   patchSdfLinkNodes,
@@ -43,14 +45,29 @@ export function reconcileSdfEditableSource({
   sourceFileName,
 }: ReconcileSdfEditableSourceOptions): ReconcileSdfEditableSourceResult {
   try {
-    if (!validateSdfCandidate(sourceFileName, sourceContent, beforeRobot)) {
+    const sourceRoot = collectXmlElementBounds(sourceContent).find((element) => element.tagName === 'sdf');
+    const sdfVersion = sourceRoot ? getElementAttribute(sourceContent, sourceRoot, 'version') ?? undefined : undefined;
+    const requiresWorldPoses = /^1\.[0-6]$/.test(sdfVersion ?? '');
+    const beforeRepresentation = requiresWorldPoses ? getSdfJointOriginRepresentation(
+      sourceFileName,
+      tryGenerateEditableRobotSource({ format: 'sdf', robotState: asSdfRobotState(beforeRobot), sdfVersion }),
+      beforeRobot,
+    ) : null;
+    if (!validateSdfCandidate(sourceFileName, sourceContent, beforeRobot, beforeRepresentation)) {
       return unsafe('The editable SDF source no longer matches the robot before this mutation.');
     }
 
-    const generatedContent = generateEditableRobotSource({
+    const generatedContent = tryGenerateEditableRobotSource({
       format: 'sdf',
       robotState: asSdfRobotState(afterRobot),
+      sdfVersion,
     });
+    if (generatedContent === null) {
+      return unsafe('The robot mutation does not currently have a lossless SDF source representation.');
+    }
+    const afterRepresentation = requiresWorldPoses
+      ? getSdfJointOriginRepresentation(sourceFileName, generatedContent, afterRobot)
+      : null;
     const generatedModel = findGeneratedSdfModel(generatedContent);
     const sourceModel = findSourceSdfModel(sourceContent, beforeRobot.name);
     if (!generatedModel || !sourceModel) {
@@ -72,7 +89,7 @@ export function reconcileSdfEditableSource({
       beforeRobot,
       afterRobot,
     );
-    if (validateSdfCandidate(sourceFileName, attributePatched, afterRobot)) {
+    if (validateSdfCandidate(sourceFileName, attributePatched, afterRobot, afterRepresentation)) {
       return { status: 'patched', content: attributePatched, level: 'attribute' };
     }
 
@@ -84,7 +101,7 @@ export function reconcileSdfEditableSource({
     });
     if (
       nodePatched !== attributePatched &&
-      validateSdfCandidate(sourceFileName, nodePatched, afterRobot)
+      validateSdfCandidate(sourceFileName, nodePatched, afterRobot, afterRepresentation)
     ) {
       return { status: 'patched', content: nodePatched, level: 'node' };
     }
@@ -101,7 +118,7 @@ export function reconcileSdfEditableSource({
       beforeRobot,
       afterRobot,
     });
-    if (validateSdfCandidate(sourceFileName, entityPatched.content, afterRobot)) {
+    if (validateSdfCandidate(sourceFileName, entityPatched.content, afterRobot, afterRepresentation)) {
       return {
         status: 'patched',
         content: entityPatched.content,
@@ -119,7 +136,7 @@ export function reconcileSdfEditableSource({
       generatedContent,
       generatedModel: generatedModel.bounds,
     });
-    if (!validateSdfCandidate(sourceFileName, sectionPatched, afterRobot)) {
+    if (!validateSdfCandidate(sourceFileName, sectionPatched, afterRobot, afterRepresentation)) {
       return unsafe('The patched SDF did not preserve the requested robot semantics.');
     }
     return { status: 'patched', content: sectionPatched, level: 'section' };

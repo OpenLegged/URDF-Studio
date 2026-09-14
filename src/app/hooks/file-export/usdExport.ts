@@ -1,4 +1,6 @@
-import JSZip from 'jszip';
+// 类型导入：jszip 运行时实例在 executeUsdExport 内动态 import 创建，
+// 避免把 export-vendor（jszip+jspdf）拉进首屏入口 chunk。
+import type JSZip from 'jszip';
 
 import {
   exportRobotToUsdWithWorker,
@@ -197,7 +199,8 @@ export async function executeUsdExport({
     },
   });
 
-  const zip = new JSZip();
+  const { default: JSZipRuntime } = await import('jszip');
+  const zip = new JSZipRuntime();
   if (shouldConvertUsdLayers) {
     reportProgress(
       3,

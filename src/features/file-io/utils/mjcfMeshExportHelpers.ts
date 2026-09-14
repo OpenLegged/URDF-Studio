@@ -280,9 +280,10 @@ export function buildTriangleVertexKey(
   itemSize: number,
 ): string {
   const start = vertexIndex * itemSize;
-  const x = Number(positionArray[start] ?? 0).toFixed(6);
-  const y = Number(positionArray[start + 1] ?? 0).toFixed(6);
-  const z = Number(positionArray[start + 2] ?? 0).toFixed(6);
+  // Only coincident vertices may identify a duplicate surface.
+  const x = Number(positionArray[start] ?? 0);
+  const y = Number(positionArray[start + 1] ?? 0);
+  const z = Number(positionArray[start + 2] ?? 0);
   return `${x},${y},${z}`;
 }
 

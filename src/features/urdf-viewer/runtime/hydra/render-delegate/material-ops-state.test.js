@@ -1,9 +1,10 @@
+import { getUsdTextureArithmeticSummary } from '../../../../../core/utils/usdTextureArithmetic.ts';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
-import { Color, MeshPhysicalMaterial, SRGBColorSpace, Texture } from 'three';
+import { ClampToEdgeWrapping, Color, MeshPhysicalMaterial, NoColorSpace, RepeatWrapping, SRGBColorSpace, Texture } from 'three';
 
 import { ThreeRenderDelegateMaterialOps } from './ThreeRenderDelegateMaterialOps.js';
 import { ThreeRenderDelegateInterface } from './ThreeRenderDelegateInterface.js';
@@ -919,4 +920,246 @@ test('prefetchPrimOverrideDataFromDriver stays cache-only after a one-shot scene
     assert.equal(summary.source, 'cache-only-after-snapshot');
     assert.equal(summary.count, 1);
     assert.equal(batchFetchCount, 0);
+});
+
+test('normalizeSnapshotMaterialRecords preserves native textureInputs per slot', () => {
+    const context = {
+        ...createMaterialOpsContext(),
+        getStageSourcePath() {
+            return '/scene.usd';
+        },
+        inferColorHexFromMaterialName: () => null,
+        resolveSnapshotMaterialEmissionEnabled,
+    };
+
+    const [record] = normalizeSnapshotMaterialRecords.call(context, [{
+        materialId: '/root/materials/mat_62',
+        mapPath: 'img/bc7ddf166a9a9658c247b3c086960790.png',
+        textureInputs: {
+            mapPath: {
+                uvTransform: [39.370079, 0, 0, 0, 39.370079, 0, 0, 0, 1],
+                uvPrimvar: 'st',
+                wrapS: 'repeat',
+                wrapT: 'repeat',
+            },
+        },
+    }]);
+
+    assert.deepEqual(record.textureInputs.mapPath.uvTransform, [39.370079, 0, 0, 0, 39.370079, 0, 0, 0, 1]);
+    assert.equal(record.textureInputs.mapPath.uvPrimvar, 'st');
+    assert.equal(record.textureInputs.mapPath.wrapS, 'repeat');
+    assert.equal(record.textureInputs.mapPath.wrapT, 'repeat');
+});
+
+test('normalizeSnapshotMaterialRecords drops textureInputs for missing texture paths and disabled emissive', () => {
+    const context = {
+        ...createMaterialOpsContext(),
+        getStageSourcePath() {
+            return '/scene.usd';
+        },
+        inferColorHexFromMaterialName: () => null,
+        resolveSnapshotMaterialEmissionEnabled,
+    };
+
+    const records = normalizeSnapshotMaterialRecords.call(context, [
+        {
+            materialId: '/root/materials/mat_a',
+            textureInputs: {
+                mapPath: { uvTransform: [2, 0, 0, 0, 2, 0, 0, 0, 1] },
+            },
+        },
+        {
+            materialId: '/root/materials/mat_b',
+            emissiveEnabled: false,
+            mapPath: 'img/a.png',
+            emissiveMapPath: 'img/b.png',
+            textureInputs: {
+                mapPath: { uvTransform: [1, 0, 0, 0, 1, 0, 0, 0, 1] },
+                emissiveMapPath: { uvTransform: [2, 0, 0, 0, 2, 0, 0, 0, 1] },
+            },
+        },
+    ]);
+
+    assert.equal(records[0].textureInputs, null);
+    assert.equal(records[1].textureInputs.emissiveMapPath, undefined);
+    assert.deepEqual(records[1].textureInputs.mapPath.uvTransform, [1, 0, 0, 0, 1, 0, 0, 0, 1]);
+});
+
+test('applySnapshotTextureInput applies per-slot uv transform, wrap, and sRGB fallback to the cloned texture', async () => {
+    const registryTexture = new Texture();
+    registryTexture.wrapS = ClampToEdgeWrapping;
+    registryTexture.colorSpace = NoColorSpace;
+    const material = new MeshPhysicalMaterial({ name: 'mat_62' });
+    const context = {
+        ...createMaterialOpsContext(),
+        registry: {
+            getTexture() {
+                return Promise.resolve(registryTexture);
+            },
+        },
+    };
+
+    assert.equal(
+        applySnapshotTextureInput.call(
+            context,
+            material,
+            'img/bc7ddf166a9a9658c247b3c086960790.png',
+            'map',
+            {
+                colorSpace: SRGBColorSpace,
+                textureInputs: {
+                    mapPath: {
+                        uvTransform: [39.370079, 0, 0, 0, 39.370079, 0, 0, 0, 1],
+                        uvPrimvar: 'st',
+                        wrapS: 'repeat',
+                        wrapT: 'repeat',
+                    },
+                },
+            },
+        ),
+        true,
+    );
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    const assignedMap = material.map;
+    assert.notEqual(assignedMap, registryTexture);
+    assert.equal(assignedMap.matrixAutoUpdate, false);
+    assert.deepEqual(assignedMap.matrix.elements, [39.370079, 0, 0, 0, 39.370079, 0, 0, 0, 1]);
+    assert.equal(assignedMap.wrapS, RepeatWrapping);
+    assert.equal(assignedMap.wrapT, RepeatWrapping);
+    // Color slot with absent authored token keeps the USD auto sRGB fallback.
+    assert.equal(assignedMap.colorSpace, SRGBColorSpace);
+    // The shared registry texture is untouched.
+    assert.equal(registryTexture.matrixAutoUpdate, true);
+    assert.equal(registryTexture.wrapS, ClampToEdgeWrapping);
+});
+
+test('applySnapshotTextureInput keeps an authored identity matrix authoritative over clone state', async () => {
+    const registryTexture = new Texture();
+    registryTexture.repeat.set(8, 4);
+    registryTexture.matrixAutoUpdate = true;
+    registryTexture.matrix.setUvTransform(0.25, 0.5, 2, 2, Math.PI / 8, 0.5, 0.5);
+    const material = new MeshPhysicalMaterial({ name: 'mat_identity' });
+    const context = {
+        ...createMaterialOpsContext(),
+        registry: {
+            getTexture() {
+                return Promise.resolve(registryTexture);
+            },
+        },
+    };
+
+    applySnapshotTextureInput.call(context, material, 'img/identity.png', 'map', {
+        textureInputs: {
+            mapPath: { uvTransform: [1, 0, 0, 0, 1, 0, 0, 0, 1] },
+        },
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    const assignedMap = material.map;
+    assert.equal(assignedMap.matrixAutoUpdate, false);
+    assert.deepEqual(assignedMap.matrix.elements, [1, 0, 0, 0, 1, 0, 0, 0, 1]);
+});
+
+test('applySnapshotTextureInput maps material property to the correct slot record', async () => {
+    const sharedTexture = new Texture();
+    let lastAssigned = null;
+    const material = new MeshPhysicalMaterial({ name: 'mat_slots' });
+    const context = {
+        ...createMaterialOpsContext(),
+        registry: {
+            getTexture() {
+                return Promise.resolve(sharedTexture);
+            },
+        },
+    };
+
+    applySnapshotTextureInput.call(context, material, 'img/orm.png', 'roughnessMap', {
+        textureInputs: {
+            roughnessMapPath: { uvTransform: [3, 0, 0, 0, 5, 0, 0, 0, 1] },
+            mapPath: { uvTransform: [9, 0, 0, 0, 9, 0, 0, 0, 1] },
+        },
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    lastAssigned = material.roughnessMap;
+    assert.deepEqual(lastAssigned.matrix.elements, [3, 0, 0, 0, 5, 0, 0, 0, 1]);
+});
+
+test('snapshot texture assignment installs actual RGB sample arithmetic on the live material', async () => {
+    const context = createMaterialOpsContext();
+    const texture = new Texture();
+    context.registry.getTexture = async () => texture;
+    const material = new MeshPhysicalMaterial();
+    applySnapshotTextureInput.call(context, material, 'wardrobe.png', 'map', {
+        textureInputs: { mapPath: { sourceOutput: 'rgb', sampleBias: [0.001, 0.02, 0.01, 0] } },
+    });
+    await new Promise((resolve) => setImmediate(resolve));
+    const shader = { uniforms: {}, vertexShader: '', fragmentShader: '#include <map_fragment>' };
+    material.onBeforeCompile(shader, {});
+    assert.equal(getUsdTextureArithmeticSummary(material)?.compiled, true);
+    assert.deepEqual(shader.uniforms.usdMapSampleBias.value.toArray(), [0.001, 0.02, 0.01, 0]);
+    assert.notEqual(material.map, texture);
+    assert.deepEqual(texture.userData, {});
+});
+
+test('native MDL preset diagnostics retain partial status and effective linear color', () => {
+    const context = createMaterialOpsContext();
+    context.getStageSourcePath = () => '/scene.usd';
+    context.inferColorHexFromMaterialName = () => 0xffffff;
+    context.resolveSnapshotMaterialEmissionEnabled = resolveSnapshotMaterialEmissionEnabled;
+    const mdlPreset = {
+        family: 'OmniPBR', status: 'partial', sourceAsset: 'Materials/Aluminum.mdl',
+        subIdentifier: 'Aluminum',
+        inputs: { diffuse_color_constant: [0.4, 0.5, 0.6], roughness_texture: { assetPath: 'orm.png', sourceColorSpace: 'raw' } },
+        unsupportedInputs: ['connected_diffuse_color'],
+    };
+    const [record] = normalizeSnapshotMaterialRecords.call(context, [{
+        materialId: '/Looks/white', color: [0.4, 0.5, 0.6], colorSource: 'mdl-preset',
+        colorSpace: 'srgb', mdlPreset,
+    }]);
+    assert.deepEqual(record.mdlPreset, mdlPreset);
+    assert.notEqual(record.mdlPreset.inputs, mdlPreset.inputs);
+    assert.equal(record.mdlPreset.status, 'partial');
+    assert.equal(record.colorSource, 'mdl-preset');
+    assert.equal(record.colorSpace, 'linear');
+    assert.deepEqual(record.color, [0.4, 0.5, 0.6]);
+});
+
+test('invalid MDL diagnostic payload cannot masquerade as a resolved preset', () => {
+    const context = createMaterialOpsContext();
+    context.getStageSourcePath = () => '/scene.usd';
+    context.inferColorHexFromMaterialName = () => null;
+    context.resolveSnapshotMaterialEmissionEnabled = resolveSnapshotMaterialEmissionEnabled;
+    const [record] = normalizeSnapshotMaterialRecords.call(context, [{
+        materialId: '/Looks/unsupported',
+        mdlPreset: { family: 'OmniPBR', status: 'resolved', sourceAsset: 'Materials/Example.mdl', subIdentifier: 'Example', inputs: { roughness: Infinity }, unsupportedInputs: [] },
+    }]);
+    assert.equal(record.mdlPreset, null);
+});
+
+
+test('snapshot fallback factory retains dielectric Fresnel parameters on real physical materials', () => {
+    const context = createStageFallbackContext();
+    const ior = (1 + Math.sqrt(0.08)) / (1 - Math.sqrt(0.08));
+    for (const intensity of [0, 0.5]) {
+        const materialPath = `/Looks/Dielectric_${intensity}`;
+        context._snapshotMaterialRecordById = new Map([[materialPath, {
+            materialId: materialPath, color: [0.2, 0.3, 0.4], roughness: 0.25, metalness: 0,
+            ior, specularIntensity: intensity, specularColor: [1, 0.8, 0.4],
+        }]]);
+        const wrapped = context.createFallbackMaterialFromSnapshot(materialPath);
+        assert.ok(wrapped._material instanceof MeshPhysicalMaterial);
+        const material = wrapped._material;
+        assert.equal(material.ior, ior);
+        assert.equal(material.specularIntensity, intensity);
+        assert.deepEqual(material.specularColor.toArray(), [1, 0.8, 0.4]);
+        const f0 = ((material.ior - 1) / (material.ior + 1)) ** 2 * material.specularIntensity;
+        assert.ok(Math.abs(f0 - 0.08 * intensity) < 1e-12);
+        assert.equal(context.createFallbackMaterialFromSnapshot(materialPath), wrapped);
+        material.dispose();
+    }
 });

@@ -99,12 +99,14 @@ function NumberInputHarness({
   min,
   step = 0.1,
   commitOnBlurOnly = false,
+  precision,
 }: {
   initialValue: number;
   label: string;
   min?: number;
   step?: number;
   commitOnBlurOnly?: boolean;
+  precision?: number;
 }) {
   const [value, setValue] = React.useState(initialValue);
 
@@ -118,8 +120,39 @@ function NumberInputHarness({
       min,
       step,
       commitOnBlurOnly,
+      precision,
     }),
     React.createElement('output', { 'data-testid': 'committed-value' }, String(value)),
+  );
+}
+
+function CountingNumberInputHarness({
+  initialValue,
+  label,
+  precision,
+}: {
+  initialValue: number;
+  label: string;
+  precision: number;
+}) {
+  const [value, setValue] = React.useState(initialValue);
+  const [changeCount, setChangeCount] = React.useState(0);
+
+  return React.createElement(
+    'div',
+    null,
+    React.createElement(NumberInput, {
+      value,
+      onChange: (nextValue: number) => {
+        setValue(nextValue);
+        setChangeCount((count) => count + 1);
+      },
+      label,
+      precision,
+      commitOnBlurOnly: true,
+    }),
+    React.createElement('output', { 'data-testid': 'committed-value' }, String(value)),
+    React.createElement('output', { 'data-testid': 'change-count' }, String(changeCount)),
   );
 }
 
@@ -189,6 +222,36 @@ function TransformFieldsHarness({
   );
 }
 
+function CountingTransformFieldsHarness({
+  initialRotationValue,
+}: {
+  initialRotationValue: EulerRadiansValue;
+}) {
+  const [rotationValue, setRotationValue] = React.useState(initialRotationValue);
+  const [changeCount, setChangeCount] = React.useState(0);
+
+  return React.createElement(
+    'div',
+    null,
+    React.createElement(TransformFields, {
+      lang: 'en',
+      positionValue: { x: 1, y: 2, z: 3 },
+      rotationValue,
+      onPositionChange: () => {},
+      onRotationChange: (nextValue: EulerRadiansValue) => {
+        setRotationValue(nextValue);
+        setChangeCount((count) => count + 1);
+      },
+    }),
+    React.createElement(
+      'output',
+      { 'data-testid': 'rotation-value' },
+      JSON.stringify(rotationValue),
+    ),
+    React.createElement('output', { 'data-testid': 'rotation-change-count' }, String(changeCount)),
+  );
+}
+
 async function renderHarness(
   root: Root,
   props: {
@@ -196,6 +259,7 @@ async function renderHarness(
     label: string;
     min?: number;
     step?: number;
+    precision?: number;
   },
 ) {
   await act(async () => {
@@ -402,6 +466,206 @@ test('typing a parseable value updates the committed value before blur', async (
     assert.equal(getCommittedValue(container), '2.5');
   } finally {
     await destroyComponentRoot(dom, root);
+  }
+});
+
+test('typing precise finite decimals commits the raw value independently from display precision', async () => {
+  const { dom, container, root } = createComponentRoot();
+  try {
+    await renderHarness(root, {
+      initialValue: 0,
+      label: 'Offset',
+      precision: 6,
+    });
+
+    const input = getTextInput(container);
+
+    await act(async () => {
+      dispatchReactFocus(input);
+      dispatchReactChange(input, '0.12345678901234568');
+    });
+    assert.equal(getCommittedValue(container), '0.12345678901234568');
+
+    await act(async () => {
+      dispatchReactChange(input, '1e-8');
+    });
+    assert.equal(getCommittedValue(container), '1e-8');
+  } finally {
+    await destroyComponentRoot(dom, root);
+  }
+});
+
+test('commit-on-blur precise input preserves sub-display precision after applying', async () => {
+  const { dom, container, root } = createComponentRoot();
+  try {
+    await act(async () => {
+      root.render(React.createElement(DeferredCommitNumberInputHarness));
+    });
+
+    const input = getTextInput(container);
+
+    await act(async () => {
+      dispatchReactFocus(input);
+      dispatchReactChange(input, '0.12345678901234568');
+      dispatchReactBlur(input);
+    });
+
+    const pendingOutput = container.querySelector('[data-testid="pending-value"]');
+    assert.equal(pendingOutput?.textContent, '0.12345678901234568');
+
+    const applyButton = container.querySelector(
+      '[data-testid="apply-pending"]',
+    ) as HTMLButtonElement | null;
+    assert.ok(applyButton, 'apply pending button should exist');
+
+    await act(async () => {
+      applyButton.click();
+    });
+
+    assert.equal(getCommittedValue(container), '0.12345678901234568');
+  } finally {
+    await destroyComponentRoot(dom, root);
+  }
+});
+
+test('focusing and blurring a rounded display value does not commit a shortened value', async () => {
+  const { dom, container, root } = createComponentRoot();
+  try {
+    await act(async () => {
+      root.render(
+        React.createElement(CountingNumberInputHarness, {
+          initialValue: 0.12345678901234568,
+          label: 'Offset',
+          precision: 6,
+        }),
+      );
+    });
+
+    const input = getTextInput(container);
+    assert.equal(input.value, '0.123457');
+
+    await act(async () => {
+      dispatchReactFocus(input);
+    });
+    const focusedValue = input.value;
+    const focusedValueLength = focusedValue.length;
+    assert.equal(focusedValue, '0.12345678901234568');
+    assert.equal(input.selectionStart, 0);
+    assert.equal(input.selectionEnd, focusedValueLength);
+
+    await act(async () => {
+      dispatchReactBlur(input);
+    });
+
+    assert.equal(getCommittedValue(container), '0.12345678901234568');
+    assert.equal(container.querySelector('[data-testid="change-count"]')?.textContent, '0');
+  } finally {
+    await destroyComponentRoot(dom, root);
+  }
+});
+
+test('focused full precision values can be replaced without appending to the old exponent', async () => {
+  const { dom, container, root } = createComponentRoot();
+  try {
+    await renderHarness(root, {
+      initialValue: 1e-18,
+      label: 'Offset',
+      precision: 6,
+    });
+
+    const input = getTextInput(container);
+    assert.equal(input.value, '0');
+
+    await act(async () => {
+      dispatchReactFocus(input);
+    });
+    const focusedValue = input.value;
+    const focusedValueLength = focusedValue.length;
+    assert.equal(focusedValue, '1e-18');
+    assert.equal(input.selectionStart, 0);
+    assert.equal(input.selectionEnd, focusedValueLength);
+
+    await act(async () => {
+      dispatchReactChange(input, '0.12345678901234568');
+      dispatchReactKeyDown(input, 'Enter');
+      dispatchReactBlur(input);
+    });
+
+    assert.equal(getCommittedValue(container), '0.12345678901234568');
+  } finally {
+    await destroyComponentRoot(dom, root);
+  }
+});
+
+test('zero-decimal number inputs keep complete integer display values', async () => {
+  const { dom, container, root } = createComponentRoot();
+  try {
+    await renderHarness(root, {
+      initialValue: 10,
+      label: 'Count',
+      precision: 0,
+      step: 1,
+    });
+
+    const input = getTextInput(container);
+    assert.equal(input.value, '10');
+
+    await act(async () => {
+      dispatchReactFocus(input);
+      dispatchReactChange(input, '10');
+    });
+
+    assert.equal(getCommittedValue(container), '10');
+  } finally {
+    await destroyComponentRoot(dom, root);
+  }
+});
+
+test('arrow stepping preserves high-precision and tiny numeric offsets', async () => {
+  {
+    const { dom, container, root } = createComponentRoot();
+    try {
+      await renderHarness(root, {
+        initialValue: 0.12345678901234568,
+        label: 'Offset',
+        precision: 6,
+        step: 1e-17,
+      });
+
+      const input = getTextInput(container);
+
+      await act(async () => {
+        dispatchReactFocus(input);
+        dispatchReactKeyDown(input, 'ArrowUp');
+      });
+
+      assert.equal(getCommittedValue(container), '0.12345678901234569');
+    } finally {
+      await destroyComponentRoot(dom, root);
+    }
+  }
+
+  {
+    const { dom, container, root } = createComponentRoot();
+    try {
+      await renderHarness(root, {
+        initialValue: 1e-18,
+        label: 'Offset',
+        precision: 6,
+        step: 1e-18,
+      });
+
+      const input = getTextInput(container);
+
+      await act(async () => {
+        dispatchReactFocus(input);
+        dispatchReactKeyDown(input, 'ArrowUp');
+      });
+
+      assert.equal(getCommittedValue(container), '2e-18');
+    } finally {
+      await destroyComponentRoot(dom, root);
+    }
   }
 });
 
@@ -880,6 +1144,92 @@ test('TransformFields renders per-axis radian rotation rows with compact +/-π/2
     assert.equal(rollInput.value, '0');
     assert.equal(pitchInput.value, 'π/4');
     assert.equal(yawInput.value, '-π/2');
+  } finally {
+    await destroyComponentRoot(dom, root);
+  }
+});
+
+test('TransformFields radian edits preserve the raw finite angle value', async () => {
+  const { dom, container, root } = createComponentRoot();
+  try {
+    await act(async () => {
+      useUIStore.setState({ rotationDisplayMode: 'euler_rad' });
+      root.render(
+        React.createElement(TransformFieldsHarness, {
+          initialRotationValue: { r: 0, p: 0, y: 0 },
+        }),
+      );
+    });
+
+    const rollInput = getTextInputByLabel(container, 'Roll');
+
+    await act(async () => {
+      dispatchReactFocus(rollInput);
+      dispatchReactChange(rollInput, '0.12345678901234568');
+    });
+
+    assert.equal(getRotationValue(container).r, 0.12345678901234568);
+  } finally {
+    await destroyComponentRoot(dom, root);
+  }
+});
+
+test('TransformFields tiny radian focus and edits preserve the raw nonzero angle', async () => {
+  const { dom, container, root } = createComponentRoot();
+  try {
+    await act(async () => {
+      useUIStore.setState({ rotationDisplayMode: 'euler_rad' });
+      root.render(
+        React.createElement(CountingTransformFieldsHarness, {
+          initialRotationValue: { r: 1e-18, p: 0, y: 0 },
+        }),
+      );
+    });
+
+    const rollInput = getTextInputByLabel(container, 'Roll');
+    assert.equal(rollInput.value, '0');
+
+    await act(async () => {
+      dispatchReactFocus(rollInput);
+    });
+    assert.equal(rollInput.value, '1e-18');
+
+    await act(async () => {
+      dispatchReactBlur(rollInput);
+    });
+    assert.equal(getRotationValue(container).r, 1e-18);
+    assert.equal(container.querySelector('[data-testid="rotation-change-count"]')?.textContent, '0');
+
+    await act(async () => {
+      dispatchReactFocus(rollInput);
+      dispatchReactChange(rollInput, '2e-18');
+    });
+    assert.equal(getRotationValue(container).r, 2e-18);
+  } finally {
+    await destroyComponentRoot(dom, root);
+  }
+});
+
+test('TransformFields tiny degree edits preserve the raw nonzero angle', async () => {
+  const { dom, container, root } = createComponentRoot();
+  try {
+    await act(async () => {
+      useUIStore.setState({ rotationDisplayMode: 'euler_deg' });
+      root.render(
+        React.createElement(TransformFieldsHarness, {
+          initialRotationValue: { r: 0, p: 0, y: 0 },
+        }),
+      );
+    });
+
+    const rollInput = getTextInputByLabel(container, 'Roll');
+
+    await act(async () => {
+      dispatchReactFocus(rollInput);
+      dispatchReactChange(rollInput, '1e-18');
+    });
+
+    assert.equal(getRotationValue(container).r, 1e-18 * Math.PI / 180);
   } finally {
     await destroyComponentRoot(dom, root);
   }

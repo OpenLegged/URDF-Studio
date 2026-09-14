@@ -23,6 +23,8 @@
 #include "pxr/base/gf/vec2f.h"
 #include "pxr/base/gf/vec3f.h"
 #include "pxr/base/gf/vec3d.h"
+#include "pxr/base/gf/vec4d.h"
+#include "pxr/base/gf/vec4f.h"
 #include "pxr/usd/sdf/assetPath.h"
 #include "pxr/usd/usdGeom/xformable.h"
 #include "pxr/usd/usdGeom/xformCache.h"
@@ -39,13 +41,17 @@
 #include "pxr/usd/usdGeom/cylinder.h"
 #include "pxr/usd/usdGeom/capsule.h"
 #include "pxr/usd/usd/stageLoadRules.h"
+#include "pxr/usd/usd/editContext.h"
 #include "pxr/usd/usd/variantSets.h"
 #include "pxr/usd/usdShade/material.h"
+#include "pxr/usd/usdShade/shader.h"
 #include "pxr/usd/usdShade/materialBindingAPI.h"
 #include "pxr/usd/usd/primFlags.h"
 #include "pxr/usd/usd/primRange.h"
 
 #include "webRenderDelegate.h"
+#include "mdlPresetStage.h"
+#include "mdlPresetMaterial.h"
 #include "pxr/imaging/hd/unitTestNullRenderPass.h"
 #include <emscripten/bind.h>
 #include "pxr/usd/usdSkel/bakeSkinning.h"
@@ -58,6 +64,7 @@
 #include <chrono>
 #include <cctype>
 #include <cstdint>
+#include <cstring>
 #include <cmath>
 #include <cstdio>
 #include <initializer_list>
@@ -277,6 +284,18 @@ public:
     emscripten::val GetPrimTransformsForPaths(emscripten::val primPaths) {
         return _BuildPrimTransformsForNormalizedPaths(
             _NormalizeUniquePathsFromJsArray(primPaths));
+    }
+
+    // Capability and result contract for loaders that keep binary layers binary.
+    emscripten::val GetMaterialBindingRepairProfile() const {
+        emscripten::val result = emscripten::val::object();
+        result.set("attempted", true);
+        result.set("candidateCount", _lastInitProfile.materialBindingRepairCandidateCount);
+        result.set("repairedCount", _lastInitProfile.materialBindingRepairCount);
+        result.set("failedCount", _lastInitProfile.materialBindingRepairFailureCount);
+        result.set("unsupportedInstanceCount", _lastInitProfile.materialBindingRepairUnsupportedInstanceCount);
+        result.set("durationMs", _lastInitProfile.materialBindingRepairMs);
+        return result;
     }
 
     emscripten::val GetLastInitProfile() const {
@@ -1097,8 +1116,10 @@ public:
                 // stage as a general fallback so standard imageable geometry is not
                 // silently dropped by the fast robot-snapshot path.
                 std::vector<std::pair<std::string, UsdPrim>> genericScenePrims;
+                // Match USD imaging population: over-only libraries are undefined
+                // even when their Mesh descendants report inherited visibility.
                 const Usd_PrimFlagsPredicate predicate =
-                    UsdTraverseInstanceProxies(UsdPrimAllPrimsPredicate);
+                    UsdTraverseInstanceProxies(UsdPrimDefaultPredicate);
                 for (UsdPrim const& prim : UsdPrimRange::Stage(_stage, predicate)) {
                     if (!prim) continue;
                     const std::string primType = _GetSupportedPrimTypeName(prim);
@@ -1782,6 +1803,7 @@ private:
     UsdImagingDelegate  *_delegate;
     HdRenderPassSharedPtr _geometryPass;
     UsdStageRefPtr _stage;
+    HdMdlPresetStage::ShaderPresets _mdlPresets;
     TfTokenVector _renderTags;
 
     struct ProtoMeshIdentifier {
@@ -1836,6 +1858,11 @@ private:
         double renderIndexCreateMs = 0.0;
         double delegateCreateMs = 0.0;
         double stageAssignMs = 0.0;
+        double materialBindingRepairMs = 0.0;
+        int materialBindingRepairCandidateCount = 0;
+        int materialBindingRepairCount = 0;
+        int materialBindingRepairFailureCount = 0;
+        int materialBindingRepairUnsupportedInstanceCount = 0;
         double clearProtoCacheMs = 0.0;
         double skinningDetectMs = 0.0;
         double bakeSkinningMs = 0.0;
@@ -1958,6 +1985,11 @@ private:
         result.set("renderIndexCreateMs", profile.renderIndexCreateMs);
         result.set("delegateCreateMs", profile.delegateCreateMs);
         result.set("stageAssignMs", profile.stageAssignMs);
+        result.set("materialBindingRepairMs", profile.materialBindingRepairMs);
+        result.set("materialBindingRepairCandidateCount", profile.materialBindingRepairCandidateCount);
+        result.set("materialBindingRepairCount", profile.materialBindingRepairCount);
+        result.set("materialBindingRepairFailureCount", profile.materialBindingRepairFailureCount);
+        result.set("materialBindingRepairUnsupportedInstanceCount", profile.materialBindingRepairUnsupportedInstanceCount);
         result.set("clearProtoCacheMs", profile.clearProtoCacheMs);
         result.set("skinningDetectMs", profile.skinningDetectMs);
         result.set("bakeSkinningMs", profile.bakeSkinningMs);
@@ -2844,6 +2876,184 @@ private:
         return normalized;
     }
 
+    // Minimal image-header facts needed to resolve sourceColorSpace=auto the
+    // way OpenUSD's hio stb backend does (Hio_StbImage::IsColorSpaceSRGB):
+    // a gamma hint when the format carries one, the component count, and
+    // whether the samples are 8-bit unsigned bytes. `hasGamma` distinguishes
+    // "no gamma chunk" (fall back to the channel/bit-depth guess) from an
+    // explicit gamma of 1.
+    struct _TextureHeaderInfo {
+        bool valid = false;
+        bool hasGamma = false;
+        float gamma = 0.0f;
+        int channels = 0;
+        bool eightBit = false;
+    };
+
+    static uint32_t _ReadU32Be(const char* data, size_t size, size_t offset) {
+        if (offset + 4 > size) return 0;
+        const unsigned char* bytes = reinterpret_cast<const unsigned char*>(data) + offset;
+        return (static_cast<uint32_t>(bytes[0]) << 24) | (static_cast<uint32_t>(bytes[1]) << 16)
+            | (static_cast<uint32_t>(bytes[2]) << 8) | static_cast<uint32_t>(bytes[3]);
+    }
+
+    static uint16_t _ReadU16Be(const char* data, size_t size, size_t offset) {
+        if (offset + 2 > size) return 0;
+        const unsigned char* bytes = reinterpret_cast<const unsigned char*>(data) + offset;
+        return static_cast<uint16_t>((static_cast<uint16_t>(bytes[0]) << 8) | static_cast<uint16_t>(bytes[1]));
+    }
+
+    // PNG: walk the chunk stream before IDAT. IHDR yields bit depth and color
+    // type; gAMA yields the gamma hint. Channel counting mirrors
+    // stb__parse_png_file(STBI__SCAN_header): palette records resolve to 3
+    // (4 with tRNS) because stb reports img_n = pal_img_n at the IDAT stop,
+    // while a non-palette tRNS does not change the reported channel count.
+    static _TextureHeaderInfo _ParsePngHeader(const char* data, size_t size) {
+        _TextureHeaderInfo info;
+        static const unsigned char signature[8] = {0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n'};
+        if (size < 33 || std::memcmp(data, signature, 8) != 0) return info;
+        if (_ReadU32Be(data, size, 8) != 13
+            || std::memcmp(data + 12, "IHDR", 4) != 0) {
+            return info;
+        }
+        const int depth = static_cast<unsigned char>(data[24]);
+        const int colorType = static_cast<unsigned char>(data[25]);
+        if (depth != 1 && depth != 2 && depth != 4 && depth != 8 && depth != 16) return info;
+        info.eightBit = depth == 8;
+        bool palette = false;
+        switch (colorType) {
+            case 0: info.channels = 1; break; // grayscale
+            case 2: info.channels = 3; break; // RGB
+            case 3: palette = true; info.channels = 3; break; // stb pal_img_n
+            case 4: info.channels = 2; break; // gray + alpha
+            case 6: info.channels = 4; break; // RGBA
+            default: return info;
+        }
+        size_t offset = 8;
+        bool sawEnd = false;
+        while (offset + 12 <= size && !sawEnd) {
+            const uint32_t length = _ReadU32Be(data, size, offset);
+            if (length > size) return info;
+            const char* type = data + offset + 4;
+            if (std::memcmp(type, "IDAT", 4) == 0 || std::memcmp(type, "IEND", 4) == 0) {
+                sawEnd = true;
+                break;
+            }
+            if (std::memcmp(type, "gAMA", 4) == 0 && length == 4) {
+                const uint32_t gamma100k = _ReadU32Be(data, size, offset + 8);
+                info.hasGamma = true;
+                info.gamma = static_cast<float>(gamma100k) / 100000.0f;
+            } else if (std::memcmp(type, "tRNS", 4) == 0) {
+                // Palette tRNS promotes the reported channels to 4 (stb sets
+                // img_n = 4 directly); non-palette tRNS only adds an alpha
+                // channel at decode time, not in the header info.
+                if (palette) info.channels = 4;
+            }
+            offset += 12 + length;
+        }
+        if (!sawEnd) return info;
+        info.valid = true;
+        return info;
+    }
+
+    // JPEG: scan SOI..SOFn markers. SOF carries the sample precision (only
+    // 8-bit baseline is accepted, like stb) and the component count. JPEG
+    // carries no gamma hint; EXIF color tags need full metadata
+    // interpretation, so absence of a hint is the honest signal.
+    static _TextureHeaderInfo _ParseJpegHeader(const char* data, size_t size) {
+        _TextureHeaderInfo info;
+        if (size < 4 || static_cast<unsigned char>(data[0]) != 0xff
+            || static_cast<unsigned char>(data[1]) != 0xd8) {
+            return info;
+        }
+        size_t offset = 2;
+        while (offset + 4 <= size) {
+            if (static_cast<unsigned char>(data[offset]) != 0xff) {
+                offset += 1;
+                continue;
+            }
+            const int marker = static_cast<unsigned char>(data[offset + 1]);
+            if (marker == 0xd8 || (marker >= 0xd0 && marker <= 0xd7) || marker == 0x01) {
+                offset += 2;
+                continue;
+            }
+            if (marker == 0xc0 || marker == 0xc1 || marker == 0xc2) {
+                if (offset + 9 > size) return info;
+                const int precision = static_cast<unsigned char>(data[offset + 4]);
+                if (precision != 8) return info;
+                const int components = static_cast<unsigned char>(data[offset + 9]);
+                if (components != 1 && components != 3 && components != 4) return info;
+                info.eightBit = true;
+                info.channels = components;
+                info.valid = true;
+                return info;
+            }
+            if (marker == 0xda || marker == 0xd9) return info;
+            const uint16_t length = _ReadU16Be(data, size, offset + 2);
+            if (length < 2) return info;
+            // JPEG segment length counts itself (the two length bytes) but not
+            // the 0xff marker prefix, so the next marker sits at offset + 2 + length.
+            // Skipping the full segment matters for EXIF APP1 payloads that embed
+            // thumbnail JPEGs: stopping inside them would hit the thumbnail EOI.
+            offset += 2 + length;
+        }
+        return info;
+    }
+
+    // Classify an auto (unauthored) sourceColorSpace from the resolved file
+    // header, mirroring Hio_StbImage::IsColorSpaceSRGB for the Auto case:
+    // gamma ~0.45455 -> sRGB, gamma ~1 -> linear, other gammas fall back to
+    // the channel guess (stb TF_WARNs and guesses); no hint -> sRGB only for
+    // 8-bit 3/4-channel images, linear otherwise. Format dispatch follows
+    // stbi__info_main's magic-byte order (JPEG probe first, then PNG) because
+    // the corpus contains JPEG payloads under .png paths; hio selects the stb
+    // backend for both extensions, so this matches its behavior. Returns false
+    // when the header is unreadable (record no resolution; the JS loader keeps
+    // its established sRGB fallback for color slots).
+    static bool _ResolveAutoTextureColorSpace(
+        std::string const& resolvedTexturePath,
+        std::string* outColorSpace) {
+        if (resolvedTexturePath.empty() || !outColorSpace) return false;
+
+        const std::shared_ptr<ArAsset> asset = ArGetResolver().OpenAsset(ArResolvedPath(resolvedTexturePath));
+        if (!asset || asset->GetSize() == 0) return false;
+        const std::shared_ptr<const char> buffer = asset->GetBuffer();
+        if (!buffer) return false;
+        const char* const data = buffer.get();
+        const size_t size = asset->GetSize();
+
+        _TextureHeaderInfo info;
+        if (size >= 4 && static_cast<unsigned char>(data[0]) == 0xff
+            && static_cast<unsigned char>(data[1]) == 0xd8) {
+            info = _ParseJpegHeader(data, size);
+        } else if (size >= 8 && static_cast<unsigned char>(data[0]) == 0x89
+            && data[1] == 'P' && data[2] == 'N' && data[3] == 'G') {
+            info = _ParsePngHeader(data, size);
+        } else {
+            return false;
+        }
+        if (!info.valid) return false;
+
+        const float gammaEpsilon = 0.1f;
+        if (info.hasGamma) {
+            if (std::fabs(info.gamma - 0.45455f) < gammaEpsilon) {
+                *outColorSpace = "srgb";
+                return true;
+            }
+            if (std::fabs(info.gamma - 1.0f) < gammaEpsilon) {
+                *outColorSpace = "raw";
+                return true;
+            }
+            // Rare gamma values with no USD-side convention: stb warns and
+            // guesses by channels; we record the same conservative guess.
+        }
+        *outColorSpace = (info.channels == 3 || info.channels == 4) && info.eightBit
+            ? "srgb"
+            : "raw";
+        return true;
+    }
+
+
     static bool _TryInferColorFromMaterialName(
         std::string const& materialName,
         std::array<double, 3>* outColor) {
@@ -3127,8 +3337,112 @@ private:
         return false;
     }
 
+    // Follow connected interface inputs/outputs, without guessing shader names.
+    UsdAttribute _ResolveMaterialAttribute(UsdAttribute attribute) const {
+        std::unordered_set<std::string> visited;
+        while (attribute && visited.insert(attribute.GetPath().GetString()).second) {
+            SdfPathVector connections;
+            if (!attribute.GetConnections(&connections) || connections.empty()) return attribute;
+            attribute = _stage->GetAttributeAtPath(connections.front());
+        }
+        return UsdAttribute();
+    }
+
+    std::array<double, 9> _ReadTextureUvTransform(
+        UsdAttribute const& input,
+        UsdTimeCode const& timeCode,
+        std::string* primvar,
+        int depth = 0) const {
+        const std::array<double, 9> identity = {1, 0, 0, 0, 1, 0, 0, 0, 1};
+        if (!input || depth >= 32) return identity;
+        const UsdAttribute source = _ResolveMaterialAttribute(input);
+        if (!source) return identity;
+        const UsdPrim node = source.GetPrim();
+        std::string nodeId;
+        _TryReadStringAttr(node.GetAttribute(TfToken("info:id")), timeCode, &nodeId);
+        if (nodeId == "UsdPrimvarReader_float2") {
+            _TryReadStringAttr(_ResolveMaterialAttribute(node.GetAttribute(TfToken("inputs:varname"))), timeCode, primvar);
+            return identity;
+        }
+        if (nodeId != "UsdTransform2d") return identity;
+        const auto upstream = _ReadTextureUvTransform(node.GetAttribute(TfToken("inputs:in")), timeCode, primvar, depth + 1);
+        std::array<double, 2> scale = {1, 1}, translation = {0, 0};
+        double rotation = 0;
+        _TryReadVec2Attr(_ResolveMaterialAttribute(node.GetAttribute(TfToken("inputs:scale"))), timeCode, &scale);
+        _TryReadVec2Attr(_ResolveMaterialAttribute(node.GetAttribute(TfToken("inputs:translation"))), timeCode, &translation);
+        const UsdAttribute rotationAttr = _ResolveMaterialAttribute(node.GetAttribute(TfToken("inputs:rotation")));
+        if (rotationAttr) _TryReadDoubleAttr(rotationAttr.GetPrim(), rotationAttr.GetName().GetText(), timeCode, &rotation);
+        const double radians = rotation * std::acos(-1.0) / 180.0;
+        const double c = std::cos(radians), sn = std::sin(radians);
+        // Column-major S -> R -> T, matching the USD coordinate transform.
+        const std::array<double, 9> local = {c * scale[0], sn * scale[0], 0,
+            -sn * scale[1], c * scale[1], 0, translation[0], translation[1], 1};
+        std::array<double, 9> result = {};
+        for (int column = 0; column < 3; ++column)
+            for (int row = 0; row < 3; ++row)
+                for (int k = 0; k < 3; ++k)
+                    result[column * 3 + row] += local[k * 3 + row] * upstream[column * 3 + k];
+        return result;
+    }
+
+    emscripten::val _BuildTextureInputRecord(UsdPrim const& texture, UsdTimeCode const& timeCode, std::string const& sourceOutput) const {
+        emscripten::val input = emscripten::val::object();
+        input.set("sourceOutput", sourceOutput);
+        for (char const* field : {"scale", "bias"}) {
+            const UsdAttribute attribute = _ResolveMaterialAttribute(texture.GetAttribute(TfToken(std::string("inputs:") + field)));
+            GfVec4f valueF;
+            GfVec4d valueD;
+            const bool hasFloat = attribute && attribute.Get(&valueF, timeCode);
+            const bool hasDouble = !hasFloat && attribute && attribute.Get(&valueD, timeCode);
+            if (!hasFloat && !hasDouble) continue;
+            emscripten::val tuple = emscripten::val::array();
+            bool finite = true;
+            for (size_t i = 0; i < 4; ++i) {
+                const double value = hasFloat ? static_cast<double>(valueF[i]) : valueD[i];
+                finite = finite && std::isfinite(value);
+                tuple.set(i, value);
+            }
+            if (finite) input.set(std::string(field) == "scale" ? "sampleScale" : "sampleBias", tuple);
+        }
+        std::string primvar;
+        const auto matrix = _ReadTextureUvTransform(texture.GetAttribute(TfToken("inputs:st")), timeCode, &primvar);
+        emscripten::val values = emscripten::val::array();
+        for (size_t i = 0; i < matrix.size(); ++i) values.set(i, matrix[i]);
+        input.set("uvTransform", values);
+        if (!primvar.empty()) input.set("uvPrimvar", primvar);
+        bool hasAuthoredColorSpace = false;
+        for (char const* field : {"wrapS", "wrapT", "sourceColorSpace"}) {
+            std::string value;
+            if (_TryReadStringAttr(_ResolveMaterialAttribute(texture.GetAttribute(TfToken(std::string("inputs:") + field))), timeCode, &value)) {
+                input.set(field, value);
+                if (field == std::string("sourceColorSpace")) hasAuthoredColorSpace = true;
+            }
+        }
+        // sourceColorSpace=auto (unauthored) resolves from the image header the
+        // same way hio's stb backend does; authored sRGB/raw stay authoritative
+        // and unresolvable headers (ICC/EXIF/palette) record nothing so the JS
+        // loader keeps its established fallback. resolvedColorSpace is the only
+        // signal — sourceColorSpace stays unset to avoid the per-material
+        // texture cloning an authored token would trigger.
+        if (!hasAuthoredColorSpace) {
+            std::string texturePath;
+            if (_TryReadTexturePathAttr(
+                    _ResolveMaterialAttribute(texture.GetAttribute(TfToken("inputs:file"))),
+                    timeCode,
+                    &texturePath)) {
+                std::string resolvedColorSpace;
+                if (_ResolveAutoTextureColorSpace(texturePath, &resolvedColorSpace)) {
+                    input.set("resolvedColorSpace", resolvedColorSpace);
+                }
+            }
+        }
+        return input;
+    }
+
     UsdPrim _FindMaterialShaderPrim(UsdPrim const& materialPrim) const {
         if (!materialPrim || !_stage) return UsdPrim();
+        const UsdShadeShader surface = UsdShadeMaterial(materialPrim).ComputeSurfaceSource();
+        if (surface) return surface.GetPrim();
 
         const std::string materialPath = materialPrim.GetPath().GetString();
         const std::string materialName = _GetPathBasename(materialPath);
@@ -3166,6 +3480,115 @@ private:
         }
 
         return UsdPrim();
+    }
+
+
+    static bool _ReadMdlInput(UsdAttribute const& attr, UsdTimeCode const& timeCode, HdMdlPreset::Value* value) {
+        if (!attr || !value) return false;
+        SdfPathVector connections;
+        if (attr.GetConnections(&connections) && !connections.empty()) return false;
+        VtValue data;
+        if (!attr.Get(&data, timeCode) || data.IsEmpty()) return false;
+        if (data.IsHolding<SdfAssetPath>()) {
+            const auto& path = data.UncheckedGet<SdfAssetPath>();
+            value->kind = HdMdlPreset::Value::Texture;
+            value->assetPath = path.GetResolvedPath().empty() ? path.GetAssetPath() : path.GetResolvedPath();
+            return HdMdlPreset::ResolveTextureColorSpace(attr.GetColorSpace().GetString(), &value->sourceColorSpace);
+        }
+        if (data.IsHolding<bool>()) { value->kind = HdMdlPreset::Value::Boolean; value->boolean = data.UncheckedGet<bool>(); return true; }
+        if (data.IsHolding<float>()) value->numbers[0] = data.UncheckedGet<float>();
+        else if (data.IsHolding<double>()) value->numbers[0] = data.UncheckedGet<double>();
+        else if (data.IsHolding<int>()) value->numbers[0] = data.UncheckedGet<int>();
+        else if (data.IsHolding<GfVec2f>()) {
+            auto const& vector = data.UncheckedGet<GfVec2f>(); value->kind = HdMdlPreset::Value::Float2;
+            value->numbers = {{vector[0], vector[1], 0}};
+        } else if (data.IsHolding<GfVec2d>()) {
+            auto const& vector = data.UncheckedGet<GfVec2d>(); value->kind = HdMdlPreset::Value::Float2;
+            value->numbers = {{vector[0], vector[1], 0}};
+        } else if (data.IsHolding<GfVec3f>()) {
+            auto const& vector = data.UncheckedGet<GfVec3f>(); value->kind = HdMdlPreset::Value::Color;
+            value->numbers = {{vector[0], vector[1], vector[2]}};
+        } else if (data.IsHolding<GfVec3d>()) {
+            auto const& vector = data.UncheckedGet<GfVec3d>(); value->kind = HdMdlPreset::Value::Color;
+            value->numbers = {{vector[0], vector[1], vector[2]}};
+        } else return false;
+        for (double number : value->numbers) if (!std::isfinite(number)) return false;
+        return true;
+    }
+
+    static emscripten::val _MdlValueToJs(HdMdlPreset::Value const& value) {
+        if (value.kind == HdMdlPreset::Value::Boolean) return emscripten::val(value.boolean);
+        if (value.kind == HdMdlPreset::Value::Number) return emscripten::val(value.numbers[0]);
+        if (value.kind == HdMdlPreset::Value::Texture) {
+            auto result = emscripten::val::object(); result.set("assetPath", value.assetPath);
+            result.set("sourceColorSpace", value.sourceColorSpace); return result;
+        }
+        auto array = emscripten::val::array();
+        const size_t count = value.kind == HdMdlPreset::Value::Float2 ? 2 : 3;
+        for (size_t i = 0; i < count; ++i) array.set(i, value.numbers[i]);
+        return array;
+    }
+
+    void _ApplyMdlMaterialRecord(UsdPrim const& shader, UsdTimeCode const& timeCode, emscripten::val& record) const {
+        const auto found = _mdlPresets.find(shader.GetPath().GetString());
+        if (found == _mdlPresets.end()) return;
+        auto const& state = found->second;
+        HdMdlPreset::Preset effective = state.preset;
+        effective.inputs.clear();
+        std::vector<std::string> unsupported = state.unsupportedInputs;
+        auto inputs = emscripten::val::object();
+        for (UsdAttribute const& attr : shader.GetAttributes()) {
+            const std::string name = attr.GetName().GetString();
+            if (!TfStringStartsWith(name, "inputs:")) continue;
+            const std::string parameter = name.substr(7);
+            HdMdlPreset::Value value;
+            if (!_ReadMdlInput(attr, timeCode, &value)) {
+                unsupported.push_back(parameter + ": blocked, connected, or unsupported USD value"); continue;
+            }
+            const auto defaultValue = state.preset.inputs.find(parameter);
+            if (value.kind == HdMdlPreset::Value::Texture && !attr.HasColorSpace() && state.defaultedInputs.count(parameter)
+                && defaultValue != state.preset.inputs.end()) value.sourceColorSpace = defaultValue->second.sourceColorSpace;
+            effective.inputs[parameter] = value;
+            inputs.set(parameter, _MdlValueToJs(value));
+        }
+        auto material = HdMdlPreset::ResolveMaterial(effective);
+        unsupported.insert(unsupported.end(), material.unsupportedInputs.begin(), material.unsupportedInputs.end());
+        if (state.preset.Supported()) {
+            for (auto const& field : material.fields) record.set(field.first, _MdlValueToJs(field.second));
+            if (material.fields.count("color")) {
+                record.set("colorSpace", std::string("linear")); record.set("colorSource", std::string("mdl-preset"));
+            }
+            if (material.fields.count("specularColor")) record.set("specularColorSpace", std::string("linear"));
+            if (effective.family == "OmniPBR") record.set("isOmniPbr", true);
+            // Generic USD aliases may have found the same textures before this
+            // family-specific mapping. Remove those slots before applying exact
+            // supported mix semantics (notably influence=0 and disabled ORM).
+            auto textureInputs = emscripten::val::object();
+            for (char const* field : {"mapPath", "roughnessMapPath", "metalnessMapPath", "normalMapPath", "aoMapPath"})
+                record.set(field, emscripten::val::null());
+            const auto matrix = HdMdlPreset::TextureUvTransform(effective);
+            for (auto const& entry : material.textures) {
+                record.set(entry.first, entry.second.value.assetPath);
+                auto input = emscripten::val::object();
+                input.set("sourceOutput", entry.second.sourceOutput);
+                input.set("sourceColorSpace", entry.second.value.sourceColorSpace);
+                input.set("uvPrimvar", std::string("st"));
+                input.set("wrapS", std::string("repeat")); input.set("wrapT", std::string("repeat"));
+                auto uv = emscripten::val::array(), sampleScale = emscripten::val::array(), sampleBias = emscripten::val::array();
+                for (size_t i = 0; i < 9; ++i) uv.set(i, matrix[i]);
+                for (size_t i = 0; i < 4; ++i) { sampleScale.set(i, entry.second.sampleScale[i]); sampleBias.set(i, entry.second.sampleBias[i]); }
+                input.set("uvTransform", uv); input.set("sampleScale", sampleScale); input.set("sampleBias", sampleBias);
+                textureInputs.set(entry.first, input);
+            }
+            record.set("textureInputs", textureInputs);
+        }
+        auto diagnostic = emscripten::val::object();
+        diagnostic.set("family", state.preset.family); diagnostic.set("sourceAsset", state.sourceAsset);
+        diagnostic.set("subIdentifier", state.preset.subIdentifier); diagnostic.set("inputs", inputs);
+        diagnostic.set("status", std::string(!state.preset.Supported() ? "unsupported" : unsupported.empty() ? "resolved" : "partial"));
+        auto failures = emscripten::val::array();
+        for (size_t i = 0; i < unsupported.size(); ++i) failures.set(i, unsupported[i]);
+        diagnostic.set("unsupportedInputs", failures); record.set("mdlPreset", diagnostic);
     }
 
     emscripten::val _BuildSnapshotMaterialRecord(
@@ -3261,6 +3684,7 @@ private:
             record.set(fieldName, array);
             return true;
         };
+        emscripten::val textureInputs = emscripten::val::object();
         auto setTexture = [&](char const* fieldName, std::initializer_list<char const*> attributeNames) {
             std::string texturePath;
             for (char const* attributeName : attributeNames) {
@@ -3275,6 +3699,18 @@ private:
                         &texturePath)
                     && !texturePath.empty()) {
                     record.set(fieldName, texturePath);
+                    return true;
+                }
+                const UsdAttribute connected = _ResolveMaterialAttribute(shaderPrim.GetAttribute(TfToken(attributeName)));
+                if (!connected || connected.GetPrim() == shaderPrim) continue;
+                const UsdPrim texture = connected.GetPrim();
+                std::string textureId;
+                _TryReadStringAttr(texture.GetAttribute(TfToken("info:id")), timeCode, &textureId);
+                if (textureId == "UsdUVTexture" && _TryReadTexturePathAttr(
+                        _ResolveMaterialAttribute(texture.GetAttribute(TfToken("inputs:file"))), timeCode, &texturePath)) {
+                    record.set(fieldName, texturePath);
+                    textureInputs.set(fieldName, _BuildTextureInputRecord(texture, timeCode, connected.GetBaseName().GetString()));
+                    record.set("textureInputs", textureInputs);
                     return true;
                 }
             }
@@ -3425,6 +3861,7 @@ private:
         setVec2("clearcoatNormalScale", { "inputs:clearcoatNormalScale", "inputs:clearcoat_normal_scale" });
 
         setTexture("mapPath", {
+            "inputs:diffuseColor",
             "inputs:diffuse_texture",
             "inputs:diffuseColor_texture",
             "inputs:diffuse_color_texture",
@@ -3435,12 +3872,14 @@ private:
             "inputs:glass_color_texture",
         });
         setTexture("emissiveMapPath", {
+            "inputs:emissiveColor",
             "inputs:emissiveColor_texture",
             "inputs:emissive_color_texture",
             "inputs:emissive_texture",
             "inputs:emissive_mask_texture",
         });
         setTexture("roughnessMapPath", {
+            "inputs:roughness",
             "inputs:roughness_texture",
             "inputs:reflectionroughness_texture",
             "inputs:reflection_roughness_texture",
@@ -3449,30 +3888,36 @@ private:
             "inputs:ORM_texture",
         });
         setTexture("metalnessMapPath", {
+            "inputs:metallic",
             "inputs:metallic_texture",
             "inputs:metalness_texture",
             "inputs:ORM_texture",
         });
         setTexture("normalMapPath", {
+            "inputs:normal",
             "inputs:normal_texture",
             "inputs:normalmap_texture",
             "inputs:normal_map_texture",
             "inputs:detail_normalmap_texture",
         });
         setTexture("aoMapPath", {
+            "inputs:occlusion",
             "inputs:occlusion_texture",
             "inputs:occlusion_map",
             "inputs:ao_texture",
             "inputs:ORM_texture",
         });
         setTexture("alphaMapPath", {
+            "inputs:opacity",
             "inputs:opacity_texture",
             "inputs:opacity_mask_texture",
             "inputs:opacityMask_texture",
             "inputs:cutout_opacity_texture",
         });
-        setTexture("clearcoatMapPath", { "inputs:clearcoat_texture", "inputs:coat_texture" });
+        setTexture("clearcoatMapPath", {
+            "inputs:clearcoat", "inputs:clearcoat_texture", "inputs:coat_texture" });
         setTexture("clearcoatRoughnessMapPath", {
+            "inputs:clearcoatRoughness",
             "inputs:clearcoatRoughness_texture",
             "inputs:clearcoat_roughness_texture",
             "inputs:coat_roughness_texture",
@@ -3482,6 +3927,7 @@ private:
             "inputs:clearcoat_normal_texture",
         });
         setTexture("specularColorMapPath", {
+            "inputs:specularColor",
             "inputs:specularColor_texture",
             "inputs:specular_color_texture",
         });
@@ -3512,6 +3958,7 @@ private:
             "inputs:iridescence_thickness_texture",
         });
 
+        _ApplyMdlMaterialRecord(shaderPrim, timeCode, record);
         return record;
     }
 
@@ -5646,6 +6093,42 @@ private:
         return false;
     }
 
+    void _RepairMaterialBindingApiSchemas(DriverInitProfile& profile) {
+        if (!_stage) return;
+        const double startedAtMs = _NowSteadyMs();
+        std::vector<UsdPrim> candidates;
+        for (UsdPrim const& prim : UsdPrimRange::Stage(_stage, UsdPrimAllPrimsPredicate)) {
+            // Instance children are not visited by this range. Do not advertise
+            // complete native repair for their non-editable prototype bindings.
+            if (prim.IsInstance()) ++profile.materialBindingRepairUnsupportedInstanceCount;
+            if (prim.HasAPI<UsdShadeMaterialBindingAPI>()) continue;
+            for (UsdRelationship const& relationship : prim.GetRelationships()) {
+                const std::string& name = relationship.GetName().GetString();
+                if ((name == "material:binding" || TfStringStartsWith(name, "material:binding:"))
+                    && relationship.HasAuthoredTargets()) {
+                    candidates.push_back(prim);
+                    break;
+                }
+            }
+        }
+        profile.materialBindingRepairCandidateCount = static_cast<int>(candidates.size());
+        // Authored source layers and their asset-resolution anchors remain intact.
+        // Only compatibility apiSchemas opinions are added to this stage's session.
+        UsdEditContext editContext(_stage, _stage->GetSessionLayer());
+        for (UsdPrim const& prim : candidates) {
+            if (prim.IsInstanceProxy() || prim.IsInPrototype()) {
+                ++profile.materialBindingRepairFailureCount;
+                continue;
+            }
+            if (UsdShadeMaterialBindingAPI::Apply(prim)) {
+                ++profile.materialBindingRepairCount;
+            } else {
+                ++profile.materialBindingRepairFailureCount;
+            }
+        }
+        profile.materialBindingRepairMs = _NowSteadyMs() - startedAtMs;
+    }
+
     void _Init(UsdStageRefPtr const& usdStage,
                HdRprimCollection const &collection,
                SdfPath const &delegateId,
@@ -5670,6 +6153,8 @@ private:
         const double stageAssignStartedAtMs = _NowSteadyMs();
         _stage = usdStage;
         initProfile.stageAssignMs = _NowSteadyMs() - stageAssignStartedAtMs;
+        _RepairMaterialBindingApiSchemas(initProfile);
+        _mdlPresets = HdMdlPresetStage::Apply(_stage);
 
         const double clearProtoCacheStartedAtMs = _NowSteadyMs();
         {

@@ -1,4 +1,4 @@
-import { Matrix3, Matrix4, Vector3 } from 'three';
+import { Color, ColorManagement, Matrix3, Matrix4, Vector3 } from 'three';
 
 import {
   getDescriptorRanges,
@@ -13,9 +13,24 @@ import { NORMAL_EPSILON, NORMAL_REPAIR_DOT_THRESHOLD } from './internalTypes.ts'
 import type { ExportDescriptor, SnapshotBuffers } from './internalTypes.ts';
 
 function formatObjNumber(value: number): string {
-  const normalized = Math.abs(value) < 1e-9 ? 0 : value;
-  const fixed = Number(normalized.toFixed(6));
-  return Number.isInteger(fixed) ? String(fixed) : String(fixed);
+  // Nine significant digits retain Float32 payloads under external scene scale.
+  return String(Number(value.toPrecision(9)));
+}
+
+const vertexColor = new Color();
+
+/**
+ * Encode one linear vertex color as the sRGB value written to the OBJ `v`
+ * line. Both readers of this field interpret it as sRGB and linearize it
+ * again on parse (the product WASM parser `srgbToLinear` and three's
+ * OBJLoader `setRGB(..., SRGBColorSpace)`); three's OBJExporter applies the
+ * same working-to-sRGB conversion before writing. Writing raw linear values
+ * here would be linearized twice on round-trip and darken the mesh.
+ */
+function formatObjVertexColorChannel(value: number): string {
+  vertexColor.setRGB(value, value, value);
+  ColorManagement.workingToColorSpace(vertexColor, 'srgb');
+  return formatObjNumber(vertexColor.r);
 }
 
 function resolveObjIndex(rawIndex: number, count: number): number {
@@ -216,13 +231,15 @@ function readGeometryData(
   const uvValues = readRangeValues(buffers?.uvs, ranges?.uvs);
   const transformValues = readRangeValues(buffers?.transforms, ranges?.transform);
 
-  const transform =
-    transformValues.length >= 16
+  const transform = descriptor.geometryTransform
+    ? new Matrix4().fromArray(descriptor.geometryTransform)
+    : transformValues.length >= 16
       ? new Matrix4().fromArray(
           Array.from({ length: 16 }, (_, index) => readRangeNumber(transformValues, index)),
         )
       : null;
-  const shouldBakeTransform = descriptor.bakeTransformIntoMesh !== false;
+  const shouldBakeTransform = Boolean(descriptor.geometryTransform)
+    || descriptor.bakeTransformIntoMesh !== false;
   const normalMatrix =
     transform && shouldBakeTransform ? new Matrix3().getNormalMatrix(transform) : null;
   const tempVector = new Vector3();
@@ -585,7 +602,7 @@ function applyTransformToGeometry(ctx: ObjBuildContext): void {
     const vertexColor = vertexColorByIndex.get(index / 3) || defaultVertexColor;
     lines.push(
       vertexColor
-        ? `v ${formatObjNumber(tempVector.x)} ${formatObjNumber(tempVector.y)} ${formatObjNumber(tempVector.z)} ${formatObjNumber(vertexColor[0])} ${formatObjNumber(vertexColor[1])} ${formatObjNumber(vertexColor[2])}`
+        ? `v ${formatObjNumber(tempVector.x)} ${formatObjNumber(tempVector.y)} ${formatObjNumber(tempVector.z)} ${formatObjVertexColorChannel(vertexColor[0])} ${formatObjVertexColorChannel(vertexColor[1])} ${formatObjVertexColorChannel(vertexColor[2])}`
         : `v ${formatObjNumber(tempVector.x)} ${formatObjNumber(tempVector.y)} ${formatObjNumber(tempVector.z)}`,
     );
   }

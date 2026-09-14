@@ -1,3 +1,4 @@
+import { getUsdTextureArithmeticSummary } from '@/core/utils/usdTextureArithmetic';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import * as THREE from 'three';
@@ -163,6 +164,7 @@ test('USD runtime keeps opaque textured materials white-based instead of name-ti
   materialRecord.mapPath = 'resource/img/walnut.png';
   materialRecord.opacity = 1;
   materialRecord.opacityEnabled = true;
+  materialRecord.textureInputs = { mapPath: { sourceOutput: 'rgb', sampleBias: [0.001, 0.02, 0.01, 0] } };
 
   const originalImage = globalThis.Image;
   const originalLoadAsync = THREE.TextureLoader.prototype.loadAsync;
@@ -185,6 +187,10 @@ test('USD runtime keeps opaque textured materials white-based instead of name-ti
     assert.equal(material.userData.urdfTextureApplied, true);
     assert.equal(material.userData.urdfColorApplied, true);
     assert.equal(material.userData.urdfColor, '#ffffff');
+    const shader = { uniforms: {}, vertexShader: '', fragmentShader: '#include <map_fragment>' } as Parameters<THREE.Material['onBeforeCompile']>[0];
+    material.onBeforeCompile(shader, {} as THREE.WebGLRenderer);
+    assert.equal(getUsdTextureArithmeticSummary(material)?.compiled, true);
+    assert.deepEqual(shader.uniforms.usdMapSampleBias.value.toArray(), [0.001, 0.02, 0.01, 0]);
     runtime.dispose();
   } finally {
     THREE.TextureLoader.prototype.loadAsync = originalLoadAsync;
@@ -242,4 +248,62 @@ test('USD runtime renders a mesh-only static scene without inventing movable joi
   assert.equal(Object.keys(runtime.robotData.joints).length, 0);
   assert.ok(runtime.root.getObjectByName('Triangle') instanceof THREE.Mesh);
   runtime.dispose();
+});
+
+test('USD runtime preserves native normal handedness and disabled AO on actual materials', async () => {
+  const parsed = createParsedScene();
+  const record = parsed.snapshot.render?.materials?.[0];
+  assert.ok(record);
+  record.normalScale = [1, -1];
+  record.aoMapIntensity = 0;
+  const runtime = await buildUsdRobotRuntimeFromScene(parsed);
+  try {
+    const mesh = runtime.root.links.arm.getObjectByName('shell') as THREE.Mesh;
+    const material = mesh.material as THREE.MeshPhysicalMaterial;
+    assert.deepEqual(material.normalScale.toArray(), [1, -1]);
+    assert.equal(material.aoMapIntensity, 0);
+  } finally {
+    runtime.dispose();
+  }
+});
+
+
+test('USD runtime preserves native dielectric IOR and specular level on actual physical materials', async () => {
+  const parsed = createParsedScene();
+  const record = parsed.snapshot.render?.materials?.[0];
+  assert.ok(record);
+  record.ior = (1 + Math.sqrt(0.08)) / (1 - Math.sqrt(0.08));
+  record.specularIntensity = 0.5;
+  record.specularColor = [1, 0.8, 0.4];
+  const runtime = await buildUsdRobotRuntimeFromScene(parsed);
+  try {
+    const mesh = runtime.root.links.arm.getObjectByName('shell') as THREE.Mesh;
+    const material = mesh.material as THREE.MeshPhysicalMaterial;
+    assert.equal(material.ior, record.ior);
+    assert.equal(material.specularIntensity, 0.5);
+    assert.deepEqual(material.specularColor.toArray(), [1, 0.8, 0.4]);
+  } finally {
+    runtime.dispose();
+  }
+});
+
+
+test('USD direct runtime retains a disabled specular lobe on the actual material', async () => {
+  const parsed = createParsedScene();
+  const record = parsed.snapshot.render?.materials?.[0];
+  assert.ok(record);
+  record.ior = (1 + Math.sqrt(0.08)) / (1 - Math.sqrt(0.08));
+  record.specularIntensity = 0;
+  record.specularColor = [1, 1, 1];
+  const runtime = await buildUsdRobotRuntimeFromScene(parsed);
+  try {
+    const mesh = runtime.root.links.arm.getObjectByName('shell');
+    assert.ok(mesh instanceof THREE.Mesh);
+    assert.ok(mesh.material instanceof THREE.MeshPhysicalMaterial);
+    assert.equal(mesh.material.ior, record.ior);
+    assert.equal(mesh.material.specularIntensity, 0);
+    assert.deepEqual(mesh.material.specularColor.toArray(), [1, 1, 1]);
+  } finally {
+    runtime.dispose();
+  }
 });

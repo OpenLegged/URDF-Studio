@@ -1,4 +1,4 @@
-import { MAX_PROPERTY_DECIMALS, formatNumberWithMaxDecimals } from '@/core/utils/numberPrecision';
+import { formatNumberPreservingPrecision } from '@/core/utils/numberPrecision';
 import { JointType, type UrdfJoint, type UrdfLink } from '@/types';
 import {
   getPreferredNewline,
@@ -105,7 +105,7 @@ function getLineEndIncludingNewline(sourceContent: string, index: number): numbe
 }
 
 function formatScalar(value: number): string {
-  return formatNumberWithMaxDecimals(value, MAX_PROPERTY_DECIMALS) || '0';
+  return formatNumberPreservingPrecision(value) || '0';
 }
 
 function formatFiniteLimitScalar(value: number | undefined): string | null {

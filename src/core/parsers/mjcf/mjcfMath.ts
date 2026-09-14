@@ -97,19 +97,31 @@ export function mjcfQuatToThreeQuat(quat?: [number, number, number, number]): TH
 }
 
 export function createMuJoCoFromToQuaternion(direction: THREE.Vector3): THREE.Quaternion {
-  if (direction.lengthSq() <= 1e-12) {
+  const length = Math.hypot(direction.x, direction.y, direction.z);
+  if (length === 0 || !Number.isFinite(length)) {
     return new THREE.Quaternion();
   }
 
-  const normalizedDirection = direction.clone().normalize();
-  const localNegativeZ = new THREE.Vector3(0, 0, -1);
-  const dot = localNegativeZ.dot(normalizedDirection);
-
-  if (dot <= -1 + 1e-9) {
-    return new THREE.Quaternion(1, 0, 0, 0);
+  const x = direction.x / length;
+  const y = direction.y / length;
+  const z = direction.z / length;
+  const transverseLength = Math.hypot(x, y);
+  if (transverseLength === 0) {
+    // MuJoCo chooses +X for the exactly antiparallel direction.
+    return z > 0 ? new THREE.Quaternion(1, 0, 0, 0) : new THREE.Quaternion();
   }
 
-  return new THREE.Quaternion().setFromUnitVectors(localNegativeZ, normalizedDirection).normalize();
+  // Choose the stable half-angle formula on each hemisphere; forming an angle
+  // near pi would round away tiny lateral components even with atan2.
+  if (z > 0) {
+    const sinHalf = Math.sqrt((1 + z) / 2);
+    return new THREE.Quaternion(
+      y / transverseLength * sinHalf, -x / transverseLength * sinHalf,
+      0, transverseLength / (2 * sinHalf),
+    );
+  }
+  const w = Math.sqrt((1 - z) / 2);
+  return new THREE.Quaternion(y / (2 * w), -x / (2 * w), 0, w);
 }
 
 /**
@@ -168,7 +180,7 @@ export function canonicalizeMjcfFromToGeom(
     quat: mjcfQuatTupleFromQuaternion(createMuJoCoFromToQuaternion(direction), options),
     size: [
       roundNumber(radius, options.precision),
-      roundNumber(direction.length() / 2, options.precision),
+      roundNumber(Math.hypot(direction.x, direction.y, direction.z) / 2, options.precision),
     ],
   };
 }
@@ -348,7 +360,7 @@ export function isNonZeroPosition(
     return false;
   }
 
-  return Math.abs(position.x) > 1e-9 || Math.abs(position.y) > 1e-9 || Math.abs(position.z) > 1e-9;
+  return Math.abs(position.x) > 0 || Math.abs(position.y) > 0 || Math.abs(position.z) > 0;
 }
 
 export function subtractLocalOffset(

@@ -2,12 +2,10 @@ import { useCallback } from 'react';
 
 import {
   appendCollisionBody,
-  createSourceSemanticRobotHash,
   getCollisionGeometryEntries,
   normalizeJointLimitOrder,
   resolveClosedLoopJointOriginCompensationDetailed,
 } from '@/core/robot';
-import { useAssetsStore } from '@/store/assetsStore';
 import {
   repairWorkspaceSelection,
   useSelectionStore,
@@ -39,23 +37,12 @@ import type {
   WorkspacePropertyRef,
 } from '../useWorkspaceMutationsTypes';
 import {
-  findAddedCollisionGeometryPatch,
-  findRemovedCollisionGeometryObjectIndex,
-  findUpdatedCollisionGeometryPatch,
-} from './collisionGeometryDiff';
-import {
   applyComponentEditorLockPatch,
   applyLinkEditorControlPatch,
 } from './editor_lock_mutations';
-import { hasLinkInertialChanged } from './linkInertialDiff';
-import { applyLinkPatch } from './linkPatch';
 import type { PropertyHistoryCommands } from './usePropertyHistoryCommands';
 import type { WorkspaceTransformCommands } from './useWorkspaceTransformCommands';
-import { synchronizeComponentSourceDraft } from '../workspace-source-sync/component_source_draft_sync';
-
-const synchronizeSourceDraft = (componentId: string, force = false): void => {
-  synchronizeComponentSourceDraft(componentId, { force });
-};
+import { synchronizeComponentSourceAfterMutation } from '../workspace-source-sync/component_source_commands';
 
 interface UseSourceAwareWorkspaceCommandsParams {
   commitPendingHistory: PropertyHistoryCommands['commitPendingHistory'];
@@ -63,24 +50,7 @@ interface UseSourceAwareWorkspaceCommandsParams {
   handleAssemblyTransform: WorkspaceTransformCommands['handleAssemblyTransform'];
   handleComponentTransform: WorkspaceTransformCommands['handleComponentTransform'];
   mutationOptions: PropertyHistoryCommands['mutationOptions'];
-  patchEditableSourceRobot: UseWorkspaceMutationsParams['patchEditableSourceRobot'];
-  patchEditableSourceAddChild: UseWorkspaceMutationsParams['patchEditableSourceAddChild'];
-  patchEditableSourceAddCollisionBody:
-    UseWorkspaceMutationsParams['patchEditableSourceAddCollisionBody'];
-  patchEditableSourceDeleteCollisionBody:
-    UseWorkspaceMutationsParams['patchEditableSourceDeleteCollisionBody'];
-  patchEditableSourceDeleteSubtree:
-    UseWorkspaceMutationsParams['patchEditableSourceDeleteSubtree'];
-  patchEditableSourceRenameEntities:
-    UseWorkspaceMutationsParams['patchEditableSourceRenameEntities'];
-  patchEditableSourceRobotName:
-    UseWorkspaceMutationsParams['patchEditableSourceRobotName'];
-  patchEditableSourceUpdateCollisionBody:
-    UseWorkspaceMutationsParams['patchEditableSourceUpdateCollisionBody'];
-  patchEditableSourceUpdateJointLimit:
-    UseWorkspaceMutationsParams['patchEditableSourceUpdateJointLimit'];
-  patchEditableSourceUpdateLinkInertial:
-    UseWorkspaceMutationsParams['patchEditableSourceUpdateLinkInertial'];
+  synchronizeComponentSource: UseWorkspaceMutationsParams['synchronizeComponentSource'];
   runPropertyMutation: PropertyHistoryCommands['runPropertyMutation'];
   setSelection: UseWorkspaceMutationsParams['setSelection'];
 }
@@ -90,80 +60,22 @@ interface DeletedComponentSourceMutation {
   previousRobot: RobotData;
 }
 
-interface DeletedLinkSourceTarget {
-  componentId: string;
-  expectedRobotSnapshotHash: string;
-  name: string;
-}
-
-function reconcileDeletedComponentSource({
-  sourceMutation,
-  removedComponentId,
-  reconcileComponentRobot,
-}: {
-  sourceMutation: DeletedComponentSourceMutation | null;
-  removedComponentId: string | null;
-  reconcileComponentRobot: (componentId: string, previousRobot: RobotData) => boolean;
-}): boolean {
-  if (!sourceMutation || removedComponentId) return false;
-  return reconcileComponentRobot(
-    sourceMutation.componentId,
-    sourceMutation.previousRobot,
-  );
-}
-
-function patchLegacyDeletedLinkSource({
-  sourceHandled,
-  deletedLink,
-  removedComponentId,
-  patchEditableSourceDeleteSubtree,
-}: {
-  sourceHandled: boolean;
-  deletedLink: DeletedLinkSourceTarget | null;
-  removedComponentId: string | null;
-  patchEditableSourceDeleteSubtree:
-    UseWorkspaceMutationsParams['patchEditableSourceDeleteSubtree'];
-}): void {
-  if (sourceHandled || !deletedLink || removedComponentId) return;
-  patchEditableSourceDeleteSubtree?.({
-    componentId: deletedLink.componentId,
-    expectedRobotSnapshotHash: deletedLink.expectedRobotSnapshotHash,
-    linkName: deletedLink.name,
-  });
-}
-
 export function useSourceAwareWorkspaceCommands({
   commitPendingHistory,
   focusOn,
   handleAssemblyTransform,
   handleComponentTransform,
   mutationOptions,
-  patchEditableSourceRobot,
-  patchEditableSourceAddChild,
-  patchEditableSourceAddCollisionBody,
-  patchEditableSourceDeleteCollisionBody,
-  patchEditableSourceDeleteSubtree,
-  patchEditableSourceRenameEntities,
-  patchEditableSourceRobotName,
-  patchEditableSourceUpdateCollisionBody,
-  patchEditableSourceUpdateJointLimit,
-  patchEditableSourceUpdateLinkInertial,
+  synchronizeComponentSource = synchronizeComponentSourceAfterMutation,
   runPropertyMutation,
   setSelection,
 }: UseSourceAwareWorkspaceCommandsParams) {
-  const reconcileComponentRobot = useCallback((
+  const synchronizeComponentRobot = useCallback((
     componentId: string,
     previousRobot: RobotData,
-  ): boolean => {
-    const nextRobot = useWorkspaceStore.getState().workspace.components[componentId]?.robot;
-    if (!nextRobot) return false;
-    return patchEditableSourceRobot?.({
-      componentId,
-      expectedRobotSnapshotHash: createSourceSemanticRobotHash(previousRobot),
-      previousRobot,
-      nextRobot,
-    }) === true;
-  }, [patchEditableSourceRobot]);
+  ): void => {
+    synchronizeComponentSource({ componentId, previousRobot });
+  }, [synchronizeComponentSource]);
 
   const handleWorkspaceNameChange = useCallback(
     (name: string) => {
@@ -197,18 +109,10 @@ export function useSourceAwareWorkspaceCommands({
         { label: 'Rename source robot' },
       );
       if (changed) {
-        const handled = reconcileComponentRobot(ref.componentId, component.robot);
-        if (!handled) {
-          patchEditableSourceRobotName?.({
-            componentId: ref.componentId,
-            expectedRobotSnapshotHash: createSourceSemanticRobotHash(component.robot),
-            name,
-          });
-        }
-        synchronizeSourceDraft(ref.componentId);
+        synchronizeComponentRobot(ref.componentId, component.robot);
       }
     },
-    [commitPendingHistory, patchEditableSourceRobotName, reconcileComponentRobot],
+    [commitPendingHistory, synchronizeComponentRobot],
   );
 
   const updateLinkProperty = useCallback(
@@ -224,7 +128,6 @@ export function useSourceAwareWorkspaceCommands({
         return;
       }
 
-      const nextLink = applyLinkPatch(currentLink, rawPatch);
       const key = options.historyKey ?? `property:${entityRefKey(ref)}`;
       const label = options.historyLabel ?? 'Update link';
       const changed = runPropertyMutation(key, label, options, (operationId) =>
@@ -238,83 +141,11 @@ export function useSourceAwareWorkspaceCommands({
         return;
       }
 
-      const sourceHandled = reconcileComponentRobot(ref.componentId, component.robot);
-      const sourceTarget = {
-        componentId: ref.componentId,
-        expectedRobotSnapshotHash: createSourceSemanticRobotHash(component.robot),
-      };
-      if (!sourceHandled && currentLink.name !== nextLink.name) {
-        patchEditableSourceRenameEntities?.({
-          ...sourceTarget,
-          operations: [{
-            kind: 'link',
-            currentName: currentLink.name,
-            nextName: nextLink.name,
-          }],
-        });
-      }
-
-      const addedCollision = findAddedCollisionGeometryPatch(currentLink, nextLink);
-      const removedCollisionIndex = findRemovedCollisionGeometryObjectIndex(
-        currentLink,
-        nextLink,
-      );
-      const updatedCollision =
-        addedCollision === null && removedCollisionIndex === null
-          ? findUpdatedCollisionGeometryPatch(currentLink, nextLink)
-          : null;
-      if (!sourceHandled && addedCollision) {
-        patchEditableSourceAddCollisionBody?.({
-          ...sourceTarget,
-          linkName: currentLink.name,
-          geometry: addedCollision.geometry,
-        });
-      }
-      if (!sourceHandled && removedCollisionIndex !== null) {
-        patchEditableSourceDeleteCollisionBody?.({
-          ...sourceTarget,
-          linkName: currentLink.name,
-          objectIndex: removedCollisionIndex,
-        });
-      }
-      if (!sourceHandled && updatedCollision) {
-        patchEditableSourceUpdateCollisionBody?.({
-          ...sourceTarget,
-          linkName: currentLink.name,
-          objectIndex: updatedCollision.objectIndex,
-          geometry: updatedCollision.geometry,
-        });
-      }
-      if (
-        !sourceHandled
-        && nextLink.inertial
-        && (
-          Object.prototype.hasOwnProperty.call(rawPatch, 'inertial')
-          || hasLinkInertialChanged(currentLink.inertial, nextLink.inertial)
-        )
-      ) {
-        patchEditableSourceUpdateLinkInertial?.({
-          ...sourceTarget,
-          linkName: currentLink.name,
-          inertial: nextLink.inertial,
-        });
-      }
-      const requiresSourceReconciliation = Object.keys(rawPatch).some(
-        (key) => key !== 'name' && key !== 'collision' && key !== 'inertial',
-      );
-      synchronizeSourceDraft(
-        ref.componentId,
-        !sourceHandled && requiresSourceReconciliation,
-      );
+      synchronizeComponentRobot(ref.componentId, component.robot);
     },
     [
       mutationOptions,
-      patchEditableSourceAddCollisionBody,
-      patchEditableSourceDeleteCollisionBody,
-      patchEditableSourceRenameEntities,
-      patchEditableSourceUpdateCollisionBody,
-      patchEditableSourceUpdateLinkInertial,
-      reconcileComponentRobot,
+      synchronizeComponentRobot,
       runPropertyMutation,
     ],
   );
@@ -380,46 +211,11 @@ export function useSourceAwareWorkspaceCommands({
         return;
       }
 
-      const sourceHandled = reconcileComponentRobot(ref.componentId, component.robot);
-      const sourceTarget = {
-        componentId: ref.componentId,
-        expectedRobotSnapshotHash: createSourceSemanticRobotHash(component.robot),
-      };
-      if (!sourceHandled && patch.limit && nextJoint.limit) {
-        patchEditableSourceUpdateJointLimit?.({
-          ...sourceTarget,
-          jointName: currentJoint.name,
-          jointType: nextJoint.type,
-          limit: nextJoint.limit,
-        });
-      }
-      if (
-        !sourceHandled
-        && typeof patch.name === 'string'
-        && currentJoint.name !== patch.name
-      ) {
-        patchEditableSourceRenameEntities?.({
-          ...sourceTarget,
-          operations: [{
-            kind: 'joint',
-            currentName: currentJoint.name,
-            nextName: patch.name,
-          }],
-        });
-      }
-      const requiresSourceReconciliation = Object.keys(patch).some(
-        (key) => key !== 'name' && key !== 'limit',
-      );
-      synchronizeSourceDraft(
-        ref.componentId,
-        !sourceHandled && requiresSourceReconciliation,
-      );
+      synchronizeComponentRobot(ref.componentId, component.robot);
     },
     [
       mutationOptions,
-      patchEditableSourceRenameEntities,
-      patchEditableSourceUpdateJointLimit,
-      reconcileComponentRobot,
+      synchronizeComponentRobot,
       runPropertyMutation,
     ],
   );
@@ -444,11 +240,10 @@ export function useSourceAwareWorkspaceCommands({
         ),
       );
       if (changed) {
-        const handled = reconcileComponentRobot(ref.componentId, previousRobot);
-        synchronizeSourceDraft(ref.componentId, !handled);
+        synchronizeComponentRobot(ref.componentId, previousRobot);
       }
     },
-    [mutationOptions, reconcileComponentRobot, runPropertyMutation],
+    [mutationOptions, synchronizeComponentRobot, runPropertyMutation],
   );
 
   const updateBridgeProperty = useCallback(
@@ -572,20 +367,7 @@ export function useSourceAwareWorkspaceCommands({
       if (!result) {
         return;
       }
-      const nextComponent = useWorkspaceStore.getState().workspace.components[ref.componentId];
-      const link = nextComponent?.robot.links[result.linkId];
-      const joint = nextComponent?.robot.joints[result.jointId];
-      const sourceHandled = reconcileComponentRobot(ref.componentId, component.robot);
-      if (!sourceHandled && link && joint) {
-        patchEditableSourceAddChild?.({
-          componentId: ref.componentId,
-          expectedRobotSnapshotHash: createSourceSemanticRobotHash(component.robot),
-          parentLinkName: parent.name,
-          linkName: link.name,
-          joint,
-        });
-      }
-      synchronizeSourceDraft(ref.componentId);
+      synchronizeComponentRobot(ref.componentId, component.robot);
       const linkRef: LinkEntityRef = {
         type: 'link',
         componentId: ref.componentId,
@@ -597,8 +379,7 @@ export function useSourceAwareWorkspaceCommands({
     [
       commitPendingHistory,
       focusOn,
-      patchEditableSourceAddChild,
-      reconcileComponentRobot,
+      synchronizeComponentRobot,
       setSelection,
     ],
   );
@@ -618,25 +399,14 @@ export function useSourceAwareWorkspaceCommands({
       }
       const entries = getCollisionGeometryEntries(updatedLink);
       const objectIndex = Math.max(0, entries.length - 1);
-      const geometry = entries[objectIndex]?.geometry;
-      const sourceHandled = reconcileComponentRobot(ref.componentId, component.robot);
-      if (!sourceHandled && geometry) {
-        patchEditableSourceAddCollisionBody?.({
-          componentId: ref.componentId,
-          expectedRobotSnapshotHash: createSourceSemanticRobotHash(component.robot),
-          linkName: link.name,
-          geometry,
-        });
-      }
-      synchronizeSourceDraft(ref.componentId);
+      synchronizeComponentRobot(ref.componentId, component.robot);
       setSelection({ entity: ref, subType: 'collision', objectIndex });
       focusOn(ref);
     },
     [
       commitPendingHistory,
       focusOn,
-      patchEditableSourceAddCollisionBody,
-      reconcileComponentRobot,
+      synchronizeComponentRobot,
       setSelection,
     ],
   );
@@ -653,7 +423,6 @@ export function useSourceAwareWorkspaceCommands({
       let changed = false;
       let removedComponentId: string | null = null;
       let sourceMutation: DeletedComponentSourceMutation | null = null;
-      let deletedLink: DeletedLinkSourceTarget | null = null;
       if (ref.type === 'component') {
         changed = store.removeComponent(ref.componentId, { label: 'Remove component' });
         if (changed) removedComponentId = ref.componentId;
@@ -674,11 +443,6 @@ export function useSourceAwareWorkspaceCommands({
         if (!component || !link) {
           return;
         }
-        deletedLink = {
-          componentId: ref.componentId,
-          expectedRobotSnapshotHash: createSourceSemanticRobotHash(component.robot),
-          name: link.name,
-        };
         sourceMutation = {
           componentId: ref.componentId,
           previousRobot: component.robot,
@@ -693,21 +457,10 @@ export function useSourceAwareWorkspaceCommands({
       if (!changed) {
         return;
       }
-      const sourceHandled = reconcileDeletedComponentSource({
-        sourceMutation,
-        removedComponentId,
-        reconcileComponentRobot,
-      });
-      patchLegacyDeletedLinkSource({
-        sourceHandled,
-        deletedLink,
-        removedComponentId,
-        patchEditableSourceDeleteSubtree,
-      });
       if (removedComponentId) {
-        useAssetsStore.getState().removeComponentSourceDraft(removedComponentId);
-      } else if ('componentId' in ref) {
-        synchronizeSourceDraft(ref.componentId);
+        synchronizeComponentSource({ componentId: removedComponentId });
+      } else if (sourceMutation) {
+        synchronizeComponentRobot(sourceMutation.componentId, sourceMutation.previousRobot);
       }
       const nextState = useWorkspaceStore.getState();
       setSelection(repairWorkspaceSelection(
@@ -718,8 +471,8 @@ export function useSourceAwareWorkspaceCommands({
     },
     [
       commitPendingHistory,
-      patchEditableSourceDeleteSubtree,
-      reconcileComponentRobot,
+      synchronizeComponentRobot,
+      synchronizeComponentSource,
       setSelection,
     ],
   );

@@ -16,15 +16,15 @@ import {
   formatMJCFFullInertia,
 } from './mjcfSourceFormatters.ts';
 
-test('formatScalar returns null for non-finite and rounds to 6 decimals otherwise', () => {
+test('formatScalar returns null for non-finite and preserves all finite digits', () => {
   assert.equal(formatScalar(undefined), null);
   assert.equal(formatScalar(NaN), null);
   assert.equal(formatScalar(Infinity), null);
   assert.equal(formatScalar(-Infinity), null);
   assert.equal(formatScalar(0), '0');
   assert.equal(formatScalar(1.5), '1.5');
-  assert.equal(formatScalar(1.23456789), '1.234568', 'rounds to 6 decimals');
-  assert.equal(formatScalar(1e-10), '0', 'tiny magnitude collapses to 0');
+  assert.equal(formatScalar(1.23456789), '1.23456789', 'retains source precision');
+  assert.equal(formatScalar(1e-10), '1e-10', 'retains tiny nonzero values');
   assert.equal(formatScalar(-1.5), '-1.5');
 });
 
@@ -61,7 +61,7 @@ test('formatCollisionGeomSize halves box extents and emits radius for sphere', (
 test('formatEuler and formatEulerForAngleUnit respect angle unit', () => {
   assert.equal(formatEuler({ r: 1, p: 2, y: 3 }), '1 2 3');
   assert.equal(formatEulerForAngleUnit({ r: 0, p: 0, y: 0 }, 'degree'), '0 0 0');
-  assert.equal(formatEulerForAngleUnit({ r: Math.PI, p: 0, y: 0 }, 'radian'), '3.141593 0 0');
+  assert.equal(formatEulerForAngleUnit({ r: Math.PI, p: 0, y: 0 }, 'radian'), `${Math.PI} 0 0`);
   assert.equal(formatEulerForAngleUnit({ r: Math.PI, p: 0, y: 0 }, 'degree'), '180 0 0');
 });
 

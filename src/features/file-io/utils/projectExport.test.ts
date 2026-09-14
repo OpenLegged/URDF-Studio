@@ -4,7 +4,7 @@ import test from 'node:test';
 import JSZip from 'jszip';
 import { JSDOM } from 'jsdom';
 
-import { parseURDF } from '@/core/parsers';
+import { parseMJCF, parseURDF } from '@/core/parsers';
 import {
   createComponentSourceDraft,
   createDefaultWorkspace,
@@ -13,6 +13,7 @@ import {
 import {
   DEFAULT_JOINT,
   DEFAULT_LINK,
+  GeometryType,
   JointType,
   type AssemblyState,
   type ComponentSourceDraft,
@@ -174,6 +175,289 @@ test('exportProject accepts the canonical source-less blank workspace', async ()
   assert.ok(zip.file('output/blank_project.urdf'));
 });
 
+test('exportProject preserves MJCF ball and free joints without requiring derived URDF files', async () => {
+  const source = `<mujoco model="ball_robot"><worldbody>
+    <body name="base_link"><freejoint name="root_free" />
+      <geom type="box" size="0.1 0.1 0.1" />
+      <body name="tool_link" pos="0 0 1"><joint name="ball_joint" type="ball" />
+        <geom type="sphere" size="0.1" />
+      </body>
+    </body>
+  </worldbody></mujoco>`;
+  const parsed = parseMJCF(source);
+  assert.ok(parsed);
+  const { selection: _selection, ...robot } = parsed;
+  const workspace = createSingleComponentWorkspace(robot, {
+    componentId: 'ball_robot',
+    sourceFile: 'robots/ball_robot.xml',
+  });
+  const draft = createComponentSourceDraft({
+    componentId: 'ball_robot',
+    format: 'mjcf',
+    content: source,
+    robot: workspace.components.ball_robot.robot,
+  });
+  const progress: ProjectExportProgress[] = [];
+  const zip = await exportToZip(createExportParams({
+    workspace,
+    componentSourceDrafts: { ball_robot: draft },
+    onProgress: (update) => progress.push(update),
+  }));
+
+  const archivedWorkspace = JSON.parse(
+    await zip.file(PROJECT_WORKSPACE_STATE_FILE)!.async('string'),
+  );
+  assert.deepEqual(archivedWorkspace, JSON.parse(JSON.stringify(workspace)));
+  assert.equal(archivedWorkspace.components.ball_robot.robot.joints.ball_joint.type, JointType.BALL);
+  assert.equal(archivedWorkspace.components.ball_robot.robot.joints.root_free.type, JointType.FLOATING);
+  assert.ok(zip.file(PROJECT_COMPONENT_SOURCE_DRAFTS_FILE));
+  assert.equal(zip.file('output/ball_robot.urdf'), null);
+  assert.equal(zip.file('output/ball_robot_extended.urdf'), null);
+  const output = await zip.file('output/ball_robot.xml')?.async('string');
+  assert.ok(output);
+  const exportedRobot = parseMJCF(output);
+  assert.ok(exportedRobot);
+  assert.equal(exportedRobot.joints.ball_joint.type, JointType.BALL);
+  assert.equal(exportedRobot.joints.root_free.type, JointType.FLOATING);
+  const lastOutputProgress = progress.filter(({ phase }) => phase === 'output').at(-1);
+  assert.ok(lastOutputProgress);
+  assert.equal(lastOutputProgress.completed, lastOutputProgress.total);
+});
+
+test('native saves skip lossy planar MJCF while keeping URDF, BOM, and canonical joints', async context => {
+  const warn = context.mock.method(console, 'warn', () => {});
+  const error = context.mock.method(console, 'error', () => {});
+  const robot = createRobot('planar_robot');
+  robot.links.child = { ...structuredClone(DEFAULT_LINK), id: 'child', name: 'child' };
+  robot.joints.planar = {
+    ...structuredClone(DEFAULT_JOINT),
+    id: 'planar', name: 'planar', type: JointType.PLANAR,
+    parentLinkId: 'base_link', childLinkId: 'child',
+  };
+  const workspace = createSingleComponentWorkspace(robot, { componentId: 'robot' });
+
+  const zip = await exportToZip(createExportParams({ workspace }));
+
+  assert.equal(zip.file('output/planar_robot.xml'), null);
+  assert.ok(zip.file('output/planar_robot.urdf'));
+  assert.ok(zip.file('output/planar_robot_extended.urdf'));
+  assert.ok(zip.file('output/bom.csv'));
+  const archived = JSON.parse(await zip.file(PROJECT_WORKSPACE_STATE_FILE)!.async('string'));
+  assert.equal(archived.components.robot.robot.joints.planar.type, JointType.PLANAR);
+  assert.equal(warn.mock.callCount(), 0);
+  assert.equal(error.mock.callCount(), 0);
+});
+
+for (const type of [GeometryType.PLANE, GeometryType.ELLIPSOID, GeometryType.MESH]) {
+  test(`native saves preserve ${type} geometry without requiring a lossy URDF artifact`, async context => {
+    const warn = context.mock.method(console, 'warn', () => {});
+    const error = context.mock.method(console, 'error', () => {});
+    const robot = createRobot('geometry_robot');
+    robot.links.base_link.visual = { ...structuredClone(DEFAULT_LINK.visual), type };
+    const workspace = createSingleComponentWorkspace(robot, { componentId: 'robot' });
+
+    const zip = await exportToZip(createExportParams({ workspace }));
+
+    assert.equal(zip.file('output/geometry_robot.urdf'), null);
+    assert.equal(zip.file('output/geometry_robot_extended.urdf'), null);
+    const mjcf = await zip.file('output/geometry_robot.xml')?.async('string');
+    if (type === GeometryType.MESH) {
+      assert.equal(mjcf, undefined);
+    } else {
+      assert.ok(mjcf);
+      assert.match(mjcf, new RegExp(`type="${type}"`));
+    }
+    assert.ok(zip.file('output/bom.csv'));
+    const archived = JSON.parse(await zip.file(PROJECT_WORKSPACE_STATE_FILE)!.async('string'));
+    assert.equal(archived.components.robot.robot.links.base_link.visual.type, type);
+    assert.equal(warn.mock.callCount(), 0);
+    assert.equal(error.mock.callCount(), 0);
+  });
+}
+
+for (const extension of ['stl', 'obj']) {
+  test(`native saves reuse packed ${extension} bytes with matching optional MJCF paths`, async context => {
+    const warn = context.mock.method(console, 'warn', () => {});
+    const error = context.mock.method(console, 'error', () => {});
+    const contents = extension === 'obj' ? 'v 0 0 0\nv 1 0 0\nv 0 1 0\nf 1 2 3\n' : 'solid part\nendsolid part';
+    const fetch = context.mock.method(globalThis, 'fetch', async () => {
+      if (fetch.mock.callCount() > 1) throw new Error('Optional artifacts must not fetch mesh bytes again.');
+      return new Response(contents);
+    });
+    const robot = createRobot('native_mesh');
+    const meshPath = `robot/meshes/part.${extension}`;
+    robot.links.base_link.visual = {
+      ...structuredClone(DEFAULT_LINK.visual), type: GeometryType.MESH, meshPath,
+      dimensions: { x: 2, y: 3, z: 4 },
+      origin: { xyz: { x: 0.2, y: 0.3, z: 0.4 }, rpy: { r: 0, p: 0, y: 0 } },
+    };
+    const workspace = createSingleComponentWorkspace(robot, { componentId: 'robot' });
+
+    const zip = await exportToZip(createExportParams({
+      workspace, assetUrls: { [meshPath]: 'blob:packed-mesh' },
+    }));
+
+    assert.equal(fetch.mock.callCount(), 1);
+    assert.equal(await zip.file(`output/meshes/part.${extension}`)?.async('string'), contents);
+    assert.equal(await zip.file(`components/robot/meshes/part.${extension}`)?.async('string'), contents);
+    const mjcf = await zip.file('output/native_mesh.xml')?.async('string');
+    assert.ok(mjcf);
+    const document = new DOMParser().parseFromString(mjcf, 'application/xml');
+    assert.equal(document.querySelector('compiler')?.getAttribute('meshdir'), 'meshes/');
+    assert.equal(document.querySelector('asset mesh')?.getAttribute('file'), `part.${extension}`);
+    assert.equal(document.querySelector('asset mesh')?.getAttribute('scale'), '2 3 4');
+    assert.equal(document.querySelector('geom[type="mesh"]')?.getAttribute('pos'), '0.2 0.3 0.4');
+    assert.ok(zip.file('output/native_mesh.urdf'));
+    assert.equal(warn.mock.callCount(), 0);
+    assert.equal(error.mock.callCount(), 0);
+  });
+}
+
+for (const [fileName, contents] of [
+  ['part.dae', '<COLLADA><invalid-mesh-and-missing-texture>'],
+  ['part.obj', 'mtllib missing.mtl\nv 0 0 0\nv 1 0 0\nv 0 1 0\nf 1 2 3\n'],
+]) {
+  test(`native saves keep ${fileName} without triggering optional conversion or resource diagnostics`, async context => {
+    const warn = context.mock.method(console, 'warn', () => {});
+    const error = context.mock.method(console, 'error', () => {});
+    const fetch = context.mock.method(globalThis, 'fetch', async () => new Response(contents));
+    const robot = createRobot('original_assets');
+    const meshPath = `meshes/${fileName}`;
+    robot.links.base_link.visual = {
+      ...structuredClone(DEFAULT_LINK.visual), type: GeometryType.MESH, meshPath,
+    };
+    const workspace = createSingleComponentWorkspace(robot, { componentId: 'robot' });
+
+    const zip = await exportToZip(createExportParams({ workspace, assetUrls: { [meshPath]: 'blob:original-mesh' } }));
+
+    assert.equal(fetch.mock.callCount(), 1);
+    assert.equal(zip.file('output/original_assets.xml'), null);
+    assert.ok(zip.file('output/original_assets.urdf'));
+    assert.ok(zip.file('output/bom.csv'));
+    assert.equal(await zip.file(`components/robot/meshes/${fileName}`)?.async('string'), contents);
+    assert.equal(warn.mock.callCount(), 0);
+    assert.equal(error.mock.callCount(), 0);
+  });
+}
+
+test('native saves retain authored mesh materials without optional MJCF material splitting', async context => {
+  const warn = context.mock.method(console, 'warn', () => {});
+  const error = context.mock.method(console, 'error', () => {});
+  const contents = 'v 0 0 0\nv 1 0 0\nv 0 1 0\nf 1 2 3\n';
+  context.mock.method(globalThis, 'fetch', async () => new Response(contents));
+  const robot = createRobot('authored_materials');
+  robot.links.base_link.visual = {
+    ...structuredClone(DEFAULT_LINK.visual),
+    type: GeometryType.MESH,
+    meshPath: 'meshes/part.obj',
+    authoredMaterials: [
+      { name: 'red', color: '#ff0000' },
+      { name: 'blue', color: '#0000ff' },
+    ],
+  };
+  const workspace = createSingleComponentWorkspace(robot, { componentId: 'robot' });
+
+  const zip = await exportToZip(createExportParams({ workspace, assetUrls: { 'meshes/part.obj': 'blob:materials' } }));
+
+  assert.equal(zip.file('output/authored_materials.xml'), null);
+  assert.ok(zip.file('output/authored_materials.urdf'));
+  assert.ok(zip.file('output/bom.csv'));
+  const archived = JSON.parse(await zip.file(PROJECT_WORKSPACE_STATE_FILE)!.async('string'));
+  assert.deepEqual(archived.components.robot.robot.links.base_link.visual.authoredMaterials, robot.links.base_link.visual.authoredMaterials);
+  assert.equal(warn.mock.callCount(), 0);
+  assert.equal(error.mock.callCount(), 0);
+});
+
+test('exportProject preserves ball bridges when component robots can each generate URDF', async () => {
+  const workspace = createSingleComponentWorkspace(createRobot('left', 'left_base_link'), {
+    workspaceName: 'ball_bridge',
+    componentId: 'left',
+  });
+  workspace.components.right = createSingleComponentWorkspace(
+    createRobot('right', 'right_base_link'),
+    { componentId: 'right' },
+  ).components.right;
+  workspace.bridges.mount = {
+    id: 'mount',
+    name: 'mount',
+    parentComponentId: 'left',
+    parentLinkId: 'left_base_link',
+    childComponentId: 'right',
+    childLinkId: 'right_base_link',
+    joint: {
+      ...DEFAULT_JOINT,
+      id: 'mount',
+      name: 'mount',
+      type: JointType.BALL,
+      parentLinkId: 'left_base_link',
+      childLinkId: 'right_base_link',
+    },
+  };
+  const zip = await exportToZip(createExportParams({ workspace }));
+
+  const archivedWorkspace = JSON.parse(
+    await zip.file(PROJECT_WORKSPACE_STATE_FILE)!.async('string'),
+  );
+  assert.deepEqual(archivedWorkspace, workspace);
+  assert.equal(zip.file('output/ball_bridge.urdf'), null);
+  assert.equal(zip.file('output/ball_bridge_extended.urdf'), null);
+  const bridgeXml = await zip.file('bridges/bridge.xml')?.async('string');
+  assert.ok(bridgeXml);
+  assert.match(bridgeXml, /type="ball"/);
+  const output = await zip.file('output/ball_bridge.xml')?.async('string');
+  assert.ok(output);
+  const exportedRobot = parseMJCF(output);
+  assert.ok(exportedRobot);
+  assert.equal(exportedRobot.joints.mount.type, JointType.BALL);
+});
+
+test('exportProject saves an unfinished mesh collision without requiring optional MJCF outputs', async () => {
+  const robot = createRobot('pending_mesh');
+  robot.links.tip = { ...structuredClone(DEFAULT_LINK), id: 'tip', name: 'tip' };
+  robot.joints.mount = {
+    ...structuredClone(DEFAULT_JOINT),
+    id: 'mount',
+    name: 'mount',
+    type: JointType.BALL,
+    parentLinkId: 'base_link',
+    childLinkId: 'tip',
+  };
+  const workspace = createSingleComponentWorkspace(robot, { componentId: 'pending_mesh' });
+  const beforeMeshSelection = structuredClone(workspace);
+  workspace.components.pending_mesh.robot.links.tip.collision = {
+    ...structuredClone(DEFAULT_LINK.collision),
+    type: GeometryType.MESH,
+    meshPath: '',
+  };
+  const progress: ProjectExportProgress[] = [];
+  const zip = await exportToZip(createExportParams({
+    workspace,
+    workspaceHistory: createHistory({ past: [beforeMeshSelection] }),
+    assetUrls: { 'textures/kept.png': 'data:text/plain;base64,a2VwdA==' },
+    onProgress: (update) => progress.push(update),
+  }));
+
+  const archivedWorkspace = JSON.parse(
+    await zip.file(PROJECT_WORKSPACE_STATE_FILE)!.async('string'),
+  );
+  assert.deepEqual(archivedWorkspace, workspace);
+  assert.equal(archivedWorkspace.components.pending_mesh.robot.joints.mount.type, JointType.BALL);
+  assert.equal(archivedWorkspace.components.pending_mesh.robot.links.tip.collision.type, GeometryType.MESH);
+  const archivedHistory = JSON.parse(
+    await zip.file(PROJECT_WORKSPACE_HISTORY_FILE)!.async('string'),
+  );
+  assert.deepEqual(archivedHistory.past, [beforeMeshSelection]);
+  assert.ok(zip.file('components/pending_mesh/state.json'));
+  const archivedAssets = JSON.parse(await zip.file(PROJECT_ASSET_MANIFEST_FILE)!.async('string'));
+  assert.equal(archivedAssets.packedFiles[0].logicalPath, 'textures/kept.png');
+  assert.equal(await zip.file(archivedAssets.packedFiles[0].archivePath)!.async('string'), 'kept');
+  assert.equal(zip.file('output/pending_mesh.xml'), null);
+  assert.equal(zip.file('output/pending_mesh.urdf'), null);
+  const lastOutputProgress = progress.filter(({ phase }) => phase === 'output').at(-1);
+  assert.ok(lastOutputProgress);
+  assert.equal(lastOutputProgress.completed, lastOutputProgress.total);
+});
+
 test('exportProject preserves committed joint motion in workspace and undo history', async () => {
   const robot = createRobot('motion_robot');
   robot.links.tool_link = {
@@ -252,6 +536,21 @@ test('exportProject fails fast when a packed asset cannot be fetched', async () 
       assetUrls: { 'textures/missing.png': 'blob:missing-project-asset' },
     })),
     /Failed to pack asset "textures\/missing\.png"/,
+  );
+});
+
+test('exportProject still rejects missing bytes for an explicitly referenced component mesh', async () => {
+  const robot = createRobot('missing_component_mesh');
+  robot.links.base_link.collision = {
+    ...structuredClone(DEFAULT_LINK.collision),
+    type: GeometryType.MESH,
+    meshPath: 'meshes/missing.stl',
+  };
+  const workspace = createSingleComponentWorkspace(robot, { componentId: 'missing_mesh' });
+
+  await assert.rejects(
+    exportProject(createExportParams({ workspace })),
+    /Missing component mesh asset "meshes\/missing\.stl" for missing_mesh/,
   );
 });
 

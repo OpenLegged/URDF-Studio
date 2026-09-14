@@ -1,4 +1,6 @@
-import JSZip from 'jszip';
+// 类型导入：zip 实例由调用方（useFileExport 的 createZip() 动态 import）
+// 创建后传入，避免把 jszip 拉进首屏入口 chunk。
+import type JSZip from 'jszip';
 
 import type { RobotState } from '@/types';
 

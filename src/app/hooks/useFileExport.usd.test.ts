@@ -18,7 +18,10 @@ import {
 import { createSingleComponentWorkspace } from '@/core/robot';
 import { useWorkspaceStore } from '@/store/workspaceStore';
 import {
+  DEFAULT_JOINT,
+  DEFAULT_LINK,
   GeometryType,
+  JointType,
   type RobotFile,
   type RobotState,
   type UsdPreparedExportCache,
@@ -912,6 +915,63 @@ test('missing USD prepared cache does not block canonical URDF projection export
   } finally {
     await new Promise((resolve) => setTimeout(resolve, 0));
     downloadMocks.restore();
+    domEnvironment.restore();
+  }
+});
+
+test('useFileExport defers unsupported assembly projection until an export is requested', async () => {
+  resetStoresToBaseline();
+  const domEnvironment = installDomEnvironment();
+  const workerMocks = installUsdExportPipelineWorkerMock();
+  try {
+    const parentRobot = createPreparedUsdExportCache('parent.usd').robotData;
+    const childRobot = createPreparedUsdExportCache('child.usd').robotData;
+    childRobot.links.tip = { ...structuredClone(DEFAULT_LINK), id: 'tip', name: 'tip' };
+    childRobot.joints.ball_joint = {
+      ...structuredClone(DEFAULT_JOINT),
+      id: 'ball_joint',
+      name: 'ball_joint',
+      type: JointType.BALL,
+      parentLinkId: 'base_link',
+      childLinkId: 'tip',
+    };
+    const workspace = createSingleComponentWorkspace(parentRobot, { componentId: 'parent' });
+    workspace.components.child = createSingleComponentWorkspace(childRobot, {
+      componentId: 'child',
+    }).components.child;
+    workspace.bridges.mount = {
+      id: 'mount',
+      name: 'mount',
+      parentComponentId: 'parent',
+      parentLinkId: 'base_link',
+      childComponentId: 'child',
+      childLinkId: 'tip',
+      joint: {
+        ...structuredClone(DEFAULT_JOINT),
+        id: 'mount',
+        name: 'mount',
+        type: JointType.FIXED,
+        parentLinkId: 'base_link',
+        childLinkId: 'tip',
+      },
+    };
+    installExportTestWorkspace(workspace);
+
+    const rendered = renderHook();
+    try {
+      assert.equal(workerMocks.usdExportRequestCount, 0);
+      await assert.rejects(
+        rendered.hook.handleExportWithConfig(createUsdExportConfig()),
+        /Cannot reroot assembly component "child" through unsupported joint .*ball.* of type "ball"/,
+      );
+      assert.equal(workerMocks.usdExportRequestCount, 0);
+      assert.equal(workerMocks.usdBinaryRequestCount, 0);
+    } finally {
+      rendered.cleanup();
+    }
+  } finally {
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    workerMocks.restore();
     domEnvironment.restore();
   }
 });

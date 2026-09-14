@@ -214,7 +214,7 @@ test('patchMJCFBodyInertialInSource inserts missing inertial on self-closing bod
     },
   });
 
-  assert.match(patched, /<body name="base_link">\s*<inertial mass="2" pos="0 0 0" quat="0\.707107 0 0 0\.707107" diaginertia="1 2 3" \/>\s*<\/body>/);
+  assert.match(patched, /<body name="base_link">\s*<inertial mass="2" pos="0 0 0" quat="0\.7071067811865476 0 0 0\.7071067811865475" diaginertia="1 2 3" \/>\s*<\/body>/);
   assert.equal(parseMJCF(patched).links.base_link.inertial?.mass, 2);
 });
 
@@ -327,7 +327,7 @@ test('patchMJCFJointLimitInSource ignores commented compiler and joint tags', ()
     /<!-- <joint name="hip_joint" type="hinge" axis="0 0 1" range="-90 90"\/> -->/,
   );
   const hipTag = patched.match(/\n      (<joint name="hip_joint"[^>]*\/>)/)?.[1] ?? '';
-  assert.match(hipTag, /range="-1\.570796 1\.570796"/);
+  assert.match(hipTag, /range="-1\.5707963267948966 1\.5707963267948966"/);
 });
 
 test('patchMJCFJointLimitInSource inserts a missing range and removes limits for continuous joints', () => {
@@ -448,7 +448,7 @@ test('appendMJCFBodyCollisionGeomToSource inserts a collision-only geom without 
     },
   });
 
-  assert.match(patched, /<geom pos="0 0\.08 0" rgba="0\.937255 0\.266667 0\.266667 1" group="3" contype="1" conaffinity="1" type="box" size="0\.04 0\.06 0\.04" \/>/);
+  assert.match(patched, /<geom pos="0 0\.08 0" rgba="0\.9372549019607843 0\.26666666666666666 0\.26666666666666666 1" group="3" contype="1" conaffinity="1" type="box" size="0\.04 0\.06 0\.04" \/>/);
   assert.match(patched, /file="assets\/base_visual\.stl"/);
 
   const parsed = parseMJCF(patched);

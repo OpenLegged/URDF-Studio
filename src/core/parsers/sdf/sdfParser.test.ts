@@ -185,6 +185,7 @@ test('parseSDF isolates malformed visual, collision, and inertial siblings on on
   assert.equal(robot.links.base.visual.type, GeometryType.BOX);
   assert.deepEqual(robot.links.base.visual.dimensions, { x: 1, y: 2, z: 3 });
   assert.equal(robot.links.base.collision.type, GeometryType.SPHERE);
+  assert.ok(robot.links.base.inertial, 'recovered link should retain default inertial data');
   assert.equal(robot.links.base.inertial.mass, 0);
   assert.deepEqual(
     robot.inspectionContext?.recovery?.diagnostics.map((diagnostic) => diagnostic.code),
