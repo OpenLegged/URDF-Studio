@@ -235,3 +235,11 @@ sidecar（不一定是云后端），再通过带鉴权的 SSE / WebSocket 适�
 流程。不应 iframe DSH Web UI，也不应让 DSH 直接修改 Zustand/workspace；最终变更仍必须经过
 canonical RobotData 字段与拓扑校验、diff card、CAS/history 和用户 apply 边界。新修改直接应用 canonical RobotData；源码 diff 仅为可选预览，未完成的 mesh 或暂不能无损表达的关节组合不会阻止编辑。导出兼容性仅在实际导出时提示，旧会话卡片仍兼容原源码应用路径。DSH 当前是 developer preview，若引入
 sidecar 需锁定精确版本并跟踪破坏性变更。
+
+## 6. 宿主 Agent 共用执行基础（2026-09-16）
+
+公开入口 `src/features/ai-assistant/runtime.ts` 提供领域无关的 `runToolCallingLoop`、泛型计划控制器、
+上下文文本计量/裁剪和本地 Session repository。机器人 `agentEngine.ts` 已使用同一循环；宿主可以注入
+自己的模型请求、工具和完成检查。循环只控制步骤、工具预算和取消，返回 `null` 的完成检查会继续当前 turn。
+机器人草稿事务、验证和 provider 协议仍由机器人 adapter 所有。没有增加对 Pro、场景数据或商业 API 的依赖。
+宿主会话可用 metadata 区分 surface/project/owner，使用 custom 事件保存领域结果，并复用设置页的数据管理。
