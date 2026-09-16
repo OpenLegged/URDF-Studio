@@ -17,6 +17,7 @@
  */
 
 import OpenAI from 'openai';
+import { runToolCallingLoop } from './tool_calling_loop';
 import type { RobotData } from '@/types';
 import type {
   AgentCapability,
@@ -424,38 +425,30 @@ class BrowserAgentRun {
   async run(): Promise<RobotEditAgentResult> {
     await this.emit({ type: 'run.status', status: 'running', step: 0 });
     try {
-      for (let step = 1; step <= this.maxSteps; step += 1) {
-        this.currentStep = step;
-        this.throwIfAborted();
-        const result = await this.runModelStep(step);
-        if (result) {
-          return result;
-        }
-      }
-      return await this.finish(
-        'step-limit',
-        this.maxSteps,
-        `The agent reached the ${this.maxSteps}-step safety limit, so no partial edit was offered.`,
-        null,
-      );
+      return await runToolCallingLoop({
+        signal: this.signal,
+        maxSteps: this.maxSteps,
+        maxToolCalls: this.maxToolCalls,
+        request: async (step) => {
+          this.currentStep = step;
+          await this.emit({ type: 'run.status', status: 'waiting-for-model', step });
+          const message = await this.requestAssistantMessage();
+          this.messages.push(message);
+          if (message.content?.trim() && message.tool_calls?.length) {
+            await this.emit({ type: 'assistant.progress', content: message.content.trim(), step });
+          }
+          return message;
+        },
+        calls: (message) => message.tool_calls ?? [],
+        execute: (call, step, index, total) => this.executeToolCall(call, step, index, total),
+        complete: (message, step) => this.resolveModelCompletion(message.content?.trim() ?? '', step),
+        onToolBatch: (step) => this.emit({ type: 'run.status', status: 'executing-tools', step }),
+        limit: (step, budget) => this.finish('step-limit', step,
+          `The agent reached the ${budget === 'steps' ? this.maxSteps : this.maxToolCalls}-${budget === 'steps' ? 'step' : 'tool'} safety limit, so no partial edit was offered.`, null),
+      });
     } catch (error) {
       return await this.handleRunError(error);
     }
-  }
-
-  private async runModelStep(step: number): Promise<RobotEditAgentResult | null> {
-    await this.emit({ type: 'run.status', status: 'waiting-for-model', step });
-    const assistantMessage = await this.requestAssistantMessage();
-    this.messages.push(assistantMessage);
-    const toolCalls = assistantMessage.tool_calls;
-    const progress = assistantMessage.content?.trim();
-    if (progress && toolCalls?.length) {
-      await this.emit({ type: 'assistant.progress', content: progress, step });
-    }
-    if (!toolCalls?.length) {
-      return await this.resolveModelCompletion(assistantMessage.content?.trim() ?? '', step);
-    }
-    return await this.executeToolBatch(toolCalls, step);
   }
 
   private async requestAssistantMessage(): Promise<OpenAI.Chat.Completions.ChatCompletionMessage> {
@@ -857,26 +850,6 @@ class BrowserAgentRun {
 
   private completionVerificationEvidenceCount(): number {
     return selectCompletionEvidence(this.completionVerificationEvidence()).length;
-  }
-
-  private async executeToolBatch(
-    toolCalls: AgentToolCall[],
-    step: number,
-  ): Promise<RobotEditAgentResult | null> {
-    await this.emit({ type: 'run.status', status: 'executing-tools', step });
-    for (let index = 0; index < toolCalls.length; index += 1) {
-      this.throwIfAborted();
-      if (this.toolCallCount >= this.maxToolCalls) {
-        return await this.finish(
-          'step-limit',
-          step,
-          `The agent reached the ${this.maxToolCalls}-tool safety limit, so no partial edit was offered.`,
-          null,
-        );
-      }
-      await this.executeToolCall(toolCalls[index], step, index, toolCalls.length);
-    }
-    return null;
   }
 
   private async executeToolCall(
