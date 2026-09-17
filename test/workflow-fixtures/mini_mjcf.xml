@@ -1,0 +1,16 @@
+<mujoco model="mini_mjcf_chain">
+  <compiler angle="radian" autolimits="true"/>
+
+  <worldbody>
+    <body name="base_link" pos="0 0 0.15">
+      <geom type="cylinder" name="base_cylinder" size="0.03 0.15"
+        rgba="0.6 0.6 0.6 1" density="700"/>
+    </body>
+    <body name="tool_link" pos="0 0 0.35">
+      <joint name="tool_joint" type="hinge" axis="0 1 0"
+        range="-1.57 1.57" damping="0.1"/>
+      <geom type="sphere" name="tool_sphere" size="0.04"
+        rgba="0.2 0.4 0.9 1" density="300"/>
+    </body>
+  </worldbody>
+</mujoco>

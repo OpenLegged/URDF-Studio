@@ -725,9 +725,9 @@ export async function openSourceEditor(page) {
   });
   if (!opened) throw new Error('Could not find source editor open button.');
 
-  await page.waitForSelector('.monaco-editor', { timeout: 30_000 });
+  await page.waitForSelector('.monaco-editor', { timeout: 60_000 });
   await page.waitForFunction(() => document.querySelectorAll('.monaco-editor .view-line').length > 0, {
-    timeout: 30_000,
+    timeout: 60_000,
   });
 }
 

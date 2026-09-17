@@ -62,6 +62,16 @@ Assembly/workspace 改动至少覆盖以下不变量：
 - **关键机制**：测试通过 URL 上的 `?regressionDebug=1` 暴露 `window.__URDF_STUDIO_DEBUG__` 调试接口（默认关闭，见 CLAUDE.md 红线）。helper 会自动加这个参数。
 - **跑完务必清理**（CLAUDE.md 红线）：`node test/usd-viewer/scripts/cleanup-headless.cjs`。
 
+### 工作流 E2E 套件（import → 属性编辑 → 源码编辑 → 导出 → 装配）
+
+`scripts/test/e2e/test_workflow_suite.mjs`（`npm run test:workflow` / `test:workflow:quick` / `test:browser:workflow`）是跨功能的**用户旅程**层：每条旅程走完整真实用户路径——多格式导入 → 右侧属性面板改 mass/joint type/limits（GUI 输入并三重验证：面板回读 + 源码草稿 + store）→ 源代码编辑（删 link、joint→fixed、改材质色）→ File→Export 导出 → **解压导出 zip 并断言 XML 内容**；J6 装配旅程用 GUI 桥接弹窗创建 revolute/continuous/prismatic/fixed + 自环闭环桥并导出装配体。
+
+- 6 条独立旅程（URDF/Xacro/MJCF/SDF/USD/装配），**并行浏览器跑**（默认 2——实测 3 并发会让共享 dev server 与软件 WebGL 的页面主线程互相饿死；`--concurrency` / env `URDF_TEST_WORKFLOW_CONCURRENCY` 可覆盖）。
+- 并发稳定性三件套：worker **错峰启动**（每个 25s，避免浏览器+Vite 冷编译同时踩踏）、旅程失败**自动重试一次**（`--no-retry` 关闭；间歇性负载抖动重试即过，确定性 bug 两次都挂）、导出前 **chunk 预热**（旅程开头打开一次 Export dialog，防止懒加载 chunk 在高负载下卡 "Loading panel…"）。
+- `--quick` 用提交在库的小 fixtures（`test/workflow-fixtures/`，无需 `test:setup`）；全量用真实语料（a1/go2/Go2 USD 等）。
+- 旅程失败不中断其他旅程；聚合报告写 `tmp/regression/workflow-suite_results.json`，截图在 `tmp/e2e/workflow/`，导出物在 `tmp/e2e/workflow/downloads/`。
+- 已知边界：重型 MJCF 导出（go2 的 28MB zip 在并发下被 CPU 争抢饿死、panda 的 OBJ 导出在 headless 下长时间停在 "Step 4 of 4"）不适合并发旅程，J3 全量用 skydio_x2（真实语料、~1MB 导出）；重导出路径由 `test:browser:mjcf-export` / `test:browser:assembly-export` 覆盖（panda 导出性能另行跟进）。
+
 ## L3 · 语料 / 真值回归（最慢、最真实）
 
 - **是什么**：拿真实机器人语料（MuJoCo menagerie、Unitree、Gazebo）批量导入/导出，与预先生成的 golden/truth 数据对比。还有性能 benchmark。
@@ -72,15 +82,16 @@ Assembly/workspace 改动至少覆盖以下不变量：
 
 ## "一口气全跑完"：统一入口 run-all
 
-`scripts/test/runner/run-all.mjs` 把三层串起来跑，**某个失败不会中断全局**，最后打印一张通过/失败总表并写入 `tmp/regression/run-all-summary.json`。它会先起**一个共享 dev server**，让所有浏览器测试复用、不必各自冷启动 Vite。
+`scripts/test/runner/run-all.mjs` 把三层串起来跑，**某个失败不会中断全局**，最后打印一张通过/失败总表并写入 `tmp/regression/run-all-summary.json`。它会先起**一个共享 dev server**，让所有浏览器测试复用、不必各自冷启动 Vite。浏览器阶段按 **worker pool 并行**执行（默认 `min(4, (核数-2)/3)`，约 3-4；`--browser-concurrency <n>` 或 env `URDF_TEST_BROWSER_CONCURRENCY` 覆盖，`--headed` 强制 1）。并发 >1 时每个用例的输出落盘 `tmp/regression/logs/<npm-key>.log`（避免交错），失败的用例会在总表后回放日志尾部。
 
 ```bash
 npm run test:all                                     # 便捷别名 = run-all.mjs（单元 + 全部浏览器）
-node scripts/test/runner/run-all.mjs              # 单元 + 全部浏览器（默认）
+node scripts/test/runner/run-all.mjs              # 单元 + 全部浏览器（默认，浏览器并行 3-4）
 node scripts/test/runner/run-all.mjs --unit-only  # 只跑单元
+node scripts/test/runner/run-all.mjs --browser-only --browser-concurrency 1  # 浏览器串行（调试单用例）
 node scripts/test/runner/run-all.mjs --browser-only --filter export   # 只跑名字含 export 的浏览器测试
 node scripts/test/runner/run-all.mjs --fixtures   # 额外带上 L3 语料回归
-node scripts/test/runner/run-all.mjs --headed     # 显示浏览器窗口（调试用）
+node scripts/test/runner/run-all.mjs --headed     # 显示浏览器窗口（调试用，自动并发 1）
 node scripts/test/runner/run-all.mjs --list       # 只列出将要跑的阶段
 ```
 
