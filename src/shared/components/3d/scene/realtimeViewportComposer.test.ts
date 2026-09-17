@@ -6,8 +6,8 @@ import {
   REALTIME_GTAO_CONFIG,
   REALTIME_POSTPROCESSING_PASS_ORDER,
   resolveRealtimePostprocessingPixelRatio,
-  shouldRenderRealtimeAmbientOcclusion,
 } from './realtimeViewportComposer.ts';
+import { shouldRenderRealtimeAmbientOcclusion } from './realtimeViewportPolicy.ts';
 
 test('realtime GTAO yields to the low-latency interaction render path', () => {
   assert.equal(

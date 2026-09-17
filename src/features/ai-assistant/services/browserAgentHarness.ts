@@ -4,6 +4,7 @@
  * without importing its Node runtime into the Vite bundle.
  */
 
+import type { RobotData } from '@/types'
 import type { Language } from '@/shared/i18n'
 import type { AgentCapability } from '../capabilities/types'
 import type { AgentPlanItem, AgentPlanItemStatus, AgentRunEvent } from '../agentRuntimeTypes'
@@ -16,8 +17,8 @@ const PLAN_ITEM_STATUSES = new Set<AgentPlanItemStatus>([
   'completed',
 ])
 
-export interface AgentPlanController {
-  capability: AgentCapability
+export interface AgentPlanController<Draft = RobotData> {
+  capability: AgentCapability<Draft>
   getPlan: () => AgentPlanItem[]
 }
 
@@ -112,7 +113,7 @@ const parsePlan = (value: unknown): AgentPlanItem[] | null => {
   return plan
 }
 
-export function createAgentPlanController(): AgentPlanController {
+export function createAgentPlanController<Draft = RobotData>(): AgentPlanController<Draft> {
   let currentPlan: AgentPlanItem[] = []
 
   return {

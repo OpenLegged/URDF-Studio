@@ -9,14 +9,17 @@ import {
   Shapes,
   Shield,
 } from 'lucide-react';
-import { useEffect, useRef, useState, type KeyboardEvent } from 'react';
+import React, { useEffect, useRef, useState, type KeyboardEvent } from 'react';
 
 import type { TranslationKeys } from '@/shared/i18n';
 import type { AppMode, AssemblyState, EntityRef, WorkspaceSelection } from '@/types';
 import { AssemblyTreeView } from '../AssemblyTreeView';
-import { TreeStructureGraphDialog } from './TreeStructureGraphDialog';
 import type { WorkspacePropertyPatch } from '@/store/workspace/types';
 import { useSelectionStore } from '@/store/selectionStore';
+
+const LazyTreeStructureGraphDialog = React.lazy(async () => ({
+  default: (await import('./TreeStructureGraphDialog')).TreeStructureGraphDialog,
+}));
 
 type LinkRef = Extract<EntityRef, { type: 'link' }>;
 type ComponentRef = Extract<EntityRef, { type: 'component' }>;
@@ -278,18 +281,22 @@ export function TreeEditorStructureSection({
         </div>
       ) : null}
 
-      <TreeStructureGraphDialog
-        isOpen={graphOpen}
-        onClose={() => {
-          setGraphOpen(false);
-          onCloseStructureGraph?.();
-        }}
-        workspace={workspace}
-        activeComponentId={activeComponentId}
-        t={t}
-        onSelect={onSelect}
-        onFocus={onFocus}
-      />
+      {graphOpen ? (
+        <React.Suspense fallback={null}>
+          <LazyTreeStructureGraphDialog
+            isOpen={graphOpen}
+            onClose={() => {
+              setGraphOpen(false);
+              onCloseStructureGraph?.();
+            }}
+            workspace={workspace}
+            activeComponentId={activeComponentId}
+            t={t}
+            onSelect={onSelect}
+            onFocus={onFocus}
+          />
+        </React.Suspense>
+      ) : null}
     </div>
   );
 }

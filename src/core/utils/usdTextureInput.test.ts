@@ -7,6 +7,8 @@ import {
   USD_COLOR_TEXTURE_INPUT_SLOTS,
   applyUsdTextureInputToTexture,
   cloneUsdSlotTexture,
+  captureUsdMaterialTextureInputs,
+  rememberUsdMaterialTextureInputs,
   getUsdTextureInputSlot,
   normalizeUsdTextureInputs,
   resolveUsdTextureColorSpace,
@@ -20,6 +22,62 @@ import {
 // col0 = [c*s0, s*s0, 0] = [0, 2, 0], col1 = [-s*s1, c*s1, 0] = [-1, 0, 0],
 // col2 = [t.x, t.y, 1], i.e. [0, 2, 0, -1, 0, 0, 0.25, 0.5, 1].
 const NONUNIFORM_SRT_UV_TRANSFORM = [0, 2, 0, -1, 0, 0, 0.25, 0.5, 1] as const;
+
+test('live material snapshots preserve native sampling metadata and independent slot matrices', () => {
+  const cached = new THREE.Texture();
+  const material = new THREE.MeshPhysicalMaterial();
+  const mapInput: UsdMaterialTextureInput = {
+    uvTransform: NONUNIFORM_SRT_UV_TRANSFORM,
+    uvPrimvar: 'st1', wrapS: 'black', wrapT: 'repeat',
+    sourceColorSpace: 'auto', resolvedColorSpace: 'raw', sourceOutput: 'rgb',
+    sampleScale: [0.2, 0.3, 0.4, 1], sampleBias: [0.1, 0, 0, 0],
+  };
+  const normalInput = { uvTransform: [1, 0, 0, 0, 1, 0, 0, 0, 1], wrapS: 'mirror', wrapT: 'clamp' };
+  rememberUsdMaterialTextureInputs(material, { mapPath: mapInput, normalMapPath: normalInput });
+  material.map = cloneUsdSlotTexture(cached, 'mapPath', mapInput);
+  material.normalMap = cloneUsdSlotTexture(cached, 'normalMapPath', normalInput);
+
+  const inputs = captureUsdMaterialTextureInputs(material)!;
+  assert.deepEqual(inputs, { mapPath: mapInput, normalMapPath: normalInput });
+  assert.deepEqual(captureUsdMaterialTextureInputs(material.clone()), inputs);
+  assert.notEqual(inputs.mapPath!.uvTransform, mapInput.uvTransform);
+  assert.notEqual(inputs.mapPath!.sampleScale, material.userData.usdTextureInputs.mapPath.sampleScale);
+  assert.equal(cached.matrixAutoUpdate, true);
+  assert.equal(cached.wrapS, THREE.ClampToEdgeWrapping);
+
+  const restored = cloneUsdSlotTexture(cached, 'mapPath', inputs.mapPath);
+  assert.deepEqual(restored.matrix.elements, material.map.matrix.elements);
+  assert.equal(restored.wrapS, material.map.wrapS);
+  assert.equal(restored.colorSpace, material.map.colorSpace);
+});
+
+test('snapshot capture reads live repeat and rotation without updating the source texture', () => {
+  const material = new THREE.MeshStandardMaterial();
+  material.map = new THREE.Texture();
+  material.map.repeat.set(3, 2);
+  material.map.offset.set(0.25, 0.5);
+  material.map.center.set(0.5, 0.5);
+  material.map.rotation = Math.PI / 3;
+  material.map.wrapT = THREE.MirroredRepeatWrapping;
+  const originalMatrix = material.map.matrix.toArray();
+  const expected = material.map.clone();
+  expected.updateMatrix();
+  const inputs = captureUsdMaterialTextureInputs(material)!;
+  assert.deepEqual(inputs.mapPath!.uvTransform, expected.matrix.elements);
+  assert.equal(inputs.mapPath!.wrapT, 'mirror');
+  assert.deepEqual(material.map.matrix.elements, originalMatrix);
+});
+
+test('pending texture metadata survives snapshot capture and is cleared on replacement', () => {
+  const material = new THREE.MeshPhysicalMaterial();
+  const inputs = { mapPath: { uvTransform: [...NONUNIFORM_SRT_UV_TRANSFORM], sourceOutput: 'r' } };
+  rememberUsdMaterialTextureInputs(material, inputs);
+  assert.deepEqual(captureUsdMaterialTextureInputs(material), inputs);
+  inputs.mapPath.uvTransform[0] = 100;
+  assert.equal(captureUsdMaterialTextureInputs(material)!.mapPath!.uvTransform![0], 0);
+  rememberUsdMaterialTextureInputs(material, null);
+  assert.equal(captureUsdMaterialTextureInputs(material), null);
+});
 
 function applyMatrixToUv(matrix: THREE.Matrix3, u: number, v: number): [number, number] {
   const vector = new THREE.Vector3(u, v, 1).applyMatrix3(matrix);

@@ -82,6 +82,7 @@ const ALLOWLIST = [
 ];
 
 const PUBLIC_APP_FEATURE_FACADES = new Set([
+  'src/features/assembly/bridge_preview.ts',
   'src/features/assembly/bridge_create_modal.ts',
   'src/features/editor/ik_selection.ts',
   'src/features/editor/panels.ts',
@@ -93,8 +94,10 @@ const PUBLIC_APP_FEATURE_FACADES = new Set([
   'src/features/editor/usd_prewarm.ts',
   'src/features/editor/usd_runtime.ts',
   'src/features/file-io/import_path_collisions.ts',
+  'src/features/file-io/mjcf_export.ts',
   'src/features/property-editor/collision_optimization.ts',
   'src/features/property-editor/collision_optimization_dialog.ts',
+  'src/features/property-editor/property_editor.ts',
 ]);
 
 const BASELINE_PATH = 'scripts/tools/dependency_boundaries_baseline.json';

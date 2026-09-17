@@ -16,6 +16,7 @@ import type {
 import {
   cloneUsdSlotTexture,
   getUsdTextureInputSlot,
+  rememberUsdMaterialTextureInputs,
   usdTextureInputRequiresSlotState,
 } from './usdTextureInput';
 
@@ -690,6 +691,7 @@ export function applyVisualMaterialOverrideToObject(
         nextMaterial.userData.urdfEmissiveIntensity = emissiveIntensityOverride;
       }
 
+      rememberUsdMaterialTextureInputs(nextMaterial, usdMaterial?.textureInputs);
       applyUsdTextureArithmetic(nextMaterial, usdMaterial?.textureInputs);
       if (fullCacheKey && cache) {
         cache.set(fullCacheKey, nextMaterial);

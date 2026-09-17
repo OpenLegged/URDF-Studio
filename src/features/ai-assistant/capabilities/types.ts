@@ -17,11 +17,11 @@
 import type { RobotData } from '@/types';
 
 /** Tool outcome surfaced back to the model as the `tool` role message content. */
-export interface AgentToolResult {
+export interface AgentToolResult<Draft = RobotData> {
   ok: boolean;
   message: string;
   /** When set, replaces the agent's working draft (used by async rebuilders). */
-  replacement?: RobotData;
+  replacement?: Draft;
   /** Runtime effect override for generic tools that expose read and command actions. */
   effect?: AgentCapabilityEffect;
   /** Prevent later draft mutations in this run after the live component target changes. */
@@ -43,7 +43,7 @@ export type AgentVerificationScope = 'draft' | 'app';
  * — only mutating capabilities produce a diff card; read/validate-only runs
  * resolve to `robot: null`.
  */
-export interface AgentCapability {
+export interface AgentCapability<Draft = RobotData> {
   readonly name: string;
   /** Model-facing description of what the tool does and when to call it. */
   readonly description: string;
@@ -55,10 +55,10 @@ export interface AgentCapability {
    * working draft (used by capabilities that rebuild it, e.g. the sandbox).
    */
   execute: (
-    draft: RobotData,
+    draft: Draft,
     args: Record<string, unknown>,
     context: AgentExecutionContext,
-  ) => AgentToolResult | Promise<AgentToolResult>;
+  ) => AgentToolResult<Draft> | Promise<AgentToolResult<Draft>>;
   /** true ⇒ a successful call marks the draft as edited. */
   readonly mutates: boolean;
   /** Classifies non-draft effects without overloading the proposal-card flag. */

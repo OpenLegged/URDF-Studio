@@ -1968,6 +1968,11 @@ test('normalizeRobotSceneSnapshot serializes preferred live visual materials by 
         preferredMaterial.name = 'Body';
         preferredMaterial.map = new Texture();
         preferredMaterial.map.name = 'textures/body_basecolor.png';
+        preferredMaterial.map.matrixAutoUpdate = false;
+        preferredMaterial.map.matrix.fromArray([0, 2, 0, -1, 0, 0, 0.25, 0.5, 1]);
+        preferredMaterial.userData.usdTextureInputs = {
+            mapPath: { uvPrimvar: 'st1', sourceOutput: 'rgb', sampleBias: [0.1, 0, 0, 0] },
+        };
         preferredMaterial.roughnessMap = new Texture();
         preferredMaterial.roughnessMap.name = 'textures/body_roughness.png';
         preferredMaterial.normalMap = new Texture();
@@ -2010,6 +2015,11 @@ test('normalizeRobotSceneSnapshot serializes preferred live visual materials by 
         assert.ok(snapshot.render.preferredVisualMaterialsByLinkPath);
         const preferredRecord = snapshot.render.preferredVisualMaterialsByLinkPath['/Robot/base_link'];
         assert.equal(preferredRecord.name, 'Body');
+        assert.deepEqual(preferredRecord.textureInputs.mapPath, {
+            uvTransform: [0, 2, 0, -1, 0, 0, 0.25, 0.5, 1],
+            wrapS: 'clamp', wrapT: 'clamp',
+            uvPrimvar: 'st1', sourceOutput: 'rgb', sampleBias: [0.1, 0, 0, 0],
+        });
         assert.ok(Array.isArray(preferredRecord.color));
         const expectedColor = new Color('#d6d9e4');
         assert.ok(Math.abs(preferredRecord.color[0] - expectedColor.r) < 1e-6);

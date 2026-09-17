@@ -16,9 +16,7 @@ import {
 import { resolveRobotFileDataWithWorker } from './robotImportWorkerBridge';
 import { hydrateDeferredArchiveAssetsInBackground } from './deferred_import_hydration';
 import { createAssetUrls } from './import_blob_urls';
-import {
-  detectImportFormat,
-} from '@/app/utils/importPreparation';
+import { detectImportFormat } from '@/app/utils/import-preparation/formatDetection';
 import { primePreResolvedRobotImports } from '@/app/utils/preResolvedRobotImportCache';
 import { prewarmUsdSelectionInBackground } from '@/app/utils/usdSelectionPrewarm';
 import { markUnsavedChangesBaselineSaved } from '@/app/utils/unsavedChangesBaseline';
@@ -26,10 +24,9 @@ import { waitForAnimationFrame } from '@/app/utils/waitForAnimationFrame';
 import { logRegressionInfo } from '@/shared/debug/consoleDiagnostics';
 import { clearPreparedUsdStageOpenCache } from '@/features/editor/usd_prewarm';
 import type { ImportPreparationOverlayState } from './file-import/importPreparationOverlay';
-import {
-  executePreparedFileImportWorkflow,
-  type HandleImportResult,
-  type ImportInputFiles,
+import type {
+  HandleImportResult,
+  ImportInputFiles,
 } from './file-import/executePreparedFileImportWorkflow';
 
 export type { ImportPreparationOverlayState } from './file-import/importPreparationOverlay';
@@ -117,6 +114,9 @@ export function useFileImport(options: UseFileImportOptions = {}) {
           return importProjectWithWorker(file, lang);
         });
 
+      const { executePreparedFileImportWorkflow } = await import(
+        './file-import/executePreparedFileImportWorkflow'
+      );
       return executePreparedFileImportWorkflow({
         files,
         forceLoadRobot,

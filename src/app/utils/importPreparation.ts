@@ -1,4 +1,5 @@
-import { isStandaloneXacroEntry, resolveRobotFileData } from '@/core/parsers/importRobotFile';
+import { resolveRobotFileData } from '@/core/parsers/importRobotFile';
+import { isStandaloneXacroEntry } from '@/core/parsers/importRobotFileLightweight';
 import {
   createImportPathCollisionMap,
   remapImportedPath,

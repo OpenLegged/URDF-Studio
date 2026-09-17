@@ -6,7 +6,7 @@ import { resolveMJCFSource } from '@/core/parsers/mjcf/mjcfSourceResolver';
 import {
   findStandaloneXacroTruthFile,
   isSourceOnlyXacroDocument,
-} from '@/core/parsers/importRobotFile';
+} from '@/core/parsers/importRobotFileLightweight';
 
 function buildMeshPreviewState(file: RobotFile): RobotState {
   const meshName =

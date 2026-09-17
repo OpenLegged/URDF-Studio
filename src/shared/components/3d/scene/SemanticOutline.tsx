@@ -8,10 +8,10 @@ import {
   createSemanticOutlineComposer,
   type SemanticOutlineIntent,
 } from './semanticOutlineComposer';
-import {
-  shouldRenderRealtimeAmbientOcclusion,
-  type RealtimeViewportComposer,
-  type RealtimeViewportDiagnostics,
+import { shouldRenderRealtimeAmbientOcclusion } from './realtimeViewportPolicy';
+import type {
+  RealtimeViewportComposer,
+  RealtimeViewportDiagnostics,
 } from './realtimeViewportComposer';
 
 interface SemanticOutlineEntry {

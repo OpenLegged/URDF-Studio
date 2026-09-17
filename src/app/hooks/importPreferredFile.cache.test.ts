@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { JSDOM } from 'jsdom';
 
 import type { RobotFile } from '@/types';
-import { resolveRobotFileData } from '@/core/parsers';
+import { resolveRobotFileData } from '@/core/parsers/importRobotFile';
 import { pickPreferredImportFile, pickPreferredMjcfImportFile } from './importPreferredFile';
 
 const { window } = new JSDOM();

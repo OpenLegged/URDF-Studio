@@ -129,6 +129,54 @@ export function getUsdTextureInputSlot(
   return input ? input : null;
 }
 
+/** Retain authored sampling data, including inputs whose textures are still loading. */
+export function rememberUsdMaterialTextureInputs(
+  material: THREE.Material,
+  inputs: UsdMaterialTextureInputs | null | undefined,
+): void {
+  const normalized = normalizeUsdTextureInputs(inputs);
+  if (normalized) {
+    material.userData.usdTextureInputs = normalized;
+  } else {
+    delete material.userData.usdTextureInputs;
+  }
+}
+
+/**
+ * Capture live texture state in the same schema used by native USD snapshots.
+ * Keep shader-only metadata (primvar, sample arithmetic, color-space hints) and
+ * USD wrap tokens such as `black` when their Three approximation is unchanged.
+ * Reading must not update a shared texture's matrix or alias authored arrays.
+ */
+export function captureUsdMaterialTextureInputs(material: unknown): UsdMaterialTextureInputs | null {
+  if (!material || typeof material !== 'object') return null;
+  const candidate = material as THREE.Material & Record<string, unknown>;
+  const inputs = normalizeUsdTextureInputs(candidate.userData?.usdTextureInputs) || {};
+  for (const slot of USD_TEXTURE_INPUT_SLOTS) {
+    const texture = candidate[slot.slice(0, -4)] as THREE.Texture | null | undefined;
+    if (!texture?.isTexture) continue;
+    const input: UsdMaterialTextureInput = {
+      ...normalizeUsdTextureInputSlot(texture.userData.usdTextureInput),
+      ...inputs[slot],
+    };
+    const matrix = texture.matrixAutoUpdate
+      ? new THREE.Matrix3().setUvTransform(
+        texture.offset.x, texture.offset.y, texture.repeat.x, texture.repeat.y,
+        texture.rotation, texture.center.x, texture.center.y,
+      )
+      : texture.matrix;
+    input.uvTransform = matrix.toArray();
+    for (const axis of ['wrapS', 'wrapT'] as const) {
+      if (resolveWrapMode(input[axis]) === texture[axis]) continue;
+      input[axis] = texture[axis] === THREE.RepeatWrapping
+        ? 'repeat'
+        : texture[axis] === THREE.MirroredRepeatWrapping ? 'mirror' : 'clamp';
+    }
+    inputs[slot] = input;
+  }
+  return normalizeUsdTextureInputs(inputs);
+}
+
 export function usdTextureInputHasUvTransform(
   input: UsdMaterialTextureInput | null | undefined,
 ): boolean {
@@ -250,6 +298,7 @@ export function applyUsdTextureInputToTexture(
   if (!texture || !input) {
     return false;
   }
+  texture.userData.usdTextureInput = normalizeUsdTextureInputSlot(input);
   let applied = false;
   if (usdTextureInputHasUvTransform(input)) {
     // An explicit matrix always wins, including the identity: the clone may
