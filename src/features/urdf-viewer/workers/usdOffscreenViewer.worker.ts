@@ -1,6 +1,7 @@
 /// <reference lib="webworker" />
 
 import * as THREE from 'three';
+import { captureUsdMaterialTextureInputs } from '@/core/utils/usdTextureInput';
 import { preloadUsdDependencies, ensureCriticalUsdDependenciesLoaded } from './offscreen/usdWorkerPreload.ts';
 import { buildUsdWorkerMeshIndex, applyUsdWorkerMeshIndexMetadata } from './offscreen/usdWorkerMeshIndex.ts';
 import { pickUsdWorkerInteractionTarget, type RuntimeInteractionTarget } from './offscreen/usdWorkerPicking.ts';
@@ -1303,6 +1304,7 @@ function buildLiveMeshSceneSnapshotFallback(
         ? source.clearcoatRoughness
         : null,
       opacityEnabled: material.transparent || material.opacity < 1,
+      textureInputs: captureUsdMaterialTextureInputs(material),
       mapPath: texturePath(source.map),
       normalMapPath: texturePath(source.normalMap),
       roughnessMapPath: texturePath(source.roughnessMap),

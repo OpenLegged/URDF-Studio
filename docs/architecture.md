@@ -49,7 +49,7 @@ Core 据此切换默认工作区与宿主工作区的壳层呈现，但不知道
 
 ## 4. Feature Public APIs
 
-- `editor`：统一 Editor 公开入口通过 `src/features/editor/index.ts` 暴露；高成本 / 延迟加载 / app 编排专用能力可通过 `src/features/<feature>/*.ts` 窄 facade 暴露，允许清单由 `dependency_boundaries.mjs` 精确维护
+- `editor`：统一 Editor 公开入口通过 `src/features/editor/index.ts` 暴露；高成本 / 延迟加载 / app 编排专用能力可通过 `src/features/<feature>/*.ts` 窄 facade 暴露（例如延迟属性栏的 `features/property-editor/property_editor.ts`），允许清单由 `dependency_boundaries.mjs` 精确维护
 - `code-editor`：组件与 Monaco 运行时从 `src/features/code-editor/index.ts` 静态进入应用依赖图；这是为了保证开发期旧页面点击源码时不再请求可能失效的 Vite 模块，禁止恢复组件入口或 Monaco 的点击时动态 `import()`
 - `urdf-viewer`：Editor 实现子目录，通过 `src/features/urdf-viewer/index.ts` 暴露
 - `file-io`：导入导出入口，通过 `src/features/file-io/index.ts` 暴露

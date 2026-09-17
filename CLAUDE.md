@@ -72,7 +72,7 @@ scripts/
 ├── generate/       代码生成（AI prompt、SEO prerender、URDF schema）
 ├── test/           测试入口与测试基础设施
 │   ├── browser/      浏览器回归测试（Puppeteer）
-│   ├── e2e/          端到端场景测试
+│   ├── e2e/          端到端场景测试（含 workflow 用户旅程套件与 GUI 驱动 helper）
 │   ├── helpers/      浏览器 / E2E 共用 helper
 │   ├── runner/       测试 runner
 │   ├── setup/        测试语料准备
@@ -281,6 +281,7 @@ node test/usd-viewer/scripts/cleanup-headless.cjs  # 清理自动化残留浏览
 | 只跑配置测试                          | `npm run test:unit:config`                                                        |
 | 轻量 regression 脚本旁单测            | `npm run test:regression:unit`                                                    |
 | 浏览器回归                            | `npm run test:browser:*` 或 `node scripts/test/runner/run-all.mjs --browser-only` |
+| 工作流 E2E（导入→属性→源码→导出→装配） | `npm run test:workflow`（全量 6 旅程，默认并发 2）或 `npm run test:workflow:quick`（小 fixtures，无需语料）；稳定性靠错峰启动 + 单次重试，详见 `docs/testing.md` |
 | 大型 fixture / truth / benchmark 回归 | `npm run test:fixtures:*` 或 `scripts/test/truth/*` / `scripts/test/benchmark/*`  |
 
 `npm test` 保持 fast lane，避免默认验证依赖 `test/` 大型语料或浏览器环境。需要全量覆盖时，按变更风险显式组合 `npm run test:unit:all`、`npm run test:fixtures` 和对应 browser suite。
@@ -299,6 +300,7 @@ node test/usd-viewer/scripts/cleanup-headless.cjs  # 清理自动化残留浏览
 | USD         | `test/unitree_model/`         |
 | USDA        | `test/unitree_ros_usda/`      |
 | URDF        | `test/unitree_ros/`           |
+| 工作流 E2E mini fixtures | `test/workflow-fixtures/`（提交在库，无需 `test:setup`；quick 模式与装配矩阵用） |
 
 ## 文档导航
 

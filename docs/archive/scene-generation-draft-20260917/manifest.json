@@ -1,0 +1,60 @@
+{
+  "date": "2026-09-17",
+  "repository": "URDF-Studio",
+  "sourceBranch": "codex/scene-generation-extension",
+  "baseCommit": "91d19b0ad387013203a8b5ddd44c1cfb3f2b0ddd",
+  "snapshotTree": "42a72f5a691ed8884634e5a920f52c0502663543",
+  "patchSHA256": "e8957ceae74c886b368a9d2b3be8e4dfd6fda55a6764f591e748fbee2dccd586",
+  "state": "historical draft; not integrated or validated for current runtime",
+  "verification": "patch reapplied to base in an isolated Git index; exact snapshot tree match",
+  "files": [
+    {
+      "path": "src/app/App.tsx",
+      "sha256": "5ed0242203cfc2702ea9030ffa06439d44ae47c1ec38f394eb8cf85667c79eea"
+    },
+    {
+      "path": "src/app/AppLayout.tsx",
+      "sha256": "d278c37ef7f315b1142084762963106830b55b965fab31d0a0afd47dce64cdb0"
+    },
+    {
+      "path": "src/app/appExtensions.ts",
+      "sha256": "4dfc778044f551fdde2508aae72dc15689a08b594d5604ebe6f013480fa13b23"
+    },
+    {
+      "path": "src/app/appLayoutTypes.ts",
+      "sha256": "5bec5b9e43d5921f42654035095afad003d3e98f02b4839ad6effc41f4e26432"
+    },
+    {
+      "path": "src/app/hooks/useFileImport.ts",
+      "sha256": "c313de23c8e824d70970741e2fc9398cbdfd1716814096a6d3adb4043b25a422"
+    },
+    {
+      "path": "src/app/hooks/useLayoutOpenToolProxy.test.tsx",
+      "sha256": "69a0478976d31ebc7993083586a6f232284f6afb96e4f99d8390d7f8d1b34197"
+    },
+    {
+      "path": "src/app/hooks/useLayoutOpenToolProxy.ts",
+      "sha256": "168e0db4c60c708b61f4b587fd00b00927a4b7be6af8d71c3a8bf5fb3419ea85"
+    },
+    {
+      "path": "src/app/hooks/useToolItems.test.tsx",
+      "sha256": "52d10e1b1f4449b13f14d117fec4b99ca33c1097b59986eead2b5764c4c175c2"
+    },
+    {
+      "path": "src/app/hooks/useToolItems.tsx",
+      "sha256": "eea194a0e2af45f8b8a96fe16dc3d6708ce46136acf42bc6f21810d5330f453c"
+    },
+    {
+      "path": "src/app/index.ts",
+      "sha256": "4a91bf83f708f226bc4868ace589be13dc90e13bd9983ceaba429bb20356acd4"
+    }
+  ],
+  "excluded": [
+    "environment files and local configuration",
+    "AGENTS.md / CLAUDE.md instructions",
+    "submodule working trees",
+    "screenshots, logs, caches and runtime artifacts"
+  ],
+  "archiveSHA256": "fed7e4606dd71d4c168bde993d244e86c968d1d63f799afbc00e41aabeb9190d",
+  "encoding": "gzip; patchSHA256 refers to decompressed bytes"
+}

@@ -22,7 +22,6 @@ import type {
   WorkspaceSelection,
 } from '@/types';
 import { translations } from '@/shared/i18n';
-import { Button, Dialog } from '@/shared/components/ui';
 import {
   classifyLibraryFileKind,
   isLibraryComponentAddableFile,
@@ -33,13 +32,19 @@ import { useSelectionStore } from '@/store/selectionStore';
 import { useUIStore, type Language } from '@/store/uiStore';
 import type { WorkspacePropertyPatch } from '@/store/workspace/types';
 import { buildFileTree } from '../utils';
-import { FileTreeContextMenu } from './FileTreeContextMenu';
 import type { LibraryDeleteTarget } from './FileTreeNode';
 import { TreeEditorFileBrowserPanel } from './tree-editor/TreeEditorFileBrowserPanel';
 import { TreeEditorJointSection } from './tree-editor/TreeEditorJointSection';
 import { TreeEditorSidebarHeader } from './tree-editor/TreeEditorSidebarHeader';
 import { useTreeEditorLayout } from './tree-editor/useTreeEditorLayout';
 import { TreeEditorStructureSection } from './tree-editor/TreeEditorStructureSection';
+
+const LazyFileTreeContextMenu = React.lazy(async () => ({
+  default: (await import('./FileTreeContextMenu')).FileTreeContextMenu,
+}));
+const LazyTreeEditorDialogs = React.lazy(async () => ({
+  default: (await import('./tree-editor/TreeEditorDialogs')).TreeEditorDialogs,
+}));
 
 export type LibraryRobotLoadIntent = 'direct' | 'preview' | 'discard';
 export type LibraryRobotLoadResult =
@@ -711,114 +716,62 @@ export const TreeEditor: React.FC<TreeEditorProps> = ({
         </button>
       )}
 
-      <FileTreeContextMenu
-        position={fileContextMenu ? { x: fileContextMenu.x, y: fileContextMenu.y } : null}
-        addLabel={t.addComponent}
-        renameLabel={t.rename}
-        exportLabel={t.export}
-        deleteLabel={t.removeFromLibrary}
-        onAdd={handleAddFileToAssembly}
-        onRename={handleRenameFolderFromMenu}
-        onExport={handleExportLibraryFile}
-        onDelete={() => {
-          if (fileContextMenu?.target) {
-            handleDeleteFromLibrary(fileContextMenu.target);
-          }
-        }}
-        showAddAction={Boolean(
-          onAddComponent &&
-          fileContextMenu?.target.type === 'file' &&
-          isLibraryComponentAddableFile(fileContextMenu.target.file),
-        )}
-        showRenameAction={Boolean(
-          fileContextMenu?.target.type === 'folder' && onRenameLibraryFolder,
-        )}
-        showExportAction={
-          fileContextMenu?.target.type === 'file' &&
-          Boolean(onExportLibraryFile) &&
-          isLibraryRobotExportableFormat(fileContextMenu.target.file.format)
-        }
-        showDeleteAction={Boolean(
-          (fileContextMenu?.target.type === 'folder' && onDeleteLibraryFolder) ||
-          (fileContextMenu?.target.type === 'file' && onDeleteLibraryFile),
-        )}
-      />
+      {fileContextMenu ? (
+        <React.Suspense fallback={null}>
+          <LazyFileTreeContextMenu
+            position={{ x: fileContextMenu.x, y: fileContextMenu.y }}
+            addLabel={t.addComponent}
+            renameLabel={t.rename}
+            exportLabel={t.export}
+            deleteLabel={t.removeFromLibrary}
+            onAdd={handleAddFileToAssembly}
+            onRename={handleRenameFolderFromMenu}
+            onExport={handleExportLibraryFile}
+            onDelete={() => handleDeleteFromLibrary(fileContextMenu.target)}
+            showAddAction={Boolean(
+              onAddComponent &&
+              fileContextMenu.target.type === 'file' &&
+              isLibraryComponentAddableFile(fileContextMenu.target.file),
+            )}
+            showRenameAction={Boolean(
+              fileContextMenu.target.type === 'folder' && onRenameLibraryFolder,
+            )}
+            showExportAction={
+              fileContextMenu.target.type === 'file' &&
+              Boolean(onExportLibraryFile) &&
+              isLibraryRobotExportableFormat(fileContextMenu.target.file.format)
+            }
+            showDeleteAction={Boolean(
+              (fileContextMenu.target.type === 'folder' && onDeleteLibraryFolder) ||
+              (fileContextMenu.target.type === 'file' && onDeleteLibraryFile),
+            )}
+          />
+        </React.Suspense>
+      ) : null}
 
-      <Dialog
-        isOpen={isDeleteAllLibraryDialogOpen}
-        onClose={() => setIsDeleteAllLibraryDialogOpen(false)}
-        title={t.deleteAllLibraryFilesConfirmTitle}
-        width="w-[420px]"
-        footer={
-          <div className="flex items-center justify-end gap-2">
-            <Button
-              type="button"
-              variant="secondary"
-              onClick={() => setIsDeleteAllLibraryDialogOpen(false)}
-            >
-              {t.cancel}
-            </Button>
-            <Button type="button" variant="danger" onClick={handleConfirmDeleteAllLibraryFiles}>
-              {t.confirm}
-            </Button>
-          </div>
-        }
-      >
-        <p className="text-sm leading-6 text-text-secondary">
-          {t.deleteAllLibraryFilesConfirmMessage}
-        </p>
-      </Dialog>
-
-      <Dialog
-        isOpen={isLoadRobotDialogOpen}
-        onClose={() => {
-          if (!isLoadRobotPending) {
-            setIsLoadRobotDialogOpen(false);
-          }
-        }}
-        title={t.simpleModeSwitchDraftConfirmTitle}
-        width="w-[460px]"
-        footer={
-          <div className="flex items-center justify-end gap-2">
-            <Button
-              type="button"
-              variant="ghost"
-              onClick={() => setIsLoadRobotDialogOpen(false)}
-              disabled={isLoadRobotPending}
-            >
-              {t.cancel}
-            </Button>
-            <Button
-              type="button"
-              variant="secondary"
-              onClick={() => {
-                if (pendingLoadRobotFile) {
-                  void handleRequestLibraryRobotLoad(pendingLoadRobotFile, 'discard');
-                }
-              }}
-              disabled={isLoadRobotPending || !pendingLoadRobotFile}
-            >
-              {t.discardAndOpen}
-            </Button>
-            <Button
-              type="button"
-              onClick={() => {
-                if (pendingLoadRobotFile) {
-                  void handleRequestLibraryRobotLoad(pendingLoadRobotFile, 'preview');
-                }
-              }}
-              isLoading={isLoadRobotPending}
-              disabled={!pendingLoadRobotFile}
-            >
-              {t.previewTargetModel}
-            </Button>
-          </div>
-        }
-      >
-        <p className="text-sm leading-6 text-text-secondary">
-          {t.simpleModeSwitchDraftConfirmMessage}
-        </p>
-      </Dialog>
+      {isDeleteAllLibraryDialogOpen || isLoadRobotDialogOpen ? (
+        <React.Suspense fallback={null}>
+          <LazyTreeEditorDialogs
+            deleteAllOpen={isDeleteAllLibraryDialogOpen}
+            loadRobotOpen={isLoadRobotDialogOpen}
+            loadRobotPending={isLoadRobotPending}
+            hasPendingLoadRobot={Boolean(pendingLoadRobotFile)}
+            t={t}
+            onCloseDeleteAll={() => setIsDeleteAllLibraryDialogOpen(false)}
+            onConfirmDeleteAll={handleConfirmDeleteAllLibraryFiles}
+            onCloseLoadRobot={() => {
+              if (!isLoadRobotPending) {
+                setIsLoadRobotDialogOpen(false);
+              }
+            }}
+            onLoadRobot={(intent) => {
+              if (pendingLoadRobotFile) {
+                void handleRequestLibraryRobotLoad(pendingLoadRobotFile, intent);
+              }
+            }}
+          />
+        </React.Suspense>
+      ) : null}
     </div>
   );
 };

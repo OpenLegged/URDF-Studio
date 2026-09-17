@@ -1,0 +1,35 @@
+<?xml version="1.0"?>
+<robot name="bar_segment">
+  <link name="base_link">
+    <visual>
+      <origin xyz="0 0 0.15" rpy="0 0 0" />
+      <geometry>
+        <cylinder radius="0.03" length="0.3" />
+      </geometry>
+      <material name="gray">
+        <color rgba="0.6 0.6 0.6 1" />
+      </material>
+    </visual>
+    <inertial>
+      <origin xyz="0 0 0.15" rpy="0 0 0" />
+      <mass value="0.1" />
+      <inertia ixx="0.001" ixy="0" ixz="0" iyy="0.001" iyz="0" izz="0.0001" />
+    </inertial>
+  </link>
+  <link name="tip_link">
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0" />
+      <geometry>
+        <sphere radius="0.035" />
+      </geometry>
+      <material name="blue">
+        <color rgba="0.2 0.4 0.9 1" />
+      </material>
+    </visual>
+  </link>
+  <joint name="tip_joint" type="fixed">
+    <parent link="base_link" />
+    <child link="tip_link" />
+    <origin xyz="0 0 0.3" rpy="0 0 0" />
+  </joint>
+</robot>

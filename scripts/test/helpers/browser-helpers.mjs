@@ -353,8 +353,10 @@ export async function launchBrowser(options = {}) {
     // page.evaluate (loadRobotByName / addComponent trigger USD hydration).
     // Those evaluates run longer than the default 30s CDP round-trip, which
     // surfaces as `Runtime.callFunctionOn timed out`. Give a single evaluate
-    // enough headroom to finish a cold load/hydrate.
-    protocolTimeout: 180000,
+    // enough headroom to finish a cold load/hydrate. Workflow-suite exports
+    // (mesh bundling + zip on the page's main thread) can freeze the page for
+    // minutes under parallel load, so the headroom is generous.
+    protocolTimeout: 600000,
   });
 }
 

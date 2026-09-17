@@ -102,6 +102,9 @@ features/urdf-viewer/
 - 可见 Mesh 同时应用 `PhysicsCollisionAPI` 时，adapter 与 runtime hydration 必须把同一个 descriptor
   投影到 visual 和 collision 两个角色；只有显式 collision section 才保持 collision-only，不能用
   section/path 的单选分类覆盖 composed collision metadata
+- generic CAD 场景的 Hydra descriptor 即使共享 default-prim owner，hydration 也必须按 authored
+  Prim 分别写入位姿；与 prepared export 共用 render descriptor 筛选，避免物理材质重复记录干扰。
+  新建 mesh attachment 的 dimensions 使用单位缩放，不能继承默认 box 尺寸。
 - 单资产无界面导出通过 `prepareUsdSourceExportCacheWithWorker` 复用 robot-mode offscreen worker；
   `includeAllAvailableFiles` 只用于调用方已验证的完整资产闭包，防止二进制层依赖被文本扫描遗漏。
   宿主等待 prepared-cache 与 complete document-load，不写入 workspace，不启动第二套 USD parser。

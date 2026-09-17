@@ -8,7 +8,7 @@ import {
   subscribeToShowVisualPreference,
 } from './workspaceViewerDetailPreferences';
 import { createAssemblyScenePlacement, createAssemblySceneProjection } from '@/core/robot';
-import { buildBridgePreviewWorkspace } from '@/features/assembly';
+import { buildBridgePreviewWorkspace } from '@/features/assembly/bridge_preview';
 import { projectWorkspaceJointMotionToRenderer } from '@/features/editor';
 import type { AssemblyState, BridgeJoint, ComponentSourceDraft, RobotFile } from '@/types';
 

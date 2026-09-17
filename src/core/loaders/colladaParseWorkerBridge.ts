@@ -1,10 +1,6 @@
 import * as THREE from 'three';
 
-import {
-  canSerializeColladaInWorker,
-  createSceneFromSerializedColladaData,
-  type SerializedColladaSceneData,
-} from './colladaWorkerSceneData';
+import type { SerializedColladaSceneData } from './colladaWorkerSceneData';
 import {
   createDefaultMeshParseWorker,
   createMeshParseWorkerPoolClient,
@@ -112,6 +108,7 @@ export function createColladaParseWorkerPoolClient({
 
   const load = async (assetUrl: string, manager: THREE.LoadingManager): Promise<THREE.Object3D> => {
     const serializedScene = await loadSerialized(assetUrl);
+    const { createSceneFromSerializedColladaData } = await import('./colladaWorkerSceneData');
     return createSceneFromSerializedColladaData(serializedScene, { manager });
   };
 
@@ -152,4 +149,9 @@ export function disposeColladaParseWorkerPoolClient(rejectPendingWith?: unknown)
   sharedColladaParseWorkerPoolClient.dispose(rejectPendingWith);
 }
 
-export { canSerializeColladaInWorker };
+// The worker serializer now supports every Collada source accepted by the
+// fallback parser. Keep this synchronous capability probe lightweight so
+// importing the worker bridge does not also evaluate ColladaLoader.
+export function canSerializeColladaInWorker(_content: string): boolean {
+  return true;
+}

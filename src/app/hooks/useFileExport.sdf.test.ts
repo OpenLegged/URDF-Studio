@@ -23,7 +23,8 @@ import {
   type RobotFile,
 } from '@/types';
 import type { ExportDialogConfig } from '@/features/file-io';
-import { parseMJCF, resolveRobotFileData } from '@/core/parsers';
+import { parseMJCF } from '@/core/parsers';
+import { resolveRobotFileData } from '@/core/parsers/importRobotFile';
 
 function restoreGlobalProperty<T extends keyof typeof globalThis>(
   key: T,

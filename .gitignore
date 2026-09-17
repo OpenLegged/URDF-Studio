@@ -12,7 +12,8 @@ MUJOCO_LOG.TXT
 .DS_Store
 dist/
 build/
-test/
+test/*
+!test/workflow-fixtures/
 scripts/
 !scripts/
 scripts/*

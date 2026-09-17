@@ -1,5 +1,5 @@
 import { GeometryType, type RobotFile } from '@/types';
-import { type RobotImportResult, resolveRobotFileData } from '@/core/parsers';
+import { type RobotImportResult, resolveRobotFileData } from '@/core/parsers/importRobotFile';
 import { pickPreferredUsdRootFile } from '@/core/parsers/usd/usdFormatUtils';
 import { getVisualGeometryEntries } from '@/core/robot';
 import { logRuntimeFailure, scheduleFailFastInDev } from '@/core/utils/runtimeDiagnostics';

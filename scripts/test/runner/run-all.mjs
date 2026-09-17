@@ -6,7 +6,8 @@
  * Stages (each can be toggled):
  *   1. unit     — Node unit tests via run-node-tests.mjs (default suite: all)
  *   2. browser  — every scripts/test/browser/test_*.mjs, auto-discovered from
- *                 package.json `test:browser:*` scripts (minus the `all` alias)
+ *                 package.json `test:browser:*` scripts (minus the `all` alias),
+ *                 run by a worker pool (see --browser-concurrency)
  *   3. fixtures — opt-in golden/truth fixture regression (needs large corpora)
  *
  * Design choices that make a full sweep practical:
@@ -15,6 +16,11 @@
  *   - One shared dev server is started up front on the default site URL. Each
  *     browser test's ensureSite() finds it reachable and reuses it instead of
  *     cold-starting its own Vite — turning N cold starts into one.
+ *   - Browser tests run in a worker pool (default 3-4 on a typical dev box;
+ *     each headless Chrome needs ~1-2 GB and a few cores). With concurrency > 1
+ *     each test's output is teed to tmp/regression/logs/<npm-key>.log — parallel
+ *     stdout would otherwise interleave — and failed tests replay the tail of
+ *     their log inline. Concurrency 1 keeps stdio inherited for debugging.
  *   - A consolidated pass/fail table is printed and written to
  *     tmp/regression/run-all-summary.json.
  *   - Browser automation is always cleaned up at the end (cleanup-headless.cjs).
@@ -27,7 +33,11 @@
  *     --skip-browser         Skip the browser stage
  *     --fixtures             Include the (heavy) fixtures stage
  *     --unit-suite <name>    Unit suite to run (default: all)
- *     --headed               Run browser tests headed
+ *     --browser-concurrency <n>  Max browser tests in parallel (default:
+ *                                min(4, cores-derived), env
+ *                                URDF_TEST_BROWSER_CONCURRENCY overrides; 1
+ *                                streams test output live instead of to logs)
+ *     --headed               Run browser tests headed (forces concurrency 1)
  *     --filter <substr>      Only browser tests whose npm key includes <substr>
  *     --list                 List the resolved stages/commands and exit
  *     --help
@@ -35,15 +45,18 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
+import os from 'node:os';
 import process from 'node:process';
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 import { ensureSite, DEFAULT_SITE_URL, writeJsonAtomic } from '../helpers/browser-helpers.mjs';
 
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../..');
 const SUMMARY_PATH = path.resolve(REPO_ROOT, 'tmp/regression/run-all-summary.json');
+const BROWSER_LOG_DIR = path.resolve(REPO_ROOT, 'tmp/regression/logs');
 const CLEANUP_SCRIPT = 'test/usd-viewer/scripts/cleanup-headless.cjs';
+const FAILURE_LOG_TAIL_LINES = 40;
 
 function parseArgs(argv) {
   const opts = {
@@ -51,6 +64,7 @@ function parseArgs(argv) {
     browser: true,
     fixtures: false,
     unitSuite: 'all',
+    browserConcurrency: null,
     headed: false,
     filter: null,
     list: false,
@@ -64,8 +78,16 @@ function parseArgs(argv) {
       case '--skip-unit': opts.unit = false; break;
       case '--skip-browser': opts.browser = false; break;
       case '--fixtures': opts.fixtures = true; break;
-      case '--headed': opts.headed = true; break;
       case '--unit-suite': opts.unitSuite = argv[(i += 1)]; break;
+      case '--browser-concurrency': {
+        const value = Number.parseInt(argv[(i += 1)], 10);
+        if (!Number.isFinite(value) || value < 1) {
+          throw new Error(`--browser-concurrency expects a positive integer, got "${argv[i]}"`);
+        }
+        opts.browserConcurrency = value;
+        break;
+      }
+      case '--headed': opts.headed = true; break;
       case '--filter': opts.filter = argv[(i += 1)]; break;
       case '--list': opts.list = true; break;
       case '--help': case '-h': opts.help = true; break;
@@ -73,6 +95,19 @@ function parseArgs(argv) {
     }
   }
   return opts;
+}
+
+/** Headless Chrome with software WebGL costs ~1-2 GB and a few cores each. */
+function defaultBrowserConcurrency() {
+  const fromEnv = Number.parseInt(process.env.URDF_TEST_BROWSER_CONCURRENCY ?? '', 10);
+  if (Number.isFinite(fromEnv) && fromEnv > 0) return fromEnv;
+  return Math.min(4, Math.max(1, Math.floor((os.cpus().length - 2) / 3)));
+}
+
+function resolveBrowserConcurrency(opts) {
+  if (opts.headed) return 1; // headed windows compete for the same display
+  if (opts.browserConcurrency != null) return opts.browserConcurrency;
+  return defaultBrowserConcurrency();
 }
 
 function readPackageScripts() {
@@ -97,8 +132,85 @@ function discoverFixtureKeys(scripts) {
     .sort();
 }
 
+/**
+ * Run one npm test, teeing output to a log file (concurrency > 1) or streaming
+ * it live (concurrency 1). Resolves to { exitCode, ms, logPath }.
+ */
+function spawnBrowserTest(key, { env, logPath, live }) {
+  return new Promise((resolve) => {
+    const start = Date.now();
+    const stdio = live ? 'inherit' : ['ignore', 'pipe', 'pipe'];
+    const child = spawn('npm', ['run', key], { cwd: REPO_ROOT, env, stdio });
+
+    let stream = null;
+    if (!live) {
+      stream = fs.createWriteStream(logPath, { flags: 'w' });
+      child.stdout.pipe(stream);
+      child.stderr.pipe(stream);
+    }
+
+    const settle = (exitCode) => {
+      if (stream) stream.end();
+      resolve({ exitCode, ms: Date.now() - start, logPath: live ? null : logPath });
+    };
+
+    child.on('error', (error) => {
+      console.error(`[run-all] ${key} failed to spawn: ${error.message}`);
+      settle(1);
+    });
+    child.on('close', (code) => settle(typeof code === 'number' ? code : 1));
+  });
+}
+
+function printFailureTail(logPath) {
+  if (!logPath || !fs.existsSync(logPath)) return;
+  const tail = fs.readFileSync(logPath, 'utf8').trimEnd().split('\n')
+    .slice(-FAILURE_LOG_TAIL_LINES);
+  if (tail.length === 0) return;
+  console.log(`    ── log tail (${path.relative(REPO_ROOT, logPath)}) ──`);
+  for (const line of tail) console.log(`    ${line}`);
+}
+
+/**
+ * Worker pool over the discovered browser npm keys. Each worker pulls the next
+ * test off the queue; results come back sorted by key so the summary table is
+ * stable regardless of completion order.
+ */
+async function runBrowserPool(keys, opts) {
+  const concurrency = resolveBrowserConcurrency(opts);
+  const live = concurrency === 1;
+  fs.mkdirSync(BROWSER_LOG_DIR, { recursive: true });
+  const env = { ...process.env, ...(opts.headed ? { URDF_E2E_HEADED: '1' } : {}) };
+
+  console.log(
+    `[run-all] browser stage: ${keys.length} test(s), concurrency=${concurrency}` +
+    (live ? ' (output streamed live)' : `, logs teed to ${path.relative(REPO_ROOT, BROWSER_LOG_DIR)}/`),
+  );
+
+  const queue = [...keys];
+  const results = [];
+
+  async function worker() {
+    for (;;) {
+      const key = queue.shift();
+      if (!key) return;
+      console.log(`[browser] START ${key}`);
+      const logPath = path.join(BROWSER_LOG_DIR, `${key}.log`);
+      const { exitCode, ms, logPath: log } = await spawnBrowserTest(key, { env, logPath, live });
+      const mark = exitCode === 0 ? 'PASS' : 'FAIL';
+      console.log(`[browser] ${mark} ${key} (${(ms / 1000).toFixed(1)}s)`);
+      if (exitCode !== 0) printFailureTail(log);
+      results.push({ stage: 'browser', name: key, exitCode, ms, log: log ?? undefined });
+    }
+  }
+
+  await Promise.all(Array.from({ length: Math.min(concurrency, keys.length) }, () => worker()));
+  results.sort((a, b) => a.name.localeCompare(b.name));
+  return results;
+}
+
 function buildStages(opts, scripts) {
-  /** @type {Array<{ stage: string, name: string, run: () => number }>} */
+  /** @type {Array<{ stage: string, name: string, keys?: string[], run: () => number | Promise<number | Array> }>} */
   const stages = [];
 
   if (opts.unit) {
@@ -114,15 +226,14 @@ function buildStages(opts, scripts) {
   }
 
   if (opts.browser) {
-    for (const key of discoverBrowserKeys(scripts, opts.filter)) {
+    const keys = discoverBrowserKeys(scripts, opts.filter);
+    if (keys.length > 0) {
       stages.push({
         stage: 'browser',
-        name: key,
-        run: () => spawnSync('npm', ['run', key], {
-          cwd: REPO_ROOT,
-          stdio: 'inherit',
-          env: { ...process.env, ...(opts.headed ? { URDF_E2E_HEADED: '1' } : {}) },
-        }).status ?? 1,
+        name: `browser-pool (${keys.length} tests)`,
+        keys,
+        // Resolves to an array of per-test results (already timed & logged).
+        run: () => runBrowserPool(keys, opts),
       });
     }
   }
@@ -146,6 +257,12 @@ function runCleanup() {
   spawnSync(process.execPath, [CLEANUP_SCRIPT], { cwd: REPO_ROOT, stdio: 'inherit' });
 }
 
+function printHelp() {
+  const lines = fs.readFileSync(fileURLToPath(import.meta.url), 'utf8').split('\n');
+  const end = lines.indexOf(' */');
+  console.log(lines.slice(2, end === -1 ? 38 : end).join('\n'));
+}
+
 function printTable(results) {
   const pad = (s, n) => String(s).padEnd(n);
   const nameWidth = Math.max(20, ...results.map((r) => r.name.length));
@@ -162,13 +279,17 @@ function printTable(results) {
   console.log(`[run-all] total: ${results.length}, passed: ${passed}, failed: ${failed}`);
   if (failed > 0) {
     console.log(`[run-all] failed: ${results.filter((r) => r.exitCode !== 0).map((r) => r.name).join(', ')}`);
+    const withLogs = results.filter((r) => r.exitCode !== 0 && r.log);
+    if (withLogs.length > 0) {
+      console.log(`[run-all] failure logs: ${withLogs.map((r) => path.relative(REPO_ROOT, r.log)).join(', ')}`);
+    }
   }
 }
 
 async function main() {
   const opts = parseArgs(process.argv.slice(2));
   if (opts.help) {
-    console.log(fs.readFileSync(fileURLToPath(import.meta.url), 'utf8').split('\n').slice(2, 38).join('\n'));
+    printHelp();
     return 0;
   }
 
@@ -182,7 +303,10 @@ async function main() {
 
   if (opts.list) {
     console.log('[run-all] resolved stages:');
-    for (const s of stages) console.log(`  ${s.stage.padEnd(9)} ${s.name}`);
+    for (const s of stages) {
+      console.log(`  ${s.stage.padEnd(9)} ${s.name}`);
+      for (const key of s.keys ?? []) console.log(`             ${key}`);
+    }
     return 0;
   }
 
@@ -208,14 +332,19 @@ async function main() {
     for (const stage of stages) {
       console.log(`\n──────── [${stage.stage}] ${stage.name} ────────`);
       const start = Date.now();
-      let exitCode;
       try {
-        exitCode = stage.run();
+        // Browser stages resolve to an array of already-timed per-test results;
+        // every other stage resolves to its own exit code.
+        const outcome = await stage.run();
+        if (Array.isArray(outcome)) {
+          results.push(...outcome);
+        } else {
+          results.push({ stage: stage.stage, name: stage.name, exitCode: outcome, ms: Date.now() - start });
+        }
       } catch (error) {
         console.error(`[run-all] ${stage.name} threw: ${error.message}`);
-        exitCode = 1;
+        results.push({ stage: stage.stage, name: stage.name, exitCode: 1, ms: Date.now() - start });
       }
-      results.push({ stage: stage.stage, name: stage.name, exitCode, ms: Date.now() - start });
     }
   } finally {
     if (sharedSite?.startedByScript) {
@@ -226,7 +355,15 @@ async function main() {
   }
 
   await writeJsonAtomic(SUMMARY_PATH, {
-    options: { unitSuite: opts.unitSuite, browser: opts.browser, fixtures: opts.fixtures, headed: opts.headed },
+    options: {
+      unitSuite: opts.unitSuite,
+      browser: opts.browser,
+      fixtures: opts.fixtures,
+      headed: opts.headed,
+      browserConcurrency: stages.some((s) => s.stage === 'browser')
+        ? resolveBrowserConcurrency(opts)
+        : undefined,
+    },
     results,
   });
   printTable(results);

@@ -1,6 +1,5 @@
 import * as THREE from 'three';
 import { clone as cloneSkeleton } from 'three/examples/jsm/utils/SkeletonUtils.js';
-import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 
 import { loadColladaScene } from '@/core/loaders/colladaParseWorkerBridge';
 import { postProcessColladaScene } from '@/core/loaders';
@@ -11,7 +10,6 @@ import {
 } from '@/core/loaders/objParseWorkerBridge';
 import { createGeometryFromSerializedMshData } from '@/core/loaders/mshGeometryData';
 import { loadSerializedMshGeometryData } from '@/core/loaders/mshParseWorkerBridge';
-import { createGeometryFromSerializedStlData } from '@/core/loaders/stlGeometryData';
 import { loadSerializedStlGeometryData } from '@/core/loaders/stlParseWorkerBridge';
 import { prepareMeshSurfaceForSingleSidedRendering } from '@/core/loaders';
 import { createMatteMaterial } from '@/core/utils/materialFactory';
@@ -135,6 +133,7 @@ const loadCachedMJCFMeshAsset = async (
 
     if (extension === 'stl') {
       const serializedGeometry = await loadSerializedStlGeometryData(assetUrl);
+      const { createGeometryFromSerializedStlData } = await import('@/core/loaders/stlGeometryData');
       const geometry = createGeometryFromSerializedStlData(serializedGeometry);
       if (abortSignal?.aborted) {
         geometry.dispose();
@@ -188,6 +187,7 @@ const loadCachedMJCFMeshAsset = async (
     }
 
     if (extension === 'gltf' || extension === 'glb') {
+      const { GLTFLoader } = await import('three/examples/jsm/loaders/GLTFLoader.js');
       const loader = new GLTFLoader();
       const result = await new Promise<{ scene: THREE.Object3D }>((resolve, reject) => {
         loader.load(assetUrl, resolve, undefined, reject);

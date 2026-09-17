@@ -1,8 +1,6 @@
 import { generateURDF } from '@/core/parsers';
-import {
-  createUsdPlaceholderRobotData,
-  type RobotImportResult,
-} from '@/core/parsers/importRobotFile';
+import type { RobotImportResult } from '@/core/parsers/importRobotFile';
+import { createUsdPlaceholderRobotData } from '@/core/parsers/importRobotFileLightweight';
 import { resolveMJCFSource } from '@/core/parsers/mjcf/mjcfSourceResolver';
 import { canGenerateUrdf } from '@/core/parsers/urdf/urdfExportSupport';
 import { buildExportableAssemblyRobotData } from '@/core/robot/assemblyTransforms';

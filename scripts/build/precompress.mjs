@@ -16,8 +16,8 @@
  *   costs ~28s for ~9% extra savings over q5 on the 19MB USD wasm), q9 below.
  * - gzip level 9 as fallback for clients without brotli support.
  * - Skips already-compressed formats (png/woff2/...) and tiny files.
- * - `--check` mode verifies every expected sidecar exists and is up to date
- *   (used by CI/verify to catch a build where the step was skipped).
+ * - `--check` mode decompresses every expected sidecar and byte-compares it
+ *   with its source (used by CI/verify to catch skipped or stale output).
  *
  * Deploy requirement: the static server must serve the sidecar files with the
  * appropriate `Content-Encoding` when the client advertises support — see
@@ -29,7 +29,13 @@
  * URDF-Studio-Pro, which compiles core sources into its own root dist/ and
  * reuses this script via the core submodule.
  */
-import { brotliCompressSync, constants as zlibConstants, gzipSync } from 'node:zlib';
+import {
+  brotliCompressSync,
+  brotliDecompressSync,
+  constants as zlibConstants,
+  gunzipSync,
+  gzipSync,
+} from 'node:zlib';
 import { existsSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import process from 'node:process';
@@ -134,16 +140,41 @@ if (files.length === 0) {
   process.exit(0);
 }
 
-const missing = [];
+const invalidSidecars = [];
 for (const filePath of files) {
   const relativePath = relative(DIST_DIR, filePath);
   const brPath = `${filePath}.br`;
   const gzPath = `${filePath}.gz`;
 
   if (CHECK_ONLY) {
-    for (const sidecarPath of [brPath, gzPath]) {
+    const raw = readFileSync(filePath);
+    const sidecars = [
+      [brPath, brotliDecompressSync],
+      [gzPath, gunzipSync],
+    ];
+
+    for (const [sidecarPath, decompress] of sidecars) {
       if (!existsSync(sidecarPath)) {
-        missing.push(relative(DIST_DIR, sidecarPath));
+        invalidSidecars.push({
+          path: relative(DIST_DIR, sidecarPath),
+          reason: 'missing',
+        });
+        continue;
+      }
+
+      try {
+        const decompressed = decompress(readFileSync(sidecarPath));
+        if (!decompressed.equals(raw)) {
+          invalidSidecars.push({
+            path: relative(DIST_DIR, sidecarPath),
+            reason: 'content does not match source',
+          });
+        }
+      } catch (error) {
+        invalidSidecars.push({
+          path: relative(DIST_DIR, sidecarPath),
+          reason: `cannot decompress (${error instanceof Error ? error.message : String(error)})`,
+        });
       }
     }
     continue;
@@ -178,9 +209,13 @@ for (const filePath of files) {
 }
 
 if (CHECK_ONLY) {
-  if (missing.length > 0) {
-    console.error(`precompress: ${missing.length} sidecar file(s) missing or stale:`);
-    for (const path of missing) console.error(`  ${path}`);
+  if (invalidSidecars.length > 0) {
+    console.error(
+      `precompress: ${invalidSidecars.length} sidecar file(s) missing, stale, or invalid:`,
+    );
+    for (const sidecar of invalidSidecars) {
+      console.error(`  ${sidecar.path}: ${sidecar.reason}`);
+    }
     process.exit(1);
   }
   console.log(`precompress: OK — ${files.length} compressible file(s) all have .br/.gz sidecars`);

@@ -1,5 +1,4 @@
 import { useLoader } from '@react-three/fiber';
-import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import * as THREE from 'three';
 
 import { buildAssetIndex, resolveManagedAssetUrl } from '@/core/loaders';
@@ -90,6 +89,7 @@ export async function preloadManagedMeshAsset({
     }
 
     if (normalizedExtension === 'gltf' || normalizedExtension === 'glb') {
+      const { GLTFLoader } = await import('three/examples/jsm/loaders/GLTFLoader.js');
       const manager = createManagedLoadingManager(assets, assetBaseDir);
       await Promise.resolve(
         useLoader.preload(GLTFLoader, assetUrl, (loader) => {
