@@ -15,7 +15,10 @@ import { GeometryTransformControls } from '@/shared/components/3d/robot/componen
 import { JointInteraction } from '@/shared/components/3d/robot/components/JointInteraction';
 import { OriginTransformControls } from '@/shared/components/3d/robot/components/OriginTransformControls';
 import { RobotModelLoadingHud } from '@/shared/components/3d/robot/components/RobotModelLoadingHud';
-import type { RobotModelKernelProps } from '@/shared/components/3d/robot/types';
+import type {
+  RobotModelKernelProps,
+  ViewerInteractiveLayer,
+} from '@/shared/components/3d/robot/types';
 import { useSnapshotRenderActive } from '@/shared/components/3d/scene/SnapshotRenderContext';
 import type { RobotData, RobotFile } from '@/types/index';
 
@@ -41,6 +44,7 @@ import { canTransformGeometry } from '@/shared/components/3d/robot/utils/geometr
 import { isRegressionDebugEnabled } from '@/shared/debug/regressionDebugEnabled';
 
 const EMPTY_ROBOT_FILES: RobotFile[] = [];
+const EMPTY_INTERACTION_LAYER_PRIORITY: ViewerInteractiveLayer[] = [];
 
 // Wrap with memo and custom comparison to prevent unnecessary re-renders
 export const RobotModelKernel: React.FC<RobotModelKernelProps> = memo(
@@ -116,7 +120,7 @@ export const RobotModelKernel: React.FC<RobotModelKernelProps> = memo(
     isSelectionLockedRef,
     isMeshPreview = false,
     hoveredSelection,
-    interactionLayerPriority = [],
+    interactionLayerPriority = EMPTY_INTERACTION_LAYER_PRIORITY,
     groundPlaneOffset = 0,
     active = true,
     suppressInitialAutoFrame = false,

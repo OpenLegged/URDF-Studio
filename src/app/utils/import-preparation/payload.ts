@@ -95,9 +95,15 @@ export interface HydrateDeferredImportAssetsWorkerResponse {
   progress?: PrepareImportProgress;
 }
 
+export interface ImportPreparationWorkerHeartbeatResponse {
+  type: 'import-preparation-heartbeat';
+  requestId: number;
+}
+
 export type ImportPreparationWorkerResponse =
   | PrepareImportWorkerResponse
-  | HydrateDeferredImportAssetsWorkerResponse;
+  | HydrateDeferredImportAssetsWorkerResponse
+  | ImportPreparationWorkerHeartbeatResponse;
 
 export type ImportPreparationWorkerRequest =
   | PrepareImportWorkerRequest

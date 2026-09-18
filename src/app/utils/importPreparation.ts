@@ -43,6 +43,7 @@ export type {
   ImportPreparationFileInput,
   ImportPreparationWorkerRequest,
   ImportPreparationWorkerResponse,
+  ImportPreparationWorkerHeartbeatResponse,
   PrepareImportPayloadArgs,
   PrepareImportProgress,
   PrepareImportProgressPhase,

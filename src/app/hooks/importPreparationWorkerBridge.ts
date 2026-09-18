@@ -13,14 +13,47 @@ interface PendingWorkerRequest {
   resolve: (value: unknown) => void;
   reject: (error: unknown) => void;
   onProgress?: (progress: PrepareImportProgress) => void;
-  timeoutId?: ReturnType<typeof setTimeout>;
+  idleTimeoutId?: ReturnType<typeof setTimeout>;
+  hardDeadlineId?: ReturnType<typeof setTimeout>;
+  resetIdleTimeout?: () => void;
 }
 
 const REQUEST_TIMEOUT_MS = 5 * 60 * 1000;
+// A worker hard-killed by the browser (memory pressure, device sleep, or an
+// extension) fires no `error`/`messageerror` event, so a one-shot 5-minute
+// timeout used to be the only signal. Worker heartbeats and other responses
+// prove per-request liveness, so only a fully silent request trips this window.
+const WORKER_IDLE_TIMEOUT_MS = 90 * 1000;
 const pendingWorkerRequests = new Map<number, PendingWorkerRequest>();
 let requestIdCounter = 0;
 let sharedWorker: Worker | null = null;
 let workerUnavailable = false;
+let requestHardTimeoutMs = REQUEST_TIMEOUT_MS;
+let workerIdleTimeoutMs = WORKER_IDLE_TIMEOUT_MS;
+
+/** Overrides watchdog windows; pass 0 to disable. Test-only hook. */
+export function configureImportPreparationWorkerTimeouts({
+  idleTimeoutMs,
+  hardTimeoutMs,
+}: {
+  idleTimeoutMs?: number;
+  hardTimeoutMs?: number;
+}): void {
+  if (idleTimeoutMs !== undefined) {
+    workerIdleTimeoutMs = idleTimeoutMs;
+  }
+  if (hardTimeoutMs !== undefined) {
+    requestHardTimeoutMs = hardTimeoutMs;
+  }
+}
+
+function resolveWorkerIdleTimeoutMs(): number {
+  return workerIdleTimeoutMs > 0 ? workerIdleTimeoutMs : Number.POSITIVE_INFINITY;
+}
+
+function resolveRequestHardTimeoutMs(): number {
+  return requestHardTimeoutMs > 0 ? requestHardTimeoutMs : Number.POSITIVE_INFINITY;
+}
 
 function clearPendingWorkerRequest(requestId: number): PendingWorkerRequest | null {
   const pendingRequest = pendingWorkerRequests.get(requestId) ?? null;
@@ -29,9 +62,13 @@ function clearPendingWorkerRequest(requestId: number): PendingWorkerRequest | nu
   }
 
   pendingWorkerRequests.delete(requestId);
-  if (pendingRequest.timeoutId !== undefined) {
-    clearTimeout(pendingRequest.timeoutId);
-    pendingRequest.timeoutId = undefined;
+  if (pendingRequest.idleTimeoutId !== undefined) {
+    clearTimeout(pendingRequest.idleTimeoutId);
+    pendingRequest.idleTimeoutId = undefined;
+  }
+  if (pendingRequest.hardDeadlineId !== undefined) {
+    clearTimeout(pendingRequest.hardDeadlineId);
+    pendingRequest.hardDeadlineId = undefined;
   }
   return pendingRequest;
 }
@@ -55,17 +92,51 @@ function disposeSharedWorker(rejectPendingWith?: unknown): void {
   }
 }
 
-function createWorkerTimeoutError(requestId: number): Error {
+function createWorkerIdleTimeoutError(requestId: number, timeoutMs: number): Error {
   return new Error(
-    'Import preparation worker did not respond within the timeout '
-      + `(likely a worker crash). Request id: ${requestId}. Timeout: ${REQUEST_TIMEOUT_MS} ms.`,
+    'Import preparation worker did not respond before the idle timeout '
+      + `(likely a worker crash). Request id: ${requestId}. Idle timeout: ${timeoutMs} ms.`,
+  );
+}
+
+function createRequestHardTimeoutError(requestId: number, timeoutMs: number): Error {
+  return new Error(
+    'Import preparation worker request exceeded the hard timeout. '
+      + `Request id: ${requestId}. Hard timeout: ${timeoutMs} ms.`,
   );
 }
 
 function registerRequestTimeout(requestId: number, request: PendingWorkerRequest): void {
-  request.timeoutId = setTimeout(() => {
-    disposeSharedWorker(createWorkerTimeoutError(requestId));
-  }, REQUEST_TIMEOUT_MS);
+  const idleTimeoutMs = resolveWorkerIdleTimeoutMs();
+  const resetIdleTimeout = () => {
+    if (!Number.isFinite(idleTimeoutMs)) {
+      return;
+    }
+    if (request.idleTimeoutId !== undefined) {
+      clearTimeout(request.idleTimeoutId);
+    }
+    request.idleTimeoutId = setTimeout(() => {
+      if (pendingWorkerRequests.has(requestId)) {
+        disposeSharedWorker(createWorkerIdleTimeoutError(requestId, idleTimeoutMs));
+      }
+    }, idleTimeoutMs);
+  };
+
+  resetIdleTimeout();
+  // Cap the total wait at the hard deadline even if progress keeps arriving.
+  const hardTimeoutMs = resolveRequestHardTimeoutMs();
+  if (Number.isFinite(hardTimeoutMs)) {
+    request.hardDeadlineId = setTimeout(() => {
+      if (pendingWorkerRequests.has(requestId)) {
+        disposeSharedWorker(createRequestHardTimeoutError(requestId, hardTimeoutMs));
+      }
+    }, hardTimeoutMs);
+  }
+  request.resetIdleTimeout = resetIdleTimeout;
+}
+
+function resetRequestTimeoutOnActivity(requestId: number): void {
+  pendingWorkerRequests.get(requestId)?.resetIdleTimeout?.();
 }
 
 function handleSharedWorkerMessage(event: MessageEvent<ImportPreparationWorkerResponse>): void {
@@ -74,8 +145,16 @@ function handleSharedWorkerMessage(event: MessageEvent<ImportPreparationWorkerRe
     return;
   }
 
+  // Heartbeats are independent of business progress. Reset only the matching
+  // request so concurrent work cannot accidentally mask a stuck request.
+  resetRequestTimeoutOnActivity(message.requestId);
+
   const pendingRequest = pendingWorkerRequests.get(message.requestId) ?? null;
   if (!pendingRequest) {
+    return;
+  }
+
+  if (message.type === 'import-preparation-heartbeat') {
     return;
   }
 
@@ -265,5 +344,7 @@ export async function hydrateDeferredImportAssetsWithWorker({
 export function disposeImportPreparationWorker(): void {
   workerUnavailable = false;
   requestIdCounter = 0;
+  requestHardTimeoutMs = REQUEST_TIMEOUT_MS;
+  workerIdleTimeoutMs = WORKER_IDLE_TIMEOUT_MS;
   disposeSharedWorker();
 }

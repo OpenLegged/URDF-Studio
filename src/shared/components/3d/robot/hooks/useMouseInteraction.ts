@@ -52,6 +52,8 @@ import {
 } from '@/shared/components/3d/robot/utils/pointerSelectionCommit';
 import { createPointerInteractionFinalizer } from '@/shared/components/3d/robot/utils/pointerInteractionFinalizer';
 
+const EMPTY_INTERACTION_LAYER_PRIORITY: ViewerInteractiveLayer[] = [];
+
 export interface UseMouseInteractionOptions {
   enabled?: boolean;
   robot: THREE.Object3D | null;
@@ -130,7 +132,7 @@ export function useMouseInteraction({
   showCollision,
   showVisual,
   showCollisionAlwaysOnTop,
-  interactionLayerPriority = [],
+  interactionLayerPriority = EMPTY_INTERACTION_LAYER_PRIORITY,
   linkMeshMapRef,
   robotLinks,
   robotJoints,
@@ -181,20 +183,25 @@ export function useMouseInteraction({
   const pointerExceededClickThresholdRef = useRef(false);
   const gizmoPointerDownRef = useRef<{ x: number; y: number } | null>(null);
 
-  // Keep refs up to date
+  // Event handlers outlive individual renders. Update their inputs during
+  // render so a native pointer event can never observe the previous commit
+  // while passive effects are still pending.
   const onJointChangeRef = useRef(onJointChange);
   const onJointChangeCommitRef = useRef(onJointChangeCommit);
   const setIsDraggingRef = useRef(setIsDragging);
   const setActiveJointRef = useRef(setActiveJoint);
   const invalidateRef = useRef(invalidate);
+  invalidateRef.current = invalidate;
+  onJointChangeRef.current = onJointChange;
+  onJointChangeCommitRef.current = onJointChangeCommit;
+  setIsDraggingRef.current = setIsDragging;
+  setActiveJointRef.current = setActiveJoint;
 
-  useEffect(() => {
-    invalidateRef.current = invalidate;
-    onJointChangeRef.current = onJointChange;
-    onJointChangeCommitRef.current = onJointChangeCommit;
-    setIsDraggingRef.current = setIsDragging;
-    setActiveJointRef.current = setActiveJoint;
-  }, [invalidate, onJointChange, onJointChangeCommit, setIsDragging, setActiveJoint]);
+  // The interaction effect must not re-run when a press commits a selection:
+  // re-running disposes the joint-drag controller mid-gesture and destroys the
+  // drag state. Read the live selection through a ref instead.
+  const selectionRef = useRef(selection);
+  selectionRef.current = selection;
 
   const { getGizmoTargets, getHelperTargets, getPickTargets } =
     usePointerInteractionTargets({
@@ -431,7 +438,7 @@ export function useMouseInteraction({
       const activeJointKey = resolveActiveViewerJointKeyFromSelection(
         (robot as { joints?: Parameters<typeof resolveActiveViewerJointKeyFromSelection>[0] } | null)
           ?.joints,
-        selection,
+        selectionRef.current,
       );
 
       if (activeJointKey) {
@@ -819,7 +826,6 @@ export function useMouseInteraction({
     justSelectedRef,
     isOrbitDragging,
     isSelectionLockedRef,
-    selection,
     showCollision,
     showCollisionAlwaysOnTop,
     showVisual,

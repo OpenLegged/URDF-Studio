@@ -9,6 +9,7 @@ import {
 import { ensureWorkerXmlDomApis } from '@/core/utils/ensureWorkerXmlDomApis';
 
 const workerScope = globalThis as unknown as DedicatedWorkerGlobalScope;
+const HEARTBEAT_INTERVAL_MS = 15 * 1000;
 ensureWorkerXmlDomApis(workerScope as unknown as typeof globalThis);
 
 workerScope.addEventListener(
@@ -18,6 +19,18 @@ workerScope.addEventListener(
     if (!message) {
       return;
     }
+
+    const postHeartbeat = () => {
+      const response: ImportPreparationWorkerResponse = {
+        type: 'import-preparation-heartbeat',
+        requestId: message.requestId,
+      };
+      workerScope.postMessage(response);
+    };
+    // Progress reflects business work and can legitimately pause during a
+    // large extraction. This independent signal only proves worker liveness.
+    postHeartbeat();
+    const heartbeatIntervalId = workerScope.setInterval(postHeartbeat, HEARTBEAT_INTERVAL_MS);
 
     try {
       if (message.type === 'prepare-import') {
@@ -73,6 +86,8 @@ workerScope.addEventListener(
         error: error instanceof Error ? error.message : 'Import preparation worker failed',
       };
       workerScope.postMessage(response);
+    } finally {
+      workerScope.clearInterval(heartbeatIntervalId);
     }
   },
 );

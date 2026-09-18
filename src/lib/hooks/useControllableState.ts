@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 
 interface UseControllableStateOptions<T> {
   value?: T;
@@ -15,20 +15,35 @@ export function useControllableState<T>({
   const isControlled = value !== undefined;
   const currentValue = isControlled ? value : uncontrolledValue;
 
+  // The setter is part of callback chains owned by consumers such as
+  // RobotCanvas. Keep its identity stable while still reading the latest
+  // controlled value and change handler at call time.
+  const currentValueRef = useRef(currentValue);
+  const isControlledRef = useRef(isControlled);
+  const onChangeRef = useRef(onChange);
+  currentValueRef.current = currentValue;
+  isControlledRef.current = isControlled;
+  onChangeRef.current = onChange;
+
   const setValue = useCallback(
     (nextValue: T | ((previousValue: T) => T)) => {
       const resolvedValue =
         typeof nextValue === 'function'
-          ? (nextValue as (previousValue: T) => T)(currentValue)
+          ? (nextValue as (previousValue: T) => T)(currentValueRef.current)
           : nextValue;
 
-      if (!isControlled) {
+      // Mirror React's queued updater semantics for consecutive calls before
+      // the next render. A controlled render will reconcile this ref back to
+      // the authoritative prop value.
+      currentValueRef.current = resolvedValue;
+
+      if (!isControlledRef.current) {
         setUncontrolledValue(resolvedValue);
       }
 
-      onChange?.(resolvedValue);
+      onChangeRef.current?.(resolvedValue);
     },
-    [currentValue, isControlled, onChange]
+    [],
   );
 
   return [currentValue, setValue] as const;

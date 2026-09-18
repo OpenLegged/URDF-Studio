@@ -50,6 +50,12 @@ export function usePointerInteractionTargets({
     visual: { key: '', targets: [] },
     collision: { key: '', targets: [] },
   });
+  // Gizmo targets re-key on selection fields, but the callback identity must
+  // stay stable: consumers include it in interaction-effect deps, and an
+  // identity flip mid-gesture re-mounts that effect and disposes active drag
+  // state. Read the live selection through a ref instead.
+  const selectionRef = useRef(selection);
+  selectionRef.current = selection;
 
   const resetTargetCaches = useCallback(() => {
     gizmoTargetsRef.current = [];
@@ -63,13 +69,14 @@ export function usePointerInteractionTargets({
   useEffect(() => resetTargetCaches, [resetTargetCaches, robot, robotVersion, scene]);
 
   const getGizmoTargets = useCallback(() => {
+    const liveSelection = selectionRef.current;
     const nextCacheKey = [
       scene.children.length,
       toolMode,
       mode ?? 'editor',
-      selection?.type ?? 'none',
-      selection?.id ?? '',
-      selection?.helperKind ?? '',
+      liveSelection?.type ?? 'none',
+      liveSelection?.id ?? '',
+      liveSelection?.helperKind ?? '',
       robot ? 'robot' : 'empty',
     ].join(':');
 
@@ -79,7 +86,7 @@ export function usePointerInteractionTargets({
     }
 
     return gizmoTargetsRef.current;
-  }, [mode, robot, scene, selection?.helperKind, selection?.id, selection?.type, toolMode]);
+  }, [mode, robot, scene, toolMode]);
 
   const getPickTargets = useCallback(
     (targetMode: PickTargetMode) => {
