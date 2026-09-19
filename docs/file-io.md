@@ -40,6 +40,14 @@
 - `DisconnectedWorkspaceUrdfExportDialog.tsx` 是 workspace 断联导出特例，不要塞回通用导出弹层
 - `ExportProgressDialog.tsx` / `ExportProgressView.tsx` 是长时导出反馈的统一 UI，不要重新发明导出进度弹层
 
+### 闭环拼接
+
+- 同组件的不同连杆、或已有连接路径的组件之间可创建闭环。闭环保存在 workspace 中；fixed 保留完整相对朝向，revolute / continuous / prismatic 按各自轴向、自由度与限位求解。被动关节影响的相连闭环必须一起求解。
+- 闭环的两个局部锚点定义位置；`origin.rpy` / `quatXyzw` 定义 B 相对 A 的零位朝向，axis 位于 A 乘零位旋转的关节坐标系。`origin.xyz` 不能再次叠加到 anchor A。
+- `.usp` 保存完整桥接数据。SDF 用原生关节及 `urdf_studio:closed_loop` 扩展保留锚点与零位，回导闭环不改变结构树或几何；USD 使用原生物理关节帧和闭环元数据保留相同语义，包括 fixed、非主轴与负轴。
+- MJCF 的 fixed 闭环使用原生 `weld` 并支持回导；尚未实现等效编码的旋转、连续和滑动闭环在显式导出时拒绝有损转换，并建议 SDF / USD。内部源码自动选择能保留这些闭环的 SDF，不把它们静默改成 `connect`。
+- 创建、编辑、撤销重做和保存项目不提示导出格式限制。URDF / Xacro 的闭环省略提示仅在实际导出后出现，编辑器内闭环保留。
+
 ## 3. App 编排层
 
 ### 关键组件

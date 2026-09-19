@@ -2,8 +2,12 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { JSDOM } from 'jsdom';
+import { Euler, Quaternion } from 'three';
 
 import { parseMJCF } from '@/core/parsers/mjcf/mjcfParser';
+import { createSingleComponentWorkspace } from '@/core/robot/canonicalWorkspace';
+import { computeLinkWorldMatrices } from '@/core/robot/kinematics';
+import { DEFAULT_JOINT, DEFAULT_LINK, JointType } from '@/types';
 import type { RobotClosedLoopConstraint, RobotData, RobotState } from '@/types';
 import { adaptUsdViewerSnapshotToRobotData } from '@/lib/robot-parser/usd';
 import { ThreeRenderDelegateCore } from '@/features/urdf-viewer/runtime/hydra/render-delegate/ThreeRenderDelegateCore.js';
@@ -325,5 +329,231 @@ for (const fixture of CLOSED_LOOP_USD_FIXTURES) {
       robot.closedLoopConstraints,
       fixture.name,
     );
+  });
+}
+
+test('USD roundtrip preserves a movable joint closed-loop constraint with joint semantics', async () => {
+  const links: RobotData['links'] = {
+    base_link: { ...structuredClone(DEFAULT_LINK), id: 'base_link', name: 'base_link' },
+    arm_link: { ...structuredClone(DEFAULT_LINK), id: 'arm_link', name: 'arm_link' },
+    tool_link: { ...structuredClone(DEFAULT_LINK), id: 'tool_link', name: 'tool_link' },
+  };
+  const joints: RobotData['joints'] = {
+    arm_joint: {
+      ...structuredClone(DEFAULT_JOINT),
+      id: 'arm_joint',
+      name: 'arm_joint',
+      type: JointType.REVOLUTE,
+      parentLinkId: 'base_link',
+      childLinkId: 'arm_link',
+      origin: { xyz: { x: 0, y: 0, z: 0.1 }, rpy: { r: 0, p: 0, y: 0 } },
+      axis: { x: 0, y: 1, z: 0 },
+      limit: { lower: -1, upper: 1, effort: 10, velocity: 5 },
+    },
+    tool_joint: {
+      ...structuredClone(DEFAULT_JOINT),
+      id: 'tool_joint',
+      name: 'tool_joint',
+      type: JointType.FIXED,
+      parentLinkId: 'arm_link',
+      childLinkId: 'tool_link',
+      origin: { xyz: { x: 0, y: 0, z: 0.4 }, rpy: { r: 0, p: 0, y: 0 } },
+    },
+  };
+  const robot: RobotData = {
+    name: 'movable_loop',
+    links,
+    joints,
+    rootLinkId: 'base_link',
+    closedLoopConstraints: [
+      {
+        id: 'tool_loop',
+        type: 'joint',
+        jointType: JointType.REVOLUTE,
+        linkAId: 'base_link',
+        linkBId: 'tool_link',
+        anchorLocalA: { x: 0.25, y: 0, z: 0.05 },
+        anchorLocalB: { x: 0, y: 0, z: 0 },
+        anchorWorld: { x: 0.25, y: 0, z: 0.05 },
+        axis: { x: 0, y: 0, z: 1 },
+        limit: { lower: -0.5, upper: 0.5, effort: 8, velocity: 2 },
+        origin: { xyz: { x: 0.25, y: 0, z: 0.05 }, rpy: { r: 0, p: 1.5, y: 0 } },
+      },
+    ],
+  };
+
+  const payload = await withSuppressedUsdAssetWarnings(() =>
+    exportRobotToUsd({
+      robot: toRobotState(robot),
+      exportName: 'movable_loop',
+      assets: {},
+    }),
+  );
+
+  const rootLayerText = await payload.archiveFiles.get(payload.rootLayerPath)?.text();
+  const baseLayerText = await getArchiveText(payload.archiveFiles, '_base.usd');
+  const physicsLayerText = await getArchiveText(payload.archiveFiles, '_physics.usd');
+  const sensorLayerText = await getArchiveText(payload.archiveFiles, '_sensor.usd');
+
+  assert.ok(rootLayerText, 'expected USD root layer to exist');
+  assert.match(physicsLayerText, /def PhysicsRevoluteJoint "tool_loop"/);
+  assert.match(physicsLayerText, /urdf:closedLoopType = "joint"/);
+  assert.match(physicsLayerText, /urdf:jointType = "revolute"/);
+  assert.match(physicsLayerText, /urdf:axisLocal = \(0, 0, 1\)/);
+  assert.match(physicsLayerText, /urdf:closedLoopId = "tool_loop"/);
+
+  const stageSourcePath = `/${payload.rootLayerPath}`;
+  const metadata = createRoundtripMetadataSnapshot(toRobotState(robot), stageSourcePath, {
+    rootLayer: rootLayerText || '',
+    baseLayer: baseLayerText,
+    physicsLayer: physicsLayerText,
+    sensorLayer: sensorLayerText,
+  });
+
+  assert.equal(
+    metadata.closedLoopConstraintEntries?.length,
+    1,
+    'expected the movable joint closed-loop entry to survive the metadata snapshot',
+  );
+  const entry = metadata.closedLoopConstraintEntries?.[0];
+  assert.equal(entry?.constraintType, 'joint');
+  assert.equal(entry?.jointType, 'revolute');
+
+  const rootPrimMatch = rootLayerText?.match(/defaultPrim = "([^"]+)"/);
+  assert.ok(rootPrimMatch, 'expected USD root layer to declare defaultPrim');
+
+  const adapted = adaptUsdViewerSnapshotToRobotData({
+    stageSourcePath,
+    stage: { defaultPrimPath: `/${rootPrimMatch?.[1]}` },
+    robotMetadataSnapshot: metadata,
+    robotTree: {
+      linkParentPairs: metadata.linkParentPairs,
+      jointCatalogEntries: metadata.jointCatalogEntries,
+      rootLinkPaths: [],
+    },
+    physics: {
+      linkDynamicsEntries: metadata.linkDynamicsEntries,
+    },
+    render: {
+      meshDescriptors: [],
+      materials: [],
+    },
+  });
+  assert.ok(adapted, 'expected the movable-loop USD snapshot to adapt back into robot data');
+  if (!adapted) {
+    return;
+  }
+
+  const roundtripped = adapted.robotData.closedLoopConstraints?.[0];
+  assert.doesNotThrow(() => createSingleComponentWorkspace(adapted.robotData));
+  assert.ok(roundtripped, 'expected the movable joint closed-loop constraint to roundtrip');
+  if (!roundtripped) {
+    return;
+  }
+  assert.equal(roundtripped.type, 'joint');
+  assert.equal(roundtripped.jointType, 'revolute');
+  assert.equal(roundtripped.id, 'tool_loop');
+  assert.deepEqual(roundtripped.anchorLocalA, { x: 0.25, y: 0, z: 0.05 });
+  assert.deepEqual(roundtripped.anchorLocalB, { x: 0, y: 0, z: 0 });
+  assert.ok(
+    Math.abs((roundtripped.axis?.x ?? 0) - 0) <= 1e-6 &&
+      Math.abs((roundtripped.axis?.y ?? 0) - 0) <= 1e-6 &&
+      Math.abs((roundtripped.axis?.z ?? 0) - 1) <= 1e-6,
+    'expected the roundtripped axis to stay (0, 0, 1)',
+  );
+  const lower = roundtripped.limit?.lower;
+  const upper = roundtripped.limit?.upper;
+  assert.ok(
+    typeof lower === 'number' && Math.abs(lower - -0.5) <= 1e-3,
+    `expected roundtripped lower limit near -0.5 rad, got ${lower}`,
+  );
+  assert.ok(
+    typeof upper === 'number' && Math.abs(upper - 0.5) <= 1e-3,
+    `expected roundtripped upper limit near 0.5 rad, got ${upper}`,
+  );
+  assert.ok(
+    Math.abs((roundtripped.origin?.rpy.p ?? 0) - 1.5) <= 1e-3,
+    `expected roundtripped origin pitch near 1.5, got ${roundtripped.origin?.rpy.p}`,
+  );
+});
+
+for (const jointType of [JointType.FIXED, JointType.CONTINUOUS, JointType.PRISMATIC, JointType.BALL]) {
+  test(`USD ${jointType} closed loop imports into canonical workspace without moving its tree`, async () => {
+    const robot: RobotData = {
+      name: 'loop_frames', rootLinkId: 'base_link',
+      links: Object.fromEntries(['base_link', 'tool_link'].map((id) => [
+        id, { ...structuredClone(DEFAULT_LINK), id, name: id },
+      ])),
+      joints: {
+        tree: {
+          ...structuredClone(DEFAULT_JOINT), id: 'tree', name: 'tree', type: JointType.FIXED,
+          parentLinkId: 'base_link', childLinkId: 'tool_link',
+          origin: { xyz: { x: 0.2, y: 0.3, z: 0.4 }, rpy: { r: 0.1, p: 0.2, y: 0.3 } },
+        },
+      },
+      closedLoopConstraints: [{
+        id: 'loop', type: 'joint', jointType,
+        linkAId: 'base_link', linkBId: 'tool_link',
+        anchorLocalA: { x: 0.5, y: 0.1, z: 0.3 },
+        anchorLocalB: { x: 0.2, y: -0.1, z: 0.4 },
+        anchorWorld: { x: 0.5, y: 0.1, z: 0.3 },
+        axis: { x: -1, y: 2, z: -3 },
+        origin: { xyz: { x: 9, y: 8, z: 7 }, rpy: { r: -0.2, p: 0.4, y: -0.6 } },
+        limit: { lower: -0.3, upper: 0.7, effort: 2, velocity: 3 },
+      }],
+    };
+    const payload = await exportRobotToUsd({ robot: toRobotState(robot), exportName: robot.name, assets: {} });
+    const rootLayer = await payload.archiveFiles.get(payload.rootLayerPath)!.text();
+    const physicsLayer = await getArchiveText(payload.archiveFiles, '_physics.usd');
+    const metadata = createRoundtripMetadataSnapshot(toRobotState(robot), `/${payload.rootLayerPath}`, {
+      rootLayer,
+      baseLayer: await getArchiveText(payload.archiveFiles, '_base.usd'),
+      physicsLayer,
+      sensorLayer: await getArchiveText(payload.archiveFiles, '_sensor.usd'),
+    });
+    const rootPrimName = rootLayer.match(/defaultPrim = "([^"]+)"/)![1];
+    const adapted = adaptUsdViewerSnapshotToRobotData({
+      stageSourcePath: `/${payload.rootLayerPath}`,
+      stage: { defaultPrimPath: `/${rootPrimName}` },
+      robotMetadataSnapshot: metadata,
+      robotTree: {
+        linkParentPairs: metadata.linkParentPairs,
+        jointCatalogEntries: metadata.jointCatalogEntries,
+        rootLinkPaths: [],
+      },
+      physics: { linkDynamicsEntries: metadata.linkDynamicsEntries },
+      render: { meshDescriptors: [], materials: [] },
+    });
+    assert.ok(adapted);
+    assert.doesNotThrow(() => createSingleComponentWorkspace(adapted.robotData));
+    const roundtripped = adapted.robotData.closedLoopConstraints?.[0];
+    assert.ok(roundtripped);
+    assert.equal(roundtripped.type, 'joint');
+    assert.equal(roundtripped.jointType, jointType);
+    assert.deepEqual(roundtripped.anchorLocalA, robot.closedLoopConstraints![0]!.anchorLocalA);
+    assert.deepEqual(roundtripped.anchorLocalB, robot.closedLoopConstraints![0]!.anchorLocalB);
+    assert.deepEqual(roundtripped.axis, { x: -1, y: 2, z: -3 });
+    const actualRotation = new Quaternion().setFromEuler(new Euler(
+      roundtripped.origin!.rpy.r, roundtripped.origin!.rpy.p, roundtripped.origin!.rpy.y, 'ZYX',
+    ));
+    const expectedRotation = new Quaternion().setFromEuler(new Euler(-0.2, 0.4, -0.6, 'ZYX'));
+    assert.ok(actualRotation.angleTo(expectedRotation) < 1e-6);
+    if (jointType === JointType.PRISMATIC) {
+      assert.equal(roundtripped.limit?.lower, -0.3);
+      assert.equal(roundtripped.limit?.upper, 0.7);
+    } else {
+      assert.equal(roundtripped.limit?.lower, undefined);
+      assert.equal(roundtripped.limit?.upper, undefined);
+    }
+    if (jointType === JointType.FIXED) assert.match(physicsLayer, /def PhysicsFixedJoint "loop"/);
+    const beforeMatrices = computeLinkWorldMatrices(robot);
+    const afterMatrices = computeLinkWorldMatrices(adapted.robotData);
+    for (const [linkId, expected] of Object.entries(beforeMatrices)) {
+      assert.ok(afterMatrices[linkId], `expected structural link ${linkId}`);
+      expected.elements.forEach((value, index) => {
+        assert.ok(Math.abs(value - afterMatrices[linkId].elements[index]) < 1e-6,
+          `USD closed-loop import moved ${linkId} at matrix index ${index}`);
+      });
+    }
   });
 }

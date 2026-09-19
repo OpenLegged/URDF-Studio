@@ -117,6 +117,7 @@
     "test:browser:cross-format-assembly": "node scripts/test/browser/test_cross_format_assembly.mjs",
     "test:browser:assembly-export": "node scripts/test/browser/test_assembly_export.mjs",
     "test:browser:joint-pick": "node scripts/test/browser/test_joint_pick.mjs",
+    "test:browser:closed-loops": "node scripts/test/browser/test_closed_loop_bridges.mjs",
     "test:browser:measure": "node scripts/test/browser/test_measure_tool.mjs",
     "test:browser:ik-drag": "node scripts/test/browser/test_ik_drag.mjs",
     "test:browser:collision-opt": "node scripts/test/browser/test_collision_optimization.mjs",

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { JSDOM } from 'jsdom';
 
 import { parseURDF } from '@/core/parsers';
-import { DEFAULT_LINK, GeometryType, type RobotFile, type RobotState, type UrdfVisual } from '@/types';
+import { DEFAULT_LINK, GeometryType, JointType, type RobotClosedLoopJointConstraint, type RobotFile, type RobotState, type UrdfVisual } from '@/types';
 
 import { parseEditableRobotSource } from './parseEditableRobotSource.ts';
 import {
@@ -305,4 +305,60 @@ test('explicit generation can still produce a supported export approximation', (
   robotState.links.base_link.visual.type = GeometryType.ELLIPSOID;
   assert.match(generateEditableRobotSource({ format: 'sdf', robotState }), /<box>/);
   assert.equal(tryGenerateEditableRobotSource({ format: 'sdf', robotState }), null);
+});
+
+test('resolveEditableRobotSourceFormat degrades URDF source with closed loops to SDF', async () => {
+  const { resolveEditableRobotSourceFormat } = await import('./generateEditableRobotSource.ts');
+  const robotState = createRobotState();
+
+  // Without closed loops the URDF source stays URDF.
+  assert.equal(resolveEditableRobotSourceFormat(robotState), 'urdf');
+
+  const loopedRobot = {
+    ...robotState,
+    closedLoopConstraints: [
+      {
+        id: 'loop_1',
+        type: 'joint',
+        jointType: JointType.REVOLUTE,
+        linkAId: 'base_link',
+        linkBId: 'tool_link',
+        anchorLocalA: { x: 0, y: 0, z: 0 },
+        anchorLocalB: { x: 0, y: 0, z: 0 },
+        anchorWorld: { x: 0, y: 0, z: 0 },
+        axis: { x: 0, y: 0, z: 1 },
+      } satisfies RobotClosedLoopJointConstraint,
+    ],
+  };
+  assert.equal(resolveEditableRobotSourceFormat(loopedRobot), 'sdf');
+  assert.equal(resolveEditableRobotSourceFormat(loopedRobot, 'xacro'), 'sdf');
+  // Hinge loop semantics require SDF, even when the original source was MJCF.
+  assert.equal(resolveEditableRobotSourceFormat(loopedRobot, 'mjcf'), 'sdf');
+  assert.equal(resolveEditableRobotSourceFormat(loopedRobot, 'sdf'), 'sdf');
+  // A fallback preference must not select a lossy representation.
+  assert.equal(
+    resolveEditableRobotSourceFormat(loopedRobot, undefined, {
+      closedLoopFallbackFormat: 'mjcf',
+    }),
+    'sdf',
+  );
+  assert.equal(
+    resolveEditableRobotSourceFormat(loopedRobot, 'xacro', {
+      closedLoopFallbackFormat: 'mjcf',
+    }),
+    'sdf',
+  );
+
+  // The degraded SDF source must actually generate and carry the loop joint.
+  const sdfSource = tryGenerateEditableRobotSource({
+    format: 'sdf',
+    robotState: loopedRobot,
+    preserveMeshPaths: true,
+  });
+  assert.ok(sdfSource, 'expected the looped robot to generate editable SDF source');
+  assert.match(sdfSource, /<joint name="loop_1" type="revolute">/);
+  assert.match(sdfSource, /<axis>/);
+  assert.equal(tryGenerateEditableRobotSource({ format: 'mjcf', robotState: loopedRobot }), null);
+  loopedRobot.joints.tool_joint.type = JointType.BALL;
+  assert.equal(resolveEditableRobotSourceFormat(loopedRobot, 'urdf'), 'sdf');
 });

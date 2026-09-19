@@ -17,13 +17,11 @@ import {
 } from '@/shared/components/ui';
 import { useDraggableWindow } from '@/shared/hooks/useDraggableWindow';
 import { resolveSuggestedBridgeOriginForVisualContact } from '@/core/robot/assemblyBridgeAlignment';
-import { wouldBridgeCreateUnsupportedAssemblyCycle } from '@/core/robot/assemblyBridgeTopology';
 import { degToRad, radToDeg } from '@/core/robot/transforms';
 import { DEFAULT_JOINT, JointType, type JointHardwareInterface } from '@/types';
 import { translations } from '@/shared/i18n';
 import { useManagedWindowLayer } from '@/store';
 import { useWorkspaceStore } from '@/store/workspaceStore';
-import { filterSelectableBridgeComponents } from '../../utils/bridgeSelection';
 import { buildBridgeJointFromDraft, buildBridgePreview } from '../../utils/bridgePreview';
 import {
   BridgeInlineFieldRow,
@@ -251,18 +249,20 @@ export const BridgeCreateModal: React.FC<BridgeCreateModalProps> = ({
 
   const parentComp = parentCompId ? workspace.components[parentCompId] : null;
   const childComp = childCompId ? workspace.components[childCompId] : null;
-  const parentComponentOptions = useMemo(
-    () => filterSelectableBridgeComponents(comps, childCompId || null),
-    [childCompId, comps],
-  );
+  const parentComponentOptions = useMemo(() => comps, [comps]);
   const childComponentHasIncomingBridge = useMemo(
-    () => hasIncomingStructuralBridge(workspace, childCompId),
-    [childCompId, workspace],
+    () =>
+      Boolean(childCompId) &&
+      childCompId !== parentCompId &&
+      hasIncomingStructuralBridge(workspace, childCompId),
+    [childCompId, parentCompId, workspace],
   );
   const childComponentOptions = useMemo(
     () =>
-      filterSelectableBridgeComponents(comps, parentCompId || null).filter(
-        (component) => !hasIncomingStructuralBridge(workspace, component.id),
+      comps.filter(
+        (component) =>
+          component.id === parentCompId ||
+          !hasIncomingStructuralBridge(workspace, component.id),
       ),
     [comps, parentCompId, workspace],
   );
@@ -306,9 +306,11 @@ export const BridgeCreateModal: React.FC<BridgeCreateModalProps> = ({
       buildSuggestedBridgeName({
         assemblyState: workspace,
         parentComponentId: parentCompId,
+        parentLinkId,
         childComponentId: childCompId,
+        childLinkId,
       }),
-    [childCompId, parentCompId, workspace],
+    [childCompId, childLinkId, parentCompId, parentLinkId, workspace],
   );
   const effectiveBridgeName = name.trim() || suggestedBridgeName;
   const parentSummary = parentComp?.name ?? '--';
@@ -334,25 +336,8 @@ export const BridgeCreateModal: React.FC<BridgeCreateModalProps> = ({
     jointType === JointType.REVOLUTE || jointType === JointType.PRISMATIC;
   const isLimitRangeInvalid = jointSupportsPositionLimits && limitLower > limitUpper;
   const limitRangeValidationMessage = isLimitRangeInvalid ? t.bridgeLimitRangeInvalid : null;
-  const hasUnsupportedNonFixedCycle = useMemo(
-    () =>
-      Boolean(parentCompId) &&
-      Boolean(childCompId) &&
-      parentCompId !== childCompId &&
-      wouldBridgeCreateUnsupportedAssemblyCycle(
-        Object.values(workspace.bridges),
-        {
-          id: '__bridge_preview__',
-          parentComponentId: parentCompId,
-          childComponentId: childCompId,
-        },
-        jointType,
-      ),
-    [childCompId, jointType, parentCompId, workspace.bridges],
-  );
-  const nonFixedCycleValidationMessage = hasUnsupportedNonFixedCycle
-    ? t.bridgeNonFixedCycleUnsupported
-    : null;
+  const hasUnsupportedNonFixedCycle = false;
+  const nonFixedCycleValidationMessage: string | null = null;
   const validationMessages = [limitRangeValidationMessage, nonFixedCycleValidationMessage].filter(
     (message): message is string => Boolean(message),
   );
@@ -481,7 +466,7 @@ export const BridgeCreateModal: React.FC<BridgeCreateModalProps> = ({
     !parentLinkId ||
     !childCompId ||
     !childLinkId ||
-    parentCompId === childCompId ||
+    (parentCompId === childCompId && parentLinkId === childLinkId) ||
     childComponentHasIncomingBridge ||
     (geometryPickingEnabled && !hasPickedOriginForCurrentRelation);
 
@@ -608,7 +593,7 @@ export const BridgeCreateModal: React.FC<BridgeCreateModalProps> = ({
     setParentLinkId,
     setPickTarget,
   });
-  const canPickJointOrigin = comps.length >= 2;
+  const canPickJointOrigin = comps.reduce((count, component) => count + Object.keys(component.robot.links).length, 0) >= 2;
   const resolveEndpointDetail = (side: 'parent' | 'child') => {
     const snap = side === 'parent' ? jointPick.parentSnap : jointPick.childSnap;
     if (snap) {
@@ -681,8 +666,7 @@ export const BridgeCreateModal: React.FC<BridgeCreateModalProps> = ({
       !parentCompId ||
       !parentLinkId ||
       !childCompId ||
-      !childLinkId ||
-      parentCompId === childCompId
+      !childLinkId
     ) {
       return;
     }

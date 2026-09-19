@@ -15,6 +15,7 @@ import {
   buildAssemblyExportName,
   createBoxFaceTextureFallbackWarnings,
   resolveDisconnectedWorkspaceUrdfAction,
+  stripClosedLoopConstraintsForUrdfExport,
 } from './urdfSupport';
 
 const replaceTemplate = (template: string, replacements: Record<string, string | number>) =>
@@ -84,7 +85,7 @@ test('createBoxFaceTextureFallbackWarnings returns replacements and omits zero c
   assert.deepStrictEqual(message, ['xacro warning 2']);
 });
 
-test('assertUrdfExportSupported skips when no closed loops and throws when they exist', () => {
+test('assertUrdfExportSupported tolerates closed loops; stripping handles them instead', () => {
   assert.doesNotThrow(() =>
     assertUrdfExportSupported(
       { name: 'robot', closedLoopConstraints: [], joints: {} },
@@ -100,19 +101,48 @@ test('assertUrdfExportSupported skips when no closed loops and throws when they 
     joints: {},
   };
 
-  assert.throws(
-    () =>
-      assertUrdfExportSupported(
-        robotWithConstraint,
-        'next',
-        replaceTemplate,
-        'Label {name} {count}',
-      ),
-    /next/,
+  // Closed loops no longer throw: URDF export cuts them and warns.
+  assert.doesNotThrow(() =>
+    assertUrdfExportSupported(
+      robotWithConstraint,
+      'next',
+      replaceTemplate,
+      'Label {name} {count}',
+    ),
   );
 });
 
-test('assertAssemblyUrdfExportSupported throws when any component has a constraint', () => {
+test('stripClosedLoopConstraintsForUrdfExport cuts loops and returns a warning', () => {
+  const toRobotState = (overrides: Partial<RobotState>): RobotState => ({
+    ...robotData,
+    selection: { type: null, id: null },
+    ...overrides,
+  });
+
+  const untouched = stripClosedLoopConstraintsForUrdfExport(
+    toRobotState({ name: 'plain' }),
+    replaceTemplate,
+    'Stripped {count} loop(s) from {name}',
+  );
+  assert.equal(untouched.warning, null);
+  assert.equal(untouched.robot.closedLoopConstraints, undefined);
+
+  const looped = stripClosedLoopConstraintsForUrdfExport(
+    toRobotState({
+      name: 'robotA',
+      closedLoopConstraints: [closedLoopConstraint, { ...closedLoopConstraint, id: 'c2' }],
+    }),
+    replaceTemplate,
+    'Stripped {count} loop(s) from {name}',
+  );
+  assert.ok(looped.warning);
+  assert.match(looped.warning, /robotA/);
+  assert.match(looped.warning, /2/);
+  assert.equal(looped.robot.closedLoopConstraints, undefined);
+  assert.equal(looped.robot.name, 'robotA');
+});
+
+test('assertAssemblyUrdfExportSupported tolerates components with closed loops', () => {
   const assembly: AssemblyState = {
     name: 'assembly',
     transform: createTransform(),
@@ -130,9 +160,10 @@ test('assertAssemblyUrdfExportSupported throws when any component has a constrai
     bridges: {},
   };
 
-  assert.throws(
-    () => assertAssemblyUrdfExportSupported(assembly, replaceTemplate, 'Label {name} {count}'),
-    /Component/,
+  // Assembly-level URDF export no longer throws for closed loops; the bundle
+  // path strips them per component and reports warnings.
+  assert.doesNotThrow(() =>
+    assertAssemblyUrdfExportSupported(assembly, replaceTemplate, 'Label {name} {count}'),
   );
 });
 

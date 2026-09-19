@@ -269,7 +269,28 @@ interface UIState {
    */
   ignoreJointLimits: boolean;
   setIgnoreJointLimits: (ignore: boolean) => void;
+
+  /**
+   * Format used when a URDF-sourced closed-loop assembly needs its merged
+   * source view converted: 'sdf' keeps full joint semantics in the loop
+   * closers, 'mjcf' degrades loops to connect constraints.
+   */
+  closedLoopSourceFallbackFormat: ClosedLoopSourceFallbackFormat;
+  setClosedLoopSourceFallbackFormat: (format: ClosedLoopSourceFallbackFormat) => void;
 }
+
+// User-selectable source-format fallback for closed-loop assembly source views.
+export type ClosedLoopSourceFallbackFormat = 'sdf' | 'mjcf';
+
+export const CLOSED_LOOP_SOURCE_FALLBACK_FORMATS: readonly ClosedLoopSourceFallbackFormat[] = [
+  'sdf',
+  'mjcf',
+] as const;
+
+export const normalizeClosedLoopSourceFallbackFormat = (
+  value: unknown,
+): ClosedLoopSourceFallbackFormat =>
+  value === 'mjcf' ? 'mjcf' : 'sdf';
 
 // Default values
 const defaultViewConfig: ViewConfig = {
@@ -667,6 +688,11 @@ export const useUIStore = create<UIState>()(
       // Temporary joint-limit override (never persisted)
       ignoreJointLimits: false,
       setIgnoreJointLimits: (ignoreJointLimits) => set({ ignoreJointLimits }),
+
+      // Source-format fallback for URDF-sourced closed-loop assemblies
+      closedLoopSourceFallbackFormat: 'sdf',
+      setClosedLoopSourceFallbackFormat: (format) =>
+        set({ closedLoopSourceFallbackFormat: normalizeClosedLoopSourceFallbackFormat(format) }),
     }),
     {
       name: 'urdf-studio-ui',
@@ -782,6 +808,7 @@ export const useUIStore = create<UIState>()(
         detailLinkTab: state.detailLinkTab,
         structureTreeShowGeometryDetails: state.structureTreeShowGeometryDetails,
         navigationSensitivity: state.navigationSensitivity,
+        closedLoopSourceFallbackFormat: state.closedLoopSourceFallbackFormat,
       }),
       onRehydrateStorage: () => (state) => {
         // Re-apply theme and font size on hydration
@@ -813,6 +840,12 @@ export const useUIStore = create<UIState>()(
           const normalizedDetailLinkTab = normalizeDetailLinkTab(state.detailLinkTab);
           if (state.detailLinkTab !== normalizedDetailLinkTab) {
             state.setDetailLinkTab(normalizedDetailLinkTab);
+          }
+          const normalizedClosedLoopSourceFallbackFormat = normalizeClosedLoopSourceFallbackFormat(
+            state.closedLoopSourceFallbackFormat,
+          );
+          if (state.closedLoopSourceFallbackFormat !== normalizedClosedLoopSourceFallbackFormat) {
+            state.setClosedLoopSourceFallbackFormat(normalizedClosedLoopSourceFallbackFormat);
           }
         }
       },

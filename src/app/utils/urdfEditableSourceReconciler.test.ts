@@ -242,6 +242,36 @@ test('reconcileUrdfEditableSource accepts concrete URDF stored with an XML filen
   assert.match(content, /<robot [^>]*name="xml_robot" version="1\.2"/);
 });
 
+test('joint edits preserve inactive Xacro examples in URDF comments', () => {
+  const comment = '<!-- <xacro:include filename="$(find demo)/robot.xacro" /> ${name} -->';
+  const source = SOURCE.replace('<!-- keep authored header -->', comment);
+  const beforeRobot = parseRobot(source);
+  const afterRobot = structuredClone(beforeRobot);
+  afterRobot.joints.old_joint.origin.xyz.x = 0.12345678901234568;
+
+  const content = requirePatched(reconcileUrdfEditableSource({
+    sourceContent: source, beforeRobot, afterRobot, sourceFileName: 'demo.urdf',
+  }));
+  assert.ok(content.includes(comment));
+  assert.deepEqual(parseRobot(content).joints.old_joint.origin, afterRobot.joints.old_joint.origin);
+});
+
+test('active Xacro content in a URDF file still requires Xacro reconciliation', () => {
+  const beforeRobot = parseRobot();
+  for (const activeContent of [
+    '<xacro:include filename="robot.xacro" />',
+    '<link name="${name}" />',
+    '<link name="$(arg name)" />',
+  ]) {
+    const result = reconcileUrdfEditableSource({
+      sourceContent: SOURCE.replace('<!-- keep authored header -->', activeContent),
+      beforeRobot, afterRobot: beforeRobot, sourceFileName: 'demo.urdf',
+    });
+    assert.equal(result.status, 'unsafe');
+    assert.match(result.reason, /Xacro-aware/);
+  }
+});
+
 test('reconcileUrdfEditableSource keeps a source-owned root version omitted by the workspace', () => {
   const sourceWithNamedMaterial = SOURCE.replace(
     '<material name="inline"><color rgba="0 1 0 1" /></material>',
@@ -363,6 +393,28 @@ test('joint edits retain unrelated high-precision geometry, mass, and material s
     source.match(/<link name="base_link">[\s\S]*?<\/link>/)?.[0],
   );
   assert.equal(parseRobot(content).joints.old_joint.origin.rpy.r, Math.PI / 6);
+});
+
+test('joint origin edits preserve Gazebo-owned materials without requiring full regeneration', () => {
+  const source = SOURCE
+    .replace('<material name="inline"><color rgba="0 1 0 1" /></material>', '')
+    .replace('</robot>', '<gazebo reference="base_link"><material>Gazebo/Green</material></gazebo>\n</robot>');
+  const beforeRobot = parseRobot(source);
+  assert.equal(beforeRobot.links.base_link.visual.color, '#00FF00');
+  const afterRobot = structuredClone(beforeRobot);
+  afterRobot.joints.old_joint.origin.rpy.r = Math.PI / 6;
+
+  const content = requirePatched(reconcileUrdfEditableSource({
+    sourceContent: source, beforeRobot, afterRobot, sourceFileName: 'demo.urdf',
+  }));
+  assert.deepEqual(parseRobot(content).links, beforeRobot.links);
+  assert.deepEqual(parseRobot(content).materials, beforeRobot.materials);
+  assert.equal(parseRobot(content).joints.old_joint.origin.rpy.r, Math.PI / 6);
+  assert.equal(
+    content.match(/<link name="base_link">[\s\S]*?<\/link>/)?.[0],
+    source.match(/<link name="base_link">[\s\S]*?<\/link>/)?.[0],
+  );
+  assert.ok(content.includes('<gazebo reference="base_link"><material>Gazebo/Green</material></gazebo>'));
 });
 
 test('high-precision limit and inertial patches retain vendor children and comments', () => {

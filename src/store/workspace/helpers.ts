@@ -296,8 +296,13 @@ export function assertBridgeCanBeApplied(
   if (!child) {
     throw new Error(`Bridge child component "${bridge.childComponentId}" does not exist.`);
   }
-  if (bridge.parentComponentId === bridge.childComponentId) {
-    throw new Error('Bridge parent and child components must differ.');
+  if (
+    bridge.parentComponentId === bridge.childComponentId &&
+    bridge.parentLinkId === bridge.childLinkId
+  ) {
+    throw new Error(
+      'Bridge parent and child links must differ within the same component.',
+    );
   }
   if (!hasExactComponentLink(parent, bridge.parentLinkId)) {
     throw new Error(
@@ -310,15 +315,20 @@ export function assertBridgeCanBeApplied(
     );
   }
 
-  const existingIncomingBridge = Object.values(workspace.bridges).find(
-    (candidate) =>
-      candidate.id !== options?.ignoreBridgeId &&
-      candidate.childComponentId === bridge.childComponentId,
-  );
-  if (existingIncomingBridge) {
-    throw new Error(
-      `Component "${bridge.childComponentId}" already has incoming bridge "${existingIncomingBridge.id}".`,
+  // Same-component bridges are self-loops: they become closed-loop constraints
+  // and must not occupy the structural incoming-bridge slot of the component.
+  if (bridge.parentComponentId !== bridge.childComponentId) {
+    const existingIncomingBridge = Object.values(workspace.bridges).find(
+      (candidate) =>
+        candidate.id !== options?.ignoreBridgeId &&
+        candidate.parentComponentId !== candidate.childComponentId &&
+        candidate.childComponentId === bridge.childComponentId,
     );
+    if (existingIncomingBridge) {
+      throw new Error(
+        `Component "${bridge.childComponentId}" already has incoming bridge "${existingIncomingBridge.id}".`,
+      );
+    }
   }
 
   if (

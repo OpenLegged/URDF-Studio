@@ -1,5 +1,6 @@
 import { getMjcfLinkDisplayName } from '@/shared/utils/robot/mjcfDisplayNames';
 import { formatNumberWithMaxDecimals, roundToMaxDecimals } from '@/core/utils/numberPrecision';
+import { classifyAssemblyBridges } from '@/core/robot/assemblyBridgeTopology';
 import {
   JointType,
   type AssemblyComponent,
@@ -89,9 +90,8 @@ export function hasIncomingStructuralBridge(
     return false;
   }
 
-  return Object.values(assemblyState.bridges).some(
-    (bridge) => bridge.childComponentId === componentId,
-  );
+  return classifyAssemblyBridges(Object.values(assemblyState.bridges))
+    .parentByChildComponentId.has(componentId);
 }
 
 export function clampValue(value: number, min?: number, max?: number) {
@@ -134,13 +134,17 @@ function sanitizeBridgeNamePart(value: string | null | undefined): string {
 export function buildSuggestedBridgeName({
   assemblyState,
   parentComponentId,
+  parentLinkId,
   childComponentId,
+  childLinkId,
 }: {
   assemblyState: AssemblyState;
   parentComponentId: string;
+  parentLinkId?: string;
   childComponentId: string;
+  childLinkId?: string;
 }): string {
-  if (!parentComponentId || !childComponentId || parentComponentId === childComponentId) {
+  if (!parentComponentId || !childComponentId) {
     return '';
   }
 
@@ -156,7 +160,17 @@ export function buildSuggestedBridgeName({
   const childName = sanitizeBridgeNamePart(
     childComponent.name || childComponent.robot.name || childComponent.id,
   );
-  const baseName = `${parentName}-${childName}`;
+
+  // Same-component self-loops carry no component distinction, so the two link
+  // names keep suggested bridge names unique.
+  const baseName =
+    parentComponentId === childComponentId
+      ? `${parentName}_${sanitizeBridgeNamePart(
+          getBridgeLinkDisplayName(parentComponent.robot, parentLinkId) || 'link',
+        )}_${sanitizeBridgeNamePart(
+          getBridgeLinkDisplayName(childComponent.robot, childLinkId) || 'link',
+        )}_loop`
+      : `${parentName}-${childName}`;
   const existingNames = new Set(
     Object.values(assemblyState.bridges)
       .map((bridge) => bridge.name.trim())

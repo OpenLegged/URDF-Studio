@@ -665,7 +665,10 @@ export function reconcileUrdfEditableSource({
   afterRobot,
   sourceFileName,
 }: ReconcileUrdfEditableSourceOptions): ReconcileUrdfEditableSourceResult {
-  if (/\.xacro$/i.test(sourceFileName) || XACRO_SOURCE_RE.test(sourceContent)) {
+  // Expanded URDF files can retain Xacro examples in comments. Only active
+  // source syntax can require Xacro-aware reconciliation; keep comments intact.
+  const activeSourceContent = sourceContent.replace(/<!--[\s\S]*?-->/g, '');
+  if (/\.xacro$/i.test(sourceFileName) || XACRO_SOURCE_RE.test(activeSourceContent)) {
     return unsafe('Xacro sources require Xacro-aware reconciliation.');
   }
 
@@ -690,31 +693,12 @@ export function reconcileUrdfEditableSource({
     if (generatedAfterWithoutSourceEnvelope === null) {
       return unsafe('The robot mutation does not currently have a lossless URDF source representation.');
     }
-    const parsedGeneratedAfterWithoutSourceEnvelope = parseUrdf(
-      sourceFileName,
-      generatedAfterWithoutSourceEnvelope,
-    );
-    if (!parsedGeneratedAfterWithoutSourceEnvelope) {
-      return unsafe('The generated URDF could not be parsed.');
-    }
-    if (
-      sourceSemanticHash(parsedGeneratedAfterWithoutSourceEnvelope) !==
-      sourceSemanticHash(afterRobot)
-    ) {
-      return unsafe('The robot mutation cannot be represented losslessly as URDF.');
-    }
-
     const generatedAfter = retainSourceOwnedRootVersion({
       sourceContent,
       generatedContent: generatedAfterWithoutSourceEnvelope,
       beforeRobot,
       afterRobot,
     });
-    const parsedGeneratedAfter = parseUrdf(sourceFileName, generatedAfter);
-    if (!parsedGeneratedAfter) {
-      return unsafe('The generated URDF could not be parsed after restoring source attributes.');
-    }
-
     const referencePatched = reconcileStandardUrdfReferences(
       sourceContent,
       beforeRobot,
@@ -727,6 +711,28 @@ export function reconcileUrdfEditableSource({
       afterRobot,
     );
     const rootPatched = patchRobotRootAttributes(finePatched, generatedAfter);
+    // Validate the actual source patch first. Unchanged authored fields (for
+    // example Gazebo materials) need not survive an unused full regeneration.
+    const parsedFinePatched = parseUrdf(sourceFileName, rootPatched);
+    if (
+      parsedFinePatched &&
+      sourceSemanticHashForWorkspace(parsedFinePatched, afterRobot) === sourceSemanticHash(afterRobot)
+    ) {
+      return { status: 'patched', content: rootPatched };
+    }
+
+    // Structural edits can still require generated fragments. Keep their
+    // lossless round-trip check before using them to replace authored XML.
+    const parsedGeneratedAfter = parseUrdf(sourceFileName, generatedAfter);
+    if (!parsedGeneratedAfter) {
+      return unsafe('The generated URDF could not be parsed.');
+    }
+    if (
+      sourceSemanticHashForWorkspace(parsedGeneratedAfter, afterRobot) !== sourceSemanticHash(afterRobot)
+    ) {
+      return unsafe('The robot mutation cannot be represented losslessly as URDF.');
+    }
+
     const markedSource = markPreservedTopLevelElements(rootPatched);
     const generatedModelContent = removeGeneratedTopLevelExtensions(generatedAfter);
     const reconciled = resolveSourcePreservingExportContent({

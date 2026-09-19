@@ -140,7 +140,10 @@ export function buildBridgeJointFromDraft(
     !draft.parentLinkId ||
     !draft.childComponentId ||
     !draft.childLinkId ||
-    draft.parentComponentId === draft.childComponentId
+    // Same-component bridges are valid self-loop closed loops; only the
+    // degenerate same-link pairing is rejected.
+    (draft.parentComponentId === draft.childComponentId &&
+      draft.parentLinkId === draft.childLinkId)
   ) {
     return null;
   }

@@ -550,7 +550,7 @@ function installClosedLoopWorkspaceAssembly() {
   }));
 }
 
-test('useFileExport rejects URDF export when the current robot contains closed-loop constraints', async () => {
+test('useFileExport cuts closed loops for URDF export and warns', async () => {
   resetStoresToBaseline();
   const domEnvironment = installDomEnvironment();
   installExportTestRobot(createClosedLoopRobotData('closed_loop_robot'));
@@ -559,12 +559,14 @@ test('useFileExport rejects URDF export when the current robot contains closed-l
   const rendered = renderHook();
 
   try {
-    await assert.rejects(
-      rendered.hook.handleExportWithConfig(createUrdfExportConfig()),
-      /closed-loop constraint/,
-    );
+    const result = await rendered.hook.handleExportWithConfig(createUrdfExportConfig());
 
-    assert.equal(downloadMocks.clicked, false, 'closed-loop URDF export should not download');
+    assert.equal(downloadMocks.clicked, true, 'closed-loop URDF export downloads the cut model');
+    assert.equal(result.partial, true, 'cutting closed loops marks the export partial');
+    assert.ok(
+      result.warnings.some((warning) => /closed-loop/i.test(warning) && /1/.test(warning)),
+      'expected the cut warning to mention closed loops and the count',
+    );
   } finally {
     rendered.cleanup();
     downloadMocks.restore();
@@ -603,7 +605,7 @@ test('useFileExport requires an explicit disconnected-workspace decision before 
   }
 });
 
-test('useFileExport blocks disconnected workspace URDF export before suggesting multi-URDF packaging when a component is closed-loop', async () => {
+test('useFileExport asks for a disconnected decision before packaging when a component is closed-loop', async () => {
   resetStoresToBaseline();
   const domEnvironment = installDomEnvironment();
   installClosedLoopWorkspaceAssembly();
@@ -612,16 +614,12 @@ test('useFileExport blocks disconnected workspace URDF export before suggesting 
   const rendered = renderHook();
 
   try {
-    await assert.rejects(
-      rendered.hook.handleExportWithConfig(createUrdfExportConfig()),
-      /closed-loop constraint/,
-    );
+    const result = await rendered.hook.handleExportWithConfig(createUrdfExportConfig());
 
-    assert.equal(
-      downloadMocks.clicked,
-      false,
-      'closed-loop workspace URDF export should not trigger any download',
-    );
+    // Closed loops no longer block the flow: the disconnected-workspace gate
+    // still routes to the multi-URDF packaging dialog first.
+    assert.equal(downloadMocks.clicked, false, 'the decision dialog must precede any download');
+    assert.equal(result.actionRequired?.type, 'disconnected-workspace-urdf');
   } finally {
     rendered.cleanup();
     downloadMocks.restore();
@@ -747,7 +745,7 @@ test('useFileExport can package every workspace component as its own URDF zip pa
   }
 });
 
-test('useFileExport rejects multi-URDF packaging when any disconnected workspace component is closed-loop', async () => {
+test('useFileExport cuts closed loops per component during multi-URDF packaging and warns', async () => {
   resetStoresToBaseline();
   const domEnvironment = installDomEnvironment();
   installClosedLoopWorkspaceAssembly();
@@ -756,15 +754,19 @@ test('useFileExport rejects multi-URDF packaging when any disconnected workspace
   const rendered = renderHook();
 
   try {
-    await assert.rejects(
-      rendered.hook.handleExportDisconnectedWorkspaceUrdfBundle(createUrdfExportConfig()),
-      /closed-loop constraint/,
+    const result = await rendered.hook.handleExportDisconnectedWorkspaceUrdfBundle(
+      createUrdfExportConfig(),
     );
 
     assert.equal(
       downloadMocks.clicked,
-      false,
-      'multi-URDF export should stop before downloading when a component is closed-loop',
+      true,
+      'multi-URDF export downloads with closed loops cut per component',
+    );
+    assert.equal(result.partial, true, 'cutting closed loops marks the bundle partial');
+    assert.ok(
+      result.warnings.some((warning) => /closed-loop/i.test(warning)),
+      'expected the per-component cut warnings',
     );
   } finally {
     rendered.cleanup();

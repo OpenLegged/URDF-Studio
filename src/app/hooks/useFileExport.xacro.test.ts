@@ -487,7 +487,7 @@ test('useFileExport packages selected xacro sources as an exportable xacro zip',
   }
 });
 
-test('useFileExport rejects xacro export when the current robot contains closed-loop constraints', async () => {
+test('useFileExport cuts closed loops for xacro export and warns', async () => {
   resetStoresToBaseline();
   const domEnvironment = installDomEnvironment();
   installExportTestRobot(createClosedLoopRobotData('closed_loop_xacro_robot'));
@@ -496,13 +496,14 @@ test('useFileExport rejects xacro export when the current robot contains closed-
   const rendered = renderHook();
 
   try {
-    await assert.rejects(
-      rendered.hook.handleExportWithConfig(createExportConfig()),
-      /closed-loop constraint/i,
-    );
+    const result = await rendered.hook.handleExportWithConfig(createExportConfig());
 
-    assert.equal(downloadMocks.clicked, false, 'expected xacro export to abort before downloading');
-    assert.equal(downloadMocks.capturedBlob, null, 'expected no zip blob on failed xacro export');
+    assert.equal(downloadMocks.clicked, true, 'xacro export downloads with closed loops cut');
+    assert.equal(result.partial, true, 'cutting closed loops marks the export partial');
+    assert.ok(
+      result.warnings.some((warning) => /closed-loop/i.test(warning)),
+      'expected the cut warning for xacro export',
+    );
   } finally {
     rendered.cleanup();
     await new Promise((resolve) => setTimeout(resolve, 0));

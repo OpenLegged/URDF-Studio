@@ -935,7 +935,7 @@ test('partial bridge origin patches preserve untouched fields and trigger re-ali
   assert.notDeepEqual(state.workspace.components.b!.transform, transformBefore);
 });
 
-test('bridge topology rejects non-fixed cycles and fixed-cycle type changes atomically', () => {
+test('bridge topology supports movable cycles and fixed-cycle type changes atomically', () => {
   installWorkspace(createWorkspace(['a', 'b']));
   const store = useWorkspaceStore.getState();
   store.addBridge({
@@ -948,20 +948,20 @@ test('bridge topology rejects non-fixed cycles and fixed-cycle type changes atom
     joint: { type: JointType.FIXED },
   });
   store.clearHistory();
-  assert.throws(
-    () =>
-      store.addBridge({
-        id: 'b_to_a_revolute',
-        name: 'b to a',
-        parentComponentId: 'b',
-        parentLinkId: 'tool_link',
-        childComponentId: 'a',
-        childLinkId: 'base_link',
-        joint: { type: JointType.REVOLUTE },
-      }),
-    /unsupported non-fixed component cycle/,
-  );
-  assert.equal(useWorkspaceStore.getState().history.past.length, 0);
+
+  // Movable cyclic bridges are now supported: they become closed-loop
+  // constraints instead of being rejected.
+  store.addBridge({
+    id: 'b_to_a_revolute',
+    name: 'b to a',
+    parentComponentId: 'b',
+    parentLinkId: 'tool_link',
+    childComponentId: 'a',
+    childLinkId: 'base_link',
+    joint: { type: JointType.REVOLUTE },
+  });
+  assert.ok(useWorkspaceStore.getState().workspace.bridges.b_to_a_revolute);
+  useWorkspaceStore.getState().removeBridge('b_to_a_revolute');
 
   store.addBridge({
     id: 'b_to_a_fixed',
@@ -973,13 +973,63 @@ test('bridge topology rejects non-fixed cycles and fixed-cycle type changes atom
     joint: { type: JointType.FIXED },
   });
   store.clearHistory();
-  const before = structuredClone(useWorkspaceStore.getState().workspace);
-  assert.throws(
-    () => store.updateBridge('b_to_a_fixed', { joint: { type: JointType.PRISMATIC } }),
-    /unsupported non-fixed component cycle/,
+  assert.equal(
+    store.updateBridge('b_to_a_fixed', { joint: { type: JointType.PRISMATIC } }),
+    true,
   );
-  assert.deepEqual(useWorkspaceStore.getState().workspace, before);
-  assert.equal(useWorkspaceStore.getState().history.past.length, 0);
+  assert.equal(
+    useWorkspaceStore.getState().workspace.bridges.b_to_a_fixed?.joint.type,
+    JointType.PRISMATIC,
+  );
+});
+
+test('same-component bridges form self-loop closed-loop constraints without structural slots', () => {
+  installWorkspace(createWorkspace(['a', 'b']));
+  const store = useWorkspaceStore.getState();
+  const transformBefore = structuredClone(
+    useWorkspaceStore.getState().workspace.components.a!.transform,
+  );
+
+  store.addBridge({
+    id: 'a_self_loop',
+    name: 'a self loop',
+    parentComponentId: 'a',
+    parentLinkId: 'base_link',
+    childComponentId: 'a',
+    childLinkId: 'tool_link',
+    joint: { type: JointType.REVOLUTE },
+  });
+  assert.ok(useWorkspaceStore.getState().workspace.bridges.a_self_loop);
+  // Self-loops must not move the component (no self-alignment).
+  assert.deepEqual(useWorkspaceStore.getState().workspace.components.a!.transform, transformBefore);
+
+  // Self-loops do not occupy the structural incoming slot: a regular bridge
+  // from another component is still allowed afterwards.
+  store.addBridge({
+    id: 'b_to_a',
+    name: 'b to a',
+    parentComponentId: 'b',
+    parentLinkId: 'tool_link',
+    childComponentId: 'a',
+    childLinkId: 'base_link',
+    joint: { type: JointType.FIXED },
+  });
+  assert.ok(useWorkspaceStore.getState().workspace.bridges.b_to_a);
+
+  // Degenerate self-loop (same link on both ends) is still rejected.
+  assert.throws(
+    () =>
+      store.addBridge({
+        id: 'a_degenerate_loop',
+        name: 'a degenerate loop',
+        parentComponentId: 'a',
+        parentLinkId: 'base_link',
+        childComponentId: 'a',
+        childLinkId: 'base_link',
+        joint: { type: JointType.FIXED },
+      }),
+    /parent and child links must differ within the same component/i,
+  );
 });
 
 test('assembly and component transform history round-trips through undo and redo', () => {

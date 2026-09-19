@@ -17,6 +17,7 @@ import {
   reconcileComponentEditableRobotSource,
 } from './component_source_reconcile';
 import { synchronizeComponentSourceAfterMutation } from './component_source_commands';
+import { reconcileComponentSourceDraftsWithWorkspace } from './component_source_history';
 
 const dom = new JSDOM('<!doctype html><html><body></body></html>');
 globalThis.DOMParser = dom.window.DOMParser as typeof DOMParser;
@@ -266,4 +267,79 @@ test('one source command prunes only a removed component and creates missing edi
   assert.equal(removed.synchronization, 'removed');
   assert.equal(useAssetsStore.getState().componentSourceDrafts.left, undefined);
   assert.ok(useAssetsStore.getState().componentSourceDrafts.right);
+});
+
+test('imported URDF joint edits and history retain comments, fixed axes, and mimic limits', context => {
+  const content = `<robot name="imported">
+  <!-- Inactive Xacro: <xacro:include filename="$(find robot)/model.xacro"/> \${name} -->
+  <link name="base"/><link name="mount"/><link name="tip"/><link name="finger"/>
+  <joint name="mount_joint" type="fixed">
+    <parent link="base"/><child link="mount"/><axis xyz="1 0 0"/>
+  </joint>
+  <joint name="hinge" type="revolute">
+    <!-- retain authored joint note -->
+    <parent link="mount"/><child link="tip"/><axis xyz="0 1 0"/>
+    <limit lower="-2" upper="2" effort="10" velocity="3"/>
+  </joint>
+  <joint name="finger_joint" type="revolute">
+    <parent link="tip"/><child link="finger"/>
+    <limit lower="-0.7" upper="0.8" effort="5" velocity="1"/>
+    <mimic joint="hinge" multiplier="0.5" offset="0.1"/>
+  </joint>
+</robot>`;
+  const parsed = parseEditableRobotSource({
+    file: { name: 'imported.urdf', format: 'urdf' }, content,
+  });
+  assert.ok(parsed);
+  const { selection: _selection, ...robotData } = parsed;
+  const value = createSingleComponentWorkspace(robotData, {
+    componentId: 'component', sourceFile: 'imported.urdf',
+  });
+  useWorkspaceStore.getState().replaceWorkspace(value, { resetHistory: true });
+  useAssetsStore.setState({
+    componentSourceDrafts: {
+      component: createComponentSourceDraft({
+        componentId: 'component', format: 'urdf', content, robot: value.components.component.robot,
+      }),
+    },
+  });
+  const invalidations = context.mock.method(console, 'info', () => {});
+
+  function assertPreserved() {
+    const currentRobot = useWorkspaceStore.getState().workspace.components.component.robot;
+    const draft = useAssetsStore.getState().componentSourceDrafts.component;
+    assert.ok(draft);
+    assert.equal(draft.robotSnapshotHash, createSourceSemanticRobotHash(currentRobot));
+    const reparsed = parseEditableRobotSource({
+      file: { name: 'imported.urdf', format: 'urdf' }, content: draft.content,
+    });
+    assert.ok(reparsed);
+    assert.deepEqual(reparsed.joints, currentRobot.joints);
+    for (const pattern of [
+      /<!--[\s\S]*?-->/g,
+      /<joint name="mount_joint"[\s\S]*?<\/joint>/g,
+      /<joint name="finger_joint"[\s\S]*?<\/joint>/g,
+    ]) {
+      assert.deepEqual(draft.content.match(pattern), content.match(pattern));
+    }
+  }
+
+  for (const [x, roll] of [[0.12345678901234568, Math.PI / 6], [-1e-18, -Math.PI / 4]]) {
+    const previousRobot = useWorkspaceStore.getState().workspace.components.component.robot;
+    const nextRobot = structuredClone(previousRobot);
+    nextRobot.joints.hinge.origin.xyz.x = x;
+    nextRobot.joints.hinge.origin.rpy.r = roll;
+    useWorkspaceStore.getState().replaceComponentRobot('component', nextRobot);
+    const result = synchronizeComponentSourceAfterMutation({ componentId: 'component', previousRobot });
+    assert.equal(result.reconciliation.outcome, 'patched', result.reconciliation.reason);
+    assertPreserved();
+  }
+
+  for (const direction of ['undo', 'undo', 'redo', 'redo'] as const) {
+    const previousWorkspace = useWorkspaceStore.getState().workspace;
+    assert.equal(useWorkspaceStore.getState()[direction](), true);
+    reconcileComponentSourceDraftsWithWorkspace(previousWorkspace);
+    assertPreserved();
+  }
+  assert.equal(invalidations.mock.callCount(), 0);
 });

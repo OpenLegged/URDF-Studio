@@ -50,6 +50,8 @@ export function SettingsModal() {
     setFontSize,
     sourceCodeAutoApply,
     setSourceCodeAutoApply,
+    closedLoopSourceFallbackFormat,
+    setClosedLoopSourceFallbackFormat,
     aiAutoApplyEdits,
     setAiAutoApplyEdits,
     codeEditorFontFamily,
@@ -80,6 +82,8 @@ export function SettingsModal() {
       setFontSize: state.setFontSize,
       sourceCodeAutoApply: state.sourceCodeAutoApply,
       setSourceCodeAutoApply: state.setSourceCodeAutoApply,
+      closedLoopSourceFallbackFormat: state.closedLoopSourceFallbackFormat,
+      setClosedLoopSourceFallbackFormat: state.setClosedLoopSourceFallbackFormat,
       aiAutoApplyEdits: state.aiAutoApplyEdits,
       setAiAutoApplyEdits: state.setAiAutoApplyEdits,
       codeEditorFontFamily: state.codeEditorFontFamily,
@@ -234,6 +238,8 @@ export function SettingsModal() {
                   aiAutoApplyEdits={aiAutoApplyEdits}
                   setAiAutoApplyEdits={setAiAutoApplyEdits}
                   sourceCodeAutoApply={sourceCodeAutoApply}
+                  closedLoopSourceFallbackFormat={closedLoopSourceFallbackFormat}
+                  setClosedLoopSourceFallbackFormat={setClosedLoopSourceFallbackFormat}
                   setSourceCodeAutoApply={setSourceCodeAutoApply}
                   codeEditorFontFamily={codeEditorFontFamily}
                   setCodeEditorFontFamily={setCodeEditorFontFamily}

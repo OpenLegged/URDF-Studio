@@ -5,17 +5,75 @@ import React, { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { JSDOM } from 'jsdom';
 
-import { GeometryType, JointType, type AssemblyState } from '@/types';
+import { DEFAULT_JOINT, GeometryType, JointType, type AssemblyState } from '@/types';
 import { useJointPickSessionStore, type PickedSnapFrame } from '@/store/jointPickSessionStore';
 import { useSelectionStore } from '@/store/selectionStore';
 import { useWorkspaceStore } from '@/store/workspaceStore';
 
 import { BridgeCreateModal } from './BridgeCreateModal.tsx';
 import type { BridgeCreateModalProps } from './BridgeCreateModal.tsx';
+import { hasIncomingStructuralBridge } from './bridge-create/bridgeCreateModalUtils';
 import {
   BridgeAxisSpinnerField,
   BridgeSpinnerField,
 } from './bridge-create/BridgeCreateFields.tsx';
+
+test('a cyclic bridge does not become an incoming structural parent', () => {
+  const workspace = createAssemblyState();
+  for (const [parent, child] of [['component_a', 'component_b'], ['component_b', 'component_a']]) {
+    const id = `${parent}_${child}`;
+    workspace.bridges[id] = {
+      id, name: id, parentComponentId: parent, childComponentId: child,
+      parentLinkId: 'base_link', childLinkId: 'base_link',
+      joint: { ...DEFAULT_JOINT, id, name: id, parentLinkId: 'base_link', childLinkId: 'base_link' },
+    };
+  }
+  assert.equal(hasIncomingStructuralBridge(workspace, 'component_a'), false);
+  assert.equal(hasIncomingStructuralBridge(workspace, 'component_b'), true);
+});
+
+test('a self-loop does not prevent attaching its component to another component', async () => {
+  const { dom, container, root } = createComponentRoot();
+  const workspace = createAssemblyState();
+  workspace.bridges.self_loop = {
+    id: 'self_loop',
+    name: 'self_loop',
+    parentComponentId: 'component_a',
+    parentLinkId: 'base_link',
+    childComponentId: 'component_a',
+    childLinkId: 'tool_link',
+    joint: {
+      ...DEFAULT_JOINT,
+      id: 'self_loop',
+      name: 'self_loop',
+      parentLinkId: 'base_link',
+      childLinkId: 'tool_link',
+      type: JointType.REVOLUTE,
+    },
+  };
+  useSelectionStore.setState({ selection: null, interactionGuard: null });
+
+  try {
+    await act(async () => {
+      root.render(createBridgeModalElement({
+        workspace,
+        isOpen: true,
+        onClose: () => {},
+        onCreate: () => {},
+        lang: 'zh',
+      }));
+    });
+    await switchEndpointInputMode(container, 'Link 列表');
+    await selectFlatEndpoint(dom, container, 'parent', 'Component B › base_link');
+    await selectFlatEndpoint(dom, container, 'child', 'Component A › base_link');
+    const confirmButton = findButtonByText(container, '确认');
+    assert.ok(confirmButton);
+    assert.equal(confirmButton.disabled, false);
+  } finally {
+    await destroyComponentRoot(dom, root);
+    useSelectionStore.setState({ selection: null, interactionGuard: null });
+  }
+});
 
 function assertNearlyEqual(actual: number, expected: number, message?: string) {
   assert.ok(Math.abs(actual - expected) < 1e-6, message ?? `${actual} !== ${expected}`);
@@ -2409,7 +2467,7 @@ test('bridge create modal disables confirm when the lower limit exceeds the uppe
   }
 });
 
-test('bridge create modal disables confirm for a non-fixed bridge that would close an assembly cycle', async () => {
+test('bridge create modal allows a non-fixed bridge that would close an assembly cycle', async () => {
   const { dom, container, root } = createComponentRoot();
   const originalConsoleError = console.error;
   const assemblyState = createAssemblyState();
@@ -2476,8 +2534,10 @@ test('bridge create modal disables confirm for a non-fixed bridge that would clo
       await Promise.resolve();
     });
 
-    assert.equal(confirmButton.disabled, true);
-    assert.match(container.textContent ?? '', /成环桥接仅支持 fixed 关节/);
+    // Movable cyclic bridges are now supported (closed-loop joint constraints),
+    // so the confirm button stays enabled and the legacy warning is gone.
+    assert.equal(confirmButton.disabled, false);
+    assert.doesNotMatch(container.textContent ?? '', /成环桥接仅支持 fixed 关节/);
   } finally {
     useSelectionStore.setState({
       selection: null,

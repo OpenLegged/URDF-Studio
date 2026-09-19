@@ -120,7 +120,7 @@ export const zh: TranslationKeys = {
   bridgeSnapKindSurface: '表面点',
   bridgePickActiveParent: '下一次点击优先写入父侧',
   bridgePickActiveChild: '下一次点击优先写入子侧',
-  bridgeSelectRelationFirst: '至少需要两个组件才能创建拼接',
+  bridgeSelectRelationFirst: '至少需要两个连杆才能创建拼接',
   add: '添加',
   bridgedComponent: '已拼接',
   bridgedComponentLockedHint: '该组件已参与拼接，暂时不能单独移动。',
@@ -775,6 +775,8 @@ export const zh: TranslationKeys = {
   no: '否',
   importWarning: '导入时提示',
   sourceCodeAutoApply: '自动应用有效的代码修改',
+  closedLoopSourceFallbackFormat: '闭环源码回退格式',
+  closedLoopSourceFallbackFormatHint: 'URDF 源含闭环桥接时，合并源码自动转换的目标格式',
   fontSize: '字体大小',
   interfaceFontSize: '界面字号',
   fontFamily: '字体',
@@ -860,6 +862,8 @@ export const zh: TranslationKeys = {
   exportFailedParse: '导出失败：文件解析失败',
   exportClosedLoopUrdfUnsupported:
     '无法将 {name} 导出为 URDF：检测到 {count} 个闭链约束。核心 URDF 只支持树形拓扑，请改用 MJCF、Xacro、SDF 或 .usp。',
+  exportClosedLoopUrdfStripped:
+    '已导出，文件中未包含 {count} 个闭环连接；编辑器中的模型不变。',
   exportUrdfJointUnsupported:
     '无法导出为 URDF/Xacro：关节 {name} 使用了不受支持的 {type} 类型。可以继续编辑，或导出为 MJCF、SDF，或保存为 .usp 项目。',
   exportLibraryParseFailed: '解析素材库文件失败：{file}',

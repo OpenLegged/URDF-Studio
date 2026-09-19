@@ -9,10 +9,12 @@ import {
 } from '@/shared/components/ui';
 import { translations } from '@/shared/i18n';
 import {
+  CLOSED_LOOP_SOURCE_FALLBACK_FORMATS,
   NAVIGATION_SENSITIVITY_MAX,
   NAVIGATION_SENSITIVITY_MIN,
   MAX_CODE_EDITOR_OPACITY,
   MIN_CODE_EDITOR_OPACITY,
+  type ClosedLoopSourceFallbackFormat,
   type CodeEditorFontFamily,
   type NavigationSensitivity,
   type ViewOptions,
@@ -59,6 +61,8 @@ export interface SettingsPaneProps {
   codeEditorOpacity: number;
   setCodeEditorOpacity: (value: number) => void;
   resetCodeEditorTypography: () => void;
+  closedLoopSourceFallbackFormat: ClosedLoopSourceFallbackFormat;
+  setClosedLoopSourceFallbackFormat: (format: ClosedLoopSourceFallbackFormat) => void;
   showWorldOriginAxes: boolean;
   showMjcfWorldGeometry: boolean;
   showUsageGuide: boolean;
@@ -98,6 +102,23 @@ export function SettingsPanes(props: SettingsPaneProps) {
               checked={props.sourceCodeAutoApply}
               onChange={props.setSourceCodeAutoApply}
             />
+            <SettingsRow label={t.closedLoopSourceFallbackFormat}>
+              <div className="w-36" title={t.closedLoopSourceFallbackFormatHint}>
+                <PanelSelect
+                  data-testid="settings-closed-loop-source-fallback-format"
+                  options={CLOSED_LOOP_SOURCE_FALLBACK_FORMATS.map((format) => ({
+                    value: format,
+                    label: format === 'sdf' ? 'SDF' : 'MJCF (XML)',
+                  }))}
+                  value={props.closedLoopSourceFallbackFormat}
+                  onChange={(event) =>
+                    props.setClosedLoopSourceFallbackFormat(
+                      event.currentTarget.value as ClosedLoopSourceFallbackFormat,
+                    )
+                  }
+                />
+              </div>
+            </SettingsRow>
             <SettingsRow label={t.fontFamily}>
               <div className="w-36">
                 <PanelSelect

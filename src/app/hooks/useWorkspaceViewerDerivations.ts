@@ -10,6 +10,7 @@ import {
 import { createAssemblyScenePlacement, createAssemblySceneProjection } from '@/core/robot';
 import { buildBridgePreviewWorkspace } from '@/features/assembly/bridge_preview';
 import { projectWorkspaceJointMotionToRenderer } from '@/features/editor';
+import { useUIStore } from '@/store/uiStore';
 import type { AssemblyState, BridgeJoint, ComponentSourceDraft, RobotFile } from '@/types';
 
 interface UseWorkspaceViewerDerivationsParams {
@@ -47,6 +48,9 @@ export function useWorkspaceViewerDerivations({
   componentSourceDrafts,
   allFileContents,
 }: UseWorkspaceViewerDerivationsParams): WorkspaceViewerDerivations {
+  const closedLoopSourceFallbackFormat = useUIStore(
+    (state) => state.closedLoopSourceFallbackFormat,
+  );
   const sceneWorkspace = useMemo(
     () => buildBridgePreviewWorkspace(semanticWorkspace, bridgePreview),
     [bridgePreview, semanticWorkspace],
@@ -77,8 +81,16 @@ export function useWorkspaceViewerDerivations({
         componentSourceDrafts,
         availableFiles,
         allFileContents,
+        closedLoopSourceFallbackFormat,
       }),
-    [activeComponentId, allFileContents, availableFiles, componentSourceDrafts, semanticWorkspace],
+    [
+      activeComponentId,
+      allFileContents,
+      availableFiles,
+      closedLoopSourceFallbackFormat,
+      componentSourceDrafts,
+      semanticWorkspace,
+    ],
   );
   const projectedJointMotion = useMemo(
     () => projectWorkspaceJointMotionToRenderer(workspace, sceneProjection),

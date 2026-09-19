@@ -90,12 +90,16 @@ export function createBridgeActions(
         (draft) => {
           assertBridgeCanBeApplied(draft, bridge);
           draft.bridges[id] = structuredClone(bridge);
-          const alignedTransform = resolveAlignedAssemblyComponentTransformForBridge(
-            draft,
-            bridge,
-          );
-          if (alignedTransform) {
-            draft.components[bridge.childComponentId]!.transform = alignedTransform;
+          // Same-component bridges are self-loops (closed-loop constraints);
+          // aligning the component to itself would be a degenerate transform.
+          if (bridge.parentComponentId !== bridge.childComponentId) {
+            const alignedTransform = resolveAlignedAssemblyComponentTransformForBridge(
+              draft,
+              bridge,
+            );
+            if (alignedTransform) {
+              draft.components[bridge.childComponentId]!.transform = alignedTransform;
+            }
           }
         },
         options,
@@ -174,7 +178,10 @@ export function createBridgeActions(
           };
           assertBridgeCanBeApplied(draft, next, { ignoreBridgeId: bridgeId });
           draft.bridges[bridgeId] = next;
-          if (realign) {
+          if (
+            realign &&
+            next.parentComponentId !== next.childComponentId
+          ) {
             const alignedTransform = resolveAlignedAssemblyComponentTransformForBridge(
               draft,
               next,

@@ -1,3 +1,5 @@
+import * as THREE from 'three';
+
 import type { RobotClosedLoopConstraint, RobotState, UrdfJoint } from '../../../types/index.ts';
 import { computeUsdInertiaProperties } from '../../../shared/utils/inertiaUsd.ts';
 import {
@@ -17,6 +19,7 @@ import {
   ISAACSIM_DEFAULT_SOLVER_VELOCITY_ITERATION_COUNT,
 } from './usdIsaacSimDefaults.ts';
 import {
+  createJointAxisAlignmentQuaternion,
   getAxisToken,
   normalizeUsdJointAxisToken,
   type UsdJointAxisToken,
@@ -271,13 +274,44 @@ export const serializeJointDefinition = (
   lines.push(`${indent}}`);
 };
 
+function resolveClosedLoopJointFrames(constraint: RobotClosedLoopConstraint) {
+  const jointType = constraint.type === 'joint' ? constraint.jointType : 'ball';
+  const usdTypeName: UsdJointTypeName =
+    jointType === 'revolute' || jointType === 'continuous'
+      ? 'PhysicsRevoluteJoint'
+      : jointType === 'prismatic'
+        ? 'PhysicsPrismaticJoint'
+        : jointType === 'fixed'
+          ? 'PhysicsFixedJoint'
+          : 'PhysicsSphericalJoint';
+  const supportsAxis = usdTypeName === 'PhysicsRevoluteJoint' || usdTypeName === 'PhysicsPrismaticJoint';
+  const axis = constraint.type === 'joint' ? constraint.axis : undefined;
+  const axisToken = getAxisToken(axis);
+  const origin = constraint.type === 'joint' ? constraint.origin : undefined;
+  const originQuaternion = origin?.quatXyzw
+    ? new THREE.Quaternion(
+        origin.quatXyzw.x, origin.quatXyzw.y, origin.quatXyzw.z, origin.quatXyzw.w,
+      ).normalize()
+    : new THREE.Quaternion().setFromEuler(
+        new THREE.Euler(origin?.rpy.r ?? 0, origin?.rpy.p ?? 0, origin?.rpy.y ?? 0, 'ZYX'),
+      );
+  const localRot1 = supportsAxis
+    ? createJointAxisAlignmentQuaternion(axis, axisToken)
+    : new THREE.Quaternion();
+  // Both frames share the joint axis at zero pose; translation is supplied by
+  // the explicit anchors below, independently of origin.xyz.
+  const localRot0 = originQuaternion.clone().multiply(localRot1);
+
+  return { jointType, usdTypeName, supportsAxis, axisToken, originQuaternion, localRot0, localRot1 };
+}
+
 export const serializeClosedLoopConstraintDefinition = (
   constraint: RobotClosedLoopConstraint,
   linkPaths: Map<string, string>,
   lines: string[],
   depth: number,
 ): void => {
-  if (constraint.type !== 'connect') {
+  if (constraint.type === 'distance') {
     return;
   }
 
@@ -293,19 +327,38 @@ export const serializeClosedLoopConstraintDefinition = (
     constraint.id || `${constraint.linkAId}_${constraint.linkBId}_closed_loop`,
   );
 
+  const { jointType, usdTypeName, supportsAxis, axisToken, originQuaternion, localRot0, localRot1 } =
+    resolveClosedLoopJointFrames(constraint);
+
   serializeUsdPrimSpecWithMetadata(
     lines,
     depth,
-    `def PhysicsSphericalJoint "${sanitizeUsdIdentifier(constraintId)}"`,
+    `def ${usdTypeName} "${sanitizeUsdIdentifier(constraintId)}"`,
   );
   lines.push(`${indent}{`);
   lines.push(`${childIndent}rel physics:body0 = <${linkAPath}>`);
   lines.push(`${childIndent}rel physics:body1 = <${linkBPath}>`);
-  lines.push(`${childIndent}custom string urdf:jointType = "ball"`);
+  if (supportsAxis) {
+    lines.push(`${childIndent}uniform token physics:axis = "${axisToken}"`);
+  }
+  lines.push(`${childIndent}custom string urdf:jointType = "${escapeUsdString(jointType)}"`);
   lines.push(`${childIndent}custom string urdf:closedLoopId = "${escapeUsdString(constraintId)}"`);
   lines.push(
     `${childIndent}custom string urdf:closedLoopType = "${escapeUsdString(constraint.type)}"`,
   );
+  if (constraint.type === 'joint' && constraint.limit) {
+    appendUsdJointLimitAttributes({
+      joint: {
+        type: jointType,
+        limit: constraint.limit,
+      } as UrdfJoint,
+      typeName: usdTypeName,
+      usdLimitAxes: {},
+      usdLimitAxisKeys: [],
+      lines,
+      childIndent,
+    });
+  }
   lines.push(
     `${childIndent}custom point3f urdf:anchorWorld = ${formatUsdTuple([
       constraint.anchorWorld.x,
@@ -313,6 +366,27 @@ export const serializeClosedLoopConstraintDefinition = (
       constraint.anchorWorld.z,
     ])}`,
   );
+  if (constraint.type === 'joint' && constraint.axis) {
+    lines.push(
+      `${childIndent}custom float3 urdf:axisLocal = ${formatUsdTuple([
+        constraint.axis.x ?? 1,
+        constraint.axis.y ?? 0,
+        constraint.axis.z ?? 0,
+      ])}`,
+    );
+  }
+  if (constraint.type === 'joint' && constraint.origin) {
+    lines.push(
+      `${childIndent}custom point3f urdf:originXyz = ${formatUsdTuple([
+        constraint.origin.xyz?.x ?? 0,
+        constraint.origin.xyz?.y ?? 0,
+        constraint.origin.xyz?.z ?? 0,
+      ])}`,
+    );
+    lines.push(
+      `${childIndent}custom quatf urdf:originQuatWxyz = ${quaternionToUsdTuple(originQuaternion)}`,
+    );
+  }
   lines.push(
     `${childIndent}point3f physics:localPos0 = ${formatUsdTuple([
       constraint.anchorLocalA.x,
@@ -327,8 +401,8 @@ export const serializeClosedLoopConstraintDefinition = (
       constraint.anchorLocalB.z,
     ])}`,
   );
-  lines.push(`${childIndent}quatf physics:localRot0 = (1, 0, 0, 0)`);
-  lines.push(`${childIndent}quatf physics:localRot1 = (1, 0, 0, 0)`);
+  lines.push(`${childIndent}quatf physics:localRot0 = ${quaternionToUsdTuple(localRot0)}`);
+  lines.push(`${childIndent}quatf physics:localRot1 = ${quaternionToUsdTuple(localRot1)}`);
   lines.push(`${indent}}`);
 };
 

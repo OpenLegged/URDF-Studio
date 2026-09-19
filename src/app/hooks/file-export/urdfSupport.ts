@@ -33,10 +33,12 @@ export function createBoxFaceTextureFallbackWarnings(
 
 export function assertUrdfExportSupported(
   robot: Pick<RobotState, 'name' | 'closedLoopConstraints'> & Partial<Pick<RobotState, 'joints'>>,
-  exportName: string | undefined,
-  replaceTemplate: (template: string, replacements: Record<string, string | number>) => string,
-  unsupportedLabel: string,
+  _exportName: string | undefined,
+  _replaceTemplate: (template: string, replacements: Record<string, string | number>) => string,
+  _unsupportedLabel: string,
 ): void {
+  // Closed loops no longer block URDF export: callers strip them via
+  // stripClosedLoopConstraintsForUrdfExport and surface a warning instead.
   const unsupportedJoint = findUnsupportedUrdfJoint(robot);
   if (unsupportedJoint) {
     throw createUnsupportedUrdfJointError(
@@ -44,31 +46,47 @@ export function assertUrdfExportSupported(
       unsupportedJoint.jointType,
     );
   }
+}
+
+/**
+ * URDF/Xacro cannot express closed loops. Instead of failing the export, the
+ * loop-closing constraints are cut from the exported robot and a warning is
+ * returned for the export result. The in-app model keeps its loops.
+ */
+export function stripClosedLoopConstraintsForUrdfExport(
+  robot: RobotState,
+  replaceTemplate: (template: string, replacements: Record<string, string | number>) => string,
+  warningLabel: string,
+): { robot: RobotState; warning: string | null } {
   const closedLoopConstraintCount = robot.closedLoopConstraints?.length ?? 0;
   if (closedLoopConstraintCount === 0) {
-    return;
+    return { robot, warning: null };
   }
 
-  const resolvedExportName = exportName?.trim() || robot.name?.trim() || 'robot';
-  throw new Error(
-    replaceTemplate(unsupportedLabel, {
+  const resolvedExportName = robot.name?.trim() || 'robot';
+  const { closedLoopConstraints: _removed, ...robotWithoutLoops } = robot;
+  return {
+    robot: robotWithoutLoops as RobotState,
+    warning: replaceTemplate(warningLabel, {
       name: resolvedExportName,
       count: closedLoopConstraintCount,
     }),
-  );
+  };
 }
 
 export function assertAssemblyUrdfExportSupported(
   assembly: AssemblyState,
   replaceTemplate: (template: string, replacements: Record<string, string | number>) => string,
-  unsupportedLabel: string,
+  _unsupportedLabel: string,
 ): void {
+  // Closed loops no longer block assembly URDF export; component-level
+  // unsupported joint checks remain in assertUrdfExportSupported.
   Object.values(assembly.components).forEach((component) => {
     assertUrdfExportSupported(
       component.robot,
       component.name?.trim() || component.id,
       replaceTemplate,
-      unsupportedLabel,
+      _unsupportedLabel,
     );
   });
 }

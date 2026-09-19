@@ -43,7 +43,7 @@ interface ExportSessionOperations {
 interface UseExportSessionOptions {
   operations: ExportSessionOperations;
   preload: (surface: ExportSessionSurface) => void;
-  showToast: (message: string, type: 'error') => void;
+  showToast: (message: string, type: 'error' | 'info') => void;
   labels: Pick<TranslationKeys,
     'exportFailedParse' | 'exportUrdfJointUnsupported' |
     'exportProgressPreparing' | 'exportProgressPreparingDetail'>;
@@ -149,6 +149,11 @@ export function useExportSession({ operations, preload, showToast, labels }: Use
         });
       } else if (request.type !== 'project-blob') {
         reportExportDiagnostics(result);
+        // Surface export compatibility notes (e.g. closed loops cut for URDF)
+        // as a toast so they are not buried in the console.
+        if (result.warnings?.length) {
+          showToast([...new Set(result.warnings)].join('\n'), 'info');
+        }
         updateState({ step: 'closed', disconnectedDialog: null });
       }
       return result;

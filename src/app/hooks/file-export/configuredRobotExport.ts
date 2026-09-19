@@ -34,6 +34,7 @@ import {
   assertAssemblyUrdfExportSupported,
   assertUrdfExportSupported,
   createBoxFaceTextureFallbackWarnings,
+  stripClosedLoopConstraintsForUrdfExport,
   type BoxFaceFallbackWarningLabels,
   resolveDisconnectedWorkspaceUrdfAction,
 } from './urdfSupport';
@@ -211,7 +212,7 @@ export async function executeConfiguredRobotExport({
     config.format === 'urdf' || config.format === 'sdf' || config.format === 'xacro'
       ? applyBoxFaceMaterialExportFallback(robot)
       : null;
-  const exportRobot = boxFaceFallback?.robot ?? robot;
+  let exportRobot = boxFaceFallback?.robot ?? robot;
   const boxFaceFallbackCount = boxFaceFallback?.records.length ?? 0;
   const assetPackagingFailures: RobotAssetPackagingFailure[] = [];
   const zip = await createZip();
@@ -225,13 +226,27 @@ export async function executeConfiguredRobotExport({
           ? config.xacro.includeMeshes
           : config.sdf.includeMeshes;
 
-  if (config.format === 'urdf') {
+  if (config.format === 'urdf' || config.format === 'xacro') {
     assertUrdfExportSupported(
       exportRobot,
       exportName,
       replaceTemplate,
       t.exportClosedLoopUrdfUnsupported,
     );
+  }
+
+  // URDF/Xacro cannot express closed loops: cut them from the exported robot
+  // and surface a warning instead of failing the export.
+  const closedLoopStripped =
+    config.format === 'urdf' || config.format === 'xacro'
+      ? stripClosedLoopConstraintsForUrdfExport(
+          exportRobot,
+          replaceTemplate,
+          t.exportClosedLoopUrdfStripped,
+        )
+      : null;
+  if (closedLoopStripped) {
+    exportRobot = closedLoopStripped.robot;
   }
 
   if (config.includeSkeleton) {
@@ -346,12 +361,15 @@ export async function executeConfiguredRobotExport({
       indeterminate: false,
     });
 
-    const warnings = createBoxFaceTextureFallbackWarnings(
-      'urdf',
-      boxFaceFallbackCount,
-      replaceTemplate,
-      boxFaceFallbackWarningLabels,
-    );
+    const warnings = [
+      ...createBoxFaceTextureFallbackWarnings(
+        'urdf',
+        boxFaceFallbackCount,
+        replaceTemplate,
+        boxFaceFallbackWarningLabels,
+      ),
+      ...(closedLoopStripped?.warning ? [closedLoopStripped.warning] : []),
+    ];
     const urdfContent = includeExtended
       ? generateURDF(
           exportRobot,
@@ -485,12 +503,6 @@ export async function executeConfiguredRobotExport({
       compressSTL,
       stlQuality,
     } = config.xacro;
-    assertUrdfExportSupported(
-      exportRobot,
-      exportName,
-      replaceTemplate,
-      t.exportClosedLoopUrdfUnsupported,
-    );
     const generatedUrdfOptions = await buildGeneratedUrdfOptions(extraMeshFiles, {
       useRelativePaths,
     });
@@ -499,12 +511,15 @@ export async function executeConfiguredRobotExport({
       indeterminate: false,
     });
 
-    const warnings = createBoxFaceTextureFallbackWarnings(
-      'xacro',
-      boxFaceFallbackCount,
-      replaceTemplate,
-      boxFaceFallbackWarningLabels,
-    );
+    const warnings = [
+      ...createBoxFaceTextureFallbackWarnings(
+        'xacro',
+        boxFaceFallbackCount,
+        replaceTemplate,
+        boxFaceFallbackWarningLabels,
+      ),
+      ...(closedLoopStripped?.warning ? [closedLoopStripped.warning] : []),
+    ];
     const generatedXacroBaseUrdf = generateURDF(exportRobot, generatedUrdfOptions);
     const rosGazeboProfile = resolveRosGazeboProfile({
       ...config.xacro,

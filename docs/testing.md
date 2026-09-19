@@ -62,6 +62,8 @@ Assembly/workspace 改动至少覆盖以下不变量：
 - **关键机制**：测试通过 URL 上的 `?regressionDebug=1` 暴露 `window.__URDF_STUDIO_DEBUG__` 调试接口（默认关闭，见 CLAUDE.md 红线）。helper 会自动加这个参数。
 - **跑完务必清理**（CLAUDE.md 红线）：`node test/usd-viewer/scripts/cleanup-headless.cjs`。
 
+`npm run test:browser:closed-loops` 使用 Playwright 操作真实拼接弹窗与关节滑块，验证固定朝向、旋转限位与错轴、连续旋转、滑动自由度及限位、相连多环、撤销重做、USP 保存回导和导出提示时机；还会实际下载并回导 SDF、USD、MJCF 固定闭环，检查回导后运动约束及 MJCF 活动闭环的导出保护。使用内置小模型，默认独立端口 4175；`URDF_TEST_SITE_URL` 可指定已有服务器，`CLOSED_LOOP_CASE` 可按名称筛选。数值证据、截图和下载物保存至 `tmp/regression/closed-loop-bridges/`，结束时只清理本次进程。
+
 ### 工作流 E2E 套件（import → 属性编辑 → 源码编辑 → 导出 → 装配）
 
 `scripts/test/e2e/test_workflow_suite.mjs`（`npm run test:workflow` / `test:workflow:quick` / `test:browser:workflow`）是跨功能的**用户旅程**层：每条旅程走完整真实用户路径——多格式导入 → 右侧属性面板改 mass/joint type/limits（GUI 输入并三重验证：面板回读 + 源码草稿 + store）→ 源代码编辑（删 link、joint→fixed、改材质色）→ File→Export 导出 → **解压导出 zip 并断言 XML 内容**；J6 装配旅程用 GUI 桥接弹窗创建 revolute/continuous/prismatic/fixed + 自环闭环桥并导出装配体。

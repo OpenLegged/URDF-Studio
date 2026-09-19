@@ -13,6 +13,7 @@ export {
   MAX_CODE_EDITOR_OPACITY,
   DEFAULT_MANAGED_WINDOW_ORDER,
   MANAGED_WINDOW_Z_INDEX_BASE,
+  CLOSED_LOOP_SOURCE_FALLBACK_FORMATS,
   bringManagedWindowToFront,
   getManagedWindowZIndex,
   normalizeManagedWindowOrder,
@@ -30,6 +31,7 @@ export type {
   RotationDisplayMode,
   MassInertiaChangeBehavior,
   ManagedWindowId,
+  ClosedLoopSourceFallbackFormat,
 } from './uiStore';
 export type { ViewerRenderQuality } from '@/shared/utils/viewerRenderQuality';
 

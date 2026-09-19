@@ -96,6 +96,7 @@ features/urdf-viewer/
 
 - USD stage preparation、runtime metadata、robot hydration、prepared export cache、roundtrip archive 的修复，默认优先放在 worker/runtime 链路完成，不要搬到主线程 adapter 或 debug bridge
 - `runtime/hydra/render-delegate/*` 产出的 metadata snapshot 是该链路的 source of truth；缺字段应修 worker/runtime 生成逻辑
+- 原生 C++ USD metadata 与 JS snapshot 归一化都必须保留 `closedLoopConstraintEntries`。带 `urdf:closedLoopType` 的物理关节作为闭环单独保存，不参与按 child 选择结构树父关节；否则会替换原有关节并断开闭环。回归必须包含真实 WASM 浏览器导入，不能只覆盖 JS stage fallback。
 - scene snapshot 的 Prim descriptor 保留 composed `physics:collisionEnabled` 与
   `physics:approximation`，供宿主区分“源文件声明碰撞”和“平台认证碰撞”；该 metadata 只陈述
   Stage 事实，不签发或暗示 Sim Ready 认证

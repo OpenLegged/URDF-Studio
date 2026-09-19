@@ -45,6 +45,7 @@ import {
 import {
   assertAssemblyUrdfExportSupported,
   createBoxFaceTextureFallbackWarnings,
+  stripClosedLoopConstraintsForUrdfExport,
 } from './file-export/urdfSupport';
 import { applyBoxFaceMaterialExportFallback } from './file-export/materialFallbacks';
 import {
@@ -455,6 +456,7 @@ export function useFileExport() {
       const componentsRoot = archiveRoot.folder('components') ?? archiveRoot;
       const assetPackagingFailures: RobotAssetPackagingFailure[] = [];
       let boxFaceFallbackCount = 0;
+      const closedLoopStrippedWarnings: (string | null)[] = [];
 
       const {
         includeExtended,
@@ -474,7 +476,14 @@ export function useFileExport() {
           selection: { type: null, id: null },
         };
         const fallbackResult = applyBoxFaceMaterialExportFallback(componentRobot);
-        const exportRobot = fallbackResult.robot;
+        // URDF cannot express closed loops: cut them per component and warn.
+        const strippedResult = stripClosedLoopConstraintsForUrdfExport(
+          fallbackResult.robot,
+          replaceTemplate,
+          t.exportClosedLoopUrdfStripped,
+        );
+        const exportRobot = strippedResult.robot;
+        closedLoopStrippedWarnings.push(strippedResult.warning);
         boxFaceFallbackCount += fallbackResult.records.length;
         const sourceResolution = resolveSourcePreservingComponentDraft({
           workspace,
@@ -545,12 +554,17 @@ export function useFileExport() {
       const content = await zip.generateAsync({ type: 'blob' });
       downloadBlob(content, `${assemblyExportName}_components_urdf.zip`);
 
-      const warnings = createBoxFaceTextureFallbackWarnings(
-        'urdf',
-        boxFaceFallbackCount,
-        replaceTemplate,
-        boxFaceFallbackWarningLabels,
-      );
+      const warnings = [
+        ...createBoxFaceTextureFallbackWarnings(
+          'urdf',
+          boxFaceFallbackCount,
+          replaceTemplate,
+          boxFaceFallbackWarningLabels,
+        ),
+        ...closedLoopStrippedWarnings.filter(
+          (warning): warning is string => Boolean(warning),
+        ),
+      ];
 
       return {
         partial: warnings.length > 0,
@@ -568,6 +582,7 @@ export function useFileExport() {
       componentSourceDrafts,
       downloadBlob,
       replaceTemplate,
+      t.exportClosedLoopUrdfStripped,
       t.exportClosedLoopUrdfUnsupported,
       t.exportFailedParse,
       throwForAssetPackagingFailures,

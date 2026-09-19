@@ -125,7 +125,7 @@ export const en: TranslationKeys = {
   bridgeSnapKindSurface: 'Surface Point',
   bridgePickActiveParent: 'The next click prefers the parent side',
   bridgePickActiveChild: 'The next click prefers the child side',
-  bridgeSelectRelationFirst: 'At least two components are required to create a bridge',
+  bridgeSelectRelationFirst: 'At least two links are required to create a bridge',
   add: 'Add',
   bridgedComponent: 'Connected',
   bridgedComponentLockedHint:
@@ -803,6 +803,9 @@ export const en: TranslationKeys = {
   no: 'No',
   importWarning: 'Import Warning',
   sourceCodeAutoApply: 'Automatically apply valid code edits',
+  closedLoopSourceFallbackFormat: 'Closed-loop source fallback format',
+  closedLoopSourceFallbackFormatHint:
+    'Target format for the merged source view when URDF-sourced assemblies carry closed-loop bridges',
   fontSize: 'Font Size',
   interfaceFontSize: 'Interface Font Size',
   fontFamily: 'Font Family',
@@ -890,6 +893,8 @@ export const en: TranslationKeys = {
   exportFailedParse: 'Export failed: file parse error',
   exportClosedLoopUrdfUnsupported:
     'URDF export is unavailable for {name}: detected {count} closed-loop constraint(s). Core URDF only supports tree topologies. Use MJCF, Xacro, SDF, or .usp instead.',
+  exportClosedLoopUrdfStripped:
+    'Exported with {count} closed-loop connection(s) omitted. Your model is unchanged.',
   exportUrdfJointUnsupported:
     'Cannot export URDF/Xacro: joint {name} uses the unsupported {type} type. You can continue editing, export MJCF or SDF, or save a .usp project.',
   exportLibraryParseFailed: 'Failed to parse library file: {file}',

@@ -75,6 +75,8 @@ export interface BuildCanonicalWorkspaceSourceDocumentsParams {
   componentSourceDrafts: Record<string, ComponentSourceDraft>;
   availableFiles: RobotFile[];
   allFileContents: Record<string, string>;
+  /** User-selected fallback format for URDF-sourced closed-loop source views. */
+  closedLoopSourceFallbackFormat?: 'sdf' | 'mjcf';
 }
 
 interface BuildSourceCodeDocumentsParams {
@@ -381,8 +383,13 @@ function buildComponentGeneratedFallbackDocument(
   workspace: AssemblyState,
   component: AssemblyComponent,
   disambiguate: boolean,
+  closedLoopFallbackOptions: { closedLoopFallbackFormat: 'sdf' | 'mjcf' },
 ): SourceCodeDocumentDescriptor {
-  const format = resolveEditableRobotSourceFormat(component.robot);
+  const format = resolveEditableRobotSourceFormat(
+    component.robot,
+    undefined,
+    closedLoopFallbackOptions,
+  );
   const content = component.robot
     ? tryGenerateEditableRobotSource({
         format,
@@ -442,13 +449,18 @@ function buildGroupMergedDocument(
   workspace: AssemblyState,
   componentIds: string[],
   componentSourceDrafts: Record<string, ComponentSourceDraft>,
+  closedLoopFallbackOptions: { closedLoopFallbackFormat: 'sdf' | 'mjcf' },
 ): SourceCodeDocumentDescriptor {
   const masterComponentId = resolveAssemblyGroupMasterComponentId(workspace, componentIds);
   const masterComponent = masterComponentId ? workspace.components[masterComponentId] : null;
   const groupName = masterComponent?.name || workspace.name;
   const subAssembly = buildGroupSubAssembly(workspace, componentIds);
   const projectedRobot = buildExportableAssemblyRobotData(subAssembly);
-  const format = resolveEditableRobotSourceFormat(projectedRobot);
+  const format = resolveEditableRobotSourceFormat(
+    projectedRobot,
+    undefined,
+    closedLoopFallbackOptions,
+  );
   const documentId = `group:${masterComponentId ?? componentIds[0]}:${format}`;
   const fileName = `${sanitizeSourceFileBaseName(groupName)}.${format === 'mjcf' ? 'xml' : format}`;
 
@@ -514,6 +526,7 @@ export function buildCanonicalWorkspaceSourceDocuments({
   componentSourceDrafts,
   availableFiles,
   allFileContents,
+  closedLoopSourceFallbackFormat,
 }: BuildCanonicalWorkspaceSourceDocumentsParams): CanonicalWorkspaceSourceDocuments {
   const componentIds = Object.keys(workspace.components);
   const resolvedComponentId =
@@ -521,6 +534,9 @@ export function buildCanonicalWorkspaceSourceDocuments({
       ? activeComponentId
       : componentIds[0] ?? null;
   const disambiguate = componentIds.length > 1;
+  const closedLoopFallbackOptions = {
+    closedLoopFallbackFormat: closedLoopSourceFallbackFormat ?? 'sdf',
+  };
 
   const groups = analyzeAssemblyConnectivity(workspace).connectedGroups;
   const documents: SourceCodeDocumentDescriptor[] = [];
@@ -535,6 +551,7 @@ export function buildCanonicalWorkspaceSourceDocuments({
         workspace,
         group.componentIds,
         componentSourceDrafts,
+        closedLoopFallbackOptions,
       );
       for (const componentId of group.componentIds) {
         documentIdsByComponent.set(componentId, [mergedDocument.id]);
@@ -557,7 +574,14 @@ export function buildCanonicalWorkspaceSourceDocuments({
     const componentDocuments =
       draftDocuments.length > 0
         ? draftDocuments
-        : [buildComponentGeneratedFallbackDocument(workspace, component, disambiguate)];
+        : [
+            buildComponentGeneratedFallbackDocument(
+              workspace,
+              component,
+              disambiguate,
+              closedLoopFallbackOptions,
+            ),
+          ];
     documentIdsByComponent.set(
       component.id,
       componentDocuments.map((document) => document.id),

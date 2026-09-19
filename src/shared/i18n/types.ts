@@ -739,6 +739,8 @@ export interface TranslationKeys extends TranslationWorkflowKeys {
   no: string;
   importWarning: string;
   sourceCodeAutoApply: string;
+  closedLoopSourceFallbackFormat: string;
+  closedLoopSourceFallbackFormatHint: string;
   fontSize: string;
   interfaceFontSize: string;
   fontFamily: string;
@@ -816,6 +818,7 @@ export interface TranslationKeys extends TranslationWorkflowKeys {
   onlyUrdfMjcfExport: string;
   exportFailedParse: string;
   exportClosedLoopUrdfUnsupported: string;
+  exportClosedLoopUrdfStripped: string;
   exportUrdfJointUnsupported: string;
   exportLibraryParseFailed: string;
   exportLibraryUnsupportedFormat: string;

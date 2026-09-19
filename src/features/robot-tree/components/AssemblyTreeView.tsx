@@ -602,8 +602,9 @@ export const AssemblyTreeView = memo(function AssemblyTreeView({
         </div>
       )}
 
-      {!simplified ? (
-        <div data-testid="assembly-tree-bridges" className="mt-2">
+      {/* Bridges are always rendered: single-component self-loops are a valid
+          closed-loop workflow and must stay reachable from the tree. */}
+      <div data-testid="assembly-tree-bridges" className="mt-2">
           <div
             className={`group flex min-w-0 cursor-pointer items-center gap-1.5 rounded-md px-2 py-1 transition-all duration-200 ${itemHoverClass}`}
             onClick={() => setBridgesExpanded((value) => !value)}
@@ -735,8 +736,7 @@ export const AssemblyTreeView = memo(function AssemblyTreeView({
               })}
             </div>
           ) : null}
-        </div>
-      ) : null}
+      </div>
     </div>
   );
 });
