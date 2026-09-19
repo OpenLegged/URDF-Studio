@@ -200,14 +200,6 @@ URL 自带凭证且来自已鉴权受信接口，其域名与 API 不同源属�
 约束：各端（发送端图库与各接收端 Studio）的 `popupHandoffProtocol.ts`
 必须保持 origin 白名单、BroadcastChannel 常量与消息类型一致。
 
-## 7. 明确热点文件（新增逻辑优先抽离）
-
-- `src/features/property-editor/utils/geometryConversion.ts`
-- `src/features/file-io/utils/usdExport.ts`
-- `src/app/hooks/useFileExport.ts`
-- `src/app/AppLayout.tsx`
-- `src/app/hooks/workspaceSourceSyncUtils.ts`（只允许 canonical workspace → source/preview 纯派生）
-
 ## 共用 MJCF 模型转换
 
 `features/file-io/utils/mjcfExport.ts` 提供 `prepareMjcfExport`，统一网格准备和 MJCF XML 生成。

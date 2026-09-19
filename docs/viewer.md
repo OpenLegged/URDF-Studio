@@ -5,7 +5,7 @@
 
 ## 1. 单模式 Editor
 
-Editor 子域划分与快速映射见 [CLAUDE.md](../CLAUDE.md) §Editor 单模式。
+Editor 包含拓扑、几何/碰撞/测量与硬件配置；状态职责见 [CLAUDE.md](../CLAUDE.md) §Editor 单模式与状态管理。
 
 新增功能前，先判断属于哪类子能力，避免跨子系统逻辑缠绕。
 

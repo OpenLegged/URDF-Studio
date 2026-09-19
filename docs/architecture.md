@@ -123,22 +123,9 @@ Core 据此切换默认工作区与宿主工作区的壳层呈现，但不知道
 
 ## 9. Debuggability First
 
-默认原则：兜底不是默认美德，silent fallback 会掩盖真实问题、污染状态、拉高排障成本。
-
-必须遵循：
-
-- 默认优先暴露真实错误，不吞错、不改写异常、不偷偷切备用路径
-- 禁止新增 `catch -> 返回空值/默认值/旧缓存/伪成功状态` 的 silent fallback
-- 导入、导出、hydration、roundtrip、解析、viewer 初始化等 source-of-truth 链路禁止不透明兜底
-- Worker bridge / off-main-thread 链路默认 fail fast，不要因 worker 不可用就在主线程悄悄补实现
-- 禁止用"自动重试 + 自动降级 + 自动切换备用实现"掩盖根因
-
-若必须保留窄兜底，同时满足：
-
-- 保留原始错误信息、栈与触发条件
-- 能被用户或开发者明确观察到
-- 不得悄悄改写 source of truth
-- 注释说明为何必须兜底及降级到什么
+- 导入、导出、解析、hydration、roundtrip 和 viewer 初始化保留原始错误，不用空值、默认值、旧缓存或伪成功状态吞错。
+- Worker 失败不能在主线程悄悄补实现；不通过自动重试、降级或备用路径掩盖根因。
+- 必要的窄兜底须保留原始错误、栈与触发条件，能被用户或开发者观察到，不改写 source of truth，并注明原因及降级行为。
 
 ## 10. Linux 哲学与 Linus taste
 
@@ -176,35 +163,20 @@ Core 据此切换默认工作区与宿主工作区的壳层呈现，但不知道
 
 ## 12. 依赖检查命令
 
-分层红线、`app` feature deep import surface 与 import 循环由 `scripts/tools/dependency_boundaries.mjs` 机器化把关（零依赖，复用 `@/* -> src/*` alias）：
+`scripts/tools/dependency_boundaries.mjs` 统一检查分层、公开入口、发布包依赖闭包与循环依赖，不另建平行检查规则。
 
 ```bash
-npm run deps:audit   # 报告越层 import、发布包可达路径、app feature deep import 与循环依赖
-npm run deps:check    # CI 阻断门（当前 cycles/deep-import baseline 均为空）
+npm run deps:audit   # 查看违规及依赖路径
+npm run deps:check   # 阻断检查，已包含在 npm run lint 中
 ```
 
-该脚本编码 §1 的方向（core 禁 React/越层、features 禁互相 import、shared/store/lib 禁向上、types 为 leaf），也会拦截非 `.cjs` 产品源中可绕过 ESM 图的 `require()`，并复用同一依赖提取与路径解析检查发布包对 app/store/features 的传递可达路径。发布边界包含静态 worker module URL；URL 不代表同一执行环境中的 ESM import，因此不作为 import cycle 边。§3 的存量例外只按精确 importer/specifier/target allowlist。`app` 对 feature 子路径的 deep import 和 import cycle 新增或 baseline stale 都会让 `--check` 失败；当前两个 baseline 清单均为空。`npm run lint` 已串联 `deps:check`。下列 `rg` 命令仅作快速人工排查备用：
-
-```bash
-# 检查潜在反向依赖（core/shared/store 对 features 的引用）
-rg -n "from ['\"]@/features/" src/core src/shared src/store
-
-# 检查 feature 间直接耦合
-rg -n "from ['\"]@/features/" src/features
-
-# 检查 shared 对 store 的依赖
-rg -n "from ['\"]@/store/" src/shared
-
-# 检查硬编码色值
-rg -n "#[0-9A-Fa-f]{3,8}" src
-
-# 检查 #0088FF 使用范围
-rg -n "#0088FF|#0088ff" src | rg -v "Slider.tsx|styles/index.css"
-```
+- 例外按 importer/specifier/resolved target 精确匹配；deep import 和 cycle 新增或 baseline stale 都会失败。
+- 非 `.cjs` 产品源的 `require()` 不能绕过 ESM 图检查。
+- 静态 worker module URL 计入发布包依赖闭包，但不视为同一执行环境的 import cycle 边。
 
 ## 13. 规模门禁与豁免（Size Budgets & Exemptions）
 
-单文件/函数长度、圈复杂度、参数数、嵌套深度由 `scripts/tools/google_style_audit.mjs` 的 count-based 规则把关，走 `google_style_baseline.json` ratchet（存量 grandfather、仅净新增违规 fail；`file-name-snake-case` 已 retired，只报告不阻断）。当前阈值：file hard 800、function hard 200、complexity hard 20、params 4、depth 4（均 skipBlank+skipComments，仅作用 `src/**`，对 `**/*.test.*` / `**/*.spec.*` / `scripts/**` 关闭）。`css-declaration-order` 当前 baseline 为 0，新增乱序会阻断。原则：**多数超长解析器/数值求解器是真实领域内聚，禁止为凑行数硬拆**；只对存在"可干净抽离附带膨胀"的文件做定向重构。
+单文件/函数长度、圈复杂度、参数数、嵌套深度由 `scripts/tools/google_style_audit.mjs` 的 count-based 规则把关，走 `google_style_baseline.json` exact-count ratchet（存量 grandfather；违规增加会失败，减少后也必须收紧 baseline，否则 stale baseline 同样失败；`file-name-snake-case` 已 retired，只报告不阻断）。阈值与豁免以 checker 为准。原则：**多数超长解析器/数值求解器是真实领域内聚，禁止为凑行数硬拆**；只对存在"可干净抽离附带膨胀"的文件做定向重构。
 
 以下文件/目录**有意豁免**所有 JS/TS 行长与复杂度门禁，不计入上述预算：
 

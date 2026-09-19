@@ -1,7 +1,7 @@
 # AI 助手与审阅
 
 > 最后更新：2026-08-30 | 覆盖源码：`src/features/ai-assistant/`
-> 交叉引用：[architecture.md](architecture.md)（ai-assistant <-> file-io 例外说明）
+> 交叉引用：[architecture.md](architecture.md)
 
 ## 1. 环境变量与两种运行模式
 
@@ -52,31 +52,7 @@ VITE_AI_BACKEND_URL=/api/ai/urdf-studio
 
 > 注意：中文文件名当前拼写为 `stantard`，属仓库现状，不要擅自改名。
 
-## 3. Skill-first 路由策略
-
-默认原则：
-- 若需求本质是"工作流指导、最佳实践、排障框架、测试套路、设计约束"，优先使用 skill，而不是在 prompt 里堆 MCP/tool 名称
-- skill 压缩"怎么做"的上下文；只有确实需要执行外部能力时，才调用对应 MCP/tool
-- skill 不能替代真实执行能力（浏览器点击、远程 API、Figma 读取等）
-
-优先替代映射：
-
-| 任务类型 | 优先 skill | 仅在必要时使用 MCP |
-|----------|-----------|-------------------|
-| 浏览器验证 / 截图 | `webapp-testing`、`playwright`、`browser-automation` | 真实 DOM 快照、网络面板、DevTools 级检查 |
-| 3D / R3F / Three.js | `threejs-skills` | — |
-| URDF Studio UI 改造 | `urdf-studio-style`、`frontend-design` | — |
-| 调试 / 排障 | `systematic-debugging`、`debugger` | — |
-| 测试 / QA | `testing-qa` | — |
-| 库文档 | `context7-auto-research` | Context7 / Web 搜索 |
-| 代码审阅 | `requesting-code-review`、`find-bugs` | — |
-
-使用约束：
-- 同一任务优先选择 1 个主 skill；不足时再补 1-2 个辅助
-- 不要同时声明多个重叠 skill
-- 若仓库已有现成脚本/测试/build 命令，优先本地命令，不改走 MCP
-
-## 4. 与 AI 对话时的有效上下文
+## 3. 与 AI 对话时的有效上下文
 
 优先给出：
 - 具体的 `Link` / `Joint` 名称
@@ -91,7 +67,7 @@ VITE_AI_BACKEND_URL=/api/ai/urdf-studio
 “把刚才的改动再调大一点”之类跟进指令不再是伪多轮。选中实体、审阅报告和 focused issue
 通过结构化 task context 注入 system prompt；实际工具读到的 live draft 始终是最终权威数据。
 
-## 5. DeepSeek Harness（DSH）接入边界
+## 4. DeepSeek Harness（DSH）接入边界
 
 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 可以作为独立 agent runtime，但不是可直接打包到
 Vite 浏览器 bundle 的对话库：
@@ -236,7 +212,7 @@ sidecar（不一定是云后端），再通过带鉴权的 SSE / WebSocket 适�
 canonical RobotData 字段与拓扑校验、diff card、CAS/history 和用户 apply 边界。新修改直接应用 canonical RobotData；源码 diff 仅为可选预览，未完成的 mesh 或暂不能无损表达的关节组合不会阻止编辑。导出兼容性仅在实际导出时提示，旧会话卡片仍兼容原源码应用路径。DSH 当前是 developer preview，若引入
 sidecar 需锁定精确版本并跟踪破坏性变更。
 
-## 6. 宿主 Agent 共用执行基础（2026-09-16）
+## 5. 宿主 Agent 共用执行基础（2026-09-16）
 
 公开入口 `src/features/ai-assistant/runtime.ts` 提供领域无关的 `runToolCallingLoop`、泛型计划控制器、
 上下文文本计量/裁剪和本地 Session repository。机器人 `agentEngine.ts` 已使用同一循环；宿主可以注入

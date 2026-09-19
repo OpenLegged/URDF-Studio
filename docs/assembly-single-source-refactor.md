@@ -1,7 +1,9 @@
-# Assembly 单一主体端到端重构计划
+# Assembly 单一主体端到端重构记录
 
 > 状态：实施与验证完成 | 最后更新：2026-07-10
 > 交叉引用：[architecture.md](architecture.md)、[file-io.md](file-io.md)、[viewer.md](viewer.md)、[testing.md](testing.md)
+
+> 本文是已完成重构的历史记录，仅供查阅设计背景，不作为当前待办；现行约束以 CLAUDE.md 和上述专题文档为准。
 
 ## 1. 目标
 

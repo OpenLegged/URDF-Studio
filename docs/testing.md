@@ -12,7 +12,7 @@ URDF Studio 采用大厂常见的**测试金字塔**分层：底层多而快、�
       ╱────────────────────╲
     ╱   L2 浏览器 E2E 测试   ╲    中等数量、慢（真启浏览器，按功能点过用户路径）
   ╱──────────────────────────╲
-╱      L1 单元测试（599）       ╲  最多、最快（纯 Node，毫秒级，逻辑/边界）
+╱      L1 单元测试             ╲  最多、最快（纯 Node，毫秒级，逻辑/边界）
 ────────────────────────────────
 ```
 
@@ -21,7 +21,7 @@ URDF Studio 采用大厂常见的**测试金字塔**分层：底层多而快、�
 ## L1 · 单元测试（最常用）
 
 - **是什么**：纯 Node（`node:test` + `node:assert/strict`）测试，不启浏览器、毫秒级。覆盖解析器、store、hooks、工具函数的逻辑与边界。
-- **放在哪**：紧挨源码，`src/**/*.test.*` / `src/**/*.spec.*`（runner 当前管理 `src` 邻近测试 593 个，全量 Node 测试 599 个）。新写的工具/纯逻辑就在它旁边建 `xxx.test.ts`。
+- **放在哪**：紧挨源码，`src/**/*.test.*` / `src/**/*.spec.*`。新写的工具/纯逻辑就在它旁边建 `xxx.test.ts`；suite 与实时数量用 `npm run test:unit:list` 查看。
 - **怎么跑**：
 
 | 目的                          | 命令                                                   |
@@ -47,7 +47,7 @@ Assembly/workspace 改动至少覆盖以下不变量：
 ## L2 · 浏览器端到端（E2E）测试
 
 - **是什么**：用 Puppeteer 真启一个 headless 浏览器，按**功能**走一遍用户路径（导入模型 → 操作 → 断言）。这是"碰撞编辑、测量、拼接、导入导出、AI、主题、显示开关…"这类用户可见功能的测试层。
-- **放在哪**：`scripts/test/browser/test_*.mjs`，每个文件对应一个功能；当前有 41 个浏览器测试脚本（含 URDF / MJCF / SDF / USD / Xacro、Editor deep、source apply、AI、主题、测量、碰撞、组装导出等）。共用地基：
+- **放在哪**：`scripts/test/browser/test_*.mjs`，每个文件对应一个功能；入口以 `package.json` 和 runner 列表为准。共用地基：
   - `scripts/test/helpers/browser-helpers.mjs` —— 启服务器/浏览器、文件上传、加载触发、稳定化。
   - `scripts/test/helpers/assertions.mjs` —— `createTestSuite` / `assert*` / `printSummary`。
   - `scripts/test/browser/helpers/<格式>-helpers.mjs` —— 各格式（urdf/mjcf/sdf/usd/xacro）的 `importModel`，封装"上传 + 选中 + 加载"。
@@ -78,6 +78,18 @@ Assembly/workspace 改动至少覆盖以下不变量：
 - **怎么跑**：`npm run test:fixtures`（聚合）或单项 `test:fixtures:*`。需要 `test/` 下的大型语料。
 - **语料从哪来**：`npm run test:setup`（克隆全部）或单项 `test:setup:*`。脚本在 `scripts/test/setup/`，幂等（已存在则跳过）。
 
+涉及解析、导入导出、资源解析或 viewer hydration 时，按格式选择基准语料：
+
+| 格式 / 场景 | 基准目录 |
+| --- | --- |
+| MJCF | `test/mujoco_menagerie-main/` |
+| MJCF tendon | `test/myosuite-main/` |
+| SDF | `test/gazebo_models/` |
+| USD | `test/unitree_model/` |
+| USDA | `test/unitree_ros_usda/` |
+| URDF | `test/unitree_ros/` |
+| 工作流 E2E mini fixtures | `test/workflow-fixtures/`（已提交，无需 `test:setup`） |
+
 ---
 
 ## "一口气全跑完"：统一入口 run-all
@@ -97,7 +109,7 @@ node scripts/test/runner/run-all.mjs --list       # 只列出将要跑的阶段
 
 > 浏览器层整体较慢（每个用例都要导入模型、构建 3D 场景）。日常开发用 `npm test`（L1）即可；提交大改动或发版前再 `run-all`。
 
-现成的快速/完整流水线（不含浏览器层）：`npm run verify:fast`（格式+lint+`typecheck:quality`+L1+构建）、`npm run verify:full`（再加 L3 fixtures）。
+`npm run verify:fast` 包含格式、lint、`typecheck:quality`、快速单测与构建；`npm run verify:full` 再加 fixtures，其中部分 fixture 验证会启动浏览器。两者都不自动包含全部单测、全部 browser suite、全仓 `typecheck` 或发布包构建；按变更风险单独追加。
 
 ---
 
