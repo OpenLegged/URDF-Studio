@@ -260,9 +260,13 @@ function generateUrdfMaterialXml(
   return xml;
 }
 
-const generateLimitTag = (joint: UrdfJoint, formatScalar: (n: number) => string): string | null => {
+const generateLimitTag = (
+  joint: UrdfJoint,
+  formatScalar: (n: number) => string,
+  preserveSourceFields = false,
+): string | null => {
   const jointType = String(joint.type).toLowerCase();
-  if (!joint.limit || joint.mimic) {
+  if (!joint.limit || (joint.mimic && !preserveSourceFields)) {
     return null;
   }
   const finiteAttribute = (name: string, value: number | undefined): string[] =>
@@ -714,7 +718,9 @@ export const generateURDF = (
     xml += `    <parent link="${parent.name}" />\n`;
     xml += `    <child link="${child.name}" />\n`;
     xml += generateOriginTag(joint.origin, '    ', vecStr, rotStr, formatQuaternionScalar);
-    if (AXIS_EXPORT_TYPES.has(jointType) && joint.axis) {
+    // Editable sources retain parsed fields even when ordinary exports omit
+    // them, so an unrelated origin edit does not invalidate the entire draft.
+    if (joint.axis && (AXIS_EXPORT_TYPES.has(jointType) || opts.preserveNumericPrecision)) {
       xml += `    <axis xyz="${vecStr(joint.axis)}" />\n`;
     }
 
@@ -723,7 +729,7 @@ export const generateURDF = (
       xml += `${calibrationTag}\n`;
     }
 
-    const limitTag = generateLimitTag(joint, formatScalar);
+    const limitTag = generateLimitTag(joint, formatScalar, opts.preserveNumericPrecision);
     if (limitTag) {
       xml += `${limitTag}\n`;
     }

@@ -178,9 +178,24 @@ export interface RobotClosedLoopDistanceConstraint extends RobotClosedLoopConstr
   restDistance: number;
 }
 
+/**
+ * A loop-closing joint, including a fixed weld, between linkA and linkB.
+ * Anchors are local to their respective links. The origin rotation defines
+ * linkB's zero-motion orientation relative to linkA; the axis is expressed in
+ * that joint frame. Origin translation does not replace the explicit anchors.
+ */
+export interface RobotClosedLoopJointConstraint extends RobotClosedLoopConstraintBase {
+  type: 'joint';
+  jointType: JointType;
+  axis?: Vector3;
+  limit?: UrdfJoint['limit'];
+  origin?: UrdfOrigin;
+}
+
 export type RobotClosedLoopConstraint =
   | RobotClosedLoopConnectConstraint
-  | RobotClosedLoopDistanceConstraint;
+  | RobotClosedLoopDistanceConstraint
+  | RobotClosedLoopJointConstraint;
 
 export interface RobotMaterialState {
   color?: string;

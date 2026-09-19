@@ -122,6 +122,11 @@ test('isAssemblyComponentIndividuallyTransformable only allows isolated componen
 
   assert.equal(isAssemblyComponentIndividuallyTransformable(assembly, 'comp_left'), false);
   assert.equal(isAssemblyComponentIndividuallyTransformable(assembly, 'comp_right'), false);
+
+  assembly.bridges.bridge_main.childComponentId = 'comp_left';
+  assert.equal(isAssemblyComponentIndividuallyTransformable(assembly, 'comp_left'), true,
+    'an internal closed loop does not tie the component to another component');
+  assert.equal(isAssemblyComponentIndividuallyTransformable(assembly, 'comp_right'), true);
 });
 
 test('buildExportableAssemblyRobotData wraps isolated components and the whole assembly with fixed joints', () => {

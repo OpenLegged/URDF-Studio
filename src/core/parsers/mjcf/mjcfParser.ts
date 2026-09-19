@@ -703,7 +703,9 @@ function mjcfToRobotState(
 export function convertParsedMJCFModelToRobotState(parsedModel: ParsedMJCFModel): RobotState {
   const parserModelWorldBody = normalizeMultiJointBodies(parsedModel.worldBody);
   const worldBody = toParserBody(parserModelWorldBody, parsedModel.compilerSettings);
-  const rootBodies = shouldPreserveSyntheticWorldRoot(worldBody)
+  const weldReferencesWorld = parsedModel.weldConstraints.some(constraint =>
+    constraint.body1 === 'world' || constraint.body2 === 'world');
+  const rootBodies = shouldPreserveSyntheticWorldRoot(worldBody) || weldReferencesWorld
     ? [worldBody]
     : worldBody.children;
 
@@ -720,9 +722,12 @@ export function convertParsedMJCFModelToRobotState(parsedModel: ParsedMJCFModel)
   applyJointEqualityMimics(robot, parsedModel.jointEqualityConstraints);
   robot.closedLoopConstraints = buildClosedLoopConstraints(
     robot,
-    parsedModel.connectConstraints,
-    parsedModel.tendonMap,
-    parserModelWorldBody,
+    {
+      connectConstraints: parsedModel.connectConstraints,
+      weldConstraints: parsedModel.weldConstraints,
+      tendonMap: parsedModel.tendonMap,
+      worldBody: parserModelWorldBody,
+    },
   );
   applyInitialPoseKeyframe(robot, worldBody, parsedModel.keyframes);
   applySolvedClosedLoopInitialPose(robot, parsedModel.actuatorMap);

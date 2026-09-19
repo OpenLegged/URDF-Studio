@@ -269,6 +269,7 @@ test('resolves mesh-backed primitive geoms into fromto capsules in body space', 
     textureMap: new Map(),
     actuatorMap: new Map(),
     connectConstraints: [],
+    weldConstraints: [],
     worldBody: {
       name: 'world',
       pos: [0, 0, 0],

@@ -1275,7 +1275,15 @@ export function validateBridges(
       continue;
     }
     if (parentComponentId === childComponentId) {
-      addIssue(issues, `${bridgePath}.childComponentId`, 'must differ from parentComponentId');
+      // Same-component bridges are self-loop closed-loop constraints; the two
+      // link endpoints must differ, otherwise the constraint is degenerate.
+      if (bridgeValue.parentLinkId === bridgeValue.childLinkId) {
+        addIssue(
+          issues,
+          `${bridgePath}.childLinkId`,
+          'must differ from parentLinkId when parent and child components are the same',
+        );
+      }
       continue;
     }
     const existingIncomingBridge = incomingBridgeByChildComponentId.get(childComponentId);

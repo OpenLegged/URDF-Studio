@@ -91,7 +91,10 @@ const URDF_FACT_KEYS = [
 const CLOSED_LOOP_BASE_KEYS = [
   'id', 'type', 'linkAId', 'linkBId', 'anchorWorld', 'anchorLocalA', 'anchorLocalB', 'source',
 ] as const;
+const CLOSED_LOOP_JOINT_KEYS = ['jointType', 'axis', 'limit', 'origin'] as const;
+const CLOSED_LOOP_TYPES = new Set<unknown>(['connect', 'distance', 'joint']);
 const CLOSED_LOOP_SOURCE_KEYS = new Set(['format', 'body1Name', 'body2Name']);
+const CLOSED_LOOP_JOINT_TYPES = new Set(['fixed', 'revolute', 'continuous', 'prismatic', 'ball']);
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -190,6 +193,60 @@ function vector3(value: unknown, path: string, issues: Issues): void {
   for (const field of ['x', 'y', 'z'] as const) finite(value[field], `${path}.${field}`, issues);
 }
 
+function validateClosedLoopJointFields(
+  constraint: Record<string, unknown>,
+  constraintPath: string,
+  issues: Issues,
+): void {
+  const jointType = String(constraint.jointType || '');
+  if (!CLOSED_LOOP_JOINT_TYPES.has(jointType)) {
+    issue(
+      issues,
+      `${constraintPath}.jointType`,
+      'must be fixed, revolute, continuous, prismatic, or ball',
+    );
+  }
+  if (constraint.axis !== undefined) {
+    vector3(constraint.axis, `${constraintPath}.axis`, issues);
+  }
+  if (constraint.limit !== undefined) {
+    const limit = constraint.limit;
+    if (!isRecord(limit)) {
+      issue(issues, `${constraintPath}.limit`, 'must be a joint limit object');
+    } else {
+      for (const field of ['lower', 'upper', 'effort', 'velocity'] as const) {
+        if (limit[field] !== undefined) {
+          finite(limit[field], `${constraintPath}.limit.${field}`, issues);
+        }
+      }
+    }
+  }
+  if (constraint.origin !== undefined) {
+    const constraintOrigin = constraint.origin;
+    if (!isRecord(constraintOrigin)) {
+      issue(issues, `${constraintPath}.origin`, 'must be an origin object');
+    } else {
+      vector3(constraintOrigin.xyz, `${constraintPath}.origin.xyz`, issues);
+      if (!isRecord(constraintOrigin.rpy)) {
+        issue(issues, `${constraintPath}.origin.rpy`, 'must be an object');
+      } else {
+        for (const field of ['r', 'p', 'y'] as const) {
+          finite(constraintOrigin.rpy[field], `${constraintPath}.origin.rpy.${field}`, issues);
+        }
+      }
+      if (constraintOrigin.quatXyzw !== undefined) {
+        if (!isRecord(constraintOrigin.quatXyzw)) {
+          issue(issues, `${constraintPath}.origin.quatXyzw`, 'must be a quaternion object');
+        } else {
+          for (const field of ['x', 'y', 'z', 'w'] as const) {
+            finite(constraintOrigin.quatXyzw[field], `${constraintPath}.origin.quatXyzw.${field}`, issues);
+          }
+        }
+      }
+    }
+  }
+}
+
 export function validateCanonicalClosedLoopConstraints({
   value,
   links,
@@ -230,15 +287,17 @@ export function validateCanonicalClosedLoopConstraints({
         );
       }
     }
-    if (constraint.type !== 'connect' && constraint.type !== 'distance') {
-      issue(issues, `${constraintPath}.type`, 'must be connect or distance');
+    if (!CLOSED_LOOP_TYPES.has(constraint.type)) {
+      issue(issues, `${constraintPath}.type`, 'must be connect, distance, or joint');
     }
     allowed(
       constraint,
       new Set(
         constraint.type === 'distance'
           ? [...CLOSED_LOOP_BASE_KEYS, 'restDistance']
-          : CLOSED_LOOP_BASE_KEYS,
+          : constraint.type === 'joint'
+            ? [...CLOSED_LOOP_BASE_KEYS, ...CLOSED_LOOP_JOINT_KEYS]
+            : CLOSED_LOOP_BASE_KEYS,
       ),
       constraintPath,
       issues,
@@ -248,6 +307,9 @@ export function validateCanonicalClosedLoopConstraints({
     }
     if (constraint.type === 'distance') {
       finite(constraint.restDistance, `${constraintPath}.restDistance`, issues);
+    }
+    if (constraint.type === 'joint') {
+      validateClosedLoopJointFields(constraint, constraintPath, issues);
     }
     if (constraint.source !== undefined) {
       const sourcePath = `${constraintPath}.source`;

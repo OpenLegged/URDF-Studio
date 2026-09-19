@@ -27,6 +27,8 @@ import {
   type SdfIncludeAvailableFile,
   type SdfIncludeResolutionContext,
 } from './sdfIncludeResolution';
+import { parseSdfClosedLoopMetadata, type SdfClosedLoopMetadata } from './sdf_closed_loop';
+import { rebaseSdfTreeJointFrames } from './sdf_joint_frames';
 
 type Pose = { xyz: Vector3; rpy: Euler };
 type ParsedPose = { pose: Pose; relativeTo: string | null; specified: boolean };
@@ -107,6 +109,7 @@ interface ParsedSdfLinkRecord {
 interface ParsedSdfJointRecord {
   joint: UrdfJoint;
   worldMatrix: THREE.Matrix4;
+  closedLoopMetadata?: SdfClosedLoopMetadata;
 }
 
 interface ParsedSdfGraph {
@@ -798,13 +801,14 @@ function buildClosedLoopConstraintFromSdfJoint(
   jointId: string,
   joint: UrdfJoint,
   graph: ParsedSdfGraph,
+  linkFrames: Map<string, THREE.Matrix4>,
 ): RobotClosedLoopConstraint | null {
-  if (joint.type !== JointType.BALL || !joint.parentLinkId || !joint.childLinkId) {
+  if (!joint.parentLinkId || !joint.childLinkId) {
     return null;
   }
 
-  const parentWorldMatrix = graph.linkRecords.get(joint.parentLinkId)?.worldMatrix;
-  const childWorldMatrix = graph.linkRecords.get(joint.childLinkId)?.worldMatrix;
+  const parentWorldMatrix = linkFrames.get(joint.parentLinkId);
+  const childWorldMatrix = linkFrames.get(joint.childLinkId);
   if (!parentWorldMatrix || !childWorldMatrix) {
     return null;
   }
@@ -813,18 +817,42 @@ function buildClosedLoopConstraintFromSdfJoint(
     graph.jointRecords.get(jointId)?.worldMatrix ??
     parentWorldMatrix.clone().multiply(poseToMatrix(joint.origin));
 
-  return {
+  const metadata = graph.jointRecords.get(jointId)?.closedLoopMetadata;
+  const common = {
     id: jointId,
-    type: 'connect',
     linkAId: joint.parentLinkId,
     linkBId: joint.childLinkId,
-    anchorWorld: extractTranslation(jointWorldMatrix),
-    anchorLocalA: extractTranslation(
+    anchorWorld: metadata
+      ? extractTranslation(parentWorldMatrix.clone().multiply(new THREE.Matrix4().makeTranslation(
+        metadata.anchorLocalA.x, metadata.anchorLocalA.y, metadata.anchorLocalA.z,
+      )))
+      : extractTranslation(jointWorldMatrix),
+    anchorLocalA: metadata?.anchorLocalA ?? extractTranslation(
       parentWorldMatrix.clone().invert().multiply(jointWorldMatrix.clone()),
     ),
     anchorLocalB: extractTranslation(
       childWorldMatrix.clone().invert().multiply(jointWorldMatrix.clone()),
     ),
+  };
+  if (joint.type === JointType.BALL && !metadata) return { ...common, type: 'connect' };
+  const origin = metadata
+    ? metadata.origin
+    : matrixToPose(parentWorldMatrix.clone().invert().multiply(childWorldMatrix));
+  const axis = metadata
+    ? joint.axis
+    : joint.axis && transformDirectionBetweenFrames(joint.axis, jointWorldMatrix, childWorldMatrix);
+  const limit = joint.limit ? { ...joint.limit } : undefined;
+  if (limit && metadata) {
+    if (limit.lower !== undefined) limit.lower += metadata.referencePosition;
+    if (limit.upper !== undefined) limit.upper += metadata.referencePosition;
+  }
+  return {
+    ...common,
+    type: 'joint',
+    jointType: metadata?.jointType ?? joint.type,
+    origin,
+    axis,
+    limit,
   };
 }
 
@@ -1070,7 +1098,10 @@ function selectTreeJointsAndClosedLoops(graph: ParsedSdfGraph): {
   const childLinkIds = new Set<string>();
   const disjointSet = new LinkDisjointSet(Object.keys(graph.links));
 
-  Object.entries(graph.joints).forEach(([jointId, joint]) => {
+  const orderedJoints = Object.entries(graph.joints).sort(([leftId], [rightId]) =>
+    Number(!!graph.jointRecords.get(leftId)?.closedLoopMetadata) -
+    Number(!!graph.jointRecords.get(rightId)?.closedLoopMetadata));
+  orderedJoints.forEach(([jointId, joint]) => {
     const parentLinkId = joint.parentLinkId;
     const childLinkId = joint.childLinkId;
 
@@ -1095,13 +1126,18 @@ function selectTreeJointsAndClosedLoops(graph: ParsedSdfGraph): {
     }
 
     skippedJointIds.push(jointId);
-    const closedLoopConstraint = buildClosedLoopConstraintFromSdfJoint(jointId, joint, graph);
-    if (closedLoopConstraint) {
-      closedLoopConstraints.push(closedLoopConstraint);
-    }
   });
 
   attachSkippedSdfRootComponents(graph, selectedJoints, skippedJointIds);
+  const linkFrames = rebaseSdfTreeJointFrames({ ...graph, joints: selectedJoints });
+  for (const jointId of skippedJointIds) {
+    const closedLoopConstraint = buildClosedLoopConstraintFromSdfJoint(
+      jointId, graph.joints[jointId], graph, linkFrames,
+    );
+    if (closedLoopConstraint) {
+      closedLoopConstraints.push(closedLoopConstraint);
+    }
+  }
 
   return {
     joints: selectedJoints,
@@ -1782,7 +1818,7 @@ function parseSdfModel(
       );
       const isUnlimitedRevolute =
         jointType === JointType.REVOLUTE &&
-        (!Number.isFinite(parsedLower) || !Number.isFinite(parsedUpper));
+        (!Number.isFinite(parsedLower) && !Number.isFinite(parsedUpper));
       const effectiveJointType = isUnlimitedRevolute ? JointType.CONTINUOUS : jointType;
 
       // Resolve the axis direction.
@@ -1864,41 +1900,10 @@ function parseSdfModel(
       };
       graph.joints[jointId] = joint;
 
-      // When the joint has a non-identity <pose>, the joint frame is offset from
-      // the child link frame.  In URDF the child link is placed at the joint
-      // frame, but in SDF the link visuals/collisions are authored relative to
-      // the link frame.  To compensate, bake the inverse joint-pose into the
-      // child link's geometry origins so they render at the correct SDF link
-      // position even though the link Object3D sits at the joint frame.
-      if (jointParsedPose.specified && !isIdentityPose(jointParsedPose.pose)) {
-        const inverseJointPose = poseToMatrix(jointParsedPose.pose).invert();
-        const childLink = graph.links[childLinkId];
-        if (childLink) {
-          const applyOffset = (origin: Pose): Pose =>
-            matrixToPose(inverseJointPose.clone().multiply(poseToMatrix(origin)));
-          childLink.visual = { ...childLink.visual, origin: applyOffset(childLink.visual.origin) };
-          childLink.collision = {
-            ...childLink.collision,
-            origin: applyOffset(childLink.collision.origin),
-          };
-          if (childLink.visualBodies) {
-            childLink.visualBodies = childLink.visualBodies.map((v) => ({
-              ...v,
-              origin: applyOffset(v.origin),
-            }));
-          }
-          if (childLink.collisionBodies) {
-            childLink.collisionBodies = childLink.collisionBodies.map((c) => ({
-              ...c,
-              origin: applyOffset(c.origin),
-            }));
-          }
-        }
-      }
-
       graph.jointRecords.set(jointId, {
         joint,
         worldMatrix: jointWorldMatrix.clone(),
+        closedLoopMetadata: parseSdfClosedLoopMetadata(jointEl),
       });
     } catch (error) {
       const detail = error instanceof Error ? error.message : String(error);

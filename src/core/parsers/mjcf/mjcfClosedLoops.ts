@@ -15,10 +15,10 @@ import {
   createRobotDistanceClosedLoopConstraint,
   resolveLinkKey,
 } from '@/core/robot';
-import { RobotState } from '@/types';
+import { JointType, type RobotClosedLoopJointConstraint, type RobotState } from '@/types';
 
-import { isNonZeroPosition, subtractLocalOffset, toPositionObject } from './mjcfMath';
-import { type MJCFModelConnectConstraint, type ParsedMJCFModel } from './mjcfModel';
+import { isNonZeroPosition, subtractLocalOffset, toPositionObject, toRPYObjectFromQuat } from './mjcfMath';
+import { type MJCFModelConnectConstraint, type MJCFModelWeldConstraint, type ParsedMJCFModel } from './mjcfModel';
 
 const FIXED_TENDON_RANGE_EPSILON = 1e-5;
 
@@ -163,15 +163,58 @@ function buildTendonDistanceClosedLoopConstraints(
   return closedLoopConstraints.length > 0 ? closedLoopConstraints : undefined;
 }
 
+function buildWeldClosedLoopConstraints(
+  robot: Pick<RobotState, 'links' | 'joints' | 'rootLinkId'>,
+  weldConstraints: MJCFModelWeldConstraint[],
+  worldBody: ParsedMJCFModel['worldBody'],
+): RobotClosedLoopJointConstraint[] {
+  const matrices = computeLinkWorldMatrices(robot);
+  const bindings = collectBodyLinkFrameOffsets(worldBody);
+  return weldConstraints.map(constraint => {
+    const linkAId = resolveLinkKey(robot.links, constraint.body1);
+    const linkBId = resolveLinkKey(robot.links, constraint.body2);
+    if (!linkAId || !linkBId) throw new Error(`MJCF weld "${constraint.name ?? ''}" references an unknown body.`);
+    const matrixA = matrices[linkAId];
+    const matrixB = matrices[linkBId];
+    const rawAnchorB = toPositionObject(constraint.anchor);
+    const anchorLocalB = subtractLocalOffset(rawAnchorB, bindings.get(constraint.body2)?.linkFrameOffsetLocal ?? null) ?? rawAnchorB;
+    const anchorWorldB = new THREE.Vector3().copy(anchorLocalB).applyMatrix4(matrixB);
+    const relpose = constraint.relpose;
+    const hasAuthoredPose = relpose && relpose.slice(3).some(value => value !== 0);
+    const inferredAnchorA = anchorWorldB.clone().applyMatrix4(matrixA.clone().invert());
+    const rawAnchorA = hasAuthoredPose
+      ? { x: relpose[0], y: relpose[1], z: relpose[2] }
+      : null;
+    const anchorLocalA = rawAnchorA
+      ? subtractLocalOffset(rawAnchorA, bindings.get(constraint.body1)?.linkFrameOffsetLocal ?? null) ?? rawAnchorA
+      : { x: inferredAnchorA.x, y: inferredAnchorA.y, z: inferredAnchorA.z };
+    const quaternion = hasAuthoredPose
+      ? new THREE.Quaternion(relpose[4], relpose[5], relpose[6], relpose[3]).normalize()
+      : new THREE.Quaternion().setFromRotationMatrix(matrixA).invert()
+        .multiply(new THREE.Quaternion().setFromRotationMatrix(matrixB)).normalize();
+    const anchorWorld = new THREE.Vector3().copy(anchorLocalA).applyMatrix4(matrixA);
+    return {
+      id: constraint.name || `mjcf-weld-${constraint.body1}-${constraint.body2}`,
+      type: 'joint', jointType: JointType.FIXED, linkAId, linkBId,
+      anchorLocalA, anchorLocalB,
+      anchorWorld: { x: anchorWorld.x, y: anchorWorld.y, z: anchorWorld.z },
+      origin: { xyz: anchorLocalA, rpy: toRPYObjectFromQuat(quaternion) ?? { r: 0, p: 0, y: 0 },
+        quatXyzw: { x: quaternion.x, y: quaternion.y, z: quaternion.z, w: quaternion.w } },
+      source: { format: 'mjcf', body1Name: constraint.body1, body2Name: constraint.body2 },
+    };
+  });
+}
+
 export function buildClosedLoopConstraints(
   robot: Pick<RobotState, 'links' | 'joints' | 'rootLinkId'>,
-  connectConstraints: MJCFModelConnectConstraint[],
-  tendonMap: ParsedMJCFModel['tendonMap'],
-  worldBody: ParsedMJCFModel['worldBody'],
+  { connectConstraints, weldConstraints, tendonMap, worldBody }: {
+    connectConstraints: MJCFModelConnectConstraint[];
+    weldConstraints: MJCFModelWeldConstraint[];
+    tendonMap: ParsedMJCFModel['tendonMap'];
+    worldBody: ParsedMJCFModel['worldBody'];
+  },
 ): RobotState['closedLoopConstraints'] {
-  if (connectConstraints.length === 0 && tendonMap.size === 0) {
-    return undefined;
-  }
+  if (connectConstraints.length === 0 && weldConstraints.length === 0 && tendonMap.size === 0) return undefined;
 
   const linkWorldMatrices = computeLinkWorldMatrices(robot);
   const bodyBindings = collectBodyLinkFrameOffsets(worldBody);
@@ -233,7 +276,8 @@ export function buildClosedLoopConstraints(
 
   const tendonClosedLoopConstraints =
     buildTendonDistanceClosedLoopConstraints(robot, tendonMap, worldBody) ?? [];
-  const closedLoopConstraints = [...connectClosedLoopConstraints, ...tendonClosedLoopConstraints];
+  const closedLoopConstraints = [...connectClosedLoopConstraints, ...tendonClosedLoopConstraints,
+    ...buildWeldClosedLoopConstraints(robot, weldConstraints, worldBody)];
 
   return closedLoopConstraints.length > 0 ? closedLoopConstraints : undefined;
 }

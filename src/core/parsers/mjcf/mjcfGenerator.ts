@@ -909,7 +909,26 @@ export const generateMujocoXML = (robot: RobotState, options: MujocoExportOption
       `[MJCF export] Closed-loop constraint "${constraint.id}" anchor world`,
     );
 
-    if (constraint.type === 'connect') {
+    if (constraint.type === 'joint' && constraint.jointType === JointType.FIXED) {
+      const authoredQuaternion = constraint.origin?.quatXyzw;
+      const rpy = constraint.origin?.rpy;
+      const quaternion = authoredQuaternion
+        ? new THREE.Quaternion(authoredQuaternion.x, authoredQuaternion.y, authoredQuaternion.z, authoredQuaternion.w).normalize()
+        : new THREE.Quaternion().setFromEuler(new THREE.Euler(rpy?.r ?? 0, rpy?.p ?? 0, rpy?.y ?? 0, 'ZYX'));
+      // Weld anchor is body2-local; relpose stores the body1-local anchor
+      // followed by the relative body2 orientation (MuJoCo quaternion wxyz).
+      const relativePose = `${vecStr(constraint.anchorLocalA)} ${[quaternion.w, quaternion.x, quaternion.y, quaternion.z].map(formatScalar).join(' ')}`;
+      equalityLines.push(
+        `    <weld name="${escapeXmlAttribute(constraint.id)}" body1="${escapeXmlAttribute(linkA.name)}" body2="${escapeXmlAttribute(linkB.name)}" anchor="${vecStr(constraint.anchorLocalB)}" relpose="${relativePose}" />`,
+      );
+      return;
+    }
+    if (constraint.type === 'joint' && constraint.jointType !== JointType.BALL) {
+      throw new Error(
+        `[MJCF export] Closed-loop joint "${constraint.id}" uses unsupported ${constraint.jointType} semantics. Export SDF or USD to preserve its axis, limits, and degrees of freedom.`,
+      );
+    }
+    if (constraint.type === 'connect' || constraint.type === 'joint') {
       equalityLines.push(
         `    <connect name="${escapeXmlAttribute(constraint.id)}" body1="${escapeXmlAttribute(linkA.name)}" body2="${escapeXmlAttribute(linkB.name)}" anchor="${vecStr(constraint.anchorLocalA)}" />`,
       );

@@ -89,3 +89,38 @@ test('source generation keeps an opacity override exact without changing authore
     material.opacity,
   ]);
 });
+
+test('editable source retains fixed joint axes without changing ordinary exports', () => {
+  const robot = parseRobot(`<robot name="fixed_axis">
+    <link name="base" /><link name="tip" />
+    <joint name="mount" type="fixed">
+      <parent link="base" /><child link="tip" />
+      <axis xyz="1 0 0" />
+    </joint>
+  </robot>`);
+  assert.deepEqual(robot.joints.mount.axis, { x: 1, y: 0, z: 0 });
+
+  const editable = parseRobot(generateURDF(robot, { preserveNumericPrecision: true }));
+  assert.deepEqual(editable.joints.mount.axis, robot.joints.mount.axis);
+  assert.doesNotMatch(generateURDF(robot), /<axis\b/);
+});
+
+test('editable source retains mimic joint limits without changing ordinary exports', () => {
+  const robot = parseRobot(`<robot name="mimic_limits">
+    <link name="base" /><link name="driver_tip" /><link name="follower_tip" />
+    <joint name="driver" type="revolute">
+      <parent link="base" /><child link="driver_tip" />
+    </joint>
+    <joint name="follower" type="revolute">
+      <parent link="base" /><child link="follower_tip" />
+      <limit lower="-0.12345678901234568" upper="0.5235987755982988" effort="1" velocity="0.5" />
+      <mimic joint="driver" multiplier="0.5" offset="0.12345678901234568" />
+    </joint>
+  </robot>`);
+  assert.ok(robot.joints.follower.limit);
+
+  const editable = parseRobot(generateURDF(robot, { preserveNumericPrecision: true }));
+  assert.deepEqual(editable.joints.follower.limit, robot.joints.follower.limit);
+  assert.deepEqual(editable.joints.follower.mimic, robot.joints.follower.mimic);
+  assert.doesNotMatch(generateURDF(robot), /<limit\b/);
+});

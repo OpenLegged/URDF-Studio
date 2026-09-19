@@ -37,7 +37,8 @@ export function isAssemblyComponentIndividuallyTransformable(
   }
 
   return !Object.values(assemblyState.bridges).some(
-    (bridge) => bridge.parentComponentId === componentId || bridge.childComponentId === componentId,
+    (bridge) => bridge.parentComponentId !== bridge.childComponentId &&
+      (bridge.parentComponentId === componentId || bridge.childComponentId === componentId),
   );
 }
 

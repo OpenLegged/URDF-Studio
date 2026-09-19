@@ -133,6 +133,14 @@ export interface MJCFModelConnectConstraint {
   anchor: [number, number, number];
 }
 
+export interface MJCFModelWeldConstraint {
+  name?: string;
+  body1: string;
+  body2: string;
+  anchor: [number, number, number];
+  relpose?: [number, number, number, number, number, number, number];
+}
+
 export interface MJCFModelJointEqualityConstraint {
   name?: string;
   joint1: string;
@@ -170,6 +178,7 @@ export interface ParsedMJCFModel {
   tendonActuators: MJCFModelActuator[];
   tendonMap: Map<string, MJCFModelTendon>;
   connectConstraints: MJCFModelConnectConstraint[];
+  weldConstraints: MJCFModelWeldConstraint[];
   jointEqualityConstraints: MJCFModelJointEqualityConstraint[];
   keyframes: MJCFModelKeyframe[];
   worldBody: MJCFModelBody;
@@ -738,6 +747,28 @@ function parseJointEqualityConstraints(mujocoElement: Element): MJCFModelJointEq
     });
   });
 
+  return constraints;
+}
+
+function parseWeldConstraints(mujocoElement: Element): MJCFModelWeldConstraint[] {
+  const constraints: MJCFModelWeldConstraint[] = [];
+  directChildren(mujocoElement, 'equality').forEach(equalityElement => {
+    directChildren(equalityElement, 'weld').forEach(element => {
+      const body1 = element.getAttribute('body1')?.trim();
+      if (!body1 || element.getAttribute('active') === 'false') return;
+      const anchor = parsePosAsTuple(element.getAttribute('anchor'));
+      const relpose = parseNumbers(element.getAttribute('relpose'));
+      if (relpose.length !== 0 && (relpose.length !== 7 || !relpose.every(Number.isFinite))) {
+        throw new Error(`MJCF weld "${element.getAttribute('name') ?? body1}" has an invalid relpose.`);
+      }
+      constraints.push({
+        name: element.getAttribute('name') || undefined,
+        body1, body2: element.getAttribute('body2')?.trim() || 'world',
+        anchor: [anchor[0] ?? 0, anchor[1] ?? 0, anchor[2] ?? 0],
+        ...(relpose.length === 7 ? { relpose: [relpose[0], relpose[1], relpose[2], relpose[3], relpose[4], relpose[5], relpose[6]] as MJCFModelWeldConstraint['relpose'] } : {}),
+      });
+    });
+  });
   return constraints;
 }
 
@@ -1930,6 +1961,7 @@ export function parseMJCFModel(xmlContent: string): ParsedMJCFModel | null {
     const materialMap = parseMaterialAssets(doc, defaults);
     const textureMap = parseTextureAssets(doc, compilerSettings, defaults);
     const connectConstraints = parseConnectConstraints(mujocoElement);
+    const weldConstraints = parseWeldConstraints(mujocoElement);
     const jointEqualityConstraints = parseJointEqualityConstraints(mujocoElement);
     const keyframes = parseKeyframes(mujocoElement);
     const worldbodyElements = directChildren(mujocoElement, 'worldbody');
@@ -2029,6 +2061,7 @@ export function parseMJCFModel(xmlContent: string): ParsedMJCFModel | null {
         tendonActuators,
         tendonMap,
         connectConstraints,
+        weldConstraints,
         jointEqualityConstraints,
         keyframes,
         worldBody,

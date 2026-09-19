@@ -19,6 +19,11 @@ import {
 } from '@/types';
 import { normalizeMeshPathForExport, normalizeTexturePathForExport } from '../meshPathUtils';
 import { createSdfNumericFormat, type SdfNumericFormat } from './sdfNumericFormat';
+import {
+  generateSdfClosedLoopMetadata,
+  getSdfClosedLoopJointFrame,
+  SDF_CLOSED_LOOP_NAMESPACE,
+} from './sdf_closed_loop';
 
 export interface GenerateSDFOptions {
   packageName?: string;
@@ -656,7 +661,7 @@ function generateJointXml(
 }
 
 function generateClosedLoopJointXmlWithName({
-  constraint, format, jointName, parentLinkName, childLinkName, supportsRelativeTo,
+  constraint, format, jointName, parentLinkName, childLinkName, supportsRelativeTo, linkMatrices,
 }: {
   constraint: RobotClosedLoopConstraint;
   format: SdfNumericFormat;
@@ -664,24 +669,62 @@ function generateClosedLoopJointXmlWithName({
   parentLinkName: string;
   childLinkName: string;
   supportsRelativeTo: boolean;
+  linkMatrices: Map<string, THREE.Matrix4>;
 }): string | null {
-  if (constraint.type !== 'connect') {
+  if (constraint.type === 'distance') {
     return null;
   }
 
+  // SDF joints may reference any parent/child pair, so movable loop closers
+  // keep their joint semantics; legacy connects stay ball joints.
+  const jointType = constraint.type === 'joint' ? constraint.jointType : JointType.BALL;
   const childLink = escapeXml(childLinkName);
-  const anchorLocalB: Pose = {
-    xyz: { ...constraint.anchorLocalB },
-    rpy: { r: 0, p: 0, y: 0 },
-  };
+  const frame = constraint.type === 'joint'
+    ? getSdfClosedLoopJointFrame(
+      constraint,
+      linkMatrices.get(constraint.linkAId) ?? new THREE.Matrix4(),
+      linkMatrices.get(constraint.linkBId) ?? new THREE.Matrix4(),
+    )
+    : { pose: { xyz: constraint.anchorLocalB, rpy: { r: 0, p: 0, y: 0 } }, referencePosition: 0 };
 
-  return [
-    `    <joint name="${escapeXml(jointName)}" type="ball">`,
+  const jointXmlLines = [
+    `    <joint name="${escapeXml(jointName)}" type="${jointType}">`,
     `      <parent>${escapeXml(parentLinkName)}</parent>`,
     `      <child>${childLink}</child>`,
-    `      <pose${supportsRelativeTo ? ` relative_to="${childLink}"` : ''}>${format.pose(anchorLocalB)}</pose>`,
-    '    </joint>',
-  ].join('\n');
+    `      <pose${supportsRelativeTo ? ` relative_to="${childLink}"` : ''}>${format.pose(frame.pose)}</pose>`,
+  ];
+
+  if (constraint.type === 'joint' && AXIS_EXPORT_TYPES.has(jointType)) {
+    jointXmlLines.push('      <axis>');
+    jointXmlLines.push(
+      `        <xyz>${[
+        format.scalar(constraint.axis?.x ?? 1),
+        format.scalar(constraint.axis?.y ?? 0),
+        format.scalar(constraint.axis?.z ?? 0),
+      ].join(' ')}</xyz>`,
+    );
+    const limitLines: string[] = [];
+    for (const key of ['lower', 'upper', 'effort', 'velocity'] as const) {
+      const value = constraint.limit?.[key];
+      const isPosition = key === 'lower' || key === 'upper';
+      if (!Number.isFinite(value) || (isPosition && jointType === JointType.CONTINUOUS)) continue;
+      const exportedValue = Number(value) - (isPosition ? frame.referencePosition : 0);
+      limitLines.push(`          <${key}>${format.scalar(exportedValue)}</${key}>`);
+    }
+    if (limitLines.length > 0) {
+      jointXmlLines.push('        <limit>');
+      jointXmlLines.push(...limitLines);
+      jointXmlLines.push('        </limit>');
+    }
+    jointXmlLines.push('      </axis>');
+  }
+
+  if (constraint.type === 'joint') {
+    jointXmlLines.push(generateSdfClosedLoopMetadata(constraint, frame.referencePosition));
+  }
+
+  jointXmlLines.push('    </joint>');
+  return jointXmlLines.join('\n');
 }
 
 export function generateSDF(robot: RobotState, options: GenerateSDFOptions = {}): string {
@@ -713,7 +756,7 @@ export function generateSDF(robot: RobotState, options: GenerateSDFOptions = {})
 
   const lines = [
     '<?xml version="1.0"?>',
-    `<sdf version="${escapeXml(version)}">`,
+    `<sdf version="${escapeXml(version)}"${robot.closedLoopConstraints?.some((constraint) => constraint.type === 'joint') ? ` xmlns:urdf_studio="${SDF_CLOSED_LOOP_NAMESPACE}"` : ''}>`,
     `  <model name="${escapeXml(modelName)}">`,
   ];
 
@@ -805,6 +848,7 @@ export function generateSDF(robot: RobotState, options: GenerateSDFOptions = {})
       format,
       jointName: closedLoopName,
       supportsRelativeTo,
+      linkMatrices,
       parentLinkName: linkNameById.get(constraint.linkAId) ||
         robot.links[constraint.linkAId]?.name ||
         constraint.linkAId,

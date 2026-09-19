@@ -10,6 +10,7 @@ import type {
 
 import {
   computeLinkWorldMatrices,
+  createJointMotionMatrix,
   createOriginMatrix,
   getJointEffectiveQuaternion,
   getChildJointsByParentLink,
@@ -21,6 +22,10 @@ import {
 } from './kinematics';
 import { resolveMimicJointAngleTargets } from './mimic';
 import { isHardPassiveSpringJoint } from './passiveSpringJoints';
+import {
+  computeClosedLoopJointResidual,
+  projectClosedLoopJointEndpoint,
+} from './closedLoopJointConstraint';
 
 const TEMP_POSITION = new THREE.Vector3();
 const TEMP_ROTATION = new THREE.Quaternion();
@@ -233,6 +238,24 @@ function buildCompensatedOrigin(
   };
 }
 
+function buildProjectedJointOrigin(
+  joint: UrdfJoint,
+  parentMatrix: THREE.Matrix4 | undefined,
+  desiredWorldMatrix: THREE.Matrix4,
+): UrdfJoint['origin'] {
+  const originMatrix = (parentMatrix?.clone() ?? new THREE.Matrix4()).invert()
+    .multiply(desiredWorldMatrix)
+    .multiply(createJointMotionMatrix(joint).invert());
+  const position = new THREE.Vector3();
+  const quaternion = new THREE.Quaternion();
+  originMatrix.decompose(position, quaternion, new THREE.Vector3());
+  return {
+    xyz: toVector3Value(position),
+    rpy: toEulerValue(quaternion),
+    ...(joint.origin.quatXyzw ? { quatXyzw: toQuaternionValue(quaternion) } : {}),
+  };
+}
+
 function jointOriginsApproximatelyEqual(a: UrdfJoint['origin'], b: UrdfJoint['origin']): boolean {
   return (
     Math.abs((a.xyz.x ?? 0) - (b.xyz.x ?? 0)) <= 1e-6 &&
@@ -264,7 +287,7 @@ function computeJointBaseTransform(
 }
 
 function getConstraintBallEndpointContext(
-  robot: Pick<RobotData, 'links' | 'joints' | 'rootLinkId'>,
+  robot: Pick<RobotData, 'links' | 'joints' | 'rootLinkId' | 'closedLoopConstraints'>,
   parentJointByChild: Map<string, UrdfJoint>,
   constraint: RobotClosedLoopConstraint,
   endpoint: 'A' | 'B',
@@ -273,6 +296,14 @@ function getConstraintBallEndpointContext(
   const linkId = endpoint === 'A' ? constraint.linkAId : constraint.linkBId;
   const joint = parentJointByChild.get(linkId);
   if (!joint || joint.type !== 'ball') {
+    return null;
+  }
+
+  const affectedLinks = collectDescendantLinks(getChildJointsByParentLink(robot), joint.childLinkId);
+  if (robot.closedLoopConstraints?.some((other) => other !== constraint &&
+    (affectedLinks.has(other.linkAId) || affectedLinks.has(other.linkBId)))) {
+    // Eliminating a ball orientation analytically is only valid for a single
+    // constraint. Shared loops must solve all of its rotation coordinates.
     return null;
   }
 
@@ -534,7 +565,19 @@ function collectClosedLoopMotionConstraints(
   }
 
   const childJointsByParent = getChildJointsByParentLink(robot);
+  const parentJointByChild = getParentJointByChildLink(robot);
   const affectedLinkIds = new Set<string>();
+  const visitedJointIds = new Set<string>();
+
+  const includeJointDescendants = (joint: UrdfJoint) => {
+    if (visitedJointIds.has(joint.id)) {
+      return;
+    }
+    visitedJointIds.add(joint.id);
+    collectDescendantLinks(childJointsByParent, joint.childLinkId).forEach((linkId) => {
+      affectedLinkIds.add(linkId);
+    });
+  };
 
   lockedJointIds.forEach((jointId) => {
     const joint = robot.joints[jointId];
@@ -542,15 +585,27 @@ function collectClosedLoopMotionConstraints(
       return;
     }
 
-    collectDescendantLinks(childJointsByParent, joint.childLinkId).forEach((linkId) => {
-      affectedLinkIds.add(linkId);
-    });
+    includeJointDescendants(joint);
   });
 
-  return constraints.filter(
-    (constraint) =>
-      affectedLinkIds.has(constraint.linkAId) || affectedLinkIds.has(constraint.linkBId),
-  );
+  const included = new Set<RobotClosedLoopConstraint>();
+  let expanded = true;
+  while (expanded) {
+    expanded = false;
+    constraints.forEach((constraint) => {
+      if (included.has(constraint) ||
+        (!affectedLinkIds.has(constraint.linkAId) && !affectedLinkIds.has(constraint.linkBId))) {
+        return;
+      }
+      included.add(constraint);
+      expanded = true;
+      // Solving this loop moves passive branches, which may participate in
+      // other loops even when the originally driven subtree does not.
+      collectClosedLoopSolverJoints(robot, parentJointByChild, [constraint], lockedJointIds)
+        .forEach(includeJointDescendants);
+    });
+  }
+  return constraints.filter((constraint) => included.has(constraint));
 }
 
 function collectClosedLoopSolverJoints(
@@ -637,11 +692,24 @@ function computeClosedLoopErrorState(
   const vector: number[] = [];
   const constraintErrors: Record<string, number> = {};
   let residualSquared = 0;
+  const linkWorldMatrices = constraints.some((constraint) => constraint.type === 'joint')
+    ? computeLinkWorldMatrices(robot, overrides)
+    : null;
 
   constraints.forEach((constraint) => {
-    computeConstraintError(robot, parentJointByChild, constraint, overrides, TEMP_ERROR);
-    vector.push(TEMP_ERROR.x, TEMP_ERROR.y, TEMP_ERROR.z);
-    const errorMagnitude = TEMP_ERROR.length();
+    let constraintVector: number[];
+    if (constraint.type === 'joint' && linkWorldMatrices) {
+      constraintVector = computeClosedLoopJointResidual(
+        constraint,
+        linkWorldMatrices[constraint.linkAId] ?? new THREE.Matrix4(),
+        linkWorldMatrices[constraint.linkBId] ?? new THREE.Matrix4(),
+      );
+    } else {
+      computeConstraintError(robot, parentJointByChild, constraint, overrides, TEMP_ERROR);
+      constraintVector = [TEMP_ERROR.x, TEMP_ERROR.y, TEMP_ERROR.z];
+    }
+    vector.push(...constraintVector);
+    const errorMagnitude = Math.hypot(...constraintVector);
     constraintErrors[constraint.id] = errorMagnitude;
     residualSquared += errorMagnitude * errorMagnitude;
   });
@@ -673,6 +741,24 @@ function resetClosedLoopSolverState(
       (overrides.quaternions ??= {})[variable.joint.id] = toQuaternionValue(currentQuaternion);
     }
   });
+}
+
+function captureClosedLoopSolverState(
+  variables: ClosedLoopSolverVariable[],
+  overrides: JointKinematicOverrideMap,
+) {
+  const currentAngleValues = new Map<string, number>();
+  const currentBallQuaternions = new Map<string, THREE.Quaternion>();
+  variables.forEach(variable => {
+    if (variable.kind === 'angle') {
+      currentAngleValues.set(variable.joint.id,
+        getCurrentJointAngleValue(variable.joint, overrides.angles ?? {}));
+    } else {
+      currentBallQuaternions.set(variable.joint.id,
+        getJointEffectiveQuaternion(variable.joint, overrides.quaternions ?? {}));
+    }
+  });
+  return { currentAngleValues, currentBallQuaternions };
 }
 
 function applyClosedLoopSolverStep(
@@ -1037,6 +1123,7 @@ export function resolveClosedLoopJointOriginCompensationDetailed(
     childJointsByParent,
     selectedJoint.childLinkId,
   );
+  const affectedLinkIds = new Set(selectedSubtreeLinks);
   const originOverrides: JointOriginOverrideMap = {
     [selectedJointId]: selectedOrigin,
   };
@@ -1048,16 +1135,19 @@ export function resolveClosedLoopJointOriginCompensationDetailed(
       const linkAInSelectedSubtree = selectedSubtreeLinks.has(constraint.linkAId);
       const linkBInSelectedSubtree = selectedSubtreeLinks.has(constraint.linkBId);
 
-      if (linkAInSelectedSubtree === linkBInSelectedSubtree) {
+      if ((linkAInSelectedSubtree && linkBInSelectedSubtree) ||
+        (!affectedLinkIds.has(constraint.linkAId) && !affectedLinkIds.has(constraint.linkBId))) {
         return;
       }
 
-      const stationaryLinkId = linkAInSelectedSubtree ? constraint.linkAId : constraint.linkBId;
-      const dependentLinkId = linkAInSelectedSubtree ? constraint.linkBId : constraint.linkAId;
-      const stationaryAnchorLocal = linkAInSelectedSubtree
+      const stationaryIsA = linkAInSelectedSubtree ||
+        (!linkBInSelectedSubtree && affectedLinkIds.has(constraint.linkAId));
+      const stationaryLinkId = stationaryIsA ? constraint.linkAId : constraint.linkBId;
+      const dependentLinkId = stationaryIsA ? constraint.linkBId : constraint.linkAId;
+      const stationaryAnchorLocal = stationaryIsA
         ? constraint.anchorLocalA
         : constraint.anchorLocalB;
-      const dependentAnchorLocal = linkAInSelectedSubtree
+      const dependentAnchorLocal = stationaryIsA
         ? constraint.anchorLocalB
         : constraint.anchorLocalA;
       const dependentParentJoint = parentJointByChild.get(dependentLinkId);
@@ -1070,20 +1160,33 @@ export function resolveClosedLoopJointOriginCompensationDetailed(
       const stationaryMatrix = linkWorldMatrices[stationaryLinkId];
       const dependentMatrix = linkWorldMatrices[dependentLinkId];
 
-      computeConstraintAnchorWorld(stationaryMatrix, stationaryAnchorLocal, TEMP_ANCHOR_A);
-      computeConstraintAnchorWorld(dependentMatrix, dependentAnchorLocal, TEMP_ANCHOR_B);
-
-      computeDependentAnchorCorrection(constraint, TEMP_ANCHOR_A, TEMP_ANCHOR_B, TEMP_DELTA);
-      if (TEMP_DELTA.lengthSq() <= ORIGIN_SOLVER_TOLERANCE_SQ) {
-        return;
+      let nextOrigin: UrdfJoint['origin'];
+      if (constraint.type === 'joint') {
+        const desiredWorldMatrix = projectClosedLoopJointEndpoint(
+          constraint,
+          linkWorldMatrices[constraint.linkAId] ?? new THREE.Matrix4(),
+          linkWorldMatrices[constraint.linkBId] ?? new THREE.Matrix4(),
+          stationaryIsA ? 'B' : 'A',
+        );
+        nextOrigin = buildProjectedJointOrigin(
+          dependentParentJoint,
+          linkWorldMatrices[dependentParentJoint.parentLinkId],
+          desiredWorldMatrix,
+        );
+      } else {
+        computeConstraintAnchorWorld(stationaryMatrix, stationaryAnchorLocal, TEMP_ANCHOR_A);
+        computeConstraintAnchorWorld(dependentMatrix, dependentAnchorLocal, TEMP_ANCHOR_B);
+        computeDependentAnchorCorrection(constraint, TEMP_ANCHOR_A, TEMP_ANCHOR_B, TEMP_DELTA);
+        if (TEMP_DELTA.lengthSq() <= ORIGIN_SOLVER_TOLERANCE_SQ) {
+          return;
+        }
+        nextOrigin = buildCompensatedOrigin(
+          dependentParentJoint,
+          linkWorldMatrices[dependentParentJoint.parentLinkId],
+          dependentMatrix,
+          TEMP_DELTA,
+        );
       }
-
-      const nextOrigin = buildCompensatedOrigin(
-        dependentParentJoint,
-        linkWorldMatrices[dependentParentJoint.parentLinkId],
-        dependentMatrix,
-        TEMP_DELTA,
-      );
 
       const previousOrigin =
         originOverrides[dependentParentJoint.id] ?? dependentParentJoint.origin;
@@ -1092,6 +1195,9 @@ export function resolveClosedLoopJointOriginCompensationDetailed(
       }
 
       originOverrides[dependentParentJoint.id] = nextOrigin;
+      collectDescendantLinks(childJointsByParent, dependentLinkId).forEach((linkId) => {
+        affectedLinkIds.add(linkId);
+      });
       changedThisPass = true;
     });
 
@@ -1147,6 +1253,7 @@ export function solveClosedLoopMotionCompensation(
   const lockedJointIds = createLockedJointIdSet(options);
   const motionConstraints = collectClosedLoopMotionConstraints(robot, constraints, lockedJointIds);
   const overrides: JointKinematicOverrideMap = {
+    origins: { ...(options.origins ?? {}) },
     angles: { ...(options.angles ?? {}) },
     quaternions: { ...(options.quaternions ?? {}) },
   };
@@ -1175,19 +1282,9 @@ export function solveClosedLoopMotionCompensation(
   );
   const solverVariables = createClosedLoopSolverVariables(solverJoints);
 
-  solverVariables.forEach((variable) => {
-    if (variable.kind === 'angle') {
-      (overrides.angles ??= {})[variable.joint.id] = getCurrentJointAngleValue(
-        variable.joint,
-        overrides.angles ?? {},
-      );
-      return;
-    }
-
-    (overrides.quaternions ??= {})[variable.joint.id] = toQuaternionValue(
-      getJointEffectiveQuaternion(variable.joint, overrides.quaternions ?? {}),
-    );
-  });
+  const initialState = captureClosedLoopSolverState(solverVariables, overrides);
+  resetClosedLoopSolverState(overrides, solverVariables,
+    initialState.currentAngleValues, initialState.currentBallQuaternions);
 
   let iterations = 0;
   let evaluation = computeClosedLoopErrorState(
@@ -1204,26 +1301,11 @@ export function solveClosedLoopMotionCompensation(
   ) {
     const baseErrorVector = evaluation.vector;
     const variableCount = solverVariables.length;
-    const currentAngleValues = new Map<string, number>();
-    const currentBallQuaternions = new Map<string, THREE.Quaternion>();
+    const { currentAngleValues, currentBallQuaternions } =
+      captureClosedLoopSolverState(solverVariables, overrides);
     const jacobian = Array.from({ length: baseErrorVector.length }, () =>
       new Array<number>(variableCount).fill(0),
     );
-
-    solverVariables.forEach((variable) => {
-      if (variable.kind === 'angle') {
-        currentAngleValues.set(
-          variable.joint.id,
-          getCurrentJointAngleValue(variable.joint, overrides.angles ?? {}),
-        );
-        return;
-      }
-
-      currentBallQuaternions.set(
-        variable.joint.id,
-        getJointEffectiveQuaternion(variable.joint, overrides.quaternions ?? {}),
-      );
-    });
 
     solverVariables.forEach((variable, variableIndex) => {
       resetClosedLoopSolverState(

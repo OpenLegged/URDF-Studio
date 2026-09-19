@@ -675,6 +675,29 @@ test('canonical validation requires complete finite closed-loop constraints', ()
   );
 });
 
+test('canonical closed-loop joints accept fixed and Euler origins and reject invalid rotations', () => {
+  for (const jointType of [JointType.FIXED, JointType.REVOLUTE, JointType.PRISMATIC]) {
+    const robot = createRobot('loop_origins');
+    robot.closedLoopConstraints = [{
+      id: 'loop', type: 'joint', jointType,
+      linkAId: 'base_link', linkBId: 'tool_link',
+      anchorLocalA: { x: 0, y: 0, z: 0 }, anchorLocalB: { x: 0, y: 0, z: 0 },
+      anchorWorld: { x: 0, y: 0, z: 0 },
+      origin: { xyz: { x: 0, y: 0, z: 0 }, rpy: { r: 0.3, p: -0.2, y: 0.1 } },
+    }];
+    const workspace = createSingleComponentWorkspace(robot);
+    assert.equal(validateCanonicalWorkspace(workspace).valid, true);
+    const constraint = workspace.components.component_1.robot.closedLoopConstraints![0]!;
+    assert.equal(constraint.type, 'joint');
+    assert.ok(constraint.origin);
+    constraint.origin.rpy.p = Number.NaN;
+    assertInvalid(workspace, 'components.component_1.robot.closedLoopConstraints.0.origin.rpy.p');
+    constraint.origin.rpy.p = 0;
+    constraint.origin.quatXyzw = { x: 0, y: 0, z: 0, w: Number.NaN };
+    assertInvalid(workspace, 'components.component_1.robot.closedLoopConstraints.0.origin.quatXyzw.w');
+  }
+});
+
 test('canonical validation rejects malformed MJCF site and inspection metadata', () => {
   const invalidSites = structuredClone(createDefaultWorkspace()) as unknown;
   asRecord(asRecord(asRecord(getFirstComponent(invalidSites).robot).links).base_link)
@@ -884,7 +907,20 @@ test('canonical validation rejects invalid bridge keys, endpoints, and joint end
   selfBridge.bridges.mount.childComponentId = 'left';
   selfBridge.bridges.mount.childLinkId = 'base_link';
   selfBridge.bridges.mount.joint.childLinkId = 'base_link';
-  assertInvalid(selfBridge, 'bridges.mount.childComponentId');
+  // Same-component bridges with distinct link endpoints are valid self-loop
+  // closed-loop constraints now.
+  const selfBridgeResult = validateCanonicalWorkspace(selfBridge);
+  assert.equal(
+    selfBridgeResult.valid,
+    true,
+    `expected self-loop bridge to validate, got ${JSON.stringify(selfBridgeResult.issues)}`,
+  );
+
+  const degenerateSelfBridge = createBridgedWorkspace();
+  degenerateSelfBridge.bridges.mount.childComponentId = 'left';
+  degenerateSelfBridge.bridges.mount.childLinkId = 'tool_link';
+  degenerateSelfBridge.bridges.mount.joint.childLinkId = 'tool_link';
+  assertInvalid(degenerateSelfBridge, 'bridges.mount.childLinkId');
 
   const duplicateIncoming = createBridgedWorkspace();
   const third = createSingleComponentWorkspace(createRobot('third'), {
@@ -908,8 +944,8 @@ test('canonical validation rejects invalid bridge keys, endpoints, and joint end
   };
   assertInvalid(duplicateIncoming, 'bridges.second_mount.childComponentId');
 
-  const nonFixedCycle = createBridgedWorkspace();
-  nonFixedCycle.bridges.return_mount = {
+  const movableCycle = createBridgedWorkspace();
+  movableCycle.bridges.return_mount = {
     id: 'return_mount',
     name: 'return_mount',
     parentComponentId: 'right',
@@ -925,13 +961,19 @@ test('canonical validation rejects invalid bridge keys, endpoints, and joint end
       childLinkId: 'base_link',
     },
   };
-  assertInvalid(nonFixedCycle, 'bridges.return_mount.joint.type');
+  // Movable cyclic bridges are valid closed-loop constraints now.
+  const movableCycleResult = validateCanonicalWorkspace(movableCycle);
+  assert.equal(
+    movableCycleResult.valid,
+    true,
+    `expected movable cyclic bridge to validate, got ${JSON.stringify(movableCycleResult.issues)}`,
+  );
 
   const fixedCycle = createBridgedWorkspace();
   fixedCycle.bridges.return_mount = {
-    ...structuredClone(nonFixedCycle.bridges.return_mount),
+    ...structuredClone(movableCycle.bridges.return_mount),
     joint: {
-      ...structuredClone(nonFixedCycle.bridges.return_mount.joint),
+      ...structuredClone(movableCycle.bridges.return_mount.joint),
       type: JointType.FIXED,
     },
   };

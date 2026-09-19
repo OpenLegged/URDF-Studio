@@ -843,7 +843,7 @@ test('mergeAssembly fails fast when a link would end up with multiple parent joi
 
   assert.throws(
     () => mergeAssembly(assemblyState),
-    /Cannot merge assembly "duplicate-parent-merge" because component "comp_child" would have multiple parent bridges: comp_left -> comp_child, comp_right -> comp_child/,
+    /Cannot merge assembly "duplicate-parent-merge" because link "comp_child_base_link" would have multiple parent joints: bridge_left_child, bridge_right_child/,
   );
 });
 
@@ -914,7 +914,14 @@ test('mergeAssembly converts a cyclic bridge into a closed-loop constraint while
   assert.equal(merged.closedLoopConstraints?.length, 1);
   assert.deepEqual(merged.closedLoopConstraints?.[0], {
     id: 'bridge_right_left',
-    type: 'connect',
+    type: 'joint',
+    jointType: JointType.FIXED,
+    axis: DEFAULT_JOINT.axis,
+    limit: DEFAULT_JOINT.limit,
+    origin: {
+      xyz: { x: -1, y: 0, z: 0 },
+      rpy: { r: 0, p: 0, y: 0 },
+    },
     linkAId: 'comp_right_base_link',
     linkBId: 'comp_left_base_link',
     anchorLocalA: { x: -1, y: 0, z: 0 },
@@ -924,12 +931,12 @@ test('mergeAssembly converts a cyclic bridge into a closed-loop constraint while
   });
 });
 
-test('mergeAssembly rejects a non-fixed bridge that would close a component cycle', () => {
+test('mergeAssembly converts a movable cyclic bridge into a joint closed-loop constraint', () => {
   const leftComponent = createSingleLinkComponent('comp_left', 'left');
   const rightComponent = createSingleLinkComponent('comp_right', 'right');
 
   const assemblyState: AssemblyState = {
-    name: 'unsupported-cyclic-motion-bridge',
+    name: 'movable-cyclic-motion-bridge',
     transform: {
       position: { x: 0, y: 0, z: 0 },
       rotation: { r: 0, p: 0, y: 0 },
@@ -974,8 +981,74 @@ test('mergeAssembly rejects a non-fixed bridge that would close a component cycl
     },
   };
 
-  assert.throws(
-    () => mergeAssembly(assemblyState),
-    /Cannot merge assembly "unsupported-cyclic-motion-bridge" because bridge "bridge_right_left" would close a cycle with joint type "revolute". Only fixed cyclic bridges can be converted into closed-loop constraints\./,
+  const merged = mergeAssembly(assemblyState);
+
+  assert.equal(merged.joints['bridge_left_right']?.type, JointType.FIXED);
+  const cyclicConstraint = merged.closedLoopConstraints?.find(
+    (constraint) => constraint.id === 'bridge_right_left',
   );
+  assert.ok(
+    cyclicConstraint,
+    'expected the movable cyclic bridge to become a closed-loop constraint',
+  );
+  assert.equal(cyclicConstraint.type, 'joint');
+  assert.equal(cyclicConstraint.jointType, JointType.REVOLUTE);
 });
+
+for (const jointType of [JointType.FIXED, JointType.REVOLUTE, JointType.CONTINUOUS, JointType.PRISMATIC]) {
+  test(`mergeAssembly preserves a same-component ${jointType} closed-loop bridge`, () => {
+    const chainComponent = createDynamicChainComponent('comp_chain', 'chain');
+
+    const assemblyState: AssemblyState = {
+      name: 'self-loop-bridge',
+      transform: {
+        position: { x: 0, y: 0, z: 0 },
+        rotation: { r: 0, p: 0, y: 0 },
+      },
+      components: {
+        [chainComponent.id]: chainComponent,
+      },
+      bridges: {
+        bridge_self_loop: {
+          id: 'bridge_self_loop',
+          name: 'bridge_self_loop',
+          parentComponentId: chainComponent.id,
+          parentLinkId: 'base_link',
+          childComponentId: chainComponent.id,
+          childLinkId: 'tool_link',
+          joint: {
+            ...DEFAULT_JOINT,
+            id: 'bridge_self_loop',
+            name: 'bridge_self_loop',
+            type: jointType,
+            parentLinkId: 'base_link',
+            childLinkId: 'tool_link',
+            axis: { x: 0, y: 0, z: 1 },
+            limit: { lower: -1, upper: 1, effort: 10, velocity: 5 },
+          },
+        },
+      },
+    };
+
+    const merged = mergeAssembly(assemblyState);
+
+    // The self-loop must not enter the structural joint map.
+    assert.equal(merged.joints['bridge_self_loop'], undefined);
+
+    const selfLoopConstraint = merged.closedLoopConstraints?.find(
+      (constraint) => constraint.id === 'bridge_self_loop',
+    );
+    assert.ok(
+      selfLoopConstraint,
+      'expected the self-loop bridge to become a closed-loop constraint',
+    );
+    assert.equal(selfLoopConstraint.type, 'joint');
+    assert.equal(selfLoopConstraint.jointType, jointType);
+    assert.equal(selfLoopConstraint.linkAId, 'comp_chain_base_link');
+    assert.equal(selfLoopConstraint.linkBId, 'comp_chain_tool_link');
+    assert.deepEqual(selfLoopConstraint.axis, { x: 0, y: 0, z: 1 });
+    assert.equal(selfLoopConstraint.limit?.lower, -1);
+    assert.equal(selfLoopConstraint.limit?.upper, 1);
+    assert.deepEqual(selfLoopConstraint.origin, assemblyState.bridges.bridge_self_loop.joint.origin);
+  });
+}

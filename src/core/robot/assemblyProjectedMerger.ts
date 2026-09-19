@@ -5,7 +5,6 @@
 import * as THREE from 'three';
 
 import {
-  JointType,
   type AssemblyState,
   type RobotClosedLoopConstraint,
   type RobotData,
@@ -13,7 +12,7 @@ import {
 } from '@/types';
 
 import { computeLinkWorldMatrices } from './kinematics';
-import { wouldCreateAssemblyComponentCycle } from './assemblyBridgeTopology';
+import { classifyAssemblyBridges } from './assemblyBridgeTopology';
 import { rerootAssemblyComponentRobot } from './assemblyReroot';
 
 function resolveAssemblyBridgeLinkId(robot: RobotData, linkId: string): string | null {
@@ -148,9 +147,8 @@ function createBridgeClosedLoopConstraint(
     parentAnchorWorld.applyMatrix4(parentLinkMatrix);
   }
 
-  return {
+  const baseConstraint = {
     id: bridge.id,
-    type: 'connect',
     linkAId: parentLinkId,
     linkBId: childLinkId,
     anchorLocalA: parentAnchorLocal,
@@ -161,6 +159,17 @@ function createBridgeClosedLoopConstraint(
       z: parentAnchorWorld.z,
     },
     source: undefined,
+  };
+
+  // Every authored bridge keeps its joint semantics. In particular, a fixed
+  // closure locks orientation as well as position; a connect only locks a point.
+  return {
+    ...baseConstraint,
+    type: 'joint',
+    jointType: bridge.joint.type,
+    ...(bridge.joint.axis ? { axis: structuredClone(bridge.joint.axis) } : {}),
+    ...(bridge.joint.limit ? { limit: structuredClone(bridge.joint.limit) } : {}),
+    origin: structuredClone(bridge.joint.origin),
   };
 }
 
@@ -195,38 +204,13 @@ export function mergeProjectedAssembly(assembly: AssemblyState): RobotData {
     visibleCompIds,
     effectiveRobotByComponentId,
   );
-  const structuralBridgeIds = new Set<string>();
-  const closedLoopBridgeIds = new Set<string>();
-  const parentByChildComponentId = new Map<string, string>();
-
-  visibleBridgeResolutions.forEach(({ bridge }) => {
-    const existingParentComponentId = parentByChildComponentId.get(bridge.childComponentId);
-    if (existingParentComponentId && existingParentComponentId !== bridge.parentComponentId) {
-      throw new Error(
-        `Cannot merge assembly "${assembly.name}" because component "${bridge.childComponentId}" would have multiple parent bridges: ${existingParentComponentId} -> ${bridge.childComponentId}, ${bridge.parentComponentId} -> ${bridge.childComponentId}`,
-      );
-    }
-
-    if (
-      wouldCreateAssemblyComponentCycle(
-        parentByChildComponentId,
-        bridge.parentComponentId,
-        bridge.childComponentId,
-      )
-    ) {
-      if (bridge.joint.type !== JointType.FIXED) {
-        throw new Error(
-          `Cannot merge assembly "${assembly.name}" because bridge "${bridge.id}" would close a cycle with joint type "${bridge.joint.type}". Only fixed cyclic bridges can be converted into closed-loop constraints.`,
-        );
-      }
-
-      closedLoopBridgeIds.add(bridge.id);
-      return;
-    }
-
-    structuralBridgeIds.add(bridge.id);
-    parentByChildComponentId.set(bridge.childComponentId, bridge.parentComponentId);
-  });
+  // Structural bridges form the merged tree; every cyclic bridge (self-loop or
+  // ancestor loop, fixed or movable) becomes a closed-loop constraint.
+  const { structuralEdges, cyclicEdges } = classifyAssemblyBridges(
+    visibleBridgeResolutions.map(({ bridge }) => bridge),
+  );
+  const structuralBridgeIds = new Set(structuralEdges.map((edge) => edge.id));
+  const closedLoopBridgeIds = new Set(cyclicEdges.map((edge) => edge.id));
 
   visibleBridgeResolutions.forEach(({ bridge, resolvedChildLinkId }) => {
     if (!structuralBridgeIds.has(bridge.id)) {
