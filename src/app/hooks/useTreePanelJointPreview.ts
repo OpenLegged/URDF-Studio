@@ -1,196 +1,250 @@
-import { useCallback, useEffect, useRef, type MutableRefObject } from 'react';
-import { useJointInteractionPreviewStore } from '@/store';
-import { resolveClosedLoopDrivenJointMotion, resolveJointKey } from '@/core/robot';
-import type { ViewerJointChangeContext, ViewerJointMotionStateValue } from '@/features/editor';
-import type { JointQuaternion, RobotData } from '@/types';
+import { useCallback, useEffect, useMemo, useRef } from 'react';
+import {
+  getJointReferencePosition,
+  isEntityEditorLocked,
+  resolveClosedLoopDrivenJointMotion,
+  type AssemblySceneProjection,
+} from '@/core/robot';
+import {
+  projectJointPreviewToWorkspaceTargets,
+  type ViewerJointMotionStateValue,
+} from '@/features/editor';
+import {
+  useJointInteractionPreviewStore,
+  type JointInteractionPreviewSnapshot,
+} from '@/store/jointInteractionPreviewStore';
+import { useUIStore } from '@/store/uiStore';
+import { useWorkspaceStore } from '@/store/workspaceStore';
+import {
+  entityRefKey,
+  type BridgeEntityRef,
+  type JointEntityRef,
+  type JointQuaternion,
+} from '@/types';
 
-const TREE_PANEL_JOINT_PREVIEW_SESSION_ID = 'tree-panel-joint-slider';
-const TREE_PANEL_JOINT_COMMIT_EPSILON = 1e-6;
+type JointRef = JointEntityRef | BridgeEntityRef;
 let nextTreePanelJointPreviewOwnerId = 0;
 
-export interface TreePanelJointCommitSnapshot {
-  jointAngles: Record<string, number>;
-  jointQuaternions: Record<string, JointQuaternion>;
-}
-
 interface UseTreePanelJointPreviewParams {
-  previewContextRobot: RobotData;
+  sceneProjection: AssemblySceneProjection;
   jointAngleState: Record<string, number>;
   jointMotionState: Record<string, ViewerJointMotionStateValue>;
-  pendingTreePanelJointCommitRef: MutableRefObject<TreePanelJointCommitSnapshot | null>;
-  handleCommittedJointChange: (
-    jointName: string,
-    angle: number,
-    context?: ViewerJointChangeContext,
-  ) => void;
+  handleCommittedJointChange: (ref: JointRef, angle: number) => void;
+  flushJointMotion: () => void;
 }
 
+function readWorkspaceJoint(ref: JointRef) {
+  const workspace = useWorkspaceStore.getState().workspace;
+  return ref.type === 'joint'
+    ? workspace.components[ref.componentId]?.robot.joints[ref.entityId]
+    : workspace.bridges[ref.bridgeId]?.joint;
+}
+
+function quaternionsMatch(current: JointQuaternion | undefined, expected: JointQuaternion) {
+  return Boolean(
+    current &&
+    (['x', 'y', 'z', 'w'] as const).every(
+      (axis) => Math.abs(current[axis] - expected[axis]) <= 1e-6,
+    ),
+  );
+}
+
+function isWorkspacePreviewCommitted(preview: JointInteractionPreviewSnapshot) {
+  return preview.workspaceTargets?.every(({ ref, angle, quaternion }) => {
+    const joint = readWorkspaceJoint(ref);
+    return (
+      joint &&
+      (angle === undefined || Math.abs((joint.angle ?? Number.NaN) - angle) <= 1e-6) &&
+      (!quaternion || quaternionsMatch(joint.quaternion, quaternion))
+    );
+  });
+}
+
+/** Keep slider frames in the runtime preview channel; commit the workspace on release. */
 export function useTreePanelJointPreview({
-  previewContextRobot,
+  sceneProjection,
   jointAngleState,
   jointMotionState,
-  pendingTreePanelJointCommitRef,
   handleCommittedJointChange,
+  flushJointMotion,
 }: UseTreePanelJointPreviewParams) {
   const ownerIdRef = useRef<string | null>(null);
+  const sessionCounterRef = useRef(0);
+  const activeSessionRef = useRef<string | null>(null);
+  const pendingCommitRef = useRef<JointInteractionPreviewSnapshot | null>(null);
   if (ownerIdRef.current === null) {
     nextTreePanelJointPreviewOwnerId += 1;
     ownerIdRef.current = `tree-panel:${nextTreePanelJointPreviewOwnerId}`;
   }
 
-  const isTreePanelJointCommitVisible = useCallback(
-    (commit: TreePanelJointCommitSnapshot) =>
-      Object.entries(commit.jointAngles).every(([jointId, committedAngle]) => {
-        const jointName = previewContextRobot.joints[jointId]?.name;
-        const motionAngle =
-          jointMotionState[jointId]?.angle ??
-          (jointName ? jointMotionState[jointName]?.angle : undefined);
-        const snapshotAngle =
-          jointAngleState[jointId] ?? (jointName ? jointAngleState[jointName] : undefined);
-        const currentAngle =
-          typeof motionAngle === 'number'
-            ? motionAngle
-            : typeof snapshotAngle === 'number'
-              ? snapshotAngle
-              : previewContextRobot.joints[jointId]?.angle;
-
-        return (
-          typeof currentAngle === 'number' &&
-          Math.abs(currentAngle - committedAngle) <= TREE_PANEL_JOINT_COMMIT_EPSILON
-        );
-      }) &&
-      Object.entries(commit.jointQuaternions).every(([jointId, committedQuaternion]) => {
-        const jointName = previewContextRobot.joints[jointId]?.name;
-        const currentQuaternion =
-          jointMotionState[jointId]?.quaternion ??
-          (jointName ? jointMotionState[jointName]?.quaternion : undefined) ??
-          previewContextRobot.joints[jointId]?.quaternion;
-
-        if (!currentQuaternion) {
-          return false;
-        }
-
-        return (
-          Math.abs(currentQuaternion.x - committedQuaternion.x) <=
-            TREE_PANEL_JOINT_COMMIT_EPSILON &&
-          Math.abs(currentQuaternion.y - committedQuaternion.y) <=
-            TREE_PANEL_JOINT_COMMIT_EPSILON &&
-          Math.abs(currentQuaternion.z - committedQuaternion.z) <=
-            TREE_PANEL_JOINT_COMMIT_EPSILON &&
-          Math.abs(currentQuaternion.w - committedQuaternion.w) <= TREE_PANEL_JOINT_COMMIT_EPSILON
-        );
+  // The semantic projection deliberately retains its identity across pose commits.
+  // Refresh only its small joint map, without re-projecting geometry and resources.
+  const previewRobot = useMemo(() => {
+    const robot = sceneProjection.robotData;
+    const joints = Object.fromEntries(
+      Object.entries(robot.joints).map(([id, joint]) => {
+        const motion = jointMotionState[id];
+        return [
+          id,
+          {
+            ...joint,
+            angle: motion?.angle ?? jointAngleState[id] ?? joint.angle,
+            quaternion: motion?.quaternion ?? joint.quaternion,
+          },
+        ];
       }),
-    [jointAngleState, jointMotionState, previewContextRobot.joints],
-  );
+    );
+    return { ...robot, joints };
+  }, [jointAngleState, jointMotionState, sceneProjection]);
 
-  const clearTreePanelJointPreview = useCallback((deferToNextFrame = false) => {
-    const clearPreview = () => {
-      useJointInteractionPreviewStore.getState().clearPreview({
-        ownerId: ownerIdRef.current,
-        source: 'tree-panel',
-        dragSessionId: TREE_PANEL_JOINT_PREVIEW_SESSION_ID,
-      });
-    };
+  const clearPreview = useCallback((preview: JointInteractionPreviewSnapshot) => {
+    useJointInteractionPreviewStore.getState().clearPreview({
+      ownerId: ownerIdRef.current,
+      source: 'tree-panel',
+      dragSessionId: preview.dragSessionId,
+    });
+    if (activeSessionRef.current === preview.dragSessionId) {
+      activeSessionRef.current = null;
+    }
+    if (pendingCommitRef.current === preview) {
+      pendingCommitRef.current = null;
+    }
+  }, []);
 
-    if (
-      deferToNextFrame &&
-      typeof window !== 'undefined' &&
-      typeof window.requestAnimationFrame === 'function'
-    ) {
-      window.requestAnimationFrame(clearPreview);
+  const cancelJointPreview = useCallback(() => {
+    const store = useJointInteractionPreviewStore.getState();
+    const preview = store.preview;
+    pendingCommitRef.current = null;
+    activeSessionRef.current = null;
+    if (preview.ownerId !== ownerIdRef.current || preview.source !== 'tree-panel') {
       return;
     }
 
-    clearPreview();
-  }, []);
+    // Preview consumers apply poses imperatively. Restore the canonical pose before
+    // removing a cancelled preview, without taking over another viewer's session.
+    const jointAngles: JointInteractionPreviewSnapshot['jointAngles'] = {};
+    const jointQuaternions: JointInteractionPreviewSnapshot['jointQuaternions'] = {};
+    for (const target of preview.workspaceTargets ?? []) {
+      const joint = readWorkspaceJoint(target.ref);
+      const id = sceneProjection.entityRefKeyToGlobal.get(entityRefKey(target.ref));
+      if (!joint || !id) continue;
+      if (target.angle !== undefined) {
+        jointAngles[id] = joint.angle ?? getJointReferencePosition(joint);
+      }
+      if (target.quaternion) {
+        jointQuaternions[id] = joint.quaternion ?? { x: 0, y: 0, z: 0, w: 1 };
+      }
+    }
+    const restoredPreview = { ...preview, jointAngles, jointQuaternions };
+    store.publishPreview({
+      ...restoredPreview,
+      workspaceTargets: projectJointPreviewToWorkspaceTargets(sceneProjection, restoredPreview),
+    });
+    clearPreview(preview);
+  }, [clearPreview, sceneProjection]);
 
-  const publishTreePanelJointPreview = useCallback(
-    (jointName: string, angle: number) => {
-      const jointId = resolveJointKey(previewContextRobot.joints, jointName);
-      if (!jointId) {
+  const publishJointPreview = useCallback(
+    (ref: JointRef, angle: number) => {
+      const jointId = sceneProjection.entityRefKeyToGlobal.get(entityRefKey(ref));
+      const store = useWorkspaceStore.getState();
+      if (
+        !jointId ||
+        !readWorkspaceJoint(ref) ||
+        !Number.isFinite(angle) ||
+        store.transaction ||
+        isEntityEditorLocked(store.workspace, ref)
+      ) {
         return null;
       }
-
-      const solution = resolveClosedLoopDrivenJointMotion(previewContextRobot, jointId, angle);
-      const preview = {
-        ownerId: ownerIdRef.current,
-        source: 'tree-panel',
-        dragSessionId: TREE_PANEL_JOINT_PREVIEW_SESSION_ID,
+      const solution = resolveClosedLoopDrivenJointMotion(previewRobot, jointId, angle, {
+        ignoreLimits: useUIStore.getState().ignoreJointLimits,
+      });
+      if (activeSessionRef.current === null || pendingCommitRef.current) {
+        sessionCounterRef.current += 1;
+        activeSessionRef.current = String(sessionCounterRef.current);
+        pendingCommitRef.current = null;
+      }
+      const rendererPreview = {
         activeJointId: jointId,
         jointAngles: solution.angles,
         jointQuaternions: solution.quaternions,
         jointOrigins: {},
-      } as const;
+      };
+      const preview: JointInteractionPreviewSnapshot = {
+        ownerId: ownerIdRef.current,
+        source: 'tree-panel',
+        dragSessionId: activeSessionRef.current,
+        ...rendererPreview,
+        workspaceTargets: projectJointPreviewToWorkspaceTargets(sceneProjection, rendererPreview),
+      };
       useJointInteractionPreviewStore.getState().publishPreview(preview);
       return preview;
     },
-    [previewContextRobot],
+    [previewRobot, sceneProjection],
+  );
+
+  const isCommitVisible = useCallback(
+    (preview: JointInteractionPreviewSnapshot) =>
+      Object.entries(preview.jointAngles).every(
+        ([id, angle]) =>
+          Math.abs(
+            (jointMotionState[id]?.angle ??
+              jointAngleState[id] ??
+              previewRobot.joints[id]?.angle ??
+              Number.NaN) - angle,
+          ) <= 1e-6,
+      ) &&
+      Object.entries(preview.jointQuaternions).every(([id, quaternion]) => {
+        const current = jointMotionState[id]?.quaternion ?? previewRobot.joints[id]?.quaternion;
+        return quaternionsMatch(current, quaternion);
+      }),
+    [jointAngleState, jointMotionState, previewRobot],
   );
 
   const handleJointPreview = useCallback(
-    (jointName: string, angle: number) => {
-      publishTreePanelJointPreview(jointName, angle);
+    (ref: JointRef, angle: number) => {
+      publishJointPreview(ref, angle);
     },
-    [publishTreePanelJointPreview],
+    [publishJointPreview],
   );
 
   const handleJointChange = useCallback(
-    (jointName: string, angle: number, context?: ViewerJointChangeContext) => {
-      const preview = publishTreePanelJointPreview(jointName, angle);
-      if (preview) {
-        pendingTreePanelJointCommitRef.current = {
-          jointAngles: preview.jointAngles,
-          jointQuaternions: preview.jointQuaternions,
-        };
-      }
-
-      handleCommittedJointChange(jointName, angle, context);
+    (ref: JointRef, angle: number) => {
+      const preview = publishJointPreview(ref, angle);
       if (!preview) {
-        clearTreePanelJointPreview(true);
+        cancelJointPreview();
         return;
       }
-
-      const pendingCommit = pendingTreePanelJointCommitRef.current;
-      if (pendingCommit && isTreePanelJointCommitVisible(pendingCommit)) {
-        pendingTreePanelJointCommitRef.current = null;
-        clearTreePanelJointPreview(true);
+      pendingCommitRef.current = preview;
+      try {
+        handleCommittedJointChange(ref, angle);
+        flushJointMotion();
+      } catch (error) {
+        cancelJointPreview();
+        throw error;
       }
+      if (!isWorkspacePreviewCommitted(preview)) {
+        cancelJointPreview();
+        return;
+      }
+      if (isCommitVisible(preview)) clearPreview(preview);
     },
     [
-      clearTreePanelJointPreview,
+      cancelJointPreview,
+      clearPreview,
+      flushJointMotion,
       handleCommittedJointChange,
-      isTreePanelJointCommitVisible,
-      pendingTreePanelJointCommitRef,
-      publishTreePanelJointPreview,
+      isCommitVisible,
+      publishJointPreview,
     ],
   );
 
   useEffect(() => {
-    const pendingCommit = pendingTreePanelJointCommitRef.current;
-    if (!pendingCommit || !isTreePanelJointCommitVisible(pendingCommit)) {
-      return;
-    }
+    const pending = pendingCommitRef.current;
+    if (pending && isCommitVisible(pending)) clearPreview(pending);
+  }, [clearPreview, isCommitVisible]);
 
-    pendingTreePanelJointCommitRef.current = null;
-    clearTreePanelJointPreview(true);
-  }, [
-    clearTreePanelJointPreview,
-    isTreePanelJointCommitVisible,
-    jointAngleState,
-    jointMotionState,
-    pendingTreePanelJointCommitRef,
-  ]);
+  useEffect(() => cancelJointPreview, [cancelJointPreview]);
 
-  useEffect(
-    () => () => {
-      pendingTreePanelJointCommitRef.current = null;
-      clearTreePanelJointPreview();
-    },
-    [clearTreePanelJointPreview, pendingTreePanelJointCommitRef],
-  );
-
-  return {
-    handleJointPreview,
-    handleJointChange,
-  };
+  return { handleJointPreview, handleJointChange, cancelJointPreview };
 }

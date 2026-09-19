@@ -69,6 +69,8 @@ interface WorkspaceCanvasProps {
   subscribeGroundPlaneInvalidation?: (listener: () => void) => () => void;
   children: React.ReactNode;
   overlays?: React.ReactNode;
+  /** Gestures originating outside the canvas, such as a sidebar joint slider. */
+  interactionActive?: boolean;
   onPointerMissed?: () => void;
   onPointerDownCapture?: React.PointerEventHandler<HTMLDivElement>;
   onCreated?: (state: RootState) => void;
@@ -170,6 +172,7 @@ export const WorkspaceCanvas = ({
   subscribeGroundPlaneInvalidation,
   children,
   overlays,
+  interactionActive = false,
   onPointerMissed,
   onPointerDownCapture,
   onCreated,
@@ -225,11 +228,16 @@ export const WorkspaceCanvas = ({
     startX: number;
     startY: number;
   } | null>(null);
-  const { dpr, isInteracting, beginInteraction, endInteraction, pulseInteraction } =
+  const { dpr, isInteracting: pointerInteracting, beginInteraction, endInteraction, pulseInteraction } =
     useViewportInteractionQuality({
       restingCap: maxDpr,
       minRenderDpr: minDpr,
     });
+  const isInteracting = pointerInteracting || interactionActive;
+  // Controls, joint previews, and transform tools invalidate when their pose
+  // changes. Interaction quality must not keep redrawing an unchanged scene
+  // while a pointer is held still; damping schedules its own demand frames.
+  const frameloop = 'demand';
 
   // Render content changes should only invalidate the current frame. A change in camera
   // projection forces a remount because R3F's <Canvas> only reads the `camera` prop at init — switching
@@ -617,7 +625,7 @@ export const WorkspaceCanvas = ({
             dpr={effectiveDpr}
             shadows={shouldEnableShadows}
             resize={resizeOptions}
-            frameloop={isInteracting ? 'always' : 'demand'}
+            frameloop={frameloop}
             camera={canvasCamera}
             gl={canvasGl}
             onCreated={handleCreated}
@@ -634,7 +642,7 @@ export const WorkspaceCanvas = ({
               >
                 <SemanticOutlineProvider enableAmbientOcclusion={enableAmbientOcclusion}>
                   <CanvasRenderKeyInvalidator renderKey={renderKey} dpr={effectiveDpr} />
-                  <CanvasResizeSync targetFrameloop={isInteracting ? 'always' : 'demand'} />
+                  <CanvasResizeSync targetFrameloop={frameloop} />
                   {cameraProjection === 'orthographic' && (
                     <OrthographicCamera
                       makeDefault

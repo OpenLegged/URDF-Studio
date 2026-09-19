@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useMemo, useRef } from 'react';
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef } from 'react';
 import { useFrame, useThree } from '@react-three/fiber';
 import * as THREE from 'three';
 
@@ -75,6 +75,13 @@ export function shouldRenderWorkspaceCanvasFrame(snapshotRenderActive: boolean):
 const CAMERA_MOTION_POSITION_EPSILON_SQUARED = 1e-12;
 const CAMERA_MOTION_ROTATION_EPSILON = 1e-9;
 const CAMERA_MOTION_ZOOM_EPSILON = 1e-6;
+
+// After a camera move suppresses a hover-only overlay, the restore frame only
+// needs to run once navigation has actually stopped. Invalidating on every
+// moving frame instead scheduled a full outline-composer render after each
+// pointer move (mask + depth + blur passes), doubling the cost of navigating
+// textured scenes like large MJCF imports.
+const SEMANTIC_OUTLINE_CATCH_UP_DEBOUNCE_MS = 120;
 
 function readCameraZoom(camera: THREE.Camera): number {
   return 'zoom' in camera && typeof camera.zoom === 'number' ? camera.zoom : 1;
@@ -164,6 +171,24 @@ function SemanticOutlineRenderer({
     height: size.height,
     rendererPixelRatio: dpr,
   };
+  const outlineCatchUpTimerRef = useRef<number | null>(null);
+  const scheduleOutlineCatchUp = useCallback(() => {
+    if (outlineCatchUpTimerRef.current !== null) {
+      window.clearTimeout(outlineCatchUpTimerRef.current);
+    }
+    outlineCatchUpTimerRef.current = window.setTimeout(() => {
+      outlineCatchUpTimerRef.current = null;
+      invalidate();
+    }, SEMANTIC_OUTLINE_CATCH_UP_DEBOUNCE_MS);
+  }, [invalidate]);
+  useEffect(
+    () => () => {
+      if (outlineCatchUpTimerRef.current !== null) {
+        window.clearTimeout(outlineCatchUpTimerRef.current);
+      }
+    },
+    [],
+  );
   const outline = useMemo(
     () =>
       createSemanticOutlineComposer({
@@ -313,9 +338,11 @@ function SemanticOutlineRenderer({
 
     // On-demand frameloops stop rendering as soon as the camera settles, so the
     // frame that skipped the overlay would otherwise be the last one drawn and
-    // the outline would stay missing until an unrelated invalidate.
+    // the outline would stay missing until an unrelated invalidate. The
+    // debounced catch-up restores it once navigation pauses instead of after
+    // every moving frame.
     if (cameraMoving && targets.length > 0 && !snapshotRenderActive) {
-      invalidate();
+      scheduleOutlineCatchUp();
     }
 
     // Diagnostics mirror of the overlay decision, so browser regressions can

@@ -60,6 +60,7 @@ export function ViewerJointsPanel({
       setActiveJoint={jointsPanel.setActiveJoint}
       handleJointAngleChange={jointsPanel.handleJointAngleChange}
       handleJointChangeCommit={jointsPanel.handleJointChangeCommit}
+      setIsDragging={jointsPanel.setIsDragging}
       onSelect={jointsPanel.handleSelectWrapper}
       onHover={jointsPanel.handleHoverWrapper}
       onUpdate={onUpdate}

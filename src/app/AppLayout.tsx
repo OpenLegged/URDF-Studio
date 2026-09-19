@@ -23,6 +23,7 @@ import { useSelectionActiveComponentSync } from './hooks/useSelectionActiveCompo
 import { useSourceCodeEditorDocuments } from './hooks/useSourceCodeEditorDocuments';
 import { useSourceCodeEditorWarmup } from './hooks/useSourceCodeEditorWarmup';
 import { useToolItems } from './hooks/useToolItems';
+import { useTreePanelJointPreview } from './hooks/useTreePanelJointPreview';
 import { useUsdDocumentLifecycle } from './hooks/useUsdDocumentLifecycle';
 import { useViewerOrchestration } from './hooks/useViewerOrchestration';
 import { useWorkspaceFilePreview } from './hooks/workspace-source-sync/useWorkspaceFilePreview';
@@ -39,7 +40,6 @@ import { logRegressionError } from '@/shared/debug/consoleDiagnostics';
 import { translations } from '@/shared/i18n';
 import type {
   BridgeJoint,
-  BridgeEntityRef,
   InteractionSelection,
   JointEntityRef,
   LinkEntityRef,
@@ -284,18 +284,13 @@ export function AppLayout({
     clearPendingCollisionTransform,
     handleTransformPendingChange,
   });
-  const handleJointPreview = useCallback(
-    (ref: JointEntityRef | BridgeEntityRef, angle: number) =>
-      handleCommittedJointChange(ref, angle),
-    [handleCommittedJointChange],
-  );
-  const handleJointChange = useCallback(
-    (ref: JointEntityRef | BridgeEntityRef, angle: number) => {
-      handleCommittedJointChange(ref, angle);
-      flushJointMotion();
-    },
-    [flushJointMotion, handleCommittedJointChange],
-  );
+  const { handleJointPreview, handleJointChange } = useTreePanelJointPreview({
+    sceneProjection,
+    jointAngleState,
+    jointMotionState,
+    handleCommittedJointChange,
+    flushJointMotion,
+  });
 
   const {
     handleUploadAsset,

@@ -13,10 +13,6 @@ export interface DraggableRuntimeJoint extends THREE.Object3D {
   setJointValue?: (value: number) => unknown;
 }
 
-interface RuntimeLinkObject extends THREE.Object3D {
-  isURDFLink?: boolean;
-}
-
 interface DirectJointDragJointResolverOptions {
   robot: THREE.Object3D | null;
   robotJoints: Record<string, UrdfJoint> | undefined;
@@ -35,49 +31,34 @@ export function createDirectJointDragJointResolver({
         ((object as DraggableRuntimeJoint).isURDFJoint || object.type === 'URDFJoint'),
     );
 
-  const findParentLinkForJoint = (jointObject: THREE.Object3D): RuntimeLinkObject | null => {
-    let parentLink: THREE.Object3D | null = jointObject.parent;
-    while (parentLink && parentLink !== robot) {
-      const runtimeLink = parentLink as RuntimeLinkObject;
-      if (runtimeLink.isURDFLink || runtimeLink.type === 'URDFLink') {
-        return runtimeLink;
-      }
-      parentLink = parentLink.parent;
-    }
-    return null;
-  };
-
-  function resolveControllableJoint(
-    jointObject: DraggableRuntimeJoint,
+  function resolveAncestorJoint(
+    object: THREE.Object3D | null,
   ): DraggableRuntimeJoint | null {
-    if (
-      !isSingleDofJoint(jointObject) ||
-      isPassiveSpringJointDragTarget(jointObject.name, robotJoints, jointObject)
-    ) {
-      return findParentJoint(findParentLinkForJoint(jointObject));
-    }
-    return jointObject;
-  }
-
-  function findParentJoint(linkObject: THREE.Object3D | null): DraggableRuntimeJoint | null {
-    if (!linkObject) {
-      return null;
-    }
-
-    let current: THREE.Object3D | null = linkObject.parent;
-    while (current && current !== robot) {
-      if (isRuntimeJointObject(current)) {
-        return resolveControllableJoint(current);
+    const visited = new Set<THREE.Object3D>();
+    let nearestPassiveJoint: DraggableRuntimeJoint | null = null;
+    let current = object;
+    while (current && current !== robot && !visited.has(current)) {
+      visited.add(current);
+      if (isRuntimeJointObject(current) && isSingleDofJoint(current)) {
+        if (!isPassiveSpringJointDragTarget(current.name, robotJoints, current)) {
+          return current;
+        }
+        nearestPassiveJoint ??= current;
       }
       current = current.parent;
     }
-    return null;
+
+    // Prefer upstream control joints in compliant robot chains, while allowing
+    // passive mechanisms to move when the entire ancestor chain is passive.
+    return nearestPassiveJoint;
   }
 
   return {
-    findParentJoint,
+    findParentJoint(linkObject: THREE.Object3D | null) {
+      return resolveAncestorJoint(linkObject?.parent ?? null);
+    },
     resolveJointObject(object: THREE.Object3D | null) {
-      return isRuntimeJointObject(object) ? resolveControllableJoint(object) : null;
+      return isRuntimeJointObject(object) ? resolveAncestorJoint(object) : null;
     },
   };
 }

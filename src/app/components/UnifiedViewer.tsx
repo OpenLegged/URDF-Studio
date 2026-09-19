@@ -1,4 +1,5 @@
 import React, { useEffect } from 'react';
+import { entityRefKey } from '@/types';
 import type { RootState } from '@react-three/fiber';
 import type { Group as ThreeGroup, Object3D as ThreeObject3D } from 'three';
 import type {
@@ -58,6 +59,7 @@ import { UnifiedViewerSceneRoots } from './unified-viewer/UnifiedViewerSceneRoot
 import type { FilePreviewState } from './unified-viewer/types';
 import { useUnifiedViewerDerivedState } from './unified-viewer/useUnifiedViewerDerivedState';
 import { useSelectionStore } from '@/store/selectionStore';
+import { useJointInteractionPreviewStore } from '@/store/jointInteractionPreviewStore';
 import { logRegressionWarn } from '@/shared/debug/consoleDiagnostics';
 import { useAssemblyAutoGroundingCoordinator } from '@/app/hooks/workspace-mutations/assemblyAutoGrounding';
 import { useUnifiedViewerSceneLifecycle } from './unified-viewer/useUnifiedViewerSceneLifecycle';
@@ -201,6 +203,12 @@ export const UnifiedViewer = React.memo(
   }: UnifiedViewerProps) => {
     const t = translations[lang];
     const workspaceInteractionEnabled = modelInteractionEnabled && !filePreview;
+    const externalJointInteractionActive = useJointInteractionPreviewStore((state) =>
+      workspaceInteractionEnabled && state.preview.source === 'tree-panel' &&
+      (state.preview.workspaceTargets?.some(({ ref }) =>
+        sceneProjection.entityRefKeyToGlobal.has(entityRefKey(ref)),
+      ) ?? false),
+    );
     const clearHover = useSelectionStore((state) => state.clearHover);
     const canonicalHoveredSelection = useSelectionStore((state) =>
       workspaceInteractionEnabled ? state.hoveredSelection : null,
@@ -481,6 +489,7 @@ export const UnifiedViewer = React.memo(
 
     return (
       <WorkspaceCanvas
+        interactionActive={externalJointInteractionActive}
         className="relative w-full h-full overflow-hidden"
         theme={theme}
         lang={lang}

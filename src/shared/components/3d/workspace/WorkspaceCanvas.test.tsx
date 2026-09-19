@@ -241,3 +241,113 @@ test('WorkspaceCanvas keeps a stationary press out of the interaction state unti
     dom.window.close();
   }
 });
+
+test('WorkspaceCanvas scopes external gestures and keeps them independent of canvas pointer gestures', async () => {
+  const dom = installDom();
+  const container = dom.window.document.getElementById('root');
+  assert.ok(container, 'root container should exist');
+  const root = createRoot(container);
+  const originalConsoleError = console.error;
+  console.error = () => {
+    // This DOM test exercises gesture ownership; jsdom cannot create WebGL contexts.
+  };
+
+  const render = async (interactionActive: boolean) => {
+    await act(async () => {
+      root.render(
+        React.createElement(
+          React.Fragment,
+          null,
+          React.createElement(WorkspaceCanvas, {
+            key: 'active-viewer',
+            theme: 'light',
+            robotName: 'active',
+            interactionActive,
+            children: null,
+          }),
+          React.createElement(WorkspaceCanvas, {
+            key: 'unrelated-viewer',
+            theme: 'light',
+            robotName: 'unrelated',
+            children: null,
+          }),
+        ),
+      );
+    });
+  };
+  const readInteracting = (robotName: string) =>
+    container
+      .querySelector(`[aria-label="${robotName} workspace"]`)
+      ?.getAttribute('data-interacting');
+
+  try {
+    await render(false);
+    assert.equal(readInteracting('active'), 'false');
+    assert.equal(readInteracting('unrelated'), 'false');
+
+    await render(true);
+    assert.equal(
+      readInteracting('active'),
+      'true',
+      'a sidebar gesture needs no canvas pointerdown',
+    );
+    assert.equal(
+      readInteracting('unrelated'),
+      'false',
+      'another canvas retains its own interaction state',
+    );
+
+    await act(async () => dom.window.dispatchEvent(new dom.window.Event('pointercancel')));
+    assert.equal(
+      readInteracting('active'),
+      'true',
+      'canvas cancellation must not release an external gesture',
+    );
+    await render(false);
+    assert.equal(
+      readInteracting('active'),
+      'false',
+      'clearing the external preview settles the canvas',
+    );
+
+    const activeCanvas = container.querySelector('[aria-label="active workspace"]');
+    assert.ok(activeCanvas);
+    await act(async () => {
+      for (const [type, clientX] of [
+        ['pointerdown', 100],
+        ['pointermove', 120],
+      ] as const) {
+        activeCanvas.dispatchEvent(
+          new dom.window.MouseEvent(type, {
+            bubbles: true,
+            button: 0,
+            buttons: 1,
+            clientX,
+            clientY: 100,
+          }),
+        );
+      }
+    });
+    assert.equal(readInteracting('active'), 'true', 'canvas drag starts its own gesture');
+    await render(true);
+    await render(false);
+    assert.equal(
+      readInteracting('active'),
+      'true',
+      'external completion must not release a canvas drag',
+    );
+    await act(async () => {
+      dom.window.dispatchEvent(new dom.window.Event('pointercancel'));
+    });
+    assert.equal(
+      readInteracting('active'),
+      'false',
+      'the last gesture ending returns to the settled path',
+    );
+    assert.equal(readInteracting('unrelated'), 'false');
+  } finally {
+    console.error = originalConsoleError;
+    await act(async () => root.unmount());
+    dom.window.close();
+  }
+});

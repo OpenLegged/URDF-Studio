@@ -5,6 +5,11 @@ import type { Theme } from '@/types';
 import { LIGHTING_CONFIG, resolveCameraFollowLightingStyle } from './constants';
 import { useWorkspaceCanvasInteractionState } from './interactionQuality';
 import { useSnapshotRenderActive } from './SnapshotRenderContext';
+import {
+  isShadowMapRefreshPaused,
+  pauseShadowMapRefresh,
+  requestShadowMapRefresh,
+} from './shadowMapRefresh';
 import { resolveEffectiveTheme } from './themeUtils';
 
 interface SceneLightingProps {
@@ -38,6 +43,7 @@ export function SceneLighting({
   const cameraTargetRef = useRef(new THREE.Vector3());
   const cameraRightRef = useRef(new THREE.Vector3());
   const cameraUpRef = useRef(new THREE.Vector3());
+  const shadowPauseOwner = useRef(Symbol('scene-lighting-interaction')).current;
   const lastCameraPositionRef = useRef(new THREE.Vector3(Number.NaN, Number.NaN, Number.NaN));
   const lastCameraQuaternionRef = useRef(
     new THREE.Quaternion(Number.NaN, Number.NaN, Number.NaN, Number.NaN),
@@ -82,11 +88,6 @@ export function SceneLighting({
     gl.shadowMap.enabled = shouldUseShadows;
     if (shouldUseShadows) {
       gl.shadowMap.type = THREE.PCFSoftShadowMap;
-      // Snapshot rendering needs a normal auto-updating pass; interactive
-      // rendering's autoUpdate is owned by the interaction effect below.
-      gl.shadowMap.autoUpdate = snapshotRenderActive;
-    } else {
-      gl.shadowMap.autoUpdate = false;
     }
 
     scene.receiveShadow = true;
@@ -111,15 +112,23 @@ export function SceneLighting({
   // last shadow map during that short interaction avoids a second full scene
   // render; the settled frame below refreshes the shadow immediately afterward.
   useEffect(() => {
-    if (!shouldUseShadows || snapshotRenderActive) {
+    if (!shouldUseShadows) {
+      gl.shadowMap.autoUpdate = false;
       return;
     }
 
-    gl.shadowMap.autoUpdate = !isInteracting;
-    if (!isInteracting) {
-      invalidate();
+    if (isInteracting && !snapshotRenderActive) {
+      const releasePause = pauseShadowMapRefresh(gl, shadowPauseOwner);
+      return () => {
+        releasePause();
+        invalidate();
+      };
     }
-  }, [gl, invalidate, isInteracting, shouldUseShadows, snapshotRenderActive]);
+
+    gl.shadowMap.autoUpdate = snapshotRenderActive || !isShadowMapRefreshPaused(gl);
+    requestShadowMapRefresh(gl, { force: snapshotRenderActive });
+    invalidate();
+  }, [gl, invalidate, isInteracting, shadowPauseOwner, shouldUseShadows, snapshotRenderActive]);
 
   useEffect(() => {
     const keyLight = cameraKeyLightRef.current;
