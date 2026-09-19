@@ -2841,6 +2841,7 @@ export class ThreeRenderDelegateInterface extends ThreeRenderDelegateMaterialOps
                 linkParentPairs: rawSnapshot.robotTree?.linkParentPairs || [],
                 jointCatalogEntries: rawSnapshot.robotTree?.jointCatalogEntries || [],
                 linkDynamicsEntries: rawSnapshot.physics?.linkDynamicsEntries || [],
+                closedLoopConstraintEntries: rawSnapshot.physics?.closedLoopConstraintEntries || [],
                 meshCountsByLinkPath: {},
             };
         const forceRefresh = options?.force === true;
@@ -4254,6 +4255,7 @@ export class ThreeRenderDelegateInterface extends ThreeRenderDelegateMaterialOps
                 source: String(snapshot.source || robotMetadataSummary.source || 'robot-scene-snapshot'),
                 linkParentPairs: toPlainArray(snapshot.linkParentPairs),
                 jointCatalogEntries: toPlainArray(snapshot.jointCatalogEntries),
+                closedLoopConstraintEntries: toPlainArray(snapshot.closedLoopConstraintEntries),
                 linkDynamicsEntries: toPlainArray(snapshot.linkDynamicsEntries),
                 meshCountsByLinkPath: toPlainObject(snapshot.meshCountsByLinkPath),
                 ...(stale ? { stale: true } : {}),
@@ -4267,6 +4269,7 @@ export class ThreeRenderDelegateInterface extends ThreeRenderDelegateMaterialOps
             }
             return Number(snapshot.linkParentPairs?.length || 0)
                 + Number(snapshot.jointCatalogEntries?.length || 0)
+                + Number(snapshot.closedLoopConstraintEntries?.length || 0)
                 + Number(snapshot.linkDynamicsEntries?.length || 0);
         };
         const rawRobotMetadataSnapshot = normalizeRobotMetadataSnapshotCandidate({
@@ -4275,6 +4278,7 @@ export class ThreeRenderDelegateInterface extends ThreeRenderDelegateMaterialOps
             source: String(robotMetadataRaw.source || robotMetadataSummary.source || 'robot-scene-snapshot'),
             linkParentPairs: toPlainArray(robotMetadataRaw.linkParentPairs),
             jointCatalogEntries: toPlainArray(robotMetadataRaw.jointCatalogEntries),
+            closedLoopConstraintEntries: toPlainArray(robotMetadataRaw.closedLoopConstraintEntries),
             linkDynamicsEntries: toPlainArray(robotMetadataRaw.linkDynamicsEntries),
             meshCountsByLinkPath: toPlainObject(robotMetadataRaw.meshCountsByLinkPath),
             stale: robotMetadataRaw.stale === true,
@@ -4288,6 +4292,7 @@ export class ThreeRenderDelegateInterface extends ThreeRenderDelegateMaterialOps
         const rawMetadataHasCompleteDriverData = rawRobotMetadataSnapshot
             && rawRobotMetadataSnapshot.stale !== true
             && (Number(rawRobotMetadataSnapshot.jointCatalogEntries?.length || 0) > 0
+                || Number(rawRobotMetadataSnapshot.closedLoopConstraintEntries?.length || 0) > 0
                 || Number(rawRobotMetadataSnapshot.linkDynamicsEntries?.length || 0) > 0);
         if (!rawMetadataHasCompleteDriverData && typeof this.buildRobotMetadataSnapshotForStage === 'function') {
             try {
@@ -4712,6 +4717,7 @@ export class ThreeRenderDelegateInterface extends ThreeRenderDelegateMaterialOps
                 rootLinkPaths: toPlainArray(rawSnapshot.robotTree?.rootLinkPaths),
             },
             physics: {
+                closedLoopConstraintEntries: toPlainArray(normalizedRobotMetadataSnapshot.closedLoopConstraintEntries),
                 linkDynamicsEntries: Array.isArray(normalizedRobotMetadataSnapshot.linkDynamicsEntries)
                     ? normalizedRobotMetadataSnapshot.linkDynamicsEntries
                     : [],

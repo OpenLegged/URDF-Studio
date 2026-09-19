@@ -32,13 +32,18 @@ function scaleArrayLike(
   return Array.from(value, (entry) => Number(entry) * scale);
 }
 
+function scaleJointLinearValue(
+  value: number | null | undefined,
+  jointType: string,
+  scale: number,
+): number | null | undefined {
+  return jointType.toLowerCase().includes('prismatic') && value != null && Number.isFinite(value)
+    ? value * scale
+    : value;
+}
+
 function scaleJointEntry(entry: UsdJointCatalogEntry, scale: number): UsdJointCatalogEntry {
-  const jointType = String(entry.jointTypeName || entry.jointType || '').toLowerCase();
-  const isPrismatic = jointType.includes('prismatic');
-  const scaleLinearValue = (value: number | null | undefined) =>
-    isPrismatic && value != null && Number.isFinite(Number(value))
-      ? Number(value) * scale
-      : value;
+  const jointType = String(entry.jointTypeName || entry.jointType || '');
 
   return {
     ...entry,
@@ -46,9 +51,9 @@ function scaleJointEntry(entry: UsdJointCatalogEntry, scale: number): UsdJointCa
     localPos1: scaleArrayLike(entry.localPos1, scale),
     localPivotInLink: scaleArrayLike(entry.localPivotInLink, scale),
     originXyz: scaleArrayLike(entry.originXyz, scale),
-    lowerLimitDeg: scaleLinearValue(entry.lowerLimitDeg),
-    upperLimitDeg: scaleLinearValue(entry.upperLimitDeg),
-    angleDeg: scaleLinearValue(entry.angleDeg),
+    lowerLimitDeg: scaleJointLinearValue(entry.lowerLimitDeg, jointType, scale),
+    upperLimitDeg: scaleJointLinearValue(entry.upperLimitDeg, jointType, scale),
+    angleDeg: scaleJointLinearValue(entry.angleDeg, jointType, scale),
   };
 }
 
@@ -72,6 +77,9 @@ function scaleClosedLoopEntry(
     anchorWorld: scaleArrayLike(entry.anchorWorld, scale),
     anchorLocalA: scaleArrayLike(entry.anchorLocalA, scale),
     anchorLocalB: scaleArrayLike(entry.anchorLocalB, scale),
+    originXyz: scaleArrayLike(entry.originXyz, scale),
+    lowerLimitDeg: scaleJointLinearValue(entry.lowerLimitDeg, String(entry.jointType || ''), scale),
+    upperLimitDeg: scaleJointLinearValue(entry.upperLimitDeg, String(entry.jointType || ''), scale),
   };
 }
 
@@ -170,6 +178,10 @@ export function normalizeUsdSceneSnapshotToMeters(
           ...snapshot.physics,
           linkDynamicsEntries: Array.from(snapshot.physics.linkDynamicsEntries || [], (entry) =>
             scaleDynamicsEntry(entry, metersPerUnit),
+          ),
+          closedLoopConstraintEntries: Array.from(
+            snapshot.physics.closedLoopConstraintEntries || [],
+            (entry) => scaleClosedLoopEntry(entry, metersPerUnit),
           ),
         }
       : snapshot.physics,

@@ -23,6 +23,14 @@ test('normalizes USD geometry, transforms, primitives, joints, and dynamics to m
     },
     physics: {
       linkDynamicsEntries: [{ centerOfMassLocal: [0, 0, 500], diagonalInertia: [1e6, 2e6, 3e6] }],
+      closedLoopConstraintEntries: [{
+        jointType: 'prismatic',
+        anchorLocalA: [1000, 0, 0],
+        anchorLocalB: [0, 500, 0],
+        originXyz: [0, 0, 250],
+        lowerLimitDeg: -200,
+        upperLimitDeg: 300,
+      }],
     },
     render: {
       meshDescriptors: [{ size: 2000, radius: 500, extentSize: [1000, 2000, 3000] }],
@@ -59,6 +67,15 @@ test('normalizes USD geometry, transforms, primitives, joints, and dynamics to m
   assert.equal(normalized.robotTree?.jointCatalogEntries?.[1]?.angleDeg, 0.125);
   assert.deepEqual(normalized.physics?.linkDynamicsEntries?.[0]?.centerOfMassLocal, [0, 0, 0.5]);
   assert.deepEqual(normalized.physics?.linkDynamicsEntries?.[0]?.diagonalInertia, [1, 2, 3]);
+  assert.deepEqual(normalized.physics?.closedLoopConstraintEntries?.[0], {
+    jointType: 'prismatic',
+    anchorLocalA: [1, 0, 0],
+    anchorLocalB: [0, 0.5, 0],
+    originXyz: [0, 0, 0.25],
+    lowerLimitDeg: -0.2,
+    upperLimitDeg: 0.3,
+    anchorWorld: undefined,
+  });
   assert.deepEqual(
     normalized.robotMetadataSnapshot?.closedLoopConstraintEntries?.[0]?.anchorWorld,
     [1, 2, 3],

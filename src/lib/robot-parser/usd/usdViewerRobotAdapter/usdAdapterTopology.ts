@@ -7,6 +7,7 @@ import {
   GeometryType,
   JointType,
   type RobotClosedLoopConstraint,
+  type RobotClosedLoopJointConstraint,
   type UrdfJoint,
   type UrdfLink,
 } from '@/types';
@@ -405,6 +406,66 @@ export function createJointFromViewerEntry(
   };
 }
 
+function createJointClosedLoopConstraint(
+  entry: ClosedLoopConstraintEntry,
+  baseConstraint: Omit<RobotClosedLoopJointConstraint, 'type' | 'jointType'>,
+  hasAuthoredAnchorWorld: boolean,
+): RobotClosedLoopJointConstraint | null {
+  const jointType = String(entry.jointType || '')
+    .trim()
+    .toLowerCase();
+  if (
+    jointType !== 'fixed' &&
+    jointType !== 'revolute' &&
+    jointType !== 'continuous' &&
+    jointType !== 'prismatic' &&
+    jointType !== 'ball'
+  ) {
+    return null;
+  }
+
+  const axisLocal = toVector3(entry.axisLocal);
+  const limit: RobotClosedLoopJointConstraint['limit'] = {};
+  if (typeof entry.lowerLimitDeg === 'number' && Number.isFinite(entry.lowerLimitDeg)) {
+    limit.lower =
+      jointType === 'prismatic'
+        ? Number(entry.lowerLimitDeg)
+        : (Number(entry.lowerLimitDeg) * Math.PI) / 180;
+  }
+  if (typeof entry.upperLimitDeg === 'number' && Number.isFinite(entry.upperLimitDeg)) {
+    limit.upper =
+      jointType === 'prismatic'
+        ? Number(entry.upperLimitDeg)
+        : (Number(entry.upperLimitDeg) * Math.PI) / 180;
+  }
+
+  const originXyz = toVector3(entry.originXyz);
+  // urdf:originQuatWxyz is serialized as (w, x, y, z).
+  const originRpy = quaternionComponentsToEuler(
+    entry.originQuatWxyz?.[1],
+    entry.originQuatWxyz?.[2],
+    entry.originQuatWxyz?.[3],
+    entry.originQuatWxyz?.[0],
+  );
+
+  const jointConstraint: RobotClosedLoopJointConstraint = {
+    ...baseConstraint,
+    type: 'joint',
+    jointType: jointType as RobotClosedLoopJointConstraint['jointType'],
+    ...(axisLocal.x !== 0 || axisLocal.y !== 0 || axisLocal.z !== 0
+      ? { axis: axisLocal }
+      : {}),
+    limit,
+    origin: {
+      xyz: originXyz,
+      rpy: originRpy,
+    },
+  };
+  return hasAuthoredAnchorWorld
+    ? ({ ...jointConstraint, __usdAuthoredAnchorWorld: true } as RobotClosedLoopJointConstraint)
+    : jointConstraint;
+}
+
 export function createClosedLoopConstraintFromUsdEntry(
   entry: ClosedLoopConstraintEntry,
   linkIdByPath: Map<string, string>,
@@ -440,24 +501,34 @@ export function createClosedLoopConstraintFromUsdEntry(
   const constraintType = String(entry.constraintType || '')
     .trim()
     .toLowerCase();
-  if (constraintType && constraintType !== 'connect') {
-    return null;
-  }
 
   const hasAuthoredAnchorWorld =
     entry.anchorWorld &&
     typeof entry.anchorWorld.length === 'number' &&
     entry.anchorWorld.length >= 3;
-  const constraint: RobotClosedLoopConstraint = {
+  const baseConstraint = {
     id:
       String(entry.id || `${linkAId}_${linkBId}_closed_loop`).trim() ||
       `${linkAId}_${linkBId}_closed_loop`,
-    type: 'connect',
     linkAId,
     linkBId,
     anchorLocalA: toVector3(entry.anchorLocalA),
     anchorLocalB: toVector3(entry.anchorLocalB),
     anchorWorld: hasAuthoredAnchorWorld ? toVector3(entry.anchorWorld) : { x: 0, y: 0, z: 0 },
+  };
+
+  // Closed-loop joints preserve their authored type without becoming tree edges.
+  if (constraintType === 'joint') {
+    return createJointClosedLoopConstraint(entry, baseConstraint, Boolean(hasAuthoredAnchorWorld));
+  }
+
+  if (constraintType && constraintType !== 'connect') {
+    return null;
+  }
+
+  const constraint: RobotClosedLoopConstraint = {
+    ...baseConstraint,
+    type: 'connect',
   };
   return hasAuthoredAnchorWorld
     ? ({ ...constraint, __usdAuthoredAnchorWorld: true } as RobotClosedLoopConstraint)

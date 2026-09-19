@@ -2118,11 +2118,19 @@ export class ThreeRenderDelegateCore {
                     closedLoopConstraintEntries.push({
                         id: closedLoopId || jointName || null,
                         constraintType: closedLoopType,
+                        jointType: jointTypeName.toLowerCase() === 'continuous'
+                            ? 'continuous'
+                            : jointType === 'spherical' ? 'ball' : jointType,
                         linkAPath: parentLinkPath,
                         linkBPath: childLinkPath,
                         anchorWorld: jointRecord?.anchorWorld || null,
-                        anchorLocalA: normalizedOriginXyz || [0, 0, 0],
+                        anchorLocalA: localPos0 || normalizedOriginXyz || [0, 0, 0],
                         anchorLocalB: localPos1,
+                        axisLocal,
+                        lowerLimitDeg: jointRecord.lowerLimitDeg == null ? null : limits.lower,
+                        upperLimitDeg: jointRecord.upperLimitDeg == null ? null : limits.upper,
+                        originXyz: normalizedOriginXyz,
+                        originQuatWxyz: normalizedOriginQuatWxyz,
                     });
                     continue;
                 }

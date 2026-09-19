@@ -405,6 +405,7 @@ public:
                 record.set("upperLimitDeg", upperLimit);
             }
 
+            _WriteJointRoundtripMetadata(prim, timeCode, record);
             records.set(recordIndex++, record);
         }
 
@@ -556,6 +557,7 @@ public:
         robotTree.set("rootLinkPaths", emptyArray);
 
         physics.set("linkDynamicsEntries", emptyArray);
+        physics.set("closedLoopConstraintEntries", emptyArray);
 
         render.set("primPathSet", emscripten::val::undefined());
         render.set("primTransforms", emptyObject);
@@ -1320,6 +1322,7 @@ public:
             robotTree.set("linkParentPairs", robotMetadataSnapshot["linkParentPairs"]);
             robotTree.set("jointCatalogEntries", robotMetadataSnapshot["jointCatalogEntries"]);
             physics.set("linkDynamicsEntries", robotMetadataSnapshot["linkDynamicsEntries"]);
+            physics.set("closedLoopConstraintEntries", robotMetadataSnapshot["closedLoopConstraintEntries"]);
         } catch (...) {
         }
 
@@ -2195,6 +2198,7 @@ private:
         snapshot.set("source", "mesh-only");
         snapshot.set("linkParentPairs", emptyPairs);
         snapshot.set("jointCatalogEntries", emptyJointEntries);
+        snapshot.set("closedLoopConstraintEntries", emscripten::val::array());
         snapshot.set("linkDynamicsEntries", emptyDynamicsEntries);
         if (!_stage) return snapshot;
 
@@ -2272,7 +2276,8 @@ private:
             const std::string primTypeName = prim.GetTypeName().GetString();
             if (primTypeName == "PhysicsRevoluteJoint"
                 || primTypeName == "PhysicsPrismaticJoint"
-                || primTypeName == "PhysicsFixedJoint") {
+                || primTypeName == "PhysicsFixedJoint"
+                || primTypeName == "PhysicsSphericalJoint") {
                 addDiscoveredLinkPath(
                     _ReadFirstRelationshipTargetPath(
                         prim.GetRelationship(TfToken("physics:body0"))));
@@ -2463,13 +2468,19 @@ private:
         stageJointRecordByChildLinkPath.reserve(sortedLinkPaths.size());
         linkParentPathByChildLinkPath.reserve(sortedLinkPaths.size());
 
+        emscripten::val closedLoopConstraintEntries = emscripten::val::array();
+        int closedLoopIndex = 0;
         const UsdTimeCode timeCode =
             _delegate ? _delegate->GetTime() : UsdTimeCode::Default();
         const Usd_PrimFlagsPredicate predicate =
             UsdTraverseInstanceProxies(UsdPrimAllPrimsPredicate);
         for (UsdPrim const& prim : UsdPrimRange::Stage(_stage, predicate)) {
             const std::string typeName = prim.GetTypeName().GetString();
-            if (typeName != "PhysicsRevoluteJoint"
+            std::string closedLoopType;
+            _TryReadStringAttr(prim.GetAttribute(TfToken("urdf:closedLoopType")),
+                               timeCode, &closedLoopType);
+            if (closedLoopType.empty()
+                && typeName != "PhysicsRevoluteJoint"
                 && typeName != "PhysicsPrismaticJoint"
                 && typeName != "PhysicsFixedJoint") {
                 continue;
@@ -2491,6 +2502,17 @@ private:
             if (childMatches.empty()) continue;
             std::vector<std::string> parentMatches =
                 resolveRuntimeLinkPathsFromSourcePath(body0, preferredRootPath);
+            // A loop connects two existing bodies; it must never replace the
+            // structural joint indexed by the same child body.
+            if (!closedLoopType.empty()) {
+                if (!parentMatches.empty()) {
+                    closedLoopConstraintEntries.set(closedLoopIndex++,
+                        _BuildClosedLoopConstraintEntry(
+                            prim, timeCode, closedLoopType,
+                            parentMatches.front(), childMatches.front()));
+                }
+                continue;
+            }
 
             std::string axisToken = "x";
             axisToken = _ReadAxisToken(prim, timeCode);
@@ -2615,6 +2637,8 @@ private:
                     : emscripten::val::null());
             entry.set("lowerLimitDeg", record.lowerLimitDeg);
             entry.set("upperLimitDeg", record.upperLimitDeg);
+            _WriteJointRoundtripMetadata(
+                _stage->GetPrimAtPath(SdfPath(record.jointPath)), timeCode, entry);
             jointCatalogEntries.set(jointCatalogIndex++, entry);
         }
 
@@ -2717,13 +2741,15 @@ private:
         }
 
         const bool hasStageMetadata =
-            pairIndex > 0 || jointCatalogIndex > 0 || dynamicsIndex > 0;
+            pairIndex > 0 || jointCatalogIndex > 0 || dynamicsIndex > 0
+            || closedLoopIndex > 0;
         snapshot.set(
             "source",
             hasStageMetadata ? std::string("usd-stage-cpp")
                              : std::string("mesh-only"));
         snapshot.set("linkParentPairs", linkParentPairs);
         snapshot.set("jointCatalogEntries", jointCatalogEntries);
+        snapshot.set("closedLoopConstraintEntries", closedLoopConstraintEntries);
         snapshot.set("linkDynamicsEntries", linkDynamicsEntries);
         return snapshot;
     }
@@ -3139,6 +3165,84 @@ private:
         }
 
         return false;
+    }
+
+    static void _WriteJointRoundtripMetadata(
+        UsdPrim const& prim, UsdTimeCode const& timeCode, emscripten::val record) {
+        for (const char* name : {"jointType", "closedLoopId", "closedLoopType"}) {
+            std::string value;
+            if (_TryReadStringAttr(prim.GetAttribute(TfToken(
+                    std::string("urdf:") + name)), timeCode, &value)) {
+                record.set(name, value);
+                if (std::string(name) == "jointType") {
+                    record.set("usdPhysicsJointTypeName", prim.GetTypeName().GetString());
+                    record.set("jointTypeName", value);
+                }
+            }
+        }
+        for (const char* name : {"axisLocal", "originXyz", "anchorWorld"}) {
+            std::array<double, 3> value;
+            if (_TryReadVec3Attr(prim.GetAttribute(TfToken(
+                    std::string("urdf:") + name)), timeCode, &value)) {
+                record.set(name, _Vec3ToJsArray(value));
+            }
+        }
+        std::array<double, 4> originQuat;
+        if (_TryReadQuatWxyzAttr(
+                prim.GetAttribute(TfToken("urdf:originQuatWxyz")),
+                timeCode, &originQuat)) {
+            record.set("originQuatWxyz", _Vec4ToJsArray(originQuat));
+        }
+    }
+
+    static emscripten::val _BuildClosedLoopConstraintEntry(
+        UsdPrim const& prim, UsdTimeCode const& timeCode,
+        std::string const& constraintType,
+        std::string const& linkAPath, std::string const& linkBPath) {
+        emscripten::val entry = emscripten::val::object();
+        std::string id = prim.GetName().GetString();
+        _TryReadStringAttr(prim.GetAttribute(TfToken("urdf:closedLoopId")), timeCode, &id);
+        std::string jointType = "fixed";
+        const std::string typeName = prim.GetTypeName().GetString();
+        if (typeName == "PhysicsRevoluteJoint") jointType = "revolute";
+        if (typeName == "PhysicsPrismaticJoint") jointType = "prismatic";
+        if (typeName == "PhysicsSphericalJoint") jointType = "ball";
+        entry.set("id", id);
+        entry.set("constraintType", constraintType);
+        entry.set("jointType", jointType);
+        entry.set("linkAPath", linkAPath);
+        entry.set("linkBPath", linkBPath);
+        std::array<double, 3> localPos0 = {0.0, 0.0, 0.0};
+        std::array<double, 3> localPos1 = {0.0, 0.0, 0.0};
+        _TryReadVec3Attr(prim.GetAttribute(TfToken("physics:localPos0")), timeCode, &localPos0);
+        _TryReadVec3Attr(prim.GetAttribute(TfToken("physics:localPos1")), timeCode, &localPos1);
+        entry.set("anchorLocalA", _Vec3ToJsArray(localPos0));
+        entry.set("anchorLocalB", _Vec3ToJsArray(localPos1));
+        entry.set("originXyz", _Vec3ToJsArray(localPos0));
+        std::array<double, 4> localRot0 = {1.0, 0.0, 0.0, 0.0};
+        std::array<double, 4> localRot1 = {1.0, 0.0, 0.0, 0.0};
+        _TryReadQuatWxyzAttr(prim.GetAttribute(TfToken("physics:localRot0")), timeCode, &localRot0);
+        _TryReadQuatWxyzAttr(prim.GetAttribute(TfToken("physics:localRot1")), timeCode, &localRot1);
+        const GfQuatd rotation0(localRot0[0], GfVec3d(localRot0[1], localRot0[2], localRot0[3]));
+        const GfQuatd rotation1(localRot1[0], GfVec3d(localRot1[1], localRot1[2], localRot1[3]));
+        const GfQuatd origin = rotation0 * rotation1.GetInverse();
+        const GfVec3d imaginary = origin.GetImaginary();
+        entry.set("originQuatWxyz", _Vec4ToJsArray({
+            origin.GetReal(), imaginary[0], imaginary[1], imaginary[2]}));
+        const std::string axisToken = _ToLowerAscii(_ReadAxisToken(prim, timeCode));
+        const GfVec3d nativeAxis = axisToken == "y" ? GfVec3d(0, 1, 0)
+            : axisToken == "z" ? GfVec3d(0, 0, 1) : GfVec3d(1, 0, 0);
+        const GfVec3d axis = rotation1.Transform(nativeAxis);
+        entry.set("axisLocal", _Vec3ToJsArray({axis[0], axis[1], axis[2]}));
+        for (const char* bound : {"lowerLimit", "upperLimit"}) {
+            double value = 0.0;
+            const bool hasValue = _TryReadDoubleAttr(
+                prim, (std::string("physics:") + bound).c_str(), timeCode, &value);
+            entry.set(std::string(bound) + "Deg",
+                      hasValue ? emscripten::val(value) : emscripten::val::null());
+        }
+        _WriteJointRoundtripMetadata(prim, timeCode, entry);
+        return entry;
     }
 
     static bool _TryReadVec2Attr(

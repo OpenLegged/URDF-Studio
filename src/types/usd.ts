@@ -161,11 +161,17 @@ export interface UsdLinkDynamicsEntry {
 export interface UsdClosedLoopConstraintEntry {
   id?: string | null;
   constraintType?: string | null;
+  jointType?: string | null;
   linkAPath?: string | null;
   linkBPath?: string | null;
   anchorWorld?: ArrayLike<number> | null;
   anchorLocalA?: ArrayLike<number> | null;
   anchorLocalB?: ArrayLike<number> | null;
+  axisLocal?: ArrayLike<number> | null;
+  lowerLimitDeg?: number | null;
+  upperLimitDeg?: number | null;
+  originXyz?: ArrayLike<number> | null;
+  originQuatWxyz?: ArrayLike<number> | null;
 }
 
 export interface UsdRobotMetadataSnapshot {
@@ -212,6 +218,7 @@ export interface UsdSceneSnapshot {
   } | null;
   physics?: {
     linkDynamicsEntries?: ArrayLike<UsdLinkDynamicsEntry>;
+    closedLoopConstraintEntries?: ArrayLike<UsdClosedLoopConstraintEntry>;
   } | null;
   render?: {
     meshDescriptors?: ArrayLike<UsdSceneMeshDescriptor>;
