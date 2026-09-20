@@ -627,6 +627,9 @@ export interface TranslationKeys extends TranslationWorkflowKeys {
   closePreview: string;
   preview: string;
   noPreviewImage: string;
+  imagePreviewZoomIn: string;
+  imagePreviewZoomOut: string;
+  imagePreviewResetZoom: string;
   loadedModel: string;
   resize: string;
   bridgeJointNamePlaceholder: string;

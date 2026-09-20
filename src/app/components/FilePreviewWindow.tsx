@@ -8,6 +8,7 @@ import {
   FLOATING_WINDOW_TITLE_CLASS,
 } from '@/shared/components/DraggableWindow';
 import { useDraggableWindow } from '@/shared/hooks/useDraggableWindow';
+import { ZoomableImage } from '@/shared/components/ZoomableImage';
 import { translations } from '@/shared/i18n';
 import {
   classifyLibraryFileKind,
@@ -366,13 +367,15 @@ export function FilePreviewWindow({
             />
           </React.Suspense>
         ) : imageUrl ? (
-          <div className="flex h-full items-center justify-center p-4">
-            <img
-              src={imageUrl}
-              alt={displayName}
-              className="max-h-full max-w-full rounded-md object-contain"
-            />
-          </div>
+          <ZoomableImage
+            src={imageUrl}
+            alt={displayName}
+            labels={{
+              zoomIn: t.imagePreviewZoomIn,
+              zoomOut: t.imagePreviewZoomOut,
+              resetZoom: t.imagePreviewResetZoom,
+            }}
+          />
         ) : showLoadingState ? (
           <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 text-text-tertiary">
             <LoaderCircle className="h-6 w-6 animate-spin" />

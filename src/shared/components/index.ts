@@ -15,3 +15,4 @@ export * from './DraggableWindow';
 // Shared Primitive Components
 export * from './SelectableText';
 export * from './FilePreviewCard';
+export * from './ZoomableImage';
