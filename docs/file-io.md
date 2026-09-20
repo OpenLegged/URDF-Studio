@@ -247,3 +247,18 @@ USD 单资产入口 `prepareUsdSourceExportCacheWithWorker` 通过 editor 的 `u
 `HandleExportWithConfigOptions.onArchive(blob, fileName)` 允许宿主接管生成的 ZIP；配置时不再触发 Core 默认浏览器下载，未配置时行为保持不变。USD 和机器人文本格式共用该交付选择。默认配置经 file-io 公共入口 `DEFAULT_EXPORT_CONFIG` 导出。
 
 隔离嵌入工作区可以传 `AppContent.externalImportEnabled={false}`，关闭自动 URL 导入与 BroadcastChannel 监听，避免后台转换抢占用户其他标签页的导入。默认开启，手动文件导入与导出不受影响。
+
+### Xacro YAML appearance dependencies
+
+Folder and archive import retain `.yaml` / `.yml` as auxiliary text in the imported
+file map. Browser Xacro supports `load_yaml` / `xacro.load_yaml`, dictionary access
+(including `.get`), numeric list comprehensions, conditional expressions and
+`str.join` for palette-to-RGBA conversion. Relative YAML paths resolve against the
+declaring Xacro file; `$(find package)` and `package://` paths stay inside imported
+packages. No host filesystem access or Python/JavaScript source execution occurs.
+Unsupported expressions remain outside this data-only subset. Missing/invalid YAML
+and unresolved material RGBA fail explicitly instead of producing black materials.
+To change an authored scheme, edit its YAML configuration and reimport the package;
+this does not add a palette selection UI.
+
+Focused regression: `npm run test:unit -- src/core/parsers/xacro/xacroYaml.test.ts src/app/utils/importPreparation.yaml.test.ts`.

@@ -13,6 +13,8 @@ export function isImportableDefinitionPath(lowerPath: string): boolean {
 
 export function isAuxiliaryTextImportPath(lowerPath: string): boolean {
   return (
+    lowerPath.endsWith('.yaml') ||
+    lowerPath.endsWith('.yml') ||
     lowerPath.endsWith('.material') ||
     lowerPath.endsWith('.gazebo') ||
     lowerPath.endsWith('.mtl') ||

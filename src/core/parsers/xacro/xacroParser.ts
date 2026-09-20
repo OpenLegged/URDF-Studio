@@ -9,15 +9,17 @@
  * - <xacro:insert_block> block parameter expansion
  * - <xacro:if> / <xacro:unless> conditionals
  * - <xacro:arg> for command-line style arguments
- * - Common Python-style boolean expressions used by upstream xacro files
+ * - Data-only Python expressions, YAML dictionaries and palette list comprehensions
  *
  * Limitations:
  * - $(find package) only supports path resolution inside imported file map
- * - Advanced Python xacro features still run in best-effort browser fallback mode
+ * - Arbitrary Python functions are not executed; unresolved material colors fail explicitly
  */
 
 import { type RobotImportRecoveryDiagnostic, type RobotState } from '@/types';
 import { attachParserRecoveryDiagnostics } from '@/core/parsers/recoveryDiagnostics';
+import { evaluateDataExpression } from './expressionEvaluation';
+import { loadXacroYaml } from './yamlLoader';
 import { parseURDF } from '@/core/parsers/urdf/parser';
 
 export interface XacroArgs {
@@ -29,7 +31,8 @@ export interface XacroFileMap {
 }
 
 interface XacroContext {
-  properties: Map<string, string>;
+  properties: Map<string, unknown>;
+  propertyOrigins: Map<string, { raw: string; basePath: string }>;
   macros: Map<string, { params: string[]; body: string; namespace?: string }>;
   args: XacroArgs;
   fileMap: XacroFileMap;
@@ -59,16 +62,6 @@ const XACRO_ROBOT_CLOSE_TAG_RE = /<\s*\/\s*xacro:robot\s*>/gi;
 const ROBOT_WRAPPER_OPEN_TAG_RE = /<\s*(?:xacro:)?robot\b[^>]*>/gi;
 const ROBOT_WRAPPER_CLOSE_TAG_RE = /<\s*\/\s*(?:xacro:)?robot\s*>/gi;
 
-const EXPRESSION_KEYWORDS = new Map<string, string>([
-  ['and', '&&'],
-  ['or', '||'],
-  ['not', '!'],
-  ['True', 'true'],
-  ['False', 'false'],
-  ['None', 'null'],
-  ['pi', String(Math.PI)],
-]);
-
 function addXacroRecoveryDiagnostic(
   ctx: XacroContext,
   diagnostic: Omit<RobotImportRecoveryDiagnostic, 'severity' | 'category'>
@@ -81,7 +74,7 @@ function addXacroRecoveryDiagnostic(
   });
 }
 
-function resolveContextValue(identifier: string, ctx: XacroContext): string | undefined {
+function resolveContextValue(identifier: string, ctx: XacroContext): unknown {
   if (ctx.properties.has(identifier)) {
     return ctx.properties.get(identifier);
   }
@@ -91,21 +84,6 @@ function resolveContextValue(identifier: string, ctx: XacroContext): string | un
   }
 
   return undefined;
-}
-
-function toJavaScriptLiteral(value: string): string {
-  const trimmed = value.trim();
-  if (trimmed === 'True') return 'true';
-  if (trimmed === 'False') return 'false';
-  if (trimmed === 'None') return 'null';
-
-  if (/^[+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?$/.test(trimmed)) {
-    // Parentheses keep unary operators authored around a variable from merging
-    // with a signed property value (for example `-${negative_limit}`).
-    return `(${trimmed})`;
-  }
-
-  return JSON.stringify(trimmed);
 }
 
 function stringifyExpressionResult(result: unknown): string | null {
@@ -135,46 +113,23 @@ function escapeRegExp(value: string): string {
 }
 
 function evaluateExpression(expr: string, ctx: XacroContext): unknown | undefined {
-  const translatedArgCalls = expr.replace(
-    /\b(?:xacro\.)?arg\(\s*(["'])([^"']+)\1\s*\)/g,
-    (_match, _quote, argName) => {
-      const resolved = ctx.args[argName];
-      if (resolved !== undefined) {
-        return toJavaScriptLiteral(resolved);
-      }
-
-      return _match;
-    },
-  );
-
-  const translated = translatedArgCalls.replace(/\b[A-Za-z_]\w*\b/g, (identifier) => {
-    const keyword = EXPRESSION_KEYWORDS.get(identifier);
-    if (keyword !== undefined) {
-      return keyword;
-    }
-
-    const resolved = resolveContextValue(identifier, ctx);
-    if (resolved !== undefined) {
-      return toJavaScriptLiteral(resolved);
-    }
-
-    return identifier;
-  });
-
-  if (/[`;\[\]{}]|=>/.test(translated)) {
-    return undefined;
-  }
-
-  const withoutStringLiterals = translated
-    .replace(/(["'])(?:\\.|(?!\1)[^\\])*\1/g, '')
-    .replace(/\b(?:true|false|null)\b/g, '');
-  if (/\b[A-Za-z_]\w*\b/.test(withoutStringLiterals)) {
-    return undefined;
-  }
-
   try {
-    return Function(`"use strict"; return (${translated});`)();
-  } catch {
+    return evaluateDataExpression(expr, {
+      resolve: (name) => {
+        const value = resolveContextValue(name, ctx);
+        if (typeof value !== 'string') return value;
+        if (value === 'True') return true;
+        if (value === 'False') return false;
+        if (value === 'None') return null;
+        return /^[+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?$/.test(value.trim())
+          ? Number(value) : value;
+      },
+      arg: (name) => ctx.args[name],
+      loadYaml: (filename) => loadXacroYaml(filename, ctx.basePath, ctx.fileMap),
+    });
+  } catch (error) {
+    // YAML dependencies must not silently become an all-black, apparently valid model.
+    if (/\b(?:xacro\.)?load_yaml\s*\(/.test(expr)) throw error;
     return undefined;
   }
 }
@@ -293,25 +248,25 @@ function qualifyXacroSymbol(name: string, namespace = ''): string {
 }
 
 function parseProperties(content: string, ctx: XacroContext, namespace = ''): void {
-  // Match <xacro:property name="..." value="..."/>
-  const propRegex = /<xacro:property\s+name=["']([^"']+)["']\s+value=["']([^"']*)["']\s*\/>/g;
-
-  let match: RegExpExecArray | null;
-  while ((match = propRegex.exec(content)) !== null) {
-    const name = match[1];
-    let value = match[2];
-    // Resolve any ${} in the value
-    value = substituteVariables(value, ctx);
-    ctx.properties.set(qualifyXacroSymbol(name, namespace), value);
+  for (const [name, value] of parseXacroArgs(content)) {
+    if (ctx.args[name] === undefined) ctx.args[name] = value;
   }
-
-  // Also match block-style properties: <xacro:property name="...">value</xacro:property>
-  const blockPropRegex = /<xacro:property\s+name=["']([^"']+)["']>([^<]*)<\/xacro:property>/g;
-  while ((match = blockPropRegex.exec(content)) !== null) {
-    const name = match[1];
-    let value = match[2].trim();
-    value = substituteVariables(value, ctx);
-    ctx.properties.set(qualifyXacroSymbol(name, namespace), value);
+  // Match the enclosing quote, allowing Python strings and extra Xacro attributes.
+  const pattern = /<xacro:property\b((?:[^"'>]|"[^"]*"|'[^']*')*)(?:\/>|>([^<]*)<\/xacro:property>)/g;
+  for (const match of content.matchAll(pattern)) {
+    const attrs = parseXmlAttributeMap(match[1]);
+    const name = attrs.get('name');
+    const raw = attrs.get('value') ?? match[2]?.trim();
+    if (!name || raw === undefined) continue;
+    const key = qualifyXacroSymbol(name, namespace);
+    const prior = ctx.propertyOrigins.get(key);
+    const basePath = prior?.raw === raw ? prior.basePath : ctx.basePath;
+    ctx.propertyOrigins.set(key, { raw, basePath });
+    const propertyCtx = { ...ctx, basePath };
+    const value = raw.replace(/\$\(arg\s+([^)]+)\)/g, (match, arg: string) => ctx.args[arg.trim()] ?? match);
+    const expression = unwrapExpression(value);
+    const evaluated = expression === null ? undefined : evaluateExpression(expression, propertyCtx);
+    ctx.properties.set(key, evaluated === undefined ? substituteVariables(value, propertyCtx) : evaluated);
   }
 }
 
@@ -351,6 +306,14 @@ function stripMacroDefinitions(content: string): string {
  * Substitute ${...} variables
  */
 function substituteVariables(content: string, ctx: XacroContext): string {
+  // Declarations are evaluated by parseProperties in their source-file scope.
+  // Re-evaluating their attributes after include expansion would resolve YAML
+  // relative to the caller instead of the file that declared the property.
+  if (content.includes('<xacro:property')) {
+    const parts = content.split(/(<xacro:property\b(?:[^"'>]|"[^"]*"|'[^']*')*(?:\/>|>[^<]*<\/xacro:property>))/g);
+    if (parts.length > 1) return parts.map(part => part.startsWith('<xacro:property') ? part : substituteVariables(part, ctx))
+      .join('');
+  }
   // Replace $(arg name) with arg value
   content = content.replace(/\$\(arg\s+([^)]+)\)/g, (_, name) => {
     const argName = name.trim();
@@ -358,7 +321,7 @@ function substituteVariables(content: string, ctx: XacroContext): string {
       return ctx.args[argName];
     }
     // Check if there's a default from xacro:arg
-    return ctx.properties.get(argName) || `$(arg ${argName})`;
+    return stringifyExpressionResult(ctx.properties.get(argName)) ?? `$(arg ${argName})`;
   });
 
   // Replace ${...} expressions
@@ -367,7 +330,7 @@ function substituteVariables(content: string, ctx: XacroContext): string {
 
     // Simple variable lookup
     if (ctx.properties.has(trimmedExpr)) {
-      return ctx.properties.get(trimmedExpr)!;
+      return stringifyExpressionResult(ctx.properties.get(trimmedExpr)) ?? match;
     }
 
     // Check args
@@ -640,6 +603,7 @@ function expandMacroCall(
   const localCtx: XacroContext = {
     ...ctx,
     properties: new Map(ctx.properties),
+    propertyOrigins: new Map(ctx.propertyOrigins),
   };
   if (macroDef.namespace) {
     const namespacePrefix = `${macroDef.namespace}.`;
@@ -804,6 +768,9 @@ function cleanupXacroElements(content: string, ctx: XacroContext): string {
       if (!element.isConnected) return;
       Array.from(element.attributes).forEach((attribute) => {
         if (!unresolvedPattern.test(attribute.value)) return;
+        if (element.tagName === 'color' && attribute.name === 'rgba') {
+          throw new Error(`[Xacro] Cannot resolve material color rgba="${attribute.value}". Check the imported YAML configuration and Xacro expressions.`);
+        }
         addXacroRecoveryDiagnostic(ctx, {
           code: 'xacro_unresolved_substitution_omitted',
           message: `Unresolved xacro substitution in ${element.tagName}.${attribute.name} was omitted.`,
@@ -862,8 +829,9 @@ export function processXacroWithDiagnostics(
   // Initialize context
   const ctx: XacroContext = {
     properties: new Map(),
+    propertyOrigins: new Map(),
     macros: new Map(),
-    args,
+    args: { ...args },
     fileMap,
     includeFileIndex: createIncludeFileIndex(fileMap),
     basePath: normalizePath(basePath),

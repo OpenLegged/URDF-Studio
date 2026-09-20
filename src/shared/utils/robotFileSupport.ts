@@ -81,6 +81,8 @@ export const ROBOT_IMPORT_ASSET_EXTENSIONS = [
 ] as const;
 
 export const ROBOT_IMPORT_AUXILIARY_TEXT_EXTENSIONS = [
+  '.yaml',
+  '.yml',
   '.material',
   '.gazebo',
   '.mtl',
