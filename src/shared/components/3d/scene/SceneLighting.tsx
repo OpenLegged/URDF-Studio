@@ -3,14 +3,13 @@ import { useThree } from '@react-three/fiber';
 import * as THREE from 'three';
 import type { Theme } from '@/types';
 import { LIGHTING_CONFIG, resolveCameraFollowLightingStyle } from './constants';
-import { useWorkspaceCanvasInteractionState } from './interactionQuality';
 import { useSnapshotRenderActive } from './SnapshotRenderContext';
 import {
   isShadowMapRefreshPaused,
-  pauseShadowMapRefresh,
   requestShadowMapRefresh,
 } from './shadowMapRefresh';
 import { resolveEffectiveTheme } from './themeUtils';
+import { cacheStaticShadowMaps } from './staticShadowCache';
 
 interface SceneLightingProps {
   theme?: Theme;
@@ -43,7 +42,6 @@ export function SceneLighting({
   const cameraTargetRef = useRef(new THREE.Vector3());
   const cameraRightRef = useRef(new THREE.Vector3());
   const cameraUpRef = useRef(new THREE.Vector3());
-  const shadowPauseOwner = useRef(Symbol('scene-lighting-interaction')).current;
   const lastCameraPositionRef = useRef(new THREE.Vector3(Number.NaN, Number.NaN, Number.NaN));
   const lastCameraQuaternionRef = useRef(
     new THREE.Quaternion(Number.NaN, Number.NaN, Number.NaN, Number.NaN),
@@ -51,7 +49,6 @@ export function SceneLighting({
 
   const effectiveTheme = resolveEffectiveTheme(theme);
   const snapshotRenderActive = useSnapshotRenderActive();
-  const isInteracting = useWorkspaceCanvasInteractionState();
   const cameraFollowStyle = resolveCameraFollowLightingStyle(effectiveTheme);
   const shouldUseShadows =
     snapshotRenderActive || (enableShadows && (cameraFollowPrimary || effectiveTheme !== 'light'));
@@ -84,6 +81,8 @@ export function SceneLighting({
     ? cameraFollowStyle.cameraSoftFrontIntensity
     : 0;
 
+  useEffect(() => cacheStaticShadowMaps(gl), [gl]);
+
   useEffect(() => {
     gl.shadowMap.enabled = shouldUseShadows;
     if (shouldUseShadows) {
@@ -108,27 +107,19 @@ export function SceneLighting({
     snapshotRenderActive,
   ]);
 
-  // Joint/link dragging changes the scene every demanded frame. Reusing the
-  // last shadow map during that short interaction avoids a second full scene
-  // render; the settled frame below refreshes the shadow immediately afterward.
+  // Keep shadows live while joints or components move. The static shadow cache
+  // reuses unchanged depth maps (including camera-only navigation), so holding
+  // a drag still does not add shadow work or keep the demand loop awake.
   useEffect(() => {
     if (!shouldUseShadows) {
       gl.shadowMap.autoUpdate = false;
       return;
     }
 
-    if (isInteracting && !snapshotRenderActive) {
-      const releasePause = pauseShadowMapRefresh(gl, shadowPauseOwner);
-      return () => {
-        releasePause();
-        invalidate();
-      };
-    }
-
     gl.shadowMap.autoUpdate = snapshotRenderActive || !isShadowMapRefreshPaused(gl);
     requestShadowMapRefresh(gl, { force: snapshotRenderActive });
     invalidate();
-  }, [gl, invalidate, isInteracting, shadowPauseOwner, shouldUseShadows, snapshotRenderActive]);
+  }, [gl, invalidate, shouldUseShadows, snapshotRenderActive]);
 
   useEffect(() => {
     const keyLight = cameraKeyLightRef.current;

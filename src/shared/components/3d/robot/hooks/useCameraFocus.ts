@@ -109,6 +109,8 @@ export function useCameraFocus({
   const focusTargetRef = useRef<THREE.Vector3 | null>(null);
   const cameraTargetPosRef = useRef<THREE.Vector3 | null>(null);
   const isFocusingRef = useRef(false);
+  const previousCameraPositionRef = useRef(new THREE.Vector3());
+  const previousOrbitTargetRef = useRef(new THREE.Vector3());
   const autoFramedScopeKeyRef = useRef<string | null>(null);
   const userInterruptedAutoFrameRef = useRef(false);
   const [focusTargetHasVisibleBounds, setFocusTargetHasVisibleBounds] = useState<boolean | null>(
@@ -257,15 +259,29 @@ export function useCameraFocus({
     ) {
       const orbitControls = controlsWithTarget;
       const step = Math.min(1, 5 * delta);
+      const previousCameraPosition = previousCameraPositionRef.current.copy(camera.position);
+      const previousOrbitTarget = previousOrbitTargetRef.current.copy(orbitControls.target);
 
       orbitControls.target.lerp(focusTargetRef.current, step);
       camera.position.lerp(cameraTargetPosRef.current, step);
       orbitControls.update();
       invalidate();
 
+      // Orbit limits can make the requested position unreachable. Preserve the
+      // existing animation path, but stop when the constrained pose stops
+      // changing, allowing only floating-point roundoff at the scene's scale.
+      const settledTolerance = 32 * Number.EPSILON * Math.max(
+        1, camera.position.length(), orbitControls.target.length(),
+      );
+      const constrainedPoseSettled = step > 0
+        && camera.position.distanceToSquared(previousCameraPosition) <= settledTolerance ** 2
+        && orbitControls.target.distanceToSquared(previousOrbitTarget) <= settledTolerance ** 2;
+
       if (
-        camera.position.distanceTo(cameraTargetPosRef.current) < 0.01 &&
-        orbitControls.target.distanceTo(focusTargetRef.current) < 0.01
+        constrainedPoseSettled || (
+          camera.position.distanceTo(cameraTargetPosRef.current) < 0.01 &&
+          orbitControls.target.distanceTo(focusTargetRef.current) < 0.01
+        )
       ) {
         isFocusingRef.current = false;
       }

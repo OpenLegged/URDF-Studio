@@ -72,6 +72,7 @@ export interface AssemblyTreeViewProps {
 
 interface ComponentContentsParams {
   component: AssemblyComponent;
+  childJointsByParent: ReturnType<typeof buildChildJointsByParent>;
   className: string;
   selection: WorkspaceSelection;
   showGeometryDetailsByDefault: boolean;
@@ -97,6 +98,7 @@ function getComponentTendons(component: AssemblyComponent) {
 
 function renderComponentContents({
   component,
+  childJointsByParent,
   className,
   selection,
   showGeometryDetailsByDefault,
@@ -115,7 +117,6 @@ function renderComponentContents({
   t,
   readOnly,
 }: ComponentContentsParams) {
-  const childJointsByParent = buildChildJointsByParent(component.robot.joints);
   const rootLinkIds = getTreeRenderRootLinkIds({
     ...component.robot,
     selection: { type: null, id: null },
@@ -214,6 +215,13 @@ export const AssemblyTreeView = memo(function AssemblyTreeView({
   const setHoveredSelection = useSelectionStore((state) => state.setHoveredSelection);
   const clearHover = useSelectionStore((state) => state.clearHover);
   const components = useMemo(() => Object.values(workspace.components), [workspace.components]);
+  const childJointsByComponent = useMemo(
+    () => Object.fromEntries(components.map((component) => [
+      component.id,
+      buildChildJointsByParent(component.robot.joints),
+    ])),
+    [components],
+  );
   const bridges = useMemo(() => Object.values(workspace.bridges), [workspace.bridges]);
   const simplified = components.length === 1 && bridges.length === 0;
   const [expandedComponents, setExpandedComponents] = useState<Set<string>>(
@@ -306,6 +314,7 @@ export const AssemblyTreeView = memo(function AssemblyTreeView({
   const componentContents = (component: AssemblyComponent, className: string) =>
     renderComponentContents({
       component,
+      childJointsByParent: childJointsByComponent[component.id],
       className,
       selection,
       showGeometryDetailsByDefault,

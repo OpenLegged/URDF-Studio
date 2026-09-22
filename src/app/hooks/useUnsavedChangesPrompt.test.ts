@@ -10,6 +10,7 @@ import { DEFAULT_LINK, JointType, type RobotData, type UrdfJoint } from '@/types
 import { createSingleComponentWorkspace } from '@/core/robot';
 import { useWorkspaceStore } from '@/store/workspaceStore';
 import { setRegressionBeforeUnloadPromptSuppressed } from '@/shared/debug/regressionBridge';
+import { markUnsavedChangesBaselineSaved } from '@/app/utils/unsavedChangesBaseline';
 
 import { useUnsavedChangesPrompt } from './useUnsavedChangesPrompt.ts';
 
@@ -186,6 +187,9 @@ function renderHook() {
       assert.ok(hookValue, 'hook should stay mounted');
       return hookValue;
     },
+    rerender() {
+      flushSync(() => root.render(React.createElement(Probe)));
+    },
     cleanup() {
       flushSync(() => {
         root.unmount();
@@ -265,6 +269,69 @@ test('useUnsavedChangesPrompt only warns for persistent canonical workspace edit
       setTimeout(() => resolve(), 0);
     });
     void domEnvironment;
+  }
+});
+
+test('unchanged immutable workspaces reuse their snapshot across notifications and renders', (context) => {
+  const domEnvironment = installDomEnvironment();
+  resetStoresToBaseline();
+  const stringify = JSON.stringify;
+  let snapshots = 0;
+  const stringifyMock = context.mock.method(JSON, 'stringify', (value: unknown) => {
+    if (new Error().stack?.includes('createStableJsonSnapshot')) snapshots += 1;
+    return stringify(value);
+  });
+  const rendered = renderHook();
+
+  try {
+    snapshots = 0;
+    flushSync(() => useWorkspaceStore.getState().clearHistory());
+    rendered.rerender();
+    flushSync(() => rendered.hook.markCurrentStateSaved());
+    assert.equal(snapshots, 0);
+
+    flushSync(() => useWorkspaceStore.getState().setJointMotion(
+      { type: 'joint', componentId: 'component_demo', entityId: 'joint_1' },
+      0.25,
+    ));
+    assert.equal(snapshots, 1);
+    assert.equal(rendered.hook.hasUnsavedChanges, true);
+    rendered.rerender();
+    flushSync(() => rendered.hook.markCurrentStateSaved());
+    assert.equal(snapshots, 1);
+    assert.equal(rendered.hook.hasUnsavedChanges, false);
+  } finally {
+    stringifyMock.mock.restore();
+    rendered.cleanup();
+    domEnvironment.restore();
+  }
+});
+
+test('saving before the next render reads current state and undo can return to the saved contents', () => {
+  const domEnvironment = installDomEnvironment();
+  resetStoresToBaseline();
+  const rendered = renderHook();
+
+  try {
+    flushSync(() => {
+      useWorkspaceStore.getState().renameWorkspace('saved before render');
+      markUnsavedChangesBaselineSaved();
+    });
+    assert.equal(rendered.hook.hasUnsavedChanges, false);
+    assert.equal(dispatchBeforeUnload(), true);
+
+    flushSync(() => useWorkspaceStore.getState().renameWorkspace('later edit'));
+    assert.equal(rendered.hook.hasUnsavedChanges, true);
+    assert.equal(dispatchBeforeUnload(), false);
+    flushSync(() => useWorkspaceStore.getState().undo());
+    assert.equal(rendered.hook.hasUnsavedChanges, false);
+    assert.equal(dispatchBeforeUnload(), true);
+    flushSync(() => useWorkspaceStore.getState().redo());
+    assert.equal(rendered.hook.hasUnsavedChanges, true);
+  } finally {
+    rendered.cleanup();
+    assert.equal(dispatchBeforeUnload(), true);
+    domEnvironment.restore();
   }
 });
 

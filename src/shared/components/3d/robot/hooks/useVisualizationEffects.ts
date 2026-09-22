@@ -690,7 +690,9 @@ export function useVisualizationEffects({
   ]);
 
   useFrame(() => {
-    if (!robot || !effectiveShowMjcfTendons) {
+    // The effect above creates tendon visuals and handles visibility changes.
+    // MJCF models without tendons have no per-frame geometry or mesh-map work.
+    if (!robot || !effectiveShowMjcfTendons || !robot.userData.__mjcfTendons) {
       return;
     }
 

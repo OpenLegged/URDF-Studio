@@ -5,6 +5,7 @@ import React, { act } from 'react';
 import { createRoot } from 'react-dom/client';
 import { JSDOM } from 'jsdom';
 
+import { createSingleComponentWorkspace } from '@/core/robot';
 import { translations } from '@/shared/i18n';
 import { useSelectionStore } from '@/store/selectionStore';
 import {
@@ -15,6 +16,7 @@ import {
   type RobotData,
 } from '@/types';
 import { TreeNode } from '../TreeNode.tsx';
+import { AssemblyTreeView } from '../AssemblyTreeView.tsx';
 
 function createRobot(): RobotData {
   const baseLink = structuredClone(DEFAULT_LINK);
@@ -265,6 +267,97 @@ test('collapsed link branch reopens only when imported child topology changes', 
     });
     assert.ok(container.querySelector('[data-testid="tree-joint-left-hinge"]'));
     assert.ok(container.querySelector('[data-testid="tree-joint-left-imported_hinge"]'));
+  } finally {
+    await act(async () => root.unmount());
+    dom.window.close();
+  }
+});
+
+test('scoped tree state keeps child-joint hover, connectors, geometry indices and ancestor attention', async () => {
+  const dom = installDom();
+  const container = dom.window.document.getElementById('root')!;
+  const root = createRoot(container);
+  const robot = createRobot();
+  const store = useSelectionStore.getState();
+  store.clearSelection();
+  store.clearHover();
+  store.clearAttentionSelection();
+  const tipSelection = { entity: { type: 'link' as const, componentId: 'left', entityId: 'tip_link' } };
+  try {
+    await act(async () => root.render(<TreeNode {...treeProps(robot, () => {})} />));
+    const jointRow = () => container.querySelector('[data-testid="tree-joint-left-hinge"]');
+    await act(async () => store.setHoveredSelection(tipSelection));
+    assert.match(jointRow()?.className ?? '', /(?:^|\s)bg-element-hover\/80(?:\s|$)/);
+    await act(async () => store.setSelection(tipSelection));
+    const tipRail = container.querySelector('[data-testid="tree-link-left-tip_link"]')?.previousElementSibling;
+    assert.match(tipRail?.className ?? '', /(?:^|\s)bg-system-blue\/20(?:\s|$)/);
+
+    await act(async () => store.setSelection({
+      entity: { type: 'link', componentId: 'left', entityId: 'base_link' },
+      subType: 'visual',
+      objectIndex: 1,
+    }));
+    const primary = container.querySelector('[data-testid="tree-geometry-left-base_link-visual"]');
+    const extra = container.querySelector('[data-testid="tree-geometry-left-base_link-visual-1"]');
+    assert.doesNotMatch(primary?.className ?? '', /(?:^|\s)bg-system-blue\/10(?:\s|$)/);
+    assert.match(extra?.className ?? '', /(?:^|\s)bg-system-blue\/10(?:\s|$)/);
+
+    await click(dom, container.querySelector('[data-testid="tree-link-left-base_link"] > div > button'), 'collapse base');
+    assert.equal(jointRow(), null);
+    await act(async () => store.setAttentionSelection(tipSelection));
+    assert.ok(jointRow(), 'attention must reopen a collapsed ancestor');
+    assert.match(jointRow()?.className ?? '', /(?:^|\s)bg-system-blue\/15(?:\s|$)/);
+    await act(async () => store.clearAttentionSelection());
+    assert.doesNotMatch(jointRow()?.className ?? '', /(?:^|\s)bg-system-blue\/15(?:\s|$)/);
+  } finally {
+    await act(async () => root.unmount());
+    dom.window.close();
+  }
+});
+
+test('assembly hover and selection do not rerender an unrelated geometry group', async () => {
+  const dom = installDom();
+  const container = dom.window.document.getElementById('root')!;
+  const root = createRoot(container);
+  const robot = createRobot();
+  robot.links.tip_link!.visual = { ...structuredClone(DEFAULT_LINK.visual), type: GeometryType.BOX };
+  const workspace = createSingleComponentWorkspace(robot, { componentId: 'left' });
+  let tipLabelReads = 0;
+  Object.defineProperty(workspace.components.left!.robot.links.tip_link!.visual, 'name', {
+    get() {
+      tipLabelReads += 1;
+      return 'Tip visual';
+    },
+  });
+  const store = useSelectionStore.getState();
+  store.clearSelection();
+  store.clearHover();
+  store.clearAttentionSelection();
+  const noOp = () => {};
+  try {
+    await act(async () => root.render(<AssemblyTreeView
+      workspace={workspace}
+      showGeometryDetailsByDefault
+      onAddChild={noOp}
+      onAddCollisionBody={noOp}
+      onDelete={noOp}
+      onUpdate={noOp}
+      onRobotNameChange={noOp}
+      mode="editor"
+      t={translations.en}
+    />));
+    assert.ok(tipLabelReads > 0, 'the tip geometry group must initially render');
+    tipLabelReads = 0;
+    const base = { entity: { type: 'link' as const, componentId: 'left', entityId: 'base_link' } };
+    await act(async () => store.setHoveredSelection(base));
+    await act(async () => store.setSelection({ ...base, subType: 'visual', objectIndex: 1 }));
+    assert.equal(tipLabelReads, 0, 'unrelated rows must survive assembly and ancestor updates');
+    await act(async () => store.setHoveredSelection({
+      entity: { type: 'link', componentId: 'left', entityId: 'tip_link' },
+      subType: 'visual',
+      objectIndex: 0,
+    }));
+    assert.ok(tipLabelReads > 0, 'the target geometry group must update immediately');
   } finally {
     await act(async () => root.unmount());
     dom.window.close();

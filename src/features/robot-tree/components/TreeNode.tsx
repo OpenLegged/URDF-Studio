@@ -56,6 +56,7 @@ import {
   runOnActivationKey,
   selectionTargets,
 } from '../utils/treeSelectionHelpers';
+import { useTreeAncestorAttention, useTreeNodeSelection } from '../hooks/useTreeNodeSelection';
 
 type LinkRef = Extract<EntityRef, { type: 'link' }>;
 type JointRef = Extract<EntityRef, { type: 'joint' }>;
@@ -95,7 +96,7 @@ export interface TreeNodeProps {
   inheritedEditorLockSource?: InheritedEditorLockSource;
 }
 
-export const TreeNode = memo(function TreeNode({
+export const TreeNode = memo(function TreeNodeView({
   componentId,
   linkId,
   robot,
@@ -117,9 +118,6 @@ export const TreeNode = memo(function TreeNode({
   componentDisplayNamePrefix,
   inheritedEditorLockSource,
 }: TreeNodeProps) {
-  const selection = useSelectionStore((state) => state.selection);
-  const hoveredSelection = useSelectionStore((state) => state.hoveredSelection);
-  const attentionSelection = useSelectionStore((state) => state.attentionSelection);
   const setSelection = useSelectionStore((state) => state.setSelection);
   const setHoveredSelection = useSelectionStore((state) => state.setHoveredSelection);
   const clearHover = useSelectionStore((state) => state.clearHover);
@@ -140,6 +138,12 @@ export const TreeNode = memo(function TreeNode({
     () => jointsByParent[linkId] ?? [],
     [jointsByParent, linkId],
   );
+  const { selection, hoveredSelection, attentionSelection } = useTreeNodeSelection(
+    componentId,
+    linkId,
+    childJoints,
+  );
+  const isAncestorOfSelectedLink = useTreeAncestorAttention(componentId, linkId, robot.joints);
   const childBranchKey = useMemo(
     () => childJoints.map((joint) => `${joint.id}:${joint.childLinkId}`).join('\u0000'),
     [childJoints],
@@ -178,20 +182,6 @@ export const TreeNode = memo(function TreeNode({
   // When the canvas selects a link inside this subtree, auto-expand so the target row mounts and
   // can be scrolled into view. Driven by attentionSelection (pulse) so tree-internal clicks don't
   // fight the user's own collapse/expand actions.
-  const isAncestorOfSelectedLink = useMemo(() => {
-    const target = attentionSelection?.entity;
-    if (!target || target.type !== 'link' || target.componentId !== componentId) return false;
-    if (target.entityId === linkId) return false;
-    let cursor = target.entityId;
-    while (cursor) {
-      const parentJoint = Object.values(robot.joints).find((joint) => joint.childLinkId === cursor);
-      if (!parentJoint) break;
-      cursor = parentJoint.parentLinkId;
-      if (cursor === linkId) return true;
-    }
-    return false;
-  }, [attentionSelection, componentId, linkId, robot.joints]);
-
   useEffect(() => {
     if (isAncestorOfSelectedLink && !expanded) {
       setExpanded(true);

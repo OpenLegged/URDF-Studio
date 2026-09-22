@@ -1,19 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useRef } from 'react';
 import { useThree } from '@react-three/fiber';
 
-const CANVAS_LAYOUT_TRANSITION_PROPERTIES = new Set([
-  'all',
-  'flex',
-  'flex-basis',
-  'max-width',
-  'min-width',
-  'width',
-]);
-
-export function isCanvasLayoutTransitionProperty(propertyName: string) {
-  return CANVAS_LAYOUT_TRANSITION_PROPERTIES.has(propertyName.trim().toLowerCase());
-}
-
 export function shouldStartCanvasResizeFrameloop(isResizeFrameloopActive: boolean) {
   return !isResizeFrameloopActive;
 }
@@ -87,12 +74,9 @@ export const CanvasResizeSync = ({
       beginSmoothResize();
       ensureResizeWatch();
     };
-    const handleTransitionActivity = (event: TransitionEvent) => {
-      if (isCanvasLayoutTransitionProperty(event.propertyName)) {
-        handleResizeActivity();
-      }
-    };
-
+    // The observer also runs while a sidebar animates the canvas container.
+    // Document-wide transition events include unrelated overlays and progress
+    // bars, which must not start a continuous 3D loop when this size is unchanged.
     let resizeObserver: ResizeObserver | null = null;
     if (parent && typeof ResizeObserver !== 'undefined') {
       resizeObserver = new ResizeObserver(handleResizeActivity);
@@ -100,13 +84,9 @@ export const CanvasResizeSync = ({
     }
 
     window.addEventListener('resize', handleResizeActivity);
-    document.addEventListener('transitionrun', handleTransitionActivity, true);
-    document.addEventListener('transitionstart', handleTransitionActivity, true);
 
     return () => {
       window.removeEventListener('resize', handleResizeActivity);
-      document.removeEventListener('transitionrun', handleTransitionActivity, true);
-      document.removeEventListener('transitionstart', handleTransitionActivity, true);
       resizeObserver?.disconnect();
       if (loopFrameRef.current !== null) {
         cancelAnimationFrame(loopFrameRef.current);
