@@ -7,6 +7,7 @@
 ```
 scripts/build/
 ├── rebuild-usd-wasm.sh                   # OpenUSD 主编译脚本
+├── usd-bindings-version.mjs              # 整套 USD bindings 的内容版本同步与检查
 ├── sync-openusd-source.sh                # OpenUSD 源码同步脚本
 ├── rebuild-collada-mesh-parser-wasm.sh   # Collada(.dae) mesh 解析器（独立 C-ABI 模块）
 ├── rebuild-obj-parser-wasm.sh            # OBJ(.obj) mesh 解析器（独立 C-ABI 模块）
@@ -87,6 +88,8 @@ WASM_OPT_LEVEL=-O3        # wasm-opt 优化级别
 | `emHdBindings.wasm` | 编译后的 OpenUSD C++ 代码 |
 | `emHdBindings.worker.js` | Web Worker 线程支持 |
 | `emHdBindings.data` | 预加载的数据文件 |
+
+四个文件必须来自同一次构建并一起发布；`worker.js` / `.data` 内容未变化时无需制造 Git 变更。重编脚本会同步四件套并更新内容哈希版本，手动替换产物后运行 `npm run usd:bindings:version`。开发启动、应用构建和可发布库构建都会检查版本；`robot-runtime` 打包必须包含全部四个文件。发布网站使用 `npm run build` 生成配套的 `.br` / `.gz`，再用 `npm run precompress:check` 校验。
 
 ## OpenUSD 源码
 

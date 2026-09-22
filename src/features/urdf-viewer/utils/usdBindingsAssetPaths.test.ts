@@ -5,7 +5,21 @@ import {
   buildUsdBindingsAssetPath,
   buildUsdBindingsScriptUrl,
   setUsdBindingsBaseUrl,
+  USD_BINDINGS_CACHE_KEY,
 } from '@/lib/robot-parser/usd/usdBindingsAssetPaths';
+
+test('default USD script and companion resources share the current bundle version', () => {
+  assert.equal(
+    buildUsdBindingsScriptUrl(),
+    `/usd/bindings/emHdBindings.js?v=${USD_BINDINGS_CACHE_KEY}`,
+  );
+  for (const file of ['emHdBindings.wasm', 'emHdBindings.worker.js', 'emHdBindings.data']) {
+    assert.equal(
+      buildUsdBindingsAssetPath(file, { cacheKey: USD_BINDINGS_CACHE_KEY }),
+      `/usd/bindings/${file}?v=${USD_BINDINGS_CACHE_KEY}`,
+    );
+  }
+});
 
 test('buildUsdBindingsScriptUrl keeps the root public path by default', () => {
   assert.equal(

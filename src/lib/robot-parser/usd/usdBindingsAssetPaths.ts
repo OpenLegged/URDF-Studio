@@ -6,7 +6,8 @@ type ImportMetaEnvLike = ImportMeta & {
   };
 };
 
-export const USD_BINDINGS_CACHE_KEY = '20260318a';
+// Generated from all emHdBindings artifacts by npm run usd:bindings:version.
+export const USD_BINDINGS_CACHE_KEY = 'aeb37fbb991b9c5976a0';
 
 let configuredWasmBaseUrl: string | null = null;
 
