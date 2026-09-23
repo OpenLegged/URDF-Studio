@@ -19,7 +19,9 @@ export async function loadUsdTextureSlot(
   let loading = cache.get(cacheKey);
   if (!loading) {
     loading = loadTexture(url).then((texture) => {
-      texture.flipY = false;
+      // Match Hydra's TextureRegistry: USD UVs address the image from the
+      // lower-left. Without the upload flip, atlas regions land on wrong faces.
+      texture.flipY = true;
       if (isColor) texture.colorSpace = THREE.SRGBColorSpace;
       return texture;
     });

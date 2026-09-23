@@ -28,8 +28,8 @@ test('USD texture slots share image loads while retaining independent sampling s
     assert.notEqual(first, second);
     assert.equal(first.source, second.source);
     assert.notEqual(first.source, normal.source);
-    assert.equal(first.flipY, false);
-    assert.equal(normal.flipY, false);
+    assert.equal(first.flipY, true);
+    assert.equal(normal.flipY, true);
     assert.equal(first.colorSpace, THREE.SRGBColorSpace);
     assert.equal(normal.colorSpace, THREE.NoColorSpace);
     assert.equal(first.wrapS, THREE.RepeatWrapping);
