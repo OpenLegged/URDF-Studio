@@ -127,6 +127,8 @@ export function AppContent({ extensions, onExposeActions, externalImportEnabled 
     useRobotLoadWorkflow({
       labels: {
         failedToParseFormat: t.failedToParseFormat,
+        robotLoadFailed: t.robotLoadFailed,
+        usdBrowserUnsupported: t.usdBrowserUnsupported,
         importPackageAssetBundleHint: t.importPackageAssetBundleHint,
         xacroSourceOnlyPreviewHint: t.xacroSourceOnlyPreviewHint,
       },

@@ -23,6 +23,7 @@ import {
 } from '@/app/utils/commitResolvedRobotLoad';
 
 import { useUsdDocumentLifecycle } from './useUsdDocumentLifecycle.ts';
+import { translations, type Language } from '@/shared/i18n';
 
 function createRobot(name: string): RobotData {
   return {
@@ -97,10 +98,12 @@ function renderLifecycle({
   startHydration,
   onToast = () => {},
   onClearOverlay = () => {},
+  language = 'zh',
 }: {
   startHydration: typeof startUsdRobotStateHydration;
   onToast?: (message: string, type?: 'info' | 'success') => void;
   onClearOverlay?: () => void;
+  language?: Language;
 }) {
   const container = document.createElement('div');
   document.body.appendChild(container);
@@ -109,9 +112,7 @@ function renderLifecycle({
     useUsdDocumentLifecycle({
       clearAssemblyComponentPreparationOverlay: onClearOverlay,
       isSelectedUsdHydrating: true,
-      labels: {
-        failedToParseFormat: 'Failed {format}',
-      },
+      labels: translations[language],
       previewFile: null,
       selectedFile: useAssetsStore.getState().selectedFile,
       setDocumentLoadState: useAssetsStore.getState().setDocumentLoadState,
@@ -157,7 +158,9 @@ beforeEach(() => {
   });
 });
 
-test('synchronous hydration start failure rolls back the complete document session', async () => {
+test('synchronous hydration failure localizes feedback and rolls back the document session', async (context) => {
+  const log = context.mock.method(console, 'error', () => {});
+  const error = new Error('cannot start worker');
   const restoreDom = installDom();
   const file = createFile('broken-start.usd', 'usd');
   const selectedBefore = useAssetsStore.getState().selectedFile;
@@ -171,7 +174,7 @@ test('synchronous hydration start failure rolls back the complete document sessi
   try {
     const cleanup = renderLifecycle({
       startHydration: (() => {
-        throw new Error('cannot start worker');
+        throw error;
       }) as typeof startUsdRobotStateHydration,
       onToast: (message) => toasts.push(message),
       onClearOverlay: () => { overlayClears += 1; },
@@ -181,7 +184,8 @@ test('synchronous hydration start failure rolls back the complete document sessi
     assert.equal(getPendingUsdWorkspaceLoad(), null);
     assert.equal(useAssetsStore.getState().selectedFile, selectedBefore);
     assert.deepEqual(useAssetsStore.getState().documentLoadState, documentBefore);
-    assert.deepEqual(toasts, ['cannot start worker']);
+    assert.deepEqual(toasts, [translations.zh.robotLoadFailed.replace('{format}', 'USD').replace('{name}', file.name)]);
+    assert.equal(log.mock.calls[0].arguments[1], error);
     assert.equal(overlayClears, 1);
     cleanup();
     await flushEffects();
@@ -190,7 +194,9 @@ test('synchronous hydration start failure rolls back the complete document sessi
   }
 });
 
-test('asynchronous hydration rejection restores old selection/document without an error shell', async () => {
+test('asynchronous hydration rejection localizes feedback and restores the document', async (context) => {
+  const log = context.mock.method(console, 'error', () => {});
+  const error = new Error('worker rejected');
   const restoreDom = installDom();
   const file = createFile('broken-async.usd', 'usd');
   const selectionBefore = useSelectionStore.getState().selection;
@@ -207,6 +213,7 @@ test('asynchronous hydration rejection restores old selection/document without a
   const toasts: string[] = [];
   try {
     const cleanup = renderLifecycle({
+      language: 'en',
       startHydration: (() => ({
         promise,
         cleanup: () => { cleanupCalls += 1; },
@@ -214,13 +221,14 @@ test('asynchronous hydration rejection restores old selection/document without a
       onToast: (message) => toasts.push(message),
     });
     await flushEffects();
-    rejectHydration(new Error('worker rejected'));
+    rejectHydration(error);
     await flushEffects();
 
     assert.equal(getPendingUsdWorkspaceLoad(), null);
     assert.deepEqual(useAssetsStore.getState().documentLoadState, documentBefore);
     assert.deepEqual(useSelectionStore.getState().selection, selectionBefore);
-    assert.deepEqual(toasts, ['worker rejected']);
+    assert.deepEqual(toasts, [translations.en.robotLoadFailed.replace('{format}', 'USD').replace('{name}', file.name)]);
+    assert.equal(log.mock.calls[0].arguments[1], error);
     cleanup();
     await flushEffects();
     assert.equal(cleanupCalls, 1);

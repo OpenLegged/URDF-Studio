@@ -11,6 +11,7 @@ import { MeshAssetNode } from '@/shared/components/3d';
 import { findAssetByPath } from '@/core/loaders/meshLoader';
 import { computeVisibleMeshBounds } from '@/shared/utils/threeBounds';
 import { DEFAULT_MESH_PREVIEW_COLOR } from '@/types/constants';
+import { useMeshPreviewVisibility } from '../hooks/useMeshPreviewVisibility';
 
 interface MeshPreviewProps {
   meshPath: string;
@@ -117,7 +118,10 @@ function MeshPreviewCameraFrame({
     invalidate();
   }, [contentRef, invalidate, resetKey]);
 
-  useFrame(() => {
+  useFrame((state) => {
+    if (state.frameloop === 'never') {
+      return;
+    }
     if (fittedKeyRef.current === resetKey) {
       return;
     }
@@ -240,8 +244,10 @@ function MeshPreviewScene({
     }
   }, [meshPath, normalizeColladaRoot]);
 
-  useFrame((_, delta) => {
-    if (!autoRotate || !rotatingGroupRef.current) {
+  useFrame((state, delta) => {
+    // R3F can flush an already queued frame after switching to "never";
+    // its manual-clock delta must not advance the hidden preview.
+    if (state.frameloop === 'never' || !autoRotate || !rotatingGroupRef.current) {
       return;
     }
 
@@ -297,6 +303,8 @@ export const MeshPreview: React.FC<MeshPreviewProps> = React.memo(
       normalizeColladaRoot ? 'normalized' : 'raw'
     }`;
     const [autoRotatePaused, setAutoRotatePaused] = useState(false);
+    const { previewRef, isVisible } = useMeshPreviewVisibility();
+    const visibleFrameloop = autoRotatePaused ? 'demand' : 'always';
     const handleUserInteractionStart = useCallback(() => {
       setAutoRotatePaused(true);
     }, []);
@@ -315,10 +323,14 @@ export const MeshPreview: React.FC<MeshPreviewProps> = React.memo(
 
 	    return (
 	      <div
+	        ref={previewRef}
 	        data-testid="property-mesh-preview"
 	        className="h-[112px] select-none overflow-hidden rounded border border-border-black bg-gradient-to-b from-element-bg to-panel-bg"
 	      >
         <Canvas
+          // R3F restarts its clock when leaving "never", so hidden time does
+          // not become a large rotation delta when the preview reappears.
+          frameloop={isVisible ? visibleFrameloop : 'never'}
           camera={{ fov: 45, near: 0.001, far: 100, position: [0.5, 0.3, 0.5] }}
           gl={{ antialias: true, alpha: true }}
 	          style={{ touchAction: 'pan-y' }}
@@ -331,7 +343,7 @@ export const MeshPreview: React.FC<MeshPreviewProps> = React.memo(
               meshPath={meshPath}
               assets={assets}
               normalizeColladaRoot={normalizeColladaRoot}
-              autoRotate={!autoRotatePaused}
+              autoRotate={isVisible && !autoRotatePaused}
               onUserInteractionStart={handleUserInteractionStart}
             />
           </Suspense>

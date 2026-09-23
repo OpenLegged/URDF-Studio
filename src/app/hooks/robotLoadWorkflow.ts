@@ -28,6 +28,7 @@ import {
   collectStandaloneImportSupportAssetPaths,
 } from '../utils/importPackageAssetReferences';
 import { resolveUsdViewerRoundtripSelection } from '../utils/usdViewerRoundtripSelection';
+import { reportRobotLoadError, type RobotLoadErrorLabels } from '../utils/robotLoadError';
 
 type CommittableRobotImportResult = Extract<
   RobotImportResult,
@@ -85,7 +86,7 @@ export interface RobotLoadWorkflowPorts {
   waitForNextPaint: () => Promise<void>;
 }
 
-export interface RobotLoadWorkflowLabels {
+export interface RobotLoadWorkflowLabels extends RobotLoadErrorLabels {
   failedToParseFormat: string;
   importPackageAssetBundleHint: string;
   xacroSourceOnlyPreviewHint: string;
@@ -161,9 +162,7 @@ function applyResolvedRobotImport(
     return;
   }
 
-  const message =
-    importResult.message ??
-    labels.failedToParseFormat.replace('{format}', file.format.toUpperCase());
+  const message = reportRobotLoadError(importResult.message ?? importResult.reason, file, labels);
   ports.setDocumentLoadState({
     status: 'error',
     fileName: file.name,
@@ -410,10 +409,7 @@ export async function runRobotLoadWorkflow({
     if (requestId !== requestEpoch.current) {
       return null;
     }
-    const message =
-      error instanceof Error
-        ? error.message
-        : labels.failedToParseFormat.replace('{format}', file.format.toUpperCase());
+    const message = reportRobotLoadError(error, file, labels);
     ports.setDocumentLoadState({
       status: 'error',
       fileName: file.name,

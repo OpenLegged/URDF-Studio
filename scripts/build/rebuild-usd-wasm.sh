@@ -203,6 +203,10 @@ mkdir -p "$DEST_DIR"
 BUILD_DIR="$(cd "$BUILD_DIR" && pwd)"
 DEST_DIR="$(cd "$DEST_DIR" && pwd)"
 
+if [[ "$DEST_DIR" -ef "${ROOT_DIR}/public/usd/bindings" ]]; then
+  require_cmd node
+fi
+
 export CMAKE_BUILD_PARALLEL_LEVEL="${JOBS}"
 echo "[1/5] Building OpenUSD WASM (${BUILD_VARIANT}, jobs=${CMAKE_BUILD_PARALLEL_LEVEL})"
 build_usd_script="${USD_REPO}/build_scripts/build_usd.py"
@@ -418,6 +422,10 @@ cp "${BIN_DIR}/emHdBindings.js" "${DEST_DIR}/emHdBindings.js"
 cp "${BIN_DIR}/emHdBindings.wasm" "${DEST_DIR}/emHdBindings.wasm"
 cp "${BIN_DIR}/emHdBindings.worker.js" "${DEST_DIR}/emHdBindings.worker.js"
 cp "${BIN_DIR}/emHdBindings.data" "${DEST_DIR}/emHdBindings.data"
+
+if [[ "$DEST_DIR" -ef "${ROOT_DIR}/public/usd/bindings" ]]; then
+  node "${SCRIPT_DIR}/usd-bindings-version.mjs"
+fi
 
 echo "[5/5] Done. Output sizes:"
 ls -lh "${DEST_DIR}/emHdBindings.js" \

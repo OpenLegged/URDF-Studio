@@ -52,6 +52,8 @@ export function useRobotLoadWorkflow({
     failedToParseFormat,
     importPackageAssetBundleHint,
     xacroSourceOnlyPreviewHint,
+    robotLoadFailed,
+    usdBrowserUnsupported,
   } = labels;
   const loadRobotFile = useCallback<LoadRobotFile>(
     (requestedFile, options) =>
@@ -60,6 +62,8 @@ export function useRobotLoadWorkflow({
           failedToParseFormat,
           importPackageAssetBundleHint,
           xacroSourceOnlyPreviewHint,
+          robotLoadFailed,
+          usdBrowserUnsupported,
         },
         options,
         ports: {
@@ -89,6 +93,8 @@ export function useRobotLoadWorkflow({
       setDocumentLoadState,
       showToast,
       xacroSourceOnlyPreviewHint,
+      robotLoadFailed,
+      usdBrowserUnsupported,
     ],
   );
 

@@ -15,7 +15,7 @@
       "note": "Function bodies over 200 code lines in src/**. Exact count tightened on 2026-08-09 after dialog and workflow splits; ratchet down when a function has a clean ownership split."
     },
     "function-too-complex": {
-      "max": 174,
+      "max": 173,
       "note": "Cyclomatic complexity over 20 in src/**. Exact count tightened on 2026-08-09 after viewer adapter simplification; ratchet down only."
     },
     "too-many-params": {

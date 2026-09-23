@@ -27,6 +27,8 @@
 
 缓存失效依赖 Vite chunk 的文件名哈希与 USD bindings 的版本参数，见 `src/lib/robot-parser/usd/usdBindingsAssetPaths.ts` 的 `USD_BINDINGS_CACHE_KEY`。`/assets/worker-bundle.js` 与 `/assets/libarchive.wasm` 是例外：libarchive.js 以固定 URL 加载它们，必须使用短 TTL 或 ETag 重验证，不能随其余哈希 chunk 一起长期 immutable。
 
+USD 的版本参数由四个 `emHdBindings.{js,wasm,worker.js,data}` 文件的内容共同生成；任一文件变化都会更新整套资源的 URL。WASM 重编脚本会同步版本，手动替换文件后运行 `npm run usd:bindings:version`，并一起提交版本变更；开发启动、应用构建和可发布库构建都会检查版本与资源是否一致。部署时必须一起发布应用 chunk 与整套 bindings，CDN 缓存键必须包含查询参数。不要复用旧版 `20260318a`：旧 JS 与新 WASM 混用会在初始化时触发 `RuntimeError: function signature mismatch`。
+
 ## nginx 参考配置
 
 需要包含 `ngx_http_brotli_static_module`（nginx-brotli）与 `ngx_http_gzip_static_module`。
@@ -99,8 +101,8 @@ server {
 curl -sH 'Accept-Encoding: br' -D - -o /dev/null \
   https://urdf.enkeebot.com/assets/three-core-XXXX.js | grep -iE 'content-encoding|content-length'
 
-# 2. 长缓存生效：应看到 immutable
-curl -sI 'https://urdf.enkeebot.com/usd/bindings/emHdBindings.wasm?v=20260318a' | grep -i cache-control
+# 2. 长缓存生效：将 <USD_BINDINGS_CACHE_KEY> 替换为当前源码中的版本，应看到 immutable
+curl -sI 'https://urdf.enkeebot.com/usd/bindings/emHdBindings.wasm?v=<USD_BINDINGS_CACHE_KEY>' | grep -i cache-control
 
 # 3. 文档不缓存
 curl -sI 'https://urdf.enkeebot.com/' | grep -i cache-control   # 期望 no-cache

@@ -154,10 +154,15 @@ test('helper-only selection changes still refresh helper interaction state for t
   dom.window.close();
 });
 
+const frameCallbacks = new Set<React.RefObject<() => void>>();
+
 const useR3fStore = create(() => ({
   invalidate: () => {},
   internal: {
-    subscribe: () => () => {},
+    subscribe: (callback: React.RefObject<() => void>) => {
+      frameCallbacks.add(callback);
+      return () => frameCallbacks.delete(callback);
+    },
   },
 }));
 
@@ -173,6 +178,7 @@ function VisualizationEffectsProbe({
   showIkHandles = false,
   showOrigins = false,
   showMjcfSites = false,
+  sourceFormat = 'urdf',
   robotLinks,
   linkMeshMapRef,
   onHighlightGeometry,
@@ -202,6 +208,7 @@ function VisualizationEffectsProbe({
   showIkHandles?: boolean;
   showOrigins?: boolean;
   showMjcfSites?: boolean;
+  sourceFormat?: 'urdf' | 'mjcf';
   robotLinks?: Record<string, any>;
   linkMeshMapRef?: React.RefObject<Map<string, THREE.Mesh[]>>;
   onHighlightGeometry?: (
@@ -234,7 +241,7 @@ function VisualizationEffectsProbe({
     showJointAxesOverlay: true,
     jointAxisSize: 1,
     modelOpacity: 1,
-    sourceFormat: 'urdf',
+    sourceFormat,
     showMjcfWorldLink: true,
     robotLinks,
     selection,
@@ -269,6 +276,7 @@ function Harness({
   showIkHandles = false,
   showOrigins = false,
   showMjcfSites = false,
+  sourceFormat = 'urdf',
   robotLinks,
   linkMeshMapRef,
   hoveredSelection,
@@ -298,6 +306,7 @@ function Harness({
         showIkHandles,
         showOrigins,
         showMjcfSites,
+        sourceFormat,
         robotLinks,
         linkMeshMapRef,
         onHighlightGeometry,
@@ -315,6 +324,70 @@ async function renderHarness(
     root.render(React.createElement(Harness, { robot, ...options }));
   });
 }
+
+test('MJCF frames without tendons do not scan the visual mesh map', async (context) => {
+  const { dom, root } = createComponentRoot();
+  const robot = new THREE.Group();
+  const linkMeshMapRef = { current: new Map<string, THREE.Mesh[]>() };
+
+  try {
+    await renderHarness(root, robot, { sourceFormat: 'mjcf', linkMeshMapRef });
+    const scan = context.mock.method(linkMeshMapRef.current, 'forEach');
+    assert.ok(frameCallbacks.size > 0, 'the visualization frame callback should be mounted');
+
+    for (let frame = 0; frame < 120; frame += 1) {
+      frameCallbacks.forEach((callback) => callback.current());
+    }
+
+    assert.equal(scan.mock.callCount(), 0, 'tendon-free MJCF frames should skip mesh-map scans');
+  } finally {
+    await act(async () => root.unmount());
+    dom.window.close();
+  }
+});
+
+test('MJCF tendon frames follow moving sites and effects restore snapshot visibility', async () => {
+  const { dom, root } = createComponentRoot();
+  const robot = new THREE.Group();
+  robot.userData.__mjcfTendonsData = [
+    { name: 'cable', attachmentRefs: ['start', 'end'], rgba: [1, 0, 0, 1] },
+  ];
+  const link = new THREE.Group() as THREE.Group & { isURDFLink: boolean };
+  link.isURDFLink = true;
+  link.name = 'moving_link';
+  link.userData.__mjcfSitesData = [
+    { name: 'start', pos: [0, 0, 0], size: [0.005] },
+    { name: 'end', pos: [0, 0.1, 0], size: [0.005] },
+  ];
+  robot.add(link);
+  const linkMeshMapRef = { current: new Map<string, THREE.Mesh[]>() };
+  const options = { sourceFormat: 'mjcf' as const, linkMeshMapRef };
+
+  try {
+    await renderHarness(root, robot, options);
+    const tendons = robot.getObjectByName('__mjcf_tendons__');
+    const anchor = tendons?.getObjectByName('__mjcf_tendon_anchor__:0');
+    assert.ok(tendons, 'the effect should create tendon visuals before frame updates');
+    assert.ok(anchor);
+    assert.equal(anchor.position.x, 0);
+    assert.ok(linkMeshMapRef.current.has('moving_link:visual'));
+
+    link.position.x = 0.25;
+    frameCallbacks.forEach((callback) => callback.current());
+    assert.equal(anchor.position.x, 0.25, 'tendon geometry should follow in-place joint motion');
+
+    await renderHarness(root, robot, { ...options, snapshotRenderActive: true });
+    assert.equal(tendons.visible, false);
+    assert.equal(linkMeshMapRef.current.has('moving_link:visual'), false);
+
+    await renderHarness(root, robot, options);
+    assert.equal(tendons.visible, true);
+    assert.ok(linkMeshMapRef.current.has('moving_link:visual'));
+  } finally {
+    await act(async () => root.unmount());
+    dom.window.close();
+  }
+});
 
 test('snapshot rendering hides URDF helper overlays even when their toggles are enabled', async () => {
   const { dom, root } = createComponentRoot();

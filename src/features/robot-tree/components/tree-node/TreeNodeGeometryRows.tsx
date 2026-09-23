@@ -21,6 +21,7 @@ import type {
   WorkspaceSelection,
 } from '@/types';
 import { runOnActivationKey, selectionTargets } from '../../utils/treeSelectionHelpers';
+import { useTreeNodeSelection } from '../../hooks/useTreeNodeSelection';
 import {
   getGeometryVisibilityButtonClass,
   getTreeConnectorElbowClass,
@@ -285,9 +286,10 @@ export const TreeNodeGeometryRows = memo(function TreeNodeGeometryRows({
   onSelectGeometry,
   onUpdate,
 }: TreeNodeGeometryRowsProps) {
-  const selection = useSelectionStore((state) => state.selection);
-  const hoveredSelection = useSelectionStore((state) => state.hoveredSelection);
-  const attentionSelection = useSelectionStore((state) => state.attentionSelection);
+  const { selection, hoveredSelection, attentionSelection } = useTreeNodeSelection(
+    componentId,
+    link.id,
+  );
   const setSelection = useSelectionStore((state) => state.setSelection);
   const setHoveredSelection = useSelectionStore((state) => state.setHoveredSelection);
   const clearHover = useSelectionStore((state) => state.clearHover);

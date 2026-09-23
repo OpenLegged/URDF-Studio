@@ -74,10 +74,11 @@
 - `useImportInputBinding`：App 级文件输入绑定
 - `useEditableSourcePatches` / `useUnsavedChangesPrompt`：源码 patch 与离开保护
 - 导出格式限制只在显式导出工作流提示，不能作为编辑、源码派生或 AI 修改的模型校验。ball 模型的内部源码优先保留 MJCF；`tryGenerateEditableRobotSource` 在未选 mesh 等中间态无法生成源码时保留 canonical 模型和已有草稿，生成视图暂不可编辑。`canPreserveJointTypesInSource` 阻止内部生成器静默改变关节类型；`.usp` 以 canonical workspace 与原始资产为准，各附带格式独立生成。可选 MJCF 仅在关节可保留、mesh 可原样使用且无需额外资源转换时附带；需 Collada/GLTF 转换、材质拆分或额外纹理/MTL 等资源准备时跳过 MJCF，仍保留可生成的 URDF/BOM。项目保存复用已打包的资产字节，不因附带产物再次加载或转换 mesh；实际格式导出继续执行完整资源准备与兼容性提示。
-- URDF/Xacro/MJCF/SDF 四种源码 reconciler 统一通过 `tryGenerateEditableRobotSource` 保护可选派生，不能把导出异常透传到编辑界面。MJCF/SDF 生成器默认内部序列化不输出 console 导出诊断；显式 configured/library 导出通过 `onWarning` 收集并返回 `warnings`。App 在成功导出后统一将非阻塞 `warnings` / `issues` 去重写入控制台，不弹 toast；真正导出失败与需要用户选择的导出操作保留界面反馈。
+- URDF/Xacro/MJCF/SDF 四种源码 reconciler 统一通过 `tryGenerateEditableRobotSource` 保护可选派生，不能把导出异常透传到编辑界面。MJCF/SDF 生成器默认内部序列化不输出 console 导出诊断；显式 configured/library 导出通过 `onWarning` 收集并返回 `warnings`。App 在成功导出后统一将非阻塞 `warnings` / `issues` 去重写入控制台；兼容性 `warnings` 另以当前界面语言去重显示，真正导出失败与需要用户选择的导出操作保留界面反馈。
 - `canPreserveGeometryInSource` 同时保护主/附加 visual 和 collision：不能把格式导出的包围盒、空几何或忽略几何等近似结果写成当前模型的源码。源码同步、AI 对比与 `.usp` 可选产物共用该检查；AI 对比只复用语义 hash 匹配的源码草稿。局部源码 patch 失败由同步协调器恢复，仅记录控制台信息。
 - URDF / Xacro / MJCF / SDF 编辑源码通过 `generateEditableRobotSource` 启用 `preserveNumericPrecision`，数值按可恢复 JavaScript `number` 的十进制写入；限位、惯量、几何、颜色、tendon 等局部 patch 同样避免小数位截断。应用的文件、项目、组件和骨架导出也保留数值精度；独立 generator 默认格式化保持兼容。连续编辑仍校验源码与模型的一致性：MJCF 四元数/RPY 与 degree 限位仅接受精确值或确定的序列化往返结果，SDF 保留源版本并处理旧版世界坐标表示；真实的过期值和不可表示变更继续拒绝。可恢复的源码回退只记录 `console.info`。
 - USD 文本保留数值有效位，颜色不再吸附到邻近灰色或 0/1；几何哈希只定位候选，去重还必须精确比较顶点、索引、法线与 UV。微小差异不能作为重复材质或网格合并；transform、动力学和 root 惯量也不能因 epsilon 判断被省略。目标格式的 float 类型和网格已有 Float32 精度限制仍然适用。
+- 加载、组件添加和导出的错误反馈在 app workflow 层本地化，不直接将 worker/parser 的英文异常作为提示正文。已知导出限制保留对象名与修正建议；未知错误显示本地化说明，原始异常、堆栈和文件上下文留在控制台。`robotLoadError.ts` / `exportErrorMessage.ts` 负责边界映射，core 不依赖 i18n。新增可面向用户的诊断时同步维护 en/zh 文案及双语行为测试。
 - `useCollisionOptimizationWorkflow`：碰撞优化 UI 流程
 - `usePendingHistoryCoordinator`：pending history 生命周期协调
 - `useToolItems`：工具箱注册表（新增工具唯一需要改的文件）

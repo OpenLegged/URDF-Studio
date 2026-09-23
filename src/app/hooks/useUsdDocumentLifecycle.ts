@@ -21,15 +21,12 @@ import {
 import { handleUsdHydrationWorkerEvent } from '../utils/usdHydrationWorkerEvents';
 import { shouldApplyUsdStageHydration } from '../utils/usdStageHydration';
 import { markUnsavedChangesBaselineSaved } from '../utils/unsavedChangesBaseline';
-
-interface UseUsdDocumentLifecycleLabels {
-  failedToParseFormat: string;
-}
+import { reportRobotLoadError, type RobotLoadErrorLabels } from '../utils/robotLoadError';
 
 interface UseUsdDocumentLifecycleOptions {
   clearAssemblyComponentPreparationOverlay: () => void;
   isSelectedUsdHydrating: boolean;
-  labels: UseUsdDocumentLifecycleLabels;
+  labels: RobotLoadErrorLabels;
   previewFile: RobotFile | null;
   selectedFile: RobotFile | null;
   setDocumentLoadState: (state: DocumentLoadState) => void;
@@ -48,7 +45,7 @@ function normalizeUsdPath(path: string | null | undefined): string {
 function createDocumentStateFromViewerEvent(
   file: RobotFile,
   event: ViewerDocumentLoadEvent,
-  failedMessage: string,
+  labels: RobotLoadErrorLabels,
 ): DocumentLoadState {
   return {
     status:
@@ -59,9 +56,9 @@ function createDocumentStateFromViewerEvent(
           : 'loading',
     fileName: file.name,
     format: file.format,
-    error: event.status === 'error' ? event.error ?? failedMessage : null,
+    error: event.status === 'error' ? reportRobotLoadError(event.error, file, labels) : null,
     phase: event.phase ?? (event.status === 'ready' ? 'ready' : null),
-    message: event.message ?? null,
+    message: event.status === 'error' ? null : event.message ?? null,
     progressMode: 'percent',
     progressPercent: mapViewerDocumentLoadEventToDocumentLoadPercent(
       file.format,
@@ -75,7 +72,7 @@ function createDocumentStateFromViewerEvent(
 export function useUsdDocumentLifecycle({
   clearAssemblyComponentPreparationOverlay,
   isSelectedUsdHydrating,
-  labels,
+  labels: { robotLoadFailed, usdBrowserUnsupported },
   previewFile,
   selectedFile,
   setDocumentLoadState,
@@ -120,10 +117,7 @@ export function useUsdDocumentLifecycle({
       const nextState = createDocumentStateFromViewerEvent(
         activeFile,
         event,
-        labels.failedToParseFormat.replace(
-          '{format}',
-          activeFile.format.toUpperCase(),
-        ),
+        { robotLoadFailed, usdBrowserUnsupported },
       );
       if (
         shouldIgnoreViewerLoadRegressionAfterReadySameFile({
@@ -135,7 +129,7 @@ export function useUsdDocumentLifecycle({
       }
       setDocumentLoadState(nextState);
     },
-    [labels.failedToParseFormat, previewFile, selectedFile, setDocumentLoadState],
+    [robotLoadFailed, usdBrowserUnsupported, previewFile, selectedFile, setDocumentLoadState],
   );
 
   useEffect(() => {
@@ -185,7 +179,7 @@ export function useUsdDocumentLifecycle({
       const nextState = createDocumentStateFromViewerEvent(
         hydrationFile,
         event,
-        labels.failedToParseFormat.replace('{format}', 'USD'),
+        { robotLoadFailed, usdBrowserUnsupported },
       );
       nextState.status = event.status === 'error' ? 'error' : 'hydrating';
       nextState.progressPercent = event.status === 'error'
@@ -231,7 +225,7 @@ export function useUsdDocumentLifecycle({
         },
       });
     } catch (error) {
-      const reason = error instanceof Error ? error.message : String(error);
+      const reason = reportRobotLoadError(error, hydrationFile, { robotLoadFailed, usdBrowserUnsupported });
       cancelPendingUsdWorkspaceLoad(operationId, { restoreDocumentSession: true });
       clearAssemblyComponentPreparationOverlay();
       showToast(reason, 'info');
@@ -298,7 +292,7 @@ export function useUsdDocumentLifecycle({
         if (cancelled || controller.signal.aborted) {
           return;
         }
-        const reason = error instanceof Error ? error.message : String(error);
+        const reason = reportRobotLoadError(error, hydrationFile, { robotLoadFailed, usdBrowserUnsupported });
         cancelPendingUsdWorkspaceLoad(operationId, { restoreDocumentSession: true });
         clearAssemblyComponentPreparationOverlay();
         showToast(reason, 'info');
@@ -319,7 +313,8 @@ export function useUsdDocumentLifecycle({
   }, [
     clearAssemblyComponentPreparationOverlay,
     isSelectedUsdHydrating,
-    labels.failedToParseFormat,
+    robotLoadFailed,
+    usdBrowserUnsupported,
     selectedFile,
     setDocumentLoadState,
     showToast,

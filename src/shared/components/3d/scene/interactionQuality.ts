@@ -34,8 +34,8 @@ function readDevicePixelRatio(): number {
  * mid-gesture: a viewport that goes soft the moment the user grabs something
  * reads as broken, and every resolution change also reallocates the drawing
  * buffer and every render target, which is a stutter of its own. Interaction
- * still buys frame time here, but by skipping *work* (shadow map refresh,
- * ambient occlusion, outline overlays) rather than by dropping pixels.
+ * still buys frame time here by deferring ambient occlusion and transient
+ * outline work. Shadows follow pose changes and reuse unchanged depth maps.
  *
  * The render-quality profile supplies both bounds: `minRenderDpr` supersamples
  * low-DPR displays to keep edges clean, `restingCap` keeps high-DPR displays

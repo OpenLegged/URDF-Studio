@@ -18,6 +18,7 @@ function preloadWorkspaceOverlay(label: string, preload: () => Promise<unknown>)
 }
 
 interface UseWorkspaceOverlayActionsParams {
+  addComponentFailed: string;
   onLoadRobot: (
     file: RobotFile,
     options?: { intent?: WorkspaceLoadIntent },
@@ -43,6 +44,7 @@ interface UseWorkspaceOverlayActionsParams {
 }
 
 export function useWorkspaceOverlayActions({
+  addComponentFailed,
   onLoadRobot,
   showAssemblyComponentPreparationOverlay,
   clearAssemblyComponentPreparationOverlay,
@@ -56,7 +58,8 @@ export function useWorkspaceOverlayActions({
   const handleAddComponent = useCallback(
     (file: RobotFile) => {
       showAssemblyComponentPreparationOverlay(file, 'prepare');
-      void Promise.resolve(onLoadRobot(file, { intent: 'append' }))
+      void Promise.resolve()
+        .then(() => onLoadRobot(file, { intent: 'append' }))
         .then((outcome) => {
           if (outcome?.status === 'hydration-pending') {
             return;
@@ -65,13 +68,12 @@ export function useWorkspaceOverlayActions({
         })
         .catch((error: unknown) => {
           clearAssemblyComponentPreparationOverlay();
-          const detail = error instanceof Error && error.message.trim()
-            ? ` ${error.message.trim()}`
-            : '';
-          showToast(`Failed to add assembly component: ${file.name}.${detail}`, 'info');
+          console.error(`[Add component] ${file.name}`, error);
+          showToast(addComponentFailed.replace('{name}', () => file.name), 'error');
         });
     },
     [
+      addComponentFailed,
       clearAssemblyComponentPreparationOverlay,
       onLoadRobot,
       showAssemblyComponentPreparationOverlay,

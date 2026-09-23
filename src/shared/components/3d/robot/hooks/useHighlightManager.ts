@@ -1,4 +1,4 @@
-import { useRef, useEffect, useCallback } from 'react';
+import { useRef, useEffect, useCallback, useMemo } from 'react';
 import * as THREE from 'three';
 import type { UrdfLink } from '@/types/index';
 import { getCollisionGeometryByObjectIndex } from '@/core/robot/index';
@@ -6,8 +6,9 @@ import { createHighlightOverrideMaterial } from '@/shared/components/3d/material
 import { disposeMaterial } from '@/shared/utils/three/dispose';
 import { useSemanticOutline } from '@/shared/components/3d/scene/SemanticOutline';
 import { type SemanticOutlineIntent } from '@/shared/components/3d/scene/semanticOutlineComposer';
-import { _pooledRay, _pooledBox3 } from '@/shared/components/3d/robot/constants';
+import { _pooledRay } from '@/shared/components/3d/robot/constants';
 import { collectPickTargets, type PickTargetMode } from '@/shared/components/3d/robot/utils/pickTargets';
+import { PickTargetBoundsCache } from '@/shared/components/3d/robot/utils/pickTargetBounds';
 import { resolveTopLayerInteractionSubType } from '@/shared/components/3d/robot/utils/interactionMode';
 import { getSyntheticGeomParentName, resolveRuntimeGeometryRoot } from '@/shared/components/3d/runtimeGeometrySelection';
 
@@ -98,6 +99,7 @@ export function useHighlightManager({
   const robotBoundingBoxRef = useRef<THREE.Box3 | null>(null);
   const robotBoundingBoxUpdatedAtRef = useRef(0);
   const boundingBoxNeedsUpdateRef = useRef(true);
+  const pickTargetBoundsCache = useMemo(() => new PickTargetBoundsCache(), []);
 
   // Map to track currently highlighted meshes for O(1) revert instead of traverse
   const highlightedMeshesRef = useRef<Map<THREE.Mesh, HighlightedMeshSnapshot>>(new Map());
@@ -238,19 +240,8 @@ export function useHighlightManager({
           }
 
           for (let i = 0; i < boundingTargets.length; i += 1) {
-            const target = boundingTargets[i] as THREE.Object3D & {
-              geometry?: THREE.BufferGeometry;
-            };
-            const geometry = target.geometry;
-
-            if (!geometry) continue;
-            if (!geometry.boundingBox) {
-              geometry.computeBoundingBox();
-            }
-            if (!geometry.boundingBox) continue;
-
-            _pooledBox3.copy(geometry.boundingBox).applyMatrix4(target.matrixWorld);
-            boundingBox.union(_pooledBox3);
+            const worldBounds = pickTargetBoundsCache.getWorldBounds(boundingTargets[i]);
+            if (worldBounds) boundingBox.union(worldBounds);
           }
 
           if (!boundingBox.isEmpty()) {
@@ -264,7 +255,7 @@ export function useHighlightManager({
 
       return robotBoundingBoxRef.current.isEmpty() ? null : robotBoundingBoxRef.current;
     },
-    [robot, getActiveBoundingMode, linkMeshMapRef],
+    [robot, getActiveBoundingMode, linkMeshMapRef, pickTargetBoundsCache],
   );
 
   // PERFORMANCE: Two-phase detection - check bounding box first

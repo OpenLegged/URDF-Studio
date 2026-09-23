@@ -42,6 +42,8 @@ bash scripts/build/rebuild-usd-wasm.sh \
   --build-dir ~/.localdeps/openusd-wasm-speed
 ```
 
+输出到默认 `public/usd/bindings/` 时，脚本会根据四个 bindings 文件的内容同步 `USD_BINDINGS_CACHE_KEY`，使浏览器重新获取整套资源。手动复制编译产物后也必须运行 `npm run usd:bindings:version`；`npm run usd:bindings:check` 可检查是否漏更新，应用构建会执行同一检查。请将 bindings 和版本变更一起提交，避免旧 JS 与新 WASM 的函数签名不匹配。
+
 ### 编译选项详解
 
 | 选项 | 说明 | 推荐值 |

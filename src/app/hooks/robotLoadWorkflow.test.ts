@@ -6,6 +6,7 @@ import type { DocumentLoadState } from '@/store/assetsStore';
 import { DEFAULT_LINK, type RobotData, type RobotFile } from '@/types';
 
 import { runRobotLoadWorkflow } from './robotLoadWorkflow.ts';
+import { translations, type Language } from '@/shared/i18n';
 
 function createRobot(name: string): RobotData {
   return {
@@ -31,13 +32,15 @@ function createReadyResult(file: RobotFile): RobotImportResult {
 async function runReadyLoad(
   source: 'pre-resolved' | 'worker',
   recoveredItemCount = 0,
+  failure?: RobotImportResult | Error,
+  language: Language = 'zh',
 ) {
   const file: RobotFile = {
     name: 'robots/demo.urdf',
     format: 'urdf',
     content: '<robot name="demo"><link name="base" /></robot>',
   };
-  const result = createReadyResult(file);
+  const result = failure && !(failure instanceof Error) ? failure : createReadyResult(file);
   if (recoveredItemCount > 0 && result.status === 'ready') {
     result.robotData.inspectionContext = {
       sourceFormat: 'urdf',
@@ -62,6 +65,7 @@ async function runReadyLoad(
     requestEpoch: { current: 0 },
     requestedFile: file,
     labels: {
+      ...translations[language],
       failedToParseFormat: 'Failed to parse {format}',
       importPackageAssetBundleHint: 'Missing assets: {assets}',
       xacroSourceOnlyPreviewHint: 'Source-only preview unavailable',
@@ -88,6 +92,7 @@ async function runReadyLoad(
       prewarmUsdSelection: () => {},
       resolveRobotFileData: async (requestedFile) => {
         workerRequests.push(requestedFile.name);
+        if (failure instanceof Error) throw failure;
         return result;
       },
       setAppMode: () => {},
@@ -138,3 +143,31 @@ test('a partially recovered load stays silent about source issues', async () => 
 
   assert.deepEqual(loaded.toasts, []);
 });
+
+for (const language of ['zh', 'en'] as const) {
+  test(`worker exceptions produce ${language} feedback and retain diagnostics`, async (context) => {
+    const error = new Error('Failed to import URDF: malformed XML');
+    const log = context.mock.method(console, 'error', () => {});
+    const loaded = await runReadyLoad('worker', 0, error, language);
+    const message = translations[language].robotLoadFailed
+      .replace('{format}', 'URDF').replace('{name}', 'robots/demo.urdf');
+    assert.deepEqual(loaded.toasts, [message]);
+    assert.equal(loaded.documentLoadState.error, message);
+    assert.equal(loaded.documentLoadState.status, 'error');
+    assert.equal(loaded.committedResults.length, 0);
+    assert.equal(log.mock.calls[0].arguments[1], error);
+  });
+}
+
+for (const source of ['pre-resolved', 'worker'] as const) {
+  test(`${source} parser failure localizes feedback without committing a model`, async (context) => {
+    const log = context.mock.method(console, 'error', () => {});
+    const loaded = await runReadyLoad(source, 0, {
+      status: 'error', format: 'urdf', reason: 'parse_failed', message: 'Unexpected close tag',
+    });
+    assert.match(loaded.toasts[0], /无法加载 URDF/);
+    assert.equal(loaded.documentLoadState.error, loaded.toasts[0]);
+    assert.equal(loaded.committedResults.length, 0);
+    assert.equal(log.mock.calls[0].arguments[1], 'Unexpected close tag');
+  });
+}

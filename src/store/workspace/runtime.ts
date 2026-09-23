@@ -6,6 +6,7 @@ import {
   createDefaultWorkspace,
   isEntityEditorLocked,
   resolveClosedLoopDrivenJointMotion,
+  type AssemblySceneProjection,
 } from '@/core/robot';
 
 import {
@@ -69,7 +70,10 @@ function appendHistory(
   before: AssemblyState,
   label: string,
 ): void {
-  history.past = [...history.past, cloneWorkspace(before)].slice(-MAX_WORKSPACE_HISTORY);
+  // These snapshots are store-owned: ordinary recipes edit a separate clone,
+  // and joint motion uses the store's Immer draft. Reuse the immutable snapshot
+  // instead of copying the entire scene again for each history entry.
+  history.past = [...history.past, before].slice(-MAX_WORKSPACE_HISTORY);
   history.future = [];
   history.activity = [...history.activity, createWorkspaceActivity(label)].slice(
     -MAX_WORKSPACE_ACTIVITY,
@@ -137,14 +141,13 @@ function mergeWorkspaceJointMotionTargets(
 }
 
 function projectJointSolutionToWorkspaceTargets(
-  workspace: AssemblyState,
+  globalToEntityRef: AssemblySceneProjection['globalToEntityRef'],
   angles: Record<string, number>,
   quaternions: Record<string, JointQuaternion>,
 ): WorkspaceJointMotionTarget[] {
-  const projection = createAssemblySceneProjection(workspace);
   const targets = new Map<string, WorkspaceJointMotionTarget>();
   const getTarget = (globalId: string) => {
-    const ref = projection.globalToEntityRef.get(globalId);
+    const ref = globalToEntityRef.get(globalId);
     if (ref?.type !== 'joint' && ref?.type !== 'bridge') {
       return null;
     }
@@ -243,7 +246,7 @@ export function createWorkspaceRuntime(
       flushPendingJointMotion();
     }
 
-    const before = cloneWorkspace(get().workspace);
+    const before = get().workspace;
     const draft = cloneWorkspace(before);
     const recipeResult = recipe(draft);
     const next = recipeResult ?? draft;
@@ -519,7 +522,7 @@ export function createWorkspaceRuntime(
     );
     return applyWorkspaceJointMotion(
       projectJointSolutionToWorkspaceTargets(
-        workspace,
+        projection.globalToEntityRef,
         solution.angles,
         solution.quaternions,
       ),
