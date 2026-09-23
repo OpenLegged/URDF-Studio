@@ -32,7 +32,6 @@
  */
 
 import fs from 'node:fs/promises';
-import os from 'node:os';
 import path from 'node:path';
 import process from 'node:process';
 import { setTimeout as delay } from 'node:timers/promises';
@@ -82,7 +81,7 @@ function parseArgs(argv) {
   return opts;
 }
 
-function defaultConcurrency(quick) {
+function defaultConcurrency() {
   const fromEnv = Number.parseInt(process.env.URDF_TEST_WORKFLOW_CONCURRENCY ?? '', 10);
   if (Number.isFinite(fromEnv) && fromEnv > 0) return fromEnv;
   // Parallel journeys share one Vite dev server and software-WebGL Chrome
@@ -105,6 +104,7 @@ async function runJourney(journey, opts) {
   const mode = opts.quick ? 'quick' : 'full';
   const startedAt = Date.now();
   let failure = null;
+  let closeError = null;
   let browserErrors = { console: [], page: [] };
 
   try {
@@ -135,10 +135,11 @@ async function runJourney(journey, opts) {
     try {
       await browser?.close();
     } catch (error) {
-      if (!isTransientPageContextError(error)) throw error;
+      if (!isTransientPageContextError(error)) closeError = error;
     }
     await site.stop();
   }
+  if (closeError) throw closeError;
 
   const ok = failure == null && suite.failed === 0 && browserErrors.page.length === 0;
   return {
@@ -176,7 +177,7 @@ Options:
     return 1;
   }
 
-  const concurrency = opts.headed ? 1 : (opts.concurrency ?? defaultConcurrency(opts.quick));
+  const concurrency = opts.headed ? 1 : (opts.concurrency ?? defaultConcurrency());
   console.log(
     `[workflow] ${opts.quick ? 'QUICK' : 'FULL'} mode: ${journeys.length} journey(ies), concurrency=${concurrency}`,
   );

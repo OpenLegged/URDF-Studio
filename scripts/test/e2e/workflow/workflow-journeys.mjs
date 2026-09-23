@@ -152,7 +152,7 @@ export async function importMiniFixture(page, fileName) {
 }
 
 /** Find an entity's ids in the projection (link/joint by name). */
-export async function findEntity(page, { componentName = null, linkName = null, jointName = null }) {
+export async function findEntity(page, { componentName = null }) {
   const state = await getWorkflowState(page);
   const component = componentName
     ? state.components.find((c) => c.name === componentName) ?? state.components[0]
@@ -616,8 +616,6 @@ export async function j6AssemblyJourney(ctx) {
   // component instead of appending (see base-helpers addComponent), so 1
   // import + 4 adds = 4 unique components total.
   await importMiniFixture(page, 'bar_segment.urdf');
-  const firstState = await getWorkflowState(page);
-  const firstComponent = firstState.components[0];
 
   // Add more components from the same fixture through the debug addComponent
   // (importing the same file again replaces; the tree/library add path is the

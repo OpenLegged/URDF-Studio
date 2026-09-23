@@ -6,14 +6,13 @@
  */
 
 import fs from 'node:fs/promises';
-import path from 'node:path';
 import JSZip from 'jszip';
 
 /**
  * Unzip an exported archive and inspect the robot definition inside.
  * Returns { hasRobot, hasSdfModel, xml, linkCount, jointCount, files }.
  */
-export async function inspectUrdfArchive(archivePath, { deletedLink = null, sdf = false } = {}) {
+export async function inspectUrdfArchive(archivePath, { deletedLink = null } = {}) {
   const data = await fs.readFile(archivePath);
   const zip = await JSZip.loadAsync(data);
   const files = Object.keys(zip.files);
