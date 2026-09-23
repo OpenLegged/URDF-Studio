@@ -1,6 +1,7 @@
 // @ts-nocheck
 import { normalizeUsdMdlPreset } from '../../../../../core/utils/usdMdlPreset.ts';
 import { applyUsdTextureArithmetic } from '../../../../../core/utils/usdTextureArithmetic.ts';
+import { applyUsdOpacityState, applyUsdTextureSlotDefaults } from '../../../../../core/utils/usdMaterialAppearance.ts';
 import { Color, Float32BufferAttribute, FrontSide, LinearSRGBColorSpace, Quaternion, SRGBColorSpace, Vector2, Vector3 } from 'three';
 import * as Shared from './shared.js';
 import { ThreeRenderDelegateCore } from './ThreeRenderDelegateCore.js';
@@ -10,6 +11,7 @@ import {
     applyUsdTextureInputToTexture,
     normalizeUsdTextureInputs,
     rememberUsdMaterialTextureInputs,
+    resolveUsdTextureColorSpace,
 } from '../../../../../core/utils/usdTextureInput.ts';
 const { buildProtoPrimPathCandidates, clamp01, createMatrixFromXformOp, debugInstancer, debugMaterials, debugMeshes, debugPrims, debugTextures, defaultGrayComponent, disableMaterials, disableTextures, extractPrimPathFromMaterialBindingWarning, extractReferencePrimTargets, extractScopeBodyText, extractUsdAssetReferencesFromLayerText, getActiveMaterialBindingWarningOwner, getAngleInRadians, getCollisionGeometryTypeFromUrdfElement, getExpectedPrimTypesForCollisionProto, getExpectedPrimTypesForProtoType, getMatrixMaxElementDelta, getPathBasename, getPathWithoutRoot, getRawConsoleMethod, getRootPathFromPrimPath, getSafePrimTypeName, hasNonZeroTranslation, hydraCallbackErrorCounts, installMaterialBindingApiWarningInterceptor, isIdentityQuaternion, isLikelyDefaultGrayMaterial, isLikelyInverseTransform, isMaterialBindingApiWarningMessage, isMatrixApproximatelyIdentity, isNonZero, isPotentiallyLargeBaseAssetPath, logHydraCallbackError, materialBindingRepairMaxLayerTextLength, materialBindingWarningHandlers, maxHydraCallbackErrorLogsPerMethod, nearlyEqual, normalizeHydraPath, normalizeUsdPathToken, parseGuideCollisionReferencesFromLayerText, parseProtoMeshIdentifier, parseUrdfTruthFromText, parseVector3Text, parseXformOpFallbacksFromLayerText, rawConsoleError, rawConsoleWarn, registerMaterialBindingApiWarningHandler, remapRootPathIfNeeded, resolveUrdfTruthFileNameForStagePath, resolveUsdAssetPath, setActiveMaterialBindingWarningOwner, shouldAllowLargeBaseAssetScan, stringifyConsoleArgs, toArrayLike, toColorArray, toFiniteNumber, toFiniteQuaternionWxyzTuple, toFiniteVector2Tuple, toFiniteVector3Tuple, toMatrixFromUrdfOrigin, toQuaternionWxyzFromRpy, transformEpsilon, wrapHydraCallbackObject } = Shared;
 export class ThreeRenderDelegateMaterialOps extends ThreeRenderDelegateCore {
@@ -2106,7 +2108,9 @@ export class ThreeRenderDelegateMaterialOps extends ThreeRenderDelegateCore {
             if (typeof this.clearSnapshotTextureApplyFailure === 'function') {
                 this.clearSnapshotTextureApplyFailure(material, normalizedTexturePath, materialProperty);
             }
-            nextTexture.colorSpace = options.colorSpace || LinearSRGBColorSpace;
+            nextTexture.colorSpace = (textureInputSlot
+                ? resolveUsdTextureColorSpace(textureInputSlot, textureInput)
+                : null) || options.colorSpace || LinearSRGBColorSpace;
             if (textureInput) {
                 // The clone is per-material, so per-slot USD metadata (uv matrix,
                 // wrap modes, color space) can be applied without contaminating the
@@ -2116,6 +2120,10 @@ export class ThreeRenderDelegateMaterialOps extends ThreeRenderDelegateCore {
             }
             nextTexture.needsUpdate = true;
             material[materialProperty] = nextTexture;
+            if (materialProperty === 'map' || materialProperty === 'emissiveMap'
+                || materialProperty === 'roughnessMap' || materialProperty === 'metalnessMap') {
+                applyUsdTextureSlotDefaults(material, materialProperty);
+            }
             applyUsdTextureArithmetic(material, options.textureInputs || (textureInputSlot ? { [textureInputSlot]: textureInput } : null));
             if (typeof options.onAssigned === 'function') {
                 options.onAssigned(nextTexture);
@@ -2363,53 +2371,34 @@ export class ThreeRenderDelegateMaterialOps extends ThreeRenderDelegateCore {
         }
         assignVec2('normalScale', 'normalScale');
         assignVec2('clearcoatNormalScale', 'clearcoatNormalScale');
-        if (record?.opacityEnabled === false) {
-            material.opacity = 1;
-            material.transparent = false;
-            material.alphaTest = 0;
-        }
-        else {
-            const opacity = toFiniteNumber(record?.opacity);
-            if (opacity !== undefined && opacity < 1) {
-                material.transparent = true;
-            }
-            const alphaTest = toFiniteNumber(record?.alphaTest);
-            if (alphaTest !== undefined && alphaTest > 0) {
-                material.transparent = false;
-            }
-        }
+        applyUsdOpacityState(material, {
+            opacity: material.opacity,
+            alphaTest: material.alphaTest,
+            opacityEnabled: record?.opacityEnabled,
+            opacityTextureEnabled: record?.opacityTextureEnabled,
+        });
         applyTexture(record?.mapPath, 'map', {
             colorSpace: SRGBColorSpace,
-            onAssigned: () => {
-                material.color = new Color(0xffffff);
-                material.vertexColors = false;
-            },
         });
         if (emissiveEnabled) {
             applyTexture(record?.emissiveMapPath, 'emissiveMap', {
                 colorSpace: SRGBColorSpace,
-                onAssigned: () => {
-                    material.emissive = new Color(0xffffff);
-                },
             });
         }
-        applyTexture(record?.roughnessMapPath, 'roughnessMap', {
-            onAssigned: () => {
-                material.roughness = 1;
-            },
-        });
-        applyTexture(record?.metalnessMapPath, 'metalnessMap', {
-            onAssigned: () => {
-                material.metalness = 1;
-            },
-        });
+        applyTexture(record?.roughnessMapPath, 'roughnessMap');
+        applyTexture(record?.metalnessMapPath, 'metalnessMap');
         applyTexture(record?.normalMapPath, 'normalMap');
         applyTexture(record?.aoMapPath, 'aoMap');
         if (record?.opacityEnabled !== false && record?.opacityTextureEnabled !== false) {
             applyTexture(record?.alphaMapPath, 'alphaMap', {
                 onAssigned: () => {
-                    if (!(material.alphaTest > 0))
-                        material.transparent = true;
+                    applyUsdOpacityState(material, {
+                        opacity: material.opacity,
+                        alphaTest: material.alphaTest,
+                        opacityEnabled: record?.opacityEnabled,
+                        opacityTextureEnabled: record?.opacityTextureEnabled,
+                        hasAlphaTexture: true,
+                    });
                 },
             });
         }

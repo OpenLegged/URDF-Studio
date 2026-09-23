@@ -133,6 +133,42 @@ test('HydraMaterial applies authored preview-surface scalar colors as linear inp
     assertColorClose(hydraMaterial._material.emissive, expectedEmissiveColor);
 });
 
+test('HydraMaterial lets a connected diffuse texture override its scalar fallback', async () => {
+    const hydraInterface = {
+        registry: { async getTexture() { return new Texture(); } },
+        createFallbackMaterialFromStage() { return null; },
+    };
+    const hydraMaterial = new HydraMaterial('/Robot/Looks/Textured', hydraInterface);
+    await hydraMaterial.applyNetworkUpdate([{
+        networkId: '/Robot/Looks/Textured',
+        nodes: [
+            {
+                path: '/Robot/Looks/Textured/PreviewSurface',
+                parameters: {
+                    base_color_constant: [0.2, 0.3, 0.4],
+                    enable_opacity: false,
+                    opacity_constant: 0.1,
+                },
+            },
+            {
+                path: '/Robot/Looks/Textured/DiffuseTexture',
+                parameters: { resolvedPath: '/textures/diffuse.png' },
+            },
+        ],
+        relationships: [{
+            inputId: '/Robot/Looks/Textured/DiffuseTexture',
+            outputId: '/Robot/Looks/Textured/PreviewSurface',
+            outputName: 'diffuseColor',
+        }],
+    }]);
+
+    assert.ok(hydraMaterial._material.map);
+    assertColorClose(hydraMaterial._material.color, new Color(0xffffff));
+    assert.equal(hydraMaterial._material.opacity, 1);
+    assert.equal(hydraMaterial._material.transparent, false);
+    assert.equal(hydraMaterial._material.depthWrite, true);
+});
+
 test('HydraMaterial applies OmniPBR diffuse_color_constant as the base color without stage fallback', async () => {
     let fallbackRequestCount = 0;
     const hydraInterface = {

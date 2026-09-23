@@ -77,6 +77,7 @@ Core 据此切换默认工作区与宿主工作区的壳层呈现，但不知道
 - `vite.config.ts` 从 Node 当前可解析的依赖图定位 Three：Core 独立安装时使用自身 `node_modules`，被宿主仓直接编译或运行配置测试时可使用上层锁定安装，不要求伪造 `core/node_modules`
 - 通用 THREE 释放：`src/shared/utils/three/dispose.ts`
 - `src/features/urdf-viewer/utils/dispose.ts`：兼容层 re-export
+- USD 材质外观规则：`src/core/utils/usdMaterialAppearance.ts` 统一 Hydra 模型预览和 Pro 场景投影的图片方向、贴图乘色与透明度；资源加载、渲染器和场景生命周期仍由各自调用方拥有
 - 通用 robot renderer kernel/backend lifecycle：`src/shared/components/3d/robot/`，包括 `RobotModelKernel`、`ThreeJsBackend`、source format/metadata 与通用 load/dispose；使用明确 props/ports，不读取应用 store
 - Studio adapter：`features/urdf-viewer/components/RobotModel.tsx` 注入设置、selection/hover ports；`RobotModelWorkspaceLayer.tsx` 保留 workspace controls/grounding；workspace mutation/history 仍由 app command 所有
 - public Canvas：`src/lib/components/RobotCanvas.tsx` 使用同一 kernel，拥有实例 hover 和 joint interaction cleanup，相机/质量/world visibility 为显式 display options

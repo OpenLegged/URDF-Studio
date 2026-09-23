@@ -2,6 +2,7 @@
 import { DefaultLoadingManager, Texture, TextureLoader } from 'three';
 import { TGALoader } from 'three/addons/loaders/TGALoader.js';
 import { EXRLoader } from 'three/addons/loaders/EXRLoader.js';
+import { orientUsdTexture } from '../../../../../core/utils/usdMaterialAppearance.ts';
 import { debugTextures } from './shared.js';
 const nowMs = () => ((typeof performance !== 'undefined' && typeof performance.now === 'function')
     ? performance.now()
@@ -377,13 +378,13 @@ class TextureRegistry {
                             // worker-decoded pixels into a typed DataTexture can reinterpret
                             // platform channel order and turn warm walnut tones blue/teal.
                             texture = new Texture(normalizedCanvas);
-                            texture.flipY = true;
                             bitmap.close?.();
                         }
                     }
                     if (!texture) {
                         texture = new Texture(bitmap);
                     }
+                    orientUsdTexture(texture);
                     texture.name = resourcePath;
                     texture.needsUpdate = true;
                     finalizeLoad('ok');
@@ -408,6 +409,7 @@ class TextureRegistry {
                     url, 
                     // onLoad callback
                     (texture) => {
+                        orientUsdTexture(texture);
                         texture.name = resourcePath;
                         finalizeLoad('ok');
                         releaseBlobObjectUrl();

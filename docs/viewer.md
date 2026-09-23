@@ -1,6 +1,6 @@
 # Editor / Viewer 子域
 
-> 最后更新：2026-09-23 | 覆盖源码：`src/core/robot/assemblySceneProjection.ts`、`src/core/robot/assemblyScenePlacement.ts`、`src/core/utils/usdTextureLoader.ts`、`src/features/editor/`、`src/features/urdf-viewer/`、`src/app/components/unified-viewer/`、`src/shared/components/3d/`
+> 最后更新：2026-09-23 | 覆盖源码：`src/core/robot/assemblySceneProjection.ts`、`src/core/robot/assemblyScenePlacement.ts`、`src/core/utils/usdMaterialAppearance.ts`、`src/core/utils/usdTextureLoader.ts`、`src/features/editor/`、`src/features/urdf-viewer/`、`src/app/components/unified-viewer/`、`src/shared/components/3d/`
 > 交叉引用：[architecture.md](architecture.md)、[file-io.md](file-io.md)、[style-guide.md](style-guide.md)、[wasm-build.md](wasm-build.md)
 
 ## 1. 单模式 Editor
@@ -85,7 +85,7 @@ features/urdf-viewer/
 
 - `runtime/*` 是 vendored usd-viewer runtime，不要在 `core/parsers/usd/*` 重复实现 viewer runtime 职责
 - URDF Studio 应把 runtime 输出适配到 `ViewerRobotDataResolution` / `RobotData`
-- 机器人 runtime 与 Pro 场景投影共用 `loadUsdTextureSlot` 处理 TextureLoader 图片方向、色彩空间、缓存和每个材质槽的 UV/重复状态；各自提供资源 URL 与所属 Three.js 加载器。模型编辑器的 Hydra 预览使用专门的 `TextureRegistry` 处理 worker 图像，但同样调用 `usdTextureInput` 中的 UV/重复/色彩空间规则与 `applyUsdTextureArithmetic`。
+- 机器人 runtime 与 Pro 场景投影共用 `loadUsdTextureSlot` 处理 TextureLoader 图片方向、色彩空间、缓存和每个材质槽的 UV/重复状态；各自提供资源 URL 与所属 Three.js 加载器。模型编辑器的 Hydra 预览使用专门的 `TextureRegistry` 处理 worker 图像，两条路径都调用 `usdMaterialAppearance` 的贴图方向、贴图乘色和透明度规则，以及 `usdTextureInput` 的 UV/重复/色彩空间规则与 `applyUsdTextureArithmetic`。渲染器和资源加载生命周期仍由各自工作区管理。
 - `public/usd/bindings/*` 必须保留在静态资源目录，供浏览器运行时 fetch
 - **WASM 构建系统**位于 `third_party/OpenUSD` 和 `scripts/build/`；重编命令与故障排查见 [wasm-build.md](wasm-build.md)
 

@@ -533,6 +533,38 @@ test('applySnapshotMaterialRecord respects snapshot diffuse color space metadata
     assert.equal(material.color.getHexString(), expected);
 });
 
+test('snapshot material opacity follows the shared USD alpha policy', async () => {
+    const context = {
+        ...createMaterialOpsContext(),
+        registry: { async getTexture() { return new Texture(); } },
+        inferColorHexFromMaterialName() { return null; },
+        shouldTreatNamedHexDiffuseAsSrgb() { return false; },
+        resolveSnapshotMaterialEmissionEnabled,
+        applySnapshotTextureInput,
+    };
+    const disabled = new MeshPhysicalMaterial();
+    applySnapshotMaterialRecord.call(context, disabled, {
+        opacity: 0.25,
+        opacityEnabled: false,
+        alphaMapPath: 'img/alpha.png',
+    });
+    assert.equal(disabled.alphaMap, null);
+    assert.equal(disabled.opacity, 1);
+    assert.equal(disabled.transparent, false);
+    assert.equal(disabled.depthWrite, true);
+
+    const blended = new MeshPhysicalMaterial();
+    applySnapshotMaterialRecord.call(context, blended, {
+        opacity: 1,
+        opacityEnabled: true,
+        alphaMapPath: 'img/alpha.png',
+    });
+    await Promise.all(context._pendingSnapshotTextureLoads);
+    assert.ok(blended.alphaMap);
+    assert.equal(blended.transparent, true);
+    assert.equal(blended.depthWrite, false);
+});
+
 test('normalizeSnapshotMaterialRecords treats authored USD scalar colors as linear', () => {
     const context = {
         ...createMaterialOpsContext(),

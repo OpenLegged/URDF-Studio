@@ -2,6 +2,7 @@
 import { Color, DoubleSide, LinearSRGBColorSpace, MeshPhysicalMaterial, MeshStandardMaterial, RGBAFormat, RepeatWrapping, SRGBColorSpace, Vector2 } from 'three';
 import * as Shared from './shared.js';
 import { disposeTexturesFromMaterial } from '../../../../../shared/utils/three/dispose.ts';
+import { applyUsdOpacityState, applyUsdTextureSlotDefaults } from '../../../../../core/utils/usdMaterialAppearance.ts';
 import { getDefaultMaterial, setDefaultMaterial } from './default-material-state.js';
 import { applyUnifiedHydraMaterialDefaults, createHydraColorFromTuple, createUnifiedHydraPhysicalMaterial, createUnifiedHydraStandardMaterial, hydraMaterialRequiresPhysicalExtensions } from './material-defaults.js';
 const { buildProtoPrimPathCandidates, clamp01, createMatrixFromXformOp, debugInstancer, debugMaterials, debugMeshes, debugPrims, debugTextures, defaultGrayComponent, disableMaterials, disableTextures, extractPrimPathFromMaterialBindingWarning, extractReferencePrimTargets, extractScopeBodyText, extractUsdAssetReferencesFromLayerText, getActiveMaterialBindingWarningOwner, getAngleInRadians, getCollisionGeometryTypeFromUrdfElement, getExpectedPrimTypesForCollisionProto, getExpectedPrimTypesForProtoType, getMatrixMaxElementDelta, getPathBasename, getPathWithoutRoot, getRawConsoleMethod, getRootPathFromPrimPath, getSafePrimTypeName, hasNonZeroTranslation, hydraCallbackErrorCounts, installMaterialBindingApiWarningInterceptor, isIdentityQuaternion, isLikelyDefaultGrayMaterial, isLikelyInverseTransform, isMaterialBindingApiWarningMessage, isMatrixApproximatelyIdentity, isNonZero, isPotentiallyLargeBaseAssetPath, logHydraCallbackError, materialBindingRepairMaxLayerTextLength, materialBindingWarningHandlers, maxHydraCallbackErrorLogsPerMethod, nearlyEqual, normalizeHydraPath, normalizeUsdPathToken, parseGuideCollisionReferencesFromLayerText, parseProtoMeshIdentifier, parseUrdfTruthFromText, parseVector3Text, parseXformOpFallbacksFromLayerText, rawConsoleError, rawConsoleWarn, registerMaterialBindingApiWarningHandler, remapRootPathIfNeeded, resolveUrdfTruthFileNameForStagePath, resolveUsdAssetPath, setActiveMaterialBindingWarningOwner, shouldAllowLargeBaseAssetScan, stringifyConsoleArgs, toArrayLike, toColorArray, toFiniteNumber, toFiniteQuaternionWxyzTuple, toFiniteVector2Tuple, toFiniteVector3Tuple, toMatrixFromUrdfOrigin, toQuaternionWxyzFromRpy, transformEpsilon, wrapHydraCallbackObject } = Shared;
@@ -95,6 +96,7 @@ class HydraMaterial {
         this._material = getDefaultMaterial();
     }
     prepareOwnedMaterial(name, usePhysicalMaterial = false) {
+        this._hasOpacityTexture = false;
         const createTemplateMaterial = () => usePhysicalMaterial
             ? createUnifiedHydraPhysicalMaterial({ name })
             : createUnifiedHydraStandardMaterial({ name });
@@ -284,20 +286,19 @@ class HydraMaterial {
                             // TODO: Extract the alpha channel into a new RGB texture.
                             console.error("Separate alpha channel is currently not supported.", nodeIn.file, mainMaterial.diffuseColor?.nodeIn?.file, channel);
                         }
-                        if (!(this._material.alphaTest > 0))
-                            this._material.transparent = true;
+                        this._hasOpacityTexture = true;
                         this._material.needsUpdate = true;
                         resolve();
                         return;
                     }
                     else if (materialParameterMapName === 'metalnessMap') {
-                        this._material.metalness = 1.0;
+                        applyUsdTextureSlotDefaults(this._material, 'metalnessMap');
                     }
                     else if (materialParameterMapName === 'roughnessMap') {
-                        this._material.roughness = 1.0;
+                        applyUsdTextureSlotDefaults(this._material, 'roughnessMap');
                     }
                     else if (materialParameterMapName === 'emissiveMap') {
-                        this._material.emissive = new Color(0xffffff);
+                        applyUsdTextureSlotDefaults(this._material, 'emissiveMap');
                     }
                     else if (!HydraMaterial.channelMap[channel]) {
                         console.error(`Unsupported texture channel '${channel}'!`);
@@ -360,11 +361,7 @@ class HydraMaterial {
                     clonedTexture.wrapT = this.convertWrap(nodeIn.wrapT);
                     this._material[materialParameterMapName] = clonedTexture;
                     if (materialParameterMapName === 'map') {
-                        // A connected UsdPreviewSurface base-color texture replaces the
-                        // scalar input. Three.js multiplies `map` by `color`, so keeping
-                        // the fallback gray here incorrectly darkens every color texture.
-                        this._material.color = new Color(0xffffff);
-                        this._material.vertexColors = false;
+                        applyUsdTextureSlotDefaults(this._material, 'map');
                     }
                     this._material.needsUpdate = true;
                     resolve();
@@ -611,6 +608,18 @@ class HydraMaterial {
         for (let key in HydraMaterial.usdPreviewToMeshPhysicalMap) {
             this.assignProperty(mainMaterialNode, key);
         }
+        // Preview-surface scalar inputs are assigned after texture loads. Restore
+        // the map's authoritative value so they cannot tint or rescale it.
+        for (const slot of ['map', 'emissiveMap', 'roughnessMap', 'metalnessMap']) {
+            if (this._material[slot]) applyUsdTextureSlotDefaults(this._material, slot);
+        }
+        applyUsdOpacityState(this._material, {
+            opacity: this._material.opacity,
+            alphaTest: this._material.alphaTest,
+            opacityEnabled: HydraMaterial._isOpacityEnabled(mainMaterialNode),
+            opacityTextureEnabled: HydraMaterial._isOpacityTextureEnabled(mainMaterialNode),
+            hasAlphaTexture: this._hasOpacityTexture === true,
+        });
     }
 }
 // Maps USD preview material texture names to Three.js MeshPhysicalMaterial names

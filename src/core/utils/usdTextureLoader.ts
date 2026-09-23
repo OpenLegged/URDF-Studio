@@ -3,8 +3,10 @@ import type { UsdMaterialTextureInput, UsdMaterialTextureInputSlotPathField } fr
 import {
   USD_COLOR_TEXTURE_INPUT_SLOTS,
   cloneUsdSlotTexture,
+  resolveUsdTextureColorSpace,
   usdTextureInputRequiresSlotState,
 } from './usdTextureInput';
+import { orientUsdTexture } from './usdMaterialAppearance';
 
 /** Load one USD image once per decode color space, then apply its material-slot sampling state. */
 export async function loadUsdTextureSlot(
@@ -19,10 +21,9 @@ export async function loadUsdTextureSlot(
   let loading = cache.get(cacheKey);
   if (!loading) {
     loading = loadTexture(url).then((texture) => {
-      // Match Hydra's TextureRegistry: USD UVs address the image from the
-      // lower-left. Without the upload flip, atlas regions land on wrong faces.
-      texture.flipY = true;
-      if (isColor) texture.colorSpace = THREE.SRGBColorSpace;
+      orientUsdTexture(texture);
+      const colorSpace = resolveUsdTextureColorSpace(slot, null);
+      if (colorSpace) texture.colorSpace = colorSpace;
       return texture;
     });
     cache.set(cacheKey, loading);
