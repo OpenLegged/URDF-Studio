@@ -10,7 +10,7 @@ import type {
   HandleProjectExportOptions,
   ProjectExportExecutionResult,
 } from './file-export/types';
-import { resolveExportErrorMessage } from '../utils/exportErrorMessage';
+import { resolveExportErrorMessage, resolveExportWarningMessage } from '../utils/exportErrorMessage';
 import { reportExportDiagnostics } from '../utils/exportDiagnostics';
 import { waitForNextPaint } from '../utils/waitForNextPaint';
 
@@ -44,9 +44,7 @@ interface UseExportSessionOptions {
   operations: ExportSessionOperations;
   preload: (surface: ExportSessionSurface) => void;
   showToast: (message: string, type: 'error' | 'info') => void;
-  labels: Pick<TranslationKeys,
-    'exportFailedParse' | 'exportUrdfJointUnsupported' |
-    'exportProgressPreparing' | 'exportProgressPreparingDetail'>;
+  labels: TranslationKeys;
 }
 
 type ExportSessionRequest =
@@ -152,12 +150,13 @@ export function useExportSession({ operations, preload, showToast, labels }: Use
         // Surface export compatibility notes (e.g. closed loops cut for URDF)
         // as a toast so they are not buried in the console.
         if (result.warnings?.length) {
-          showToast([...new Set(result.warnings)].join('\n'), 'info');
+          showToast([...new Set(result.warnings.map(warning => resolveExportWarningMessage(warning, labels)))].join('\n'), 'info');
         }
         updateState({ step: 'closed', disconnectedDialog: null });
       }
       return result;
     } catch (error) {
+      console.error('[Export] Failed:', error);
       if (request.type === 'project-blob') throw error;
       if (isCurrent()) showToast(resolveExportErrorMessage(error, labels), 'error');
       return undefined;

@@ -21,6 +21,7 @@ import type {
 } from '@/features/ai-assistant';
 import type { RobotData } from '@/types';
 import type { Language } from '@/shared/i18n';
+import { translations } from '@/shared/i18n';
 
 interface BotWorldImportOverlayState {
   isImporting: boolean;
@@ -126,7 +127,7 @@ export function AppOverlayLayer({
       )}
 
       {extensions?.slots?.renderModals?.()}
-      <AppToast toast={toast} onClose={closeToast} />
+      <AppToast toast={toast} onClose={closeToast} closeLabel={translations[lang].close} />
       {extensions?.slots?.renderTopOverlays?.()}
 
       {botWorldImportState.isImporting && (

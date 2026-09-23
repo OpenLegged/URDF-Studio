@@ -219,7 +219,8 @@ export function AppLayout({
     clearAssemblyComponentPreparationOverlay,
     isSelectedUsdHydrating: isUsdHydrationPending,
     labels: {
-      failedToParseFormat: t.failedToParseFormat,
+      robotLoadFailed: t.robotLoadFailed,
+      usdBrowserUnsupported: t.usdBrowserUnsupported,
     },
     previewFile: activePreviewFile,
     selectedFile,
@@ -320,6 +321,7 @@ export function AppLayout({
     handleOpenCollisionOptimizer,
     handlePrefetchCollisionOptimizer,
   } = useWorkspaceOverlayActions({
+    addComponentFailed: t.addComponentFailed,
     onLoadRobot,
     showAssemblyComponentPreparationOverlay,
     clearAssemblyComponentPreparationOverlay,

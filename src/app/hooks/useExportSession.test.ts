@@ -4,6 +4,7 @@ import { act } from 'react';
 
 import type { ExportProgressState } from '@/features/file-io';
 import { DEFAULT_CONFIG } from '@/features/file-io/components/ExportDialog/config';
+import { translations } from '@/shared/i18n';
 import type { RobotFile } from '@/types';
 import { renderHook } from '../../../scripts/test/helpers/react-hook-harness';
 import type { ExportExecutionResult, ExportTarget } from './file-export/types';
@@ -43,6 +44,7 @@ function renderSession(
     preload: (surface) => { preloads.push(surface); },
     showToast: (message) => { errors.push(message); },
     labels: {
+      ...translations.en,
       exportFailedParse: 'Export failed', exportUrdfJointUnsupported: 'Unsupported joint {name}: {type}',
       exportProgressPreparing: 'Preparing', exportProgressPreparingDetail: 'Preparing assets',
     },
@@ -123,7 +125,7 @@ test('failed configured exports preserve the editable session for retry', async 
   assert.equal(session.current.step, 'configure');
   assert.equal(session.current.busy, false);
   assert.equal(session.current.defaultFormat, 'urdf');
-  assert.deepEqual(session.errors, ['Missing mesh']);
+  assert.deepEqual(session.errors, [translations.en.exportFailed]);
   await act(async () => { await session.current.submit(DEFAULT_CONFIG); });
   assert.equal(session.current.step, 'closed');
   assert.equal(attempts, 2);
@@ -162,7 +164,7 @@ test('disconnected export confirmation owns close protection and retry state', a
   await act(async () => { confirmation.reject(new Error('Archive failed')); await pending; });
   assert.equal(session.current.step, 'disconnected');
   assert.equal(session.current.busy, false);
-  assert.deepEqual(session.errors, ['Archive failed']);
+  assert.deepEqual(session.errors, [translations.en.exportFailed]);
   await act(async () => { await session.current.confirmDisconnected(); });
   assert.equal(session.current.step, 'closed');
   assert.equal(session.current.disconnectedDialog, null);
@@ -180,7 +182,7 @@ test('project export displays progress and releases the session after failure', 
   await act(async () => { completion.reject(new Error('Disk unavailable')); await pending; });
   assert.equal(session.current.busy, false);
   assert.equal(session.current.progress, null);
-  assert.deepEqual(session.errors, ['Disk unavailable']);
+  assert.deepEqual(session.errors, [translations.en.exportFailed]);
 });
 
 test('captured blob export commands read the latest operations after a render', async (context) => {
@@ -224,3 +226,34 @@ test('unmount invalidates export progress and late errors without canceling the 
   assert.deepEqual(observedProgress, []);
   assert.deepEqual(session.errors, []);
 });
+
+for (const language of ['zh', 'en'] as const) {
+  test(`${language} export toasts use localized errors and preserve original diagnostics`, async (context) => {
+    const failure = new Error('Internal worker broke');
+    const logged = context.mock.method(console, 'error', () => {});
+    const session = renderSession(context, { handleExportProject: async () => { throw failure; } });
+    session.options.labels = translations[language];
+    session.rerender();
+    await act(async () => { await session.current.exportProject(); });
+    assert.deepEqual(session.errors, [translations[language].exportFailed]);
+    assert.ok(logged.mock.calls.some(call => call.arguments[1] === failure));
+  });
+
+  test(`${language} export success localizes and deduplicates warnings while logging raw details`, async (context) => {
+    const warning = '[MJCF export] Joint "joint_1" uses unsupported planar type, degrading to freejoint.';
+    const logged = context.mock.method(console, 'warn', () => {});
+    const session = renderSession(context, {
+      handleExportWithConfig: async () => ({ ...SUCCESS, partial: true, warnings: [warning, warning, 'Raw note'] }),
+    });
+    session.options.labels = translations[language];
+    session.rerender();
+    await act(async () => { session.current.open(); await session.current.submit(DEFAULT_CONFIG); });
+    assert.deepEqual(session.errors, [[
+      translations[language].exportMjcfPlanarJointWarning.replace('{name}', 'joint_1'),
+      translations[language].exportCompatibilityWarning,
+    ].join('\n')]);
+    assert.ok(logged.mock.calls.some(call => String(call.arguments[0]).includes(warning)));
+    assert.ok(logged.mock.calls.some(call => String(call.arguments[0]).includes('Raw note')));
+    assert.equal(session.current.step, 'closed');
+  });
+}

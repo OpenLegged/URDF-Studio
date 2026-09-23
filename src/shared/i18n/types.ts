@@ -90,6 +90,9 @@ export interface TranslationKeys extends TranslationWorkflowKeys {
   components: string;
   bridges: string;
   addComponent: string;
+  addComponentFailed: string;
+  robotLoadFailed: string;
+  usdBrowserUnsupported: string;
   createBridge: string;
   bridgeJoint: string;
   parentComponent: string;
@@ -819,6 +822,17 @@ export interface TranslationKeys extends TranslationWorkflowKeys {
   removedFolder: string;
   deletedAllLibraryFiles: string;
   onlyUrdfMjcfExport: string;
+  exportFailed: string;
+  exportMjcfClosedLoopJointUnsupported: string;
+  exportMjcfMissingCollisionGeometry: string;
+  exportCompatibilityWarning: string;
+  exportMjcfPlanarJointWarning: string;
+  exportMjcfCyclicLinkWarning: string;
+  exportSdfFloatingJointWarning: string;
+  exportAssetPackagingFailed: string;
+  exportMissingMeshAsset: string;
+  exportWorkspaceBusy: string;
+  exportPendingEditFailed: string;
   exportFailedParse: string;
   exportClosedLoopUrdfUnsupported: string;
   exportClosedLoopUrdfStripped: string;

@@ -4,6 +4,7 @@ import { CLOSE_BUTTON_DANGER_TERTIARY_CLASS } from '@/shared/components/ui';
 interface AppToastProps {
   toast: AppToastState;
   onClose: () => void;
+  closeLabel: string;
 }
 
 function resolveToastPresentation(type: AppToastState['type']) {
@@ -28,7 +29,7 @@ function resolveToastPresentation(type: AppToastState['type']) {
   };
 }
 
-export function AppToast({ toast, onClose }: AppToastProps) {
+export function AppToast({ toast, onClose, closeLabel }: AppToastProps) {
   if (!toast.show) {
     return null;
   }
@@ -61,7 +62,7 @@ export function AppToast({ toast, onClose }: AppToastProps) {
         <button
           type="button"
           onClick={onClose}
-          aria-label="Close notification"
+          aria-label={closeLabel}
           className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-system-blue/30 ${CLOSE_BUTTON_DANGER_TERTIARY_CLASS}`}
         >
           <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
