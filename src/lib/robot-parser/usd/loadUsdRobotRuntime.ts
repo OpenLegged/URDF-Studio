@@ -5,11 +5,10 @@ import type { UsdSceneMaterialRecord, UsdSceneMeshDescriptor } from '@/types';
 import type { UsdMaterialTextureInputSlotPathField } from '@/types/usdMaterial';
 import { URDFCollider, URDFVisual } from '@/core/parsers/urdf/loader/URDFClasses';
 import {
-  USD_COLOR_TEXTURE_INPUT_SLOTS,
-  cloneUsdSlotTexture,
   getUsdTextureInputSlot,
-  usdTextureInputRequiresSlotState,
 } from '@/core/utils/usdTextureInput';
+import { loadUsdTextureSlot } from '@/core/utils/usdTextureLoader';
+import { collectMaterialTextures } from '@/core/utils/three/objectRenderQuality';
 import { buildRobotRuntimeFromData, type RobotRuntimeModel } from '../runtime';
 import { resolveUsdDescriptorTargetLinkPath } from './usdDescriptorLinkResolution';
 import { selectUsdRenderableMeshDescriptors } from './usdRenderableDescriptors';
@@ -228,9 +227,6 @@ async function applyMaterialTextures(
 ): Promise<void> {
   if (!record || typeof Image === 'undefined') return;
   const loader = new THREE.TextureLoader();
-  // Cached textures are shared across materials; a slot with authored USD
-  // metadata (uv matrix / wrap / color space) is cloned per material so sibling
-  // materials with different transforms cannot contaminate each other.
   const resolveSlotTexture = async (
     path: string | null | undefined,
     slot: UsdMaterialTextureInputSlotPathField,
@@ -238,20 +234,10 @@ async function applyMaterialTextures(
     if (!path) return null;
     const url = resolveAssetUrl(path, assets);
     if (!url) return null;
-    let pending = textureCache.get(url);
-    if (!pending) {
-      pending = loader.loadAsync(url).then((texture) => {
-        texture.flipY = false;
-        if (USD_COLOR_TEXTURE_INPUT_SLOTS.has(slot)) texture.colorSpace = THREE.SRGBColorSpace;
-        return texture;
-      });
-      textureCache.set(url, pending);
-    }
-    const texture = await pending;
-    const textureInput = getUsdTextureInputSlot(record.textureInputs, slot);
-    return textureInput && usdTextureInputRequiresSlotState(textureInput)
-      ? cloneUsdSlotTexture(texture, slot, textureInput)
-      : texture;
+    return loadUsdTextureSlot(
+      url, slot, getUsdTextureInputSlot(record.textureInputs, slot), textureCache,
+      (sourceUrl) => loader.loadAsync(sourceUrl),
+    );
   };
 
   const [map, emissiveMap, roughnessMap, metalnessMap, normalMap, aoMap, alphaMap] =
@@ -346,6 +332,23 @@ function applyGeometryGroups(
   if (cursor < totalCount) geometry.addGroup(cursor, totalCount - cursor, 0);
 }
 
+async function unattachedCachedTextures(
+  root: THREE.Object3D,
+  cache: Map<string, Promise<THREE.Texture>>,
+): Promise<THREE.Texture[]> {
+  const attached = new Set<THREE.Texture>();
+  root.traverse((object) => {
+    if (!(object instanceof THREE.Mesh)) return;
+    const materials = Array.isArray(object.material) ? object.material : [object.material];
+    materials.forEach((material) => {
+      collectMaterialTextures(material).forEach((texture) => attached.add(texture));
+    });
+  });
+  const settled = await Promise.allSettled(cache.values());
+  return settled.flatMap((result) => result.status === 'fulfilled' && !attached.has(result.value)
+    ? [result.value] : []);
+}
+
 /** Build a visible articulated runtime from a worker-baked USD scene snapshot. */
 export async function buildUsdRobotRuntimeFromScene(
   parsed: ParsedUsdScene,
@@ -355,6 +358,7 @@ export async function buildUsdRobotRuntimeFromScene(
     parseVisual: false,
     parseCollision: false,
   });
+  const textureCache = new Map<string, Promise<THREE.Texture>>();
 
   try {
     runtime.root.updateMatrixWorld(true);
@@ -362,7 +366,6 @@ export async function buildUsdRobotRuntimeFromScene(
     Array.from(parsed.snapshot.render?.materials || []).forEach((record) => {
       if (record.materialId) materialById.set(normalizePath(record.materialId), record);
     });
-    const textureCache = new Map<string, Promise<THREE.Texture>>();
     const descriptors = selectUsdRenderableMeshDescriptors(parsed.snapshot);
     const knownLinkPaths = Object.keys(parsed.resolution.linkIdByPath);
     const rootLink = runtime.root.links[parsed.resolution.robotData.rootLinkId] ?? runtime.root;
@@ -440,13 +443,23 @@ export async function buildUsdRobotRuntimeFromScene(
     runtime.root.userData.usdStageSourcePath = parsed.resolution.stageSourcePath;
     runtime.root.updateMatrixWorld(true);
 
+    const unattachedTextures = await unattachedCachedTextures(runtime.root, textureCache);
+    let disposed = false;
     return {
       ...runtime,
       format: 'usd',
       meshCount,
+      dispose: () => {
+        if (disposed) return;
+        disposed = true;
+        runtime.dispose();
+        unattachedTextures.forEach((texture) => texture.dispose());
+      },
     };
   } catch (error) {
+    const unattachedTextures = await unattachedCachedTextures(runtime.root, textureCache);
     runtime.dispose();
+    unattachedTextures.forEach((texture) => texture.dispose());
     throw error;
   }
 }

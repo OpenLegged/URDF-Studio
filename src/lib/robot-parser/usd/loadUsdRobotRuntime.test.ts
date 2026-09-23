@@ -164,15 +164,21 @@ test('USD runtime keeps opaque textured materials white-based instead of name-ti
   materialRecord.mapPath = 'resource/img/walnut.png';
   materialRecord.opacity = 1;
   materialRecord.opacityEnabled = true;
-  materialRecord.textureInputs = { mapPath: { sourceOutput: 'rgb', sampleBias: [0.001, 0.02, 0.01, 0] } };
+  materialRecord.textureInputs = { mapPath: {
+    sourceOutput: 'rgb', sampleBias: [0.001, 0.02, 0.01, 0],
+    uvTransform: [39.37008, 0, 0, 0, 39.37008, 0, 0, 0, 1],
+  } };
 
   const originalImage = globalThis.Image;
   const originalLoadAsync = THREE.TextureLoader.prototype.loadAsync;
+  const cachedTexture = new THREE.Texture();
+  let cachedTextureDisposals = 0;
+  cachedTexture.addEventListener('dispose', () => { cachedTextureDisposals += 1; });
   Object.defineProperty(globalThis, 'Image', {
     configurable: true,
     value: class Image {},
   });
-  THREE.TextureLoader.prototype.loadAsync = async () => new THREE.Texture();
+  THREE.TextureLoader.prototype.loadAsync = async () => cachedTexture;
   try {
     const runtime = await buildUsdRobotRuntimeFromScene(parsed, {
       assets: { 'resource/img/walnut.png': 'blob:walnut' },
@@ -181,6 +187,8 @@ test('USD runtime keeps opaque textured materials white-based instead of name-ti
     const material = mesh.material as THREE.MeshPhysicalMaterial;
 
     assert.ok(material.map);
+    assert.notEqual(material.map, cachedTexture);
+    assert.deepEqual(material.map.matrix.toArray(), materialRecord.textureInputs.mapPath!.uvTransform);
     assert.equal(material.color.getHex(), 0xffffff);
     assert.equal(material.vertexColors, false);
     assert.equal(material.transparent, false);
@@ -192,6 +200,7 @@ test('USD runtime keeps opaque textured materials white-based instead of name-ti
     assert.equal(getUsdTextureArithmeticSummary(material)?.compiled, true);
     assert.deepEqual(shader.uniforms.usdMapSampleBias.value.toArray(), [0.001, 0.02, 0.01, 0]);
     runtime.dispose();
+    assert.equal(cachedTextureDisposals, 1);
   } finally {
     THREE.TextureLoader.prototype.loadAsync = originalLoadAsync;
     if (originalImage === undefined) {
