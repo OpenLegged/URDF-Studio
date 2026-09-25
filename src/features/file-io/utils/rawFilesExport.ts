@@ -1,5 +1,4 @@
 // 类型导入：运行时实例在各导出函数内动态 import 创建，避免把 export-vendor 拉进启动 chunk。
-import type JSZip from 'jszip';
 import type { RobotFile } from '@/types';
 
 export interface RawFilesCollectOptions {

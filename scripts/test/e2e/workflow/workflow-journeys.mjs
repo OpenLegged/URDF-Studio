@@ -134,7 +134,8 @@ export async function importMiniFixture(page, fileName) {
   await uploadFile(page, path.join(FIXTURE_DIR, fileName));
   await waitForWorkflowState(
     page,
-    `(state) => state.exists && state.componentCount >= 1 && state.components.some((c) => c.sourceFile === '${fileName}' && c.linkCount > 0)`,
+    (state) => state.exists && state.componentCount >= 1
+      && state.components.some((c) => c.sourceFile === fileName && c.linkCount > 0),
     120_000,
   );
   // Seed the debug cache the way waitForReady() does for corpus imports.
@@ -152,7 +153,7 @@ export async function importMiniFixture(page, fileName) {
 }
 
 /** Find an entity's ids in the projection (link/joint by name). */
-export async function findEntity(page, { componentName = null, linkName = null, jointName = null }) {
+export async function findEntity(page, { componentName = null }) {
   const state = await getWorkflowState(page);
   const component = componentName
     ? state.components.find((c) => c.name === componentName) ?? state.components[0]
@@ -305,7 +306,10 @@ export async function j1UrdfJourney(ctx) {
 
   const stateAfterSourceEdit = await waitForWorkflowState(
     page,
-    `(state) => { const c = state.components[0]; return c && c.linkCount === ${component.linkCount - 1}; }`,
+    (state) => {
+      const first = state.components[0];
+      return first && first.linkCount === component.linkCount - 1;
+    },
     60_000,
   );
   assertEqual(
@@ -567,7 +571,7 @@ export async function j4SdfJourney(ctx) {
   });
   assertNonNull(suite, archivePath, 'J4: SDF export produced a download');
   const { inspectUrdfArchive } = await import('./workflow-export-inspect.mjs');
-  const inspection = await inspectUrdfArchive(archivePath, { sdf: true });
+  const inspection = await inspectUrdfArchive(archivePath);
   assertTrue(suite, inspection.hasSdfModel || inspection.hasRobot, 'J4: exported archive has SDF/URDF content');
   await screenshot(page, 'J4', 'exported');
 }
@@ -616,8 +620,6 @@ export async function j6AssemblyJourney(ctx) {
   // component instead of appending (see base-helpers addComponent), so 1
   // import + 4 adds = 4 unique components total.
   await importMiniFixture(page, 'bar_segment.urdf');
-  const firstState = await getWorkflowState(page);
-  const firstComponent = firstState.components[0];
 
   // Add more components from the same fixture through the debug addComponent
   // (importing the same file again replaces; the tree/library add path is the
@@ -631,7 +633,7 @@ export async function j6AssemblyJourney(ctx) {
 
   const multiState = await waitForWorkflowState(
     page,
-    '(state) => state.componentCount === 4',
+    (state) => state.componentCount === 4,
     30_000,
   );
   assertEqual(suite, multiState.componentCount, 4, 'J6: 4 components in workspace');
@@ -656,7 +658,7 @@ export async function j6AssemblyJourney(ctx) {
     jointTypeLabel: UI.jointTypeRevolute,
     limits: { lower: -0.8, upper: 0.8 },
   });
-  let bridgeState = await waitForWorkflowState(page, '(state) => state.bridgeCount === 1', 30_000);
+  let bridgeState = await waitForWorkflowState(page, (state) => state.bridgeCount === 1, 30_000);
   assertEqual(suite, bridgeState.bridgeCount, 1, 'J6: revolute bridge created');
   assertEqual(suite, bridgeState.bridges[0].type, 'revolute', 'J6: bridge 1 is revolute');
   assertEqual(suite, bridgeState.bridges[0].limit?.lower, -0.8, 'J6: bridge 1 lower limit');
@@ -670,7 +672,7 @@ export async function j6AssemblyJourney(ctx) {
     childOption: linkOf(names[2], 'base'),
     jointTypeLabel: UI.jointTypeContinuous,
   });
-  bridgeState = await waitForWorkflowState(page, '(state) => state.bridgeCount === 2', 30_000);
+  bridgeState = await waitForWorkflowState(page, (state) => state.bridgeCount === 2, 30_000);
   assertEqual(suite, bridgeState.bridges.at(-1).type, 'continuous', 'J6: bridge 2 is continuous');
 
   // Bridge 3: prismatic (c3.tip → c4.base) + limits
@@ -682,7 +684,7 @@ export async function j6AssemblyJourney(ctx) {
     jointTypeLabel: UI.jointTypePrismatic,
     limits: { lower: -0.2, upper: 0.5 },
   });
-  bridgeState = await waitForWorkflowState(page, '(state) => state.bridgeCount === 3', 30_000);
+  bridgeState = await waitForWorkflowState(page, (state) => state.bridgeCount === 3, 30_000);
   assertEqual(suite, bridgeState.bridges.at(-1).type, 'prismatic', 'J6: bridge 3 is prismatic');
 
   // Bridge 4: fixed (c4.tip → c1.base) — closes the cross-component loop.
@@ -693,7 +695,7 @@ export async function j6AssemblyJourney(ctx) {
     childOption: linkOf(names[0], 'base'),
     jointTypeLabel: UI.jointTypeFixed,
   });
-  bridgeState = await waitForWorkflowState(page, '(state) => state.bridgeCount === 4', 30_000);
+  bridgeState = await waitForWorkflowState(page, (state) => state.bridgeCount === 4, 30_000);
   assertEqual(suite, bridgeState.bridges.at(-1).type, 'fixed', 'J6: bridge 4 is fixed');
 
   // Bridge 5: self-loop within one component (revolute, base→tip of c1).
@@ -706,7 +708,7 @@ export async function j6AssemblyJourney(ctx) {
     jointTypeLabel: UI.jointTypeRevolute,
     limits: { lower: -1, upper: 1 },
   });
-  bridgeState = await waitForWorkflowState(page, '(state) => state.bridgeCount === 5', 30_000);
+  bridgeState = await waitForWorkflowState(page, (state) => state.bridgeCount === 5, 30_000);
   const selfLoop = bridgeState.bridges.at(-1);
   assertTrue(
     suite,

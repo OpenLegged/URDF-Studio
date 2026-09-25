@@ -25,9 +25,6 @@ import {
   DEFAULT_OPERATION_TIMEOUT_MS,
 } from '../../helpers/browser-helpers.mjs';
 
-import {
-  assert,
-} from '../../helpers/assertions.mjs';
 // English UI labels (the suite pins the app to EN; see setLanguageEn).
 export const UI = {
   fileMenu: 'File',
@@ -554,7 +551,7 @@ export async function waitForDownload(client, downloadDir, timeoutMs = 120_000) 
   let suggested = null;
   try {
     suggested = await completed;
-  } catch (error) {
+  } catch {
     // Fall through to directory polling — some Puppeteer/Chrome versions do
     // not emit progress events even with eventsEnabled: true.
   }
@@ -576,9 +573,6 @@ export async function waitForDownload(client, downloadDir, timeoutMs = 120_000) 
 
 /** Open the BridgeCreateModal from the tree's Bridges section + button. */
 export async function openBridgeModal(page) {
-  const createButton = page.locator
-    ? null // Puppeteer has no locators; use evaluate below.
-    : null;
   const opened = await retryPageAction(
     () =>
       page.evaluate(() => {
@@ -689,7 +683,7 @@ async function dismissBridgeModal(page) {
 }
 
 async function selectComboboxInBridgeIdentity(page, jointTypeLabel) {
-  const picked = await page.evaluate((expectedOption) => {
+  const picked = await page.evaluate(() => {
     // The identity row's type combobox: the only combobox whose options will
     // include the joint type labels. Open it, then pick from the portal.
     const triggers = [...document.querySelectorAll('button[role="combobox"]')];
@@ -702,7 +696,7 @@ async function selectComboboxInBridgeIdentity(page, jointTypeLabel) {
     if (!typeTrigger) return { ok: false, error: 'type combobox trigger not found' };
     typeTrigger.click();
     return { ok: true };
-  }, jointTypeLabel);
+  });
   if (!picked.ok) throw new Error(`selectComboboxInBridgeIdentity: ${picked.error}`);
 
   await page.waitForSelector('[role="option"]', { timeout: 5_000 });
@@ -811,8 +805,8 @@ export async function getWorkflowState(page) {
   });
 }
 
-/** Wait until the workspace state satisfies a predicate (serialized source). */
-export async function waitForWorkflowState(page, predicateSource, timeoutMs = 60_000) {
+/** Wait until the workspace state satisfies a predicate. */
+export async function waitForWorkflowState(page, predicate, timeoutMs = 60_000) {
   const deadline = Date.now() + timeoutMs;
   let last = null;
   while (Date.now() < deadline) {
@@ -820,7 +814,7 @@ export async function waitForWorkflowState(page, predicateSource, timeoutMs = 60
     last = state;
     let satisfied = false;
     try {
-      satisfied = new Function('state', `return (${predicateSource})(state);`)(state);
+      satisfied = predicate(state);
     } catch (error) {
       throw new Error(`waitForWorkflowState predicate threw: ${error.message}`);
     }

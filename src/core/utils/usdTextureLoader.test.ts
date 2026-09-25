@@ -20,11 +20,11 @@ test('USD texture slots share image loads while retaining independent sampling s
     const secondTransform = [66.666664, 0, 0, 0, 66.666664, 0, 0, 0, 1];
     const first = await loadUsdTextureSlot(url, 'mapPath', {
       uvTransform: firstTransform, wrapS: 'repeat', wrapT: 'repeat',
-    }, cache, load);
+    }, { cache, loadTexture: load });
     const second = await loadUsdTextureSlot(url, 'mapPath', {
       uvTransform: secondTransform, wrapS: 'repeat', wrapT: 'repeat',
-    }, cache, load);
-    const normal = await loadUsdTextureSlot(url, 'normalMapPath', null, cache, load);
+    }, { cache, loadTexture: load });
+    const normal = await loadUsdTextureSlot(url, 'normalMapPath', null, { cache, loadTexture: load });
 
     assert.equal(loads, 2);
     assert.notEqual(first, second);

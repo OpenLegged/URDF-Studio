@@ -84,6 +84,7 @@ const ALLOWLIST = [
 const PUBLIC_APP_FEATURE_FACADES = new Set([
   'src/features/assembly/bridge_preview.ts',
   'src/features/assembly/bridge_create_modal.ts',
+  'src/features/ai-assistant/conversation_launch.ts',
   'src/features/editor/ik_selection.ts',
   'src/features/editor/panels.ts',
   'src/features/editor/usd_bindings.ts',
@@ -93,6 +94,7 @@ const PUBLIC_APP_FEATURE_FACADES = new Set([
   'src/features/editor/usd_offscreen_runtime.ts',
   'src/features/editor/usd_prewarm.ts',
   'src/features/editor/usd_runtime.ts',
+  'src/features/file-io/export_formats.ts',
   'src/features/file-io/import_path_collisions.ts',
   'src/features/file-io/mjcf_export.ts',
   'src/features/property-editor/collision_optimization.ts',

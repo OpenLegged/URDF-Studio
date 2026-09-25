@@ -13,8 +13,10 @@ export async function loadUsdTextureSlot(
   url: string,
   slot: UsdMaterialTextureInputSlotPathField,
   input: UsdMaterialTextureInput | null | undefined,
-  cache: Map<string, Promise<THREE.Texture>>,
-  loadTexture: (url: string) => Promise<THREE.Texture>,
+  { cache, loadTexture }: {
+    cache: Map<string, Promise<THREE.Texture>>;
+    loadTexture: (url: string) => Promise<THREE.Texture>;
+  },
 ): Promise<THREE.Texture> {
   const isColor = USD_COLOR_TEXTURE_INPUT_SLOTS.has(slot);
   const cacheKey = `${isColor ? 'srgb' : 'linear'}:${url}`;

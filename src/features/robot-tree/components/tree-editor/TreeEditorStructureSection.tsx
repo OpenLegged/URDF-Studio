@@ -60,6 +60,41 @@ interface TreeEditorStructureSectionProps {
   onCloseStructureGraph?: () => void;
 }
 
+function useScrollToAttentionSelection(
+  isOpen: boolean,
+  scrollContainerRef: React.RefObject<HTMLDivElement | null>,
+) {
+  useEffect(() => {
+    if (!isOpen) return;
+    let lastScrolledKey: string | null = null;
+    return useSelectionStore.subscribe((state, previousState) => {
+      if (state.attentionSelection === previousState.attentionSelection) return;
+      const target = state.selection?.entity;
+      if (
+        !target
+        || (target.type !== 'link' && target.type !== 'joint' && target.type !== 'bridge')
+      ) return;
+      const key = target.type === 'bridge'
+        ? `bridge:${target.bridgeId}`
+        : `${target.type}:${target.componentId}:${target.entityId}`;
+      if (key === lastScrolledKey) return;
+      lastScrolledKey = key;
+      // Wait one frame for auto-expanding ancestors to mount the target row.
+      window.requestAnimationFrame(() => {
+        const testId = target.type === 'bridge'
+          ? `tree-bridge-${target.bridgeId}`
+          : target.type === 'link'
+            ? `tree-link-${target.componentId}-${target.entityId}`
+            : `tree-joint-${target.componentId}-${target.entityId}`;
+        const row = scrollContainerRef.current?.querySelector<HTMLElement>(
+          `[data-testid="${testId}"]`,
+        );
+        row?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      });
+    });
+  }, [isOpen, scrollContainerRef]);
+}
+
 export function TreeEditorStructureSection({
   workspace,
   activeComponentId,
@@ -96,39 +131,8 @@ export function TreeEditorStructureSection({
 
   useEffect(() => setGraphOpen(showStructureGraph), [showStructureGraph]);
 
-  // Scroll the structure tree to the row that matches the canonical selection whenever the
-  // attention pulse fires (canvas click / programmatic selection). Tree-internal clicks only
-  // update `selection` without pulsing, so they don't trigger a scroll.
-  useEffect(() => {
-    if (!isOpen) return;
-    let lastScrolledKey: string | null = null;
-    return useSelectionStore.subscribe((state, previousState) => {
-      if (state.attentionSelection === previousState.attentionSelection) return;
-      const target = state.selection?.entity;
-      if (
-        !target
-        || (target.type !== 'link' && target.type !== 'joint' && target.type !== 'bridge')
-      ) return;
-      const key = target.type === 'bridge'
-        ? `bridge:${target.bridgeId}`
-        : `${target.type}:${target.componentId}:${target.entityId}`;
-      if (key === lastScrolledKey) return;
-      lastScrolledKey = key;
-      // Wait one frame so auto-expanding ancestors (TreeNode/AssemblyTreeView) has a chance to
-      // mount the target row before we try to scroll it into view.
-      window.requestAnimationFrame(() => {
-        const testId = target.type === 'bridge'
-          ? `tree-bridge-${target.bridgeId}`
-          : target.type === 'link'
-            ? `tree-link-${target.componentId}-${target.entityId}`
-            : `tree-joint-${target.componentId}-${target.entityId}`;
-        const row = scrollContainerRef.current?.querySelector<HTMLElement>(
-          `[data-testid="${testId}"]`,
-        );
-        row?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      });
-    });
-  }, [isOpen]);
+  // Tree-internal clicks do not pulse attention and therefore do not scroll.
+  useScrollToAttentionSelection(isOpen, scrollContainerRef);
 
   const handleHeaderKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     if (event.target !== event.currentTarget || (event.key !== 'Enter' && event.key !== ' ')) return;

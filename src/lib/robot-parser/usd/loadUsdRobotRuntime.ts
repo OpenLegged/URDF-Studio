@@ -235,8 +235,10 @@ async function applyMaterialTextures(
     const url = resolveAssetUrl(path, assets);
     if (!url) return null;
     return loadUsdTextureSlot(
-      url, slot, getUsdTextureInputSlot(record.textureInputs, slot), textureCache,
-      (sourceUrl) => loader.loadAsync(sourceUrl),
+      url, slot, getUsdTextureInputSlot(record.textureInputs, slot), {
+        cache: textureCache,
+        loadTexture: (sourceUrl) => loader.loadAsync(sourceUrl),
+      },
     );
   };
 

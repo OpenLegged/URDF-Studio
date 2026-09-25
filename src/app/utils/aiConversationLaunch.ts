@@ -1,8 +1,7 @@
-// 深导入而非 ai-assistant barrel：这两个轻量工具（深拷贝 + workspace 目标
-// 解析）依赖只有 store；走 barrel 会把整个 feature-ai-assistant chunk
-// （transport/sessionStore 等 ~512KB raw）静态拉进首屏。
-import { cloneAISnapshot } from '@/features/ai-assistant/utils/aiConversationRobotSnapshot';
-import { resolveAIWorkspaceRobotTarget } from '@/features/ai-assistant/utils/aiWorkspaceTarget';
+import {
+  cloneAISnapshot,
+  resolveAIWorkspaceRobotTarget,
+} from '@/features/ai-assistant/conversation_launch';
 import type {
   AIConversationFocusedIssue,
   AIConversationLaunchContext,
@@ -13,7 +12,7 @@ import { useSelectionStore } from '@/store/selectionStore';
 import { useWorkspaceStore } from '@/store/workspaceStore';
 import type { InspectionReport, RobotState } from '@/types';
 
-export { cloneAISnapshot } from '@/features/ai-assistant/utils/aiConversationRobotSnapshot';
+export { cloneAISnapshot } from '@/features/ai-assistant/conversation_launch';
 
 export function resolveCurrentAIConversationSelection(): AIConversationSelection | null {
   const workspace = useWorkspaceStore.getState().workspace;

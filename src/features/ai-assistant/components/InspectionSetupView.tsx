@@ -77,6 +77,47 @@ function groupProfilesByLayer(profiles: InspectionProfileDefinition[]) {
   })).filter((group) => group.profiles.length > 0);
 }
 
+function InspectionPlanEditorFooter({
+  t,
+  selectedItemCount,
+  selectedProfileCount,
+  onClose,
+  onConfirm,
+}: {
+  t: TranslationKeys;
+  selectedItemCount: number;
+  selectedProfileCount: number;
+  onClose: () => void;
+  onConfirm: () => void;
+}) {
+  return (
+    <div className="flex items-center justify-between gap-3">
+      <div className="text-[12px] font-medium text-text-secondary">
+        {t.inspectionSelectedChecks.replace('{count}', String(selectedItemCount))} ·{' '}
+        {t.inspectionSelectedCategories}: {selectedProfileCount}
+      </div>
+      <div className="flex items-center gap-2">
+        <button
+          type="button"
+          data-inspection-plan-editor-cancel
+          onClick={onClose}
+          className="h-8 rounded-lg border border-border-black bg-panel-bg px-3 text-[12px] font-medium text-text-secondary transition-colors hover:bg-element-hover hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-system-blue/30"
+        >
+          {t.cancel}
+        </button>
+        <button
+          type="button"
+          data-inspection-plan-editor-confirm
+          onClick={onConfirm}
+          className="h-8 rounded-lg bg-system-blue-solid px-3 text-[12px] font-semibold text-white shadow-sm transition-colors hover:brightness-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-system-blue/30"
+        >
+          {t.confirm}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function InspectionPlanEditorDialog({
   isOpen,
   robot,
@@ -162,30 +203,13 @@ function InspectionPlanEditorDialog({
       closeLabel={t.close}
       className="max-h-[76vh]"
       footer={
-        <div className="flex items-center justify-between gap-3">
-          <div className="text-[12px] font-medium text-text-secondary">
-            {t.inspectionSelectedChecks.replace('{count}', String(selectedItemCount))} ·{' '}
-            {t.inspectionSelectedCategories}: {selectedProfileCount}
-          </div>
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              data-inspection-plan-editor-cancel
-              onClick={onClose}
-              className="h-8 rounded-lg border border-border-black bg-panel-bg px-3 text-[12px] font-medium text-text-secondary transition-colors hover:bg-element-hover hover:text-text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-system-blue/30"
-            >
-              {t.cancel}
-            </button>
-            <button
-              type="button"
-              data-inspection-plan-editor-confirm
-              onClick={() => onConfirm(cloneSelectedInspectionProfiles(draftProfiles))}
-              className="h-8 rounded-lg bg-system-blue-solid px-3 text-[12px] font-semibold text-white shadow-sm transition-colors hover:brightness-105 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-system-blue/30"
-            >
-              {t.confirm}
-            </button>
-          </div>
-        </div>
+        <InspectionPlanEditorFooter
+          t={t}
+          selectedItemCount={selectedItemCount}
+          selectedProfileCount={selectedProfileCount}
+          onClose={onClose}
+          onConfirm={() => onConfirm(cloneSelectedInspectionProfiles(draftProfiles))}
+        />
       }
     >
       <div data-inspection-plan-editor="true" className="space-y-3">

@@ -23,10 +23,7 @@ import { scheduleUsdRuntimeStartupIdlePrewarm } from './utils/usdRuntimeStartupP
 import { useUIStore, useAssetsStore } from '@/store';
 import type { RobotFile } from '@/types';
 import { translations } from '@/shared/i18n';
-// 深导入而非走 file-io barrel：barrel re-export 的 project 导入导出 utils
-// 静态依赖 jszip/jspdf（export-vendor ~574KB），而启动期只需要这个格式常量。
-import { EXPORT_FORMATS } from '@/features/file-io/components/ExportDialog/config';
-import type { ExportFormat } from '@/features/file-io';
+import { EXPORT_FORMATS, type ExportFormat } from '@/features/file-io/export_formats';
 import type { ImportPreparationOverlayState } from './hooks/useFileImport';
 import { useAssetImportFromUrl } from './hooks/useAssetImportFromUrl';
 import {
@@ -37,10 +34,7 @@ import {
   preloadExportProgressDialog,
   preloadSettingsModal,
 } from './components/lazyAppOverlays';
-// 深导入而非 ai-assistant barrel：barrel 会被 feature-ai-assistant chunk 化并
-// 静态拉进首屏（transport/sessionStore 等运行时模块 ~512KB raw）；此处仅需
-// 这个轻量快照读取函数（依赖只有 workspace/selection store）。
-import { resolveCurrentAIRobotSnapshot } from '@/features/ai-assistant/utils/aiConversationRobotSnapshot';
+import { resolveCurrentAIRobotSnapshot } from '@/features/ai-assistant/conversation_launch';
 import { applyAIUrdfModification } from './utils/applyAIUrdfModification';
 import { logRegressionError } from '@/shared/debug/consoleDiagnostics';
 import { createStudioAgentPorts } from './components/ai/studioAgentPorts';
