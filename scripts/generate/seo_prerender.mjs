@@ -19,8 +19,15 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { execSync } from 'node:child_process';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { loadEnv } from 'vite';
+import { assertEnvMode } from '../build/env-mode.mjs';
 
-const SITE = 'https://urdf.enkeebot.com';
+const envRoot = fileURLToPath(new URL('../../', import.meta.url));
+const isEntry = process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);
+const mode = assertEnvMode(isEntry ? process.argv[2] ?? 'production' : 'production', envRoot);
+const env = loadEnv(mode, envRoot, '');
+const indexable = env.VITE_INDEXABLE !== 'false';
+const SITE = new URL(env.VITE_SITE_URL || 'https://urdf.enkeebot.com').origin;
 const LOGO = `${SITE}/logos/logo.png`;
 const GITHUB = 'https://github.com/enkeebot/URDF-Studio';
 
@@ -288,6 +295,7 @@ function main() {
   let enHtml = readFileSync(indexPath, 'utf8');
   enHtml = replaceRegion(enHtml, 'SEO:HEAD', renderHead('en'));
   enHtml = replaceRegion(enHtml, 'SEO:CONTENT', renderContent('en'));
+  if (!indexable) enHtml = enHtml.replace(/<meta\s+name="robots"[^>]*>/gi, '').replace('</head>', '<meta name="robots" content="noindex, nofollow" /></head>');
   writeFileSync(indexPath, enHtml);
 
   let zhHtml = enHtml.replace(
@@ -302,10 +310,12 @@ function main() {
   zhHtml = replaceRegion(zhHtml, 'SEO:HEAD', renderHead('zh'));
   zhHtml = replaceRegion(zhHtml, 'SEO:CONTENT', renderContent('zh'));
   mkdirSync(path.join(distDir, 'zh'), { recursive: true });
+  if (!indexable) zhHtml = zhHtml.replace(/<meta\s+name="robots"[^>]*>/gi, '').replace('</head>', '<meta name="robots" content="noindex, nofollow" /></head>');
   writeFileSync(path.join(distDir, 'zh', 'index.html'), zhHtml);
 
   const lastmod = resolveLastmod(repoRoot);
-  writeFileSync(path.join(distDir, 'sitemap.xml'), renderSitemap(lastmod));
+  writeFileSync(path.join(distDir, 'sitemap.xml'), indexable ? renderSitemap(lastmod) : '<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"/>\n');
+  if (!indexable) writeFileSync(path.join(distDir, 'robots.txt'), 'User-agent: *\nDisallow: /\n');
 
   console.log(
     `[seo_prerender] wrote dist/index.html (en), dist/zh/index.html (zh), dist/sitemap.xml (lastmod ${lastmod})`,

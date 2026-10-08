@@ -5,7 +5,7 @@ node_modules/
 .omx/
 .mimocode/
 .env.local
-.env
+.env.*.local
 .dev-certs/
 *.log
 MUJOCO_LOG.TXT
