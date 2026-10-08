@@ -165,10 +165,13 @@ OPENAI_CONTEXT_WINDOW_TOKENS=32768
 GEMINI_API_KEY=
 ```
 
-Put personal values in ignored `.env.dev.local`; the shared `.env.local` file is unsupported.
-Loading order is `.env` → `.env.<mode>` → `.env.<mode>.local` → process variables.
-Tracked profiles contain public settings only. Provider values injected by Vite are visible in the
-browser and are suitable only for trusted local BYOK use, not server-side secrets.
+Team-wide public defaults belong in tracked `.env`; shared public settings for each mode belong
+in tracked `.env.dev`, `.env.fat`, or `.env.production`. These profiles work without any local file.
+An ignored `.env.<mode>.local` is optional and only holds temporary personal overrides; the shared
+`.env.local` file is unsupported. Loading order is `.env` → `.env.<mode>` → `.env.<mode>.local`
+→ process variables. This open-source core must not contain platform-private settings or commercial
+keys. Provider values injected by Vite are visible in the browser; personal keys are only suitable
+for trusted local BYOK use through `.env.dev.local` or process variables, not server-side secrets.
 
 `npm run dev` selects `dev`. `npm run build:dev`, `build:fat`, and `build:production` select their
 respective profiles while keeping production build optimizations; `npm run build` defaults to

@@ -98,7 +98,8 @@ Editor 包含拓扑、几何/碰撞/测量和硬件配置；公开入口 `featur
 - 本地修改先在 `dev` 提交与验证，禁止直接在 `main` 开发提交。
 - `dev` 验证通过后合并到 `main`：`git checkout main && git merge dev`，先 `git push origin dev` 再 `git push origin main`。
 - 若 `main` 先有提交，在 `dev` 上 `git merge --ff-only main` 对齐后继续开发。
-- provider key 只放被忽略的 `.env.dev.local`（环境规则见 [README 可选环境变量](README_CN.md#可选环境变量)），不写入任何跟踪文件，不强制 add；`opencode.json` 使用 `{env:VAR}` 引用。BYOK 的 `VITE_*` 会进入浏览器 bundle，仅限本机 dev，不能向不可信网络暴露带密钥的实例。
+- 团队共用的公开配置写入已跟踪的 `.env` 和对应 mode profile；`.env.<mode>.local` 仅作可选个人临时覆盖，不是启动或构建前置条件，详见 [README 可选环境变量](README_CN.md#可选环境变量)。开源 core 不接收平台私有配置或商业密钥。
+- 个人 BYOK provider key 只通过被忽略的 `.env.dev.local` 或进程变量注入，不写入跟踪文件，不强制 add；`opencode.json` 使用 `{env:VAR}` 引用。Vite 注入的 provider 值会进入浏览器 bundle，仅限可信本机 dev。
 - 提交/推送前检查暂存区与未跟踪非忽略文件中的明文 secret，命中立即停止提交并移除；不能把单一 key 正则无匹配当作安全证明。
 
 ## 文档导航

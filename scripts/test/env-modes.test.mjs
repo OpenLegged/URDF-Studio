@@ -19,14 +19,18 @@ test('mode-local overrides stay in their mode and process values win', () => {
     delete process.env[key];
     writeFileSync(path.join(dir, '.env'), `${key}=common\n`);
     writeFileSync(path.join(dir, '.env.dev'), `${key}=dev\n`);
-    writeFileSync(path.join(dir, '.env.dev.local'), `${key}=personal-dev\n`);
     writeFileSync(path.join(dir, '.env.fat'), `${key}=fat\n`);
     writeFileSync(path.join(dir, '.env.production'), `${key}=production\n`);
+    for (const mode of ['dev', 'fat', 'production']) {
+      assert.equal(assertEnvMode(mode, dir), mode);
+      assert.equal(loadEnv(mode, dir, '')[key], mode, 'Tracked profiles must work without local overrides');
+    }
+    writeFileSync(path.join(dir, '.env.dev.local'), `${key}=personal-dev\n`);
     assert.equal(loadEnv('dev', dir, '')[key], 'personal-dev');
     assert.equal(loadEnv('fat', dir, '')[key], 'fat');
     assert.equal(loadEnv('production', dir, '')[key], 'production');
-    writeFileSync(path.join(dir, '.env.fat.local'), `${key}=private-fat\n`);
-    assert.equal(loadEnv('fat', dir, '')[key], 'private-fat');
+    writeFileSync(path.join(dir, '.env.fat.local'), `${key}=personal-fat\n`);
+    assert.equal(loadEnv('fat', dir, '')[key], 'personal-fat');
     process.env[key] = 'injected';
     for (const mode of ['dev', 'fat', 'production']) assert.equal(loadEnv(mode, dir, '')[key], 'injected');
     writeFileSync(path.join(dir, '.env.local'), `${key}=wrong-environment\n`);

@@ -6,7 +6,7 @@ export function assertEnvMode(mode, root) {
     throw new Error(`Unsupported environment mode "${mode}"; use dev, fat or production.`);
   }
   if (existsSync(path.join(root, '.env.local'))) {
-    throw new Error('Move .env.local overrides to .env.dev.local; shared local overrides are not supported.');
+    throw new Error('Move .env.local team settings to .env.<mode> and optional personal overrides to .env.<mode>.local; shared local overrides are not supported.');
   }
   return mode;
 }
