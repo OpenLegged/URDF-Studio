@@ -15,6 +15,25 @@ test('keeps the original compact desktop behavior when optional header actions a
   assert.equal(layout.showDesktopOverflow, true);
 });
 
+test('keeps settings and the host secondary action visible while compact layouts collapse other controls', () => {
+  for (const width of [320, 640, 1024]) {
+    const layout = getHeaderResponsiveLayout(width, {
+      hasQuickAction: true,
+      hasSecondaryAction: true,
+    });
+
+    assert.equal(layout.showSettingsInline, true);
+    assert.equal(layout.showSecondaryActionInline, true);
+    assert.equal(layout.showSecondaryActionLabel, false);
+    assert.equal(layout.showSnapshotInline, false);
+    assert.equal(layout.isDesktop, width >= 640);
+  }
+  assert.equal(getHeaderResponsiveLayout(1280, {
+    hasQuickAction: true,
+    hasSecondaryAction: true,
+  }).showSecondaryActionLabel, true);
+});
+
 test('reclaims unused header action space so desktop controls stay inline longer', () => {
   const layout = getHeaderResponsiveLayout(1024, {
     hasQuickAction: false,

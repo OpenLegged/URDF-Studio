@@ -2,6 +2,7 @@ import {
   Camera,
   Code,
   Languages,
+  MessageCircleQuestionMark,
   Moon,
   Monitor,
   MoreHorizontal,
@@ -14,6 +15,9 @@ import { IconButton } from '@/shared/components/ui';
 import { HeaderMenuOverlay } from './HeaderMenuOverlay';
 import { HeaderMenuItem, HeaderMenuSeparator } from './HeaderMenuItem';
 import type { HeaderOverflowMenuProps } from './types';
+
+export const FEEDBACK_FORM_URL =
+  'https://enkeebot.feishu.cn/share/base/form/shrcnok1dXPePgAxuu2qnXiVxYf';
 
 export function HeaderOverflowMenu({
   className = '',
@@ -44,22 +48,23 @@ export function HeaderOverflowMenu({
   showLanguage,
   showTheme,
   showSecondaryAction,
+  showFeedback = false,
 }: HeaderOverflowMenuProps) {
   const QuickActionIcon = quickAction?.icon;
   const SecondaryActionIcon = secondaryAction?.icon;
   const showPrimaryGroup = showQuickAction || showSourceCode || showUndoRedo;
   const showSecondaryGroup =
-    showSnapshot || showSettings || showLanguage || showTheme || showSecondaryAction;
+    showSnapshot || showSettings || showLanguage || showTheme || showSecondaryAction || showFeedback;
 
   return (
-    <div className={`relative ${className}`.trim()}>
+    <div className={`relative shrink-0 ${className}`.trim()}>
       <IconButton
         type="button"
         onClick={() => setActiveMenu(activeMenu === 'more' ? null : 'more')}
         variant="toolbar"
         size="md"
         isActive={activeMenu === 'more'}
-        className="relative z-50 h-7 w-7"
+        className="relative z-50 h-8 w-8 shrink-0 p-0 !text-text-secondary hover:!text-text-primary"
         title={t.more}
         aria-label={t.more}
         aria-haspopup="menu"
@@ -135,6 +140,18 @@ export function HeaderOverflowMenu({
 
             {showSecondaryGroup && (
               <>
+                {showFeedback && (
+                  <a
+                    href={FEEDBACK_FORM_URL}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    role="menuitem"
+                    className="flex items-center gap-2.5 px-3 py-2 text-xs text-text-primary transition-colors hover:bg-element-hover focus:outline-none focus-visible:bg-element-hover focus-visible:ring-2 focus-visible:ring-system-blue/30"
+                  >
+                    <MessageCircleQuestionMark className="h-4 w-4 text-text-tertiary" />
+                    {t.feedback}
+                  </a>
+                )}
                 {showSecondaryAction && secondaryAction && SecondaryActionIcon && (
                   <HeaderMenuItem
                     icon={SecondaryActionIcon}
