@@ -1,6 +1,6 @@
 # UI 样式与可访问性
 
-> 最后更新：2026-09-04 | 覆盖源码：`src/styles/`、`src/store/uiStore.ts`、`src/shared/components/ui/`、`src/app/components/header/`、`src/app/components/settings/`
+> 最后更新：2026-10-09 | 覆盖源码：`src/styles/`、`src/store/uiStore.ts`、`src/shared/components/ui/`、`src/app/components/header/`、`src/app/components/settings/`
 > 交叉引用：[architecture.md](architecture.md)
 
 ## 1. 关键入口
@@ -23,6 +23,7 @@
 ## 2.1 控件复用边界
 
 - Header 的宿主 secondary action 在 primary / alternate 工作区共用标签宽度规则；宽屏显示文字，紧凑宽度收起文字，不按工作区强制隐藏。
+- 顶栏保持 40px；右侧按产品/截图/反馈/更多、语言、主题、设置、宿主 secondary action 排列。设置与宿主动作在窄屏保持直接可用，其他操作按原有更多菜单折叠，反馈链接在手机收入更多菜单；左侧菜单缩小横向留白。图标按钮为 32×32px、6px 圆角、16px glyph，语言按钮仅显示图标；宿主动作使用中性 ghost 样式，文字使用 `text-ui-control` 并在 160px 最大宽度内省略。
 
 - 基础交互控件统一从 `src/shared/components/ui/` 引用：`Button`、`IconButton`、`ToolbarToggleGroup`、`Checkbox`、`Switch`、`Input`、`Select`、`PanelSelect`、`Slider`、`SegmentedControl`、`Dialog`、`Tooltip`、`ContextMenu`
 - 面板组合控件统一从 `src/shared/components/Panel/` 引用；面板内 overlay / toolbar 小按钮优先使用 `IconButton` 或 `PanelOverlayToggleButton`

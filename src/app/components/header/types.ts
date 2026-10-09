@@ -95,6 +95,7 @@ export interface HeaderAction {
 }
 
 export interface HeaderResponsiveLayout {
+  isDesktop: boolean;
   showMenuLabels: boolean;
   showSourceInline: boolean;
   showSourceText: boolean;
@@ -139,4 +140,5 @@ export interface HeaderOverflowMenuProps {
   showLanguage: boolean;
   showTheme: boolean;
   showSecondaryAction?: boolean;
+  showFeedback?: boolean;
 }
