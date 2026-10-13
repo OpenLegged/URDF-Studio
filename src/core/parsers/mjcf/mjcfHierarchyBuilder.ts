@@ -968,6 +968,20 @@ export async function buildMJCFHierarchy(
         }
 
         mesh.name = geom.name || geom.type || 'geom';
+        mesh.userData.mjcfGeomType = geom.type;
+        if (geom.type === 'hfield') {
+          // MuJoCo emits one normal per heightfield triangle, preserving facets.
+          mesh.traverse((node) => {
+            if (!(node instanceof THREE.Mesh)) return;
+            const materials = Array.isArray(node.material) ? node.material : [node.material];
+            for (const material of materials) {
+              if (material instanceof THREE.MeshStandardMaterial) {
+                material.flatShading = true;
+                material.needsUpdate = true;
+              }
+            }
+          });
+        }
         const shouldRenderVisualMesh = objectHasVisibleMaterial(mesh);
 
         const applyGeomTransformToContainer = (container: THREE.Object3D) => {

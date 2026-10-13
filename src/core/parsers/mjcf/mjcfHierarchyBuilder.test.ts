@@ -1659,6 +1659,8 @@ test('renders height fields with body/geom poses, asset size and explicit sRGB c
   const mesh = meshes[0];
   assert.ok(mesh.material instanceof THREE.MeshStandardMaterial);
   assert.equal(mesh.material.color.getHexString(), '6b9bd2');
+  assert.equal(mesh.material.flatShading, true);
+  assert.equal(mesh.userData.mjcfGeomType, 'hfield');
   rootGroup.updateMatrixWorld(true);
   const bounds = new THREE.Box3().setFromObject(mesh);
   assert.deepEqual(bounds.min.toArray(), [9, 19, 32.5]);
