@@ -193,6 +193,7 @@ export async function loadMJCFToThreeJS(
       bodies,
       rootGroup,
       meshMap,
+      hfieldMap: parsedModel.hfieldMap,
       assets,
       abortSignal,
       meshCache,

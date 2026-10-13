@@ -1638,3 +1638,40 @@ test('tracks MJCF joint ref values without double-applying them to runtime joint
   const kneeLinkQuaternion = kneeLink.quaternion.clone().normalize();
   assert.ok(kneeLinkQuaternion.angleTo(new THREE.Quaternion()) <= 1e-9);
 });
+
+
+test('renders height fields with body/geom poses, asset size and explicit sRGB color', async () => {
+  const rootGroup = new THREE.Group();
+  await buildMJCFHierarchy({
+    bodies: [{name: 'terrain-body', pos: [10, 20, 30], joints: [], children: [],
+      geoms: [{name: 'rough', type: 'hfield', hfield: 'samples', size: [99, 99, 99],
+        pos: [1, 2, 3], rgba: [107 / 255, 155 / 255, 210 / 255, 1], hasExplicitRgba: true,
+        contype: 1, conaffinity: 1}]}],
+    rootGroup, meshMap: new Map(),
+    hfieldMap: new Map([['samples', {name: 'samples', nrow: 2, ncol: 2,
+      size: [2, 3, 4, .5], elevation: [0, 1, 2, 3]}]]),
+    assets: {}, meshCache: new Map(), compilerSettings: createCompilerSettings(),
+    materialMap: new Map(), textureMap: new Map(),
+  });
+  const meshes: THREE.Mesh[] = [];
+  rootGroup.traverse((object) => {if (object instanceof THREE.Mesh && object.userData.isVisualMesh) meshes.push(object);});
+  assert.equal(meshes.length, 1);
+  const mesh = meshes[0];
+  assert.ok(mesh.material instanceof THREE.MeshStandardMaterial);
+  assert.equal(mesh.material.color.getHexString(), '6b9bd2');
+  rootGroup.updateMatrixWorld(true);
+  const bounds = new THREE.Box3().setFromObject(mesh);
+  assert.deepEqual(bounds.min.toArray(), [9, 19, 32.5]);
+  assert.deepEqual(bounds.max.toArray(), [13, 25, 37]);
+});
+
+test('fails explicitly when a referenced height field file cannot be resolved', async () => {
+  await assert.rejects(buildMJCFHierarchy({
+    bodies: [{name: 'world', pos: [0, 0, 0], joints: [], children: [],
+      geoms: [{type: 'hfield', hfield: 'missing'}]}],
+    rootGroup: new THREE.Group(), meshMap: new Map(),
+    hfieldMap: new Map([['missing', {name: 'missing', file: 'missing.bin', size: [1, 1, 1, .1]}]]),
+    assets: {}, meshCache: new Map(), compilerSettings: createCompilerSettings(),
+    materialMap: new Map(), textureMap: new Map(),
+  }), /Height field file could not be resolved: missing.bin/);
+});

@@ -594,7 +594,10 @@ export function parseTextureAssets(
   return textureMap;
 }
 
-export function parseHfieldAssets(doc: Document): Map<string, MJCFHfield> {
+export function parseHfieldAssets(
+  doc: Document,
+  settings?: MJCFCompilerSettings,
+): Map<string, MJCFHfield> {
   const hfieldMap = new Map<string, MJCFHfield>();
   const mujocoEl = doc.querySelector('mujoco');
   if (!mujocoEl) {
@@ -607,7 +610,11 @@ export function parseHfieldAssets(doc: Document): Map<string, MJCFHfield> {
     const hfields = assetEl.querySelectorAll(':scope > hfield');
     hfields.forEach((hfieldEl) => {
       const name = hfieldEl.getAttribute('name') || `hfield_${hfieldIndex}`;
-      const file = hfieldEl.getAttribute('file') || undefined;
+      let file = hfieldEl.getAttribute('file') || undefined;
+      if (file && settings?.meshdir && !file.startsWith('/') && !file.includes(':')) {
+        const prefix = settings.meshdir.endsWith('/') ? settings.meshdir : `${settings.meshdir}/`;
+        file = `${prefix}${file}`;
+      }
       const contentType = hfieldEl.getAttribute('content_type') || undefined;
       const nrowAttr = hfieldEl.getAttribute('nrow');
       const ncolAttr = hfieldEl.getAttribute('ncol');
