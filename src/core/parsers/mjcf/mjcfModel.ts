@@ -1957,7 +1957,7 @@ export function parseMJCFModel(xmlContent: string): ParsedMJCFModel | null {
     const compilerSettings = parseCompilerSettings(doc);
     const defaults = parseMJCFDefaults(doc);
     const meshMap = parseMeshAssets(doc, compilerSettings, defaults);
-    const hfieldMap = parseHfieldAssets(doc);
+    const hfieldMap = parseHfieldAssets(doc, compilerSettings);
     const materialMap = parseMaterialAssets(doc, defaults);
     const textureMap = parseTextureAssets(doc, compilerSettings, defaults);
     const connectConstraints = parseConnectConstraints(mujocoElement);

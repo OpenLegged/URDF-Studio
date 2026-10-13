@@ -263,3 +263,8 @@ To change an authored scheme, edit its YAML configuration and reimport the packa
 this does not add a palette selection UI.
 
 Focused regression: `npm run test:unit -- src/core/parsers/xacro/xacroYaml.test.ts src/app/utils/importPreparation.yaml.test.ts`.
+
+
+MJCF 文件/ZIP 依赖中的 hfield 与 mesh 共用 compiler meshdir/assetdir 和源目录解析。
+原生查看器可显示二进制、内联及 PNG 高度场，细节与预算见 [viewer.md](viewer.md#mjcf-高度场预览)。
+源高度数据、物理碰撞与原始材质不会因预览重新生成或改写。

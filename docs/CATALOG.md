@@ -7,7 +7,7 @@
 | 文档 | 内容 |
 | -------------------------------------------------------- | --------------------------------------------------------------------------- |
 | [CLAUDE.md](../CLAUDE.md) | 项目入口：协作偏好、架构约束、状态职责、验证与分支工作流 |
-| [viewer.md](viewer.md) | Editor/Viewer 子域：拓扑、几何/碰撞/测量、renderer backend、USD runtime |
+| [viewer.md](viewer.md) | Editor/Viewer 子域：拓扑、几何/碰撞/测量、renderer backend、USD runtime、MJCF 高度场预览 |
 | [file-io.md](file-io.md) | 导入导出链路：App 编排、File I/O、Workspace、组装、project archive |
 | [wasm-build.md](wasm-build.md) | OpenUSD WASM 构建：源码迁移、编译脚本、故障排查 |
 | [style-guide.md](style-guide.md) | UI 样式：语义色 token、蓝色约束、暗色层级、面板文案、验收标准 |
