@@ -29,6 +29,7 @@ export type MJCFElementType =
   | 'material'
   | 'texture'
   | 'site'
+  | 'light'
   | 'tendon'
   | 'motor'
   | 'position'
@@ -50,6 +51,7 @@ export interface MJCFElementDefaults {
   material: MJCFAttributeMap;
   texture: MJCFAttributeMap;
   site: MJCFAttributeMap;
+  light: MJCFAttributeMap;
   tendon: MJCFAttributeMap;
   motor: MJCFAttributeMap;
   position: MJCFAttributeMap;
@@ -279,6 +281,7 @@ export function createEmptyDefaults(): MJCFElementDefaults {
     material: {},
     texture: {},
     site: {},
+    light: {},
     tendon: {},
     motor: {},
     position: {},
@@ -301,6 +304,7 @@ export function cloneDefaults(defaults: MJCFElementDefaults): MJCFElementDefault
     material: { ...defaults.material },
     texture: { ...defaults.texture },
     site: { ...defaults.site },
+    light: { ...defaults.light },
     tendon: { ...defaults.tendon },
     motor: { ...defaults.motor },
     position: { ...defaults.position },
@@ -326,6 +330,7 @@ export function mergeDefaults(
     material: { ...base.material, ...(override.material || {}) },
     texture: { ...base.texture, ...(override.texture || {}) },
     site: { ...base.site, ...(override.site || {}) },
+    light: { ...base.light, ...(override.light || {}) },
     tendon: { ...base.tendon, ...(override.tendon || {}) },
     motor: { ...base.motor, ...(override.motor || {}) },
     position: { ...base.position, ...(override.position || {}) },
@@ -365,6 +370,7 @@ export function collectDefaultAttributes(defaultEl: Element): Partial<MJCFElemen
     material: collectDirectAttributes(defaultEl, 'material'),
     texture: collectDirectAttributes(defaultEl, 'texture'),
     site: collectDirectAttributes(defaultEl, 'site'),
+    light: collectDirectAttributes(defaultEl, 'light'),
     tendon: collectDirectAttributes(defaultEl, 'tendon'),
     motor: collectDirectAttributes(defaultEl, 'motor'),
     position: collectDirectAttributes(defaultEl, 'position'),

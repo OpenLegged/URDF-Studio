@@ -272,3 +272,24 @@ To change an authored scheme, edit its YAML configuration and reimport the packa
 this does not add a palette selection UI.
 
 Focused regression: `npm run test:unit -- src/core/parsers/xacro/xacroYaml.test.ts src/app/utils/importPreparation.yaml.test.ts`.
+
+
+MJCF 文件/ZIP 依赖中的 hfield 与 mesh 共用 compiler meshdir/assetdir 和源目录解析。
+原生查看器可显示二进制、内联及 PNG 高度场，细节与预算见 [viewer.md](viewer.md#mjcf-高度场预览)。
+源高度数据、物理碰撞与原始材质不会因预览重新生成或改写。
+
+
+### MJCF 显式灯光解析
+
+`parseMJCFModel` 在 `worldBody` 和每个 `MJCFModelBody.lights` 中保留原生显式灯光。
+`MJCFModelLight` 的位置和方向属于所在 body 的局部坐标，嵌套 `<frame>` 的位姿已经合并；
+无名 body 仍使用现有生成名，便于原生查看器按 body/link 绑定。灯光经过 root/default class、
+body/frame `childclass` 与显式 `class` 的同一属性继承链。数据包含开关、阴影开关、类型与追踪模式、
+目标 body、三种 RGB 光照系数、衰减、聚光锥截止角与指数。截止角始终使用度数，与 compiler.angle 无关。
+
+默认值遵循 [MuJoCo light](https://mujoco.readthedocs.io/en/stable/XMLreference.html#body-light)；
+旧 `directional=true` 在未指定 type 时解析为 directional。未知 type/mode 字符串原样保留供消费者
+明确报告支持范围；非法数值、向量、布尔属性按实体边界遗漏该灯并返回 `mjcf_light_omitted` 恢复诊断，
+不静默使用默认灯替代。此解析层不创建渲染器灯具，不推算 body COM 或改写源文件。
+
+邻近回归：`npm run test:unit -- src/core/parsers/mjcf/mjcfLight.test.ts src/core/parsers/mjcf/mjcfUtils.test.ts`。

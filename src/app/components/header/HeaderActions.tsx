@@ -15,10 +15,9 @@ import type {
   HeaderTranslations,
   HeaderMenuKey,
 } from './types';
-import { HeaderOverflowMenu } from './HeaderOverflowMenu';
+import { FEEDBACK_FORM_URL, HeaderOverflowMenu } from './HeaderOverflowMenu';
 
-export const FEEDBACK_FORM_URL =
-  'https://enkeebot.feishu.cn/share/base/form/shrcnok1dXPePgAxuu2qnXiVxYf';
+export { FEEDBACK_FORM_URL } from './HeaderOverflowMenu';
 
 interface HeaderActionsProps {
   responsive: HeaderResponsiveLayout;
@@ -63,12 +62,35 @@ function InlineActionButton({ action, show, showLabel }: InlineActionButtonProps
       onClick={action.onClick}
       variant="ghost"
       size="xs"
-	      className="hidden h-7 whitespace-nowrap px-2 text-system-blue hover:bg-system-blue-solid hover:text-white sm:flex"
+      className="h-8 whitespace-nowrap px-2 text-system-blue hover:bg-system-blue-solid hover:text-white"
       title={action.title ?? action.label}
       aria-label={action.title ?? action.label}
     >
       <ActionIcon className="w-4 h-4" />
-	      {showLabel ? <span className="whitespace-nowrap">{action.label}</span> : null}
+      {showLabel ? <span className="whitespace-nowrap">{action.label}</span> : null}
+    </Button>
+  );
+}
+
+function SecondaryActionButton({ action, showLabel }: Omit<InlineActionButtonProps, 'show'>) {
+  const ActionIcon = action?.icon;
+
+  if (!action || !ActionIcon) {
+    return null;
+  }
+
+  return (
+    <Button
+      type="button"
+      onClick={action.onClick}
+      variant="ghost"
+      size="icon"
+      className={`h-8 w-8 shrink-0 gap-1.5 p-0 text-ui-control font-medium ${showLabel ? 'sm:w-auto sm:max-w-[160px] sm:px-2.5' : ''}`.trim()}
+      title={action.title ?? action.label}
+      aria-label={action.title ?? action.label}
+    >
+      <ActionIcon className="h-4 w-4 shrink-0" />
+      {showLabel ? <span className="hidden min-w-0 truncate sm:block">{action.label}</span> : null}
     </Button>
   );
 }
@@ -97,7 +119,7 @@ function SnapshotButton({
       onFocus={onPrefetchSnapshot}
       variant="ghost"
       size="md"
-      className="hidden h-7 w-7 sm:flex"
+      className="h-8 w-8 shrink-0 p-0 !text-text-secondary hover:!text-text-primary"
       aria-label={label}
     >
       <Camera className="w-4 h-4" />
@@ -121,18 +143,17 @@ function LanguageButton({
   }
 
   return (
-    <Button
+    <IconButton
       type="button"
       onClick={() => setLang(lang === 'en' ? 'zh' : 'en')}
       variant="ghost"
-      size="xs"
-      className="hidden h-7 px-2 text-text-tertiary hover:text-text-primary sm:flex"
+      size="md"
+      className="h-8 w-8 shrink-0 p-0 !text-text-secondary hover:!text-text-primary"
       title={label}
       aria-label={label}
     >
-      <Languages className="w-3.5 h-3.5" />
-      <span className="text-[10px] font-semibold">{lang === 'en' ? 'EN' : '中'}</span>
-    </Button>
+      <Languages className="w-4 h-4" />
+    </IconButton>
   );
 }
 
@@ -174,7 +195,7 @@ function ThemeButton({
       onClick={() => setTheme(resolveNextTheme(theme))}
       variant="ghost"
       size="md"
-      className="hidden h-7 w-7 sm:flex"
+      className="h-8 w-8 shrink-0 p-0 !text-text-secondary hover:!text-text-primary"
       aria-label={label}
     >
       <ThemeIcon theme={theme} />
@@ -210,10 +231,10 @@ function SettingsButton({
       onFocus={onPrefetchSettings}
       variant="ghost"
       size="md"
-      className="hidden h-7 w-7 sm:flex"
+      className="h-8 w-8 shrink-0 p-0 !text-text-secondary hover:!text-text-primary"
       aria-label={label}
     >
-      <Settings className="w-4 h-4" />
+      <Settings className="w-4 h-4" strokeWidth={2} />
     </IconButton>
   );
 }
@@ -224,7 +245,7 @@ function FeedbackButton({ label }: { label: string }) {
       href={FEEDBACK_FORM_URL}
       target="_blank"
       rel="noopener noreferrer"
-      className="inline-flex h-7 shrink-0 items-center gap-1 rounded-md border border-transparent px-2 text-xs font-medium text-text-secondary transition-all duration-200 hover:bg-element-hover hover:text-text-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-system-blue/30"
+      className="inline-flex h-8 shrink-0 items-center justify-center gap-1.5 rounded-md border border-transparent px-2 text-ui-control font-medium text-text-secondary transition-colors duration-200 hover:bg-element-hover hover:text-text-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-system-blue/30"
       title={label}
       aria-label={label}
     >
@@ -258,19 +279,19 @@ export function HeaderActions({
   t,
 }: HeaderActionsProps) {
   const {
+    isDesktop,
     showQuickActionInline,
     showQuickActionLabel,
     showSnapshotInline,
     showSettingsInline,
     showLanguageInline,
     showThemeInline,
-    showSecondaryActionInline,
     showSecondaryActionLabel,
     showDesktopOverflow,
   } = responsive;
 
   return (
-    <div className="flex items-center justify-end gap-0.5 shrink-0 justify-self-stretch w-full">
+    <div className="flex items-center justify-end gap-1 shrink-0 justify-self-stretch w-full">
       <InlineActionButton
         action={quickAction}
         show={showQuickActionInline}
@@ -282,24 +303,11 @@ export function HeaderActions({
         onPrefetchSnapshot={onPrefetchSnapshot}
         label={t.snapshot}
       />
-      <LanguageButton
-        show={showLanguageInline}
-        lang={lang}
-        setLang={setLang}
-        label={t.switchLanguage}
-      />
-      <ThemeButton
-        show={showThemeInline}
-        theme={theme}
-        setTheme={setTheme}
-        label={t.toggleTheme}
-      />
-      <FeedbackButton label={t.feedback} />
+      {isDesktop ? <FeedbackButton label={t.feedback} /> : null}
       <HeaderDivider show={showThemeInline || showDesktopOverflow} />
 
       {showDesktopOverflow && (
         <HeaderOverflowMenu
-          className="hidden sm:block"
           lang={lang}
           theme={theme}
           canUndo={canUndo}
@@ -326,25 +334,11 @@ export function HeaderActions({
           showSettings={!showSettingsInline}
           showLanguage={!showLanguageInline}
           showTheme={!showThemeInline}
-          showSecondaryAction={Boolean(secondaryAction) && !showSecondaryActionInline}
+          showSecondaryAction={false}
         />
       )}
 
-      <InlineActionButton
-        action={secondaryAction}
-        show={showSecondaryActionInline}
-        showLabel={showSecondaryActionLabel}
-      />
-
-      <SettingsButton
-        show={showSettingsInline}
-        onOpenSettings={onOpenSettings}
-        onPrefetchSettings={onPrefetchSettings}
-        label={t.settings}
-      />
-
-      <HeaderOverflowMenu
-        className="sm:hidden"
+      {!isDesktop && <HeaderOverflowMenu
         lang={lang}
         theme={theme}
         canUndo={canUndo}
@@ -368,11 +362,32 @@ export function HeaderActions({
         showSourceCode
         showUndoRedo
         showSnapshot={snapshotAvailable}
-        showSettings
+        showSettings={false}
         showLanguage
         showTheme
-        showSecondaryAction={Boolean(secondaryAction)}
+        showSecondaryAction={false}
+        showFeedback
+      />}
+
+      <LanguageButton
+        show={showLanguageInline}
+        lang={lang}
+        setLang={setLang}
+        label={t.switchLanguage}
       />
+      <ThemeButton
+        show={showThemeInline}
+        theme={theme}
+        setTheme={setTheme}
+        label={t.toggleTheme}
+      />
+      <SettingsButton
+        show={showSettingsInline}
+        onOpenSettings={onOpenSettings}
+        onPrefetchSettings={onPrefetchSettings}
+        label={t.settings}
+      />
+      <SecondaryActionButton action={secondaryAction} showLabel={showSecondaryActionLabel} />
     </div>
   );
 }

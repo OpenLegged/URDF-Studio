@@ -64,6 +64,23 @@ function renderHeader(withSurfaceModeSelector = false, overrides: Partial<Header
   );
 }
 
+function renderDesktopHeader(render: () => string): string {
+  const originalWindow = Object.getOwnPropertyDescriptor(globalThis, 'window');
+  try {
+    Object.defineProperty(globalThis, 'window', {
+      configurable: true,
+      value: { innerWidth: 1600 },
+    });
+    return render();
+  } finally {
+    if (originalWindow) {
+      Object.defineProperty(globalThis, 'window', originalWindow);
+    } else {
+      Reflect.deleteProperty(globalThis, 'window');
+    }
+  }
+}
+
 test('Header keeps the leading logo at a readable non-shrinking size', () => {
   const markup = renderHeader();
 
@@ -165,11 +182,11 @@ test('Header renders host-owned file actions for the alternate surface', () => {
   assert.doesNotMatch(markup, /aria-label="File"/);
 });
 
-test('Header keeps the host quick action before the snapshot on alternate desktop surfaces', () => {
+test('Header keeps alternate actions within the responsive inline budget', () => {
   const originalWindow = Object.getOwnPropertyDescriptor(globalThis, 'window');
 
   try {
-    for (const width of [1600, 1024, 640]) {
+    for (const width of [1600, 1280, 1024, 640, 320]) {
       Object.defineProperty(globalThis, 'window', {
         configurable: true,
         value: { innerWidth: width },
@@ -184,22 +201,43 @@ test('Header keeps the host quick action before the snapshot on alternate deskto
       const quickAction = markup.match(
         /<button[^>]*aria-label="Quick action"[^>]*>(.*?)<\/button>/,
       )?.[1];
-      assert.ok(quickAction, `host quick action should remain inline at ${width}px`);
       const secondaryAction = markup.match(
         /<button[^>]*aria-label="Secondary action"[^>]*>(.*?)<\/button>/,
       )?.[1];
       assert.ok(secondaryAction, `host secondary action should remain inline at ${width}px`);
-      assert.ok(
-        markup.indexOf('aria-label="Quick action"') < markup.indexOf('aria-label="Snapshot"'),
-        'host quick action should occupy the same leading position in the right actions group',
-      );
-      if (width === 1600) {
-        assert.match(quickAction, />Quick action</, 'roomy headers should display the action label');
+      if (width <= 1024) {
+        if (width === 1024) {
+          assert.ok(quickAction, 'the host quick action should fit inline at 1024px');
+          assert.ok(markup.indexOf('aria-label="Quick action"') < markup.indexOf('aria-label="More"'));
+        } else {
+          assert.equal(quickAction, undefined, `the host quick action belongs in overflow at ${width}px`);
+        }
+        assert.doesNotMatch(markup, /aria-label="Snapshot"/);
+        assert.doesNotMatch(markup, /aria-label="Switch Language"/);
+        assert.doesNotMatch(markup, /lucide-moon|lucide-sun|lucide-monitor/);
+        assert.equal((markup.match(/aria-label="More"/g) ?? []).length, 1);
+        assert.ok(markup.indexOf('aria-label="More"') < markup.indexOf('aria-label="Settings"'));
+        assert.ok(markup.indexOf('aria-label="Settings"') < markup.indexOf('aria-label="Secondary action"'));
+      } else {
+        assert.ok(quickAction, `host quick action should remain inline at ${width}px`);
+        assert.ok(
+          markup.indexOf('aria-label="Quick action"') < markup.indexOf('aria-label="Snapshot"'),
+          'host quick action should occupy the same leading position in the right actions group',
+        );
+        assert.match(markup, /aria-label="Switch Language"/);
+        assert.match(markup, /lucide-moon|lucide-sun|lucide-monitor/);
+        assert.doesNotMatch(markup, /aria-label="More"/);
+      }
+      if (width >= 1100) {
         assert.match(secondaryAction, />Secondary action</, 'roomy headers should display the secondary label');
       } else {
         assert.doesNotMatch(secondaryAction, />Secondary action</, 'compact headers should hide the secondary label');
+      }
+      if (width === 1600) {
+        assert.match(quickAction ?? '', />Quick action</, 'roomy headers should display the action label');
+      } else {
         assert.doesNotMatch(
-          quickAction,
+          quickAction ?? '',
           />Quick action</,
           'compact headers should retain the icon without the label',
         );
@@ -215,7 +253,7 @@ test('Header keeps the host quick action before the snapshot on alternate deskto
 });
 
 test('Header renders host-owned view options and snapshot controls for the alternate surface', () => {
-  const markup = renderToStaticMarkup(
+  const markup = renderDesktopHeader(() => renderToStaticMarkup(
     React.createElement(Header, {
       onImportFile: () => {},
       onImportFolder: () => {},
@@ -247,14 +285,14 @@ test('Header renders host-owned view options and snapshot controls for the alter
       },
       setViewConfig: () => {},
     }),
-  );
+  ));
 
   assert.match(markup, /aria-label="View"/);
   assert.match(markup, /aria-label="Snapshot"/);
 });
 
 test('Header links to the feedback form in a new tab', () => {
-  const markup = renderHeader();
+  const markup = renderDesktopHeader(() => renderHeader());
 
   const feedbackLink = markup.match(
     /<a[^>]*href="https:\/\/enkeebot\.feishu\.cn\/share\/base\/form\/shrcnok1dXPePgAxuu2qnXiVxYf"[^>]*>/,
@@ -277,4 +315,53 @@ test('Header links to the feedback form in a new tab', () => {
     />Feedback</,
     'feedback button should include a visible text label so its purpose is clear',
   );
+});
+
+test('Header places settings before the host secondary action on wide and mobile layouts', () => {
+  const originalWindow = Object.getOwnPropertyDescriptor(globalThis, 'window');
+
+  try {
+    for (const width of [1600, 1280, 1024, 320]) {
+      Object.defineProperty(globalThis, 'window', {
+        configurable: true,
+        value: { innerWidth: width },
+      });
+      const markup = renderHeader();
+      const settingsIndex = markup.indexOf('aria-label="Settings"');
+      const secondaryIndex = markup.indexOf('aria-label="Secondary action"');
+      assert.ok(settingsIndex >= 0, `settings must remain available at ${width}px`);
+      assert.ok(secondaryIndex > settingsIndex, 'the host action must follow settings');
+
+      const settingsButton = markup.match(/<button[^>]*aria-label="Settings"[^>]*>/)?.[0];
+      assert.ok(settingsButton);
+      assert.doesNotMatch(settingsButton, /hidden/, 'settings must stay visible on mobile');
+      const secondaryButton = markup.match(
+        /<button[^>]*aria-label="Secondary action"[^>]*>(.*?)<\/button>/,
+      );
+      assert.ok(secondaryButton);
+      assert.doesNotMatch(secondaryButton[0].split('>')[0], /hidden/);
+      assert.doesNotMatch(secondaryButton[0], /text-system-blue/);
+      if (width >= 1100) {
+        assert.match(secondaryButton[1], />Secondary action</);
+        assert.ok(
+          markup.indexOf('aria-label="Switch Language"') < settingsIndex,
+          'language must precede settings',
+        );
+        const languageButton = markup.match(
+          /<button[^>]*aria-label="Switch Language"[^>]*>(.*?)<\/button>/,
+        );
+        assert.ok(languageButton);
+        assert.doesNotMatch(languageButton[1], /<span/, 'language is a single icon action');
+      } else {
+        assert.doesNotMatch(secondaryButton[1], />Secondary action</);
+        assert.doesNotMatch(secondaryButton[0], /sm:w-auto|sm:px-2/);
+      }
+    }
+  } finally {
+    if (originalWindow) {
+      Object.defineProperty(globalThis, 'window', originalWindow);
+    } else {
+      Reflect.deleteProperty(globalThis, 'window');
+    }
+  }
 });

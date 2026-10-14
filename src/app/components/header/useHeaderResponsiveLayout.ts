@@ -10,6 +10,8 @@ interface HeaderResponsiveLayoutOptions {
 const OPTIONAL_ACTION_WIDTH_BONUS = 96;
 const CENTER_TOOLBAR_MEDIUM_WIDTH_PENALTY = 160;
 const CENTER_TOOLBAR_COMPACT_WIDTH_PENALTY = 240;
+// Reserve room for the persistent trailing actions and the larger 32px controls.
+const PERSISTENT_ACTION_WIDTH_PENALTY = 32;
 
 function resolveCenterToolbarWidthPenalty(width: number) {
   if (width >= 1440) {
@@ -37,7 +39,8 @@ export function getHeaderResponsiveLayout(
     width -
     centerToolbarWidthPenalty +
     (hasQuickAction ? 0 : OPTIONAL_ACTION_WIDTH_BONUS) +
-    (hasSecondaryAction ? 0 : OPTIONAL_ACTION_WIDTH_BONUS);
+    (hasSecondaryAction ? 0 : OPTIONAL_ACTION_WIDTH_BONUS) -
+    PERSISTENT_ACTION_WIDTH_PENALTY;
 
   const showMenuLabels = effectiveWidth >= 1080;
   const showSourceInline = effectiveWidth >= 1120;
@@ -46,13 +49,14 @@ export function getHeaderResponsiveLayout(
   const showQuickActionInline = effectiveWidth >= 720;
   const showQuickActionLabel = effectiveWidth >= 1360;
   const showSnapshotInline = effectiveWidth >= 1024;
-  const showSettingsInline = effectiveWidth >= 960;
+  const showSettingsInline = true;
   const showLanguageInline = effectiveWidth >= 900;
   const showThemeInline = effectiveWidth >= 840;
-  const showSecondaryActionInline = effectiveWidth >= 780;
-  const showSecondaryActionLabel = effectiveWidth >= 1360;
+  const showSecondaryActionInline = true;
+  const showSecondaryActionLabel = width >= 1100;
 
   return {
+    isDesktop: width >= 640,
     showMenuLabels,
     showSourceInline,
     showSourceText,
@@ -95,7 +99,7 @@ export function useHeaderResponsiveLayout(
 
     const observer = new ResizeObserver((entries) => {
       const entry = entries[0];
-      const nextWidth = Math.round(entry?.contentRect.width ?? node.clientWidth);
+      const nextWidth = Math.round(entry?.borderBoxSize?.[0]?.inlineSize ?? node.clientWidth);
       setHeaderWidth((prevWidth) => (prevWidth === nextWidth ? prevWidth : nextWidth));
     });
 
