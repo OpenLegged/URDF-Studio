@@ -1,7 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { createElement } from 'react';
+import { renderToString } from 'react-dom/server';
 
 import {
+  useAssetImportFromUrl,
   assertRemoteImportBlobWithinLimits,
   assertCompletedRemoteImport,
   assertRemoteImportContentLengthWithinLimits,
@@ -62,12 +65,12 @@ test('asset import never embeds a Vite service credential in browser code', asyn
   assert.doesNotMatch(source, /VITE_API_TOKEN|BOTBASE_API_TOKEN/);
 });
 
-test('asset download request headers carry a shell-provided Bearer token', () => {
+test('asset download request headers carry a shell-provided Bearer token', async () => {
   // Arrange: hosting shell registers a service-token provider
   setAssetDownloadAuthTokenProvider(() => 'service-token-from-shell');
   try {
     // Act
-    const headers = buildAssetDownloadRequestHeaders();
+    const headers = await buildAssetDownloadRequestHeaders(new URL('https://gallery.example/api/download-asset'));
 
     // Assert: token read at call time, surfaced as a Bearer header
     assert.equal(headers.Authorization, 'Bearer service-token-from-shell');
@@ -77,12 +80,12 @@ test('asset download request headers carry a shell-provided Bearer token', () =>
   }
 });
 
-test('asset download request headers omit Authorization when no provider is registered', () => {
+test('asset download request headers omit Authorization when no provider is registered', async () => {
   // Arrange: no hosting shell → BYOK / unauthenticated local dev
   setAssetDownloadAuthTokenProvider(null);
 
   // Act
-  const headers = buildAssetDownloadRequestHeaders();
+  const headers = await buildAssetDownloadRequestHeaders(new URL('https://gallery.example/api/download-asset'));
 
   // Assert: never an "Authorization: Bearer undefined" leak
   assert.equal(Object.hasOwn(headers, 'Authorization'), false);
@@ -143,4 +146,116 @@ test('handoff origin allowlist strips userinfo and validates the real host', () 
   assert.equal(isAllowedHandoffOrigin(maliciousOrigin), false);
   assert.equal(isAllowedHandoffOrigin('https://botworld.enkeebot.com'), true);
   assert.equal(isAllowedHandoffOrigin('http://localhost:5173'), false);
+});
+
+
+test('asset credentials wait for the host and receive the actual request destination', async () => {
+  let resolveToken: (token: string) => void = () => {};
+  const tokenPromise = new Promise<string>((resolve) => { resolveToken = resolve; });
+  const requestUrl = new URL('https://gallery.example/api/collections/robots');
+  let receivedUrl: URL | undefined;
+  let completed = false;
+  setAssetDownloadAuthTokenProvider((url) => {
+    receivedUrl = url;
+    return tokenPromise;
+  });
+  try {
+    const pending = buildAssetDownloadRequestHeaders(requestUrl).then((headers) => {
+      completed = true;
+      return headers;
+    });
+    await Promise.resolve();
+    assert.equal(completed, false);
+    assert.equal(receivedUrl, requestUrl);
+    resolveToken('restored-user-token');
+    assert.equal((await pending).Authorization, 'Bearer restored-user-token');
+  } finally {
+    setAssetDownloadAuthTokenProvider(null);
+  }
+});
+
+test('asset credential failures propagate without an anonymous retry', async () => {
+  setAssetDownloadAuthTokenProvider(async () => { throw new Error('Session unavailable'); });
+  try {
+    await assert.rejects(
+      buildAssetDownloadRequestHeaders(new URL('https://gallery.example/api/download-asset')),
+      /Session unavailable/,
+    );
+  } finally {
+    setAssetDownloadAuthTokenProvider(null);
+  }
+});
+
+
+function captureImportActions() {
+  let actions: ReturnType<typeof useAssetImportFromUrl> | undefined;
+  function ImportHarness() {
+    actions = useAssetImportFromUrl({
+      enabled: false,
+      handleImport: async () => ({ status: 'completed' }),
+    });
+    return null;
+  }
+  renderToString(createElement(ImportHarness));
+  assert.ok(actions);
+  return actions;
+}
+
+test('single and collection imports await credentials and never forward them to object storage', async (t) => {
+  let resolveToken: (token: string) => void = () => {};
+  const tokenPromise = new Promise<string>((resolve) => { resolveToken = resolve; });
+  const credentialUrls: string[] = [];
+  const requests: { url: string; authorization: string | null }[] = [];
+  setAssetDownloadAuthTokenProvider((url) => {
+    credentialUrls.push(url.pathname);
+    return tokenPromise;
+  });
+  t.mock.method(globalThis, 'fetch', async (input: string | URL | Request, init?: RequestInit) => {
+    const url = String(input);
+    requests.push({ url, authorization: new Headers(init?.headers).get('Authorization') });
+    if (url.includes('/api/collections/')) {
+      return Response.json({ data: { assetIds: ['one', 'two'] } });
+    }
+    if (url.includes('/api/download-asset')) {
+      return Response.json({ success: true, data: {
+        rootFolderName: 'robot', files: [{ path: 'robot.urdf', url: 'https://objects.example/signed-file' }],
+      } });
+    }
+    return new Response('<robot/>');
+  });
+  try {
+    const actions = captureImportActions();
+    const single = actions.importAssetFromBotWorld('one', 'https://botworld.enkeebot.com');
+    await Promise.resolve();
+    assert.equal(requests.length, 0);
+    resolveToken('user-token');
+    assert.deepEqual(await single, { success: true });
+    assert.deepEqual(await actions.importCollectionFromBotWorld('robots', 'https://botworld.enkeebot.com'), { success: true });
+    assert.deepEqual(credentialUrls, ['/api/download-asset', '/api/collections/robots', '/api/download-asset', '/api/download-asset']);
+    for (const request of requests) {
+      assert.equal(request.authorization, request.url.startsWith('https://objects.example') ? null : 'Bearer user-token');
+      assert.equal(request.url.includes('user-token'), false);
+    }
+  } finally {
+    setAssetDownloadAuthTokenProvider(null);
+  }
+});
+
+test('401 is reported after one manifest request without a public-token retry', async (t) => {
+  let requests = 0;
+  setAssetDownloadAuthTokenProvider(async () => 'expired-user-token');
+  t.mock.method(globalThis, 'fetch', async () => {
+    requests += 1;
+    return new Response('', { status: 401, statusText: 'Unauthorized' });
+  });
+  const errors: unknown[][] = [];
+  t.mock.method(console, 'error', (...args: unknown[]) => { errors.push(args); });
+  try {
+    const actions = captureImportActions();
+    assert.deepEqual(await actions.importAssetFromBotWorld('one', 'https://botworld.enkeebot.com'), { success: false });
+    assert.equal(requests, 1);
+    assert.match(String(errors[0]), /401 Unauthorized/);
+  } finally {
+    setAssetDownloadAuthTokenProvider(null);
+  }
 });

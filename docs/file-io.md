@@ -138,7 +138,7 @@ infra（URL 参数解析、BroadcastChannel 已有-tab 认领、并发下载与�
     → 已有 Studio tab 回复 import-accepted → 新 tab 关闭 → 已有 tab 执行导入
     → 无已有 tab 回复 → 当前 tab 执行导入
   → Studio 验证 from origin 白名单 → 解析资产下载端点
-  → POST 资产下载接口（携带宿主注入的 Bearer 服务令牌）→ 获取文件列表（含预签名下载 URL）
+  → POST 资产下载接口（等待宿主注入的 Bearer 凭证）→ 获取文件列表（含预签名下载 URL）
   → worker pool 并行下载预签名 URL → 设置 webkitRelativePath 保持文件夹结构
   → handleImport(files) 导入到编辑器
 ```
@@ -147,9 +147,10 @@ infra（URL 参数解析、BroadcastChannel 已有-tab 认领、并发下载与�
 - Studio 验证 `from` origin 白名单后获取文件列表（含预签名下载 URL）；Core 默认请求该
   handoff origin，宿主可通过 `setAssetDownloadEndpointResolver` 显式改为自己的同源代理
 - 资产下载请求的 `Authorization: Bearer <token>` 由宿主通过 `setAssetDownloadAuthTokenProvider`
-  在调用时注入服务令牌（上游服务的静态 service token）；未注册 provider 时不带 `Authorization`
-  （BYOK / 本地未鉴权开发）。token 在调用时读取，开源 Core 不读 `import.meta.env`，不把
-  `VITE_*` 服务凭据编进浏览器资产
+  在调用时注入凭证；provider 接收实际请求 `URL`，可返回同步 token 或 Promise，供宿主
+  等待会话恢复并校验凭证目标。单个与合集请求都等待 provider；未注册时不带 Authorization。
+  provider 异常或 API 拒绝会显式失败，不自动匿名重试；预签名文件下载不携带此凭证。
+  开源 Core 不读取 `import.meta.env` 或部署凭据。
 - 并行下载由 `REMOTE_IMPORT_DOWNLOAD_CONCURRENCY`（8）限流的 worker pool 调度，不用
   `Promise.all(files.map(...))` 一次性发起全部请求（资产最多含 2000 文件，避免压垮浏览器与
   对象存储）；按原始 index 写回 `downloadedFiles`，保证 `webkitRelativePath` 顺序与文件列表一致

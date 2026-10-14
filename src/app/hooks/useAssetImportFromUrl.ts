@@ -30,9 +30,11 @@ export {
  * `import.meta.env` directly. No provider registered → no Authorization header
  * (BYOK / unauthenticated local dev). See asset_import_from_url.test.ts.
  */
-export function buildAssetDownloadRequestHeaders(): Record<string, string> {
+export async function buildAssetDownloadRequestHeaders(
+  requestUrl: URL,
+): Promise<Record<string, string>> {
   const headers: Record<string, string> = { 'Content-Type': 'application/json' };
-  const token = getAssetDownloadAuthToken();
+  const token = await getAssetDownloadAuthToken(requestUrl);
   if (token) {
     headers.Authorization = `Bearer ${token}`;
   }
@@ -274,7 +276,7 @@ export function useAssetImportFromUrl(options: UseAssetImportFromUrlOptions) {
 
         const response = await fetch(apiUrl.toString(), {
           method: 'POST',
-          headers: buildAssetDownloadRequestHeaders(),
+          headers: await buildAssetDownloadRequestHeaders(apiUrl),
           body: JSON.stringify({ assetId }),
         });
 
@@ -410,7 +412,7 @@ export function useAssetImportFromUrl(options: UseAssetImportFromUrlOptions) {
       try {
         const collUrl = new URL(`/api/collections/${encodeURIComponent(slug)}`, remoteImportOrigin);
         const collRes = await fetch(collUrl.toString(), {
-          headers: buildAssetDownloadRequestHeaders(),
+          headers: await buildAssetDownloadRequestHeaders(collUrl),
         });
         if (!collRes.ok) throw new Error(`Collection fetch failed: ${collRes.status}`);
         const collJson = await collRes.json();
