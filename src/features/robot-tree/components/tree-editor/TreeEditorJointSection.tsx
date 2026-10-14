@@ -7,6 +7,7 @@ import {
 } from '@/core/robot';
 import { translations } from '@/shared/i18n';
 import { JointPanelControls, JointPanelList } from '@/shared/components/Panel/JointPanelContent';
+import { JointPoseExport } from '@/shared/components/Panel/JointPoseExport';
 import { resolveActiveViewerJointKeyFromSelection } from '@/shared/utils/active_joint_selection';
 import { createJointPanelStore } from '@/shared/utils/jointPanelStore';
 import { normalizeViewerJointAngleState } from '@/shared/utils/jointPanelState';
@@ -574,6 +575,15 @@ export function TreeEditorJointSection({
         {hasJointEntries ? (
           <div className="flex min-w-fit shrink-0 items-center gap-1">
             <JointPanelControls
+              exportControl={
+                <JointPoseExport
+                  robot={localRobot}
+                  robotName={robot.name}
+                  jointPanelStore={jointPanelStoreRef.current}
+                  lang={lang}
+                  compact
+                />
+              }
               t={t}
               angleUnit={angleUnit}
               setAngleUnit={setAngleUnit}

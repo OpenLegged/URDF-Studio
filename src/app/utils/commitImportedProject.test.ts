@@ -1,11 +1,17 @@
 import assert from 'node:assert/strict';
 import test, { beforeEach } from 'node:test';
 
-import type { ProjectImportResult } from '@/features/file-io';
-import { createComponentSourceDraft, createDefaultWorkspace } from '@/core/robot';
+import { exportProject, importProject, type ProjectImportResult } from '@/features/file-io';
+import {
+  createComponentSourceDraft,
+  createDefaultWorkspace,
+  createSingleComponentWorkspace,
+} from '@/core/robot';
+import { DEFAULT_JOINT, DEFAULT_LINK, JointType, type RobotData } from '@/types';
 import { useAssetsStore } from '@/store/assetsStore';
 import { useSelectionStore } from '@/store/selectionStore';
 import { useWorkspaceStore } from '@/store/workspaceStore';
+import { captureProjectExportPersistenceSnapshot } from '../hooks/file-export/projectExportPersistence';
 
 import { commitImportedProject } from './commitImportedProject.ts';
 
@@ -92,6 +98,101 @@ test('validated project restore commits canonical workspace, history, assets, an
   );
   assert.deepEqual(useSelectionStore.getState().selection, null);
   assert.equal(markedSaved, 1);
+});
+
+test('saving and reopening a project restores current joint poses across identical component names', async () => {
+  const robot: RobotData = {
+    name: 'same_robot',
+    rootLinkId: 'base',
+    links: Object.fromEntries(
+      ['base', 'arm', 'slider', 'follower'].map((id) => [
+        id,
+        { ...structuredClone(DEFAULT_LINK), id, name: id },
+      ]),
+    ),
+    joints: {
+      hinge: {
+        ...structuredClone(DEFAULT_JOINT),
+        id: 'hinge',
+        name: 'hinge',
+        type: JointType.REVOLUTE,
+        parentLinkId: 'base',
+        childLinkId: 'arm',
+        referencePosition: 0.4,
+        angle: 0.4,
+      },
+      slide: {
+        ...structuredClone(DEFAULT_JOINT),
+        id: 'slide',
+        name: 'slide',
+        type: JointType.PRISMATIC,
+        parentLinkId: 'arm',
+        childLinkId: 'slider',
+        referencePosition: 0.05,
+        angle: 0.05,
+      },
+      follower: {
+        ...structuredClone(DEFAULT_JOINT),
+        id: 'follower',
+        name: 'follower',
+        type: JointType.REVOLUTE,
+        parentLinkId: 'slider',
+        childLinkId: 'follower',
+        mimic: { joint: 'hinge', multiplier: -1, offset: 0.1 },
+        angle: -0.3,
+      },
+    },
+  };
+  const workspace = createSingleComponentWorkspace(robot, {
+    componentId: 'left',
+    componentName: 'Same instance',
+  });
+  workspace.components.right = createSingleComponentWorkspace(robot, {
+    componentId: 'right',
+    componentName: 'Same instance',
+  }).components.right!;
+  const store = useWorkspaceStore.getState();
+  store.replaceWorkspace(workspace, { resetHistory: true });
+  for (const [componentId, hinge, slide] of [
+    ['left', 0.75, 0.12],
+    ['right', -0.2, -0.08],
+  ] as const) {
+    assert.equal(store.setJointMotion({ type: 'joint', componentId, entityId: 'hinge' }, hinge), true);
+    assert.equal(store.setJointMotion({ type: 'joint', componentId, entityId: 'slide' }, slide), true);
+  }
+  // Save before the deferred motion history has been flushed, as the UI can do.
+  const captured = captureProjectExportPersistenceSnapshot();
+  const archived = await exportProject({
+    name: 'pose_roundtrip',
+    lang: 'en',
+    workspace: captured.workspace,
+    workspaceHistory: captured.workspaceHistory,
+    assets: {
+      availableFiles: [],
+      assetUrls: {},
+      allFileContents: {},
+      motorLibrary: {},
+      selectedFileName: null,
+    },
+  });
+  store.replaceWorkspace(createDefaultWorkspace('another_project'), { resetHistory: true });
+  commitImportedProject(await importProject(await archived.blob.arrayBuffer()));
+
+  const restored = useWorkspaceStore.getState();
+  assert.deepEqual(restored.workspace, captured.workspace);
+  assert.deepEqual(restored.history, captured.workspaceHistory);
+  for (const [componentId, hinge, slide] of [
+    ['left', 0.75, 0.12],
+    ['right', -0.2, -0.08],
+  ] as const) {
+    const joints = restored.workspace.components[componentId]!.robot.joints;
+    assert.equal(joints.hinge!.angle, hinge);
+    assert.equal(joints.slide!.angle, slide);
+    assert.equal(joints.hinge!.referencePosition, 0.4);
+    assert.equal(joints.slide!.referencePosition, 0.05);
+    assert.equal(joints.follower!.angle, -hinge + 0.1);
+    assert.deepEqual(joints.follower!.mimic, robot.joints.follower!.mimic);
+  }
 });
 
 test('workspace validation failure leaves workspace, history, and assets untouched', () => {

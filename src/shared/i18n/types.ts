@@ -37,6 +37,18 @@ export interface TranslationKeys extends TranslationWorkflowKeys {
   importFolder: string;
   export: string;
   exportProject: string;
+  exportCurrentPose: string;
+  poseJointCount: string;
+  poseFileFormat: string;
+  poseFileName: string;
+  poseJointValues: string;
+  poseUnits: string;
+  poseJointName: string;
+  posePosition: string;
+  poseUnit: string;
+  poseExportHint: string;
+  poseExportFailed: string;
+  poseInvalidFileName: string;
   importUsp: string;
   collisionOptimizerDialog: string;
   collisionOptimizerDesc: string;

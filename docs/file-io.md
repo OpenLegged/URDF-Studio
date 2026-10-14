@@ -40,6 +40,15 @@
 - `DisconnectedWorkspaceUrdfExportDialog.tsx` 是 workspace 断联导出特例，不要塞回通用导出弹层
 - `ExportProgressDialog.tsx` / `ExportProgressView.tsx` 是长时导出反馈的统一 UI，不要重新发明导出进度弹层
 
+### 当前关节姿态导出
+
+- 关节工具栏的下载图标位于设置与 RAD/DEG 之间；侧栏和浮动面板共用 `JointPoseExport`。
+- `shared/utils/jointPoseExport.ts` 在打开弹窗时读取面板的最新实际关节值，生成独立快照；RAD/DEG 只影响显示，导出旋转值始终为 rad、平移值为 m。不减去 MJCF `referencePosition`，不裁剪到限位，也不舍入文件中的数值。
+- 范围与单自由度关节面板一致：revolute、continuous、prismatic，包括零值与从动关节；fixed、floating、ball、planar 不在这份标量姿态文件中。
+- JSON schema 为 `{ version: 1, robot, joints: [{ id, name, type, position, unit }] }`。CSV 列为 `joint_id,joint_name,joint_type,position,unit`，使用 UTF-8 BOM、CRLF 和带双引号的字段。ID 对应当前面板投影中的关节 ID，名称仍保留面板所用的模型名称；多个同名关节不会覆盖彼此。
+- 非有限位置拒绝导出并显示错误，避免 JSON 把 NaN/Infinity 写成 null。此导出不改模型、history 或保存基线。
+- 工程保存沿用 `captureProjectExportPersistenceSnapshot` 与 `.usp 3.0` canonical workspace/history；保存前提交已完成的 pending joint motion，重新导入通过 `commitImportedProject` 恢复原始关节值。姿态不是 URDF 的 `joint origin`。
+
 ### 闭环拼接
 
 - 同组件的不同连杆、或已有连接路径的组件之间可创建闭环。闭环保存在 workspace 中；fixed 保留完整相对朝向，revolute / continuous / prismatic 按各自轴向、自由度与限位求解。被动关节影响的相连闭环必须一起求解。

@@ -364,3 +364,71 @@ test('joints panel updates its explicit height when a longer robot is rendered i
   });
   dom.window.close();
 });
+
+test('pose export stays in the toolbar and captures live values independently of degree display', async () => {
+  const { dom, container, root } = createComponentRoot();
+  const store = createJointPanelStore({ jointAngles: { joint_1: 0.1 } });
+  const blobs: Blob[] = [];
+  const names: string[] = [];
+  const originalCreateUrl = URL.createObjectURL;
+  const originalRevokeUrl = URL.revokeObjectURL;
+  URL.createObjectURL = (blob) => {
+    blobs.push(blob);
+    return 'blob:pose-test';
+  };
+  URL.revokeObjectURL = () => {};
+  dom.window.HTMLAnchorElement.prototype.click = function () {
+    names.push(this.download);
+  };
+  try {
+    await renderJointsPanel(root, undefined, { angleUnit: 'deg', jointPanelStore: store });
+    const exportButton = container.querySelector<HTMLButtonElement>(
+      '[aria-label="Export current pose"]',
+    );
+    assert.ok(exportButton);
+    const controls = exportButton.closest('div.mr-1');
+    assert.ok(controls);
+    assert.ok(controls.querySelector('[title="Advanced"]'));
+    assert.ok(controls.querySelector('[title="Switch unit"]'));
+    await act(async () => {
+      store.patchJointAngles({ joint_1: 0.8765432109876543 });
+    });
+    await act(async () => {
+      exportButton.click();
+    });
+    const dialog = dom.window.document.querySelector<HTMLElement>(
+      '[role="dialog"][aria-label="Export current pose"]',
+    );
+    assert.ok(dialog);
+    assert.match(dialog.textContent ?? '', /0\.8765/);
+    const jsonExport = Array.from(dialog.querySelectorAll<HTMLButtonElement>('button')).find(
+      (button) => button.textContent?.includes('Export JSON'),
+    );
+    assert.ok(jsonExport);
+    await act(async () => {
+      jsonExport.click();
+    });
+    assert.deepEqual(names, ['robot_pose.json']);
+    const payload: unknown = JSON.parse(await blobs[0].text());
+    assert.deepEqual(payload, {
+      version: 1,
+      robot: 'robot',
+      joints: [
+        {
+          id: 'joint_1',
+          name: 'joint_1',
+          type: 'revolute',
+          position: 0.8765432109876543,
+          unit: 'rad',
+        },
+      ],
+    });
+  } finally {
+    URL.createObjectURL = originalCreateUrl;
+    URL.revokeObjectURL = originalRevokeUrl;
+    await act(async () => {
+      root.unmount();
+    });
+    dom.window.close();
+  }
+});

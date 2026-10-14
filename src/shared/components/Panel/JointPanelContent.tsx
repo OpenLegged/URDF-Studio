@@ -55,6 +55,7 @@ export interface JointPanelLink {
 }
 
 export interface JointPanelRobot {
+  name?: string;
   links?: Record<string, JointPanelLink>;
   joints?: Record<string, JointPanelJoint>;
   inspectionContext?: {
@@ -86,6 +87,7 @@ interface JointPanelItemSnapshot {
 }
 
 export interface JointPanelControlsProps {
+  exportControl?: React.ReactNode;
   t: JointPanelTranslations;
   angleUnit: JointPanelAngleUnit;
   setAngleUnit: (unit: JointPanelAngleUnit) => void;
@@ -305,6 +307,7 @@ const JointPanelItemBinding = React.memo(function JointPanelItemBinding({
 });
 
 export function JointPanelControls({
+  exportControl,
   t,
   angleUnit,
   setAngleUnit,
@@ -376,6 +379,7 @@ export function JointPanelControls({
         <Settings className={iconClass} />
         <span className={textClass}>{t.advanced || 'Advanced'}</span>
       </button>
+      {exportControl}
       <button
         onClick={(event) => {
           event.stopPropagation();
