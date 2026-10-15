@@ -5,7 +5,9 @@
 
 export type AssetDownloadEndpointResolver = (remoteImportOrigin: string) => URL;
 export type AiBackendAuthTokenProvider = () => string | null | undefined;
-export type AssetDownloadAuthTokenProvider = () => string | null | undefined;
+export type AssetDownloadAuthTokenProvider = (
+  requestUrl: URL,
+) => string | null | undefined | Promise<string | null | undefined>;
 
 const defaultAssetDownloadEndpointResolver: AssetDownloadEndpointResolver =
   (remoteImportOrigin) => new URL('/api/download-asset', remoteImportOrigin);
@@ -34,16 +36,17 @@ export function getAiBackendAuthToken(): string | null | undefined {
   return aiBackendAuthTokenProvider?.();
 }
 
-// Service-token (botbase `AuthenticateToken`) bearer for the asset download
-// request. Read at call time so the hosting shell (pro) can supply a runtime
-// credential without the open-source core ever touching `import.meta.env` —
-// see asset_import_from_url.test.ts which forbids VITE_API_TOKEN in the hook.
+// The hosting shell owns credentials and their destination policy. Providers
+// may await session restoration and inspect the actual request URL; Core never
+// reads deployment configuration or forwards this bearer to signed file URLs.
 export function setAssetDownloadAuthTokenProvider(
   provider: AssetDownloadAuthTokenProvider | null,
 ): void {
   assetDownloadAuthTokenProvider = provider;
 }
 
-export function getAssetDownloadAuthToken(): string | null | undefined {
-  return assetDownloadAuthTokenProvider?.();
+export async function getAssetDownloadAuthToken(
+  requestUrl: URL,
+): Promise<string | null | undefined> {
+  return assetDownloadAuthTokenProvider?.(requestUrl);
 }
