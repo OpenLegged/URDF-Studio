@@ -1,6 +1,6 @@
 # UI 样式与可访问性
 
-> 最后更新：2026-10-09 | 覆盖源码：`src/styles/`、`src/store/uiStore.ts`、`src/shared/components/ui/`、`src/app/components/header/`、`src/app/components/settings/`
+> 最后更新：2026-10-16 | 覆盖源码：`src/styles/`、`src/store/uiStore.ts`、`src/shared/components/ui/`、`src/shared/hooks/useDraggableWindow.ts`、`src/app/components/header/`、`src/app/components/settings/`
 > 交叉引用：[architecture.md](architecture.md)
 
 ## 1. 关键入口
@@ -28,6 +28,7 @@
 - 基础交互控件统一从 `src/shared/components/ui/` 引用：`Button`、`IconButton`、`ToolbarToggleGroup`、`Checkbox`、`Switch`、`Input`、`Select`、`PanelSelect`、`Slider`、`SegmentedControl`、`Dialog`、`Tooltip`、`ContextMenu`
 - 面板组合控件统一从 `src/shared/components/Panel/` 引用；面板内 overlay / toolbar 小按钮优先使用 `IconButton` 或 `PanelOverlayToggleButton`
 - Feature 内可以保留业务 adapter（如 property editor 的数值输入），但 adapter 只负责业务布局、密度和行为，不复制完整 hover / focus / disabled / token 状态样式
+- 浮窗宿主若根据可用区域限制位置或尺寸，使用 `useDraggableWindow` 的 `setPosition` / `setSize` 同步窗口状态，保持下一次拖动和缩放的起点与实际显示一致。
 - Header、toolbar、panel、menu、dialog 表面禁止新增 `bg-white`、`text-slate-*`、`border-slate-*` 等绕过语义 token 的 Tailwind 色值；使用 `panel-bg`、`element-bg`、`element-hover`、`input-bg`、`border-black`、`border-strong`、`text-*`
 
 ## 3. 高频语义色

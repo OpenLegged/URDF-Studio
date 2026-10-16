@@ -52,6 +52,7 @@ export interface DraggableWindowReturn {
   isMaximized: boolean;
   isMinimized: boolean;
   position: Position;
+  setPosition: Dispatch<SetStateAction<Position>>;
   size: WindowSize;
   setSize: Dispatch<SetStateAction<WindowSize>>;
   isDragging: boolean;
@@ -694,6 +695,7 @@ export const useDraggableWindow = ({
     isMaximized,
     isMinimized,
     position,
+    setPosition,
     size,
     setSize,
     isDragging,
