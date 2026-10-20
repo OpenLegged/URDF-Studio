@@ -271,7 +271,7 @@ const generateLimitTag = (
   }
   const finiteAttribute = (name: string, value: number | undefined): string[] =>
     Number.isFinite(value) ? [`${name}="${formatScalar(Number(value))}"`] : [];
-  const attributes = FULL_LIMIT_EXPORT_TYPES.has(jointType)
+  const attributes = preserveSourceFields || FULL_LIMIT_EXPORT_TYPES.has(jointType)
     ? [
         ...finiteAttribute('lower', joint.limit.lower),
         ...finiteAttribute('upper', joint.limit.upper),
@@ -288,7 +288,7 @@ const generateLimitTag = (
   if (attributes.length === 0) {
     return null;
   }
-  if (FULL_LIMIT_EXPORT_TYPES.has(jointType)) {
+  if (preserveSourceFields || FULL_LIMIT_EXPORT_TYPES.has(jointType)) {
     return `    <limit ${attributes.join(' ')} />`;
   }
   if (EFFORT_VELOCITY_LIMIT_EXPORT_TYPES.has(jointType)) {
@@ -739,13 +739,15 @@ export const generateURDF = (
       xml += `${safetyControllerTag}\n`;
     }
 
-    if (DYNAMICS_EXPORT_TYPES.has(jointType)) {
+    // Editable references must retain parsed dynamics/hardware on every joint
+    // type; omitting them would hide source corruption during project import.
+    if (DYNAMICS_EXPORT_TYPES.has(jointType) || opts.preserveNumericPrecision) {
       if (joint.dynamics && (joint.dynamics.damping !== 0 || joint.dynamics.friction !== 0)) {
         xml += `    <dynamics damping="${formatScalar(joint.dynamics.damping)}" friction="${formatScalar(joint.dynamics.friction)}" />\n`;
       }
     }
 
-    if (DYNAMICS_EXPORT_TYPES.has(jointType)) {
+    if (DYNAMICS_EXPORT_TYPES.has(jointType) || opts.preserveNumericPrecision) {
       const shouldExportHardware =
         joint.hardware &&
         (hardwareMode === 'always' || (hardwareMode === 'auto' && hasExportableHardware(joint)));

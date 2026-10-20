@@ -43,7 +43,7 @@ async function loadViteConfigWithDevServerEnv(
     const loaded = await loadConfigFromFile(
       {
         command: 'serve',
-        mode: 'development',
+        mode: 'dev',
         isSsrBuild: false,
         isPreview: false,
       },
@@ -235,7 +235,7 @@ test('dev server sends isolation headers to local and private LAN origins only',
   const loaded = await loadConfigFromFile(
     {
       command: 'serve',
-      mode: 'development',
+      mode: 'dev',
       isSsrBuild: false,
       isPreview: false,
     },
@@ -309,7 +309,7 @@ test('dev server falls back to another port when the requested port is occupied'
     const loaded = await loadConfigFromFile(
       {
         command: 'serve',
-        mode: 'development',
+        mode: 'dev',
         isSsrBuild: false,
         isPreview: false,
       },

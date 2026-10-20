@@ -25,6 +25,8 @@
 - `useWorkspaceStore.workspace`（非空 `AssemblyState`）是唯一可变机器人模型；`RobotData` 只由 component 或只读 scene projection 产生
 - 空白项目也是 `1 component + 0 bridges`；直接打开文件原子替换 workspace，显式“添加”只追加 component
 - `.usp` 只接受并生成严格的 `3.0` manifest，project payload 只保存 canonical workspace、统一 history 和 component source drafts；不提供 v2 或旧 robot/assembly 字段迁移
+- `.usp` 导入分别校验 draft 与 canonical 模型的 freshness，以及源码内容。URDF/Xacro 解析得到的名称 ID、材质及导入诊断可能与编辑器状态不同；直接 hash 不匹配时，仅在模型可由该格式保留的前提下，将 canonical 模型生成并重解析为参考源码，精确比较两份解析结果。保留原 workspace、history、draft 和全局 freshness hash，不用源码解析结果替换编辑状态，也不接受真实参数、拓扑或源码内容损坏。
+- URDF 的保精度源码模式还须保留所有关节上已解析的 limit、dynamics 和 hardware 字段，包括 continuous 的上下限及 fixed/planar/floating 的动力学和硬件参数；不能用普通导出的字段裁剪规则生成工程校验参考。普通 URDF 导出规则不变。
 - component 内实体 ID 始终是 source-local；全局 ID 只在 scene/export projection 中生成，并通过显式双向映射解析
 - 机器人源格式检测 source of truth 在 `core/parsers/format_detection.ts`；`app/utils/import-preparation/formatDetection.ts` 与 `features/file-io/utils/formatDetection.ts` 只做 wrapper
 - 新增导出辅助逻辑时，优先补到 `app/hooks/file-export/*`，不要把 `useFileExport.ts` 堆成大而全单文件

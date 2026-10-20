@@ -14,9 +14,11 @@ import type {
 import type { Language } from '@/shared/i18n';
 import { isAssetLibraryOnlyFormat } from '@/shared/utils/robotFileSupport';
 import { createSourceSemanticRobotHash, normalizeComponentRobot } from '@/core/robot';
-import { parseMJCF, parseSDF, parseURDF, parseXacro } from '@/core/parsers';
+import { generateURDF, parseMJCF, parseSDF, parseURDF, parseXacro } from '@/core/parsers';
 import { rewriteRobotMeshPathsForSource } from '@/core/parsers/meshPathUtils';
 import { processMJCFIncludes } from '@/core/parsers/mjcf/mjcfSourceResolver';
+import { canPreserveGeometryInSource } from '@/core/parsers/sourceGeometrySupport';
+import { canPreserveJointTypesInSource } from '@/core/parsers/sourceJointSupport';
 import {
   assertProjectArchiveEntryPath,
   assertProjectAssetsManifest,
@@ -308,14 +310,56 @@ function parseComponentSourceDraft(
   );
 }
 
+/**
+ * Generated URDF/Xacro text uses entity names, while the workspace retains
+ * stable editor IDs and import metadata. Compare both through the same source
+ * representation without changing the canonical workspace or its freshness hash.
+ */
+function matchesGeneratedUrdfDraft(
+  robot: RobotData,
+  parsedHash: string,
+  sourceFile: RobotFile,
+  context: ReturnType<typeof buildDraftSourceContext>,
+): boolean {
+  const { format } = sourceFile;
+  if (
+    (format !== 'urdf' && format !== 'xacro')
+    || !canPreserveJointTypesInSource(robot, format)
+    || !canPreserveGeometryInSource(robot, format)
+  ) return false;
+
+  const generatedFile: RobotFile = {
+    ...sourceFile,
+    content: generateURDF(
+      { ...robot, selection: { type: null, id: null } },
+      { includeHardware: 'auto', preserveMeshPaths: true, preserveNumericPrecision: true },
+    ),
+  };
+  const generatedContext = buildDraftSourceContext(
+    generatedFile,
+    context.availableFiles,
+    context.allFileContents,
+  );
+  const generatedRobot = parseComponentSourceDraft(
+    generatedFile,
+    generatedContext.availableFiles,
+    generatedContext.allFileContents,
+  );
+  return generatedRobot !== null
+    && createSourceSemanticRobotHash(generatedRobot) === parsedHash;
+}
+
 async function loadComponentSourceDrafts(
   zip: JSZip,
   manifestPath: string | undefined,
   workspace: AssemblyState,
-  availableFiles: readonly ImportedProjectLibraryFile[],
-  allFileContents: Record<string, string>,
+  sourceContext: {
+    availableFiles: readonly ImportedProjectLibraryFile[];
+    allFileContents: Record<string, string>;
+  },
 ): Promise<Record<string, ComponentSourceDraft>> {
   if (!manifestPath) return {};
+  const { availableFiles, allFileContents } = sourceContext;
 
   const manifestValue = await loadRequiredJson(
     zip,
@@ -361,7 +405,11 @@ async function loadComponentSourceDrafts(
         `Invalid project file: failed to parse component source draft "${entry.componentId}"`,
       );
     }
-    if (createSourceSemanticRobotHash(parsedRobot) !== entry.robotSnapshotHash) {
+    const parsedHash = createSourceSemanticRobotHash(parsedRobot);
+    if (
+      parsedHash !== entry.robotSnapshotHash
+      && !matchesGeneratedUrdfDraft(component.robot, parsedHash, sourceFile, context)
+    ) {
       throw new Error(
         `Invalid project file: component source draft content hash mismatch for "${entry.componentId}"`,
       );
@@ -478,8 +526,7 @@ export async function readImportedProjectArchive(
     zip,
     manifest.entries.componentSourceDrafts,
     workspaceValue,
-    availableFiles,
-    allFileContentsValue,
+    { availableFiles, allFileContents: allFileContentsValue },
   );
   const usdPreparedExportCaches = await readUsdPreparedExportCaches(
     zip,
