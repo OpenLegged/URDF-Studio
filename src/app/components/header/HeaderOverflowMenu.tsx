@@ -17,7 +17,7 @@ import { HeaderMenuItem, HeaderMenuSeparator } from './HeaderMenuItem';
 import type { HeaderOverflowMenuProps } from './types';
 
 export const FEEDBACK_FORM_URL =
-  'https://enkeebot.feishu.cn/share/base/form/shrcnok1dXPePgAxuu2qnXiVxYf';
+  'https://enkeebot.feishu.cn/share/base/form/shrcnLX2424RsDjfzDWP0wIyc8c';
 
 export function HeaderOverflowMenu({
   className = '',
