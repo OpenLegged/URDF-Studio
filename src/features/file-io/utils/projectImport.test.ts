@@ -1,17 +1,20 @@
 import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 
 import JSZip from 'jszip';
 import { JSDOM } from 'jsdom';
 
-import { parseMJCF, parseSDF, parseURDF, parseXacro } from '@/core/parsers';
+import { generateURDF, parseMJCF, parseSDF, parseURDF, parseXacro } from '@/core/parsers';
 import {
   createComponentSourceDraft,
   createSingleComponentWorkspace,
+  createSourceSemanticRobotHash,
 } from '@/core/robot';
 import {
   DEFAULT_JOINT,
   DEFAULT_LINK,
+  GeometryType,
   JointType,
   type AssemblyState,
   type ComponentSourceDraft,
@@ -729,5 +732,348 @@ test('readImportedProjectArchive rejects oversized asset manifests', async () =>
   await assert.rejects(
     readImportedProjectArchive(await toProjectFile(zip)),
     /asset manifest contains too many entries/i,
+  );
+});
+
+
+const EDITED_PROJECT_FIXTURE = new URL(
+  '../../../../test/project-fixtures/edited-component-source-draft.usp',
+  import.meta.url,
+);
+
+test('importProject restores an existing edited project without changing canonical state or source', async () => {
+  const bytes = await readFile(EDITED_PROJECT_FIXTURE);
+  const zip = await JSZip.loadAsync(bytes);
+  const workspace = JSON.parse(await zip.file(PROJECT_WORKSPACE_STATE_FILE)!.async('string'));
+  const history = JSON.parse(await zip.file(PROJECT_WORKSPACE_HISTORY_FILE)!.async('string'));
+  const manifest = await readDraftManifest(zip);
+  const entry = manifest.drafts[0]!;
+  const content = await zip.file(entry.contentPath)!.async('string');
+  const imported = await readImportedProjectArchive(bytes);
+
+  assert.deepEqual(imported.workspace, workspace);
+  assert.deepEqual(imported.workspaceHistory, history);
+  assert.deepEqual(imported.componentSourceDrafts, {
+    [entry.componentId]: {
+      componentId: entry.componentId,
+      format: entry.format,
+      robotSnapshotHash: entry.robotSnapshotHash,
+      content,
+    },
+  });
+  assert.deepEqual(imported.warnings, []);
+});
+
+function generateDraftSource(robot: RobotData): string {
+  return generateURDF(
+    { ...robot, selection: { type: null, id: null } },
+    { includeHardware: 'auto', preserveMeshPaths: true, preserveNumericPrecision: true },
+  );
+}
+
+function createGeneratedDraftProjectParams(
+  workspace: AssemblyState,
+  format: 'urdf' | 'xacro',
+  workspaceHistory: WorkspaceHistory,
+): ExportProjectParams {
+  const component = workspace.components['edited-instance']!;
+  return createParams(workspace, {
+    availableFiles: [],
+    workspaceHistory,
+    componentSourceDrafts: {
+      [component.id]: createComponentSourceDraft({
+        componentId: component.id,
+        format,
+        content: generateDraftSource(component.robot),
+        robot: component.robot,
+      }),
+    },
+  });
+}
+
+async function assertRepeatedProjectRoundtrip(params: ExportProjectParams): Promise<void> {
+  let nextParams = params;
+  for (let iteration = 0; iteration < 2; iteration += 1) {
+    const imported = await importProject(await toProjectFile(await buildProjectZip(nextParams)));
+    assert.deepEqual(imported.workspace, params.workspace);
+    assert.deepEqual(imported.workspaceHistory, params.workspaceHistory);
+    assert.deepEqual(imported.componentSourceDrafts, params.componentSourceDrafts);
+    assert.deepEqual(imported.warnings, []);
+    nextParams = {
+      ...nextParams,
+      workspace: imported.workspace,
+      workspaceHistory: imported.workspaceHistory,
+      componentSourceDrafts: imported.componentSourceDrafts,
+      assets: imported.assets,
+    };
+  }
+}
+
+for (const format of ['urdf', 'xacro'] as const) {
+  test(`importProject repeatedly roundtrips ${format.toUpperCase()} creation, addition, edits and deletion with stable IDs`, async () => {
+    const robot = createRobot('edited_robot');
+    const rootId = robot.rootLinkId;
+    robot.links[rootId]!.name = 'root_display_name';
+    const workspace = createSingleComponentWorkspace(robot, {
+      componentId: 'edited-instance',
+      sourceFile: `robots/edited.${format}`,
+    });
+    const current = workspace.components['edited-instance']!.robot;
+    const history: WorkspaceHistory = { past: [], future: [], activity: [] };
+    await assertRepeatedProjectRoundtrip(
+      createGeneratedDraftProjectParams(workspace, format, history),
+    );
+
+    history.past.push(structuredClone(workspace));
+    current.links['stable-child-id'] = {
+      ...structuredClone(DEFAULT_LINK),
+      id: 'stable-child-id',
+      name: 'child_display_name',
+    };
+    current.joints['stable-joint-id'] = {
+      ...structuredClone(DEFAULT_JOINT),
+      id: 'stable-joint-id',
+      name: 'joint_display_name',
+      type: JointType.REVOLUTE,
+      parentLinkId: rootId,
+      childLinkId: 'stable-child-id',
+    };
+    await assertRepeatedProjectRoundtrip(
+      createGeneratedDraftProjectParams(workspace, format, history),
+    );
+
+    history.past.push(structuredClone(workspace));
+    current.name = 'renamed_robot';
+    const child = current.links['stable-child-id']!;
+    child.name = 'renamed_child';
+    child.inertial!.mass = 1.23456789012345;
+    child.visual.dimensions.y = 0.617283945061725;
+    child.collision.dimensions.y = 0.617283945061725;
+    const joint = current.joints['stable-joint-id']!;
+    joint.name = 'renamed_joint';
+    assert.ok(joint.limit);
+    joint.limit.upper = 0.87654321098765;
+    joint.dynamics.damping = 0.23456789012345;
+    await assertRepeatedProjectRoundtrip(
+      createGeneratedDraftProjectParams(workspace, format, history),
+    );
+
+    history.past.push(structuredClone(workspace));
+    delete current.joints['stable-joint-id'];
+    delete current.links['stable-child-id'];
+    await assertRepeatedProjectRoundtrip(
+      createGeneratedDraftProjectParams(workspace, format, history),
+    );
+  });
+}
+
+const SOURCE_CORRUPTIONS = [
+  {
+    label: 'mass',
+    selector: 'link[name="arm_link"] inertial mass',
+    attribute: 'value',
+    value: '99',
+  },
+  {
+    label: 'geometry',
+    selector: 'link[name="arm_link"] visual geometry box',
+    attribute: 'size',
+    value: '9 9 9',
+  },
+  {
+    label: 'joint topology',
+    selector: 'joint[name="joint_2"] parent',
+    attribute: 'link',
+    value: 'base_link',
+  },
+  { label: 'model name', selector: 'robot', attribute: 'name', value: 'corrupt_name' },
+  {
+    label: 'material',
+    selector: 'link[name="base_link"] visual material color',
+    attribute: 'rgba',
+    value: '1 0 0 1',
+  },
+];
+
+for (const corruption of SOURCE_CORRUPTIONS) {
+  test(`importProject rejects ${corruption.label} corruption in an edited project source`, async () => {
+    const zip = await JSZip.loadAsync(await readFile(EDITED_PROJECT_FIXTURE));
+    const manifest = await readDraftManifest(zip);
+    const contentPath = manifest.drafts[0]!.contentPath;
+    const document = new DOMParser().parseFromString(
+      await zip.file(contentPath)!.async('string'),
+      'text/xml',
+    );
+    const element = document.querySelector(corruption.selector);
+    assert.ok(element, `Fixture must contain ${corruption.selector}`);
+    element.setAttribute(corruption.attribute, corruption.value);
+    zip.file(contentPath, new XMLSerializer().serializeToString(document));
+    await assert.rejects(
+      importProject(await toProjectFile(zip)),
+      /component source draft content hash mismatch/i,
+    );
+  });
+}
+
+test('importProject keeps the canonical draft hash check for an edited project', async () => {
+  const zip = await JSZip.loadAsync(await readFile(EDITED_PROJECT_FIXTURE));
+  const manifest = await readDraftManifest(zip);
+  manifest.drafts[0]!.robotSnapshotHash = 'robot-semantic-v1:corrupt';
+  zip.file(PROJECT_COMPONENT_SOURCE_DRAFTS_FILE, JSON.stringify(manifest));
+  await assert.rejects(
+    importProject(await toProjectFile(zip)),
+    /component source draft hash mismatch/i,
+  );
+});
+
+for (const unsupported of ['plane geometry', 'ball joint'] as const) {
+  test(`importProject does not accept generated URDF approximations of ${unsupported}`, async () => {
+    const zip = await JSZip.loadAsync(await readFile(EDITED_PROJECT_FIXTURE));
+    const workspace: AssemblyState = JSON.parse(
+      await zip.file(PROJECT_WORKSPACE_STATE_FILE)!.async('string'),
+    );
+    const robot = workspace.components.component_1!.robot;
+    const manifest = await readDraftManifest(zip);
+    const entry = manifest.drafts[0]!;
+    if (unsupported === 'plane geometry') {
+      robot.links.arm_link!.visual.type = GeometryType.PLANE;
+      // The public URDF exporter can approximate a plane as a thin box.
+      // A derived editable source must never use that to claim exact equality.
+      zip.file(entry.contentPath, generateDraftSource(robot));
+    } else {
+      const joint = Object.values(robot.joints).find((value) => value.name === 'joint_2');
+      assert.ok(joint);
+      joint.type = JointType.BALL;
+    }
+    entry.robotSnapshotHash = createSourceSemanticRobotHash(robot);
+    zip.file(PROJECT_WORKSPACE_STATE_FILE, JSON.stringify(workspace));
+    zip.file(PROJECT_COMPONENT_SOURCE_DRAFTS_FILE, JSON.stringify(manifest));
+    await assert.rejects(
+      importProject(await toProjectFile(zip)),
+      /component source draft content hash mismatch/i,
+    );
+  });
+}
+
+function createJointFieldProjectParams(type: JointType, fields: string): ExportProjectParams {
+  const content = `<robot name="joint_fields">
+    <link name="base"/><link name="tip"/>
+    <joint name="joint" type="${type}">
+      <parent link="base"/><child link="tip"/>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      ${fields}
+    </joint>
+  </robot>`;
+  const robot: RobotData = JSON.parse(JSON.stringify(parseRobotData(content)));
+  const joint = robot.joints.joint!;
+  // Editor-owned IDs differ from XML names, so even an unchanged source uses
+  // the generated-source comparison rather than the direct snapshot hash.
+  robot.links = {
+    'base-id': { ...robot.links.base!, id: 'base-id' },
+    'tip-id': { ...robot.links.tip!, id: 'tip-id' },
+  };
+  robot.rootLinkId = 'base-id';
+  robot.joints = {
+    'joint-id': {
+      ...joint,
+      id: 'joint-id',
+      parentLinkId: 'base-id',
+      childLinkId: 'tip-id',
+    },
+  };
+  const workspace = createSingleComponentWorkspace(robot, {
+    componentId: 'joint-fields',
+    sourceFile: 'joint-fields.urdf',
+  });
+  return createParams(workspace, {
+    availableFiles: [],
+    componentSourceDrafts: {
+      'joint-fields': createComponentSourceDraft({
+        componentId: 'joint-fields',
+        format: 'urdf',
+        robot: workspace.components['joint-fields']!.robot,
+        content,
+      }),
+    },
+  });
+}
+
+async function assertEditedDraftRejected(
+  params: ExportProjectParams,
+  edit: (document: Document) => void,
+): Promise<void> {
+  const zip = await buildProjectZip(params);
+  const manifest = await readDraftManifest(zip);
+  const contentPath = manifest.drafts[0]!.contentPath;
+  const document = new DOMParser().parseFromString(
+    await zip.file(contentPath)!.async('string'),
+    'text/xml',
+  );
+  edit(document);
+  zip.file(contentPath, new XMLSerializer().serializeToString(document));
+  await assert.rejects(
+    importProject(await toProjectFile(zip)),
+    /component source draft content hash mismatch/i,
+  );
+}
+
+const JOINT_DYNAMICS_AND_HARDWARE = `
+  <dynamics damping="0.75" friction="0.2"/>
+  <hardware>
+    <armature>0.3</armature><motorType>special</motorType>
+    <motorDirection>-1</motorDirection><hardwareInterface>effort</hardwareInterface>
+  </hardware>
+`;
+
+for (const type of [JointType.PLANAR, JointType.FIXED, JointType.FLOATING]) {
+  const fields = `${type === JointType.PLANAR ? '<axis xyz="0 0 1"/>' : ''}
+    ${JOINT_DYNAMICS_AND_HARDWARE}`;
+  test(`importProject retains ${type} joint dynamics and hardware during source comparison`, async () => {
+    const params = createJointFieldProjectParams(type, fields);
+    const joint = params.workspace.components['joint-fields']!.robot.joints['joint-id']!;
+    assert.deepEqual(joint.dynamics, { damping: 0.75, friction: 0.2 });
+    assert.equal(joint.hardware.armature, 0.3);
+    assert.equal(joint.hardware.motorDirection, -1);
+    assert.equal(joint.hardware.hardwareInterface, 'effort');
+    await assertRepeatedProjectRoundtrip(params);
+  });
+
+  for (const tag of ['dynamics', 'hardware']) {
+    test(`importProject rejects removing ${type} joint ${tag} from the saved source`, async () => {
+      await assertEditedDraftRejected(
+        createJointFieldProjectParams(type, fields),
+        (document) => {
+          const element = document.querySelector(`joint > ${tag}`);
+          assert.ok(element);
+          element.remove();
+        },
+      );
+    });
+  }
+}
+
+const CONTINUOUS_JOINT_FIELDS = `
+  <axis xyz="0 0 1"/>
+  <limit lower="-0.3" upper="0.8" effort="10" velocity="2"/>
+`;
+
+test('importProject retains authored continuous joint position limits during source comparison', async () => {
+  const params = createJointFieldProjectParams(JointType.CONTINUOUS, CONTINUOUS_JOINT_FIELDS);
+  assert.deepEqual(
+    params.workspace.components['joint-fields']!.robot.joints['joint-id']!.limit,
+    { lower: -0.3, upper: 0.8, effort: 10, velocity: 2 },
+  );
+  await assertRepeatedProjectRoundtrip(params);
+});
+
+test('importProject rejects removing continuous joint position limits from the saved source', async () => {
+  await assertEditedDraftRejected(
+    createJointFieldProjectParams(JointType.CONTINUOUS, CONTINUOUS_JOINT_FIELDS),
+    (document) => {
+      const element = document.querySelector('joint > limit');
+      assert.ok(element);
+      element.removeAttribute('lower');
+      element.removeAttribute('upper');
+    },
   );
 });

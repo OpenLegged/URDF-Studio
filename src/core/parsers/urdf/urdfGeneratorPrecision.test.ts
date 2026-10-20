@@ -124,3 +124,34 @@ test('editable source retains mimic joint limits without changing ordinary expor
   assert.deepEqual(editable.joints.follower.mimic, robot.joints.follower.mimic);
   assert.doesNotMatch(generateURDF(robot), /<limit\b/);
 });
+
+for (const type of ['fixed', 'planar', 'floating', 'continuous']) {
+  test(`editable source retains ${type} joint parameters without changing ordinary exports`, () => {
+    const robot = parseRobot(`<robot name="joint_parameters">
+      <link name="base" /><link name="tip" />
+      <joint name="joint" type="${type}">
+        <parent link="base" /><child link="tip" />
+        <limit lower="-0.3" upper="0.8" effort="10" velocity="2" />
+        <dynamics damping="0.75" friction="0.2" />
+        <hardware>
+          <armature>0.3</armature><motorType>special</motorType>
+          <motorId>7</motorId><motorDirection>-1</motorDirection>
+          <hardwareInterface>effort</hardwareInterface>
+        </hardware>
+      </joint>
+    </robot>`);
+    const editable = parseRobot(generateURDF(robot, {
+      preserveNumericPrecision: true,
+      includeHardware: 'auto',
+    }));
+    assert.deepEqual(editable.joints.joint.limit, robot.joints.joint.limit);
+    assert.deepEqual(editable.joints.joint.dynamics, robot.joints.joint.dynamics);
+    assert.deepEqual(editable.joints.joint.hardware, robot.joints.joint.hardware);
+
+    const ordinary = generateURDF(robot, { includeHardware: 'auto' });
+    assert.doesNotMatch(ordinary, /\b(?:lower|upper)="/);
+    if (type !== 'continuous') {
+      assert.doesNotMatch(ordinary, /<(?:limit|dynamics|hardware)\b/);
+    }
+  });
+}

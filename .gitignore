@@ -13,6 +13,7 @@ MUJOCO_LOG.TXT
 dist/
 build/
 test/*
+!test/project-fixtures/
 !test/workflow-fixtures/
 scripts/
 !scripts/
