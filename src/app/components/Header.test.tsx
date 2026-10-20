@@ -295,7 +295,7 @@ test('Header links to the feedback form in a new tab', () => {
   const markup = renderDesktopHeader(() => renderHeader());
 
   const feedbackLink = markup.match(
-    /<a[^>]*href="https:\/\/enkeebot\.feishu\.cn\/share\/base\/form\/shrcnok1dXPePgAxuu2qnXiVxYf"[^>]*>/,
+    /<a[^>]*href="https:\/\/enkeebot\.feishu\.cn\/share\/base\/form\/shrcnLX2424RsDjfzDWP0wIyc8c"[^>]*>/,
   )?.[0];
   assert.ok(feedbackLink, 'header should render the feedback link');
   assert.match(feedbackLink, /target="_blank"/, 'feedback should open in a new tab');
