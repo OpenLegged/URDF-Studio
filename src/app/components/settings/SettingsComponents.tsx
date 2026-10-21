@@ -18,7 +18,7 @@ import {
 export function SettingsSection({ icon, title, children, actions }: SettingsSectionProps) {
   return (
     <section className="overflow-hidden rounded-[10px] border border-border-black bg-settings-card/95">
-      <div className="flex min-h-10 items-center justify-between gap-3 border-b border-border-black/70 px-3 py-2">
+      <div className="flex min-h-10 flex-wrap items-center justify-between gap-3 border-b border-border-black/70 px-3 py-2">
         <div className="flex min-w-0 items-center gap-2">
           <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-[7px] border border-border-black bg-panel-bg text-text-secondary">
             {icon}
@@ -47,13 +47,13 @@ export function SettingsRow({ label, children, stacked = false }: SettingsRowPro
   }
 
   return (
-    <div className="grid min-h-10 grid-cols-[minmax(0,1fr)_auto] items-center gap-3 px-3 py-2">
+    <div className="grid min-h-10 grid-cols-1 items-center gap-2 px-3 py-2 @min-[480px]:grid-cols-[minmax(0,1fr)_auto] @min-[480px]:gap-3">
       {label ? (
         <div className="min-w-0 text-[11px] font-medium leading-4.5 text-text-secondary">
           {label}
         </div>
       ) : null}
-      <div className="flex max-w-full items-center justify-end gap-2">{children}</div>
+      <div className="flex min-w-0 max-w-full flex-wrap items-center justify-start gap-2 @min-[480px]:justify-end">{children}</div>
     </div>
   );
 }

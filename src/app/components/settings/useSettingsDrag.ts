@@ -4,8 +4,6 @@ import { useUIStore } from '@/store';
 import {
   DEFAULT_SETTINGS_MAX_HEIGHT,
   DEFAULT_SETTINGS_MAX_WIDTH,
-  DEFAULT_SETTINGS_MIN_HEIGHT,
-  DEFAULT_SETTINGS_MIN_WIDTH,
   DEFAULT_SETTINGS_WIDTH,
   SETTINGS_ESTIMATED_HEIGHT,
   SETTINGS_VIEWPORT_MARGIN,
@@ -20,12 +18,29 @@ export interface SettingsDrag {
   syncPosition: () => void;
 }
 
+const readViewportLimits = () => ({
+  maxPanelWidth:
+    typeof window === 'undefined'
+      ? DEFAULT_SETTINGS_MAX_WIDTH
+      : Math.max(
+          1,
+          Math.min(DEFAULT_SETTINGS_MAX_WIDTH, window.innerWidth - SETTINGS_VIEWPORT_MARGIN * 2),
+        ),
+  maxPanelHeight:
+    typeof window === 'undefined'
+      ? DEFAULT_SETTINGS_MAX_HEIGHT
+      : Math.max(
+          1,
+          Math.min(DEFAULT_SETTINGS_MAX_HEIGHT, window.innerHeight - SETTINGS_VIEWPORT_MARGIN * 2),
+        ),
+});
+
 /**
  * Owns the settings window drag/resize/reposition lifecycle: position clamping,
  * window resize + ResizeObserver sync, and the pointer-drag listeners with
  * symmetric cleanup. Callers only consume the stable `SettingsDrag` surface.
  */
-export function useSettingsDrag(): SettingsDrag {
+export function useSettingsDrag(isOpen: boolean): SettingsDrag {
   const settingsPos = useUIStore((state) => state.settingsPos);
   const setSettingsPos = useUIStore((state) => state.setSettingsPos);
   const panelRef = React.useRef<HTMLDivElement>(null);
@@ -34,21 +49,7 @@ export function useSettingsDrag(): SettingsDrag {
   const dragPreviousUserSelectRef = React.useRef('');
   const dragPreviousCursorRef = React.useRef('');
 
-  const maxPanelWidth =
-    typeof window !== 'undefined'
-      ? Math.max(
-          DEFAULT_SETTINGS_MIN_WIDTH,
-          Math.min(DEFAULT_SETTINGS_MAX_WIDTH, window.innerWidth - SETTINGS_VIEWPORT_MARGIN * 2),
-        )
-      : DEFAULT_SETTINGS_MAX_WIDTH;
-
-  const maxPanelHeight =
-    typeof window !== 'undefined'
-      ? Math.max(
-          DEFAULT_SETTINGS_MIN_HEIGHT,
-          Math.min(DEFAULT_SETTINGS_MAX_HEIGHT, window.innerHeight - SETTINGS_VIEWPORT_MARGIN * 2),
-        )
-      : DEFAULT_SETTINGS_MAX_HEIGHT;
+  const [{ maxPanelWidth, maxPanelHeight }, setViewportLimits] = React.useState(readViewportLimits);
 
   const clampSettingsPosition = React.useCallback((x: number, y: number) => {
     if (typeof window === 'undefined') {
@@ -94,16 +95,20 @@ export function useSettingsDrag(): SettingsDrag {
   }, [clampSettingsPosition, setSettingsPos]);
 
   React.useEffect(() => {
-    if (typeof window === 'undefined' || !panelRef.current) {
+    if (!isOpen || typeof window === 'undefined' || !panelRef.current) {
       return undefined;
     }
 
-    syncPosition();
-    window.addEventListener('resize', syncPosition);
+    const handleResize = () => {
+      setViewportLimits(readViewportLimits());
+      syncPosition();
+    };
+    handleResize();
+    window.addEventListener('resize', handleResize);
 
     if (typeof ResizeObserver === 'undefined') {
       return () => {
-        window.removeEventListener('resize', syncPosition);
+        window.removeEventListener('resize', handleResize);
       };
     }
 
@@ -115,11 +120,18 @@ export function useSettingsDrag(): SettingsDrag {
 
     return () => {
       observer.disconnect();
-      window.removeEventListener('resize', syncPosition);
+      window.removeEventListener('resize', handleResize);
     };
-  }, [syncPosition]);
+  }, [isOpen, syncPosition]);
 
-  React.useEffect(() => () => clearDragListeners(), [clearDragListeners]);
+  React.useLayoutEffect(() => {
+    if (isOpen) syncPosition();
+  }, [isOpen, maxPanelWidth, maxPanelHeight, syncPosition]);
+
+  React.useEffect(() => {
+    if (!isOpen) return undefined;
+    return () => clearDragListeners();
+  }, [clearDragListeners, isOpen]);
 
   const handleDragStart = React.useCallback(
     (event: React.MouseEvent) => {

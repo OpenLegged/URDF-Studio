@@ -570,3 +570,96 @@ test('SettingsModal exposes browser-local Agent data controls', async () => {
     dom.window.close();
   }
 });
+
+
+test('SettingsModal fits the viewport when opened from a closed mount and tracks viewport changes', async () => {
+  const { dom, container, root } = createComponentRoot();
+  const initialState = useUIStore.getState();
+  const setViewport = (width: number, height: number) => {
+    Object.defineProperty(dom.window, 'innerWidth', { value: width, configurable: true });
+    Object.defineProperty(dom.window, 'innerHeight', { value: height, configurable: true });
+  };
+
+  // jsdom has no layout; model the settings frame's viewport-constrained bounds.
+  dom.window.HTMLDivElement.prototype.getBoundingClientRect = function () {
+    const frame = this.firstElementChild as HTMLElement | null;
+    return new dom.window.DOMRect(
+      0, 0,
+      Math.min(Number.parseFloat(frame?.style.width ?? '0') || 0, dom.window.innerWidth - 24),
+      Math.min(Number.parseFloat(frame?.style.height ?? '0') || 0, dom.window.innerHeight - 24),
+    );
+  };
+
+  try {
+    setViewport(541, 320);
+    useUIStore.setState({ isSettingsOpen: false, settingsPos: { x: 700, y: 600 } });
+    await act(async () => { root.render(React.createElement(SettingsModal)); });
+    assert.equal(container.firstElementChild, null);
+
+    await act(async () => { useUIStore.getState().openSettings(); });
+    const panel = container.firstElementChild as HTMLDivElement | null;
+    const frame = panel?.firstElementChild as HTMLDivElement | null;
+    assert.ok(panel);
+    assert.ok(frame);
+    assert.equal(frame.style.width, '517px');
+    assert.equal(frame.style.height, '296px');
+    assert.equal(dom.window.document.activeElement, panel);
+    assert.deepEqual(useUIStore.getState().settingsPos, { x: 12, y: 12 });
+
+    await act(async () => {
+      setViewport(390, 280);
+      dom.window.dispatchEvent(new dom.window.Event('resize'));
+    });
+    assert.equal(frame.style.width, '366px');
+    assert.equal(frame.style.height, '256px');
+
+    await act(async () => {
+      setViewport(1024, 768);
+      dom.window.dispatchEvent(new dom.window.Event('resize'));
+    });
+    assert.equal(frame.style.width, '620px');
+    assert.equal(frame.style.height, '460px');
+  } finally {
+    await act(async () => { root.unmount(); });
+    useUIStore.setState(initialState);
+    dom.window.close();
+  }
+});
+
+test('SettingsModal Escape closes settings but first dismisses an expanded Select', async () => {
+  const { dom, container, root } = createComponentRoot();
+  const initialState = useUIStore.getState();
+  try {
+    useUIStore.setState({ isSettingsOpen: true, lang: 'en' });
+    await act(async () => { root.render(React.createElement(SettingsModal)); });
+    const sourceCodeButton = container.querySelector('[data-settings-page="sourceCode"]');
+    assert.ok(sourceCodeButton);
+    await act(async () => {
+      sourceCodeButton.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
+    });
+    const combobox = container.querySelector('[role="combobox"]');
+    assert.ok(combobox);
+    await act(async () => {
+      combobox.dispatchEvent(new dom.window.MouseEvent('click', { bubbles: true }));
+    });
+    assert.equal(combobox.getAttribute('aria-expanded'), 'true');
+    await act(async () => {
+      combobox.dispatchEvent(new dom.window.KeyboardEvent('keydown', {
+        key: 'Escape', bubbles: true, cancelable: true,
+      }));
+    });
+    assert.equal(useUIStore.getState().isSettingsOpen, true);
+    assert.equal(combobox.getAttribute('aria-expanded'), 'false');
+    await act(async () => {
+      combobox.dispatchEvent(new dom.window.KeyboardEvent('keydown', {
+        key: 'Escape', bubbles: true, cancelable: true,
+      }));
+    });
+    assert.equal(useUIStore.getState().isSettingsOpen, false);
+    assert.equal(container.firstElementChild, null);
+  } finally {
+    await act(async () => { root.unmount(); });
+    useUIStore.setState(initialState);
+    dom.window.close();
+  }
+});
