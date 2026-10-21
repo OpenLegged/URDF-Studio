@@ -2,9 +2,11 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { DragEvent } from 'react';
 import type { AssemblyState, WorkspaceSelection } from '@/types';
 import { validateEntityRef } from '@/store/selectionStore';
-import { useActiveHistory } from './useActiveHistory';
+import type { HistoryActions } from './useActiveHistory';
+import { useKeyboardShortcuts } from './useAppEffects';
 
 interface UseAppLayoutEffectsParams {
+  historyOverride?: HistoryActions | null;
   workspace: AssemblyState;
   selection: WorkspaceSelection;
   clearSelection: () => void;
@@ -40,6 +42,7 @@ function captureDroppedFileSystemEntries(items: DataTransferItemList | null | un
 }
 
 export function useAppLayoutEffects({
+  historyOverride,
   workspace,
   selection,
   clearSelection,
@@ -47,7 +50,7 @@ export function useAppLayoutEffects({
   onFileDrop,
   onDropError,
 }: UseAppLayoutEffectsParams) {
-  const { undo, redo, canUndo, canRedo } = useActiveHistory();
+  useKeyboardShortcuts(historyOverride);
   const dragLeaveFrameRef = useRef<number | null>(null);
   const [isFileDragActive, setIsFileDragActive] = useState(false);
 
@@ -63,26 +66,6 @@ export function useAppLayoutEffects({
     setIsFileDragActive(false);
   }, [cancelPendingDragLeaveCheck]);
 
-  useEffect(() => {
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if ((event.metaKey || event.ctrlKey) && event.key === 'z' && !event.shiftKey) {
-        if (canUndo) {
-          undo();
-          event.preventDefault();
-        }
-      }
-
-      if ((event.metaKey || event.ctrlKey) && event.key === 'z' && event.shiftKey) {
-        if (canRedo) {
-          redo();
-          event.preventDefault();
-        }
-      }
-    };
-
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [canRedo, canUndo, redo, undo]);
 
   useEffect(() => {
     if (shouldDeferSelectionCleanup) {

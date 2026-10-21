@@ -184,3 +184,7 @@ npm run deps:check   # 阻断检查，已包含在 npm run lint 中
 - **手写 C-ABI emscripten 源**：`src/core/loaders/wasm/collada_mesh_parser.cpp`、`src/core/loaders/wasm/obj_parser.cpp`。它们是**单翻译单元（single TU）**设计——单 `.cpp` + `-flto` + 匿名 `namespace` 内部链接，所有 helper 文件本地。拆成多 TU/头文件**运行时零收益、只增 header 边界摩擦**，故有意保留单文件；要可读性用 section banner 注释而非物理拆分。注意：构建是 **C-ABI `EXPORTED_FUNCTIONS`** 模式（手动 `HEAPU8` marshalling via `*_get_result_ptr` / `*_get_result_size`），**不是 embind**（无 `emscripten/bind.h` / `EMSCRIPTEN_BINDINGS` / `--bind`）。.cpp 风格由 `.clang-format` 固定。
 - **生成产物**：`public/wasm/**`（emscripten JS glue + `.wasm` 二进制，由 `scripts/build/rebuild-*-wasm.sh` 生成，**勿手改**，改 `.cpp` 重跑脚本）、`**/*.generated.*`（ESLint 与 audit 一致跳过）。
 - **vendored 源**：`third_party/**`（魔改版 OpenUSD）、`src/features/urdf-viewer/runtime/**`（USD WASM runtime）。
+
+### 宿主工作区历史
+
+`surfaceModeSelector.alternateControls.history` 注入中性的 `undo`、`redo`、`canUndo`、`canRedo`。Header 和全局快捷键共用当前 surface 的历史；alternate 缺少 history 时禁用，不回退到模型。Core 不依赖宿主 store。文本输入、IME 和已消费事件不触发工作区撤销。

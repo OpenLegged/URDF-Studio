@@ -450,6 +450,8 @@ export function AppLayout({
     handleDragLeave,
     handleDrop,
   } = useAppLayoutEffects({
+    historyOverride: surfaceModeSelector?.current === 'alternate'
+      ? surfaceModeSelector.alternateControls?.history ?? null : undefined,
     workspace,
     selection,
     clearSelection,
