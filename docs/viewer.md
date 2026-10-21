@@ -44,7 +44,7 @@ features/urdf-viewer/
 ## 3. 核心 hooks / 能力
 
 - `useViewerController`：viewer 控制器
-- `useMouseInteraction`：鼠标交互处理
+- `useMouseInteraction`：鼠标交互处理。选择、悬停、网格选择和涂色回调通过 ref 读取最新值，回调引用更新不重建原生事件监听或取消正在进行的关节拖动；松手提交角度，卸载只清理会话。
 - `useHoverDetection`：悬停检测
 - `useVisualizationEffects`：惯性、质心、原点等辅助可视化
 - `useRendererBackend`：统一模型加载与格式后端生命周期，backend 实现在 `features/urdf-viewer/renderers/`

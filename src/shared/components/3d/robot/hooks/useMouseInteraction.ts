@@ -186,6 +186,10 @@ export function useMouseInteraction({
   // Event handlers outlive individual renders. Update their inputs during
   // render so a native pointer event can never observe the previous commit
   // while passive effects are still pending.
+  // Workspace updates replace these callbacks even while the next joint is
+  // being dragged. Keep the gesture alive and dispatch to the latest callbacks.
+  const interactionCallbacksRef = useRef({ onHover, onSelect, onMeshSelect, onPaintFace });
+  interactionCallbacksRef.current = { onHover, onSelect, onMeshSelect, onPaintFace };
   const onJointChangeRef = useRef(onJointChange);
   const onJointChangeCommitRef = useRef(onJointChangeCommit);
   const setIsDraggingRef = useRef(setIsDragging);
@@ -292,7 +296,7 @@ export function useMouseInteraction({
       (hoveredLinkRef as any).currentMesh = null;
       (hoveredLinkRef as any).currentObjectIndex = null;
       (hoveredLinkRef as any).currentSubType = null;
-      onHover?.(null, null);
+      interactionCallbacksRef.current.onHover?.(null, null);
     };
 
     const applyHoveredState = (
@@ -304,7 +308,7 @@ export function useMouseInteraction({
       (hoveredLinkRef as any).currentMesh = highlightTarget ?? null;
       (hoveredLinkRef as any).currentObjectIndex = hoveredSelection.objectIndex ?? null;
       (hoveredLinkRef as any).currentSubType = hoveredSelection.subType ?? null;
-      onHover?.(
+      interactionCallbacksRef.current.onHover?.(
         hoveredSelection.type,
         hoveredSelection.id,
         hoveredSelection.subType,
@@ -413,21 +417,22 @@ export function useMouseInteraction({
       invalidate: () => invalidateRef.current(),
     });
 
-    const commitPointerSelection = createPointerSelectionCommit({
-      toolMode,
-      mode,
-      robotLinks,
-      robotJoints,
-      resolveDirectIkHandleLink,
-      onSelect,
-      onMeshSelect,
-      highlightGeometry,
-      clearHoveredState,
-      applyHoveredState,
-    });
     const applyResolvedSelection = (pendingSelection: PendingPointerSelection) => {
       armSelectionMissGuard(justSelectedRef);
-      commitPointerSelection(pendingSelection);
+      // Resolve optional handlers at dispatch time: an absent mesh handler must
+      // still allow the selection helper to fall back to onSelect.
+      createPointerSelectionCommit({
+        toolMode,
+        mode,
+        robotLinks,
+        robotJoints,
+        resolveDirectIkHandleLink,
+        onSelect: interactionCallbacksRef.current.onSelect,
+        onMeshSelect: interactionCallbacksRef.current.onMeshSelect,
+        highlightGeometry,
+        clearHoveredState,
+        applyHoveredState,
+      })(pendingSelection);
     };
 
     const syncActiveJointFromCurrentSelection = () => {
@@ -591,7 +596,7 @@ export function useMouseInteraction({
         return;
       }
       if (hitResolution.kind === 'paint') {
-        onPaintFace?.(hitResolution.hit);
+        interactionCallbacksRef.current.onPaintFace?.(hitResolution.hit);
         pointerInteractionHitTargetRef.current = true;
         clearHoveredState();
         e.preventDefault();
@@ -728,7 +733,7 @@ export function useMouseInteraction({
       },
       setOrbitControlsEnabled,
       invalidate: () => invalidateRef.current(),
-      onSelect,
+      onSelect: (...args) => interactionCallbacksRef.current.onSelect?.(...args),
     });
 
     const handleWindowBlur = () => {
@@ -766,7 +771,7 @@ export function useMouseInteraction({
         (hoveredLinkRef as any).currentMesh = null;
         (hoveredLinkRef as any).currentObjectIndex = null;
         (hoveredLinkRef as any).currentSubType = null;
-        onHover?.(null, null);
+        interactionCallbacksRef.current.onHover?.(null, null);
       }
 
       if (shouldFinalizeInteraction) {
@@ -815,10 +820,6 @@ export function useMouseInteraction({
     robot,
     robotVersion,
     orbitControls,
-    onHover,
-    onSelect,
-    onMeshSelect,
-    onPaintFace,
     highlightGeometry,
     toolMode,
     measureMode,
