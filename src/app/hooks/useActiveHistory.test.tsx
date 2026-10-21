@@ -32,11 +32,11 @@ function createRobot(name: string): RobotData {
   };
 }
 
-function renderHistory(): ReturnType<typeof useActiveHistory> {
+function renderHistory(override?: Parameters<typeof useActiveHistory>[0]): ReturnType<typeof useActiveHistory> {
   let hookValue: ReturnType<typeof useActiveHistory> | null = null;
 
   function Probe() {
-    hookValue = useActiveHistory();
+    hookValue = useActiveHistory(override);
     return null;
   }
 
@@ -159,4 +159,27 @@ test('undo and redo reconcile valid URDF text instead of discarding its draft', 
   assert.ok(draft);
   assert.match(draft.content, /name="after"/);
   assert.match(draft.content, /data-vendor="kept"/);
+});
+
+
+test('alternate history never changes the model and loading never falls through', () => {
+  useWorkspaceStore.getState().replaceComponentRobot('component', createRobot('after'));
+  const model = useWorkspaceStore.getState().workspace;
+  let undone = 0;
+  let redone = 0;
+  const alternate = { undo: () => { undone++; }, redo: () => { redone++; }, canUndo: true, canRedo: true };
+  const history = renderHistory(alternate);
+  history.undo();
+  history.redo();
+  assert.equal(undone, 1);
+  assert.equal(redone, 1);
+  assert.equal(useWorkspaceStore.getState().workspace, model);
+  const loading = renderHistory(null);
+  assert.equal(loading.canUndo, false);
+  assert.equal(loading.canRedo, false);
+  loading.undo();
+  loading.redo();
+  assert.equal(useWorkspaceStore.getState().workspace, model);
+  renderHistory().undo();
+  assert.equal(useWorkspaceStore.getState().workspace.components.component.robot.name, 'before');
 });

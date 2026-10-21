@@ -14,30 +14,27 @@ import {
   validateEntityRef,
 } from '@/store/selectionStore';
 import { useWorkspaceStore } from '@/store/workspaceStore';
-import { useActiveHistory } from './useActiveHistory';
+import { useActiveHistory, type HistoryActions } from './useActiveHistory';
 import { synchronizeWorkspaceComponentSourceDrafts } from './workspace-source-sync/component_source_draft_sync';
 
 /**
  * Hook for keyboard shortcuts (undo/redo)
  */
-export function useKeyboardShortcuts() {
-  const { undo, redo, canUndo, canRedo } = useActiveHistory();
+export function useKeyboardShortcuts(historyOverride?: HistoryActions | null) {
+  const { undo, redo, canUndo, canRedo } = useActiveHistory(historyOverride);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Undo: Ctrl+Z
-      if ((e.metaKey || e.ctrlKey) && e.key === 'z' && !e.shiftKey) {
-        if (canUndo) {
-          undo();
-          e.preventDefault();
-        }
-      }
-      // Redo: Ctrl+Shift+Z
-      if ((e.metaKey || e.ctrlKey) && e.key === 'z' && e.shiftKey) {
-        if (canRedo) {
-          redo();
-          e.preventDefault();
-        }
+      if (e.defaultPrevented || e.isComposing || e.altKey) return;
+      const target = e.target;
+      if (target instanceof Element && target.closest('input, textarea, select, [contenteditable]:not([contenteditable="false"]), [role="textbox"]')) return;
+      if (!(e.metaKey || e.ctrlKey) || e.key.toLowerCase() !== 'z') return;
+      // Consume the editor shortcut even at the end of its history.
+      e.preventDefault();
+      if (e.shiftKey) {
+        if (canRedo) redo();
+      } else if (canUndo) {
+        undo();
       }
     };
 

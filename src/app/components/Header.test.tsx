@@ -226,7 +226,11 @@ test('Header keeps alternate actions within the responsive inline budget', () =>
         );
         assert.match(markup, /aria-label="Switch Language"/);
         assert.match(markup, /lucide-moon|lucide-sun|lucide-monitor/);
-        assert.doesNotMatch(markup, /aria-label="More"/);
+        if (width === 1280) {
+          assert.match(markup, /aria-label="More"/, 'collapsed history remains available in overflow');
+        } else {
+          assert.doesNotMatch(markup, /aria-label="More"/);
+        }
       }
       if (width >= 1100) {
         assert.match(secondaryAction, />Secondary action</, 'roomy headers should display the secondary label');
@@ -363,5 +367,39 @@ test('Header places settings before the host secondary action on wide and mobile
     } else {
       Reflect.deleteProperty(globalThis, 'window');
     }
+  }
+});
+
+
+test('both surfaces share inline history placement and alternate availability', () => {
+  const originalWindow = Object.getOwnPropertyDescriptor(globalThis, 'window');
+  try {
+    for (const width of [1800, 1024, 640, 375]) {
+      Object.defineProperty(globalThis, 'window', { configurable: true, value: { innerWidth: width } });
+      for (const canUndo of [true, false]) {
+        const primary = renderHeader(true);
+        const alternate = renderHeader(true, {
+          surfaceModeSelector: {
+            ...surfaceModeSelector, current: 'alternate',
+            alternateControls: { history: { undo: () => {}, redo: () => {}, canUndo, canRedo: !canUndo } },
+          },
+        });
+        assert.equal(alternate.includes('data-testid="history-undo"'), primary.includes('data-testid="history-undo"'));
+        if (width === 1800) {
+          const undoTag = alternate.match(/<button[^>]*data-testid="history-undo"[^>]*>/)?.[0];
+          const redoTag = alternate.match(/<button[^>]*data-testid="history-redo"[^>]*>/)?.[0];
+          assert.ok(undoTag);
+          assert.ok(redoTag);
+          assert.equal( /\sdisabled(?:=|\s|>)/.test(undoTag), !canUndo);
+          assert.equal( /\sdisabled(?:=|\s|>)/.test(redoTag), canUndo);
+          assert.match(undoTag, /aria-label="Undo"/);
+        } else {
+          assert.match(alternate, /aria-label="More"/);
+        }
+      }
+    }
+  } finally {
+    if (originalWindow) Object.defineProperty(globalThis, 'window', originalWindow);
+    else Reflect.deleteProperty(globalThis, 'window');
   }
 });
