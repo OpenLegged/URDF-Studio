@@ -168,7 +168,7 @@ GEMINI_API_KEY=
 团队共用的公开默认值写入已跟踪的 `.env`，各环境共用的公开配置写入已跟踪的
 `.env.dev` / `.env.fat` / `.env.production`；没有 local 文件也能直接启动和构建。
 `.env.<mode>.local` 仅作可选的个人临时覆盖，不入库；通用 `.env.local` 不受支持。
-读取顺序：`.env` → `.env.<mode>` → `.env.<mode>.local` → 进程变量。
+读取顺序：`.env` → `.env.<mode>` → `.env.<mode>.local` → 进程变量。所选 mode 的 `.env.<mode>` 不存在时启动和构建直接失败。
 开源 core 不保存平台私有配置或商业密钥；Vite 注入的 provider 值会进入浏览器。个人 BYOK
 密钥仅限可信本机 dev，可用 `.env.dev.local` 或进程变量注入，不能当作服务端密钥。
 

@@ -8,5 +8,8 @@ export function assertEnvMode(mode, root) {
   if (existsSync(path.join(root, '.env.local'))) {
     throw new Error('Move .env.local team settings to .env.<mode> and optional personal overrides to .env.<mode>.local; shared local overrides are not supported.');
   }
+  if (!existsSync(path.join(root, `.env.${mode}`))) {
+    throw new Error(`Missing environment profile: .env.${mode}`);
+  }
   return mode;
 }

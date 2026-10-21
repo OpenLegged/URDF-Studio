@@ -36,6 +36,9 @@ test('mode-local overrides stay in their mode and process values win', () => {
     writeFileSync(path.join(dir, '.env.local'), `${key}=wrong-environment\n`);
     assert.throws(() => assertEnvMode('production', dir), /Move .env.local/);
     assert.throws(() => assertEnvMode('unknown', dir), /Unsupported environment/);
+    rmSync(path.join(dir, '.env.local'));
+    rmSync(path.join(dir, '.env.fat'));
+    assert.throws(() => assertEnvMode('fat', dir), /Missing environment profile: \.env\.fat/);
   } finally {
     if (previous === undefined) delete process.env[key]; else process.env[key] = previous;
     rmSync(dir, { recursive: true, force: true });
@@ -77,6 +80,7 @@ test('CLI wrappers reject environment overrides before starting Vite or build ta
     for (const file of ['preview.mjs', 'build.mjs', 'env-mode.mjs']) {
       copyFileSync(path.join(root, scriptDir, file), path.join(dir, scriptDir, file));
     }
+    writeFileSync(path.join(dir, '.env.fat'), '');
     writeFileSync(path.join(dir, 'dist/.build-environment.json'), JSON.stringify({ mode: 'fat' }));
     writeFileSync(path.join(dir, 'node_modules/vite/bin/vite.js'),
       "require('node:fs').writeFileSync('vite-started', 'true'); process.exit(17);\n");

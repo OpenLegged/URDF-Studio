@@ -169,7 +169,7 @@ Team-wide public defaults belong in tracked `.env`; shared public settings for e
 in tracked `.env.dev`, `.env.fat`, or `.env.production`. These profiles work without any local file.
 An ignored `.env.<mode>.local` is optional and only holds temporary personal overrides; the shared
 `.env.local` file is unsupported. Loading order is `.env` → `.env.<mode>` → `.env.<mode>.local`
-→ process variables. This open-source core must not contain platform-private settings or commercial
+→ process variables. A missing `.env.<mode>` for the selected mode fails startup and builds. This open-source core must not contain platform-private settings or commercial
 keys. Provider values injected by Vite are visible in the browser; personal keys are only suitable
 for trusted local BYOK use through `.env.dev.local` or process variables, not server-side secrets.
 
