@@ -28,6 +28,7 @@ export function TreeEditorDialogs({
   return (
     <>
       <Dialog
+        closeLabel={t.close}
         isOpen={deleteAllOpen}
         onClose={onCloseDeleteAll}
         title={t.deleteAllLibraryFilesConfirmTitle}
@@ -49,6 +50,7 @@ export function TreeEditorDialogs({
       </Dialog>
 
       <Dialog
+        closeLabel={t.close}
         isOpen={loadRobotOpen}
         onClose={onCloseLoadRobot}
         title={t.simpleModeSwitchDraftConfirmTitle}
