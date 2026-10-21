@@ -6,6 +6,7 @@ import { createRoot } from 'react-dom/client';
 import { JSDOM } from 'jsdom';
 
 import { Tooltip } from './Tooltip';
+import { Dialog } from './Dialog';
 
 function installDom() {
   const dom = new JSDOM('<!doctype html><html><body><div id="root"></div></body></html>', {
@@ -52,6 +53,88 @@ function mockRect(element: Element, rect: Partial<DOMRect>) {
       toJSON: () => ({}),
     }) as DOMRect;
 }
+
+test('dialog tooltips stay in their owning layer and unmount with the dialog', async () => {
+  const dom = installDom();
+  const container = dom.window.document.getElementById('root');
+  assert.ok(container);
+  const root = createRoot(container);
+
+  function renderDialogs(childOpen: boolean) {
+    return (
+      <Dialog isOpen onClose={() => {}} title="Parent" closeLabel="Close parent" zIndexClassName="z-[1200]">
+        <Dialog
+          isOpen={childOpen}
+          onClose={() => {}}
+          title="Child"
+          closeLabel="Close child"
+          zIndexClassName="z-[1300]"
+        >
+          Child content
+        </Dialog>
+      </Dialog>
+    );
+  }
+
+  async function hoverClose(title: string, label: string) {
+    const dialog = dom.window.document.querySelector(`[role="dialog"][aria-label="${title}"]`);
+    assert.ok(dialog);
+    const trigger = dialog.querySelector(`button[aria-label="${label}"]:not([tabindex="-1"])`)?.parentElement;
+    assert.ok(trigger);
+    await act(async () => {
+      trigger.dispatchEvent(new dom.window.MouseEvent('mouseenter', { bubbles: false }));
+    });
+    const tooltip = dom.window.document.querySelector('[role="tooltip"]');
+    assert.ok(tooltip);
+    assert.equal(tooltip.textContent, label);
+    assert.equal(tooltip.parentElement, dialog);
+    assert.equal(tooltip.closest('.overflow-hidden'), null);
+  }
+
+  try {
+    await act(async () => { root.render(renderDialogs(true)); });
+    await hoverClose('Child', 'Close child');
+    await act(async () => { root.render(renderDialogs(false)); });
+    assert.equal(dom.window.document.querySelector('[role="tooltip"]'), null);
+    await hoverClose('Parent', 'Close parent');
+  } finally {
+    await act(async () => { root.unmount(); });
+    assert.equal(dom.window.document.querySelector('[role="tooltip"]'), null);
+    dom.window.close();
+  }
+});
+
+test('activating a tooltip trigger dismisses its hint without swallowing the action', async () => {
+  const dom = installDom();
+  const container = dom.window.document.getElementById('root');
+  assert.ok(container);
+  const root = createRoot(container);
+  let activations = 0;
+
+  try {
+    await act(async () => {
+      root.render(
+        <Tooltip content="Open external page">
+          <button onClick={() => { activations += 1; }}>Open</button>
+        </Tooltip>,
+      );
+    });
+    const button = container.querySelector('button');
+    const trigger = button?.parentElement;
+    assert.ok(button);
+    assert.ok(trigger);
+    await act(async () => {
+      trigger.dispatchEvent(new dom.window.MouseEvent('mouseenter', { bubbles: false }));
+    });
+    assert.ok(dom.window.document.querySelector('[role="tooltip"]'));
+    await act(async () => { button.click(); });
+    assert.equal(activations, 1);
+    assert.equal(dom.window.document.querySelector('[role="tooltip"]'), null);
+  } finally {
+    await act(async () => { root.unmount(); });
+    dom.window.close();
+  }
+});
 
 test('Tooltip portals floating content outside clipped ancestors', async () => {
   const dom = installDom();

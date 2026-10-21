@@ -36,6 +36,7 @@ export const DisconnectedWorkspaceUrdfExportDialog: React.FC<DisconnectedWorkspa
 
   return (
     <Dialog
+      closeLabel={t.close}
       isOpen={isOpen}
       onClose={() => {
         if (!isExporting) {

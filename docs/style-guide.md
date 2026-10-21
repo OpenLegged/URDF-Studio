@@ -1,6 +1,6 @@
 # UI 样式与可访问性
 
-> 最后更新：2026-10-16 | 覆盖源码：`src/styles/`、`src/store/uiStore.ts`、`src/shared/components/ui/`、`src/shared/hooks/useDraggableWindow.ts`、`src/app/components/header/`、`src/app/components/settings/`
+> 最后更新：2026-10-21 | 覆盖源码：`src/styles/`、`src/store/uiStore.ts`、`src/shared/components/ui/`、`src/shared/hooks/useDraggableWindow.ts`、`src/app/components/header/`、`src/app/components/settings/`
 > 交叉引用：[architecture.md](architecture.md)
 
 ## 1. 关键入口
@@ -21,6 +21,11 @@
 - 小字号文本避免低对比度颜色
 
 ## 2.1 控件复用边界
+
+- Dialog 内的 Tooltip portal 到所属弹窗的外层根节点，避开面板裁剪并保留弹窗层级；普通页面提示仍 portal 到 body。不要通过抬高全局提示 z-index 让底层提示穿过上层模态窗口。
+- 业务弹窗须通过 `closeLabel={t.close}` 传入本地化的关闭文案，避免中文界面回退到组件默认的英文提示。
+- Header 宿主动作的悬停/聚焦说明使用共享 Tooltip，`HeaderAction.title` 仅作为提示文案与无障碍名称，不透传成 DOM 原生 `title`。
+- Tooltip 在触发控件被点击（含键盘激活产生的 click）时关闭，避免打开新页面或面板后保留旧提示。
 
 - Header 的宿主 secondary action 在 primary / alternate 工作区共用标签宽度规则；宽屏显示文字，紧凑宽度收起文字，不按工作区强制隐藏。
 - 顶栏保持 40px；右侧按产品/截图/反馈/更多、语言、主题、设置、宿主 secondary action 排列。设置与宿主动作在窄屏保持直接可用，其他操作按原有更多菜单折叠，反馈链接在手机收入更多菜单；左侧菜单缩小横向留白。图标按钮为 32×32px、6px 圆角、16px glyph，语言按钮仅显示图标；宿主动作使用中性 ghost 样式，文字使用 `text-ui-control` 并在 160px 最大宽度内省略。

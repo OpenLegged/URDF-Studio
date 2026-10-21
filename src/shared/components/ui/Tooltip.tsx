@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { createContext, useContext, useState } from 'react';
 import {
   autoUpdate,
   flip,
@@ -16,6 +16,9 @@ import { createPortal } from 'react-dom';
 
 type TooltipSide = 'top' | 'bottom';
 type TooltipAlign = 'start' | 'center' | 'end';
+
+// Dialogs provide an unclipped root in their own stacking context.
+export const TooltipPortalContext = createContext<HTMLElement | null>(null);
 
 interface TooltipProps {
   content: React.ReactNode;
@@ -72,6 +75,7 @@ export function Tooltip({
 }: TooltipProps) {
   ensureFloatingUiDomGlobals();
 
+  const portalRoot = useContext(TooltipPortalContext);
   const [isOpen, setIsOpen] = useState(false);
   const { context, floatingStyles, refs } = useFloating({
     open: isOpen,
@@ -83,7 +87,7 @@ export function Tooltip({
   });
   const hover = useHover(context, { mouseOnly: true, move: false });
   const focus = useFocus(context);
-  const dismiss = useDismiss(context);
+  const dismiss = useDismiss(context, { referencePress: true, referencePressEvent: 'click' });
   const role = useRole(context, { role: 'tooltip' });
   const { getFloatingProps, getReferenceProps } = useInteractions([hover, focus, dismiss, role]);
   const { 'aria-describedby': tooltipDescriptionId, ...referenceProps } =
@@ -120,7 +124,7 @@ export function Tooltip({
             >
               {content}
             </span>,
-            document.body,
+            portalRoot ?? document.body,
           )
         : null}
     </span>

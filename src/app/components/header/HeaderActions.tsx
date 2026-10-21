@@ -7,7 +7,7 @@ import {
   Settings,
   Sun,
 } from 'lucide-react';
-import { Button, IconButton } from '@/shared/components/ui';
+import { Button, IconButton, Tooltip } from '@/shared/components/ui';
 import type { Theme } from '@/types';
 import type {
   HeaderAction,
@@ -57,18 +57,19 @@ function InlineActionButton({ action, show, showLabel }: InlineActionButtonProps
   }
 
   return (
-    <Button
-      type="button"
-      onClick={action.onClick}
-      variant="ghost"
-      size="xs"
-      className="h-8 whitespace-nowrap px-2 text-system-blue hover:bg-system-blue-solid hover:text-white"
-      title={action.title ?? action.label}
-      aria-label={action.title ?? action.label}
-    >
-      <ActionIcon className="w-4 h-4" />
-      {showLabel ? <span className="whitespace-nowrap">{action.label}</span> : null}
-    </Button>
+    <Tooltip content={action.title ?? action.label}>
+      <Button
+        type="button"
+        onClick={action.onClick}
+        variant="ghost"
+        size="xs"
+        className="h-8 whitespace-nowrap px-2 text-system-blue hover:bg-system-blue-solid hover:text-white"
+        aria-label={action.title ?? action.label}
+      >
+        <ActionIcon className="w-4 h-4" />
+        {showLabel ? <span className="whitespace-nowrap">{action.label}</span> : null}
+      </Button>
+    </Tooltip>
   );
 }
 
@@ -80,18 +81,19 @@ function SecondaryActionButton({ action, showLabel }: Omit<InlineActionButtonPro
   }
 
   return (
-    <Button
-      type="button"
-      onClick={action.onClick}
-      variant="ghost"
-      size="icon"
-      className={`h-8 w-8 shrink-0 gap-1.5 p-0 text-ui-control font-medium ${showLabel ? 'sm:w-auto sm:max-w-[160px] sm:px-2.5' : ''}`.trim()}
-      title={action.title ?? action.label}
-      aria-label={action.title ?? action.label}
-    >
-      <ActionIcon className="h-4 w-4 shrink-0" />
-      {showLabel ? <span className="hidden min-w-0 truncate sm:block">{action.label}</span> : null}
-    </Button>
+    <Tooltip content={action.title ?? action.label}>
+      <Button
+        type="button"
+        onClick={action.onClick}
+        variant="ghost"
+        size="icon"
+        className={`h-8 w-8 shrink-0 gap-1.5 p-0 text-ui-control font-medium ${showLabel ? 'sm:w-auto sm:max-w-[160px] sm:px-2.5' : ''}`.trim()}
+        aria-label={action.title ?? action.label}
+      >
+        <ActionIcon className="h-4 w-4 shrink-0" />
+        {showLabel ? <span className="hidden min-w-0 truncate sm:block">{action.label}</span> : null}
+      </Button>
+    </Tooltip>
   );
 }
 
