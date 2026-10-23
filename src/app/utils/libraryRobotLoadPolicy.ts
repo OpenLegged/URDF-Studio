@@ -7,16 +7,14 @@ export type LibraryRobotLoadAction =
   | 'blocked';
 
 interface ResolveLibraryRobotLoadActionOptions {
-  selectedFileName: string | null | undefined;
   shouldPreviewCurrentState: boolean;
-  hasSimpleModeSourceEdits: boolean;
+  hasWorkspaceEdits: boolean;
   intent: LibraryRobotLoadIntent;
 }
 
 export function resolveLibraryRobotLoadAction({
-  selectedFileName,
   shouldPreviewCurrentState,
-  hasSimpleModeSourceEdits,
+  hasWorkspaceEdits,
   intent,
 }: ResolveLibraryRobotLoadActionOptions): LibraryRobotLoadAction {
   if (intent === 'preview') {
@@ -28,7 +26,7 @@ export function resolveLibraryRobotLoadAction({
   }
 
   const shouldGuardLibraryLoad =
-    !shouldPreviewCurrentState && Boolean(selectedFileName) && hasSimpleModeSourceEdits;
+    !shouldPreviewCurrentState && hasWorkspaceEdits;
 
   if (!shouldGuardLibraryLoad || intent === 'discard') {
     return 'load';
@@ -36,10 +34,6 @@ export function resolveLibraryRobotLoadAction({
 
   if (intent === 'direct') {
     return 'needs-preview-or-discard-confirm';
-  }
-
-  if (!selectedFileName) {
-    return 'blocked';
   }
 
   return 'blocked';

@@ -10,17 +10,15 @@ import { resolveLibraryRobotLoadAction } from '../utils/libraryRobotLoadPolicy';
 
 interface UseLibraryRobotLoadRequestOptions {
   handlePreviewFileWithFeedback: (file: RobotFile) => void;
-  hasSimpleModeSourceEdits: boolean;
+  hasWorkspaceEdits: boolean;
   onLoadRobot: AppLayoutProps['onLoadRobot'];
-  selectedFile: RobotFile | null;
   shouldPreviewLibraryRobotLoad: boolean;
 }
 
 export function useLibraryRobotLoadRequest({
   handlePreviewFileWithFeedback,
-  hasSimpleModeSourceEdits,
+  hasWorkspaceEdits,
   onLoadRobot,
-  selectedFile,
   shouldPreviewLibraryRobotLoad,
 }: UseLibraryRobotLoadRequestOptions) {
   return useCallback(
@@ -29,9 +27,8 @@ export function useLibraryRobotLoadRequest({
       intent: LibraryRobotLoadIntent,
     ): Promise<LibraryRobotLoadResult> => {
       const loadAction = resolveLibraryRobotLoadAction({
-        selectedFileName: selectedFile?.name,
         shouldPreviewCurrentState: shouldPreviewLibraryRobotLoad,
-        hasSimpleModeSourceEdits,
+        hasWorkspaceEdits,
         intent,
       });
 
@@ -53,9 +50,8 @@ export function useLibraryRobotLoadRequest({
     },
     [
       handlePreviewFileWithFeedback,
-      hasSimpleModeSourceEdits,
+      hasWorkspaceEdits,
       onLoadRobot,
-      selectedFile,
       shouldPreviewLibraryRobotLoad,
     ],
   );

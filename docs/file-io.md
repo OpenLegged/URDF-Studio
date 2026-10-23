@@ -130,6 +130,7 @@
 - Tree 永远消费 Assembly；单组件时隐藏 Assembly/Bridges 冗余层并默认展开唯一 component
 - 文件加入组装入口：右键菜单"添加"、文件行右侧绿色按钮
 - 单击机器人文件原子替换为单组件 workspace；显式"添加"才追加，允许同一 source 多实例
+- 素材库替换前复用 canonical workspace 的未保存判定（包括 AI、属性、源码和拓扑修改）：有修改时先提供预览、取消或明确丢弃。成功保存/导出后可再次加载原模板；编辑不回写素材库模板。
 - PropertyEditor 按统一 `WorkspaceSelection` 直接定位 component entity 或 bridge，不把 bridge 伪装成 joint
 
 ## 6. 跨域 Handoff 接收端

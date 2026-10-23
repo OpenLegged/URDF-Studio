@@ -42,6 +42,10 @@ VITE_AI_BACKEND_URL=/api/ai/urdf-studio
 - 鉴权可插拔：宿主壳通过 `setAiBackendAuthTokenProvider(() => token)` 注册用户 JWT 提供者
   （推荐从窄 `src/hostIntegrations.ts` facade 导入；feature 入口保留兼容导出），请求以 `Authorization: Bearer` 携带；自部署自建代理
   时可不注册。
+- 托管修改使用完整的机器人几何、物理与资源上下文。回复中同 ID 实体未返回的字段继承当前模型，
+  保留 meshPath、缩放、位姿、惯量、独立碰撞和附加几何；只有显式字段才覆盖。返回的 links/joints
+  是完整成员集合（支持删除），整个集合字段省略时才保留原集合。明确 generation 则创建新模型。
+  外部回复经 canonical 校验后才生成提案。BYOK 工具调用失败会报告错误，不再自动整模重生成。
 - 服务端提示词模板是本仓 `config/aiPromptTemplates.generated.ts` 的镜像（BotPilot
   `workflows/urdf_studio/prompt_templates.py`）；改模板时两侧一起更新。
 
