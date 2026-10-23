@@ -1,17 +1,9 @@
-/**
- * Resolve an AI modification proposal: run the surgical tool-calling agent,
- * falling back to the legacy full-robot regeneration only for non-tool-calling
- * errors (network, timeout, etc.). When the endpoint rejects tool-calling,
- * the user gets a clear message instead of a silent fallback that clobbers
- * mesh data.
- *
- * Boundary: feature layer. Imports `@/core/...` (none here), same-feature
- * services (`aiService`, `aiAgent`), `@/shared/i18n`, `@/types`.
- */
+/** Resolve a proposal using the configured transport; tool failures never regenerate the model. */
 
 import type { Language } from '@/shared/i18n';
 import type { MotorSpec, RobotData, RobotState } from '@/types';
 import { generateRobotFromPromptWithOptions } from '../services/aiService';
+import { resolveAiRuntimeEnv } from '../services/aiRuntimeEnv';
 import { runRobotEditAgent, AgentToolsUnsupportedError } from '../services/aiAgent';
 import type { AgentConversationTurn } from '../services/agentEngine';
 import type { AgentRunEvent } from '../agentRuntimeTypes';
@@ -29,7 +21,7 @@ export type ModificationProposal =
 
 export interface ResolveModificationProposalArgs {
   message: string;
-  /** Current robot (with selection stripped) for the legacy fallback path. */
+  /** Current robot (with selection stripped) for managed generation. */
   currentRobot: RobotState;
   /** Live robot data fed to the agent (re-resolved at submit time). */
   robotData: RobotData;
@@ -50,7 +42,7 @@ export interface ResolveModificationProposalArgs {
 
 /**
  * Returns `change` when there is an edited robot to apply, `no-change` when the
- * model made no tool calls (or the fallback returned only advice), and `aborted`
+ * model made no tool calls (or managed generation returned only advice), and `aborted`
  * when the user cancelled mid-flight (caller should render nothing).
  */
 export async function resolveModificationProposal(
@@ -69,6 +61,22 @@ export async function resolveModificationProposal(
     onToolCall,
     additionalCapabilities,
   } = args;
+  if (signal.aborted) return { kind: 'aborted' };
+  const runtime = resolveAiRuntimeEnv();
+  if (runtime.backendUrl || !runtime.apiKey) {
+    const response = await generateRobotFromPromptWithOptions({
+      prompt: message,
+      currentRobot,
+      motorLibrary,
+      lang,
+      signal,
+    });
+    if (signal.aborted) return { kind: 'aborted' };
+    if (!response?.robotData) {
+      return { kind: 'no-change', explanation: response?.explanation ?? '' };
+    }
+    return { kind: 'change', robot: response.robotData, explanation: response.explanation ?? '' };
+  }
   try {
     const agentResult = await runRobotEditAgent(message, robotData, lang, {
       signal,
@@ -97,37 +105,12 @@ export async function resolveModificationProposal(
       return { kind: 'aborted' };
     }
     if (agentError instanceof AgentToolsUnsupportedError) {
-      const errorMessage = (agentError as Error).message || '';
-      if (/api.?key/i.test(errorMessage)) {
-        const response = await generateRobotFromPromptWithOptions({
-          prompt: message,
-          currentRobot,
-          motorLibrary,
-          lang,
-          signal,
-        });
-        if (!response || !response.robotData) {
-          return { kind: 'no-change', explanation: response?.explanation ?? '' };
-        }
-        return { kind: 'change', robot: response.robotData, explanation: response.explanation ?? '' };
-      }
       const hint =
         lang === 'zh'
           ? '当前模型不支持工具调用（function calling），无法执行精准修改。请在环境变量中配置支持 function calling 的模型（如 gpt-4o、gpt-4.1-mini 等）。'
           : 'The current model does not support tool calling (function calling). Please configure a model that supports function calling (e.g., gpt-4o, gpt-4.1-mini) in your environment variables.';
       return { kind: 'no-change', explanation: hint };
     }
-    console.warn('AI edit agent unavailable, falling back to generation', agentError);
-    const response = await generateRobotFromPromptWithOptions({
-      prompt: message,
-      currentRobot,
-      motorLibrary,
-      lang,
-      signal,
-    });
-    if (!response || !response.robotData) {
-      return { kind: 'no-change', explanation: response?.explanation ?? '' };
-    }
-    return { kind: 'change', robot: response.robotData, explanation: response.explanation ?? '' };
+    throw agentError;
   }
 }

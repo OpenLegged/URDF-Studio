@@ -13,6 +13,7 @@ import { setRegressionBeforeUnloadPromptSuppressed } from '@/shared/debug/regres
 import { markUnsavedChangesBaselineSaved } from '@/app/utils/unsavedChangesBaseline';
 
 import { useUnsavedChangesPrompt } from './useUnsavedChangesPrompt.ts';
+import { useLibraryRobotLoadRequest } from './useLibraryRobotLoadRequest.ts';
 
 function restoreGlobalProperty<T extends keyof typeof globalThis>(
   key: T,
@@ -375,6 +376,61 @@ test('useUnsavedChangesPrompt can suppress beforeunload warnings for regression 
     await new Promise<void>((resolve) => {
       setTimeout(() => resolve(), 0);
     });
+    void domEnvironment;
+  }
+});
+
+
+test('canonical edits guard library replacement until explicit discard or a successful save', async () => {
+  const domEnvironment = installDomEnvironment();
+  resetStoresToBaseline();
+  const container = document.createElement('div');
+  document.body.appendChild(container);
+  const root = createRoot(container);
+  let requestLoad: ReturnType<typeof useLibraryRobotLoadRequest> = async () => 'blocked';
+  let loadCount = 0;
+  let previewCount = 0;
+  const sourceFile = { name: 'demo.urdf', format: 'urdf' as const, content: '<robot name="demo" />' };
+
+  function Probe() {
+    const { hasUnsavedChanges } = useUnsavedChangesPrompt();
+    requestLoad = useLibraryRobotLoadRequest({
+      hasWorkspaceEdits: hasUnsavedChanges,
+      shouldPreviewLibraryRobotLoad: false,
+      handlePreviewFileWithFeedback: () => { previewCount += 1; },
+      onLoadRobot: () => {
+        loadCount += 1;
+        return { status: 'committed', component: useWorkspaceStore.getState().workspace.components.component_demo! };
+      },
+    });
+    return null;
+  }
+
+  try {
+    flushSync(() => root.render(React.createElement(Probe)));
+    const robot = structuredClone(useWorkspaceStore.getState().workspace.components.component_demo!.robot);
+    assert.ok(robot.joints.joint_1?.limit);
+    robot.joints.joint_1.limit.upper = 0.75;
+    flushSync(() => {
+      useWorkspaceStore.getState().replaceComponentRobot('component_demo', robot, { label: 'Apply AI modification' });
+    });
+
+    assert.equal(await requestLoad(sourceFile, 'direct'), 'needs-preview-or-discard-confirm');
+    assert.equal(loadCount, 0, 'clicking the current library template must not replace the AI edit');
+    assert.equal(await requestLoad(sourceFile, 'preview'), 'loaded');
+    assert.equal(previewCount, 1);
+    assert.equal(loadCount, 0);
+    assert.equal(useWorkspaceStore.getState().workspace.components.component_demo!.robot.joints.joint_1?.limit?.upper, 0.75);
+    assert.equal(await requestLoad(sourceFile, 'discard'), 'loaded');
+    assert.equal(loadCount, 1, 'only an explicit discard may load over an unsaved edit');
+
+    flushSync(() => markUnsavedChangesBaselineSaved());
+    assert.equal(await requestLoad(sourceFile, 'direct'), 'loaded');
+    assert.equal(loadCount, 2, 'successfully saved work may be replaced with the original library template');
+  } finally {
+    flushSync(() => root.unmount());
+    container.remove();
+    await new Promise<void>((resolve) => setTimeout(resolve, 0));
     void domEnvironment;
   }
 });

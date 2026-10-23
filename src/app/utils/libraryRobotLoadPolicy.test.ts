@@ -6,9 +6,8 @@ import { resolveLibraryRobotLoadAction } from './libraryRobotLoadPolicy.ts';
 test('resolveLibraryRobotLoadAction keeps direct library model clicks as loads when the current state can be replaced directly', () => {
   assert.equal(
     resolveLibraryRobotLoadAction({
-      selectedFileName: 'robots/current.urdf',
       shouldPreviewCurrentState: false,
-      hasSimpleModeSourceEdits: false,
+      hasWorkspaceEdits: false,
       intent: 'direct',
     }),
     'load',
@@ -18,9 +17,8 @@ test('resolveLibraryRobotLoadAction keeps direct library model clicks as loads w
 test('resolveLibraryRobotLoadAction previews direct library model clicks when the current workspace has meaningful edits', () => {
   assert.equal(
     resolveLibraryRobotLoadAction({
-      selectedFileName: 'robots/current.urdf',
       shouldPreviewCurrentState: true,
-      hasSimpleModeSourceEdits: false,
+      hasWorkspaceEdits: false,
       intent: 'direct',
     }),
     'preview',
@@ -30,9 +28,8 @@ test('resolveLibraryRobotLoadAction previews direct library model clicks when th
 test('resolveLibraryRobotLoadAction previews from the unsaved-edit confirmation without switching files', () => {
   assert.equal(
     resolveLibraryRobotLoadAction({
-      selectedFileName: 'robots/current.urdf',
       shouldPreviewCurrentState: false,
-      hasSimpleModeSourceEdits: true,
+      hasWorkspaceEdits: true,
       intent: 'preview',
     }),
     'preview',
@@ -42,9 +39,8 @@ test('resolveLibraryRobotLoadAction previews from the unsaved-edit confirmation 
 test('resolveLibraryRobotLoadAction reloads the already selected model when replacement is safe', () => {
   assert.equal(
     resolveLibraryRobotLoadAction({
-      selectedFileName: 'robots/current.urdf',
       shouldPreviewCurrentState: true,
-      hasSimpleModeSourceEdits: false,
+      hasWorkspaceEdits: false,
       intent: 'direct',
     }),
     'preview',
@@ -54,9 +50,8 @@ test('resolveLibraryRobotLoadAction reloads the already selected model when repl
 test('resolveLibraryRobotLoadAction reloads the already selected model directly when clean', () => {
   assert.equal(
     resolveLibraryRobotLoadAction({
-      selectedFileName: 'robots/current.urdf',
       shouldPreviewCurrentState: false,
-      hasSimpleModeSourceEdits: false,
+      hasWorkspaceEdits: false,
       intent: 'direct',
     }),
     'load',
@@ -66,9 +61,8 @@ test('resolveLibraryRobotLoadAction reloads the already selected model directly 
 test('resolveLibraryRobotLoadAction still guards same-source replacement with unsaved edits', () => {
   assert.equal(
     resolveLibraryRobotLoadAction({
-      selectedFileName: 'robots/current.urdf',
       shouldPreviewCurrentState: false,
-      hasSimpleModeSourceEdits: true,
+      hasWorkspaceEdits: true,
       intent: 'direct',
     }),
     'needs-preview-or-discard-confirm',
@@ -78,9 +72,8 @@ test('resolveLibraryRobotLoadAction still guards same-source replacement with un
 test('resolveLibraryRobotLoadAction asks for preview or discard before replacing unsaved source edits', () => {
   assert.equal(
     resolveLibraryRobotLoadAction({
-      selectedFileName: 'robots/current.urdf',
       shouldPreviewCurrentState: false,
-      hasSimpleModeSourceEdits: true,
+      hasWorkspaceEdits: true,
       intent: 'direct',
     }),
     'needs-preview-or-discard-confirm',
@@ -90,9 +83,8 @@ test('resolveLibraryRobotLoadAction asks for preview or discard before replacing
 test('resolveLibraryRobotLoadAction discards unsaved source edits when requested', () => {
   assert.equal(
     resolveLibraryRobotLoadAction({
-      selectedFileName: 'robots/current.urdf',
       shouldPreviewCurrentState: false,
-      hasSimpleModeSourceEdits: true,
+      hasWorkspaceEdits: true,
       intent: 'discard',
     }),
     'load',

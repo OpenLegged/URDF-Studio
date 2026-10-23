@@ -68,7 +68,7 @@ function preloadExportSurface(surface: ExportSessionSurface): void {
 }
 
 export function AppContent({ extensions, onExposeActions, externalImportEnabled = true }: AppContentProps = {}) {
-  useUnsavedChangesPrompt();
+  const { hasUnsavedChanges } = useUnsavedChangesPrompt();
   useComponentSourceDraftCleanup();
 
   // Refs for file inputs
@@ -282,6 +282,7 @@ export function AppContent({ extensions, onExposeActions, externalImportEnabled 
   return (
     <>
       <AppLayout
+        hasUnsavedWorkspaceChanges={hasUnsavedChanges}
         importInputRef={importInputRef}
         importFolderInputRef={importFolderInputRef}
         onFileDrop={(files) => {

@@ -368,24 +368,14 @@ const generateRobotFromPromptRequest = async ({
     }
   }
 
+  const { selection: _selection, ...robotContext } = currentRobot
   const contextRobot = {
-    name: currentRobot.name,
-    links: Object.values(currentRobot.links).map(l => ({
-      id: l.id,
-      name: l.name,
-      visual: l.visual,
-      inertial: l.inertial
-    })),
+    ...robotContext,
+    links: Object.values(currentRobot.links),
     joints: Object.values(currentRobot.joints).map(j => ({
-      id: j.id,
-      name: j.name,
-      type: j.type,
+      ...j,
       parent: j.parentLinkId,
       child: j.childLinkId,
-      origin: j.origin,
-      axis: j.axis,
-      limit: j.limit,
-      hardware: j.hardware
     })),
     rootId: currentRobot.rootLinkId
   }
@@ -433,20 +423,18 @@ const generateRobotFromPromptRequest = async ({
 
     let finalRobotState: Partial<RobotState> | undefined = undefined
     if (data) {
-      const normalized = normalizeAIRobotResponse(data)
+      const normalized = normalizeAIRobotResponse(
+        data,
+        parsedResult.actionType === 'generation' ? undefined : robotContext,
+      )
       if (normalized) {
-        finalRobotState = {
-          name: normalized.name,
-          links: normalized.links,
-          joints: normalized.joints,
-          rootLinkId: normalized.rootLinkId as string
-        }
+        finalRobotState = normalized
       }
     }
 
     let actionType: 'modification' | 'generation' | 'advice' =
       (parsedResult.actionType as 'modification' | 'generation' | 'advice') || 'advice'
-    if (finalRobotState && (finalRobotState.links || finalRobotState.joints)) {
+    if (finalRobotState) {
       actionType =
         (parsedResult.actionType as 'modification' | 'generation' | 'advice') ||
         (Object.keys(currentRobot.links).length === 0 ? 'generation' : 'modification')

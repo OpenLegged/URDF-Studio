@@ -56,6 +56,7 @@ interface ViewerCameraSession {
 }
 
 export function AppLayout({
+  hasUnsavedWorkspaceChanges,
   importInputRef,
   importFolderInputRef,
   onFileDrop,
@@ -497,9 +498,8 @@ export function AppLayout({
   });
   const handleRequestLoadRobot = useLibraryRobotLoadRequest({
     handlePreviewFileWithFeedback,
-    hasSimpleModeSourceEdits: false,
+    hasWorkspaceEdits: hasUnsavedWorkspaceChanges,
     onLoadRobot,
-    selectedFile,
     shouldPreviewLibraryRobotLoad: false,
   });
 
