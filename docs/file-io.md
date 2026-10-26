@@ -48,6 +48,7 @@
 - `shared/utils/jointPoseExport.ts` 在打开弹窗时读取面板的最新实际关节值，生成独立快照；RAD/DEG 只影响显示，导出旋转值始终为 rad、平移值为 m。不减去 MJCF `referencePosition`，不裁剪到限位，也不舍入文件中的数值。
 - 范围与单自由度关节面板一致：revolute、continuous、prismatic，包括零值与从动关节；fixed、floating、ball、planar 不在这份标量姿态文件中。
 - JSON schema 为 `{ version: 1, robot, joints: [{ id, name, type, position, unit }] }`。CSV 列为 `joint_id,joint_name,joint_type,position,unit`，使用 UTF-8 BOM、CRLF 和带双引号的字段。ID 对应当前面板投影中的关节 ID，名称仍保留面板所用的模型名称；多个同名关节不会覆盖彼此。
+- CSV 文本字段若在前导空白或控制字符之后以 `=`、`+`、`-`、`@` 开头，会在原值前加单引号文本标记，防止模型中的名称被表格软件解释为公式；数值位置（含负值）不加标记。JSON 与工作区中的原始 ID、名称保持不变。
 - 非有限位置拒绝导出并显示错误，避免 JSON 把 NaN/Infinity 写成 null。此导出不改模型、history 或保存基线。
 - 工程保存沿用 `captureProjectExportPersistenceSnapshot` 与 `.usp 3.0` canonical workspace/history；保存前提交已完成的 pending joint motion，重新导入通过 `commitImportedProject` 恢复原始关节值。姿态不是 URDF 的 `joint origin`。
 
