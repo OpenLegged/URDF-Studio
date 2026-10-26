@@ -56,6 +56,7 @@ interface ViewerCameraSession {
 }
 
 export function AppLayout({
+  hasUnsavedWorkspaceChanges,
   importInputRef,
   importFolderInputRef,
   onFileDrop,
@@ -450,6 +451,8 @@ export function AppLayout({
     handleDragLeave,
     handleDrop,
   } = useAppLayoutEffects({
+    historyOverride: surfaceModeSelector?.current === 'alternate'
+      ? surfaceModeSelector.alternateControls?.history ?? null : undefined,
     workspace,
     selection,
     clearSelection,
@@ -495,9 +498,8 @@ export function AppLayout({
   });
   const handleRequestLoadRobot = useLibraryRobotLoadRequest({
     handlePreviewFileWithFeedback,
-    hasSimpleModeSourceEdits: false,
+    hasWorkspaceEdits: hasUnsavedWorkspaceChanges,
     onLoadRobot,
-    selectedFile,
     shouldPreviewLibraryRobotLoad: false,
   });
 

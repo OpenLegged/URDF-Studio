@@ -402,3 +402,18 @@ test('explicit geom size overrides default size without merging missing trailing
 
   assert.equal(resolved.size, '0.009 0.012');
 });
+
+
+test('resolves height field files through compiler meshdir or inherited assetdir', () => {
+  for (const attrs of ['assetdir="assets/common"', 'assetdir="ignored" meshdir="assets/common"']) {
+    const doc = parseXmlDocument(`<mujoco><compiler ${attrs}/><asset>
+      <hfield name="terrain" file="rough.bin" size="2 3 .4 .1"/>
+      <hfield name="absolute" file="/rough.bin" size="2 3 .4 .1"/>
+      <hfield name="url" file="https://example.invalid/rough.bin" size="2 3 .4 .1"/>
+    </asset></mujoco>`);
+    const fields = parseHfieldAssets(doc, parseCompilerSettings(doc));
+    assert.equal(fields.get('terrain')?.file, 'assets/common/rough.bin');
+    assert.equal(fields.get('absolute')?.file, '/rough.bin');
+    assert.equal(fields.get('url')?.file, 'https://example.invalid/rough.bin');
+  }
+});

@@ -1,3 +1,4 @@
+import type { HistoryActions } from '../../hooks/useActiveHistory';
 import type { ComponentType, Dispatch, MouseEventHandler, ReactNode, SetStateAction } from 'react';
 import type { LucideIcon } from 'lucide-react';
 import { translations } from '@/shared/i18n';
@@ -44,6 +45,7 @@ export interface HeaderSurfaceModeSelectorConfig {
   translations: Record<'en' | 'zh', HeaderSurfaceModeSelectorCopy>;
   /** Host-owned controls shown while the alternate workspace is active. */
   alternateControls?: {
+    history?: HistoryActions | null;
     snapshot?: {
       onSnapshot: () => void;
       onPrefetchSnapshot?: () => void;
@@ -95,6 +97,7 @@ export interface HeaderAction {
 }
 
 export interface HeaderResponsiveLayout {
+  isDesktop: boolean;
   showMenuLabels: boolean;
   showSourceInline: boolean;
   showSourceText: boolean;
@@ -139,4 +142,5 @@ export interface HeaderOverflowMenuProps {
   showLanguage: boolean;
   showTheme: boolean;
   showSecondaryAction?: boolean;
+  showFeedback?: boolean;
 }

@@ -101,6 +101,7 @@ function renderHook(options: DraggableWindowOptions) {
     return React.createElement('div', {
       ref: current.containerRef,
       style: current.windowStyle,
+      onMouseDown: current.handleDragStart,
     });
   }
 
@@ -117,6 +118,34 @@ function renderHook(options: DraggableWindowOptions) {
     },
   };
 }
+
+test('host positioning becomes the origin of the next drag', async () => {
+  const dom = installDom(1200, 900);
+  const hook = renderHook({
+    defaultPosition: { x: 800, y: 600 },
+    defaultSize: { width: 300, height: 200 },
+    centerOnMount: false,
+  });
+
+  try {
+    await hook.render();
+    await act(async () => hook.getCurrent().setPosition({ x: 300, y: 150 }));
+    await act(async () => {
+      hook.getCurrent().containerRef.current!.dispatchEvent(new dom.window.MouseEvent('mousedown', {
+        bubbles: true, clientX: 340, clientY: 180,
+      }));
+    });
+    await act(async () => {
+      dom.window.document.dispatchEvent(new dom.window.MouseEvent('mousemove', { clientX: 400, clientY: 220 }));
+      dom.window.document.dispatchEvent(new dom.window.MouseEvent('mouseup', { clientX: 400, clientY: 220 }));
+    });
+    assert.deepEqual(hook.getCurrent().position, { x: 360, y: 190 });
+    assert.equal(hook.getCurrent().isDragging, false);
+  } finally {
+    await act(async () => hook.root.unmount());
+    dom.window.close();
+  }
+});
 
 test('window resize keeps a containable draggable window fully inside the viewport', async () => {
   const dom = installDom(1000, 800);

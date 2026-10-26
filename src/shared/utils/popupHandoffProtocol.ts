@@ -17,13 +17,13 @@
 /**
  * Origin patterns allowed for handoff communication.
  * Loaded from VITE_HANDOFF_ORIGINS env (comma-separated, supports `*` wildcard).
- * Falls back to production domains (*.enkeebot.com / *.enkeebot.cn) when env is unset.
+ * Falls back to the production domain (*.enkeebot.com) when env is unset.
  */
 const handoffOriginsEnv = (import.meta as ImportMeta & { env?: { VITE_HANDOFF_ORIGINS?: string } })
   .env?.VITE_HANDOFF_ORIGINS;
 
 export const ALLOWED_HANDOFF_ORIGINS: ReadonlyArray<string> = (
-  handoffOriginsEnv || 'https://*.enkeebot.com,https://*.enkeebot.cn'
+  handoffOriginsEnv || 'https://*.enkeebot.com'
 )
   .split(',')
   .map((s: string) => s.trim())

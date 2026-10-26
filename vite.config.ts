@@ -4,6 +4,7 @@ import path from 'path';
 import { defineConfig, loadEnv, type Plugin, type ServerOptions } from 'vite';
 import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
+import { assertEnvMode } from './scripts/build/env-mode.mjs';
 
 const appPackageVersion =
   JSON.parse(fs.readFileSync(path.resolve(__dirname, 'package.json'), 'utf8')).version ?? '0.0.0';
@@ -420,7 +421,8 @@ function createStaticHostingHeadersAssetPlugin() {
 }
 
 export default defineConfig(async ({ mode }) => {
-  const env = loadEnv(mode, '.', '');
+  assertEnvMode(mode, __dirname);
+  const env = loadEnv(mode, __dirname, '');
   const devServerHttps = await resolveDevServerHttps(env);
   const devServerHost = devServerHttps
     ? env.URDF_STUDIO_DEV_HOST?.trim() || '0.0.0.0'
@@ -434,6 +436,7 @@ export default defineConfig(async ({ mode }) => {
   const viteCacheDir = resolveViteCacheDir(env);
 
   return {
+    envDir: __dirname,
     cacheDir: viteCacheDir,
     server: {
       port: 3000,

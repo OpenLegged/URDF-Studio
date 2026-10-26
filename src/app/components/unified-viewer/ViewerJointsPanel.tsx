@@ -39,6 +39,7 @@ export function ViewerJointsPanel({
 
   return (
     <JointsPanel
+      lang={lang}
       showJointPanel={showJointPanel}
       robot={jointsPanel.displayRobot}
       scopeKey={jointsPanel.scopeKey}

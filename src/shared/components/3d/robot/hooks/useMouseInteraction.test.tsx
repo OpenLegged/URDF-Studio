@@ -156,3 +156,228 @@ test('selection and unrelated rerenders do not reinstall the pointer interaction
     dom.restore();
   }
 });
+
+type InteractionCallbacks = Pick<
+  Parameters<typeof useMouseInteraction>[0],
+  'onSelect' | 'onHover' | 'onMeshSelect' | 'onPaintFace'
+>;
+
+/** Real geometry hits exercise the native pointer lifecycle and its final commit. */
+async function mountDirectDragHarness() {
+  const dom = installDom();
+  const root = createRoot(dom.rootElement);
+  const canvas = document.createElement('canvas');
+  document.body.appendChild(canvas);
+  Object.defineProperties(canvas, {
+    clientWidth: { value: 200 },
+    clientHeight: { value: 200 },
+  });
+  const scene = new THREE.Scene();
+  const camera = new THREE.OrthographicCamera(-2, 2, 2, -2, 0.1, 100);
+  camera.position.z = 5;
+  camera.updateProjectionMatrix();
+  camera.updateMatrixWorld(true);
+  const robot = new THREE.Group();
+  const joint = Object.assign(new THREE.Group(), {
+    name: 'joint_a',
+    isURDFJoint: true,
+    jointType: 'revolute',
+    angle: 0,
+    axis: new THREE.Vector3(0, 0, 1),
+    limit: { lower: -Math.PI, upper: Math.PI },
+    setJointValue(angle: number) {
+      joint.angle = angle;
+      joint.rotation.z = angle;
+      joint.updateMatrixWorld(true);
+    },
+  });
+  const link = Object.assign(new THREE.Group(), { name: 'link_a', isURDFLink: true });
+  const mesh = new THREE.Mesh(
+    new THREE.BoxGeometry(1, 0.25, 0.25),
+    new THREE.MeshBasicMaterial(),
+  );
+  mesh.position.x = 0.6;
+  link.add(mesh);
+  joint.add(link);
+  robot.add(joint);
+  scene.add(robot);
+  scene.updateMatrixWorld(true);
+  const linkMeshMapRef = { current: new Map([['link_a:visual', [mesh]]]) };
+  const previews: Array<[string, number]> = [];
+  const commits: Array<[string, number]> = [];
+  const onJointChange = (name: string, angle: number) => { previews.push([name, angle]); };
+  const onJointChangeCommit = (name: string, angle: number) => { commits.push([name, angle]); };
+  const r3fStore = create(() => ({
+    camera,
+    controls: { enabled: true },
+    gl: { domElement: canvas },
+    invalidate: () => {},
+    scene,
+  }));
+  let interaction: ReturnType<typeof useMouseInteraction> | undefined;
+  let unmounted = false;
+
+  function Harness({
+    callbacks,
+    toolMode,
+  }: {
+    callbacks: InteractionCallbacks;
+    toolMode: Parameters<typeof useMouseInteraction>[0]['toolMode'];
+  }) {
+    interaction = useMouseInteraction({
+      robot,
+      robotVersion: 0,
+      toolMode,
+      mode: 'editor',
+      showCollision: false,
+      showVisual: true,
+      showCollisionAlwaysOnTop: false,
+      linkMeshMapRef,
+      rayIntersectsBoundingBox,
+      highlightGeometry,
+      onJointChange,
+      onJointChangeCommit,
+      ...callbacks,
+    });
+    return null;
+  }
+
+  return {
+    joint,
+    previews,
+    commits,
+    interaction() {
+      assert.ok(interaction, 'interaction hook should be mounted');
+      return interaction;
+    },
+    async render(
+      callbacks: InteractionCallbacks,
+      toolMode: Parameters<typeof useMouseInteraction>[0]['toolMode'] = 'select',
+    ) {
+      await act(async () => {
+        root.render(
+          <r3fContext.Provider value={r3fStore as unknown as React.ContextType<typeof r3fContext>}>
+            <Harness callbacks={callbacks} toolMode={toolMode} />
+          </r3fContext.Provider>,
+        );
+      });
+    },
+    async dispatch(type: string, x = 130, y = 100) {
+      await act(async () => {
+        const event = new window.MouseEvent(type, {
+          bubbles: true,
+          clientX: x,
+          clientY: y,
+          button: 0,
+          buttons: type === 'mouseup' ? 0 : 1,
+        });
+        Object.defineProperties(event, { offsetX: { value: x }, offsetY: { value: y } });
+        canvas.dispatchEvent(event);
+      });
+    },
+    async unmount() {
+      if (!unmounted) {
+        await act(async () => root.unmount());
+        unmounted = true;
+      }
+    },
+    async dispose() {
+      if (!unmounted) await act(async () => root.unmount());
+      mesh.geometry.dispose();
+      mesh.material.dispose();
+      dom.restore();
+    },
+  };
+}
+
+for (const callbackName of ['onSelect', 'onHover', 'onMeshSelect', 'onPaintFace'] as const) {
+  test(`replacing ${callbackName} during a direct joint drag preserves its final commit`, async () => {
+    const harness = await mountDirectDragHarness();
+    try {
+      await harness.render({ [callbackName]: () => {} });
+      await harness.dispatch('mousedown');
+      assert.equal(harness.interaction().isDraggingJoint.current, true);
+      await harness.dispatch('pointermove', 130, 90);
+      assert.ok(harness.previews.length > 0, 'real pointer movement should publish a preview');
+      assert.ok(Math.abs(harness.joint.angle) > 0.01);
+      assert.equal(harness.commits.length, 0, 'preview must not prematurely commit');
+
+      await harness.render({ [callbackName]: () => {} });
+      assert.equal(
+        harness.interaction().isDraggingJoint.current,
+        true,
+        'callback replacement must not dispose the active gesture',
+      );
+      await harness.dispatch('pointermove', 130, 85);
+      await harness.dispatch('mouseup', 130, 85);
+      assert.equal(harness.commits.length, 1, 'pointerup should commit exactly once');
+      assert.equal(harness.commits[0]?.[0], 'joint_a');
+      assert.ok(Math.abs(harness.commits[0]![1] - harness.joint.angle) < 1e-6);
+      assert.equal(harness.interaction().isDraggingJoint.current, false);
+    } finally {
+      await harness.dispose();
+    }
+  });
+}
+
+for (const callbackName of ['onSelect', 'onHover', 'onMeshSelect', 'onPaintFace'] as const) {
+  test(`native pointer handlers use the latest ${callbackName}`, async () => {
+    const harness = await mountDirectDragHarness();
+    let oldCalls = 0;
+    let latestCalls = 0;
+    const toolMode = callbackName === 'onPaintFace' ? 'paint' : 'select';
+    try {
+      await harness.render({ [callbackName]: () => { oldCalls += 1; } }, toolMode);
+      await harness.render({ [callbackName]: () => { latestCalls += 1; } }, toolMode);
+      if (callbackName === 'onHover') {
+        harness.interaction().hoveredLinkRef.current = 'link_a';
+        await harness.dispatch('mouseleave');
+      } else {
+        await harness.dispatch('mousedown');
+        await harness.dispatch('mouseup');
+      }
+      assert.equal(oldCalls, 0);
+      assert.ok(latestCalls > 0, 'the replacement callback should receive the next native event');
+    } finally {
+      await harness.dispose();
+    }
+  });
+}
+
+test('removing onMeshSelect preserves the onSelect fallback for geometry selection', async () => {
+  const harness = await mountDirectDragHarness();
+  let meshSelections = 0;
+  let fallbackSelections = 0;
+  const onSelect = () => { fallbackSelections += 1; };
+  try {
+    await harness.render({ onSelect, onMeshSelect: () => { meshSelections += 1; } });
+    await harness.dispatch('mousedown');
+    await harness.dispatch('mouseup');
+    assert.equal(meshSelections, 1);
+    assert.equal(fallbackSelections, 0);
+    await harness.render({ onSelect });
+    await harness.dispatch('mousedown');
+    await harness.dispatch('mouseup');
+    assert.equal(meshSelections, 1);
+    assert.equal(fallbackSelections, 1);
+  } finally {
+    await harness.dispose();
+  }
+});
+
+test('unmounting an active direct joint drag does not commit it into a different document', async () => {
+  const harness = await mountDirectDragHarness();
+  try {
+    await harness.render({});
+    await harness.dispatch('mousedown');
+    await harness.dispatch('pointermove', 130, 90);
+    assert.ok(harness.previews.length > 0);
+    assert.equal(harness.interaction().isDraggingJoint.current, true);
+    await harness.unmount();
+    assert.equal(harness.interaction().isDraggingJoint.current, false);
+    await harness.dispatch('mouseup', 130, 90);
+    assert.equal(harness.commits.length, 0);
+  } finally {
+    await harness.dispose();
+  }
+});

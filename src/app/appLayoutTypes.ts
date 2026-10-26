@@ -31,6 +31,7 @@ export interface AppLayoutExposedActions {
 }
 
 export interface AppLayoutProps {
+  hasUnsavedWorkspaceChanges: boolean;
   importInputRef: React.RefObject<HTMLInputElement | null>;
   importFolderInputRef: React.RefObject<HTMLInputElement | null>;
   onFileDrop: (files: File[]) => void;

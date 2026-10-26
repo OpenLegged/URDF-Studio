@@ -13,7 +13,7 @@ import { URDFCollider, URDFVisual } from '../urdf/loader/URDFClasses';
 import { createGeometryMesh, type MJCFMeshCache } from './mjcfGeometry';
 import { assignMJCFBodyGeomRoles } from './mjcfGeomClassification';
 import { applyRgbaToMesh, createJointAxisHelper, createLinkAxesHelper } from './mjcfRenderHelpers';
-import type { MJCFCompilerSettings, MJCFMesh, MJCFMaterial, MJCFTexture } from './mjcfUtils';
+import type { MJCFCompilerSettings, MJCFHfield, MJCFMesh, MJCFMaterial, MJCFTexture } from './mjcfUtils';
 import { getMjcfCubeTextureFacePaths, getMjcfCubeTextureFaceRecord } from './mjcfCubeTextures';
 import { convertMjcfAngle, mjcfQuatToThreeQuat } from './mjcfMath';
 import { createMainThreadYieldController } from '@/core/utils/yieldToMainThread';
@@ -37,6 +37,7 @@ export interface MJCFHierarchyGeom {
   type: string;
   size?: number[];
   mesh?: string;
+  hfield?: string;
   rgba?: [number, number, number, number];
   hasExplicitRgba?: boolean;
   pos?: [number, number, number];
@@ -83,6 +84,7 @@ interface BuildMJCFHierarchyOptions {
   bodies: MJCFHierarchyBody[];
   rootGroup: THREE.Group;
   meshMap: Map<string, MJCFMesh>;
+  hfieldMap?: Map<string, MJCFHfield>;
   assets: Record<string, string>;
   abortSignal?: MJCFLoadAbortSignal;
   meshCache: MJCFMeshCache;
@@ -835,6 +837,7 @@ export async function buildMJCFHierarchy(
     bodies,
     rootGroup,
     meshMap,
+    hfieldMap = new Map(),
     assets,
     meshCache,
     compilerSettings,
@@ -925,6 +928,7 @@ export async function buildMJCFHierarchy(
             meshCache,
             sourceFileDir,
             abortSignal,
+            hfieldMap,
           );
         }
         if (!mesh) {
@@ -964,6 +968,20 @@ export async function buildMJCFHierarchy(
         }
 
         mesh.name = geom.name || geom.type || 'geom';
+        mesh.userData.mjcfGeomType = geom.type;
+        if (geom.type === 'hfield') {
+          // MuJoCo emits one normal per heightfield triangle, preserving facets.
+          mesh.traverse((node) => {
+            if (!(node instanceof THREE.Mesh)) return;
+            const materials = Array.isArray(node.material) ? node.material : [node.material];
+            for (const material of materials) {
+              if (material instanceof THREE.MeshStandardMaterial) {
+                material.flatShading = true;
+                material.needsUpdate = true;
+              }
+            }
+          });
+        }
         const shouldRenderVisualMesh = objectHasVisibleMaterial(mesh);
 
         const applyGeomTransformToContainer = (container: THREE.Object3D) => {

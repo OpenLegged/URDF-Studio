@@ -1,5 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { OptionsPanel } from './OptionsPanel';
+import { JointPoseExport } from './JointPoseExport';
+import type { Language } from '@/shared/i18n';
 import { getSingleDofJointEntries } from '@/shared/utils/jointTypes';
 import type { JointPanelActiveJointOptions, JointPanelStore } from '@/shared/utils/jointPanelStore';
 import { JointPanelControls, JointPanelList } from './JointPanelContent';
@@ -14,6 +16,7 @@ const JOINT_PANEL_COMPACT_ITEM_ESTIMATED_HEIGHT = 52;
 const JOINT_PANEL_COMPACT_ADVANCED_ITEM_ESTIMATED_HEIGHT = 70;
 
 interface JointsPanelProps {
+  lang?: Language;
   showJointPanel: boolean;
   robot: JointPanelRobot | null | undefined;
   scopeKey?: string | null;
@@ -55,6 +58,7 @@ interface JointsPanelProps {
 
 export const JointsPanel: React.FC<JointsPanelProps> = ({
   showJointPanel,
+  lang = 'en',
   robot,
   scopeKey,
   jointPanelRef,
@@ -116,6 +120,14 @@ export const JointsPanel: React.FC<JointsPanelProps> = ({
 
   const additionalControls = (
     <JointPanelControls
+      exportControl={
+        <JointPoseExport
+          robot={robot}
+          robotName={robot?.name}
+          jointPanelStore={jointPanelStore}
+          lang={lang}
+        />
+      }
       t={t}
       angleUnit={angleUnit}
       setAngleUnit={setAngleUnit}

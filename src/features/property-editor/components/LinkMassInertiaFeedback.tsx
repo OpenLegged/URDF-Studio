@@ -127,6 +127,7 @@ export const LinkMassInertiaFeedback: React.FC<LinkMassInertiaFeedbackProps> = (
   return (
     <>
       <Dialog
+        closeLabel={t.close}
         isOpen={Boolean(pendingMassInertiaDecision)}
         onClose={closeDecision}
         title={t.massChangeInertiaDialogTitle}

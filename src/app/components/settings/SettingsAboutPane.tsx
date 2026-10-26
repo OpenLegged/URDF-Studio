@@ -76,7 +76,7 @@ export function SettingsAboutPane({ t }: SettingsAboutPaneProps) {
         </div>
         <div className="space-y-1.5">
           <AboutLinkCard
-            href="https://botworld.enkeebot.com/"
+            href={import.meta.env.VITE_BOTWORLD_URL || 'https://botworld.enkeebot.com/'}
             icon={
               <img
                 src="/logos/botworld-logo.png"
@@ -92,7 +92,7 @@ export function SettingsAboutPane({ t }: SettingsAboutPaneProps) {
             description="一站式机器人资产平台"
           />
           <AboutLinkCard
-            href="https://motion.enkeebot.com/"
+            href={import.meta.env.VITE_MOTION_STUDIO_URL || 'https://motion.enkeebot.com/'}
             icon={
               <img
                 src="/logos/motion-studio-logo.png"

@@ -4,13 +4,25 @@ import { useWorkspaceStore } from '@/store/workspaceStore';
 import { flushPendingHistory } from '../utils/pendingHistory';
 import { reconcileComponentSourceDraftsWithWorkspace } from './workspace-source-sync/component_source_history';
 
-export function useActiveHistory() {
+export interface HistoryActions {
+  undo: () => void;
+  redo: () => void;
+  canUndo: boolean;
+  canRedo: boolean;
+}
+
+const unavailableHistory: HistoryActions = {
+  undo: () => {}, redo: () => {}, canUndo: false, canRedo: false,
+};
+
+/** undefined selects the model; null disables history while a host surface loads. */
+export function useActiveHistory(override?: HistoryActions | null): HistoryActions {
   const undoWorkspace = useWorkspaceStore((state) => state.undo);
   const redoWorkspace = useWorkspaceStore((state) => state.redo);
   const canUndo = useWorkspaceStore((state) => state.canUndo());
   const canRedo = useWorkspaceStore((state) => state.canRedo());
 
-  return useMemo(
+  const modelHistory = useMemo(
     () => ({
       undo: () => {
         flushPendingHistory();
@@ -31,4 +43,5 @@ export function useActiveHistory() {
     }),
     [canRedo, canUndo, redoWorkspace, undoWorkspace],
   );
+  return override === undefined ? modelHistory : override ?? unavailableHistory;
 }

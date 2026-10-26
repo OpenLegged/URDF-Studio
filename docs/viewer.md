@@ -44,7 +44,7 @@ features/urdf-viewer/
 ## 3. 核心 hooks / 能力
 
 - `useViewerController`：viewer 控制器
-- `useMouseInteraction`：鼠标交互处理
+- `useMouseInteraction`：鼠标交互处理。选择、悬停、网格选择和涂色回调通过 ref 读取最新值，回调引用更新不重建原生事件监听或取消正在进行的关节拖动；松手提交角度，卸载只清理会话。
 - `useHoverDetection`：悬停检测
 - `useVisualizationEffects`：惯性、质心、原点等辅助可视化
 - `useRendererBackend`：统一模型加载与格式后端生命周期，backend 实现在 `features/urdf-viewer/renderers/`
@@ -160,3 +160,20 @@ features/urdf-viewer/
 | `renderers/robotLoaderSourceMetadata.ts` | loader source metadata 标准化 |
 | `renderers/sourceFormat.ts` | viewer source format 分类 |
 | `renderers/urdfXmlFallbackPolicy.ts` | URDF XML fallback 策略 |
+
+
+## MJCF 高度场预览
+
+`core/parsers/mjcf/mjcfHeightfield.ts` 从 asset hfield 读取 MuJoCo little-endian
+二进制（int32 行/列 + row-major float32）、内联 elevation 或 PNG，生成 Z-up
+表面、侧壁和底面。归一化、行顺序与三角对角线遵循 MuJoCo；size 的 X/Y 是半宽，
+Z 是高度，第四项为向下的底板深度。geom size 不替代 asset size；body/geom 位姿和
+sRGB 材质沿用既有 hierarchy 处理，碰撞覆盖层保持独立。
+文件通过现有资源解析器寻找，遵循 compiler meshdir（缺省继承 assetdir）和源文件目录。
+缺失、损坏、非有限数据、预算超限与取消显式失败，不再跳过 hfield 并显示空预览。
+最多接受 1,048,576 个样本，并限制输入字节与总顶点数量；PNG 需要浏览器 bitmap/canvas。
+这项能力只补原生场景渲染，未将高度场加入编辑器简化碰撞、吸附或自动放置计算。
+
+原生 hfield 使用 flat shading，保留 MuJoCo 逐三角形法线造成的起伏明暗；
+hierarchy 在 geom 根对象公开 `userData.mjcfGeomType`，供宿主识别源几何类型。
+该渲染策略不改变采样顶点、三角剖分、资产 sRGB 颜色或物理参数。

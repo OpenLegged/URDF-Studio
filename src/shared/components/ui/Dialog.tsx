@@ -2,6 +2,7 @@ import React from 'react';
 import { createPortal } from 'react-dom';
 import { X } from 'lucide-react';
 import { IconButton } from './IconButton';
+import { TooltipPortalContext } from './Tooltip';
 
 interface DialogProps {
   isOpen: boolean;
@@ -57,6 +58,11 @@ export const Dialog: React.FC<DialogProps> = ({
   closeLabel = 'Close dialog',
 }) => {
   const dialogRef = React.useRef<HTMLDivElement | null>(null);
+  const [portalRoot, setPortalRoot] = React.useState<HTMLDivElement | null>(null);
+  const setDialogRef = React.useCallback((node: HTMLDivElement | null) => {
+    dialogRef.current = node;
+    setPortalRoot(node);
+  }, []);
   const previousFocusRef = React.useRef<HTMLElement | null>(null);
   const onCloseRef = React.useRef(onClose);
 
@@ -141,7 +147,7 @@ export const Dialog: React.FC<DialogProps> = ({
 
   const content = (
     <div
-      ref={dialogRef}
+      ref={setDialogRef}
       className={`fixed inset-0 ${zIndexClassName} flex items-center justify-center`}
       role="dialog"
       aria-modal="true"
@@ -199,5 +205,8 @@ export const Dialog: React.FC<DialogProps> = ({
     </div>
   );
 
-  return createPortal(content, document.body);
+  return createPortal(
+    <TooltipPortalContext.Provider value={portalRoot}>{content}</TooltipPortalContext.Provider>,
+    document.body,
+  );
 };

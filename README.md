@@ -165,7 +165,18 @@ OPENAI_CONTEXT_WINDOW_TOKENS=32768
 GEMINI_API_KEY=
 ```
 
-You can place them in `.env.local`.
+Team-wide public defaults belong in tracked `.env`; shared public settings for each mode belong
+in tracked `.env.dev`, `.env.fat`, or `.env.production`. These profiles work without any local file.
+An ignored `.env.<mode>.local` is optional and only holds temporary personal overrides; the shared
+`.env.local` file is unsupported. Loading order is `.env` → `.env.<mode>` → `.env.<mode>.local`
+→ process variables. A missing `.env.<mode>` for the selected mode fails startup and builds. This open-source core must not contain platform-private settings or commercial
+keys. Provider values injected by Vite are visible in the browser; personal keys are only suitable
+for trusted local BYOK use through `.env.dev.local` or process variables, not server-side secrets.
+
+`npm run dev` selects `dev`. `npm run build:dev`, `build:fat`, and `build:production` select their
+respective profiles while keeping production build optimizations; `npm run build` defaults to
+production. `npm run preview` uses the mode recorded by the successful build. These are generic
+standalone build modes, not deployment branches; no `fat` branch or platform endpoints are required.
 
 ### AI Features
 

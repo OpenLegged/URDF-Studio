@@ -25,12 +25,11 @@ test('directly opening the selected source still reaches the atomic replacement 
       handlePreviewFileWithFeedback: () => {
         throw new Error('clean direct open should not preview');
       },
-      hasSimpleModeSourceEdits: false,
+      hasWorkspaceEdits: false,
       onLoadRobot: async (file) => {
         loadedFiles.push(file);
         return { status: 'committed', component: loadedComponent };
       },
-      selectedFile,
       shouldPreviewLibraryRobotLoad: false,
     });
     return null;
@@ -55,12 +54,11 @@ test('same-source direct open still honors the unsaved source guard', async () =
   function Probe() {
     requestLoad = useLibraryRobotLoadRequest({
       handlePreviewFileWithFeedback: () => {},
-      hasSimpleModeSourceEdits: true,
+      hasWorkspaceEdits: true,
       onLoadRobot: async () => {
         loadCount += 1;
         return { status: 'committed', component: loadedComponent };
       },
-      selectedFile,
       shouldPreviewLibraryRobotLoad: false,
     });
     return null;

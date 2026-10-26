@@ -25,6 +25,8 @@
 - `useWorkspaceStore.workspace`（非空 `AssemblyState`）是唯一可变机器人模型；`RobotData` 只由 component 或只读 scene projection 产生
 - 空白项目也是 `1 component + 0 bridges`；直接打开文件原子替换 workspace，显式“添加”只追加 component
 - `.usp` 只接受并生成严格的 `3.0` manifest，project payload 只保存 canonical workspace、统一 history 和 component source drafts；不提供 v2 或旧 robot/assembly 字段迁移
+- `.usp` 导入分别校验 draft 与 canonical 模型的 freshness，以及源码内容。URDF/Xacro 解析得到的名称 ID、材质及导入诊断可能与编辑器状态不同；直接 hash 不匹配时，仅在模型可由该格式保留的前提下，将 canonical 模型生成并重解析为参考源码，精确比较两份解析结果。保留原 workspace、history、draft 和全局 freshness hash，不用源码解析结果替换编辑状态，也不接受真实参数、拓扑或源码内容损坏。
+- URDF 的保精度源码模式还须保留所有关节上已解析的 limit、dynamics 和 hardware 字段，包括 continuous 的上下限及 fixed/planar/floating 的动力学和硬件参数；不能用普通导出的字段裁剪规则生成工程校验参考。普通 URDF 导出规则不变。
 - component 内实体 ID 始终是 source-local；全局 ID 只在 scene/export projection 中生成，并通过显式双向映射解析
 - 机器人源格式检测 source of truth 在 `core/parsers/format_detection.ts`；`app/utils/import-preparation/formatDetection.ts` 与 `features/file-io/utils/formatDetection.ts` 只做 wrapper
 - 新增导出辅助逻辑时，优先补到 `app/hooks/file-export/*`，不要把 `useFileExport.ts` 堆成大而全单文件
@@ -39,6 +41,16 @@
 - `projectImport.worker.ts` 已进入 project import 链路；问题优先在 worker/bridge 修
 - `DisconnectedWorkspaceUrdfExportDialog.tsx` 是 workspace 断联导出特例，不要塞回通用导出弹层
 - `ExportProgressDialog.tsx` / `ExportProgressView.tsx` 是长时导出反馈的统一 UI，不要重新发明导出进度弹层
+
+### 当前关节姿态导出
+
+- 关节工具栏的下载图标位于设置与 RAD/DEG 之间；侧栏和浮动面板共用 `JointPoseExport`。
+- `shared/utils/jointPoseExport.ts` 在打开弹窗时读取面板的最新实际关节值，生成独立快照；RAD/DEG 只影响显示，导出旋转值始终为 rad、平移值为 m。不减去 MJCF `referencePosition`，不裁剪到限位，也不舍入文件中的数值。
+- 范围与单自由度关节面板一致：revolute、continuous、prismatic，包括零值与从动关节；fixed、floating、ball、planar 不在这份标量姿态文件中。
+- JSON schema 为 `{ version: 1, robot, joints: [{ id, name, type, position, unit }] }`。CSV 列为 `joint_id,joint_name,joint_type,position,unit`，使用 UTF-8 BOM、CRLF 和带双引号的字段。ID 对应当前面板投影中的关节 ID，名称仍保留面板所用的模型名称；多个同名关节不会覆盖彼此。
+- CSV 文本字段若在前导空白或控制字符之后以 `=`、`+`、`-`、`@` 开头，会在原值前加单引号文本标记，防止模型中的名称被表格软件解释为公式；数值位置（含负值）不加标记。JSON 与工作区中的原始 ID、名称保持不变。
+- 非有限位置拒绝导出并显示错误，避免 JSON 把 NaN/Infinity 写成 null。此导出不改模型、history 或保存基线。
+- 工程保存沿用 `captureProjectExportPersistenceSnapshot` 与 `.usp 3.0` canonical workspace/history；保存前提交已完成的 pending joint motion，重新导入通过 `commitImportedProject` 恢复原始关节值。姿态不是 URDF 的 `joint origin`。
 
 ### 闭环拼接
 
@@ -119,6 +131,7 @@
 - Tree 永远消费 Assembly；单组件时隐藏 Assembly/Bridges 冗余层并默认展开唯一 component
 - 文件加入组装入口：右键菜单"添加"、文件行右侧绿色按钮
 - 单击机器人文件原子替换为单组件 workspace；显式"添加"才追加，允许同一 source 多实例
+- 素材库替换前复用 canonical workspace 的未保存判定（包括 AI、属性、源码和拓扑修改）：有修改时先提供预览、取消或明确丢弃。成功保存/导出后可再次加载原模板；编辑不回写素材库模板。
 - PropertyEditor 按统一 `WorkspaceSelection` 直接定位 component entity 或 bridge，不把 bridge 伪装成 joint
 
 ## 6. 跨域 Handoff 接收端
@@ -138,7 +151,7 @@ infra（URL 参数解析、BroadcastChannel 已有-tab 认领、并发下载与�
     → 已有 Studio tab 回复 import-accepted → 新 tab 关闭 → 已有 tab 执行导入
     → 无已有 tab 回复 → 当前 tab 执行导入
   → Studio 验证 from origin 白名单 → 解析资产下载端点
-  → POST 资产下载接口（携带宿主注入的 Bearer 服务令牌）→ 获取文件列表（含预签名下载 URL）
+  → POST 资产下载接口（等待宿主注入的 Bearer 凭证）→ 获取文件列表（含预签名下载 URL）
   → worker pool 并行下载预签名 URL → 设置 webkitRelativePath 保持文件夹结构
   → handleImport(files) 导入到编辑器
 ```
@@ -147,9 +160,10 @@ infra（URL 参数解析、BroadcastChannel 已有-tab 认领、并发下载与�
 - Studio 验证 `from` origin 白名单后获取文件列表（含预签名下载 URL）；Core 默认请求该
   handoff origin，宿主可通过 `setAssetDownloadEndpointResolver` 显式改为自己的同源代理
 - 资产下载请求的 `Authorization: Bearer <token>` 由宿主通过 `setAssetDownloadAuthTokenProvider`
-  在调用时注入服务令牌（上游服务的静态 service token）；未注册 provider 时不带 `Authorization`
-  （BYOK / 本地未鉴权开发）。token 在调用时读取，开源 Core 不读 `import.meta.env`，不把
-  `VITE_*` 服务凭据编进浏览器资产
+  在调用时注入凭证；provider 接收实际请求 `URL`，可返回同步 token 或 Promise，供宿主
+  等待会话恢复并校验凭证目标。单个与合集请求都等待 provider；未注册时不带 Authorization。
+  provider 异常或 API 拒绝会显式失败，不自动匿名重试；预签名文件下载不携带此凭证。
+  开源 Core 不读取 `import.meta.env` 或部署凭据。
 - 并行下载由 `REMOTE_IMPORT_DOWNLOAD_CONCURRENCY`（8）限流的 worker pool 调度，不用
   `Promise.all(files.map(...))` 一次性发起全部请求（资产最多含 2000 文件，避免压垮浏览器与
   对象存储）；按原始 index 写回 `downloadedFiles`，保证 `webkitRelativePath` 顺序与文件列表一致
@@ -263,3 +277,24 @@ To change an authored scheme, edit its YAML configuration and reimport the packa
 this does not add a palette selection UI.
 
 Focused regression: `npm run test:unit -- src/core/parsers/xacro/xacroYaml.test.ts src/app/utils/importPreparation.yaml.test.ts`.
+
+
+MJCF 文件/ZIP 依赖中的 hfield 与 mesh 共用 compiler meshdir/assetdir 和源目录解析。
+原生查看器可显示二进制、内联及 PNG 高度场，细节与预算见 [viewer.md](viewer.md#mjcf-高度场预览)。
+源高度数据、物理碰撞与原始材质不会因预览重新生成或改写。
+
+
+### MJCF 显式灯光解析
+
+`parseMJCFModel` 在 `worldBody` 和每个 `MJCFModelBody.lights` 中保留原生显式灯光。
+`MJCFModelLight` 的位置和方向属于所在 body 的局部坐标，嵌套 `<frame>` 的位姿已经合并；
+无名 body 仍使用现有生成名，便于原生查看器按 body/link 绑定。灯光经过 root/default class、
+body/frame `childclass` 与显式 `class` 的同一属性继承链。数据包含开关、阴影开关、类型与追踪模式、
+目标 body、三种 RGB 光照系数、衰减、聚光锥截止角与指数。截止角始终使用度数，与 compiler.angle 无关。
+
+默认值遵循 [MuJoCo light](https://mujoco.readthedocs.io/en/stable/XMLreference.html#body-light)；
+旧 `directional=true` 在未指定 type 时解析为 directional。未知 type/mode 字符串原样保留供消费者
+明确报告支持范围；非法数值、向量、布尔属性按实体边界遗漏该灯并返回 `mjcf_light_omitted` 恢复诊断，
+不静默使用默认灯替代。此解析层不创建渲染器灯具，不推算 body COM 或改写源文件。
+
+邻近回归：`npm run test:unit -- src/core/parsers/mjcf/mjcfLight.test.ts src/core/parsers/mjcf/mjcfUtils.test.ts`。

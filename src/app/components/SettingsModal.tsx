@@ -100,7 +100,7 @@ export function SettingsModal() {
   const settingsWindowLayer = useManagedWindowLayer('settings');
   const [activePage, setActivePage] = React.useState<SettingsPage>('general');
   const t = translations[lang];
-  const { maxPanelWidth, maxPanelHeight, onDragStart, panelRef } = useSettingsDrag();
+  const { maxPanelWidth, maxPanelHeight, onDragStart, panelRef } = useSettingsDrag(isSettingsOpen);
 
   const settingsPages = React.useMemo<SettingsNavItem[]>(
     () => [
@@ -133,6 +133,10 @@ export function SettingsModal() {
     [t.about, t.aiAgentSettings, t.codeEditor, t.general, t.view],
   );
 
+  React.useEffect(() => {
+    if (isSettingsOpen) panelRef.current?.focus();
+  }, [isSettingsOpen, panelRef]);
+
   const resetCodeEditorTypography = React.useCallback(() => {
     setCodeEditorFontFamily(DEFAULT_CODE_EDITOR_FONT_FAMILY);
     setCodeEditorFontSize(DEFAULT_CODE_EDITOR_FONT_SIZE);
@@ -155,22 +159,30 @@ export function SettingsModal() {
       onClick={(event) => event.stopPropagation()}
       onContextMenu={(event) => event.stopPropagation()}
       onDoubleClick={(event) => event.stopPropagation()}
-      onKeyDown={(event) => event.stopPropagation()}
+      onKeyDown={(event) => {
+        if (event.key === 'Escape') {
+          // The existing Select owns Escape while its listbox is open.
+          if (panelRef.current?.querySelector('[role="combobox"][aria-expanded="true"]')) return;
+          event.preventDefault();
+          closeSettings();
+        }
+        event.stopPropagation();
+      }}
       onPointerDownCapture={settingsWindowLayer.onActivate}
       onFocusCapture={settingsWindowLayer.onActivate}
       onPointerDown={(event) => event.stopPropagation()}
       onWheel={(event) => event.stopPropagation()}
     >
       <OptionsPanelContainer
-        width={DEFAULT_SETTINGS_WIDTH}
-        height={SETTINGS_ESTIMATED_HEIGHT}
-        minWidth={DEFAULT_SETTINGS_MIN_WIDTH}
+        width={Math.min(DEFAULT_SETTINGS_WIDTH, maxPanelWidth)}
+        height={Math.min(SETTINGS_ESTIMATED_HEIGHT, maxPanelHeight)}
+        minWidth={Math.min(DEFAULT_SETTINGS_MIN_WIDTH, maxPanelWidth)}
         maxWidth={maxPanelWidth}
-        minHeight={DEFAULT_SETTINGS_MIN_HEIGHT}
+        minHeight={Math.min(DEFAULT_SETTINGS_MIN_HEIGHT, maxPanelHeight)}
         maxHeight={maxPanelHeight}
         resizable
         resizeTitle={t.resize}
-        className={`overflow-hidden ${FLOATING_WINDOW_RADIUS_CLASS} bg-settings-shell shadow-[0_18px_48px_rgba(15,23,42,0.08),0_8px_18px_rgba(15,23,42,0.06),0_1px_3px_rgba(15,23,42,0.04)] dark:shadow-[0_20px_52px_rgba(0,0,0,0.42),0_10px_28px_rgba(0,0,0,0.34)]`}
+        className={`max-w-[calc(100vw-24px)] overflow-hidden ${FLOATING_WINDOW_RADIUS_CLASS} bg-settings-shell shadow-[0_18px_48px_rgba(15,23,42,0.08),0_8px_18px_rgba(15,23,42,0.06),0_1px_3px_rgba(15,23,42,0.04)] dark:shadow-[0_20px_52px_rgba(0,0,0,0.42),0_10px_28px_rgba(0,0,0,0.34)]`}
       >
         <div className="flex h-full min-h-0 flex-col bg-settings-shell">
           <div

@@ -2,8 +2,9 @@ import * as THREE from 'three';
 import { ConvexGeometry } from 'three/examples/jsm/geometries/ConvexGeometry.js';
 import { findAssetByPath } from '@/core/loaders';
 import { createMatteMaterial } from '@/core/utils/materialFactory';
-import type { MJCFMesh } from './mjcfUtils';
+import type { MJCFHfield, MJCFMesh } from './mjcfUtils';
 import { loadMJCFMeshObject, type MJCFMeshCache } from './mjcfMeshAssetLoader';
+import { loadMJCFHeightfieldGeometry } from './mjcfHeightfield';
 import { createMuJoCoFromToQuaternion, mjcfQuatToThreeQuat } from './mjcfMath';
 import {
   disposeTransientObject3D,
@@ -282,6 +283,7 @@ export async function createGeometryMesh(
   meshCache: MJCFMeshCache,
   sourceFileDir = '',
   abortSignal?: MJCFLoadAbortSignal,
+  hfieldMap: Map<string, MJCFHfield> = new Map(),
 ): Promise<THREE.Object3D | null> {
   const type = geom.type?.trim() || (geom.mesh ? 'mesh' : '');
 
@@ -385,10 +387,19 @@ export async function createGeometryMesh(
     }
 
     case 'hfield': {
-      console.warn(
-        `[MJCFLoader] Height field geom "${geom.name || geom.hfield || 'unnamed'}" is not rendered yet.`,
-      );
-      return null;
+      const hfield = geom.hfield ? hfieldMap.get(geom.hfield) : undefined;
+      if (!hfield) {
+        throw createMJCFGeometryError(
+          'Height field not defined in assets',
+          geom.hfield || geom.name || 'unnamed',
+        );
+      }
+      const assetUrl = hfield.file ? resolveMJCFAssetUrl(hfield.file, assets, sourceFileDir) : undefined;
+      if (hfield.file && !assetUrl) {
+        throw createMJCFGeometryError('Height field file could not be resolved', hfield.file);
+      }
+      const geometry = await loadMJCFHeightfieldGeometry(hfield, assetUrl, abortSignal);
+      return new THREE.Mesh(geometry, createDefaultMaterial());
     }
 
     case 'mesh':

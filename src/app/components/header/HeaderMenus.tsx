@@ -1,3 +1,4 @@
+import { HeaderHistoryButtons } from './HeaderHistoryButtons';
 import { useMemo } from 'react';
 import {
   Briefcase,
@@ -7,12 +8,10 @@ import {
   Eye,
   FileText,
   Folder,
-  Redo,
   Sparkles,
-  Undo,
   Upload,
 } from 'lucide-react';
-import { Button, IconButton } from '@/shared/components/ui';
+import { Button } from '@/shared/components/ui';
 import { ToolboxMenu } from './ToolboxMenu';
 import { HeaderButton } from './HeaderButton';
 import { HeaderMenuOverlay } from './HeaderMenuOverlay';
@@ -338,35 +337,8 @@ export function HeaderMenus({
         </div>
       )}
 
-      {showUndoRedoInline && <div className="w-px h-5 bg-border-black mx-1.5 hidden sm:block" />}
-
       {showUndoRedoInline && (
-        <div className="items-center gap-0.5 hidden sm:flex">
-          <IconButton
-            type="button"
-            onClick={undo}
-            disabled={!canUndo}
-            data-testid="history-undo"
-            variant="ghost"
-            size="sm"
-            title={`${t.undo} (Ctrl+Z)`}
-            aria-label={t.undo}
-          >
-            <Undo className="w-4 h-4" />
-          </IconButton>
-          <IconButton
-            type="button"
-            onClick={redo}
-            disabled={!canRedo}
-            data-testid="history-redo"
-            variant="ghost"
-            size="sm"
-            title={`${t.redo} (Ctrl+Shift+Z)`}
-            aria-label={t.redo}
-          >
-            <Redo className="w-4 h-4" />
-          </IconButton>
-        </div>
+        <HeaderHistoryButtons undo={undo} redo={redo} canUndo={canUndo} canRedo={canRedo} t={t} />
       )}
     </div>
   );

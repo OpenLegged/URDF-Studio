@@ -165,7 +165,16 @@ OPENAI_CONTEXT_WINDOW_TOKENS=32768
 GEMINI_API_KEY=
 ```
 
-可以放到 `.env.local` 中。
+团队共用的公开默认值写入已跟踪的 `.env`，各环境共用的公开配置写入已跟踪的
+`.env.dev` / `.env.fat` / `.env.production`；没有 local 文件也能直接启动和构建。
+`.env.<mode>.local` 仅作可选的个人临时覆盖，不入库；通用 `.env.local` 不受支持。
+读取顺序：`.env` → `.env.<mode>` → `.env.<mode>.local` → 进程变量。所选 mode 的 `.env.<mode>` 不存在时启动和构建直接失败。
+开源 core 不保存平台私有配置或商业密钥；Vite 注入的 provider 值会进入浏览器。个人 BYOK
+密钥仅限可信本机 dev，可用 `.env.dev.local` 或进程变量注入，不能当作服务端密钥。
+
+`npm run dev` 选择 dev；`build:dev`、`build:fat`、`build:production` 显式选择对应配置，均使用
+优化构建。`npm run build` 默认 production，`npm run preview` 跟随成功构建记录的 mode。
+这些是独立应用的通用构建模式，不是部署分支；不要求新增 fat 分支或填写平台业务端点。
 
 ### AI 功能
 

@@ -669,6 +669,7 @@ async function main() {
 
   console.log("[batch] starting vite dev server...");
   const server = await createServer({
+    mode: "dev",
     root: ROOT,
     configFile: resolve(ROOT, "vite.config.ts"),
     server: { port: args.port, host: "127.0.0.1", strictPort: true },

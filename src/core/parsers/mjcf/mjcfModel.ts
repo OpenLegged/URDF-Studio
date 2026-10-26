@@ -27,6 +27,8 @@ import {
   buildGeneratedMjcfSiteName,
 } from './mjcfGeneratedNames';
 import { convertMjcfAngle, mjcfQuatToThreeQuat } from './mjcfMath';
+import { parseMJCFModelLightAttributes, type MJCFModelLight } from './mjcfLight';
+export type { MJCFModelLight } from './mjcfLight';
 
 export interface MJCFModelGeom {
   name?: string;
@@ -161,6 +163,7 @@ export interface MJCFModelBody {
   quat?: [number, number, number, number];
   geoms: MJCFModelGeom[];
   sites: MJCFModelSite[];
+  lights?: MJCFModelLight[];
   joints: MJCFModelJoint[];
   inertial?: MJCFModelInertial;
   children: MJCFModelBody[];
@@ -251,7 +254,7 @@ function directChildrenByTagNames(element: Element, tagNames: string[]): Element
   );
 }
 
-type RecoverableMJCFElementKind = 'body' | 'frame' | 'geom' | 'inertial' | 'joint' | 'site';
+type RecoverableMJCFElementKind = 'body' | 'frame' | 'geom' | 'inertial' | 'joint' | 'site' | 'light';
 
 interface MJCFModelRecoveryCollector {
   diagnostics: RobotImportRecoveryDiagnostic[];
@@ -1020,6 +1023,54 @@ function collectSitesInBodyOrder(
   return sites;
 }
 
+function collectLightsInBodyOrder(
+  container: Element,
+  defaults: MJCFDefaultsRegistry,
+  activeClassQName: string | undefined,
+  compilerSettings: MJCFCompilerSettings,
+  bodyPath: string,
+  recovery: MJCFModelRecoveryCollector,
+): MJCFModelLight[] {
+  const lights: MJCFModelLight[] = [];
+  walkFrameExpandedChildren(
+    container,
+    defaults,
+    activeClassQName,
+    compilerSettings,
+    (child, context) => {
+      if (child.tagName.toLowerCase() !== 'light') return;
+      try {
+        const attributes = resolveElementAttributes(defaults, 'light', child, context.activeClassQName);
+        const light = parseMJCFModelLightAttributes(attributes);
+        const classQName = resolveDefaultClassQName(
+          defaults,
+          child.getAttribute('class'),
+          context.activeClassQName,
+        );
+        light.classQName = classQName;
+        light.className = classQName?.split('/').pop() || child.getAttribute('class') || undefined;
+        if (context.inheritedTransform) {
+          light.pos = vectorToTuple(
+            new THREE.Vector3(...light.pos)
+              .applyQuaternion(context.inheritedTransform.quaternion)
+              .add(context.inheritedTransform.position),
+          );
+          light.dir = vectorToTuple(
+            new THREE.Vector3(...light.dir).applyQuaternion(context.inheritedTransform.quaternion),
+          );
+        }
+        lights.push(light);
+      } catch (error) {
+        recovery.omit('light', child, describeError(error), bodyPath);
+      }
+    },
+    undefined,
+    recovery,
+    bodyPath,
+  );
+  return lights;
+}
+
 function parseTendonMap(
   mujocoElement: Element,
   defaults: MJCFDefaultsRegistry,
@@ -1761,6 +1812,14 @@ function parseBody(
     { value: 0 },
     recovery,
   );
+  const lights = collectLightsInBodyOrder(
+    bodyElement,
+    defaults,
+    childDefaultsClassQName,
+    bodyCompilerSettings,
+    bodyPath,
+    recovery,
+  );
   const joints = collectJointsInBodyOrder(
     bodyElement,
     defaults,
@@ -1797,6 +1856,7 @@ function parseBody(
     quat: resolvedBodyQuat,
     geoms,
     sites,
+    lights,
     joints,
     inertial,
     children,
@@ -1957,7 +2017,7 @@ export function parseMJCFModel(xmlContent: string): ParsedMJCFModel | null {
     const compilerSettings = parseCompilerSettings(doc);
     const defaults = parseMJCFDefaults(doc);
     const meshMap = parseMeshAssets(doc, compilerSettings, defaults);
-    const hfieldMap = parseHfieldAssets(doc);
+    const hfieldMap = parseHfieldAssets(doc, compilerSettings);
     const materialMap = parseMaterialAssets(doc, defaults);
     const textureMap = parseTextureAssets(doc, compilerSettings, defaults);
     const connectConstraints = parseConnectConstraints(mujocoElement);
@@ -1977,6 +2037,7 @@ export function parseMJCFModel(xmlContent: string): ParsedMJCFModel | null {
       pos: [0, 0, 0],
       geoms: [],
       sites: [],
+      lights: [],
       joints: [],
       children: [],
     };
@@ -2007,6 +2068,16 @@ export function parseMJCFModel(xmlContent: string): ParsedMJCFModel | null {
           compilerSettings,
           'world',
           { value: worldBody.sites.length },
+          recovery,
+        ),
+      );
+      worldBody.lights?.push(
+        ...collectLightsInBodyOrder(
+          worldbodyElement,
+          defaults,
+          undefined,
+          compilerSettings,
+          'world',
           recovery,
         ),
       );

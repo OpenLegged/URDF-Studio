@@ -1,6 +1,6 @@
 # UI 样式与可访问性
 
-> 最后更新：2026-09-04 | 覆盖源码：`src/styles/`、`src/store/uiStore.ts`、`src/shared/components/ui/`、`src/app/components/header/`、`src/app/components/settings/`
+> 最后更新：2026-10-21 | 覆盖源码：`src/styles/`、`src/store/uiStore.ts`、`src/shared/components/ui/`、`src/shared/hooks/useDraggableWindow.ts`、`src/app/components/header/`、`src/app/components/settings/`
 > 交叉引用：[architecture.md](architecture.md)
 
 ## 1. 关键入口
@@ -22,11 +22,20 @@
 
 ## 2.1 控件复用边界
 
+- Dialog 内的 Tooltip portal 到所属弹窗的外层根节点，避开面板裁剪并保留弹窗层级；普通页面提示仍 portal 到 body。不要通过抬高全局提示 z-index 让底层提示穿过上层模态窗口。
+- 业务弹窗须通过 `closeLabel={t.close}` 传入本地化的关闭文案，避免中文界面回退到组件默认的英文提示。
+- Header 宿主动作的悬停/聚焦说明使用共享 Tooltip，`HeaderAction.title` 仅作为提示文案与无障碍名称，不透传成 DOM 原生 `title`。
+- Tooltip 在触发控件被点击（含键盘激活产生的 click）时关闭，避免打开新页面或面板后保留旧提示。
+
 - Header 的宿主 secondary action 在 primary / alternate 工作区共用标签宽度规则；宽屏显示文字，紧凑宽度收起文字，不按工作区强制隐藏。
+- 顶栏保持 40px；右侧按产品/截图/反馈/更多、语言、主题、设置、宿主 secondary action 排列。设置与宿主动作在窄屏保持直接可用，其他操作按原有更多菜单折叠，反馈链接在手机收入更多菜单；左侧菜单缩小横向留白。图标按钮为 32×32px、6px 圆角、16px glyph，语言按钮仅显示图标；宿主动作使用中性 ghost 样式，文字使用 `text-ui-control` 并在 160px 最大宽度内省略。
+
+- 设置浮窗的初始尺寸、手动缩放和位置受当前视口边界约束；窄屏允许低于桌面最小尺寸并保留四周 12px 留白。打开时聚焦窗口，Escape 关闭设置；已展开的 Select 优先消费 Escape。窗口打开/关闭及视口改变时对称维护拖动、resize 和 observer 生命周期。
 
 - 基础交互控件统一从 `src/shared/components/ui/` 引用：`Button`、`IconButton`、`ToolbarToggleGroup`、`Checkbox`、`Switch`、`Input`、`Select`、`PanelSelect`、`Slider`、`SegmentedControl`、`Dialog`、`Tooltip`、`ContextMenu`
 - 面板组合控件统一从 `src/shared/components/Panel/` 引用；面板内 overlay / toolbar 小按钮优先使用 `IconButton` 或 `PanelOverlayToggleButton`
 - Feature 内可以保留业务 adapter（如 property editor 的数值输入），但 adapter 只负责业务布局、密度和行为，不复制完整 hover / focus / disabled / token 状态样式
+- 浮窗宿主若根据可用区域限制位置或尺寸，使用 `useDraggableWindow` 的 `setPosition` / `setSize` 同步窗口状态，保持下一次拖动和缩放的起点与实际显示一致。
 - Header、toolbar、panel、menu、dialog 表面禁止新增 `bg-white`、`text-slate-*`、`border-slate-*` 等绕过语义 token 的 Tailwind 色值；使用 `panel-bg`、`element-bg`、`element-hover`、`input-bg`、`border-black`、`border-strong`、`text-*`
 
 ## 3. 高频语义色
@@ -61,3 +70,5 @@
 - Light / Dark / 高对比 三种场景均可读
 - Hover / Active / Focus 行为一致且可感知
 - 无新增分散硬编码色值
+
+设置面板宽度不足 480px 时，现有设置行使用上下排列的标签与控件；分组标题操作允许换行，避免标签竖排和标题截断。依据已有面板容器查询宽度，桌面布局保持双列。
