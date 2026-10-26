@@ -72,7 +72,13 @@ export function serializeJointPose(pose: JointPose, format: JointPoseFormat): st
   if (format === 'json') {
     return JSON.stringify(pose, null, 2) + '\n';
   }
-  const csvCell = (value: string | number) => `"${String(value).replaceAll('"', '""')}"`;
+  const csvCell = (value: string | number) => {
+    // CSV quoting does not stop spreadsheet formulas. Only label strings need
+    // a text marker; numeric positions (including negatives) remain numeric.
+    const text = typeof value === 'string' && /^[\s\p{Cc}]*[=+\-@]/u.test(value)
+      ? `'${value}` : String(value);
+    return `"${text.replaceAll('"', '""')}"`;
+  };
   const rows = pose.joints.map((joint) =>
     [joint.id, joint.name, joint.type, joint.position, joint.unit].map(csvCell).join(','),
   );

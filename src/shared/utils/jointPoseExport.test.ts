@@ -95,6 +95,29 @@ test('CSV preserves commas, quotes, and newlines in joint identities', () => {
   );
 });
 
+test('CSV keeps formula-like joint identities as text, including hidden leading characters', () => {
+  const identities = ['=1+1', '+1+1', '-1+1', '@SUM(1,2)', '  =1+1', '\t+1+1', '\r\n-1+1', '\u0000@SUM(1,2)', '\u007f=1+1', '\uFEFF=1+1'];
+  for (const identity of identities) {
+    const pose = buildJointPose({ joints: { [identity]: { name: identity, type: 'continuous', angle: -0.25 } } }, {});
+    const safeIdentity = `"'${identity}"`;
+    assert.equal(
+      serializeJointPose(pose, 'csv'),
+      `\uFEFFjoint_id,joint_name,joint_type,position,unit\r\n${safeIdentity},${safeIdentity},"continuous","-0.25","rad"\r\n`,
+      `CSV must treat ${JSON.stringify(identity)} as a label rather than a formula`,
+    );
+    assert.deepEqual(JSON.parse(serializeJointPose(pose, 'json')), pose, 'JSON preserves the original identity');
+    assert.equal(pose.joints[0].name, identity, 'CSV encoding does not mutate the captured pose');
+  }
+});
+
+test('CSV does not add text markers to numeric positions or ordinary numeric labels', () => {
+  const pose = buildJointPose({ joints: { '123': { name: 'joint-1', type: 'prismatic', angle: -1.2345678901234567 } } }, {});
+  assert.equal(
+    serializeJointPose(pose, 'csv'),
+    '\uFEFFjoint_id,joint_name,joint_type,position,unit\r\n"123","joint-1","prismatic","-1.2345678901234567","m"\r\n',
+  );
+});
+
 test('pose filenames avoid duplicate extensions and unsafe path characters', () => {
   assert.equal(jointPoseFileName(' squat.json ', 'json'), 'squat.json');
   assert.equal(jointPoseFileName('squat.JSON', 'csv'), 'squat.csv');
