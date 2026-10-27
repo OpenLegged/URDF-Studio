@@ -101,6 +101,12 @@ async function main() {
     const paintedState = await getPaintGeometryState(page);
     assert(suite, paintedState.meshMaterialGroups.length > 0, 'surface paint creates face groups');
     assert(suite, paintedState.authoredMaterials.length === 2, 'paint stores base and paint slots');
+    assert(suite, paintedState.authoredMaterials[1]?.opacity === 1, 'opaque paint authors alpha 1');
+    assert(
+      suite,
+      paintedState.runtimeMaterials.some((material) => material.color === '#ff6c0a' && material.opacity === 1),
+      'opaque paint does not inherit the original translucent alpha',
+    );
 
     // ── 3. Restore the clicked surface to its actual base ──
     await setRestoreOperation(page);

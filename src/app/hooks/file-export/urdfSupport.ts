@@ -3,8 +3,31 @@ import {
   createUnsupportedUrdfJointError,
   findUnsupportedUrdfJoint,
 } from '@/core/parsers/urdf/urdfExportSupport';
-import type { AssemblyState, RobotState } from '@/types';
+import type { AssemblyState, RobotState, RobotFile } from '@/types';
+import { generateURDF } from '@/core/parsers';
+import { buildGeneratedUrdfOptions } from '@/app/utils/generatedUrdfOptions';
+import { resolveSourcePreservingExportContent, type SourcePreservingExportFile } from '../sourcePreservingExportUtils';
 import type { ExportActionRequired, ExportTarget } from './types';
+
+export async function generateComponentUrdfContent(options: {
+  robot: RobotState;
+  extraMeshFiles?: Map<string, Blob>;
+  sourceFile: SourcePreservingExportFile | null;
+  preserveSource: boolean;
+  includeExtended: boolean;
+  useRelativePaths: boolean;
+  availableFiles: RobotFile[];
+  allFileContents: Record<string, string>;
+}): Promise<string> {
+  const generatedContent = generateURDF(options.robot, await buildGeneratedUrdfOptions(
+    options.extraMeshFiles, { extended: options.includeExtended, useRelativePaths: options.useRelativePaths },
+  ));
+  if (options.includeExtended || !options.sourceFile || !options.preserveSource) return generatedContent;
+  return resolveSourcePreservingExportContent({
+    format: 'urdf', currentRobot: options.robot, sourceFile: options.sourceFile,
+    generatedContent, availableFiles: options.availableFiles, allFileContents: options.allFileContents,
+  }).content;
+}
 
 export interface BoxFaceFallbackWarningLabels {
   sdf: string;

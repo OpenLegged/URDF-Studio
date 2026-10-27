@@ -8,6 +8,7 @@ export type MjcfActuatorType = 'position' | 'velocity' | 'motor';
 export interface MjcfVisualMeshVariant {
   meshPath: string;
   color?: string;
+  opacity?: number;
   sourceMaterialName?: string;
 }
 

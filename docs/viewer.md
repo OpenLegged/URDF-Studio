@@ -65,6 +65,7 @@ features/urdf-viewer/
   材质乘色与 OBJ 顶点乘色均为白色，避免备用色经 MJCF mesh variant 再次染色；
   无 base-color 贴图的纯色材质继续保留原色，透明度也独立保留。
 - 材质必须通过 `materials.ts` / `urdfMaterials.ts` 复用，不在高频路径直接 `new`
+- 局部涂色原位刷新必须把 assets/sourceFileDir 传给 palette 的 LoadingManager，不能把已导入贴图路径当作站点 URL；加载完成只刷新仍有效的 patch，过期回调由材质生命周期清理。
 - viewer backend / load scene sync 归 `features/urdf-viewer/renderers/`；`shared/components/3d/renderers/` 只保留 STL/OBJ/DAE/GLTF 等纯 mesh renderer 组件
 - 使用 `RobotData`、`WorkspaceSelection` 等共享类型，避免 `any`
 - TransformControls 引用注册必须完整、可追踪

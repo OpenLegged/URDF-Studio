@@ -83,6 +83,11 @@ MJCF 生成选项、网格和贴图打包。上述单测不替代 Unitree 浏览
 | `unitree_go2/go2.xml`   | 标准 MuJoCo menagerie 样本 |
 | `unitree_go2/scene.xml` | 带 scene 包装的 MJCF       |
 
+### 局部涂色小样本
+
+- `scripts/test/fixtures/paint_restore/`：原色 `#336699`、透明度 0.75 的 URDF 方盒，用于上色/恢复回归。
+- `scripts/test/fixtures/paint_textured/`：12 三角面的 UV OBJ、MTL、URDF 显式纹理和自生成棋盘 PNG，用于纹理上色及 USP/MJCF/URDF 实际下载回导，无外部语料依赖。
+
 ### 样本选择建议
 
 - 快速 smoke：`gazebo_models/camera/model.sdf`、`fanuc.../m710ic70.urdf`、`Go2/usd/go2.usd`

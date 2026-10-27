@@ -478,6 +478,60 @@ test('syncLinkVisualColors keeps an authored texture on its neutral base color',
   assert.equal(material.color.getHexString(), 'ffffff');
 });
 
+for (const useVisualGroup of [false, true]) {
+  test(`syncLinkVisualColors preserves precise textured alpha and syncs opacity-only edits (visual group: ${useVisualGroup})`, () => {
+    const robot = new THREE.Group();
+    const link = new THREE.Group() as THREE.Group & { isURDFLink?: boolean };
+    link.isURDFLink = true;
+    link.name = 'base_link';
+    const material = new THREE.MeshStandardMaterial({
+      color: '#ffffff',
+      map: new THREE.Texture(),
+      opacity: 0.75,
+      transparent: true,
+    });
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), material);
+    mesh.userData.isVisualMesh = true;
+    if (useVisualGroup) {
+      const group = new THREE.Group() as THREE.Group & { isURDFVisual?: boolean };
+      group.isURDFVisual = true;
+      group.add(mesh);
+      link.add(group);
+    } else {
+      link.add(mesh);
+    }
+    robot.add(link);
+    const linkData: UrdfLink = {
+      ...DEFAULT_LINK,
+      id: 'base_link',
+      name: 'base_link',
+      visual: {
+        ...DEFAULT_LINK.visual,
+        type: GeometryType.MESH,
+        color: '#ffffffbf',
+        authoredMaterials: [{
+          color: '#ffffffbf',
+          colorRgba: [1, 1, 1, 0.75],
+          texture: 'checker.png',
+        }],
+      },
+    };
+    const sync = () => syncLinkVisualColors({ robot, robotLinks: { base_link: linkData } });
+    assert.equal(sync(), false, 'exact imported alpha must not be replaced by rounded hex alpha');
+    assert.equal(material.opacity, 0.75);
+
+    linkData.visual.authoredMaterials![0]!.opacity = 0.4;
+    assert.equal(sync(), true, 'an opacity-only edit must invalidate the color sync cache');
+    assert.equal(material.opacity, 0.4);
+    linkData.visual.authoredMaterials![0]!.opacity = 1;
+    assert.equal(sync(), true, 'explicit opaque alpha must override the stored RGBA alpha');
+    assert.equal(material.opacity, 1);
+    assert.equal(sync(), false);
+    assert.equal(material.color.getHexString(), 'ffffff');
+    assert.ok(material.map);
+  });
+}
+
 test('syncLinkVisualColors applies visualBodies colors to their matching visual groups', () => {
   const robot = new THREE.Group();
 

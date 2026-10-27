@@ -1,4 +1,5 @@
 import type { UrdfVisual, UrdfVisualMaterial, UrdfVisualMeshMaterialGroup } from '@/types';
+import { parseThreeColorWithOpacity } from '@/core/utils/color';
 import { normalizeAuthoredMaterialEntry } from './visualMaterials';
 
 function normalizeMaterialValue(value?: string | null): string | undefined {
@@ -226,6 +227,7 @@ function compactMeshMaterialPalette(
 function findMatchingCustomMaterialIndex(
   authoredMaterials: readonly UrdfVisualMaterial[],
   paintColor: string,
+  paintOpacity: number,
 ): number | null {
   const normalizedPaintColor = normalizeColor(paintColor);
   if (!normalizedPaintColor) {
@@ -240,6 +242,7 @@ function findMatchingCustomMaterialIndex(
 
     if (
       normalizeColor(material.color) === normalizedPaintColor &&
+      material.opacity === paintOpacity &&
       !normalizeMaterialValue(material.texture)
     ) {
       return materialIndex;
@@ -317,9 +320,13 @@ export function applyMeshMaterialPaintEdit({
   let targetMaterialIndex = 0;
 
   if (!erase) {
+    // RGB paint means fully opaque, not "inherit the original material's alpha".
+    // Keep that intent in the model so rendering and exports agree.
+    const paintOpacity = parseThreeColorWithOpacity(paintColor)?.opacity ?? 1;
     const existingMaterialIndex = findMatchingCustomMaterialIndex(
       nextAuthoredMaterials,
       paintColor,
+      paintOpacity,
     );
     if (existingMaterialIndex !== null) {
       targetMaterialIndex = existingMaterialIndex;
@@ -328,6 +335,7 @@ export function applyMeshMaterialPaintEdit({
       nextAuthoredMaterials.push({
         name: `${materialNamePrefix}_${targetMaterialIndex}`,
         color: paintColor,
+        opacity: paintOpacity,
       });
     }
   }

@@ -9,6 +9,7 @@ export interface ExportContext {
   robot: RobotState;
   exportName: string;
   extraMeshFiles?: Map<string, Blob>;
+  sourceFileDir?: string;
 }
 
 export interface HandleExportWithConfigOptions {
