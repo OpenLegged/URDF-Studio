@@ -1,11 +1,12 @@
 import * as THREE from 'three';
 
-import { parseThreeColorWithOpacity } from '@/core/utils/color';
+import { colorRgbaTupleToOpacity, parseThreeColorWithOpacity } from '@/core/utils/color';
 import {
   getVisualGeometryEntries,
   resolveDirectManipulableLinkIkDescriptor,
   resolveLinkIkHandleDescriptor,
   resolveLinkKey,
+  resolveVisualMaterialOverride,
 } from '@/core/robot/index';
 import { GIZMO_BASE_RENDER_ORDER } from '@/shared/components/3d/unified-transform-controls/gizmoCore';
 import { MathUtils as SharedMathUtils } from '@/shared/utils/index';
@@ -576,7 +577,24 @@ export function syncLinkVisualColors({
     return materialColor?.trim() || undefined;
   };
 
-  const syncVisualRootColor = (visualRoot: THREE.Object3D, targetColor: string): void => {
+  const resolveVisualOpacity = (
+    linkData: UrdfLink,
+    geometry: UrdfLink['visual'],
+    isPrimaryVisual: boolean,
+  ): number | undefined => {
+    const material = resolveVisualMaterialOverride(
+      { materials: robotMaterials }, linkData, geometry, { isPrimaryVisual },
+    );
+    // A multi-material visual owns separate per-slot alpha values.
+    if (material.isMultiMaterial) return undefined;
+    return material.opacity ?? colorRgbaTupleToOpacity(material.colorRgba);
+  };
+
+  const syncVisualRootColor = (
+    visualRoot: THREE.Object3D,
+    targetColor: string,
+    authoredOpacity?: number,
+  ): void => {
     const parsedTargetColor = parseThreeColorWithOpacity(targetColor);
     if (!parsedTargetColor) return;
 
@@ -601,10 +619,9 @@ export function syncLinkVisualColors({
           : null;
       const effectiveTargetColor = authoredTextureColor ?? parsedTargetColor.color;
 
-      const lastSynced = child.userData.__syncedColor as string | undefined;
-      if (lastSynced === targetColor && mat.color.equals(effectiveTargetColor)) return;
-
-      const nextOpacity = parsedTargetColor.opacity;
+      // Display hex colors quantize alpha to 8 bits; keep the canonical material
+      // opacity when available, including edits that leave the RGB unchanged.
+      const nextOpacity = authoredOpacity ?? parsedTargetColor.opacity;
       const colorMatches = mat.color.equals(effectiveTargetColor);
       const opacityMatches =
         nextOpacity == null || Math.abs((mat.opacity ?? 1) - nextOpacity) <= 1e-6;
@@ -643,14 +660,19 @@ export function syncLinkVisualColors({
           index === 0 ? linkMaterialColor || entry.geometry.color : entry.geometry.color;
         const visualGroup = visualGroups[index];
         if (!targetColor || !visualGroup) return;
-        syncVisualRootColor(visualGroup, targetColor);
+        syncVisualRootColor(
+          visualGroup, targetColor, resolveVisualOpacity(linkData, entry.geometry, index === 0),
+        );
       });
       return;
     }
 
     const primaryTargetColor = linkMaterialColor || visualEntries[0]?.geometry.color;
     if (!primaryTargetColor) return;
-    syncVisualRootColor(link, primaryTargetColor);
+    syncVisualRootColor(
+      link, primaryTargetColor,
+      visualEntries[0] ? resolveVisualOpacity(linkData, visualEntries[0].geometry, true) : undefined,
+    );
   });
 
   return changed;

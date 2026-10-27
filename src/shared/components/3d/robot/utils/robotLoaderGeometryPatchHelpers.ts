@@ -483,6 +483,9 @@ export function patchVisualEntriesInPlace({
         linkData: nextLinkData,
         previousGeometry: previousEntry.geometry,
         geometry: nextEntry.geometry,
+        assets,
+        sourceFileDir,
+        isPatchTargetValid,
         showVisual,
         showCollision,
         invalidate,
@@ -623,6 +626,9 @@ export function patchCollisionEntriesInPlace({
         linkData: nextLinkData,
         previousGeometry: previousEntry.geometry,
         geometry: nextEntry.geometry,
+        assets,
+        sourceFileDir,
+        isPatchTargetValid,
         showVisual,
         showCollision,
         invalidate,
@@ -877,6 +883,9 @@ export function patchGeometryGroupInPlace({
   linkData,
   previousGeometry,
   geometry,
+  assets,
+  sourceFileDir,
+  isPatchTargetValid,
   showVisual,
   showCollision,
   invalidate,
@@ -889,6 +898,9 @@ export function patchGeometryGroupInPlace({
   linkData: UrdfLink;
   previousGeometry: LinkGeometry | undefined;
   geometry: LinkGeometry | undefined;
+  assets: Record<string, string>;
+  sourceFileDir?: string;
+  isPatchTargetValid?: () => boolean;
   showVisual: boolean;
   showCollision: boolean;
   invalidate: () => void;
@@ -1002,8 +1014,19 @@ export function patchGeometryGroupInPlace({
       disposeReplacedMaterials(previousVisibleMaterial, disposedMaterials, false);
     });
 
+    const patchToken = ((targetGroup.userData.__patchToken as number) || 0) + 1;
+    targetGroup.userData.__patchToken = patchToken;
+    const manager = createLoadingManager(assets, sourceFileDir ?? '');
+    manager.onLoad = () => {
+      if (
+        targetGroup.userData.__patchToken === patchToken &&
+        (!isPatchTargetValid || isPatchTargetValid())
+      ) {
+        invalidate();
+      }
+    };
     targetGroup.children.forEach((child) => {
-      applyVisualMeshMaterialGroupsToObject(child, geometry);
+      applyVisualMeshMaterialGroupsToObject(child, geometry, { manager });
     });
 
     highlightedSnapshots.forEach((highlightSnapshot, mesh) => {

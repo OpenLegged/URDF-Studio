@@ -22,7 +22,6 @@ import { setTimeout as wait } from 'node:timers/promises';
 import {
   takeScreenshot,
   retryPageAction,
-  DEFAULT_OPERATION_TIMEOUT_MS,
 } from '../../helpers/browser-helpers.mjs';
 
 // English UI labels (the suite pins the app to EN; see setLanguageEn).
@@ -68,17 +67,11 @@ export const SCREENSHOT_DIR = path.resolve('tmp/e2e/workflow/screenshots');
 
 /** Pin the UI language to English so the label constants above stay valid. */
 export async function setLanguageEn(page) {
-  await page.evaluate(() => {
-    window.localStorage.setItem('language', 'en');
-  });
-  // Reload so the app picks the language up on boot.
-  await page.reload({ waitUntil: 'domcontentloaded' });
-  // Cold dev-server compiles under parallel journeys can take a while.
-  await retryPageAction(
-    () => page.waitForFunction(() => Boolean(window.__URDF_STUDIO_DEBUG__), { timeout: 30_000 }),
-    DEFAULT_OPERATION_TIMEOUT_MS,
-    'debug API availability after language pin',
-  );
+  // The persisted UI store can override the legacy localStorage language key.
+  // Use the actual language control so both the rendered UI and persistence agree.
+  const chineseToggle = await page.$('button[aria-label="切换语言"]');
+  if (chineseToggle) await chineseToggle.click();
+  await page.waitForSelector('button[aria-label="Switch Language"]', { timeout: 30_000 });
 }
 
 export async function screenshot(page, journeyId, stepName) {

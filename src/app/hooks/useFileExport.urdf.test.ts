@@ -26,6 +26,7 @@ import {
 } from '@/types';
 import type { ExportDialogConfig } from '@/features/file-io';
 import { IDENTITY_ASSEMBLY_TRANSFORM } from '@/core/robot/assemblyTransforms';
+import { generateURDF } from '@/core/parsers';
 
 function restoreGlobalProperty<T extends keyof typeof globalThis>(
   key: T,
@@ -942,3 +943,73 @@ test('configured export can deliver an archive to its host without starting a br
     domEnvironment.restore();
   }
 });
+
+for (const mode of ['standard', 'extended', 'components'] as const) {
+  test(`URDF ${mode} ZIP retains painted primitive faces, texture alpha, and generated mesh files`, async () => {
+    resetStoresToBaseline();
+    const environment = installDomEnvironment();
+    const robot = createRobotData('base_link', 'paint_fixture');
+    robot.links.base_link.visual = {
+      ...structuredClone(DEFAULT_LINK.visual), type: GeometryType.BOX,
+      dimensions: { x: 1, y: 2, z: 3 }, color: '#ffffff',
+      authoredMaterials: [{ texture: 'checker.png', color: '#ffffff', opacity: 0.75 }],
+    };
+    const source = generateURDF({ ...robot, selection: { type: null, id: null } })
+      .replace('</robot>', '  <custom preserved="yes" />\n</robot>');
+    const file: RobotFile = { name: 'robot.urdf', format: 'urdf', content: source };
+    robot.links.base_link.visual.authoredMaterials!.push(
+      { color: '#ff6c0a', opacity: 1 }, { color: '#00cc44', opacity: 0.4 },
+    );
+    robot.links.base_link.visual.meshMaterialGroups = [
+      { meshKey: '0', start: 0, count: 30, materialIndex: 0 },
+      { meshKey: '0', start: 30, count: 3, materialIndex: 1 },
+      { meshKey: '0', start: 33, count: 3, materialIndex: 2 },
+    ];
+    useAssetsStore.setState({
+      assets: { 'checker.png': createFaceTextureAssets()['textures/front.png'] },
+      availableFiles: [file], selectedFile: file, allFileContents: { [file.name]: source },
+    });
+    if (mode === 'components') {
+      const workspace = createAssemblyState();
+      for (const component of Object.values(workspace.components)) {
+        component.robot = structuredClone(robot);
+        component.sourceFile = file.name;
+      }
+      installExportTestWorkspace(workspace);
+    } else {
+      installExportTestRobot(robot);
+    }
+    const download = installDownloadMocks();
+    const rendered = renderHook();
+    try {
+      const config = createUrdfExportConfig({ includeMeshes: true, includeExtended: mode === 'extended' });
+      const result = mode === 'components'
+        ? await rendered.hook.handleExportDisconnectedWorkspaceUrdfBundle(config)
+        : await rendered.hook.handleExportWithConfig(config);
+      assert.equal(result.partial, false);
+      assert.ok(download.capturedBlob);
+      const zip = await JSZip.loadAsync(await download.capturedBlob.arrayBuffer());
+      const urdfs = Object.values(zip.files).filter(entry => entry.name.endsWith('.urdf'));
+      assert.equal(urdfs.length, mode === 'components' ? 2 : 1);
+      for (const entry of urdfs) {
+        const xml = await entry.async('text');
+        const document = new DOMParser().parseFromString(xml, 'application/xml');
+        const visuals = [...document.querySelectorAll('visual')];
+        assert.equal(visuals.length, 3);
+        assert.deepEqual(visuals.map(visual => Number(visual.querySelector('color')?.getAttribute('rgba')?.split(' ')[3])), [0.75, 1, 0.4]);
+        const root = entry.name.slice(0, entry.name.lastIndexOf('/') + 1);
+        for (const visual of visuals) {
+          const path = visual.querySelector('mesh')?.getAttribute('filename');
+          assert.ok(path && zip.file(root + path), `mesh must exist: ${path}`);
+        }
+        assert.ok(zip.file(root + 'textures/checker.png'));
+        if (mode !== 'extended') assert.match(xml, /<custom preserved="yes"/);
+      }
+    } finally {
+      rendered.cleanup();
+      download.restore();
+      await settleDomTasks();
+      environment.restore();
+    }
+  });
+}

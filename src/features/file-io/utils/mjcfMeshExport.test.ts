@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import * as THREE from 'three';
 import { OBJLoader } from 'three/addons/loaders/OBJLoader.js';
 import { OBJExporter } from 'three/addons/exporters/OBJExporter.js';
+import { STLExporter } from 'three/addons/exporters/STLExporter.js';
 import { JSDOM } from 'jsdom';
 
 import {
@@ -24,11 +25,44 @@ import { DEFAULT_LINK, GeometryType, type RobotState } from '@/types';
 import { disposeObject3D } from '@/shared/utils/three/dispose';
 
 import { __mjcfMeshExportInternals, prepareMjcfMeshExportAssets } from './mjcfMeshExport';
+import { extractVisualMeshVariants } from './mjcfMeshExportHelpers';
 
 const dom = new JSDOM('<!doctype html><html><body></body></html>');
 globalThis.DOMParser = dom.window.DOMParser as typeof DOMParser;
 globalThis.XMLSerializer = dom.window.XMLSerializer as typeof XMLSerializer;
 globalThis.ProgressEvent = dom.window.ProgressEvent as typeof ProgressEvent;
+
+test('extracted MJCF material variants retain runtime opacity independently of RGB', async () => {
+  const geometry = new THREE.BoxGeometry(1, 1, 1);
+  const materials = [
+    new THREE.MeshStandardMaterial({ color: '#ffffff', opacity: 0.75, transparent: true }),
+    new THREE.MeshStandardMaterial({ color: '#00cc44', opacity: 0.4, transparent: true }),
+    new THREE.MeshStandardMaterial({ color: '#ff6c0a', opacity: 1 }),
+  ];
+  materials.forEach((material, index) => { material.name = `slot_${index}`; });
+  geometry.clearGroups();
+  geometry.addGroup(0, 24, 0);
+  geometry.addGroup(24, 6, 1);
+  geometry.addGroup(30, 6, 2);
+  const mesh = new THREE.Mesh(geometry, materials);
+  try {
+    const variants = extractVisualMeshVariants({
+      meshObject: mesh,
+      sourceMeshPath: 'paint/cube.obj',
+      usedArchivePaths: new Set(),
+      exporters: { obj: new OBJExporter(), stl: new STLExporter() },
+      meshFormat: 'obj',
+    });
+    assert.deepEqual(variants.map(({ blob: _blob, ...variant }) => variant), [
+      { meshPath: 'paint/cube_slot_0.obj', color: '#ffffff', opacity: 0.75, sourceMaterialName: 'slot_0' },
+      { meshPath: 'paint/cube_slot_1.obj', color: '#00cc44', opacity: 0.4, sourceMaterialName: 'slot_1' },
+      { meshPath: 'paint/cube_slot_2.obj', color: '#ff6c0a', opacity: 1, sourceMaterialName: 'slot_2' },
+    ]);
+    assert.deepEqual(await Promise.all(variants.map(async variant => countObjFaces(await variant.blob.text()))), [8, 2, 2]);
+  } finally {
+    disposeObject3D(mesh, true);
+  }
+});
 
 function getWorldBox(object: THREE.Object3D): THREE.Box3 {
   object.updateMatrixWorld(true);
@@ -1021,8 +1055,8 @@ test('prepareMjcfMeshExportAssets exports visual variants for native OBJ face-ma
   robot.links.base_link.visual = {
     ...robot.links.base_link.visual,
     authoredMaterials: [
-      { name: 'base', color: '#808080' },
-      { name: 'paint_slot_1', color: '#ff5500' },
+      { name: 'base', color: '#808080', opacity: 0.75 },
+      { name: 'paint_slot_1', color: '#ff5500', opacity: 0.4 },
     ],
     meshMaterialGroups: [
       { meshKey, start: 0, count: 3, materialIndex: 1 },
@@ -1038,6 +1072,7 @@ test('prepareMjcfMeshExportAssets exports visual variants for native OBJ face-ma
 
   assert.ok(variants, 'expected face-material groups to create visual mesh variants');
   assert.equal(variants?.length, 2);
+  assert.deepEqual(variants.map(variant => variant.opacity).sort(), [0.4, 0.75]);
   assert.equal(prepared.archiveFiles.size, 2);
   assert.equal(prepared.convertedSourceMeshPaths.has(meshPath), true);
 });

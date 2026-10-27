@@ -11,6 +11,7 @@ import { STLExporter } from 'three/addons/exporters/STLExporter.js';
 export interface MjcfVisualMeshVariant {
   meshPath: string;
   color?: string;
+  opacity?: number;
   sourceMaterialName?: string;
 }
 
@@ -915,6 +916,7 @@ export function extractVisualMeshVariants({
       variantFiles.push({
         meshPath: exportPath,
         color: colorToHex(getMaterialColor(variant.material)),
+        opacity: variant.material.opacity,
         sourceMaterialName: variant.material.name || undefined,
         blob,
       });
@@ -944,10 +946,9 @@ export function registerInlineMeshBlobUrls(
     if (normalizedSourcePath) {
       resolvedAssets[normalizedSourcePath] = objectUrl;
 
-      const fileName = normalizedSourcePath.split('/').pop();
-      if (fileName) {
-        resolvedAssets[fileName] = objectUrl;
-      }
+      // The asset index resolves unique basenames and source-local paths.
+      // A synthetic basename alias would overwrite same-named meshes from
+      // another component before that resolver can disambiguate them.
     }
   });
 

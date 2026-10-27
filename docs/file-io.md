@@ -42,6 +42,15 @@
 - `DisconnectedWorkspaceUrdfExportDialog.tsx` 是 workspace 断联导出特例，不要塞回通用导出弹层
 - `ExportProgressDialog.tsx` / `ExportProgressView.tsx` 是长时导出反馈的统一 UI，不要重新发明导出进度弹层
 
+### 局部涂色与材质保留
+
+- 涂色材质显式保存 opacity（包括 1 和 0），不能把六位 RGB 当作继承底材透明度；同色但不同 opacity 的材质不能共用涂色槽。
+- `.usp` 保存面分组和材质，回导时纯色涂色槽必须清除底材贴图的异步加载标记，避免迟到的贴图回调重新覆盖涂色。未涂区域保留原纹理及透明度。
+- MJCF 将分面材质拆成独立网格时，variant 同时携带颜色和透明度；RGB 颜色存在不能屏蔽 alpha。
+- 回导后的显示同步优先使用材质的精确 opacity / colorRgba alpha，不能再用八位十六进制颜色中的量化 alpha 覆盖。
+- URDF ZIP（含扩展 URDF 和分组件打包）把局部涂色按材质拆成独立 OBJ visual，保留 UV、颜色、精确透明度及未涂区域纹理。原语尺寸与网格内部变换烘焙到 OBJ，visual origin 保留；不修改工作区或碰撞几何。源码保留在转换后的标准 URDF 结构上执行，仍保留未知扩展元素。
+- 分组件资源解析使用组件源目录；prepared mesh 不建立会互相覆盖的 basename 别名。仅有纹理和透明度的材质也输出中性白 RGBA，避免 alpha 丢失。
+
 ### 当前关节姿态导出
 
 - 关节工具栏的下载图标位于设置与 RAD/DEG 之间；侧栏和浮动面板共用 `JointPoseExport`。

@@ -64,6 +64,12 @@ Assembly/workspace 改动至少覆盖以下不变量：
 
 `npm run test:browser:closed-loops` 使用 Playwright 操作真实拼接弹窗与关节滑块，验证固定朝向、旋转限位与错轴、连续旋转、滑动自由度及限位、相连多环、撤销重做、USP 保存回导和导出提示时机；还会实际下载并回导 SDF、USD、MJCF 固定闭环，检查回导后运动约束及 MJCF 活动闭环的导出保护。使用内置小模型，默认独立端口 4175；`URDF_TEST_SITE_URL` 可指定已有服务器，`CLOSED_LOOP_CASE` 可按名称筛选。数值证据、截图和下载物保存至 `tmp/regression/closed-loop-bridges/`，结束时只清理本次进程。
 
+### 纹理涂色与真实文件回导
+
+`npm run test:browser:paint-roundtrip` 使用 `scripts/test/fixtures/paint_textured/` 中的小型 UV OBJ 和棋盘贴图，操作真实上色面板，覆盖单三角面/相连面、透明度 0.4 → 1、撤销/重做、恢复纹理，以及 USP/URDF/MJCF 下载后在独立浏览器上下文回导。比较颜色、透明度、纹理是否仅留在未涂面及各材质三角面数量，并检查未捕获异常和控制台错误（包括贴图加载失败）；产物位于 `tmp/regression/paint-roundtrip/`。`URDF_STUDIO_TEST_SITE_URL` 可复用构建预览。
+
+默认验证全部三种格式；`PAINT_ROUNDTRIP_FORMATS=URDF` 可缩小调试范围。任一格式失败返回非零，后续格式仍继续验证。邻近单测还覆盖扩展/分组件 URDF、未知源码元素保留、共享网格不同涂色、同名不同目录资源、仅有纹理的 alpha、镜像绕序及原语尺寸烘焙。
+
 ### 工作流 E2E 套件（import → 属性编辑 → 源码编辑 → 导出 → 装配）
 
 `scripts/test/e2e/test_workflow_suite.mjs`（`npm run test:workflow` / `test:workflow:quick` / `test:browser:workflow`）是跨功能的**用户旅程**层：每条旅程走完整真实用户路径——多格式导入 → 右侧属性面板改 mass/joint type/limits（GUI 输入并三重验证：面板回读 + 源码草稿 + store）→ 源代码编辑（删 link、joint→fixed、改材质色）→ File→Export 导出 → **解压导出 zip 并断言 XML 内容**；J6 装配旅程用 GUI 桥接弹窗创建 revolute/continuous/prismatic/fixed + 自环闭环桥并导出装配体。

@@ -12,7 +12,7 @@ import {
   JointType,
   UrdfLink,
 } from '@/types';
-import { colorRgbaTupleToHex, type ColorRgbaTuple } from '@/core/utils/color';
+import { colorRgbaTupleToHex, parseThreeColorWithOpacity, type ColorRgbaTuple } from '@/core/utils/color';
 import {
   getGeometryAuthoredMaterials,
   collectGeometryTexturePaths,
@@ -451,12 +451,17 @@ export const generateMujocoXML = (robot: RobotState, options: MujocoExportOption
     texture?: string;
   } => {
     const authoredMaterials = getGeometryAuthoredMaterials(visual);
+    const variantOpacity = Number.isFinite(variant.opacity)
+      ? Number(variant.opacity)
+      : parseThreeColorWithOpacity(variant.color)?.opacity ?? undefined;
+    const opacityFields = (material: { opacity?: number; colorRgba?: ColorRgbaTuple }) => {
+      const opacity = variantOpacity ?? material.opacity ?? material.colorRgba?.[3];
+      return Number.isFinite(opacity) ? { opacity: Number(opacity) } : {};
+    };
     const fallbackState = {
       color: variant.color || fallback.color,
       ...(!variant.color && fallback.colorRgba ? { colorRgba: fallback.colorRgba } : {}),
-      ...(!variant.color && Number.isFinite(fallback.opacity)
-        ? { opacity: Number(fallback.opacity) }
-        : {}),
+      ...opacityFields(variant.color ? {} : fallback),
       ...(fallback.texture ? { texture: fallback.texture } : {}),
     };
 
@@ -482,9 +487,7 @@ export const generateMujocoXML = (robot: RobotState, options: MujocoExportOption
           ...(!variant.color && matchedMaterial.colorRgba
             ? { colorRgba: matchedMaterial.colorRgba }
             : {}),
-          ...(!variant.color && Number.isFinite(matchedMaterial.opacity)
-            ? { opacity: Number(matchedMaterial.opacity) }
-            : {}),
+          ...opacityFields(matchedMaterial),
           ...(matchedMaterial.texture ? { texture: matchedMaterial.texture } : {}),
         };
       }
@@ -505,9 +508,7 @@ export const generateMujocoXML = (robot: RobotState, options: MujocoExportOption
           ...(!variant.color && singleMaterial.colorRgba
             ? { colorRgba: singleMaterial.colorRgba }
             : {}),
-          ...(!variant.color && Number.isFinite(singleMaterial.opacity)
-            ? { opacity: Number(singleMaterial.opacity) }
-            : {}),
+          ...opacityFields(singleMaterial),
           ...(singleMaterial.texture ? { texture: singleMaterial.texture } : {}),
         };
       }

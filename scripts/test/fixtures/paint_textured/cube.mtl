@@ -1,0 +1,7 @@
+newmtl checker_base
+Kd 1 1 1
+Ka 0 0 0
+Ks 0 0 0
+d 0.75
+illum 2
+map_Kd checker.png

@@ -1269,6 +1269,95 @@ test('applyGeometryPatchInPlace updates mesh scale on the geometry group without
   assert.deepEqual(loaderRoot.scale.toArray(), [0.01, 0.01, 0.01]);
 });
 
+test('applyGeometryPatchInPlace resolves palette textures through workspace assets and invalidates only current loads', () => {
+  const originalTextureLoad = THREE.TextureLoader.prototype.load;
+  const requests: { url: string; texture: THREE.Texture; finish: () => void }[] = [];
+  THREE.TextureLoader.prototype.load = function mockTextureLoad(url, onLoad) {
+    const resolvedUrl = this.manager.resolveURL(url);
+    const texture = new THREE.Texture<HTMLImageElement>();
+    this.manager.itemStart(resolvedUrl);
+    requests.push({
+      url: resolvedUrl,
+      texture,
+      finish: () => {
+        onLoad?.(texture);
+        this.manager.itemEnd(resolvedUrl);
+      },
+    });
+    return texture;
+  };
+
+  try {
+    const robotModel = new THREE.Group();
+    const linkObject = new URDFLink();
+    linkObject.name = 'base_link';
+    const visualGroup = new URDFVisual();
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(), new THREE.MeshStandardMaterial());
+    visualGroup.add(mesh);
+    linkObject.add(visualGroup);
+    robotModel.add(linkObject);
+    const originalLink = makeLink({
+      id: 'base_link', name: 'base_link',
+      visual: makeGeometry({
+        type: GeometryType.MESH, meshPath: 'cube.obj',
+        authoredMaterials: [{ name: 'base', texture: 'checker.png' }],
+      }),
+    });
+    const paintedLink = structuredClone(originalLink);
+    paintedLink.visual.authoredMaterials!.push({ name: 'paint', color: '#ff0000', opacity: 1 });
+    paintedLink.visual.meshMaterialGroups = [
+      { meshKey: '0', start: 0, count: 30, materialIndex: 0 },
+      { meshKey: '0', start: 30, count: 6, materialIndex: 1 },
+    ];
+    let invalidations = 0;
+    let targetValid = true;
+    const patch = (previousLinkData: UrdfLink, linkData: UrdfLink) => {
+      assert.equal(applyGeometryPatchInPlace({
+        robotModel,
+        patch: {
+          linkName: 'base_link', previousLinkData, linkData,
+          visualChanged: true, visualBodiesChanged: false,
+          collisionChanged: false, collisionBodiesChanged: false,
+          inertialChanged: false, visibilityChanged: false,
+        },
+        // Duplicate basenames require the source directory to select the right asset.
+        assets: { 'robot/checker.png': 'blob:robot-checker', 'other/checker.png': 'blob:other-checker' },
+        sourceFileDir: 'robot',
+        showVisual: true, showCollision: false,
+        linkMeshMapRef: { current: new Map<string, THREE.Mesh[]>() },
+        invalidate: () => { invalidations += 1; },
+        isPatchTargetValid: () => targetValid,
+      }), true);
+      assert.equal(visualGroup.children[0], mesh, 'palette edits should preserve the mesh');
+    };
+
+    patch(originalLink, paintedLink);
+    assert.deepEqual(requests.map(({ url }) => url), ['blob:robot-checker']);
+    const beforeCompletion = invalidations;
+    requests[0]!.finish();
+    assert.equal(invalidations, beforeCompletion + 1, 'texture completion must schedule a frame after the patch');
+    assert.ok(Array.isArray(mesh.material));
+    assert.equal((mesh.material[0] as THREE.MeshStandardMaterial).map, requests[0]!.texture);
+    assert.equal((mesh.material[1] as THREE.MeshStandardMaterial).map, null);
+
+    const editedLink = structuredClone(paintedLink);
+    editedLink.visual.authoredMaterials![1]!.opacity = 0.4;
+    patch(paintedLink, editedLink);
+    patch(editedLink, paintedLink);
+    const beforeStaleCompletion = invalidations;
+    let staleTextureDisposed = false;
+    requests[1]!.texture.addEventListener('dispose', () => { staleTextureDisposed = true; });
+    requests[1]!.finish();
+    assert.equal(staleTextureDisposed, true, 'replaced material must reject its late texture');
+    assert.equal(invalidations, beforeStaleCompletion, 'superseded loads must not invalidate');
+    targetValid = false;
+    requests[2]!.finish();
+    assert.equal(invalidations, beforeStaleCompletion, 'unmounted target must not invalidate');
+  } finally {
+    THREE.TextureLoader.prototype.load = originalTextureLoad;
+  }
+});
+
 test('applyGeometryPatchInPlace updates authored multi-material colors in place without rebuilding the visual group', () => {
   const robotModel = new THREE.Group() as THREE.Group & {
     links?: Record<string, THREE.Object3D>;

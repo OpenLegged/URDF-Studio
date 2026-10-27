@@ -5,14 +5,14 @@
 import { useCallback, useMemo } from 'react';
 import type JSZip from 'jszip';
 import type { RobotFile, RobotState } from '@/types';
-import { generateURDF } from '@/core/parsers';
+import { getSourceFileDirectory } from '@/core/parsers/meshPathUtils';
 import { resolveSourcePreservingComponentDraft } from '@/core/robot';
 import { useAssetsStore } from '@/store';
 import type { ExportDialogConfig, PrepareMjcfMeshExportAssetsOptions } from '@/features/file-io';
+import { prepareUrdfPaintExport } from '@/features/file-io';
 import type { RobotAssetPackagingFailure } from '../utils/exportArchiveAssets';
 import { addRobotAssetsToZip } from '../utils/exportArchiveAssets';
 import { flushPendingHistory } from '../utils/pendingHistory';
-import { buildGeneratedUrdfOptions } from '../utils/generatedUrdfOptions';
 import { resolveRobotFileDataWithWorker } from './robotImportWorkerBridge';
 import { markUnsavedChangesBaselineSaved } from '../utils/unsavedChangesBaseline';
 import {
@@ -46,6 +46,7 @@ import {
   assertAssemblyUrdfExportSupported,
   createBoxFaceTextureFallbackWarnings,
   stripClosedLoopConstraintsForUrdfExport,
+  generateComponentUrdfContent,
 } from './file-export/urdfSupport';
 import { applyBoxFaceMaterialExportFallback } from './file-export/materialFallbacks';
 import {
@@ -289,6 +290,7 @@ export function useFileExport() {
       return {
         robot,
         exportName: getFileBaseName(file.name),
+        sourceFileDir: getSourceFileDirectory(file.name),
         ...(extraMeshFiles && extraMeshFiles.size > 0 ? { extraMeshFiles } : {}),
       };
     },
@@ -383,13 +385,16 @@ export function useFileExport() {
           robot: bundle.robot,
           exportName: canonicalContext.exportName,
           extraMeshFiles,
+          sourceFileDir: getSourceFileDirectory(identitySourcePath),
         };
       }
     }
 
-    return extraMeshFiles.size > 0
-      ? { ...canonicalContext, extraMeshFiles }
-      : canonicalContext;
+    return {
+      ...canonicalContext,
+      ...(extraMeshFiles.size > 0 ? { extraMeshFiles } : {}),
+      sourceFileDir: identitySourcePath ? getSourceFileDirectory(identitySourcePath) : undefined,
+    };
   }, [
     availableFiles,
     componentSourceDrafts,
@@ -475,7 +480,14 @@ export function useFileExport() {
           ...component.robot,
           selection: { type: null, id: null },
         };
-        const fallbackResult = applyBoxFaceMaterialExportFallback(componentRobot);
+        const paintedExport = await prepareUrdfPaintExport({
+          robot: componentRobot,
+          assets,
+          sourceFileDir: component.sourceFile ? getSourceFileDirectory(component.sourceFile) : undefined,
+          extraMeshFiles: component.sourceFile
+            ? new Map(Object.entries(getUsdPreparedExportCache(component.sourceFile)?.meshFiles ?? {})) : undefined,
+        });
+        const fallbackResult = applyBoxFaceMaterialExportFallback(paintedExport.robot);
         // URDF cannot express closed loops: cut them per component and warn.
         const strippedResult = stripClosedLoopConstraintsForUrdfExport(
           fallbackResult.robot,
@@ -501,27 +513,11 @@ export function useFileExport() {
                 content: sourceResolution.draft.content,
               }
             : null;
-        const generatedUrdfOptions = await buildGeneratedUrdfOptions(undefined, {
-          useRelativePaths,
+        const urdfContent = await generateComponentUrdfContent({
+          robot: exportRobot, extraMeshFiles: paintedExport.extraMeshFiles, sourceFile,
+          preserveSource: fallbackResult.records.length === 0 && preferSourceVisualMeshes !== false,
+          includeExtended, useRelativePaths, availableFiles, allFileContents,
         });
-        const generatedUrdfContent = generateURDF(exportRobot, generatedUrdfOptions);
-        const urdfContent = includeExtended
-          ? generateURDF(
-              exportRobot,
-              await buildGeneratedUrdfOptions(undefined, { extended: true, useRelativePaths }),
-            )
-          : ((sourceFile
-              && fallbackResult.records.length === 0
-              && preferSourceVisualMeshes !== false
-              ? resolveSourcePreservingExportContent({
-                  format: 'urdf',
-                  currentRobot: exportRobot,
-                  sourceFile,
-                  generatedContent: generatedUrdfContent,
-                  availableFiles,
-                  allFileContents,
-                }).content
-              : null) ?? generatedUrdfContent);
 
         componentFolder.file(`${componentExportName}.urdf`, urdfContent);
 
@@ -541,6 +537,7 @@ export function useFileExport() {
         const meshPackagingResult = await addMeshesToZip({
           robot: exportRobot,
           zip: componentFolder,
+          extraMeshFiles: paintedExport.extraMeshFiles,
           compressOptions: {
             compressSTL,
             stlQuality,
@@ -581,6 +578,8 @@ export function useFileExport() {
       buildSourcePreservingExportContent,
       componentSourceDrafts,
       downloadBlob,
+      assets,
+      getUsdPreparedExportCache,
       replaceTemplate,
       t.exportClosedLoopUrdfStripped,
       t.exportClosedLoopUrdfUnsupported,
