@@ -52,6 +52,7 @@ export type {
 export type { RawFilesCollectOptions } from './utils/rawFilesExport';
 
 // Utilities
+export { prepareUrdfPaintExport } from './utils/urdfPaintExport';
 export {
   detectFormat,
   isRobotDefinitionFile,

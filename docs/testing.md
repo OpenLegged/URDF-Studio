@@ -64,6 +64,41 @@ Assembly/workspace 改动至少覆盖以下不变量：
 
 `npm run test:browser:closed-loops` 使用 Playwright 操作真实拼接弹窗与关节滑块，验证固定朝向、旋转限位与错轴、连续旋转、滑动自由度及限位、相连多环、撤销重做、USP 保存回导和导出提示时机；还会实际下载并回导 SDF、USD、MJCF 固定闭环，检查回导后运动约束及 MJCF 活动闭环的导出保护。使用内置小模型，默认独立端口 4175；`URDF_TEST_SITE_URL` 可指定已有服务器，`CLOSED_LOOP_CASE` 可按名称筛选。数值证据、截图和下载物保存至 `tmp/regression/closed-loop-bridges/`，结束时只清理本次进程。
 
+### 连续几何属性编辑
+
+`npm run test:browser:geometry-edit-stability` 使用 Playwright 点击真实属性面板，连续执行 240 次旋转、位置和半径修改，覆盖默认圆柱及三个连杆的可视几何/碰撞体，并验证源码大小与缩进有界、运行时复用、撤销/重做和浏览器异常。无需外部模型，默认使用独立端口 4186；`URDF_STUDIO_TEST_SITE_URL` 可复用已有服务器，报告和截图位于 `tmp/regression/geometry-edit/`。快速单测另覆盖 URDF/Xacro/MJCF/SDF 连续源码替换，以及 tab、CRLF 和 inline XML。
+
+真实机器人使用独立入口，外部目录必须显式传入；不会被 `npm test`、`verify:fast`、`test:browser:all` 或 `test:all` 自动执行：
+
+```bash
+npm run test:geometry:real-model -- \
+  --model-dir /path/to/b2_z1_description \
+  --model-dir /path/to/BDX_V4_11.24 \
+  --model-dir /path/to/bdx_package
+```
+
+每个目录必须包含一个 `.urdf` 入口及其完整网格/贴图资源。当前范围为 URDF；没有入口、多个入口、非法 XML、可见符号链接或没有可测试的 visual/collision 时明确失败，不自动下载或挑选模型。脚本只读原目录，将过滤隐藏文件、`.git` 和 `node_modules` 的资源流式打包到系统临时目录，通过应用文件导入入口加载；结束后删除临时包。模型资源不放入 Git。
+
+脚本从 URDF 获取名称、拓扑和几何类型，确定性选择最多 12 个连杆，优先覆盖类型差异、多碰撞体和模型尾部，再分散补齐。每个选中连杆测试第一个 visual 及所有 collision；未选择的连杆、额外 visual 和不支持的几何会逐项记录在 `coverage`，不计作已验证。B2 + Z1 包含 primitive visual、box/cylinder/sphere collision；两个 BDX 的 visual/collision 都使用 mesh，按原比例的 1% 修改缩放，兼容 `0.001` 的网格单位。
+
+默认每个几何执行 40 次真实属性面板编辑，最后对一个几何追加 40 次连续旋转，并检查目标几何确实变化、源码草稿非空且 XML/拓扑有效、源码大小和缩进有界、网格保持加载、运行时复用及浏览器错误。另保留一次位置修改作为撤销/重做检查点，避免所有成对编辑抵消后撤销掉导入操作。撤销/重做后打开实际源码编辑器检查有效 URDF，避免把草稿缓存清空误判为成功。耗时分位数和 GC 前后堆指标用于诊断，不用固定毫秒阈值判断不同机器的性能。
+
+可选参数：`--edits-per-case 8` 用于短回归（整数且至少 8）、`--headed` 显示浏览器、`--site-url http://127.0.0.1:4187` 复用指定站点、`--output-dir tmp/regression/my-run` 指定报告目录。默认自动启动独立端口 4187 的开发服务器；仅在导入准备期间遇到导航刷新时重试一次，不重试编辑失败。默认每模型 300 秒的 Node watchdog 可用 `--model-timeout-ms` 调整；即使渲染线程卡死、RAF 不再返回，也会关闭本次测试浏览器并记录失败。
+
+模型按顺序运行，每个模型使用独立浏览器上下文。默认产物位于 `tmp/regression/geometry-real/<时间>/`，包含总报告、每模型的输入 SHA-256、覆盖清单、源码/运行时采样、操作耗时、截图与失败诊断；导入、编辑、撤销/重做和源码窗口阶段分别记录，浏览器崩溃保留 CDP 状态及错误码。任一模型失败返回非零；脚本在正常完成、失败和 SIGINT/SIGTERM 中断时关闭自己创建的浏览器和服务器并删除临时包，保留复用的服务器。该测试不是跨浏览器或长时间内存泄漏验收。
+
+无需外部资源的测试脚本单测：
+
+```bash
+node --test scripts/test/helpers/geometry-edit-model.test.mjs scripts/test/helpers/geometry-edit-browser.test.mjs
+```
+
+### 纹理涂色与真实文件回导
+
+`npm run test:browser:paint-roundtrip` 使用 `scripts/test/fixtures/paint_textured/` 中的小型 UV OBJ 和棋盘贴图，操作真实上色面板，覆盖单三角面/相连面、透明度 0.4 → 1、撤销/重做、恢复纹理，以及 USP/URDF/MJCF 下载后在独立浏览器上下文回导。比较颜色、透明度、纹理是否仅留在未涂面及各材质三角面数量，并检查未捕获异常和控制台错误（包括贴图加载失败）；产物位于 `tmp/regression/paint-roundtrip/`。`URDF_STUDIO_TEST_SITE_URL` 可复用构建预览。
+
+默认验证全部三种格式；`PAINT_ROUNDTRIP_FORMATS=URDF` 可缩小调试范围。任一格式失败返回非零，后续格式仍继续验证。邻近单测还覆盖扩展/分组件 URDF、未知源码元素保留、共享网格不同涂色、同名不同目录资源、仅有纹理的 alpha、镜像绕序及原语尺寸烘焙。
+
 ### 工作流 E2E 套件（import → 属性编辑 → 源码编辑 → 导出 → 装配）
 
 `scripts/test/e2e/test_workflow_suite.mjs`（`npm run test:workflow` / `test:workflow:quick` / `test:browser:workflow`）是跨功能的**用户旅程**层：每条旅程走完整真实用户路径——多格式导入 → 右侧属性面板改 mass/joint type/limits（GUI 输入并三重验证：面板回读 + 源码草稿 + store）→ 源代码编辑（删 link、joint→fixed、改材质色）→ File→Export 导出 → **解压导出 zip 并断言 XML 内容**；J6 装配旅程用 GUI 桥接弹窗创建 revolute/continuous/prismatic/fixed + 自环闭环桥并导出装配体。
@@ -131,3 +166,28 @@ node scripts/test/runner/run-all.mjs --list       # 只列出将要跑的阶段
 - 单元测试：末尾 `pass / fail` 计数，退出码非 0 即失败。
 - 浏览器测试：每条断言一行 `[suite:<名字>] ✓/✗ ...`，结尾 `[summary:<名字>] passed/failed`。
 - run-all：总表 + `tmp/regression/run-all-summary.json`；每个浏览器用例还各自写 `tmp/regression/<name>_results.json`。
+
+### 场景编辑器整模型挂接 ZIP 回归
+
+`src/core/parsers/mjcf/mjcfWholeModelAttachment.test.ts` 自带多根节点、frame 位姿、
+同名资源、嵌套挂接和错误诊断的小样本。用户原始 `untitled_scene.mujoco(1).zip`
+不纳入 Git；通过环境变量启用真实 ZIP 回归（校验 SHA-256、CRC、15 个 body
+含 world、19 个 geom、8 个 mesh、4 个 free joint、家具位姿及全部文件资源路径）：
+
+```bash
+MJCF_SCENE_REGRESSION_ZIP='/absolute/path/untitled_scene.mujoco(1).zip' \
+  npm run test:unit -- src/core/parsers/mjcf/mjcfWholeModelAttachment.test.ts
+```
+
+浏览器验收直接使用“文件 → 导入文件”选择同一原始 ZIP，无需改写或重新打包。
+源文件的 1000 米地面会影响自动取景，检查家具时可以缩放视口并临时隐藏 world 的地面显示；
+这不改变原始几何尺寸或物理参数。
+
+`src/app/hooks/workspace-source-sync/component_mjcf_source_sync.test.ts` 覆盖可见性反复切换、
+宿主共享 geom 原位编辑、挂接家具修改、草稿资源引用、`.usp` 保存重开及篡改拒绝。
+同样可设置 `MJCF_SCENE_REGRESSION_ZIP` 运行原始 ZIP 的编辑和保存回归；
+浏览器额外验证实际显示切换、修改家具位姿、工程重开、MJCF ZIP 导出及回导。
+导出文件应由原生 MuJoCo 成功编译并保留编辑值、8 个 mesh 和 4 个家具根节点。
+
+实际导出的 ZIP 还需按 XML 引用逐个比较 8 个家具 mesh 角色与原 ZIP 对应文件的 SHA-256，
+允许内容相同的左右床头柜安全共享；原生编译同时核对家具质量与原始基线一致。

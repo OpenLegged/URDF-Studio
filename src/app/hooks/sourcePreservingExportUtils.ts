@@ -7,6 +7,7 @@ import {
   applyTextReplacements,
   collectDirectChildren,
   collectXmlElementBounds,
+  createXmlElementReplacement,
   findRootElement,
   getAttributeValueFromOpenTag,
   getClosingTagStart,
@@ -43,6 +44,8 @@ export interface ResolveSourcePreservingExportContentOptions {
   /** Restore caller-owned markers before the resolver validates and returns content. */
   finalizePatchedContent?: (content: string) => string;
   xacroSourceModelMode?: 'strict' | 'direct-changes';
+  /** Model downloads use prepared assets and physics; editable/native sources keep their own sections. */
+  mjcfModelSections?: 'generated';
 }
 
 export interface SourcePreservingExportResult {
@@ -274,16 +277,9 @@ function patchMatchingXacroSource(sourceContent: string, generatedContent: strin
 
   sourceChildren.forEach((sourceChild) => {
     const generatedChild = generatedChildrenByKey.get(sourceChild.key);
-    replacements.push({
-      startOffset: sourceChild.bounds.startOffset,
-      endOffset: sourceChild.bounds.endOffset,
-      text: generatedChild
-        ? reindentFragment(
-            generatedChild.text,
-            getIndentAt(patched, sourceChild.bounds.startOffset),
-          )
-        : '',
-    });
+    replacements.push(generatedChild
+      ? createXmlElementReplacement(patched, sourceChild.bounds, generatedContent, generatedChild.bounds)
+      : { ...sourceChild.bounds, text: '' });
   });
 
   const missingGeneratedChildren = generatedChildren.filter(
@@ -579,14 +575,9 @@ function patchUrdfLikeSource({
       changedKeys.has(sourceChild.key) ||
       (format === 'xacro' && isManagedXacroControlChild(sourceChild))
     ) {
-      replacements.push({
-        startOffset: sourceChild.bounds.startOffset,
-        endOffset: sourceChild.bounds.endOffset,
-        text: reindentFragment(
-          generatedChild.text,
-          getIndentAt(patched, sourceChild.bounds.startOffset),
-        ),
-      });
+      replacements.push(createXmlElementReplacement(
+        patched, sourceChild.bounds, generatedContent, generatedChild.bounds,
+      ));
     }
   });
 
@@ -663,16 +654,9 @@ function patchMjcfSource(sourceContent: string, generatedContent: string): strin
 
   sourceSections.forEach((sourceSection) => {
     const generatedSection = generatedSectionsByKey.get(sourceSection.key);
-    replacements.push({
-      startOffset: sourceSection.bounds.startOffset,
-      endOffset: sourceSection.bounds.endOffset,
-      text: generatedSection
-        ? reindentFragment(
-            generatedSection.text,
-            getIndentAt(patched, sourceSection.bounds.startOffset),
-          )
-        : '',
-    });
+    replacements.push(generatedSection
+      ? createXmlElementReplacement(patched, sourceSection.bounds, generatedContent, generatedSection.bounds)
+      : { ...sourceSection.bounds, text: '' });
   });
 
   const missingSections = generatedSections.filter(
@@ -770,14 +754,9 @@ function patchSdfSource(sourceContent: string, generatedContent: string): string
   }
 
   return applyTextReplacements(patched, [
-    {
-      startOffset: adjustedSourceModel.bounds.startOffset,
-      endOffset: adjustedSourceModel.bounds.endOffset,
-      text: reindentFragment(
-        generatedModel.text,
-        getIndentAt(patched, adjustedSourceModel.bounds.startOffset),
-      ),
-    },
+    createXmlElementReplacement(
+      patched, adjustedSourceModel.bounds, generatedContent, generatedModel.bounds,
+    ),
   ]);
 }
 
@@ -884,12 +863,17 @@ export function resolveSourcePreservingExportContent(
     );
   }
 
-  if (sourceRobot && buildRobotSnapshot(sourceRobot) === buildRobotSnapshot(generatedRobot)) {
+  // RobotState does not distinguish absent inertials from all-zero placeholders,
+  // or retain every compiler/geom mass option. An explicit model download must
+  // still apply the prepared XML when these parsed snapshots compare equal.
+  const useGeneratedMjcfSections = format === 'mjcf' && options.mjcfModelSections === 'generated';
+  if (!useGeneratedMjcfSections && sourceRobot && buildRobotSnapshot(sourceRobot) === buildRobotSnapshot(generatedRobot)) {
     return resolveMatchingSourceContent(options, sourceContent);
   }
 
   if (
-    sourceRobot
+    !useGeneratedMjcfSections
+    && sourceRobot
     && sourceRobot.name !== generatedRobot.name
     && buildRobotSnapshotWithName(sourceRobot, generatedRobot.name)
       === buildRobotSnapshot(generatedRobot)

@@ -8,6 +8,7 @@ export type MjcfActuatorType = 'position' | 'velocity' | 'motor';
 export interface MjcfVisualMeshVariant {
   meshPath: string;
   color?: string;
+  opacity?: number;
   sourceMaterialName?: string;
 }
 
@@ -19,6 +20,10 @@ export interface MujocoExportOptions {
   preserveInertialData?: boolean;
   /** Editable source serialization retains every finite input digit. */
   preserveNumericPrecision?: boolean;
+  /** Keep library asset identities; meshdir/texturedir export relocation is disabled. */
+  preserveAssetPaths?: boolean;
+  /** Source location for paths relative to an editable document; used with preserveAssetPaths. */
+  sourceFileName?: string;
   meshdir?: string;
   texturedir?: string;
   addFloatBase?: boolean;

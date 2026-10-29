@@ -1,4 +1,5 @@
 import type JSZip from 'jszip';
+import { prepareUrdfPaintExport } from '@/features/file-io';
 import { prepareMjcfExport } from '@/features/file-io/mjcf_export';
 
 import type {
@@ -62,6 +63,7 @@ interface AddMeshesToZipOptions {
   onProgress?: (progress: { completed: number; total: number; currentFile: string }) => void;
   robot: RobotState;
   skipMeshPaths?: ReadonlySet<string>;
+  meshPathOverrides?: ReadonlyMap<string, string>;
   zip: JSZip;
 }
 
@@ -71,6 +73,7 @@ interface BuildSourcePreservingExportContentOptions {
   currentRobot: RobotState;
   format: 'urdf' | 'mjcf' | 'sdf' | 'xacro';
   generatedContent: string;
+  mjcfModelSections?: 'generated';
   options?: { useRelativePaths?: boolean; preferSourceVisualMeshes?: boolean };
   target: ExportTarget;
 }
@@ -207,12 +210,16 @@ export async function executeConfiguredRobotExport({
     throw new Error(t.exportFailedParse);
   }
 
-  const { robot, exportName, extraMeshFiles } = exportContext;
+  const { robot, exportName } = exportContext;
+  const paintedExport = config.format === 'urdf'
+    ? await prepareUrdfPaintExport({ robot, assets, extraMeshFiles: exportContext.extraMeshFiles, sourceFileDir: exportContext.sourceFileDir })
+    : { robot, extraMeshFiles: exportContext.extraMeshFiles };
+  const { extraMeshFiles } = paintedExport;
   const boxFaceFallback =
     config.format === 'urdf' || config.format === 'sdf' || config.format === 'xacro'
-      ? applyBoxFaceMaterialExportFallback(robot)
+      ? applyBoxFaceMaterialExportFallback(paintedExport.robot)
       : null;
-  let exportRobot = boxFaceFallback?.robot ?? robot;
+  let exportRobot = boxFaceFallback?.robot ?? paintedExport.robot;
   const boxFaceFallbackCount = boxFaceFallback?.records.length ?? 0;
   const assetPackagingFailures: RobotAssetPackagingFailure[] = [];
   const zip = await createZip();
@@ -306,6 +313,7 @@ export async function executeConfiguredRobotExport({
         target,
         currentRobot: robot,
         generatedContent: generatedMjcfContent,
+        mjcfModelSections: 'generated',
       }) ??
         generatedMjcfContent,
     );
@@ -327,6 +335,7 @@ export async function executeConfiguredRobotExport({
         compressOptions: { compressSTL, stlQuality },
         extraMeshFiles,
         skipMeshPaths: mjcfMeshExport.convertedSourceMeshPaths,
+        meshPathOverrides: mjcfMeshExport.meshPathOverrides,
         onProgress: createAssetProgressCallback(reportProgress, t, 4),
       });
       assetPackagingFailures.push(...meshPackagingResult.failedAssets);

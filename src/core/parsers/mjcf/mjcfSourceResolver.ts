@@ -4,6 +4,14 @@ import {
   MJCF_COMPILER_EULERSEQ_SCOPE_ATTR,
 } from './mjcfCompilerScope';
 import { parseMJCFXmlDocument } from './mjcfUtils';
+import {
+  applyAssetDirectory,
+  getBasePath,
+  getCombinedCompilerAttributes,
+  normalizePath,
+  prefixAttachedModelDocument,
+  prefixIdentifier,
+} from './mjcfSourceScope';
 
 type MJCFFileMap = Record<string, string>;
 
@@ -66,35 +74,6 @@ const MJCF_INCLUDE_TAG_PATTERN = /<\s*include(?=[\s>/])/i;
 const MJCF_ATTACH_TAG_PATTERN = /<\s*attach(?=[\s>/])/i;
 const MJCF_TEMPLATE_PLACEHOLDER_TOKENS = ['OBJECT_NAME'] as const;
 
-function normalizePath(path: string): string {
-  const slashNormalized = path.replace(/\\/g, '/').replace(/\/+/g, '/');
-  const hasLeadingSlash = slashNormalized.startsWith('/');
-  const parts = slashNormalized.split('/').filter(Boolean);
-  const resolved: string[] = [];
-
-  for (const part of parts) {
-    if (part === '.') continue;
-    if (part === '..') {
-      resolved.pop();
-      continue;
-    }
-    resolved.push(part);
-  }
-
-  const normalized = resolved.join('/');
-  if (!normalized) {
-    return hasLeadingSlash ? '/' : '';
-  }
-
-  return hasLeadingSlash ? `/${normalized}` : normalized;
-}
-
-function getBasePath(path: string): string {
-  const normalized = normalizePath(path);
-  const parts = normalized.split('/');
-  parts.pop();
-  return parts.join('/');
-}
 
 function getIndexedMJCFFileMap(files: RobotFile[]): IndexedMJCFFileMap {
   const cached = indexedFileMapCache.get(files);
@@ -337,77 +316,7 @@ function parseXml(content: string): Document | null {
   return parseMJCFXmlDocument(content).doc;
 }
 
-function getCombinedCompilerAttributes(doc: Document): {
-  angle: string;
-  assetdir: string;
-  meshdir: string;
-  texturedir: string;
-  eulerseq: string;
-} {
-  let angle = '';
-  let assetdir = '';
-  let meshdir: string | null = null;
-  let texturedir: string | null = null;
-  let eulerseq = '';
 
-  doc.querySelectorAll('compiler').forEach((compilerEl) => {
-    const nextAngle = compilerEl.getAttribute('angle');
-    if (nextAngle) {
-      angle = nextAngle;
-    }
-
-    const nextAssetdir = compilerEl.getAttribute('assetdir');
-    if (nextAssetdir !== null) {
-      assetdir = nextAssetdir;
-    }
-
-    const nextMeshdir = compilerEl.getAttribute('meshdir');
-    if (nextMeshdir !== null) {
-      meshdir = nextMeshdir;
-    }
-
-    const nextTexturedir = compilerEl.getAttribute('texturedir');
-    if (nextTexturedir !== null) {
-      texturedir = nextTexturedir;
-    }
-
-    const nextEulerSeq = compilerEl.getAttribute('eulerseq');
-    if (nextEulerSeq) {
-      eulerseq = nextEulerSeq;
-    }
-  });
-
-  return {
-    angle,
-    assetdir,
-    meshdir: meshdir ?? assetdir,
-    texturedir: texturedir ?? assetdir,
-    eulerseq,
-  };
-}
-
-function prefixIdentifier(value: string, prefix: string): string {
-  const trimmed = value.trim();
-  if (!trimmed || !prefix) {
-    return trimmed;
-  }
-
-  return `${prefix}${trimmed}`;
-}
-
-function applyAssetDirectory(filePath: string, directory: string): string {
-  const trimmed = filePath.trim();
-  if (!trimmed || trimmed.startsWith('/') || trimmed.includes(':')) {
-    return trimmed;
-  }
-
-  const normalizedDirectory = normalizePath(directory);
-  if (!normalizedDirectory) {
-    return normalizePath(trimmed);
-  }
-
-  return normalizePath(`${normalizedDirectory}/${trimmed}`);
-}
 
 function pushResolutionIssue(
   issues: MJCFSourceResolutionIssue[],
@@ -421,88 +330,14 @@ function annotateImportedNodeSourceScope(node: Node, sourceFilePath: string): vo
     return;
   }
 
-  (node as Element).setAttribute(MJCF_SOURCE_FILE_SCOPE_ATTR, sourceFilePath);
+  const element = node as Element;
+  if (!element.hasAttribute(MJCF_SOURCE_FILE_SCOPE_ATTR)) {
+    element.setAttribute(MJCF_SOURCE_FILE_SCOPE_ATTR, sourceFilePath);
+  }
 }
 
 function stripMJCFSourceScopeAnnotations(content: string): string {
   return content.replace(MJCF_SOURCE_FILE_SCOPE_ATTR_PATTERN, '');
-}
-
-function prefixAttachedModelDocument(doc: Document, prefix: string): void {
-  const compilerAttrs = getCombinedCompilerAttributes(doc);
-  const referenceAttributes = [
-    'mesh',
-    'material',
-    'texture',
-    'class',
-    'childclass',
-    'joint',
-    'joint1',
-    'joint2',
-    'body',
-    'body1',
-    'body2',
-    'site',
-    'site1',
-    'site2',
-    'sidesite',
-    'geom',
-    'geom1',
-    'geom2',
-    'tendon',
-    'tendon1',
-    'tendon2',
-    'actuator',
-    'objname',
-    'name1',
-    'name2',
-  ] as const;
-  const elements = Array.from(doc.querySelectorAll('*'));
-
-  elements.forEach((element) => {
-    const tagName = element.tagName.toLowerCase();
-    const name = element.getAttribute('name');
-    if (name) {
-      element.setAttribute('name', prefixIdentifier(name, prefix));
-    }
-
-    if (tagName === 'default') {
-      const className = element.getAttribute('class');
-      if (className) {
-        element.setAttribute('class', prefixIdentifier(className, prefix));
-      }
-    }
-  });
-
-  elements.forEach((element) => {
-    const tagName = element.tagName.toLowerCase();
-    referenceAttributes.forEach((attributeName) => {
-      if (tagName === 'default' && attributeName === 'class') {
-        return;
-      }
-
-      const value = element.getAttribute(attributeName);
-      if (!value) {
-        return;
-      }
-
-      element.setAttribute(attributeName, prefixIdentifier(value, prefix));
-    });
-
-    if (tagName === 'mesh') {
-      const fileAttr = element.getAttribute('file');
-      if (fileAttr) {
-        element.setAttribute('file', applyAssetDirectory(fileAttr, compilerAttrs.meshdir));
-      }
-    }
-
-    if (tagName === 'texture') {
-      const fileAttr = element.getAttribute('file');
-      if (fileAttr) {
-        element.setAttribute('file', applyAssetDirectory(fileAttr, compilerAttrs.texturedir));
-      }
-    }
-  });
 }
 
 function expandIncludesRecursive(
@@ -651,7 +486,7 @@ function expandAttachedModelsRecursive(
     const bodyName = attachEl.getAttribute('body')?.trim();
     const prefix = attachEl.getAttribute('prefix')?.trim() || '';
 
-    if (!modelName || !bodyName) {
+    if (!modelName) {
       attachEl.remove();
       return;
     }
@@ -715,19 +550,31 @@ function expandAttachedModelsRecursive(
       return;
     }
 
-    prefixAttachedModelDocument(attachedDoc, prefix);
+    prefixAttachedModelDocument(attachedDoc, prefix, resolvedPath);
 
-    const prefixedBodyName = prefixIdentifier(bodyName, prefix);
-    const attachedRootBody = Array.from(attachedDoc.querySelectorAll('worldbody body')).find(
-      (bodyEl) => bodyEl.getAttribute('name')?.trim() === prefixedBodyName,
-    );
+    // With no body selector MuJoCo attaches the complete worldbody. A frame
+    // preserves its multiple roots and world geoms without inventing a body.
+    let attachedRoot: Element | undefined;
+    if (bodyName) {
+      const prefixedBodyName = prefixIdentifier(bodyName, prefix);
+      attachedRoot = Array.from(attachedDoc.querySelectorAll('worldbody body')).find(
+        (bodyEl) => bodyEl.getAttribute('name')?.trim() === prefixedBodyName,
+      );
+    } else {
+      attachedRoot = attachedDoc.createElement('frame');
+      for (const worldbody of Array.from(attachedDoc.querySelectorAll('mujoco > worldbody'))) {
+        for (const child of Array.from(worldbody.children)) {
+          attachedRoot.appendChild(child);
+        }
+      }
+    }
 
-    if (!attachedRootBody) {
+    if (!attachedRoot) {
       console.warn(`[MJCF] Attached body not found: ${bodyName} in ${resolvedPath}`);
       pushResolutionIssue(issues, {
         kind: 'missing_attached_body',
         sourceFilePath: resolvedPath,
-        reference: bodyName,
+        reference: bodyName ?? '',
         detail: `Attached MJCF body "${bodyName}" was not found inside "${resolvedPath}".`,
       });
       attachEl.remove();
@@ -742,13 +589,19 @@ function expandAttachedModelsRecursive(
 
     const insertionAnchor = hostMujoco.querySelector(':scope > worldbody');
     const attachedCompilerAttrs = getCombinedCompilerAttributes(attachedDoc);
-    if (attachedCompilerAttrs.angle) {
-      attachedRootBody.setAttribute(MJCF_COMPILER_ANGLE_SCOPE_ATTR, attachedCompilerAttrs.angle);
+    // A selected body can belong to an already expanded inner attachment.
+    // Materialize its inherited scope before removing its ancestor frames.
+    const scopedAngle = attachedRoot.closest(`[${MJCF_COMPILER_ANGLE_SCOPE_ATTR}]`)
+      ?.getAttribute(MJCF_COMPILER_ANGLE_SCOPE_ATTR) ?? attachedCompilerAttrs.angle;
+    const scopedEulerSeq = attachedRoot.closest(`[${MJCF_COMPILER_EULERSEQ_SCOPE_ATTR}]`)
+      ?.getAttribute(MJCF_COMPILER_EULERSEQ_SCOPE_ATTR) ?? attachedCompilerAttrs.eulerseq;
+    if (!attachedRoot.hasAttribute(MJCF_COMPILER_ANGLE_SCOPE_ATTR)) {
+      attachedRoot.setAttribute(MJCF_COMPILER_ANGLE_SCOPE_ATTR, scopedAngle);
     }
-    if (attachedCompilerAttrs.eulerseq) {
-      attachedRootBody.setAttribute(
+    if (!attachedRoot.hasAttribute(MJCF_COMPILER_EULERSEQ_SCOPE_ATTR)) {
+      attachedRoot.setAttribute(
         MJCF_COMPILER_EULERSEQ_SCOPE_ATTR,
-        attachedCompilerAttrs.eulerseq,
+        scopedEulerSeq,
       );
     }
 
@@ -769,9 +622,9 @@ function expandAttachedModelsRecursive(
       }
     });
 
-    const importedBody = doc.importNode(attachedRootBody, true);
-    annotateImportedNodeSourceScope(importedBody, resolvedPath);
-    attachEl.parentNode?.insertBefore(importedBody, attachEl);
+    const importedRoot = doc.importNode(attachedRoot, true);
+    annotateImportedNodeSourceScope(importedRoot, resolvedPath);
+    attachEl.parentNode?.insertBefore(importedRoot, attachEl);
     attachEl.remove();
   });
 

@@ -1,6 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as THREE from 'three';
+import { applyMeshMaterialPaintEdit } from '@/core/robot/visualMeshMaterialGroups';
+import { applyVisualMaterialOverrideToObject } from './visualMaterialOverrides';
 
 import {
   applyVisualMeshMaterialGroupsToObject,
@@ -9,6 +11,75 @@ import {
   resolveMeshFaceSelection,
   resolveRuntimeMeshMaterialGroupKey,
 } from './meshMaterialGroups';
+
+test('late base texture loading does not retexture solid paint after project reimport', () => {
+  const originalLoad = THREE.TextureLoader.prototype.load;
+  const completions: Array<() => void> = [];
+  THREE.TextureLoader.prototype.load = function (_url, onLoad) {
+    const texture = new THREE.Texture<HTMLImageElement>();
+    completions.push(() => onLoad?.(texture));
+    return texture;
+  };
+  const root = new THREE.Group();
+  const mesh = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.MeshStandardMaterial());
+  root.add(mesh);
+  try {
+    applyVisualMaterialOverrideToObject(root, { texture: 'checker.png', opacity: 0.75 });
+    applyVisualMeshMaterialGroupsToObject(root, {
+      authoredMaterials: [
+        { color: '#ffffff', texture: 'checker.png', opacity: 0.75 },
+        { color: '#ff6c0a', opacity: 1 },
+      ],
+      meshMaterialGroups: [
+        { meshKey: '0', start: 0, count: 3, materialIndex: 0 },
+        { meshKey: '0', start: 3, count: 3, materialIndex: 1 },
+      ],
+    });
+    completions.forEach(complete => complete());
+    assert.ok(Array.isArray(mesh.material));
+    const materials = mesh.material as THREE.MeshStandardMaterial[];
+    assert.ok(materials[0]?.map);
+    assert.equal(materials[1]?.map, null);
+    assert.equal(materials[1]?.color.getHexString(), 'ff6c0a');
+  } finally {
+    THREE.TextureLoader.prototype.load = originalLoad;
+    mesh.geometry.dispose();
+    for (const material of mesh.material as THREE.Material[]) material.dispose();
+  }
+});
+
+test('painting a translucent textured mesh applies the chosen alpha and preserves untouched texture', () => {
+  const texture = new THREE.Texture();
+  const mesh = new THREE.Mesh(
+    new THREE.PlaneGeometry(1, 1),
+    new THREE.MeshStandardMaterial({ map: texture, opacity: 0.75, transparent: true }),
+  );
+  const root = new THREE.Group();
+  root.add(mesh);
+  const meshKey = resolveRuntimeMeshMaterialGroupKey(mesh, root);
+  let geometry = applyMeshMaterialPaintEdit({
+    geometry: {}, meshKey, triangleCount: 2, selectedFaceIndices: [0],
+    paintColor: '#00cc4466', baseMaterial: { color: '#ffffff', opacity: 0.75 },
+  });
+
+  for (const [paintColor, opacity] of [['#00cc4466', 0.4], ['#00cc44', 1]] as const) {
+    geometry = applyMeshMaterialPaintEdit({
+      geometry, meshKey, triangleCount: 2, selectedFaceIndices: [0], paintColor,
+    });
+    applyVisualMeshMaterialGroupsToObject(root, geometry);
+    assert.ok(Array.isArray(mesh.material));
+    const materials = mesh.material as THREE.MeshStandardMaterial[];
+    assert.equal(materials[0]?.map, texture);
+    assert.equal(materials[0]?.opacity, 0.75);
+    assert.equal(materials[1]?.map, null);
+    assert.equal(materials[1]?.opacity, opacity);
+    assert.equal(materials[1]?.color.getHexString(), '00cc44');
+  }
+
+  mesh.geometry.dispose();
+  for (const material of mesh.material as THREE.Material[]) material.dispose();
+  texture.dispose();
+});
 
 test('captureRuntimeVisualMaterialDescriptor preserves authored structure and captures the actual unhighlighted PBR base', () => {
   const baseMaterial = new THREE.MeshStandardMaterial({

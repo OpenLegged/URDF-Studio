@@ -51,6 +51,19 @@ export function applyGeometryPatchInPlace({
     return true;
   }
 
+  const inPlaceContext = {
+    robotModel,
+    linkObject,
+    linkData: patch.linkData,
+    assets,
+    sourceFileDir,
+    isPatchTargetValid,
+    showVisual,
+    showCollision,
+    invalidate,
+    primitiveGeometryDetail,
+  };
+
   if (patch.visualChanged || patch.visualBodiesChanged) {
     let visualPatched = false;
 
@@ -75,17 +88,11 @@ export function applyGeometryPatchInPlace({
 
     if (!visualPatched && usesSyntheticAttachmentMapping && visualTargetGroup) {
       visualPatched = patchGeometryGroupInPlace({
-        robotModel,
-        linkObject,
+        ...inPlaceContext,
         category: 'visual',
-        linkData: patch.linkData,
         previousGeometry: patch.previousLinkData.visual,
         geometry: patch.linkData.visual,
-        showVisual,
-        showCollision,
-        invalidate,
         targetGroup: visualTargetGroup,
-        primitiveGeometryDetail,
       });
 
       if (!visualPatched) {
@@ -113,16 +120,10 @@ export function applyGeometryPatchInPlace({
     if (!visualPatched && !usesSyntheticAttachmentMapping) {
       if (
         !patchGeometryGroupInPlace({
-          robotModel,
-          linkObject,
+          ...inPlaceContext,
           category: 'visual',
-          linkData: patch.linkData,
           previousGeometry: patch.previousLinkData.visual,
           geometry: patch.linkData.visual,
-          showVisual,
-          showCollision,
-          invalidate,
-          primitiveGeometryDetail,
         })
       ) {
         patchGeometryCategory({
@@ -169,17 +170,11 @@ export function applyGeometryPatchInPlace({
 
     if (!collisionPatched && usesSyntheticAttachmentMapping && collisionTargetGroup) {
       collisionPatched = patchGeometryGroupInPlace({
-        robotModel,
-        linkObject,
+        ...inPlaceContext,
         category: 'collision',
-        linkData: patch.linkData,
         previousGeometry: patch.previousLinkData.collision,
         geometry: patch.linkData.collision,
-        showVisual,
-        showCollision,
-        invalidate,
         targetGroup: collisionTargetGroup,
-        primitiveGeometryDetail,
       });
 
       if (!collisionPatched) {
@@ -207,16 +202,10 @@ export function applyGeometryPatchInPlace({
     if (!collisionPatched && !usesSyntheticAttachmentMapping) {
       if (
         !patchGeometryGroupInPlace({
-          robotModel,
-          linkObject,
+          ...inPlaceContext,
           category: 'collision',
-          linkData: patch.linkData,
           previousGeometry: patch.previousLinkData.collision,
           geometry: patch.linkData.collision,
-          showVisual,
-          showCollision,
-          invalidate,
-          primitiveGeometryDetail,
         })
       ) {
         patchGeometryCategory({

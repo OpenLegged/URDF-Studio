@@ -1936,6 +1936,69 @@ test('generated MJCF emits separate visual geoms for extracted mesh material var
   assert.match(generated, /<mesh name="dae_base_gray" file="dae\/base_gray\.obj" \/>/);
 });
 
+test('generated MJCF preserves variant opacity with extracted RGB and authored material fallbacks', () => {
+  installDomParser();
+  const meshPath = 'paint/cube.obj';
+  const robot: RobotState = {
+    name: 'paint-variant-opacity',
+    rootLinkId: 'base_link',
+    selection: { type: null, id: null },
+    links: {
+      base_link: {
+        ...DEFAULT_LINK,
+        id: 'base_link',
+        name: 'base_link',
+        visual: {
+          ...DEFAULT_LINK.visual,
+          type: GeometryType.MESH,
+          dimensions: { x: 1, y: 1, z: 1 },
+          meshPath,
+          authoredMaterials: [
+            { name: 'checker', color: '#ffffff', texture: 'checker.png', opacity: 0.75 },
+            { name: 'green', color: '#00cc44', opacity: 0.4 },
+            { name: 'orange', color: '#ff6c0a', colorRgba: [1, 0.4, 0, 0.25] },
+          ],
+        },
+        collision: { ...DEFAULT_LINK.collision, type: GeometryType.NONE },
+      },
+    },
+    joints: {},
+    materials: {},
+  };
+  const variants = [
+    { meshPath: 'base.obj', color: '#ffffff', sourceMaterialName: 'checker', opacity: 0.75 },
+    { meshPath: 'green.obj', color: '#00cc44', sourceMaterialName: 'green', opacity: 0.4 },
+    { meshPath: 'orange.obj', color: '#ff6c0a', sourceMaterialName: 'orange', opacity: 1 },
+    { meshPath: 'zero.obj', color: '#00cc44', sourceMaterialName: 'green', opacity: 0 },
+    { meshPath: 'old-green.obj', color: '#00cc44', sourceMaterialName: 'green' },
+    { meshPath: 'old-orange.obj', color: '#ff6c0a', sourceMaterialName: 'orange' },
+    { meshPath: 'old-alpha.obj', color: '#00cc4466', sourceMaterialName: 'checker' },
+    { meshPath: 'unknown.obj', color: '#ff6c0a', sourceMaterialName: 'unmatched' },
+  ];
+  const generated = generateMujocoXML(robot, {
+    includeSceneHelpers: false,
+    visualMeshVariants: new Map([[meshPath, variants]]),
+  });
+  const parsed = parseMJCFModel(generated);
+  assert.deepEqual(variants.map((_variant, index) => parsed.materialMap.get(`base_link_mat_${index + 1}`)?.rgba?.[3]), [
+    0.75, 0.4, 1, 0, 0.4, 0.25, 0.4, 1,
+  ]);
+  assert.deepEqual(parsed.materialMap.get('base_link_mat_3')?.rgba?.slice(0, 3), [1, 0.4235, 0.0392]);
+  assert.equal(parsed.textureMap.get(parsed.materialMap.get('base_link_mat_1')?.texture ?? '')?.file, '../textures/checker.png');
+
+  robot.links.base_link.visual.authoredMaterials = [{ name: 'single', color: '#ffffff', opacity: 0.75 }];
+  const unnamedVariants = [
+    { meshPath: 'single-translucent.obj', color: '#00cc44' },
+    { meshPath: 'single-opaque.obj', color: '#ff6c0a', opacity: 1 },
+  ];
+  const unnamed = parseMJCFModel(generateMujocoXML(robot, {
+    includeSceneHelpers: false,
+    visualMeshVariants: new Map([[meshPath, unnamedVariants]]),
+  }));
+  assert.equal(unnamed.materialMap.get('base_link_mat_1')?.rgba?.[3], 0.75);
+  assert.equal(unnamed.materialMap.get('base_link_mat_2')?.rgba?.[3], 1);
+});
+
 test('generated MJCF binds texture-backed mesh material variants through per-variant materials', () => {
   installDomParser();
 

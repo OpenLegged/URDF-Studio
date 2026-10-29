@@ -278,10 +278,16 @@ function mjcfToRobotState(
           };
           break;
         case 'cylinder':
-        case 'capsule':
           result.dimensions = {
             x: effectiveSize[0] || 0.1,
             y: (effectiveSize[1] || 0.1) * 2,
+            z: 0,
+          };
+          break;
+        case 'capsule':
+          result.dimensions = {
+            x: effectiveSize[0] || 0.1,
+            y: (effectiveSize[1] ?? 0.1) * 2,
             z: 0,
           };
           break;

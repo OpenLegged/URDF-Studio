@@ -25,7 +25,7 @@
 - `useWorkspaceStore.workspace`（非空 `AssemblyState`）是唯一可变机器人模型；`RobotData` 只由 component 或只读 scene projection 产生
 - 空白项目也是 `1 component + 0 bridges`；直接打开文件原子替换 workspace，显式“添加”只追加 component
 - `.usp` 只接受并生成严格的 `3.0` manifest，project payload 只保存 canonical workspace、统一 history 和 component source drafts；不提供 v2 或旧 robot/assembly 字段迁移
-- `.usp` 导入分别校验 draft 与 canonical 模型的 freshness，以及源码内容。URDF/Xacro 解析得到的名称 ID、材质及导入诊断可能与编辑器状态不同；直接 hash 不匹配时，仅在模型可由该格式保留的前提下，将 canonical 模型生成并重解析为参考源码，精确比较两份解析结果。保留原 workspace、history、draft 和全局 freshness hash，不用源码解析结果替换编辑状态，也不接受真实参数、拓扑或源码内容损坏。
+- `.usp` 导入分别校验 draft 与 canonical 模型的 freshness，以及源码内容。URDF/Xacro/MJCF 解析得到的名称 ID、材质及导入诊断可能与编辑器状态不同；直接 hash 不匹配时，仅在模型可由该格式保留的前提下，将 canonical 模型生成并重解析为参考源码，精确比较两份解析结果。保留原 workspace、history、draft 和全局 freshness hash，不用源码解析结果替换编辑状态，也不接受真实参数、拓扑或源码内容损坏。
 - URDF 的保精度源码模式还须保留所有关节上已解析的 limit、dynamics 和 hardware 字段，包括 continuous 的上下限及 fixed/planar/floating 的动力学和硬件参数；不能用普通导出的字段裁剪规则生成工程校验参考。普通 URDF 导出规则不变。
 - component 内实体 ID 始终是 source-local；全局 ID 只在 scene/export projection 中生成，并通过显式双向映射解析
 - 机器人源格式检测 source of truth 在 `core/parsers/format_detection.ts`；`app/utils/import-preparation/formatDetection.ts` 与 `features/file-io/utils/formatDetection.ts` 只做 wrapper
@@ -35,12 +35,22 @@
   `core/robot/canonicalRobotSalvage.ts` 在 canonical 校验仍失败时按 issue 归属丢弃 link/joint/material 后重试；只有连一个可显示的 link 都不剩才返回 `parse_failed`。
   URDF / Xacro / MJCF / SDF 的解析阶段也按实体边界跳过损坏的 link、joint、body、model 或 include/attach 分支；XML 结构本身损坏、根标签无效或没有任何可显示实体仍然失败，不做猜测式 XML 修复。
   被丢弃的内容通过 `inspectionContext.recovery` 上报，主导入、文件预览、添加组件和源码应用入口都提示恢复数量，不允许静默地把残缺模型当成完整模型
+- MJCF `<attach model="..." prefix="...">` 省略 `body` 时展开子模型的全部 `worldbody` 元素；显式 `body` 仍只选择对应子树。展开节点保留各自的角度 / Euler 顺序作用域（含默认值），子模型网格、heightfield、纹理及 cube face 路径转换为导入文件集合的根路径，避免宿主 compiler 目录或嵌套挂接重复拼接、同名资源串用。此流程不承诺完整 MuJoCo composition 的非树 section 合并。
 - URDF `<limit>` 只对 revolute / prismatic 必需；`continuous`（轮子、被动转动关节）缺 `<limit>` 不产生诊断，也不合成上下限位
 - `.usp 3.0` project import/export、USD prepared export cache、live USD roundtrip archive 已进入主工作流
 - `projectArchive.worker.ts`、`usdExport.worker.ts`、`usdBinaryArchive.worker.ts` 已进入主导出链路；大型归档或序列化任务优先走 worker/transfer
 - `projectImport.worker.ts` 已进入 project import 链路；问题优先在 worker/bridge 修
 - `DisconnectedWorkspaceUrdfExportDialog.tsx` 是 workspace 断联导出特例，不要塞回通用导出弹层
 - `ExportProgressDialog.tsx` / `ExportProgressView.tsx` 是长时导出反馈的统一 UI，不要重新发明导出进度弹层
+
+### 局部涂色与材质保留
+
+- 涂色材质显式保存 opacity（包括 1 和 0），不能把六位 RGB 当作继承底材透明度；同色但不同 opacity 的材质不能共用涂色槽。
+- `.usp` 保存面分组和材质，回导时纯色涂色槽必须清除底材贴图的异步加载标记，避免迟到的贴图回调重新覆盖涂色。未涂区域保留原纹理及透明度。
+- MJCF 将分面材质拆成独立网格时，variant 同时携带颜色和透明度；RGB 颜色存在不能屏蔽 alpha。
+- 回导后的显示同步优先使用材质的精确 opacity / colorRgba alpha，不能再用八位十六进制颜色中的量化 alpha 覆盖。
+- URDF ZIP（含扩展 URDF 和分组件打包）把局部涂色按材质拆成独立 OBJ visual，保留 UV、颜色、精确透明度及未涂区域纹理。原语尺寸与网格内部变换烘焙到 OBJ，visual origin 保留；不修改工作区或碰撞几何。源码保留在转换后的标准 URDF 结构上执行，仍保留未知扩展元素。
+- 分组件资源解析使用组件源目录；prepared mesh 不建立会互相覆盖的 basename 别名。仅有纹理和透明度的材质也输出中性白 RGBA，避免 alpha 丢失。
 
 ### 当前关节姿态导出
 
@@ -88,6 +98,10 @@
 - 导出格式限制只在显式导出工作流提示，不能作为编辑、源码派生或 AI 修改的模型校验。ball 模型的内部源码优先保留 MJCF；`tryGenerateEditableRobotSource` 在未选 mesh 等中间态无法生成源码时保留 canonical 模型和已有草稿，生成视图暂不可编辑。`canPreserveJointTypesInSource` 阻止内部生成器静默改变关节类型；`.usp` 以 canonical workspace 与原始资产为准，各附带格式独立生成。可选 MJCF 仅在关节可保留、mesh 可原样使用且无需额外资源转换时附带；需 Collada/GLTF 转换、材质拆分或额外纹理/MTL 等资源准备时跳过 MJCF，仍保留可生成的 URDF/BOM。项目保存复用已打包的资产字节，不因附带产物再次加载或转换 mesh；实际格式导出继续执行完整资源准备与兼容性提示。
 - URDF/Xacro/MJCF/SDF 四种源码 reconciler 统一通过 `tryGenerateEditableRobotSource` 保护可选派生，不能把导出异常透传到编辑界面。MJCF/SDF 生成器默认内部序列化不输出 console 导出诊断；显式 configured/library 导出通过 `onWarning` 收集并返回 `warnings`。App 在成功导出后统一将非阻塞 `warnings` / `issues` 去重写入控制台；兼容性 `warnings` 另以当前界面语言去重显示，真正导出失败与需要用户选择的导出操作保留界面反馈。
 - `canPreserveGeometryInSource` 同时保护主/附加 visual 和 collision：不能把格式导出的包围盒、空几何或忽略几何等近似结果写成当前模型的源码。源码同步、AI 对比与 `.usp` 可选产物共用该检查；AI 对比只复用语义 hash 匹配的源码草稿。局部源码 patch 失败由同步协调器恢复，仅记录控制台信息。
+- 仅显示可见性等非源码语义变化不进入 reconciler；仍调用 draft freshness 同步，避免保留缺失或过期草稿。MJCF reconciliation 使用完整文件库解析 `<attach>`，并采用与生产导入相同的资源路径规范化。窄 patch 无法覆盖共享 geom 时可继续尝试 entity/section，但每个候选必须通过完整语义校验；原始文件库不可变。
+- 显式 MJCF 模型下载采用资源准备与惯性推算后的 compiler/default/asset/worldbody sections，并保留源 option/custom 等非模型元数据。源码解析快照相等不能证明导出物理参数相等：缺省惯性与全零占位解析后相同，仍必须应用生成结果，避免恢复无效零惯性。
+- MJCF 场景的无惯性 `world` 根直接写入 worldbody，保留其地面和 site；自由关节家具继续作为顶层 body。显式网格导出为同名不同路径的资源分配无冲突目录，XML 和打包 worker 复用同一映射，不能靠 basename 选取资产。
+- MJCF 内部生成草稿保留完整 mesh/texture 路径，不使用导出包的目录重排规则。无法原位修改的挂接子实体会展开到组件私有草稿；`.usp` 重开保留 canonical freshness 与源码语义校验；回归同时检查草稿资源引用及包内资产字节，不能仅凭资产存在判定草稿有效。
 - URDF / Xacro / MJCF / SDF 编辑源码通过 `generateEditableRobotSource` 启用 `preserveNumericPrecision`，数值按可恢复 JavaScript `number` 的十进制写入；限位、惯量、几何、颜色、tendon 等局部 patch 同样避免小数位截断。应用的文件、项目、组件和骨架导出也保留数值精度；独立 generator 默认格式化保持兼容。连续编辑仍校验源码与模型的一致性：MJCF 四元数/RPY 与 degree 限位仅接受精确值或确定的序列化往返结果，SDF 保留源版本并处理旧版世界坐标表示；真实的过期值和不可表示变更继续拒绝。可恢复的源码回退只记录 `console.info`。
 - USD 文本保留数值有效位，颜色不再吸附到邻近灰色或 0/1；几何哈希只定位候选，去重还必须精确比较顶点、索引、法线与 UV。微小差异不能作为重复材质或网格合并；transform、动力学和 root 惯量也不能因 epsilon 判断被省略。目标格式的 float 类型和网格已有 Float32 精度限制仍然适用。
 - 加载、组件添加和导出的错误反馈在 app workflow 层本地化，不直接将 worker/parser 的英文异常作为提示正文。已知导出限制保留对象名与修正建议；未知错误显示本地化说明，原始异常、堆栈和文件上下文留在控制台。`robotLoadError.ts` / `exportErrorMessage.ts` 负责边界映射，core 不依赖 i18n。新增可面向用户的诊断时同步维护 en/zh 文案及双语行为测试。

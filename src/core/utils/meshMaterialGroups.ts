@@ -554,6 +554,10 @@ function createPaletteMaterial({
     }
   } else if (slotIndex > 0 && parsedColor && 'map' in nextMaterial) {
     (nextMaterial as THREE.MeshStandardMaterial).map = null;
+    // A paint slot must not inherit the base texture's pending-load marker.
+    // Otherwise a late base texture callback reapplies that texture after restore/import.
+    delete nextMaterial.userData.urdfTexturePath;
+    delete nextMaterial.userData.urdfTextureApplied;
   }
 
   // Mesh palette edits are authoritative for this slot material.

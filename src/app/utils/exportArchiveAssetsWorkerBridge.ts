@@ -62,6 +62,7 @@ function serializePrepareExportArchiveAssetsArgsForWorker(
       blob,
     })),
     skipMeshPaths: Array.from(args.skipMeshPaths ?? []),
+    meshPathOverrides: Array.from(args.meshPathOverrides ?? []),
   };
 }
 

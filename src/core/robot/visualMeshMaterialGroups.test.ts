@@ -33,7 +33,7 @@ test('applyMeshMaterialPaintEdit stores full mesh material groups for painted fa
 
   assert.deepEqual(result.authoredMaterials, [
     { name: 'base', color: '#808080' },
-    { name: 'paint_slot_1', color: '#ff5500' },
+    { name: 'paint_slot_1', color: '#ff5500', opacity: 1 },
   ]);
   assert.deepEqual(result.meshMaterialGroups, [
     { meshKey: '0', start: 0, count: 3, materialIndex: 0 },
@@ -47,7 +47,7 @@ test('applyMeshMaterialPaintEdit erases painted faces and collapses empty custom
   const geometry = makeMeshGeometry({
     authoredMaterials: [
       { name: 'base', color: '#808080' },
-      { name: 'paint_slot_1', color: '#ff5500' },
+      { name: 'paint_slot_1', color: '#ff5500', opacity: 1 },
     ],
     meshMaterialGroups: [
       { meshKey: '0', start: 0, count: 3, materialIndex: 0 },
@@ -101,7 +101,7 @@ test('applyMeshMaterialPaintEdit captures the effective base before the first pa
 
   assert.deepEqual(result.authoredMaterials, [
     { name: 'effective_base', color: '#ffffff' },
-    { name: 'paint_slot_1', color: '#3366ff' },
+    { name: 'paint_slot_1', color: '#3366ff', opacity: 1 },
   ]);
 });
 
@@ -121,7 +121,7 @@ test('applyMeshMaterialPaintEdit preserves the base texture while painting UV me
 
   assert.deepEqual(result.authoredMaterials, [
     { name: 'base', texture: 'textures/base.png', color: '#ffffff' },
-    { name: 'paint_slot_1', color: '#3366ff' },
+    { name: 'paint_slot_1', color: '#3366ff', opacity: 1 },
   ]);
   assert.deepEqual(result.meshMaterialGroups, [
     { meshKey: '0', start: 0, count: 3, materialIndex: 1 },
@@ -227,4 +227,44 @@ test('applyMeshMaterialPaintEdit round-trips the complete authored base material
 
   assert.equal(secondRestore.changed, false);
   assert.deepEqual(secondRestore.authoredMaterials, restored.authoredMaterials);
+});
+
+for (const [paintColor, opacity] of [['#00cc44', 1], ['#00cc4466', 0.4], ['#00cc4400', 0]] as const) {
+  test(`paint authors explicit opacity ${opacity} independently of the base material`, () => {
+    const result = applyMeshMaterialPaintEdit({
+      geometry: makeMeshGeometry(),
+      meshKey: '0',
+      triangleCount: 2,
+      selectedFaceIndices: [0],
+      paintColor,
+      baseMaterial: { color: '#336699', opacity: 0.75, texture: 'base.png' },
+    });
+    assert.equal(result.authoredMaterials?.[1]?.opacity, opacity);
+    assert.equal(result.authoredMaterials?.[0]?.opacity, 0.75);
+    assert.equal(result.authoredMaterials?.[0]?.texture, 'base.png');
+  });
+}
+
+test('repainting does not reuse a same-color slot with a different or implicit opacity', () => {
+  for (const opacity of [undefined, 0.4]) {
+    const geometry = makeMeshGeometry({
+      authoredMaterials: [
+        { color: '#336699', opacity: 0.75 },
+        { name: 'old_paint', color: '#00cc44', opacity },
+      ],
+      meshMaterialGroups: [{ meshKey: '0', start: 0, count: 6, materialIndex: 1 }],
+    });
+    const result = applyMeshMaterialPaintEdit({
+      geometry, meshKey: '0', triangleCount: 2, selectedFaceIndices: [0], paintColor: '#00cc44',
+    });
+    assert.equal(result.changed, true);
+    const paintedGroup = result.meshMaterialGroups?.find(group => group.start === 0);
+    assert.ok(paintedGroup);
+    assert.equal(result.authoredMaterials?.[paintedGroup.materialIndex]?.opacity, 1);
+    const repeated = applyMeshMaterialPaintEdit({
+      geometry: { ...geometry, ...result }, meshKey: '0', triangleCount: 2,
+      selectedFaceIndices: [0], paintColor: '#00cc44',
+    });
+    assert.equal(repeated.changed, false);
+  }
 });

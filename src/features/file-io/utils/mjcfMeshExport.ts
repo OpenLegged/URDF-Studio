@@ -12,6 +12,7 @@ import { hasGeometryMeshMaterialGroups } from '@/core/robot';
 import { applyVisualMeshMaterialGroupsToObject } from '@/core/utils/meshMaterialGroups';
 import { type RobotState } from '@/types';
 import { disposeObject3D } from '@/shared/utils/three/dispose';
+import { buildMjcfMeshExportPathOverrides } from './mjcfMeshExportPaths';
 import {
   isMjcfNativeMeshPath,
   buildConvertedMeshExportPath,
@@ -66,6 +67,7 @@ export async function prepareMjcfMeshExportAssets(
   const visualMeshVariants = new Map<string, MjcfVisualMeshVariant[]>();
   const usedArchivePaths = new Set<string>();
   const referencedMeshPaths = collectReferencedMeshPaths(robot);
+  const collisionSafePaths = buildMjcfMeshExportPathOverrides(referencedMeshPaths);
   const referencedMeshUsage = collectReferencedMeshUsage(robot);
   const { resolvedAssets, tempObjectUrls } = registerInlineMeshBlobUrls(assets, extraMeshFiles);
   const colladaRootNormalizationHints = buildColladaRootNormalizationHints(robot.links);
@@ -90,6 +92,10 @@ export async function prepareMjcfMeshExportAssets(
         meshPathOverrides,
         convertedSourceMeshPaths,
       );
+      // Reused bytes reference the same archive target as their canonical source.
+      for (const [source, canonical] of meshPathOverrides) {
+        meshPathOverrides.set(source, collisionSafePaths.get(canonical) ?? normalizeMeshPathForExport(canonical));
+      }
     }
 
     for (const meshPath of referencedMeshPaths) {
@@ -99,7 +105,14 @@ export async function prepareMjcfMeshExportAssets(
         (normalizedSourcePath ? referencedMeshUsage.get(normalizedSourcePath) : undefined);
 
       if (isMjcfNativeMeshPath(meshPath) && !sourceUsage?.hasVisualMultiMaterialUsage) {
-        if (normalizedSourcePath && normalizedSourcePath !== meshPath) {
+        const target = collisionSafePaths.get(meshPath) ?? normalizedSourcePath;
+        if (convertedSourceMeshPaths.has(meshPath)) continue;
+        usedArchivePaths.add(target);
+        if (collisionSafePaths.has(meshPath)) {
+          // A shortened alias is ambiguous here; only the exact source identity
+          // may select this target.
+          meshPathOverrides.set(meshPath, target);
+        } else if (normalizedSourcePath && normalizedSourcePath !== meshPath) {
           registerNativeMeshPassThroughOverride(meshPath, normalizedSourcePath, meshPathOverrides);
         }
         continue;

@@ -75,6 +75,7 @@ test('exportArchiveAssets worker client resolves successful worker responses and
       ['textures/coat.png', new Blob(['png'], { type: 'image/png' })],
     ]),
     skipMeshPaths: new Set(['meshes/replaced.stl']),
+    meshPathOverrides: new Map([['parts/left/meshes/base.stl', 'parts/left/meshes/base.stl']]),
     onProgress: ({ currentFile }) => progressEvents.push(currentFile),
   });
 
@@ -88,6 +89,7 @@ test('exportArchiveAssets worker client resolves successful worker responses and
   assert.equal(postedRequest.payload.targetFormat, 'mjcf');
   assert.equal(postedRequest.payload.extraMeshFiles[0]?.path, 'textures/coat.png');
   assert.deepEqual(postedRequest.payload.skipMeshPaths, ['meshes/replaced.stl']);
+  assert.deepEqual(postedRequest.payload.meshPathOverrides, [['parts/left/meshes/base.stl', 'parts/left/meshes/base.stl']]);
 
   fakeWorker.emitMessage({
     type: 'prepare-export-archive-assets-progress',
