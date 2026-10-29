@@ -63,6 +63,7 @@ interface AddMeshesToZipOptions {
   onProgress?: (progress: { completed: number; total: number; currentFile: string }) => void;
   robot: RobotState;
   skipMeshPaths?: ReadonlySet<string>;
+  meshPathOverrides?: ReadonlyMap<string, string>;
   zip: JSZip;
 }
 
@@ -72,6 +73,7 @@ interface BuildSourcePreservingExportContentOptions {
   currentRobot: RobotState;
   format: 'urdf' | 'mjcf' | 'sdf' | 'xacro';
   generatedContent: string;
+  mjcfModelSections?: 'generated';
   options?: { useRelativePaths?: boolean; preferSourceVisualMeshes?: boolean };
   target: ExportTarget;
 }
@@ -311,6 +313,7 @@ export async function executeConfiguredRobotExport({
         target,
         currentRobot: robot,
         generatedContent: generatedMjcfContent,
+        mjcfModelSections: 'generated',
       }) ??
         generatedMjcfContent,
     );
@@ -332,6 +335,7 @@ export async function executeConfiguredRobotExport({
         compressOptions: { compressSTL, stlQuality },
         extraMeshFiles,
         skipMeshPaths: mjcfMeshExport.convertedSourceMeshPaths,
+        meshPathOverrides: mjcfMeshExport.meshPathOverrides,
         onProgress: createAssetProgressCallback(reportProgress, t, 4),
       });
       assetPackagingFailures.push(...meshPackagingResult.failedAssets);

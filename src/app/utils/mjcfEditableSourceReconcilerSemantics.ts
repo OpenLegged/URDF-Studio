@@ -2,7 +2,8 @@ import {
   createSourceSemanticRobotHash,
   createStableJsonSnapshot,
 } from '@/core/robot';
-import type { RobotData, RobotState, UrdfLink, UrdfVisual } from '@/types';
+import type { RobotData, RobotFile, RobotState, UrdfLink, UrdfVisual } from '@/types';
+import { rewriteRobotMeshPathsForSource } from '@/core/parsers/meshPathUtils';
 
 import { parseEditableRobotSource } from './parseEditableRobotSource';
 
@@ -188,11 +189,15 @@ export function mjcfSourceSemanticHash(robot: RobotData): string {
 export function parseMJCFEditableSource(
   sourceFileName: string,
   content: string,
+  availableFiles: RobotFile[] = [],
 ): RobotState | null {
-  return parseEditableRobotSource({
+  const parsed = parseEditableRobotSource({
     file: { name: sourceFileName || 'model.xml', format: 'mjcf' },
     content,
+    availableFiles,
   });
+  // Match the library-relative paths used by the production import boundary.
+  return parsed ? rewriteRobotMeshPathsForSource(parsed, sourceFileName) : null;
 }
 
 function findEntityPair<T extends { id: string; name: string }>(

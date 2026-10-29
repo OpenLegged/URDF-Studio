@@ -20,6 +20,7 @@ export interface PrepareExportArchiveAssetsArgs {
   compressOptions?: ExportArchiveAssetsCompressOptions;
   extraMeshFiles?: ReadonlyMap<string, Blob>;
   skipMeshPaths?: ReadonlySet<string>;
+  meshPathOverrides?: ReadonlyMap<string, string>;
   onProgress?: (progress: PrepareExportArchiveAssetsProgress) => void;
 }
 
@@ -68,6 +69,7 @@ export interface ExportArchiveAssetsWorkerPayload {
   compressOptions?: ExportArchiveAssetsCompressOptions;
   extraMeshFiles: ExportArchiveAssetsWorkerInlineFile[];
   skipMeshPaths: string[];
+  meshPathOverrides?: Array<[string, string]>;
 }
 
 export interface PrepareExportArchiveAssetsWorkerRequest {

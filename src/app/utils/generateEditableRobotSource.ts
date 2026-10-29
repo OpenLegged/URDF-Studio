@@ -14,6 +14,7 @@ export interface GenerateEditableRobotSourceOptions {
   robotState: RobotState;
   includeHardware?: 'never' | 'auto' | 'always';
   preserveMeshPaths?: boolean;
+  sourceFileName?: string;
   sdfVersion?: string;
 }
 
@@ -56,12 +57,14 @@ export function generateEditableRobotSource({
   robotState,
   includeHardware = 'auto',
   preserveMeshPaths,
+  sourceFileName,
   sdfVersion,
 }: GenerateEditableRobotSourceOptions): string {
   switch (format) {
     case 'mjcf':
       return generateMujocoXML(robotState, {
-        meshdir: 'meshes/',
+        preserveAssetPaths: true,
+        sourceFileName,
         includeSceneHelpers: false,
         preserveInertialData: true,
         preserveNumericPrecision: true,

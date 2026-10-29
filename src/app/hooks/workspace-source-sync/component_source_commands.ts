@@ -32,6 +32,17 @@ export function synchronizeComponentSourceAfterMutation({
   previousRobot,
 }: ComponentSourceMutation): ComponentSourceMutationResult {
   const nextRobot = useWorkspaceStore.getState().workspace.components[componentId]?.robot;
+  if (
+    previousRobot && nextRobot
+    && createSourceSemanticRobotHash(previousRobot) === createSourceSemanticRobotHash(nextRobot)
+  ) {
+    // Visibility and other presentation changes do not require a source patch.
+    // Still repair a missing/stale draft through the normal freshness check.
+    return {
+      reconciliation: { handled: false },
+      synchronization: synchronizeComponentSourceDraft(componentId),
+    };
+  }
   const reconciliation = previousRobot && nextRobot
     ? reconcileComponentEditableRobotSource({
         componentId,

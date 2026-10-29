@@ -25,7 +25,9 @@ import { resolveJointKey, resolveLinkKey } from '@/core/robot/identity';
 import { DEFAULT_MJCF_DENSITY, mjcfCollisionGeometries, mjcfCollisionMasses, needsMjcfInertiaInference } from './mjcfMassInference';
 import {
   buildTextureExportPathOverrides,
+  getSourceFileDirectory,
   normalizeMeshPathForExport,
+  resolveImportedAssetPath,
   resolveTextureExportPath,
 } from '../meshPathUtils';
 
@@ -73,8 +75,8 @@ export const generateMujocoXML = (robot: RobotState, options: MujocoExportOption
   const negligibleScalar = options.preserveNumericPrecision ? 0 : 1e-12;
   const FIXED_SPATIAL_TENDON_RANGE_EPSILON = 1e-6;
   const { name, links, joints, rootLinkId } = robot;
-  const meshdir = options.meshdir ?? '../meshes/';
-  const texturedir =
+  const meshdir = options.preserveAssetPaths ? '' : options.meshdir ?? '../meshes/';
+  const texturedir = options.preserveAssetPaths ? '' :
     options.texturedir ??
     (meshdir.includes('meshes') ? meshdir.replace(/meshes\/?$/, 'textures/') : '../textures/');
   const addFloatBase = options.addFloatBase ?? false;
@@ -119,6 +121,24 @@ export const generateMujocoXML = (robot: RobotState, options: MujocoExportOption
       .filter((texture): texture is string => Boolean(texture)),
   ]);
 
+  const preserveAssetPath = (assetPath: string): string => {
+    const path = resolveImportedAssetPath(assetPath);
+    if (!path || /^(?:blob:|https?:\/\/|data:)/i.test(path)) return path;
+    // Workspace paths are rooted in the imported library. A generated document
+    // can live below that root, so express them relative to its own directory.
+    const sourceDirectory = getSourceFileDirectory(options.sourceFileName);
+    const sourceSegments = resolveImportedAssetPath(sourceDirectory).split('/').filter(Boolean);
+    const assetSegments = path.split('/').filter(Boolean);
+    while (sourceSegments.length && sourceSegments[0] === assetSegments[0]) {
+      sourceSegments.shift();
+      assetSegments.shift();
+    }
+    return [...sourceSegments.map(() => '..'), ...assetSegments].join('/');
+  };
+  const resolveExportTexturePath = (texturePath: string): string => options.preserveAssetPaths
+    ? preserveAssetPath(texturePath)
+    : resolveTextureExportPath(texturePath, texturePathOverrides);
+
   // Helper to convert hex color to rgba string
   /**
    * Compute a compensating quaternion for a negative mesh scale.
@@ -146,7 +166,7 @@ export const generateMujocoXML = (robot: RobotState, options: MujocoExportOption
     return variants && variants.length > 0 ? variants : undefined;
   };
 
-  const resolveExportMeshPath = (meshPath?: string): string => {
+  const resolveExportMeshPath = (meshPath?: string, canonicalMeshPath?: string): string => {
     if (!meshPath) {
       return '';
     }
@@ -157,7 +177,11 @@ export const generateMujocoXML = (robot: RobotState, options: MujocoExportOption
     }
 
     const overridePath =
-      meshPathOverrides?.get(meshPath || '') || meshPathOverrides?.get(normalizedPath);
+      (canonicalMeshPath ? meshPathOverrides?.get(canonicalMeshPath) : undefined)
+      || meshPathOverrides?.get(meshPath || '') || meshPathOverrides?.get(normalizedPath);
+    if (options.preserveAssetPaths) {
+      return preserveAssetPath(overridePath || meshPath);
+    }
     if (!overridePath) {
       return normalizedPath;
     }
@@ -168,7 +192,9 @@ export const generateMujocoXML = (robot: RobotState, options: MujocoExportOption
   const meshAssets = new Map<string, MeshAssetEntry>();
   const registerMeshAsset = (geometry: UrdfLink['visual']) => {
     const mjcfMesh = geometry.mjcfMesh;
-    const normalizedPath = resolveExportMeshPath(mjcfMesh?.file || geometry.meshPath);
+    const normalizedPath = resolveExportMeshPath(options.preserveAssetPaths
+      ? geometry.meshPath || mjcfMesh?.file
+      : mjcfMesh?.file || geometry.meshPath, geometry.meshPath);
     const inlineVertices =
       !mjcfMesh?.file && mjcfMesh?.vertices?.length ? [...mjcfMesh.vertices] : null;
     if (!normalizedPath && !inlineVertices) {
@@ -260,7 +286,9 @@ export const generateMujocoXML = (robot: RobotState, options: MujocoExportOption
     mjcfMesh?: UrdfLink['visual']['mjcfMesh'],
     assetRef?: string,
   ): string | null => {
-    const normalizedPath = resolveExportMeshPath(mjcfMesh?.file || meshPath);
+    const normalizedPath = resolveExportMeshPath(options.preserveAssetPaths
+      ? meshPath || mjcfMesh?.file
+      : mjcfMesh?.file || meshPath, meshPath);
     const inlineVertices =
       !mjcfMesh?.file && mjcfMesh?.vertices?.length ? [...mjcfMesh.vertices] : null;
     if (!normalizedPath && !inlineVertices) {
@@ -313,7 +341,9 @@ export const generateMujocoXML = (robot: RobotState, options: MujocoExportOption
     hfieldAssets.set(key, {
       key,
       name: assetName,
-      file: geometry.mjcfHfield?.file,
+      file: options.preserveAssetPaths && geometry.mjcfHfield?.file
+        ? preserveAssetPath(geometry.meshPath || geometry.mjcfHfield.file)
+        : geometry.mjcfHfield?.file,
       contentType: geometry.mjcfHfield?.contentType,
       nrow: geometry.mjcfHfield?.nrow,
       ncol: geometry.mjcfHfield?.ncol,
@@ -629,7 +659,7 @@ export const generateMujocoXML = (robot: RobotState, options: MujocoExportOption
 
       const pbr = entry.bodyIndex === null ? resolveLinkMaterialPbr(link) : {};
       const cubeTextureFacePaths = boxFacePalette.map((faceEntry) =>
-        resolveTextureExportPath(faceEntry.material.texture || '', texturePathOverrides),
+        resolveExportTexturePath(faceEntry.material.texture || ''),
       );
       const canExportCubeTexture =
         boxFacePalette.length > 0 && cubeTextureFacePaths.every((path) => Boolean(path));
@@ -691,7 +721,7 @@ export const generateMujocoXML = (robot: RobotState, options: MujocoExportOption
 
   const textureAssets = new Map<string, TextureAssetEntry>();
   const registerTextureAsset = (linkId: string, objectIndex: number, texturePath?: string) => {
-    const normalizedPath = resolveTextureExportPath(texturePath || '', texturePathOverrides);
+    const normalizedPath = resolveExportTexturePath(texturePath || '');
     if (!normalizedPath) {
       return;
     }
@@ -746,7 +776,7 @@ export const generateMujocoXML = (robot: RobotState, options: MujocoExportOption
   });
 
   const resolveTextureAssetName = (texturePath?: string): string | null => {
-    const normalizedPath = resolveTextureExportPath(texturePath || '', texturePathOverrides);
+    const normalizedPath = resolveExportTexturePath(texturePath || '');
     if (!normalizedPath) {
       return null;
     }
@@ -762,18 +792,6 @@ export const generateMujocoXML = (robot: RobotState, options: MujocoExportOption
     return cubeTextureAssetNameMap.get(cubeTextureKey) || null;
   };
 
-  const hasGeometry = (link: UrdfLink | undefined): boolean => {
-    if (!link) return false;
-
-    const hasVisual = getVisualGeometryEntries(link).length > 0;
-    const hasCollision = link.collision.type !== GeometryType.NONE;
-    const hasExtraCollisions = (link.collisionBodies || []).some(
-      (body) => body.type !== GeometryType.NONE,
-    );
-
-    return hasVisual || hasCollision || hasExtraCollisions;
-  };
-
   const isSyntheticWorldRoot = (linkId: string): boolean => {
     const link = links[linkId];
     if (!link) return false;
@@ -781,8 +799,13 @@ export const generateMujocoXML = (robot: RobotState, options: MujocoExportOption
     const normalizedName = (link.name || '').trim().toLowerCase();
     if (normalizedName !== 'world') return false;
 
-    const hasMass = (link.inertial?.mass || 0) > 0;
-    return !hasMass && !hasGeometry(link);
+    // World geoms and sites belong directly to <worldbody>. Wrapping them in
+    // an extra body also nests free-jointed children, which MuJoCo rejects.
+    // A root with authored inertia is a real body and must retain that data.
+    const hasInertialData = (link.inertial?.mass ?? 0) !== 0
+      || Object.values(link.inertial?.inertia ?? {}).some((value) => value !== 0);
+    const hasParent = Object.values(joints).some((joint) => joint.childLinkId === linkId);
+    return !hasInertialData && !hasParent;
   };
 
   const needsBalanceInertia = Object.values(links).some((link) => hasInvalidMujocoInertia(link));
@@ -991,7 +1014,7 @@ export const generateMujocoXML = (robot: RobotState, options: MujocoExportOption
       ? ` refquat="${refquat.map((value) => formatScalar(value)).join(' ')}"`
       : '';
     if (path) {
-      xml += `    <mesh name="${meshName}" file="${path}"${scaleAttr}${refposAttr}${refquatAttr} />\n`;
+      xml += `    <mesh name="${meshName}" file="${escapeXmlAttribute(path)}"${scaleAttr}${refposAttr}${refquatAttr} />\n`;
       return;
     }
 
@@ -1002,7 +1025,7 @@ export const generateMujocoXML = (robot: RobotState, options: MujocoExportOption
   hfieldAssets.forEach(({ name: hfieldName, file, contentType, nrow, ncol, size, elevation }) => {
     const attrs = [
       `name="${hfieldName}"`,
-      file ? `file="${file}"` : '',
+      file ? `file="${escapeXmlAttribute(file)}"` : '',
       contentType ? `content_type="${contentType}"` : '',
       !file && Number.isFinite(nrow) ? `nrow="${nrow}"` : '',
       !file && Number.isFinite(ncol) ? `ncol="${ncol}"` : '',
@@ -1018,7 +1041,7 @@ export const generateMujocoXML = (robot: RobotState, options: MujocoExportOption
     if (!textureName) {
       return;
     }
-    xml += `    <texture name="${textureName}" type="2d" file="${path}" />\n`;
+    xml += `    <texture name="${textureName}" type="2d" file="${escapeXmlAttribute(path)}" />\n`;
   });
   cubeTextureAssets.forEach((cubeTextureAsset) => {
     const textureName = cubeTextureAssetNameMap.get(cubeTextureAsset.key);
@@ -1026,7 +1049,7 @@ export const generateMujocoXML = (robot: RobotState, options: MujocoExportOption
       return;
     }
 
-    xml += `    <texture name="${textureName}" type="cube" fileright="${cubeTextureAsset.fileright}" fileleft="${cubeTextureAsset.fileleft}" fileup="${cubeTextureAsset.fileup}" filedown="${cubeTextureAsset.filedown}" filefront="${cubeTextureAsset.filefront}" fileback="${cubeTextureAsset.fileback}" />\n`;
+    xml += `    <texture name="${textureName}" type="cube" fileright="${escapeXmlAttribute(cubeTextureAsset.fileright)}" fileleft="${escapeXmlAttribute(cubeTextureAsset.fileleft)}" fileup="${escapeXmlAttribute(cubeTextureAsset.fileup)}" filedown="${escapeXmlAttribute(cubeTextureAsset.filedown)}" filefront="${escapeXmlAttribute(cubeTextureAsset.filefront)}" fileback="${escapeXmlAttribute(cubeTextureAsset.fileback)}" />\n`;
   });
   visualMaterialAssets.forEach(
     ({
@@ -1087,15 +1110,13 @@ export const generateMujocoXML = (robot: RobotState, options: MujocoExportOption
     xml += `    <light pos="0 0 10" dir="0 0 -1" diffuse="1 1 1"/>\n`;
     xml += `    <geom type="plane" size="5 5 0.1" rgba=".9 .9 .9 1"/>\n`;
   }
-  const syntheticWorldRoot = isSyntheticWorldRoot(rootLinkId) ? links[rootLinkId] : undefined;
-  if (syntheticWorldRoot) {
-    getExportedSites(rootLinkId, syntheticWorldRoot).forEach((site) => {
-      xml += renderMjcfSite(site, '    ');
-    });
-  }
-
   // Recursive Body Builder
-  const buildBody = (linkId: string, indent: string, path = new Set<string>()) => {
+  const buildBody = (
+    linkId: string,
+    indent: string,
+    path = new Set<string>(),
+    inWorldBody = false,
+  ) => {
     const link = links[linkId];
     if (!link) return '';
 
@@ -1123,7 +1144,8 @@ export const generateMujocoXML = (robot: RobotState, options: MujocoExportOption
 
     const bodyName =
       (link.name || link.id).trim().toLowerCase() === 'world' ? 'world_link' : link.name;
-    let bodyXml = `${indent}<body name="${escapeXmlAttribute(bodyName)}" pos="${pos}"${quatAttr(bodyRotation)}>\n`;
+    let bodyXml = inWorldBody ? ''
+      : `${indent}<body name="${escapeXmlAttribute(bodyName)}" pos="${pos}"${quatAttr(bodyRotation)}>\n`;
 
     // 1. Joint Definition (inside the body it belongs to)
     if (parentJoint && parentJoint.type !== JointType.FIXED) {
@@ -1181,7 +1203,8 @@ export const generateMujocoXML = (robot: RobotState, options: MujocoExportOption
     const collisionGeoms = mjcfCollisionGeometries(link);
     const inferInertia = !options.preserveInertialData && (needsMjcfInertiaInference(link)
       || (options.massMode === 'recompute' && collisionGeoms.length > 0));
-    const moving = (parentJoint && parentJoint.type !== JointType.FIXED) || (linkId === rootLinkId && addFloatBase);
+    const moving = (parentJoint && parentJoint.type !== JointType.FIXED)
+      || (!inWorldBody && linkId === rootLinkId && addFloatBase);
     if (!options.preserveInertialData && (inferInertia || options.massMode === 'recompute') && moving && collisionGeoms.length === 0) {
       throw new Error(`[MJCF export] ${link.name}: missing collision geometry for mass/inertia estimation. Add collision shapes in the model editor.`);
     }
@@ -1190,7 +1213,7 @@ export const generateMujocoXML = (robot: RobotState, options: MujocoExportOption
     // 2. Inertial
     // An explicit all-zero placeholder disables MuJoCo's automatic inference.
     // Omit only missing data; preserve authored nonzero parameters, including errors.
-    if (link.inertial && !inferInertia) {
+    if (!inWorldBody && link.inertial && !inferInertia) {
       const inertialOrigin = link.inertial.origin || {
         xyz: { x: 0, y: 0, z: 0 },
         rpy: { r: 0, p: 0, y: 0 },
@@ -1417,7 +1440,7 @@ export const generateMujocoXML = (robot: RobotState, options: MujocoExportOption
       bodyXml += buildBody(childJoint.childLinkId, indent + '  ', nextPath);
     });
 
-    bodyXml += `${indent}</body>\n`;
+    if (!inWorldBody) bodyXml += `${indent}</body>\n`;
     return bodyXml;
   };
 
@@ -1426,12 +1449,13 @@ export const generateMujocoXML = (robot: RobotState, options: MujocoExportOption
       return buildBody(rootLinkId, '    ');
     }
 
-    const rootChildren = Object.values(joints).filter((joint) => joint.parentLinkId === rootLinkId);
-    return rootChildren.map((joint) => buildBody(joint.childLinkId, '    ')).join('');
+    return buildBody(rootLinkId, '  ', new Set<string>(), true);
   };
 
   const injectFreeJoint = (bodyXml: string): string => {
-    const firstNewline = bodyXml.indexOf('\n');
+    const firstBody = bodyXml.indexOf('<body ');
+    if (firstBody === -1) return bodyXml;
+    const firstNewline = bodyXml.indexOf('\n', firstBody);
     if (firstNewline === -1) {
       return bodyXml;
     }

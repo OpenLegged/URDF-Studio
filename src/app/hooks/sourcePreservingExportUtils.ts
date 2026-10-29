@@ -44,6 +44,8 @@ export interface ResolveSourcePreservingExportContentOptions {
   /** Restore caller-owned markers before the resolver validates and returns content. */
   finalizePatchedContent?: (content: string) => string;
   xacroSourceModelMode?: 'strict' | 'direct-changes';
+  /** Model downloads use prepared assets and physics; editable/native sources keep their own sections. */
+  mjcfModelSections?: 'generated';
 }
 
 export interface SourcePreservingExportResult {
@@ -861,12 +863,17 @@ export function resolveSourcePreservingExportContent(
     );
   }
 
-  if (sourceRobot && buildRobotSnapshot(sourceRobot) === buildRobotSnapshot(generatedRobot)) {
+  // RobotState does not distinguish absent inertials from all-zero placeholders,
+  // or retain every compiler/geom mass option. An explicit model download must
+  // still apply the prepared XML when these parsed snapshots compare equal.
+  const useGeneratedMjcfSections = format === 'mjcf' && options.mjcfModelSections === 'generated';
+  if (!useGeneratedMjcfSections && sourceRobot && buildRobotSnapshot(sourceRobot) === buildRobotSnapshot(generatedRobot)) {
     return resolveMatchingSourceContent(options, sourceContent);
   }
 
   if (
-    sourceRobot
+    !useGeneratedMjcfSections
+    && sourceRobot
     && sourceRobot.name !== generatedRobot.name
     && buildRobotSnapshotWithName(sourceRobot, generatedRobot.name)
       === buildRobotSnapshot(generatedRobot)
