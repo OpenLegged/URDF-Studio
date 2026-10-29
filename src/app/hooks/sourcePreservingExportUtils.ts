@@ -7,6 +7,7 @@ import {
   applyTextReplacements,
   collectDirectChildren,
   collectXmlElementBounds,
+  createXmlElementReplacement,
   findRootElement,
   getAttributeValueFromOpenTag,
   getClosingTagStart,
@@ -274,16 +275,9 @@ function patchMatchingXacroSource(sourceContent: string, generatedContent: strin
 
   sourceChildren.forEach((sourceChild) => {
     const generatedChild = generatedChildrenByKey.get(sourceChild.key);
-    replacements.push({
-      startOffset: sourceChild.bounds.startOffset,
-      endOffset: sourceChild.bounds.endOffset,
-      text: generatedChild
-        ? reindentFragment(
-            generatedChild.text,
-            getIndentAt(patched, sourceChild.bounds.startOffset),
-          )
-        : '',
-    });
+    replacements.push(generatedChild
+      ? createXmlElementReplacement(patched, sourceChild.bounds, generatedContent, generatedChild.bounds)
+      : { ...sourceChild.bounds, text: '' });
   });
 
   const missingGeneratedChildren = generatedChildren.filter(
@@ -579,14 +573,9 @@ function patchUrdfLikeSource({
       changedKeys.has(sourceChild.key) ||
       (format === 'xacro' && isManagedXacroControlChild(sourceChild))
     ) {
-      replacements.push({
-        startOffset: sourceChild.bounds.startOffset,
-        endOffset: sourceChild.bounds.endOffset,
-        text: reindentFragment(
-          generatedChild.text,
-          getIndentAt(patched, sourceChild.bounds.startOffset),
-        ),
-      });
+      replacements.push(createXmlElementReplacement(
+        patched, sourceChild.bounds, generatedContent, generatedChild.bounds,
+      ));
     }
   });
 
@@ -663,16 +652,9 @@ function patchMjcfSource(sourceContent: string, generatedContent: string): strin
 
   sourceSections.forEach((sourceSection) => {
     const generatedSection = generatedSectionsByKey.get(sourceSection.key);
-    replacements.push({
-      startOffset: sourceSection.bounds.startOffset,
-      endOffset: sourceSection.bounds.endOffset,
-      text: generatedSection
-        ? reindentFragment(
-            generatedSection.text,
-            getIndentAt(patched, sourceSection.bounds.startOffset),
-          )
-        : '',
-    });
+    replacements.push(generatedSection
+      ? createXmlElementReplacement(patched, sourceSection.bounds, generatedContent, generatedSection.bounds)
+      : { ...sourceSection.bounds, text: '' });
   });
 
   const missingSections = generatedSections.filter(
@@ -770,14 +752,9 @@ function patchSdfSource(sourceContent: string, generatedContent: string): string
   }
 
   return applyTextReplacements(patched, [
-    {
-      startOffset: adjustedSourceModel.bounds.startOffset,
-      endOffset: adjustedSourceModel.bounds.endOffset,
-      text: reindentFragment(
-        generatedModel.text,
-        getIndentAt(patched, adjustedSourceModel.bounds.startOffset),
-      ),
-    },
+    createXmlElementReplacement(
+      patched, adjustedSourceModel.bounds, generatedContent, generatedModel.bounds,
+    ),
   ]);
 }
 

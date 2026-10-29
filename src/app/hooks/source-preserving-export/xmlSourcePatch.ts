@@ -1,6 +1,7 @@
 import {
   escapeRegex,
   escapeXmlAttribute,
+  getIndentAt,
   getPreferredNewline,
 } from '@/core/utils/xmlSourceTextUtils';
 
@@ -196,6 +197,27 @@ export function reindentFragment(fragment: string, targetIndent: string): string
       return `${targetIndent}${line.startsWith(sourceIndent) ? line.slice(sourceIndent.length) : line}`;
     })
     .join(getPreferredNewline(fragment));
+}
+
+/** Replace a tag-bounded element while leaving its first-line prefix in place. */
+export function createXmlElementReplacement(
+  sourceXml: string,
+  sourceElement: XmlElementBounds,
+  generatedXml: string,
+  generatedElement: XmlElementBounds,
+): TextReplacement {
+  const targetIndent = getIndentAt(sourceXml, sourceElement.startOffset);
+  const generatedIndent = getIndentAt(generatedXml, generatedElement.startOffset);
+  // Bounds start at '<'. Restore the generated first-line indent so nested
+  // lines are rebased too, then omit the prefix already owned by sourceXml.
+  const fragment = generatedIndent
+    + generatedXml.slice(generatedElement.startOffset, generatedElement.endOffset);
+  const text = reindentFragment(fragment, targetIndent).slice(targetIndent.length);
+  return {
+    startOffset: sourceElement.startOffset,
+    endOffset: sourceElement.endOffset,
+    text: text.replace(/\r?\n/g, getPreferredNewline(sourceXml)),
+  };
 }
 
 export function collectDirectChildren(xml: string, parentTagName: string): XmlElementBounds[] {
