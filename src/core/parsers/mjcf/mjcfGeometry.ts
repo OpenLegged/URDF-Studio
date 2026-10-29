@@ -342,7 +342,7 @@ export async function createGeometryMesh(
         return createFromToGeometry(geom, 'capsule');
       }
       const radius = geom.size?.[0] || 0.05;
-      const halfHeight = geom.size?.[1] || 0.1;
+      const halfHeight = geom.size?.[1] ?? 0.1;
       // Create capsule using cylinder + 2 hemispheres
       const group = new THREE.Group();
 
