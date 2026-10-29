@@ -940,30 +940,36 @@ test('buildRuntimeRobotFromState loads MJCF SDF mesh assets through the canonica
   assert.deepEqual(mesh.scale.toArray(), [2, 3, 4]);
 });
 
-test('buildRuntimeRobotFromState treats capsule dimensions.y as straight body length', async () => {
-  const robot = await buildRuntimeRobotFromState({
-    robotName: 'capsule_length_robot',
-    links: {
-      base_link: {
-        ...DEFAULT_LINK,
-        id: 'base_link',
-        name: 'base_link',
-        visual: {
-          ...DEFAULT_LINK.visual,
-          type: GeometryType.CAPSULE,
-          dimensions: { x: 0.08, y: 0.12, z: 0 },
+for (const bodyLength of [0.12, 0]) {
+  test(`buildRuntimeRobotFromState preserves capsule straight body length ${bodyLength}`, async () => {
+    const robot = await buildRuntimeRobotFromState({
+      robotName: 'capsule_length_robot',
+      links: {
+        base_link: {
+          ...DEFAULT_LINK,
+          id: 'base_link',
+          name: 'base_link',
+          visual: {
+            ...DEFAULT_LINK.visual,
+            type: GeometryType.CAPSULE,
+            dimensions: { x: 0.08, y: bodyLength, z: 0 },
+          },
         },
       },
-    },
-    joints: {},
-    manager: new THREE.LoadingManager(),
-    loadMeshCb: createNoopMeshLoadCb(),
-  });
+      joints: {},
+      manager: new THREE.LoadingManager(),
+      loadMeshCb: createNoopMeshLoadCb(),
+    });
 
-  const capsule = robot.links.base_link.getObjectByProperty('isMesh', true) as THREE.Mesh;
-  assert.ok(capsule.geometry instanceof THREE.CapsuleGeometry);
-  assert.equal(capsule.geometry.parameters.height, 0.12);
-});
+    const capsule = robot.links.base_link.getObjectByProperty('isMesh', true) as THREE.Mesh;
+    assert.ok(capsule.geometry instanceof THREE.CapsuleGeometry);
+    assert.equal(capsule.geometry.parameters.height, bodyLength);
+    capsule.geometry.computeBoundingBox();
+    const bounds = capsule.geometry.boundingBox;
+    assert.ok(bounds);
+    assert.ok(Math.abs(bounds.max.y - bounds.min.y - (bodyLength + 0.16)) < 1e-6);
+  });
+}
 
 test('parseURDF to runtime preserves native capsule end-to-end length', async () => {
   const state = parseURDF(`
