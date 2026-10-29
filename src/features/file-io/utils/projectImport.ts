@@ -14,7 +14,7 @@ import type {
 import type { Language } from '@/shared/i18n';
 import { isAssetLibraryOnlyFormat } from '@/shared/utils/robotFileSupport';
 import { createSourceSemanticRobotHash, normalizeComponentRobot } from '@/core/robot';
-import { generateURDF, parseMJCF, parseSDF, parseURDF, parseXacro } from '@/core/parsers';
+import { generateMujocoXML, generateURDF, parseMJCF, parseSDF, parseURDF, parseXacro } from '@/core/parsers';
 import { rewriteRobotMeshPathsForSource } from '@/core/parsers/meshPathUtils';
 import { processMJCFIncludes } from '@/core/parsers/mjcf/mjcfSourceResolver';
 import { canPreserveGeometryInSource } from '@/core/parsers/sourceGeometrySupport';
@@ -311,11 +311,11 @@ function parseComponentSourceDraft(
 }
 
 /**
- * Generated URDF/Xacro text uses entity names, while the workspace retains
- * stable editor IDs and import metadata. Compare both through the same source
+ * Generated source uses entity names and format-specific encoding, while the
+ * workspace retains stable editor IDs and import metadata. Compare both through the same source
  * representation without changing the canonical workspace or its freshness hash.
  */
-function matchesGeneratedUrdfDraft(
+function matchesGeneratedSourceDraft(
   robot: RobotData,
   parsedHash: string,
   sourceFile: RobotFile,
@@ -323,17 +323,25 @@ function matchesGeneratedUrdfDraft(
 ): boolean {
   const { format } = sourceFile;
   if (
-    (format !== 'urdf' && format !== 'xacro')
+    (format !== 'urdf' && format !== 'xacro' && format !== 'mjcf')
     || !canPreserveJointTypesInSource(robot, format)
     || !canPreserveGeometryInSource(robot, format)
   ) return false;
 
   const generatedFile: RobotFile = {
     ...sourceFile,
-    content: generateURDF(
-      { ...robot, selection: { type: null, id: null } },
-      { includeHardware: 'auto', preserveMeshPaths: true, preserveNumericPrecision: true },
-    ),
+    content: format === 'mjcf'
+      ? generateMujocoXML({ ...robot, selection: { type: null, id: null } }, {
+          preserveAssetPaths: true,
+          sourceFileName: sourceFile.name,
+          includeSceneHelpers: false,
+          preserveInertialData: true,
+          preserveNumericPrecision: true,
+        })
+      : generateURDF(
+          { ...robot, selection: { type: null, id: null } },
+          { includeHardware: 'auto', preserveMeshPaths: true, preserveNumericPrecision: true },
+        ),
   };
   const generatedContext = buildDraftSourceContext(
     generatedFile,
@@ -408,7 +416,7 @@ async function loadComponentSourceDrafts(
     const parsedHash = createSourceSemanticRobotHash(parsedRobot);
     if (
       parsedHash !== entry.robotSnapshotHash
-      && !matchesGeneratedUrdfDraft(component.robot, parsedHash, sourceFile, context)
+      && !matchesGeneratedSourceDraft(component.robot, parsedHash, sourceFile, context)
     ) {
       throw new Error(
         `Invalid project file: component source draft content hash mismatch for "${entry.componentId}"`,

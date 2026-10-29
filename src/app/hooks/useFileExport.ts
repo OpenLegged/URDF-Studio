@@ -74,6 +74,7 @@ interface AddMeshesToZipOptions {
   onProgress?: (progress: { completed: number; total: number; currentFile: string }) => void;
   robot: RobotState;
   skipMeshPaths?: ReadonlySet<string>;
+  meshPathOverrides?: ReadonlyMap<string, string>;
   zip: JSZipInstance;
 }
 
@@ -81,6 +82,7 @@ interface BuildSourcePreservingExportContentOptions {
   currentRobot: RobotState;
   format: SourcePreservingExportFormat;
   generatedContent: string;
+  mjcfModelSections?: 'generated';
   options?: UrdfSourceExportPreference;
   target: ExportTarget;
 }
@@ -210,6 +212,7 @@ export function useFileExport() {
       onProgress,
       robot,
       skipMeshPaths,
+      meshPathOverrides,
       zip,
     }: AddMeshesToZipOptions) => {
       return addRobotAssetsToZip({
@@ -220,6 +223,7 @@ export function useFileExport() {
         compressOptions,
         extraMeshFiles,
         skipMeshPaths,
+        meshPathOverrides,
         onProgress,
       });
     },
@@ -331,6 +335,7 @@ export function useFileExport() {
       currentRobot,
       format,
       generatedContent,
+      mjcfModelSections,
       options = {},
       target,
     }: BuildSourcePreservingExportContentOptions): string | null => {
@@ -348,6 +353,7 @@ export function useFileExport() {
         currentRobot,
         sourceFile,
         generatedContent,
+        mjcfModelSections,
         availableFiles,
         allFileContents,
       }).content;

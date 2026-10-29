@@ -195,6 +195,7 @@ export function synchronizeComponentSourceDraft(
       format,
       robotState,
       preserveMeshPaths: true,
+      sourceFileName: seed.name,
     });
     if (generatedContent === null) return 'failed';
     let content = generatedContent;

@@ -1,4 +1,4 @@
-import type { RobotData } from '@/types';
+import type { RobotData, RobotFile } from '@/types';
 
 import { alignMJCFJointLimitRoundoff } from './mjcfEditableSourceJointLimitRoundoff';
 import { resolveMJCFSourceAngleUnit } from './mjcfEditableSourcePatchHelpers';
@@ -12,7 +12,6 @@ import {
 import { applyMJCFSectionPatches } from './mjcfEditableSourceReconcilerSections';
 import {
   asMJCFRobotState,
-  mjcfCoreSemanticHash,
   mjcfEncodingMetadataChanged,
   mjcfSourceSemanticHash,
   parseMJCFEditableSource,
@@ -25,6 +24,7 @@ export interface ReconcileMJCFEditableSourceOptions {
   beforeRobot: RobotData;
   afterRobot: RobotData;
   sourceFileName: string;
+  availableFiles?: RobotFile[];
 }
 
 export type ReconcileMJCFEditableSourceResult =
@@ -35,8 +35,9 @@ function validateCandidate(
   sourceFileName: string,
   content: string,
   expected: RobotData,
+  availableFiles: RobotFile[],
 ): boolean {
-  const parsed = parseMJCFEditableSource(sourceFileName, content);
+  const parsed = parseMJCFEditableSource(sourceFileName, content, availableFiles);
   return Boolean(parsed && sourceMatches(parsed, expected, content));
 }
 
@@ -52,22 +53,23 @@ function unsafe(reason: string): ReconcileMJCFEditableSourceResult {
 }
 
 /**
- * Reconcile a concrete, single-file MJCF source without replacing the complete
- * document. Every progressively wider candidate must parse to the requested
- * source semantics before it may be returned.
+ * Patch the component-owned MJCF source, resolving attachments against the
+ * immutable source files. Every candidate must parse to the requested semantics;
+ * edits that cannot be represented in this document defer to source draft sync.
  */
 export function reconcileMJCFEditableSource({
   sourceContent,
   beforeRobot,
   afterRobot,
   sourceFileName,
+  availableFiles = [],
 }: ReconcileMJCFEditableSourceOptions): ReconcileMJCFEditableSourceResult {
   if (/<\s*include\b/i.test(sourceContent)) {
     return unsafe('MJCF sources with <include> require multi-file reconciliation.');
   }
 
   try {
-    const parsedSource = parseMJCFEditableSource(sourceFileName, sourceContent);
+    const parsedSource = parseMJCFEditableSource(sourceFileName, sourceContent, availableFiles);
     if (!parsedSource) return unsafe('The editable source is not valid MJCF.');
     if (!sourceMatches(parsedSource, beforeRobot, sourceContent)) {
       return unsafe('The editable source no longer matches the robot before this mutation.');
@@ -76,69 +78,63 @@ export function reconcileMJCFEditableSource({
       return unsafe('The mutation changes MJCF encoding metadata without a safe local patch.');
     }
 
+    let patchFailure: string | undefined;
+    const attempt = (patch: () => string): string | null => {
+      try {
+        return patch();
+      } catch (error) {
+        // A shared geom or attached entity may require a wider patch. Keep the
+        // authored text until a complete candidate passes semantic validation.
+        patchFailure = error instanceof Error ? error.message : 'MJCF patch failed.';
+        return null;
+      }
+    };
+    const attributeCandidate = attempt(() => applyMJCFAttributePatches(
+      sourceContent, beforeRobot, afterRobot,
+    )) ?? sourceContent;
+    if (validateCandidate(sourceFileName, attributeCandidate, afterRobot, availableFiles)) {
+      return { status: 'patched', content: attributeCandidate, level: 'attribute' };
+    }
+
+    const nodeCandidate = attempt(() => applyMJCFNodePatches(
+      attributeCandidate, beforeRobot, afterRobot,
+    )) ?? attributeCandidate;
+    if (validateCandidate(sourceFileName, nodeCandidate, afterRobot, availableFiles)) {
+      return { status: 'patched', content: nodeCandidate, level: 'node' };
+    }
+
     const generatedBefore = tryGenerateEditableRobotSource({
-      format: 'mjcf',
-      robotState: asMJCFRobotState(beforeRobot),
+      format: 'mjcf', robotState: asMJCFRobotState(beforeRobot), sourceFileName,
     });
     const generatedAfter = tryGenerateEditableRobotSource({
-      format: 'mjcf',
-      robotState: asMJCFRobotState(afterRobot),
+      format: 'mjcf', robotState: asMJCFRobotState(afterRobot), sourceFileName,
     });
     if (generatedBefore === null || generatedAfter === null) {
       return unsafe('The robot mutation does not currently have a lossless MJCF source representation.');
     }
-    const parsedGeneratedAfter = parseMJCFEditableSource(sourceFileName, generatedAfter);
-    if (
-      !parsedGeneratedAfter ||
-      mjcfCoreSemanticHash(alignMJCFRotationRoundoff(parsedGeneratedAfter, afterRobot))
-        !== mjcfCoreSemanticHash(afterRobot)
-    ) {
-      return unsafe('The robot mutation cannot be represented losslessly as MJCF.');
-    }
-
-    const attributeCandidate = applyMJCFAttributePatches(
-      sourceContent,
-      beforeRobot,
-      afterRobot,
-    );
-    if (validateCandidate(sourceFileName, attributeCandidate, afterRobot)) {
-      return { status: 'patched', content: attributeCandidate, level: 'attribute' };
-    }
-
-    const nodeCandidate = applyMJCFNodePatches(
-      attributeCandidate,
-      beforeRobot,
-      afterRobot,
-    );
-    if (validateCandidate(sourceFileName, nodeCandidate, afterRobot)) {
-      return { status: 'patched', content: nodeCandidate, level: 'node' };
-    }
-
-    const entityCandidate = applyMJCFEntityPatches({
-      sourceContent: nodeCandidate,
-      generatedContent: generatedAfter,
-      beforeRobot,
-      afterRobot,
-    });
-    if (validateCandidate(sourceFileName, entityCandidate, afterRobot)) {
+    // Generated entities are only patch material. Validate the complete candidate,
+    // which retains the authored root, attachments and unrelated encoding metadata.
+    const entityCandidate = attempt(() => applyMJCFEntityPatches({
+      sourceContent: nodeCandidate, generatedContent: generatedAfter,
+      beforeRobot, afterRobot,
+    }));
+    if (entityCandidate !== null
+      && validateCandidate(sourceFileName, entityCandidate, afterRobot, availableFiles)) {
       return { status: 'patched', content: entityCandidate, level: 'entity' };
     }
 
-    const sectionCandidate = applyMJCFSectionPatches({
-      sourceContent: attributeCandidate,
-      generatedBefore,
-      generatedAfter,
-      beforeRobot,
-      afterRobot,
-    });
+    const sectionCandidate = attempt(() => applyMJCFSectionPatches({
+      sourceContent: attributeCandidate, generatedBefore, generatedAfter,
+      beforeRobot, afterRobot,
+    }));
     if (
-      sectionCandidate !== sourceContent &&
-      validateCandidate(sourceFileName, sectionCandidate, afterRobot)
+      sectionCandidate !== null && sectionCandidate !== sourceContent &&
+      validateCandidate(sourceFileName, sectionCandidate, afterRobot, availableFiles)
     ) {
       return { status: 'patched', content: sectionCandidate, level: 'section' };
     }
 
-    return unsafe('No source-preserving MJCF patch matched the requested robot semantics.');
+    return unsafe(patchFailure ?? 'No source-preserving MJCF patch matched the requested robot semantics.');
   } catch (error) {
     return unsafe(error instanceof Error ? error.message : 'MJCF reconciliation failed.');
   }

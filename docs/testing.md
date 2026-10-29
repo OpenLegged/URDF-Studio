@@ -157,3 +157,12 @@ MJCF_SCENE_REGRESSION_ZIP='/absolute/path/untitled_scene.mujoco(1).zip' \
 浏览器验收直接使用“文件 → 导入文件”选择同一原始 ZIP，无需改写或重新打包。
 源文件的 1000 米地面会影响自动取景，检查家具时可以缩放视口并临时隐藏 world 的地面显示；
 这不改变原始几何尺寸或物理参数。
+
+`src/app/hooks/workspace-source-sync/component_mjcf_source_sync.test.ts` 覆盖可见性反复切换、
+宿主共享 geom 原位编辑、挂接家具修改、草稿资源引用、`.usp` 保存重开及篡改拒绝。
+同样可设置 `MJCF_SCENE_REGRESSION_ZIP` 运行原始 ZIP 的编辑和保存回归；
+浏览器额外验证实际显示切换、修改家具位姿、工程重开、MJCF ZIP 导出及回导。
+导出文件应由原生 MuJoCo 成功编译并保留编辑值、8 个 mesh 和 4 个家具根节点。
+
+实际导出的 ZIP 还需按 XML 引用逐个比较 8 个家具 mesh 角色与原 ZIP 对应文件的 SHA-256，
+允许内容相同的左右床头柜安全共享；原生编译同时核对家具质量与原始基线一致。

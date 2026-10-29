@@ -242,6 +242,7 @@ export async function prepareExportArchiveAssets({
   compressOptions,
   extraMeshFiles,
   skipMeshPaths,
+  meshPathOverrides,
   onProgress,
 }: PrepareExportArchiveAssetsArgs): Promise<PrepareExportArchiveAssetsResult> {
   const { meshPaths, texturePaths } = collectRobotAssetReferences(robot);
@@ -259,7 +260,7 @@ export async function prepareExportArchiveAssets({
       normalizeMeshPathForExport,
       'meshes',
     );
-    const exportPath = inlineMesh?.exportPath || normalizeMeshPathForExport(meshPath);
+    const exportPath = meshPathOverrides?.get(meshPath) || inlineMesh?.exportPath || normalizeMeshPathForExport(meshPath);
     if (skipMeshPaths?.has(meshPath) || (exportPath && skipMeshPaths?.has(exportPath))) {
       return;
     }
@@ -449,6 +450,7 @@ export function serializePrepareExportArchiveAssetsArgsForWorker(
       blob,
     })),
     skipMeshPaths: Array.from(args.skipMeshPaths ?? []),
+    meshPathOverrides: Array.from(args.meshPathOverrides ?? []),
   };
 }
 
@@ -463,6 +465,7 @@ export function hydratePrepareExportArchiveAssetsArgsFromWorker(
     compressOptions: payload.compressOptions,
     extraMeshFiles: new Map(payload.extraMeshFiles.map((file) => [file.path, file.blob])),
     skipMeshPaths: new Set(payload.skipMeshPaths),
+    meshPathOverrides: new Map(payload.meshPathOverrides ?? []),
     onProgress,
   };
 }

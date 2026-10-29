@@ -32,6 +32,7 @@ interface AddRobotAssetsToZipOptions {
   compressOptions?: CompressOptions;
   extraMeshFiles?: Map<string, Blob>;
   skipMeshPaths?: ReadonlySet<string>;
+  meshPathOverrides?: ReadonlyMap<string, string>;
   onProgress?: (progress: { completed: number; total: number; currentFile: string }) => void;
 }
 
@@ -85,6 +86,7 @@ export async function addRobotAssetsToZip(
     compressOptions: options.compressOptions,
     extraMeshFiles: options.extraMeshFiles,
     skipMeshPaths: options.skipMeshPaths,
+    meshPathOverrides: options.meshPathOverrides,
     onProgress: createWorkerProgressForwarder(options.onProgress),
   };
   let result: PrepareExportArchiveAssetsResult;
