@@ -105,6 +105,7 @@
     "test:browser:urdf-tree-crud": "node scripts/test/browser/test_urdf_tree_crud.mjs",
     "test:browser:urdf-property-editor": "node scripts/test/browser/test_urdf_property_editor.mjs",
     "test:browser:geometry-edit-stability": "node scripts/test/browser/test_geometry_edit_stability.mjs",
+    "test:geometry:real-model": "node scripts/test/browser/test_real_model_geometry_edit.mjs",
     "test:browser:urdf-source-editor": "node scripts/test/browser/test_urdf_source_editor.mjs",
     "test:browser:source-apply-unitree-ros": "node scripts/test/browser/test_source_apply_unitree_ros.mjs",
     "test:browser:sdf-import": "node scripts/test/browser/test_sdf_model_import.mjs",
