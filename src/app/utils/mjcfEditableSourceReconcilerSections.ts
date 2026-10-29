@@ -12,6 +12,7 @@ import type {
 import {
   applyTextReplacements,
   collectDirectChildren,
+  createXmlElementReplacement,
   findRootElement,
   getClosingTagStart,
   reindentFragment,
@@ -64,16 +65,9 @@ function patchOneSection(content: string, generatedContent: string, tagName: str
   );
   const replacements: TextReplacement[] = sourceElements.map((sourceElement, index) => {
     const generatedElement = generatedElements[index];
-    return {
-      startOffset: sourceElement.startOffset,
-      endOffset: sourceElement.endOffset,
-      text: generatedElement
-        ? reindentFragment(
-            generatedContent.slice(generatedElement.startOffset, generatedElement.endOffset),
-            getIndentAt(content, sourceElement.startOffset),
-          )
-        : '',
-    };
+    return generatedElement
+      ? createXmlElementReplacement(content, sourceElement, generatedContent, generatedElement)
+      : { ...sourceElement, text: '' };
   });
   if (generatedElements.length > sourceElements.length) {
     const root = findRootElement(content, 'mujoco');
