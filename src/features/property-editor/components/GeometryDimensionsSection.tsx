@@ -27,6 +27,7 @@ export const GeometryDimensionsSection = ({
   const geometryAssetReference = geometry.assetRef?.trim() || geometry.meshPath?.trim() || '';
   const hfieldAssetMetadata =
     geometry.type === GeometryType.HFIELD ? geometry.mjcfHfield : undefined;
+  const capsuleDiameter = 2 * (geometry.dimensions?.x || 0.05);
 
   return (
     <>
@@ -190,9 +191,11 @@ export const GeometryDimensionsSection = ({
             },
             {
               label: t.totalLength || 'Total Length',
-              min: POSITIVE_GEOMETRY_VALUE_MIN,
-              value: geometry.dimensions?.y || 0.5,
-              onChange: (v) => onUpdate({ dimensions: { ...geometry.dimensions, y: v } }),
+              min: capsuleDiameter,
+              value: (geometry.dimensions?.y ?? 0.5) + capsuleDiameter,
+              onChange: (v) => onUpdate({
+                dimensions: { ...geometry.dimensions, y: Math.max(v - capsuleDiameter, 0) },
+              }),
             },
           ]}
           labelClassName={PROPERTY_EDITOR_INLINE_FIELD_LABEL_CLASS}

@@ -709,7 +709,7 @@ export function createPrimitiveMesh(
     const radius = Math.max(dimensions.x || 0.05, 1e-5);
     // Canonical RobotData stores the straight cylindrical span. The rendered
     // end-to-end extent is this body length plus both hemispherical caps.
-    const bodyLength = Math.max(dimensions.y || 0.5, 0);
+    const bodyLength = Math.max(dimensions.y ?? 0.5, 0);
     const mesh = new THREE.Mesh(
       createRobotCapsuleGeometry(radius, bodyLength, primitiveGeometryDetail),
       material,

@@ -320,8 +320,7 @@ export function patchGeometryCategory({
     applyPrimitiveVisualOverride(mesh);
   } else if (geometry.type === GeometryType.CAPSULE) {
     const radius = Math.max(dims.x || 0.05, 1e-5);
-    const totalLength = Math.max(dims.y || 0.5, radius * 2);
-    const bodyLength = Math.max(totalLength - 2 * radius, 0);
+    const bodyLength = Math.max(dims.y ?? 0.5, 0);
     const mesh = new THREE.Mesh(
       createRobotCapsuleGeometry(radius, bodyLength, primitiveGeometryDetail),
       isCollision ? collisionBaseMaterial : createVisualMaterial(),
@@ -862,8 +861,7 @@ export function patchPrimitiveDimensionsInPlace(
       return true;
     case GeometryType.CAPSULE: {
       const radius = Math.max(dims.x || 0.05, 1e-5);
-      const totalLength = Math.max(dims.y || 0.5, radius * 2);
-      const bodyLength = Math.max(totalLength - 2 * radius, 0);
+      const bodyLength = Math.max(dims.y ?? 0.5, 0);
       const previousMeshGeometry = mesh.geometry;
       mesh.geometry = createRobotCapsuleGeometry(radius, bodyLength, primitiveGeometryDetail);
       previousMeshGeometry?.dispose?.();
