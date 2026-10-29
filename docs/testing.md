@@ -68,6 +68,31 @@ Assembly/workspace 改动至少覆盖以下不变量：
 
 `npm run test:browser:geometry-edit-stability` 使用 Playwright 点击真实属性面板，连续执行 240 次旋转、位置和半径修改，覆盖默认圆柱及三个连杆的可视几何/碰撞体，并验证源码大小与缩进有界、运行时复用、撤销/重做和浏览器异常。无需外部模型，默认使用独立端口 4186；`URDF_STUDIO_TEST_SITE_URL` 可复用已有服务器，报告和截图位于 `tmp/regression/geometry-edit/`。快速单测另覆盖 URDF/Xacro/MJCF/SDF 连续源码替换，以及 tab、CRLF 和 inline XML。
 
+真实机器人使用独立入口，外部目录必须显式传入；不会被 `npm test`、`verify:fast`、`test:browser:all` 或 `test:all` 自动执行：
+
+```bash
+npm run test:geometry:real-model -- \
+  --model-dir /path/to/b2_z1_description \
+  --model-dir /path/to/BDX_V4_11.24 \
+  --model-dir /path/to/bdx_package
+```
+
+每个目录必须包含一个 `.urdf` 入口及其完整网格/贴图资源。当前范围为 URDF；没有入口、多个入口、非法 XML、可见符号链接或没有可测试的 visual/collision 时明确失败，不自动下载或挑选模型。脚本只读原目录，将过滤隐藏文件、`.git` 和 `node_modules` 的资源流式打包到系统临时目录，通过应用文件导入入口加载；结束后删除临时包。模型资源不放入 Git。
+
+脚本从 URDF 获取名称、拓扑和几何类型，确定性选择最多 12 个连杆，优先覆盖类型差异、多碰撞体和模型尾部，再分散补齐。每个选中连杆测试第一个 visual 及所有 collision；未选择的连杆、额外 visual 和不支持的几何会逐项记录在 `coverage`，不计作已验证。B2 + Z1 包含 primitive visual、box/cylinder/sphere collision；两个 BDX 的 visual/collision 都使用 mesh，按原比例的 1% 修改缩放，兼容 `0.001` 的网格单位。
+
+默认每个几何执行 40 次真实属性面板编辑，最后对一个几何追加 40 次连续旋转，并检查目标几何确实变化、源码草稿非空且 XML/拓扑有效、源码大小和缩进有界、网格保持加载、运行时复用及浏览器错误。另保留一次位置修改作为撤销/重做检查点，避免所有成对编辑抵消后撤销掉导入操作。撤销/重做后打开实际源码编辑器检查有效 URDF，避免把草稿缓存清空误判为成功。耗时分位数和 GC 前后堆指标用于诊断，不用固定毫秒阈值判断不同机器的性能。
+
+可选参数：`--edits-per-case 8` 用于短回归（整数且至少 8）、`--headed` 显示浏览器、`--site-url http://127.0.0.1:4187` 复用指定站点、`--output-dir tmp/regression/my-run` 指定报告目录。默认自动启动独立端口 4187 的开发服务器；仅在导入准备期间遇到导航刷新时重试一次，不重试编辑失败。默认每模型 300 秒的 Node watchdog 可用 `--model-timeout-ms` 调整；即使渲染线程卡死、RAF 不再返回，也会关闭本次测试浏览器并记录失败。
+
+模型按顺序运行，每个模型使用独立浏览器上下文。默认产物位于 `tmp/regression/geometry-real/<时间>/`，包含总报告、每模型的输入 SHA-256、覆盖清单、源码/运行时采样、操作耗时、截图与失败诊断；导入、编辑、撤销/重做和源码窗口阶段分别记录，浏览器崩溃保留 CDP 状态及错误码。任一模型失败返回非零；脚本在正常完成、失败和 SIGINT/SIGTERM 中断时关闭自己创建的浏览器和服务器并删除临时包，保留复用的服务器。该测试不是跨浏览器或长时间内存泄漏验收。
+
+无需外部资源的测试脚本单测：
+
+```bash
+node --test scripts/test/helpers/geometry-edit-model.test.mjs scripts/test/helpers/geometry-edit-browser.test.mjs
+```
+
 ### 纹理涂色与真实文件回导
 
 `npm run test:browser:paint-roundtrip` 使用 `scripts/test/fixtures/paint_textured/` 中的小型 UV OBJ 和棋盘贴图，操作真实上色面板，覆盖单三角面/相连面、透明度 0.4 → 1、撤销/重做、恢复纹理，以及 USP/URDF/MJCF 下载后在独立浏览器上下文回导。比较颜色、透明度、纹理是否仅留在未涂面及各材质三角面数量，并检查未捕获异常和控制台错误（包括贴图加载失败）；产物位于 `tmp/regression/paint-roundtrip/`。`URDF_STUDIO_TEST_SITE_URL` 可复用构建预览。
