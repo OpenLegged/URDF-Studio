@@ -35,6 +35,7 @@
   `core/robot/canonicalRobotSalvage.ts` 在 canonical 校验仍失败时按 issue 归属丢弃 link/joint/material 后重试；只有连一个可显示的 link 都不剩才返回 `parse_failed`。
   URDF / Xacro / MJCF / SDF 的解析阶段也按实体边界跳过损坏的 link、joint、body、model 或 include/attach 分支；XML 结构本身损坏、根标签无效或没有任何可显示实体仍然失败，不做猜测式 XML 修复。
   被丢弃的内容通过 `inspectionContext.recovery` 上报，主导入、文件预览、添加组件和源码应用入口都提示恢复数量，不允许静默地把残缺模型当成完整模型
+- MJCF `<attach model="..." prefix="...">` 省略 `body` 时展开子模型的全部 `worldbody` 元素；显式 `body` 仍只选择对应子树。展开节点保留各自的角度 / Euler 顺序作用域（含默认值），子模型网格、heightfield、纹理及 cube face 路径转换为导入文件集合的根路径，避免宿主 compiler 目录或嵌套挂接重复拼接、同名资源串用。此流程不承诺完整 MuJoCo composition 的非树 section 合并。
 - URDF `<limit>` 只对 revolute / prismatic 必需；`continuous`（轮子、被动转动关节）缺 `<limit>` 不产生诊断，也不合成上下限位
 - `.usp 3.0` project import/export、USD prepared export cache、live USD roundtrip archive 已进入主工作流
 - `projectArchive.worker.ts`、`usdExport.worker.ts`、`usdBinaryArchive.worker.ts` 已进入主导出链路；大型归档或序列化任务优先走 worker/transfer

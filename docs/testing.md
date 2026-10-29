@@ -137,3 +137,19 @@ node scripts/test/runner/run-all.mjs --list       # 只列出将要跑的阶段
 - 单元测试：末尾 `pass / fail` 计数，退出码非 0 即失败。
 - 浏览器测试：每条断言一行 `[suite:<名字>] ✓/✗ ...`，结尾 `[summary:<名字>] passed/failed`。
 - run-all：总表 + `tmp/regression/run-all-summary.json`；每个浏览器用例还各自写 `tmp/regression/<name>_results.json`。
+
+### 场景编辑器整模型挂接 ZIP 回归
+
+`src/core/parsers/mjcf/mjcfWholeModelAttachment.test.ts` 自带多根节点、frame 位姿、
+同名资源、嵌套挂接和错误诊断的小样本。用户原始 `untitled_scene.mujoco(1).zip`
+不纳入 Git；通过环境变量启用真实 ZIP 回归（校验 SHA-256、CRC、15 个 body
+含 world、19 个 geom、8 个 mesh、4 个 free joint、家具位姿及全部文件资源路径）：
+
+```bash
+MJCF_SCENE_REGRESSION_ZIP='/absolute/path/untitled_scene.mujoco(1).zip' \
+  npm run test:unit -- src/core/parsers/mjcf/mjcfWholeModelAttachment.test.ts
+```
+
+浏览器验收直接使用“文件 → 导入文件”选择同一原始 ZIP，无需改写或重新打包。
+源文件的 1000 米地面会影响自动取景，检查家具时可以缩放视口并临时隐藏 world 的地面显示；
+这不改变原始几何尺寸或物理参数。
