@@ -138,6 +138,9 @@ export function buildCanonicalMjcfAuthoredMaterials({
   }
 
   const baseMaterial: UrdfVisualMaterial = {
+    ...(texture?.type === '2d' && material?.texuniform === true
+      ? { mjcfTextureUniform: true }
+      : {}),
     ...(materialName ? { name: materialName } : {}),
     ...(sharedColor ? { color: sharedColor } : {}),
     ...(sharedColorRgba ? { colorRgba: sharedColorRgba } : {}),

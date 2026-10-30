@@ -17,7 +17,7 @@ const VISUAL_KEYS = new Set([
 const AUTHORED_MATERIAL_KEYS = new Set([
   'name', 'color', 'colorRgba', 'texture', 'textureRotation', 'opacity', 'roughness',
   'metalness', 'emissive', 'emissiveIntensity', 'alphaTest', 'passes', 'textureRepeat',
-  'mjcfBuiltinTexture',
+  'mjcfBuiltinTexture', 'mjcfTextureUniform',
 ]);
 const MATERIAL_PASS_KEYS = new Set(['texture', 'sceneBlend', 'depthWrite', 'lighting']);
 const MJCF_BUILTIN_TEXTURE_KEYS = new Set([
@@ -352,6 +352,7 @@ function validateAuthoredMaterial(value: unknown, path: string, issues: Issues):
   ] as const) {
     optionalFinite(value[field], `${path}.${field}`, issues);
   }
+  optionalBoolean(value.mjcfTextureUniform, `${path}.mjcfTextureUniform`, issues);
   if (value.textureRepeat !== undefined) {
     finiteArray({ value: value.textureRepeat, path: `${path}.textureRepeat`, issues, expectedLength: 2 });
   }

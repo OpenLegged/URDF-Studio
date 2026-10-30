@@ -7,6 +7,7 @@ import {
 } from '@/core/robot/index';
 import { type JointPatchCandidate } from '@/core/robot/runtime_patch_diff';
 import { applyOriginToJoint } from '@/shared/components/3d/robot/utils/robotLoaderPatchUtils';
+import { syncCoplanarGroundDepth } from './coplanarGroundDepth';
 
 function getCurrentJointValues(joint: RuntimeURDFJoint): number[] {
   const jointValue = (
@@ -280,6 +281,7 @@ export function patchJointsInPlace(
   });
 
   robotModel.updateMatrixWorld(true);
+  syncCoplanarGroundDepth(robotModel);
   invalidate();
   return true;
 }

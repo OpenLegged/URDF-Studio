@@ -99,7 +99,8 @@ test('canonical MJCF runtime preserves checker, flat, gradient, cube faces, and 
   `);
 
   const robotData = toRobotData(robot);
-  const canonicalValidation = validateCanonicalRobotData(robotData);
+  const { sourceDocument: _sourceDocument, ...canonicalData } = robotData;
+  const canonicalValidation = validateCanonicalRobotData(canonicalData);
   assert.equal(canonicalValidation.valid, true, JSON.stringify(canonicalValidation.issues));
 
   const checkerGeometry = findVisualGeometry(robot, 'checker-plane');

@@ -11,6 +11,7 @@ import {
 } from '@/core/utils/three/collisionOverlayMaterial';
 import { URDFCollider, URDFVisual } from '../urdf/loader/URDFClasses';
 import { createGeometryMesh, type MJCFMeshCache } from './mjcfGeometry';
+import { applyMjcfUniformTextureMapping } from './mjcfTextureMapping';
 import { assignMJCFBodyGeomRoles } from './mjcfGeomClassification';
 import { applyRgbaToMesh, createJointAxisHelper, createLinkAxesHelper } from './mjcfRenderHelpers';
 import type { MJCFCompilerSettings, MJCFHfield, MJCFMesh, MJCFMaterial, MJCFTexture } from './mjcfUtils';
@@ -939,6 +940,11 @@ export async function buildMJCFHierarchy(
 
         const materialDef = geom.material ? materialMap.get(geom.material) : undefined;
         if (materialDef) {
+          const textureDef = materialDef.texture ? textureMap.get(materialDef.texture) : undefined;
+          if (mesh instanceof THREE.Mesh && (geom.type === 'box' || geom.type === 'plane')) {
+            applyMjcfUniformTextureMapping(mesh, [geom.size?.[0] ?? 1, geom.size?.[1] ?? 1],
+              textureDef?.type === '2d' && materialDef.texuniform === true);
+          }
           await applyMaterialAssetToMesh(
             mesh,
             materialDef,

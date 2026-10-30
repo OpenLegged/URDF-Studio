@@ -4,6 +4,7 @@ import type { UrdfLink } from '@/types/index';
 
 import { shouldSyncDirectLinkChildVisibility } from '@/shared/components/3d/robot/utils/runtimeVisibility';
 import { syncCollisionGroupVisibility } from '@/shared/components/3d/robot/utils/collisionVisibilitySync';
+import { syncCoplanarGroundDepth } from './coplanarGroundDepth';
 
 function resolveLinkNameForNode(
   node: THREE.Object3D,
@@ -157,5 +158,5 @@ export function syncRobotGeometryVisibility({
     walkNode(robot.children[index], null);
   }
 
-  return changed;
+  return syncCoplanarGroundDepth(robot, sourceFormat === 'mjcf') || changed;
 }

@@ -44,6 +44,7 @@ export interface ResolvedVisualMaterialOverride {
   alphaTest?: number;
   passes?: UrdfVisualMaterial['passes'];
   textureRepeat?: [number, number];
+  mjcfTextureUniform?: boolean;
   mjcfBuiltinTexture?: MjcfBuiltinTexture;
   usdMaterial?: UsdSceneMaterialRecord | null;
   source: 'authored' | 'legacy-link' | 'none';
@@ -149,6 +150,7 @@ export function normalizeAuthoredMaterialEntry(
   const emissiveIntensity = normalizeNonNegativeValue(material.emissiveIntensity);
   const alphaTest = normalizeUnitIntervalValue(material.alphaTest);
   const textureRepeat = normalizeFinitePair(material.textureRepeat);
+  const mjcfTextureUniform = material.mjcfTextureUniform === true;
   const mjcfBuiltinTexture = normalizeMjcfBuiltinTexture(material.mjcfBuiltinTexture);
   const passes = Array.isArray(material.passes)
     ? material.passes.map((pass) => ({
@@ -179,6 +181,7 @@ export function normalizeAuthoredMaterialEntry(
     alphaTest === undefined &&
     passes === undefined &&
     textureRepeat === undefined &&
+    !mjcfTextureUniform &&
     !mjcfBuiltinTexture
   ) {
     return null;
@@ -198,6 +201,7 @@ export function normalizeAuthoredMaterialEntry(
     ...(alphaTest !== undefined ? { alphaTest } : {}),
     ...(passes !== undefined ? { passes } : {}),
     ...(textureRepeat ? { textureRepeat } : {}),
+    ...(mjcfTextureUniform ? { mjcfTextureUniform } : {}),
     ...(mjcfBuiltinTexture ? { mjcfBuiltinTexture } : {}),
   };
 }
@@ -348,6 +352,7 @@ export function resolveVisualMaterialOverride(
       textureRepeat: primaryMaterial?.textureRepeat
         ? [...primaryMaterial.textureRepeat]
         : undefined,
+      mjcfTextureUniform: primaryMaterial?.mjcfTextureUniform,
       mjcfBuiltinTexture: primaryMaterial?.mjcfBuiltinTexture
         ? { ...primaryMaterial.mjcfBuiltinTexture }
         : undefined,

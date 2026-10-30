@@ -162,6 +162,18 @@ features/urdf-viewer/
 | `renderers/sourceFormat.ts` | viewer source format 分类 |
 | `renderers/urdfXmlFallbackPolicy.ts` | URDF XML fallback 策略 |
 
+## MJCF 地面材质与共面显示
+
+MJCF 2D 材质的 `texuniform` 与 `texrepeat` 保留在 canonical authored material。
+box / plane 的运行时 UV 按 MuJoCo 原生渲染器的 geom 半尺寸规则生成；调整几何尺寸时从
+原始 UV 重新计算，不能把缩放后的重复次数写回模型，也不能在连续编辑时累乘 UV。
+程序化棋盘、平色和渐变纹理通过 MJCF 导出保留其定义及重复参数。
+
+MJCF 中水平 box / plane 的较大顶面完全包含较小共面顶面时，viewer 为较大面的显示材质
+施加深度偏移，让房间地板稳定显示。对数深度缓冲在 shader 写入深度后施加微小偏移，
+普通深度缓冲使用 polygonOffset。该策略按实际几何判断，不依赖资产名称；
+加载、几何、位姿和可见性更新后重新检查，关系消失时移除。两层地面仍保持可见，
+canonical 顶点、尺寸、位姿、碰撞体及导出的物理数据均不因此改变。
 
 ## MJCF 高度场预览
 

@@ -63,6 +63,7 @@ import {
 } from './mjcfGeneratorUtils';
 
 import { createMjcfNumberFormatters } from './mjcfGeneratorFormatting';
+import { serializeMjcfBuiltinTexture } from './mjcfBuiltinTextureExport';
 
 export type { MjcfActuatorType, MjcfVisualMeshVariant, MujocoExportOptions };
 
@@ -694,6 +695,7 @@ export const generateMujocoXML = (robot: RobotState, options: MujocoExportOption
       }
 
       const materialName = buildVisualMaterialAssetName(link, entry.objectIndex);
+      const authoredMaterial = getGeometryAuthoredMaterials(entry.geometry)[0];
       visualMaterialAssets.set(visualKey, {
         visualKey,
         linkId,
@@ -707,6 +709,10 @@ export const generateMujocoXML = (robot: RobotState, options: MujocoExportOption
           : {}),
         texture: cubeTextureKey ? undefined : materialState.texture,
         ...(cubeTextureKey ? { cubeTextureKey } : {}),
+        mjcfBuiltinTexture: !materialState.texture && !cubeTextureKey
+          ? authoredMaterial?.mjcfBuiltinTexture : undefined,
+        textureRepeat: authoredMaterial?.textureRepeat,
+        mjcfTextureUniform: authoredMaterial?.mjcfTextureUniform,
         ...pbr,
       });
       visualMaterialNameMap.set(visualKey, materialName);
@@ -773,6 +779,13 @@ export const generateMujocoXML = (robot: RobotState, options: MujocoExportOption
         owningObjectIndex,
       ),
     );
+  });
+
+  const builtinTextureAssetNames = new Map<string, string>();
+  visualMaterialAssets.forEach(({ visualKey, linkId, objectIndex, mjcfBuiltinTexture }) => {
+    if (mjcfBuiltinTexture) {
+      builtinTextureAssetNames.set(visualKey, buildTextureAssetName(links[linkId], objectIndex));
+    }
   });
 
   const resolveTextureAssetName = (texturePath?: string): string | null => {
@@ -1051,6 +1064,12 @@ export const generateMujocoXML = (robot: RobotState, options: MujocoExportOption
 
     xml += `    <texture name="${textureName}" type="cube" fileright="${escapeXmlAttribute(cubeTextureAsset.fileright)}" fileleft="${escapeXmlAttribute(cubeTextureAsset.fileleft)}" fileup="${escapeXmlAttribute(cubeTextureAsset.fileup)}" filedown="${escapeXmlAttribute(cubeTextureAsset.filedown)}" filefront="${escapeXmlAttribute(cubeTextureAsset.filefront)}" fileback="${escapeXmlAttribute(cubeTextureAsset.fileback)}" />\n`;
   });
+  visualMaterialAssets.forEach(({ visualKey, mjcfBuiltinTexture }) => {
+    const textureName = builtinTextureAssetNames.get(visualKey);
+    if (textureName && mjcfBuiltinTexture) {
+      xml += serializeMjcfBuiltinTexture(textureName, mjcfBuiltinTexture, formatColorScalar);
+    }
+  });
   visualMaterialAssets.forEach(
     ({
       visualKey,
@@ -1059,6 +1078,8 @@ export const generateMujocoXML = (robot: RobotState, options: MujocoExportOption
       opacity,
       texture,
       cubeTextureKey,
+      textureRepeat,
+      mjcfTextureUniform,
       specular,
       shininess,
       reflectance,
@@ -1068,9 +1089,11 @@ export const generateMujocoXML = (robot: RobotState, options: MujocoExportOption
       if (!materialName) {
         return;
       }
-      const textureAssetName = resolveTextureAssetName(texture);
+      const textureAssetName = builtinTextureAssetNames.get(visualKey) || resolveTextureAssetName(texture);
       const cubeTextureAssetName = resolveCubeTextureAssetName(cubeTextureKey);
       const pbrAttrs = [
+        textureRepeat ? ` texrepeat="${textureRepeat.map(formatScalar).join(' ')}"` : '',
+        mjcfTextureUniform ? ' texuniform="true"' : '',
         Number.isFinite(specular) ? ` specular="${formatColorScalar(specular!)}"` : '',
         Number.isFinite(shininess)
           ? ` shininess="${formatColorScalar(shininess!)}"`
