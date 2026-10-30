@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { applyCanonicalMjcfTextureMapping } from '@/core/parsers/mjcf/mjcfTextureMapping';
 import { stackCoincidentVisualRoots } from '@/core/loaders/visualMeshStacking';
 import { applyMeshAssetTransform } from '@/core/parsers/mjcf/mjcfGeometry';
 import { GENERATED_OBJ_MATERIAL_USER_DATA_KEY } from '@/core/loaders/objModelData';
@@ -681,6 +682,7 @@ export function createPrimitiveMesh(
         : material,
     );
     mesh.scale.set(dimensions.x || 0.1, dimensions.y || 0.1, dimensions.z || 0.1);
+    if (!isCollision) applyCanonicalMjcfTextureMapping(mesh, geometry);
     return mesh;
   }
 
@@ -688,6 +690,7 @@ export function createPrimitiveMesh(
     material.side = THREE.DoubleSide;
     const mesh = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), material);
     mesh.scale.set(dimensions.x || 1, dimensions.y || 1, 1);
+    if (!isCollision) applyCanonicalMjcfTextureMapping(mesh, geometry);
     return mesh;
   }
 

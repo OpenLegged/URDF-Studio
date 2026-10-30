@@ -59,6 +59,8 @@ export interface UrdfVisualMaterial {
   alphaTest?: number;
   passes?: GazeboMaterialPass[];
   textureRepeat?: [number, number];
+  /** MuJoCo 2D texture repeat uses geom half-size instead of normalized object UVs. */
+  mjcfTextureUniform?: boolean;
   mjcfBuiltinTexture?: MjcfBuiltinTexture;
 }
 

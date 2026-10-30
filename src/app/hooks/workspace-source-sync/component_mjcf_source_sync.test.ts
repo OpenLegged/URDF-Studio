@@ -44,10 +44,15 @@ function fixture(): SceneFiles {
   const files: RobotFile[] = [{
     name: 'scene.xml', format: 'mjcf', content: `<mujoco model="room">
   <compiler angle="radian"/>
-  <asset>${FURNITURE.map((name) => `<model name="${name}" file="parts/${name}/model.xml"/>`).join('')}</asset>
+  <asset>
+    <texture name="ground-checker" type="2d" builtin="checker" mark="edge"
+      rgb1="0.2 0.3 0.4" rgb2="0.1 0.2 0.3" markrgb="0.8 0.8 0.8" width="300" height="300"/>
+    <material name="ground-material" texture="ground-checker" texuniform="true" texrepeat="5 5"/>
+    ${FURNITURE.map((name) => `<model name="${name}" file="parts/${name}/model.xml"/>`).join('')}
+  </asset>
   <worldbody>
-    <geom name="ground" type="plane" size="10 10 .1"/>
-    <body name="floor"><geom name="floor_geom" type="box" size="2 2 .1"/></body>
+    <geom name="ground" type="box" size="500 500 .05" pos="0 0 -.05" material="ground-material"/>
+    <body name="floor" pos="0 0 -.05"><geom name="floor_geom" type="box" size="2.4 2.4 .05"/></body>
     ${FURNITURE.map((name, index) => `<frame pos="${index} 0 0"><attach model="${name}" prefix="${name}__"/></frame>`).join('')}
   </worldbody>
 </mujoco>`,
@@ -199,6 +204,13 @@ async function editAndRoundtrip(context: TestContext, scene?: SceneFiles): Promi
   // Project state is JSON: undefined fields and negative zero have no distinct encoding.
   assert.deepEqual(restored.workspace, JSON.parse(JSON.stringify(workspace)));
   assert.deepEqual(restored.componentSourceDrafts, assets.componentSourceDrafts);
+  const restoredRobot = restored.workspace.components[COMPONENT_ID]!.robot;
+  // Display fixes must retain both coincident ground surfaces in the project,
+  // including their physical geometry and authored texture scale.
+  for (const [id, link] of Object.entries(before.links)) {
+    if (FURNITURE.some((name) => id === `${name}__root`)) continue;
+    assert.deepEqual(restoredRobot.links[id], JSON.parse(JSON.stringify(link)));
+  }
   for (const name of FURNITURE) {
     const original = before.links[`${name}__root`]!;
     const link = restored.workspace.components[COMPONENT_ID]!.robot.links[`${name}__root`]!;

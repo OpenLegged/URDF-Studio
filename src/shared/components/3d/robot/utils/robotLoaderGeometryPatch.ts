@@ -10,6 +10,7 @@ import {
   getPatchRuntimeLinkName,
   getPatchRuntimeNames,
 } from '@/shared/components/3d/robot/utils/robotLoaderGeometryPatchHelpers';
+import { syncCoplanarGroundDepth } from './coplanarGroundDepth';
 
 /**
  * Narrow a geometry to just its first authored material so the single-override resolver
@@ -249,5 +250,6 @@ export function applyGeometryPatchesInPlace({
     }
   }
 
+  syncCoplanarGroundDepth(robotModel);
   return true;
 }

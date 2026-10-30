@@ -1,5 +1,6 @@
 import type { RefObject } from 'react';
 import * as THREE from 'three';
+import { applyCanonicalMjcfTextureMapping } from '@/core/parsers/mjcf/mjcfTextureMapping';
 import {
   createRobotCapsuleGeometry,
   createRobotCylinderGeometry,
@@ -49,6 +50,7 @@ import {
 } from '@/shared/components/3d/robot/utils/robotLoaderPatchUtils';
 import { applyURDFMaterials, applyURDFMaterialTextures, collectURDFMaterialsFromVisualGeometry } from '@/shared/components/3d/urdfMaterials';
 import { getSyntheticGeomParentName, resolveRuntimeGeometryRoot } from '@/shared/components/3d/runtimeGeometrySelection';
+import { syncCoplanarGroundDepth } from './coplanarGroundDepth';
 
 export function toPrimaryAuthoredMaterialGeometry(
   geometry: Pick<LinkGeometry, 'color' | 'authoredMaterials'>,
@@ -173,6 +175,7 @@ export function patchGeometryCategory({
       ) {
         return;
       }
+      syncCoplanarGroundDepth(robotModel);
       invalidate();
     };
     return manager;
@@ -206,6 +209,7 @@ export function patchGeometryCategory({
     }
   };
   const addPrimitive = (mesh: THREE.Mesh) => {
+    if (!isCollision) applyCanonicalMjcfTextureMapping(mesh, geometry);
     if (isCollision) {
       markCollisionObject(mesh, linkName);
     } else {
@@ -831,9 +835,11 @@ export function patchPrimitiveDimensionsInPlace(
 
       mesh.scale.set(dims.x || 0.1, dims.y || 0.1, dims.z || 0.1);
       mesh.rotation.set(0, 0, 0);
+      applyCanonicalMjcfTextureMapping(mesh, geometry);
       return true;
     case GeometryType.PLANE:
       mesh.scale.set(dims.x || 1, dims.y || 1, 1);
+      applyCanonicalMjcfTextureMapping(mesh, geometry);
       return true;
     case GeometryType.SPHERE: {
       const radius = dims.x || 0.1;
