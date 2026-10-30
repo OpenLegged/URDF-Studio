@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 
-import type { RobotState, UrdfLink, UrdfMjcfSite } from '@/types';
+import type { RobotState, UrdfLink, UrdfMjcfSite, MjcfBuiltinTexture } from '@/types';
 import type { ColorRgbaTuple } from '@/core/utils/color';
 
 export type MjcfActuatorType = 'position' | 'velocity' | 'motor';
@@ -496,6 +496,9 @@ export interface VisualMaterialAssetEntry {
   opacity?: number;
   texture?: string;
   cubeTextureKey?: string;
+  mjcfBuiltinTexture?: MjcfBuiltinTexture;
+  textureRepeat?: [number, number];
+  mjcfTextureUniform?: boolean;
   specular?: number;
   shininess?: number;
   reflectance?: number;

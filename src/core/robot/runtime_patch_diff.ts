@@ -93,6 +93,7 @@ function sameAuthoredMaterials(
         sameOptionalNumber(material?.opacity, target?.opacity) &&
         normalizeMaterialField(material?.texture) === normalizeMaterialField(target?.texture) &&
         sameNumberTuple(material?.textureRepeat, target?.textureRepeat) &&
+        Boolean(material?.mjcfTextureUniform) === Boolean(target?.mjcfTextureUniform) &&
         sameMjcfBuiltinTexture(material?.mjcfBuiltinTexture, target?.mjcfBuiltinTexture)
       );
     })

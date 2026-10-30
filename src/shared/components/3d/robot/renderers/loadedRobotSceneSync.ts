@@ -22,6 +22,7 @@ import {
   asRuntimeObject3D,
   asRuntimeRobotObject,
 } from '@/shared/components/3d/runtimeRobotTypes';
+import { syncCoplanarGroundDepth } from '../utils/coplanarGroundDepth';
 
 export interface SyncLoadedRobotSceneOptions {
   robot: THREE.Object3D;
@@ -774,6 +775,7 @@ export function syncLoadedRobotScene({
   };
 
   walkNode(robot, null, false);
+  changed = syncCoplanarGroundDepth(robot, sourceFormat === 'mjcf') || changed;
 
   return { changed, linkMeshMap };
 }
