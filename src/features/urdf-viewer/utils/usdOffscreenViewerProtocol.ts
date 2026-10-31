@@ -38,6 +38,8 @@ export interface UsdOffscreenViewerInitRequest {
   projectionMode?: 'robot' | 'scene';
   /** Preserve a caller-verified file closure, including dependencies hidden inside binary layers. */
   includeAllAvailableFiles?: boolean;
+  /** Bake diffuse texture sampling into export-only OBJ UVs for consumers such as MuJoCo. */
+  bakeBaseColorUvTransform?: boolean;
   canvas: OffscreenCanvas;
   width: number;
   height: number;

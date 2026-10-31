@@ -44,6 +44,8 @@ export type ExportDescriptor = {
   bakeTransformIntoMesh?: boolean;
   geometryTransform?: number[];
   writeTextureCoordinates?: boolean;
+  baseColorUvTransform?: ArrayLike<number>;
+  subsetUvTransforms?: Array<{ start: number; length: number; matrix?: ArrayLike<number> }>;
 };
 
 export type RobotLike = RobotData | RobotState;

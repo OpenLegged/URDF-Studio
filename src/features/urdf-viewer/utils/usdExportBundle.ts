@@ -140,6 +140,7 @@ export function prepareUsdExportCacheFromResolvedSnapshot(
   resolution: ViewerRobotDataResolution,
   options: {
     includeTransferBytes?: boolean;
+    bakeBaseColorUvTransform?: boolean;
   } = {},
 ): PreparedUsdExportCacheResult {
   const { robot: snapshotRobot, descriptorByPath } = createDescriptorExportMap(
@@ -158,7 +159,7 @@ export function prepareUsdExportCacheFromResolvedSnapshot(
     // Snapshot descriptor matrices are scene transforms, so baking them into the
     // OBJ vertices would apply the same link pose a second time in the viewer.
     descriptor.bakeTransformIntoMesh = false;
-    const asset = buildObjBlobFromDescriptor(descriptor, snapshot.buffers || null);
+    const asset = buildObjBlobFromDescriptor(descriptor, snapshot.buffers, options.bakeBaseColorUvTransform);
     if (!asset) return;
 
     meshFiles[meshPath] = asset.blob;
