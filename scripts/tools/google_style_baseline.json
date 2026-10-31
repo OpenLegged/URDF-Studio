@@ -11,7 +11,7 @@
       "note": "src/** files over 800 code lines (blank/comment lines skipped). Exact count synchronized on 2026-08-11 after merging dev into scene-gen; --check rejects both increases and stale headroom. Avoid splitting cohesive parsers/solvers only to satisfy the counter."
     },
     "function-too-long": {
-      "max": 112,
+      "max": 111,
       "note": "Function bodies over 200 code lines in src/**. Exact count tightened on 2026-08-09 after dialog and workflow splits; ratchet down when a function has a clean ownership split."
     },
     "function-too-complex": {

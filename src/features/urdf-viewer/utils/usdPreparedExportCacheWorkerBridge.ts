@@ -84,12 +84,14 @@ export async function prepareUsdSourceExportCacheWithWorker({
   rootPath,
   files,
   signal,
+  bakeBaseColorUvTransform,
   timeoutMs = DEFAULT_USD_PREPARED_EXPORT_CACHE_REQUEST_TIMEOUT_MS,
 }: {
   rootPath: string;
   files: ReadonlyMap<string, Blob>;
   signal?: AbortSignal;
   timeoutMs?: number;
+  bakeBaseColorUvTransform?: boolean;
 }): Promise<PreparedUsdExportCacheResult> {
   signal?.throwIfAborted();
   if (!files.has(rootPath)) throw new Error(`USD source entrypoint is missing: ${rootPath}`);
@@ -154,7 +156,7 @@ export async function prepareUsdSourceExportCacheWithWorker({
       sourceWorker.addEventListener('error', onError);
       sourceWorker.addEventListener('messageerror', onError);
       const request: UsdOffscreenViewerInitRequest = {
-        type: 'init', sessionId: 1, projectionMode: 'robot', includeAllAvailableFiles: true,
+        type: 'init', sessionId: 1, projectionMode: 'robot', includeAllAvailableFiles: true, bakeBaseColorUvTransform,
         canvas, width: 1, height: 1, devicePixelRatio: 1, theme: 'light', active: false,
         groundPlaneOffset: 0, showVisual: true, showCollision: false,
         showCollisionAlwaysOnTop: false, showOrigins: false, showOriginsOverlay: false,
