@@ -1,5 +1,5 @@
 import { parseThreeColorWithOpacity } from '@/core/utils/color';
-import { captureUsdMaterialTextureInputs } from '@/core/utils/usdTextureInput';
+import { captureUsdMaterialTextureInputs, usdTextureInputHasTransform } from '@/core/utils/usdTextureInput';
 
 import {
   DEFAULT_LINK,
@@ -77,6 +77,12 @@ const SNAPSHOT_TEXTURE_PATH_KEYS = [
   'iridescenceMapPath',
   'iridescenceThicknessMapPath',
 ] as const satisfies readonly (keyof SnapshotMaterialRecord)[];
+
+export function getBaseColorUvTransform(material: SnapshotMaterialRecord | null | undefined) {
+  const input = material?.textureInputs?.mapPath;
+  return hasNonEmptyTexturePath(material?.mapPath) && usdTextureInputHasTransform(input)
+    ? input?.uvTransform ?? undefined : undefined;
+}
 
 export function snapshotMaterialUsesTextureCoordinates(
   material: SnapshotMaterialRecord | null | undefined,

@@ -480,17 +480,53 @@ function readGeometryData(
   };
 }
 
+function writeObjTextureCoordinates(ctx: ObjBuildContext, bakeBaseColorUvTransform: boolean): boolean {
+  const { lines, uvValues, uvStride, hasFaceVaryingUvs, hasPerVertexUvs, subsetStart, subsetEnd, vertexCount } = ctx;
+  if (!hasFaceVaryingUvs && !hasPerVertexUvs) return false;
+
+  const writeUv = (index: number, matrix?: ArrayLike<number>): void => {
+    const offset = index * uvStride;
+    const u = readRangeNumber(uvValues, offset);
+    const v = readRangeNumber(uvValues, offset + 1);
+    const x = matrix ? matrix[0] * u + matrix[3] * v + matrix[6] : u;
+    const y = matrix ? matrix[1] * u + matrix[4] * v + matrix[7] : v;
+    lines.push(`vt ${formatObjNumber(x)} ${formatObjNumber(y)}`);
+  };
+  const matrix = bakeBaseColorUvTransform ? ctx.descriptor.baseColorUvTransform : undefined;
+  const subsets = bakeBaseColorUvTransform ? ctx.descriptor.subsetUvTransforms : undefined;
+  if (subsets?.some((subset) => subset.matrix !== matrix)) {
+    // Adjacent material subsets can share a position and sample different atlas regions.
+    // Give each corner its own OBJ texture index while retaining the shared positions.
+    const matrices = Array<ArrayLike<number> | undefined>(subsetEnd - subsetStart).fill(matrix);
+    for (const subset of subsets) {
+      matrices.fill(
+        subset.matrix,
+        Math.max(0, subset.start - subsetStart),
+        Math.max(0, subset.start + subset.length - subsetStart),
+      );
+    }
+    for (let corner = subsetStart; corner < subsetEnd; corner++) {
+      const index = hasFaceVaryingUvs ? corner : readRangeNumber(ctx.fullTriangleIndices, corner);
+      writeUv(index, matrices[corner - subsetStart]);
+    }
+    return true;
+  }
+  const start = hasFaceVaryingUvs ? subsetStart : 0;
+  const end = hasFaceVaryingUvs ? subsetEnd : vertexCount;
+  for (let index = start; index < end; index++) writeUv(index, matrix);
+  return hasFaceVaryingUvs;
+}
+
 /**
  * Stage 2 — bake the descriptor transform into vertex positions and emit the
  * `v` / `vt` / `vn` OBJ sections (including face-varying normal repair) in the
  * exact original order, reusing the shared scratch objects from the context.
  */
-function applyTransformToGeometry(ctx: ObjBuildContext): void {
+function applyTransformToGeometry(ctx: ObjBuildContext, bakeBaseColorUvTransform: boolean): boolean {
   const {
     lines,
     positionValues,
     normalValues,
-    uvValues,
     transform,
     shouldBakeTransform,
     normalMatrix,
@@ -501,9 +537,6 @@ function applyTransformToGeometry(ctx: ObjBuildContext): void {
     triangleIndices,
     vertexColorByIndex,
     defaultVertexColor,
-    uvStride,
-    hasFaceVaryingUvs,
-    hasPerVertexUvs,
     normalStride,
     hasFaceVaryingNormals,
     hasPerVertexNormals,
@@ -613,25 +646,7 @@ function applyTransformToGeometry(ctx: ObjBuildContext): void {
     );
   };
 
-  if (hasFaceVaryingUvs) {
-    for (let uvIndex = subsetStart; uvIndex < subsetEnd; uvIndex += 1) {
-      const offset = uvIndex * uvStride;
-      lines.push(
-        `vt ${formatObjNumber(readRangeNumber(uvValues, offset))} ${formatObjNumber(
-          readRangeNumber(uvValues, offset + 1),
-        )}`,
-      );
-    }
-  } else if (hasPerVertexUvs) {
-    for (let vertexIndex = 0; vertexIndex < vertexCount; vertexIndex += 1) {
-      const offset = vertexIndex * uvStride;
-      lines.push(
-        `vt ${formatObjNumber(readRangeNumber(uvValues, offset))} ${formatObjNumber(
-          readRangeNumber(uvValues, offset + 1),
-        )}`,
-      );
-    }
-  }
+  const faceCornerUvIndices = writeObjTextureCoordinates(ctx, bakeBaseColorUvTransform);
 
   if (shouldWriteRepairedFaceVaryingNormals) {
     for (let index = 0; index + 2 < triangleIndices.length; index += 3) {
@@ -710,17 +725,17 @@ function applyTransformToGeometry(ctx: ObjBuildContext): void {
       pushObjNormalLine(tempVector);
     }
   }
+  return faceCornerUvIndices;
 }
 
 /**
  * Stage 3 — emit the `f` face section (1-based, subset-relative indices) and
  * serialize the accumulated OBJ lines into a Blob plus its encoded bytes.
  */
-function serializeAsOBJ(ctx: ObjBuildContext): { blob: Blob; bytes: Uint8Array } | null {
+function serializeAsOBJ(ctx: ObjBuildContext, faceCornerUvIndices: boolean): { blob: Blob; bytes: Uint8Array } | null {
   const {
     lines,
     triangleIndices,
-    hasFaceVaryingUvs,
     hasPerVertexUvs,
     hasPerVertexNormals,
     writesFaceVaryingNormals,
@@ -771,7 +786,7 @@ function serializeAsOBJ(ctx: ObjBuildContext): { blob: Blob; bytes: Uint8Array }
     if (!Number.isFinite(a) || !Number.isFinite(b) || !Number.isFinite(c)) {
       continue;
     }
-    const uvIndexes = hasFaceVaryingUvs
+    const uvIndexes = faceCornerUvIndices
       ? [index + 1, index + 2, index + 3]
       : hasPerVertexUvs
         ? [a, b, c]
@@ -807,13 +822,13 @@ function serializeAsOBJ(ctx: ObjBuildContext): { blob: Blob; bytes: Uint8Array }
 export function buildObjBlobFromDescriptor(
   descriptor: ExportDescriptor,
   buffers: SnapshotBuffers | null | undefined,
+  bakeBaseColorUvTransform = false,
 ): { blob: Blob; bytes: Uint8Array } | null {
   const ctx = readGeometryData(descriptor, buffers);
   if (!ctx) {
     return null;
   }
 
-  applyTransformToGeometry(ctx);
-
-  return serializeAsOBJ(ctx);
+  const faceCornerUvIndices = applyTransformToGeometry(ctx, bakeBaseColorUvTransform);
+  return serializeAsOBJ(ctx, faceCornerUvIndices);
 }

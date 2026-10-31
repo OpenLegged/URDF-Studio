@@ -193,11 +193,12 @@ test('source hydration preserves binary dependencies and disposes workers/URLs o
   Object.defineProperty(globalThis, 'OffscreenCanvas', { configurable: true, writable: true, value: class {} });
   try {
     const files = new Map([['root.usdc', new Blob(['PXR-USDC'])], ['layers/nested.usdc', new Blob(['binary'])], ['textures/wood.png', new Blob(['texture'])]]);
-    const success = prepareUsdSourceExportCacheWithWorker({ rootPath: 'root.usdc', files });
+    const success = prepareUsdSourceExportCacheWithWorker({ rootPath: 'root.usdc', files, bakeBaseColorUvTransform: true });
     const worker = workers[0]!;
     const request = worker.postedMessages[0] as UsdOffscreenViewerInitRequest;
     assert.equal(request.projectionMode, 'robot');
     assert.equal(request.includeAllAvailableFiles, true);
+    assert.equal(request.bakeBaseColorUvTransform, true);
     assert.ok(request.stageOpenContext);
     assert.deepEqual((request.stageOpenContext.availableFiles ?? []).map((file) => file.name), ['layers/nested.usdc', 'textures/wood.png']);
     const serialized = await serializePreparedUsdExportCacheForWorker({ robotData: demoRobotData, resolution: demoResolution, meshFiles: { 'mesh.obj': new Blob(['v 0 0 0']) } });

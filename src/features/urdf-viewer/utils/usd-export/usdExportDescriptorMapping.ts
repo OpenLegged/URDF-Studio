@@ -47,6 +47,7 @@ import {
   buildGeomSubsetMaterialGroups,
   colorArrayToVertexColor,
   colorHexToVertexColor,
+  getBaseColorUvTransform,
   getDescriptorMaterialRecord,
   getSnapshotMaterialLookup,
   getSnapshotPreferredVisualMaterialLookup,
@@ -55,6 +56,7 @@ import {
   snapshotMaterialUsesTextureCoordinates,
   visualUsesTextureCoordinates,
 } from './usdExportMaterials.ts';
+import { getDescriptorGeomSubsetSections } from './objBufferReaders.ts';
 import type {
   ExportDescriptor,
   RobotLike,
@@ -389,6 +391,14 @@ function assignVisualDescriptorToLink(
   }
 
   const descriptorMaterialRecord = getDescriptorMaterialRecord(entry, materialLookup);
+  entry.baseColorUvTransform = getBaseColorUvTransform(descriptorMaterialRecord ?? preferredMaterialRecord);
+  const subsets = getDescriptorGeomSubsetSections(entry.descriptor);
+  if (subsets.length) {
+    entry.subsetUvTransforms = subsets.map(({ start, length, materialId }) => ({
+      start, length, matrix: materialId && materialLookup.has(materialId)
+        ? getBaseColorUvTransform(materialLookup.get(materialId)) : entry.baseColorUvTransform,
+    }));
+  }
   const explicitFallbackColor = colorHexToVertexColor(explicitMaterialFallback?.color);
   const preferredFallbackColor = resolvePreferredMaterialFallbackColor(preferredMaterialRecord);
   entry.writeTextureCoordinates =

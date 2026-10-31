@@ -1609,6 +1609,7 @@ async function prepareAndPublishWorkerPreparedCache({
   isActive,
   sessionId,
   failOnError = false,
+  bakeBaseColorUvTransform,
 }: {
   snapshot: NonNullable<ViewerRobotDataResolution['usdSceneSnapshot']>;
   resolution: ViewerRobotDataResolution;
@@ -1616,6 +1617,7 @@ async function prepareAndPublishWorkerPreparedCache({
   isActive: () => boolean;
   sessionId: UsdOffscreenViewerSessionId;
   failOnError?: boolean;
+  bakeBaseColorUvTransform?: boolean;
 }): Promise<void> {
   try {
     const serializedPreparedCache = await trackWorkerLoadDebugStep({
@@ -1627,7 +1629,7 @@ async function prepareAndPublishWorkerPreparedCache({
       },
       run: async () => {
         const preparedCache = prepareUsdExportCacheFromResolvedSnapshot(snapshot, resolution, {
-          includeTransferBytes: true,
+          includeTransferBytes: true, bakeBaseColorUvTransform,
         });
         return await serializePreparedUsdExportCacheForWorker(preparedCache);
       },
@@ -1677,6 +1679,7 @@ async function publishResolvedRobotData(
   loadGeneration: number,
   options: {
     completionMode?: UsdOffscreenViewerCompletionMode;
+    bakeBaseColorUvTransform?: boolean;
     sessionId: UsdOffscreenViewerSessionId;
   },
 ): Promise<PublishedWorkerRobotData> {
@@ -1741,6 +1744,7 @@ async function publishResolvedRobotData(
         isActive: () => isLoadGenerationActive(loadGeneration),
         sessionId: options.sessionId,
         failOnError: options.completionMode === 'complete',
+        bakeBaseColorUvTransform: options.bakeBaseColorUvTransform,
       })
     : Promise.resolve();
 
@@ -2109,7 +2113,9 @@ async function loadUsdStageIntoWorker(message: UsdOffscreenViewerInitRequest): P
         rendererMode: 'offscreen-worker',
       },
       run: async () =>
-        await publishResolvedRobotData(loadGeneration, { completionMode, sessionId }),
+        await publishResolvedRobotData(loadGeneration, {
+          completionMode, sessionId, bakeBaseColorUvTransform: message.bakeBaseColorUvTransform,
+        }),
       resolveDetail: (result) => ({
         resolutionSource: 'worker-bootstrap',
         rendererMode: 'offscreen-worker',
