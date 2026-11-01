@@ -59,7 +59,7 @@ export interface LibraryMutationPlan {
 
 export type RenameRobotFolderResult =
   | { ok: true; nextPath: string }
-  | { ok: false; reason: 'missing' | 'invalid' | 'conflict' };
+  | { ok: false; reason: 'missing' | 'invalid' | 'conflict' | 'locked' };
 
 export interface RenameRobotFolderPlanResult {
   result: RenameRobotFolderResult;

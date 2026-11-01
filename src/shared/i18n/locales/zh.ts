@@ -874,6 +874,7 @@ export const zh: TranslationKeys = {
   assetLibraryRenameInvalid: '文件夹名称无效，请重新输入。',
   assetLibraryRenameConflict: '目标文件夹已存在: {path}',
   assetLibraryDeleteLockedConflict: '以下组件已锁定编辑，请先解锁再删除其素材文件：{names}',
+  assetLibraryRenameLockedConflict: '以下组件已锁定编辑，请先解锁再重命名其素材文件夹：{names}',
   removedFromAssetLibrary: '已从素材库删除: {name}',
   removedFolder: '已删除文件夹: {path}',
   deletedAllLibraryFiles: '已删除素材库全部 {count} 个文件',

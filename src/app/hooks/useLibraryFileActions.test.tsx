@@ -395,3 +395,70 @@ test('deleting a library file blocked by a link-locked component toasts instead 
   assert.equal(useWorkspaceStore.getState().transaction, null);
   assert.equal(useWorkspaceStore.getState().history.past.length, 0);
 });
+
+test('folder rename blocked by an edit-locked component toasts the conflict and renames nothing', () => {
+  const target: RobotFile = {
+    name: 'library/old/robot.urdf',
+    format: 'urdf',
+    content: '<robot name="robot" />',
+  };
+  const workspace = createSingleComponentWorkspace(robot('robot'), {
+    componentId: 'robot',
+    sourceFile: target.name,
+  });
+  workspace.components.robot.editorLocked = true;
+  useWorkspaceStore.getState().replaceWorkspace(workspace, { resetHistory: true });
+  useWorkspaceStore.setState({ history: { past: [], future: [], activity: [] } });
+  useAssetsStore.setState({
+    availableFiles: [target],
+    selectedFile: target,
+    allFileContents: { [target.name]: target.content },
+  });
+
+  const toastMessages: string[] = [];
+  const result = renderLibraryActions({
+    showToast: (message) => toastMessages.push(message),
+  }).handleRenameLibraryFolder('library/old', 'new');
+
+  assert.deepEqual(result, { ok: false, reason: 'locked' });
+  assert.equal(toastMessages.length, 1);
+  assert.match(toastMessages[0], /unlock them before renaming/);
+  assert.equal(
+    useWorkspaceStore.getState().workspace.components.robot?.sourceFile,
+    target.name,
+  );
+  assert.deepEqual(
+    useAssetsStore.getState().availableFiles.map((file) => file.name),
+    [target.name],
+  );
+  assert.deepEqual(Object.keys(useAssetsStore.getState().allFileContents), [target.name]);
+  assert.equal(useWorkspaceStore.getState().transaction, null);
+  assert.equal(useWorkspaceStore.getState().history.past.length, 0);
+});
+
+test('the lock-conflict toast inserts component names containing dollar patterns literally', () => {
+  const target: RobotFile = {
+    name: 'library/dollar.urdf',
+    format: 'urdf',
+    content: '<robot name="dollar" />',
+  };
+  const workspace = createSingleComponentWorkspace(robot('dollar'), {
+    componentId: 'dollar',
+    sourceFile: target.name,
+  });
+  workspace.components.dollar.editorLocked = true;
+  workspace.components.dollar.name = 'Arm$&Joint';
+  useWorkspaceStore.getState().replaceWorkspace(workspace, { resetHistory: true });
+  useWorkspaceStore.setState({ history: { past: [], future: [], activity: [] } });
+  useAssetsStore.setState({ availableFiles: [target], selectedFile: null });
+
+  const toastMessages: string[] = [];
+  renderLibraryActions({
+    showToast: (message) => toastMessages.push(message),
+  }).handleDeleteAllLibraryFiles();
+
+  assert.equal(toastMessages.length, 1);
+  assert.ok(toastMessages[0].includes('Arm$&Joint'));
+  assert.ok(!toastMessages[0].includes('{names}'));
+  assert.deepEqual(useAssetsStore.getState().availableFiles, [target]);
+});

@@ -6,6 +6,7 @@ import { isLibraryRobotExportableFormat } from '@/shared/utils';
 import {
   resolveRobotFolderRenameTarget,
   type LibraryMutationPlan,
+  type RenameRobotFolderResult,
   useAssetsStore,
 } from '@/store/assetsStore';
 import { useWorkspaceStore } from '@/store/workspaceStore';
@@ -24,9 +25,10 @@ interface UseLibraryFileActionsParams {
 }
 
 /**
- * Names of components the workspace store would refuse to remove, mirroring
- * `removeComponent`'s editor-lock guard so library deletion reports the
- * conflict up front instead of throwing mid-transaction.
+ * Names of components the workspace store would refuse to mutate, mirroring
+ * the editor-lock guards in `removeComponent` and `updateComponentSourceFile`
+ * so library mutations report the conflict up front instead of throwing
+ * mid-transaction.
  */
 function findEditorLockedComponentNames(
   components: AssemblyState['components'],
@@ -88,6 +90,27 @@ export function useLibraryFileActions({
     componentIds.forEach((componentId) => assets.removeComponentSourceDraft(componentId));
   }, []);
 
+  /**
+   * Toast the edit-lock conflict for components a library mutation would touch
+   * and return true when one blocks it. The replacer is a function so component
+   * names containing `$` patterns are inserted literally.
+   */
+  const toastEditorLockedConflict = useCallback(
+    (relatedComponentIds: readonly string[], message: string): boolean => {
+      const lockedComponentNames = findEditorLockedComponentNames(
+        assemblyState.components,
+        relatedComponentIds,
+      );
+      if (lockedComponentNames.length === 0) return false;
+      showToast(
+        message.replace('{names}', () => formatLockedComponentNames(lockedComponentNames)),
+        'info',
+      );
+      return true;
+    },
+    [assemblyState.components, showToast],
+  );
+
   const commitLibraryMutation = useCallback(
     (
       plan: LibraryMutationPlan,
@@ -137,18 +160,7 @@ export function useLibraryFileActions({
       const relatedComponentIds = Object.values(assemblyState.components)
         .filter((component) => component.sourceFile === file.name)
         .map((component) => component.id);
-      const lockedComponentNames = findEditorLockedComponentNames(
-        assemblyState.components,
-        relatedComponentIds,
-      );
-      if (lockedComponentNames.length > 0) {
-        showToast(
-          t.assetLibraryDeleteLockedConflict.replace(
-            '{names}',
-            formatLockedComponentNames(lockedComponentNames),
-          ),
-          'info',
-        );
+      if (toastEditorLockedConflict(relatedComponentIds, t.assetLibraryDeleteLockedConflict)) {
         return;
       }
 
@@ -176,8 +188,8 @@ export function useLibraryFileActions({
       removeComponentDrafts,
       removeWorkspaceComponents,
       selectedFile?.name,
-      showToast,
       t,
+      toastEditorLockedConflict,
     ],
   );
 
@@ -197,18 +209,7 @@ export function useLibraryFileActions({
             component.sourceFile !== null && isPathInFolder(component.sourceFile, normalizedFolder),
         )
         .map((component) => component.id);
-      const lockedComponentNames = findEditorLockedComponentNames(
-        assemblyState.components,
-        relatedComponentIds,
-      );
-      if (lockedComponentNames.length > 0) {
-        showToast(
-          t.assetLibraryDeleteLockedConflict.replace(
-            '{names}',
-            formatLockedComponentNames(lockedComponentNames),
-          ),
-          'info',
-        );
+      if (toastEditorLockedConflict(relatedComponentIds, t.assetLibraryDeleteLockedConflict)) {
         return;
       }
       const removedFiles = availableFiles.filter((file) =>
@@ -241,13 +242,13 @@ export function useLibraryFileActions({
       removeComponentDrafts,
       removeWorkspaceComponents,
       selectedFile?.name,
-      showToast,
       t,
+      toastEditorLockedConflict,
     ],
   );
 
   const handleRenameLibraryFolder = useCallback(
-    (folderPath: string, nextName: string) => {
+    (folderPath: string, nextName: string): RenameRobotFolderResult => {
       const {
         normalizedFolder,
         sanitizedName,
@@ -279,6 +280,18 @@ export function useLibraryFileActions({
 
       if (result.nextPath !== expectedNextPath) {
         throw new Error(`Asset folder rename resolved to unexpected path "${result.nextPath}".`);
+      }
+
+      if (normalizedFolder !== expectedNextPath) {
+        const relatedComponentIds = Object.values(assemblyState.components)
+          .filter(
+            (component) =>
+              component.sourceFile !== null && isPathInFolder(component.sourceFile, normalizedFolder),
+          )
+          .map((component) => component.id);
+        if (toastEditorLockedConflict(relatedComponentIds, t.assetLibraryRenameLockedConflict)) {
+          return { ok: false, reason: 'locked' };
+        }
       }
 
       commitLibraryMutation(plan, {
@@ -314,7 +327,7 @@ export function useLibraryFileActions({
 
       return result;
     },
-    [commitLibraryMutation, isPathInFolder, showToast, t],
+    [assemblyState, commitLibraryMutation, isPathInFolder, showToast, t, toastEditorLockedConflict],
   );
 
   const handleDeleteAllLibraryFiles = useCallback(() => {
@@ -331,20 +344,10 @@ export function useLibraryFileActions({
           component.sourceFile !== null && availableFileNames.has(component.sourceFile),
       )
       .map((component) => component.id);
-    const lockedComponentNames = findEditorLockedComponentNames(
-      assemblyState.components,
-      relatedComponentIds,
-    );
-    if (lockedComponentNames.length > 0) {
-      showToast(
-        t.assetLibraryDeleteLockedConflict.replace(
-          '{names}',
-          formatLockedComponentNames(lockedComponentNames),
-        ),
-        'info',
-      );
+    if (toastEditorLockedConflict(relatedComponentIds, t.assetLibraryDeleteLockedConflict)) {
       return;
     }
+
 
     commitLibraryMutation(plan, {
       label: 'Remove library components',
@@ -372,8 +375,8 @@ export function useLibraryFileActions({
     removeComponentDrafts,
     removeWorkspaceComponents,
     selectedFile?.name,
-    showToast,
     t,
+    toastEditorLockedConflict,
   ]);
 
   const handleExportLibraryFile = useCallback(

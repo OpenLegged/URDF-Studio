@@ -831,6 +831,7 @@ export interface TranslationKeys extends TranslationWorkflowKeys {
   assetLibraryRenameInvalid: string;
   assetLibraryRenameConflict: string;
   assetLibraryDeleteLockedConflict: string;
+  assetLibraryRenameLockedConflict: string;
   removedFromAssetLibrary: string;
   removedFolder: string;
   deletedAllLibraryFiles: string;
