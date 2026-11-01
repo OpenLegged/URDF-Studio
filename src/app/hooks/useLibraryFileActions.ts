@@ -1,4 +1,5 @@
 import { useCallback } from 'react';
+import { hasComponentEditorLocks } from '@/core/robot';
 import { clearPreparedUsdStageOpenCache } from '@/features/editor/usd_prewarm';
 import type { TranslationKeys } from '@/shared/i18n';
 import { isLibraryRobotExportableFormat } from '@/shared/utils';
@@ -8,7 +9,7 @@ import {
   useAssetsStore,
 } from '@/store/assetsStore';
 import { useWorkspaceStore } from '@/store/workspaceStore';
-import type { AssemblyState, RobotFile } from '@/types';
+import type { AssemblyComponent, AssemblyState, RobotFile } from '@/types';
 import { beginCoordinatedWorkspaceTransaction } from '@/app/utils/pendingHistory';
 
 interface UseLibraryFileActionsParams {
@@ -20,6 +21,29 @@ interface UseLibraryFileActionsParams {
   openLibraryExportDialog: (file: RobotFile) => void;
   showToast: (message: string, type?: 'info' | 'success') => void;
   t: TranslationKeys;
+}
+
+/**
+ * Names of components the workspace store would refuse to remove, mirroring
+ * `removeComponent`'s editor-lock guard so library deletion reports the
+ * conflict up front instead of throwing mid-transaction.
+ */
+function findEditorLockedComponentNames(
+  components: AssemblyState['components'],
+  componentIds: readonly string[],
+): string[] {
+  return componentIds
+    .map((componentId) => components[componentId])
+    .filter(
+      (component): component is AssemblyComponent =>
+        Boolean(component && hasComponentEditorLocks(component)),
+    )
+    .map((component) => component.name);
+}
+
+function formatLockedComponentNames(names: readonly string[]): string {
+  const preview = names.slice(0, 3).join(', ');
+  return names.length > 3 ? `${preview} +${names.length - 3}` : preview;
 }
 
 export function useLibraryFileActions({
@@ -113,6 +137,20 @@ export function useLibraryFileActions({
       const relatedComponentIds = Object.values(assemblyState.components)
         .filter((component) => component.sourceFile === file.name)
         .map((component) => component.id);
+      const lockedComponentNames = findEditorLockedComponentNames(
+        assemblyState.components,
+        relatedComponentIds,
+      );
+      if (lockedComponentNames.length > 0) {
+        showToast(
+          t.assetLibraryDeleteLockedConflict.replace(
+            '{names}',
+            formatLockedComponentNames(lockedComponentNames),
+          ),
+          'info',
+        );
+        return;
+      }
 
       commitLibraryMutation(plan, {
         label: 'Remove library components',
@@ -138,6 +176,8 @@ export function useLibraryFileActions({
       removeComponentDrafts,
       removeWorkspaceComponents,
       selectedFile?.name,
+      showToast,
+      t,
     ],
   );
 
@@ -157,6 +197,20 @@ export function useLibraryFileActions({
             component.sourceFile !== null && isPathInFolder(component.sourceFile, normalizedFolder),
         )
         .map((component) => component.id);
+      const lockedComponentNames = findEditorLockedComponentNames(
+        assemblyState.components,
+        relatedComponentIds,
+      );
+      if (lockedComponentNames.length > 0) {
+        showToast(
+          t.assetLibraryDeleteLockedConflict.replace(
+            '{names}',
+            formatLockedComponentNames(lockedComponentNames),
+          ),
+          'info',
+        );
+        return;
+      }
       const removedFiles = availableFiles.filter((file) =>
         isPathInFolder(file.name, normalizedFolder),
       );
@@ -187,6 +241,8 @@ export function useLibraryFileActions({
       removeComponentDrafts,
       removeWorkspaceComponents,
       selectedFile?.name,
+      showToast,
+      t,
     ],
   );
 
@@ -275,6 +331,20 @@ export function useLibraryFileActions({
           component.sourceFile !== null && availableFileNames.has(component.sourceFile),
       )
       .map((component) => component.id);
+    const lockedComponentNames = findEditorLockedComponentNames(
+      assemblyState.components,
+      relatedComponentIds,
+    );
+    if (lockedComponentNames.length > 0) {
+      showToast(
+        t.assetLibraryDeleteLockedConflict.replace(
+          '{names}',
+          formatLockedComponentNames(lockedComponentNames),
+        ),
+        'info',
+      );
+      return;
+    }
 
     commitLibraryMutation(plan, {
       label: 'Remove library components',
@@ -302,6 +372,8 @@ export function useLibraryFileActions({
     removeComponentDrafts,
     removeWorkspaceComponents,
     selectedFile?.name,
+    showToast,
+    t,
   ]);
 
   const handleExportLibraryFile = useCallback(

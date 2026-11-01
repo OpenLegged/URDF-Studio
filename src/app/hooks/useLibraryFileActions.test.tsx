@@ -312,3 +312,86 @@ test('library file deletion rolls assets back and does not revoke blobs when wor
   assert.deepEqual(useAssetsStore.getState().assets, { [target.name]: 'blob:owned-urdf' });
   assert.deepEqual(revokedUrls, []);
 });
+
+test('delete-all with an edit-locked component toasts the conflict and deletes nothing', () => {
+  const target: RobotFile = {
+    name: 'library/locked.urdf',
+    format: 'urdf',
+    content: '<robot name="locked" />',
+  };
+  const survivorFile: RobotFile = {
+    name: 'library/free.urdf',
+    format: 'urdf',
+    content: '<robot name="free" />',
+  };
+  const workspace = createSingleComponentWorkspace(robot('locked'), {
+    componentId: 'locked',
+    sourceFile: target.name,
+  });
+  workspace.components.free = createSingleComponentWorkspace(robot('free'), {
+    componentId: 'free',
+    sourceFile: survivorFile.name,
+  }).components.free;
+  workspace.components.locked.editorLocked = true;
+  useWorkspaceStore.getState().replaceWorkspace(workspace, { resetHistory: true });
+  useWorkspaceStore.setState({ history: { past: [], future: [], activity: [] } });
+  useAssetsStore.setState({ availableFiles: [target, survivorFile], selectedFile: null });
+
+  const toastMessages: string[] = [];
+  const renderedActions = renderLibraryActions({
+    showToast: (message) => toastMessages.push(message),
+  });
+  renderedActions.handleDeleteAllLibraryFiles();
+
+  assert.equal(toastMessages.length, 1);
+  assert.match(toastMessages[0], /unlock them before deleting/);
+  assert.match(toastMessages[0], /locked/);
+  assert.deepEqual(
+    useAssetsStore.getState().availableFiles.map((file) => file.name),
+    [target.name, survivorFile.name],
+  );
+  assert.deepEqual(Object.keys(useWorkspaceStore.getState().workspace.components).sort(), [
+    'free',
+    'locked',
+  ]);
+  assert.equal(useWorkspaceStore.getState().history.past.length, 0);
+  assert.equal(useWorkspaceStore.getState().transaction, null);
+
+  // The guard is scoped to related components: deleting the unlocked file
+  // still works while the locked component stays.
+  renderedActions.handleDeleteLibraryFile(survivorFile);
+  assert.equal(toastMessages.length, 1);
+  assert.deepEqual(
+    useAssetsStore.getState().availableFiles.map((file) => file.name),
+    [target.name],
+  );
+  assert.deepEqual(Object.keys(useWorkspaceStore.getState().workspace.components), ['locked']);
+});
+
+test('deleting a library file blocked by a link-locked component toasts instead of throwing', () => {
+  const target: RobotFile = {
+    name: 'library/link-locked.urdf',
+    format: 'urdf',
+    content: '<robot name="link-locked" />',
+  };
+  const workspace = createSingleComponentWorkspace(robot('link-locked'), {
+    componentId: 'link-locked',
+    sourceFile: target.name,
+  });
+  workspace.components['link-locked'].robot.links.base.editorLocked = true;
+  useWorkspaceStore.getState().replaceWorkspace(workspace, { resetHistory: true });
+  useWorkspaceStore.setState({ history: { past: [], future: [], activity: [] } });
+  useAssetsStore.setState({ availableFiles: [target], selectedFile: null });
+
+  const toastMessages: string[] = [];
+  renderLibraryActions({
+    showToast: (message) => toastMessages.push(message),
+  }).handleDeleteLibraryFile(target);
+
+  assert.equal(toastMessages.length, 1);
+  assert.match(toastMessages[0], /unlock them before deleting/);
+  assert.deepEqual(useAssetsStore.getState().availableFiles, [target]);
+  assert.ok(useWorkspaceStore.getState().workspace.components['link-locked']);
+  assert.equal(useWorkspaceStore.getState().transaction, null);
+  assert.equal(useWorkspaceStore.getState().history.past.length, 0);
+});

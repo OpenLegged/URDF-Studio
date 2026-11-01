@@ -905,6 +905,8 @@ export const en: TranslationKeys = {
   renamedFolder: 'Renamed folder: {from} -> {to}',
   assetLibraryRenameInvalid: 'Invalid folder name. Please try again.',
   assetLibraryRenameConflict: 'Target folder already exists: {path}',
+  assetLibraryDeleteLockedConflict:
+    'These components are edit-locked; unlock them before deleting their library files: {names}',
   removedFromAssetLibrary: 'Removed from asset library: {name}',
   removedFolder: 'Removed folder: {path}',
   deletedAllLibraryFiles: 'Deleted all {count} file(s) from the asset library',
