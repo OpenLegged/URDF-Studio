@@ -144,8 +144,8 @@ test('hit-aware top-layer pick keeps collision priority when collision overlay i
   );
 });
 
-test('select mode blocks orbit on geometry hits before direct drag is resolved', () => {
-  assert.equal(shouldBlockOrbitForGeometryHit('select'), true);
+test('select mode leaves ordinary geometry available for orbit until a joint drag starts', () => {
+  assert.equal(shouldBlockOrbitForGeometryHit('select'), false);
   assert.equal(shouldStartJointDragFromGeometryHit('select'), true);
 });
 

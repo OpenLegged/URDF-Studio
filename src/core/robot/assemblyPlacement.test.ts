@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 
-import { DEFAULT_LINK, type RenderableBounds, type RobotData } from '@/types';
+import { DEFAULT_LINK, GeometryType, type RenderableBounds, type RobotData } from '@/types';
 
 import { buildDefaultAssemblyComponentPlacementTransform } from './assemblyPlacement.ts';
 
@@ -100,4 +100,33 @@ test('repeated instances with the same bounds keep the same raw floor height', (
   });
 
   assert.equal(transform.position.z, 0);
+});
+
+test('a horizontal MJCF world surface places a new model on its top near the room', () => {
+  const scene = robot('room');
+  scene.inspectionContext = { sourceFormat: 'mjcf' };
+  const world = scene.links.base!;
+  world.name = 'world';
+  world.inertial.mass = 0;
+  world.visual.type = GeometryType.BOX;
+  world.visual.dimensions = { x: 1000, y: 1000, z: 0.1 };
+  world.visual.origin = { xyz: { x: 0, y: 0, z: -0.05 }, rpy: { r: 0, p: 0, y: 0 } };
+  const inputs = {
+    robot: robot('quadruped'), renderableBounds: bounds(-0.7),
+    existingComponents: [{
+      robot: scene,
+      transform: { position: { x: 3, y: -2, z: 1 }, rotation: { r: 0, p: 0, y: 0.5 } },
+    }],
+  };
+  assert.deepEqual(buildDefaultAssemblyComponentPlacementTransform(inputs).position, { x: 3, y: -2, z: 1.7 });
+  // A second environment must not be stacked on the existing floor.
+  const secondScene = buildDefaultAssemblyComponentPlacementTransform({
+    robot: scene, existingComponents: inputs.existingComponents,
+  });
+  assert.ok(secondScene.position.x > 1000);
+  world.visual.origin.rpy.r = Math.PI / 4;
+  assert.ok(buildDefaultAssemblyComponentPlacementTransform(inputs).position.x > 100);
+  world.visual.origin.rpy.r = 0;
+  scene.inspectionContext.sourceFormat = 'urdf';
+  assert.ok(buildDefaultAssemblyComponentPlacementTransform(inputs).position.x > 100);
 });

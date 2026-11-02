@@ -5,6 +5,7 @@ import * as THREE from 'three';
 import type { AssemblyScenePlacement } from '@/core/robot';
 import {
   DEFAULT_LINK,
+  GeometryType,
   type AssemblyComponent,
   type AssemblyState,
   type AssemblyTransform,
@@ -273,4 +274,47 @@ test('skips bridge-owned child placement instead of overwriting component transf
     measuredComponentIds: [],
     runtimeRobotLocalPositionDelta: null,
   });
+});
+
+test('places robots on the room floor clear of a bed and of each other', () => {
+  const room = component('room', transform());
+  room.robot.inspectionContext = { sourceFormat: 'mjcf' };
+  const root = room.robot.links[room.robot.rootLinkId]!;
+  root.name = 'world';
+  root.inertial.mass = 0;
+  root.visual.type = GeometryType.BOX;
+  root.visual.dimensions = { x: 1000, y: 1000, z: 0.1 };
+  root.visual.origin = { xyz: { x: 0, y: 0, z: -0.05 }, rpy: { r: 0, p: 0, y: 0 } };
+
+  const roomTarget = new THREE.Group();
+  const v = (x: number, y: number, z: number) => new THREE.Vector3(x, y, z);
+  roomTarget.add(
+    visualBox(v(0, 0, -0.05), v(1000, 1000, 0.1)),
+    visualBox(v(0, 0, -0.05), v(4.8, 4.8, 0.1)),
+    visualBox(v(0, 1.05, 0.6), v(2, 2.18, 1.2)),
+    visualBox(v(-2.325, 0, 1.4), v(0.15, 4.8, 2.8)),
+  );
+  const runtimeRobot = new THREE.Group();
+  const targets: Record<string, THREE.Object3D> = { room: roomTarget };
+  for (const id of ['first', 'second']) {
+    const target = new THREE.Group();
+    target.add(visualBox(v(0, 0, 0.8), v(1, 0.5, 1)));
+    targets[id] = target;
+  }
+  runtimeRobot.add(...Object.values(targets));
+  const result = resolveAssemblyComponentAutoGrounding({
+    componentIds: ['first', 'second'],
+    groundPlaneOffset: 0,
+    runtimeRobot,
+    scenePlacement: assembledPlacement(runtimeRobot, targets),
+    workspace: workspace([room, component('first', transform()), component('second', transform())]),
+  });
+  const [first, second] = result.adjustments.map((item) => item.transform.position);
+  assert.ok(first && second);
+  for (const position of [first, second]) {
+    assert.ok(Math.abs(position.z + 0.3) < 1e-6, 'feet sit on z=0, not the slab underside');
+    assert.ok(Math.abs(position.x) + 0.5 < 2.25 && Math.abs(position.y) + 0.25 < 2.25);
+    assert.ok(position.y + 0.25 < -0.04 || Math.abs(position.x) - 0.5 > 1);
+  }
+  assert.ok(Math.abs(first.y - second.y) >= 0.5 || Math.abs(first.x - second.x) >= 1);
 });

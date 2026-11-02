@@ -2,7 +2,10 @@ import * as THREE from 'three';
 
 import type { AssemblyScenePlacement } from '@/core/robot';
 import { cloneAssemblyTransform } from '@/core/robot/assemblyTransformUtils';
-import { getLowestMeshZ } from '@/shared/utils';
+import { computeVisibleMeshBounds, getLowestMeshZ } from '@/shared/utils';
+import { DEFAULT_ASSEMBLY_COMPONENT_PLACEMENT_GAP } from '@/core/robot/assemblyPlacement';
+import { resolveMjcfWorldGround } from '@/core/robot/mjcfWorldGround';
+import { findSceneFloorOffset, measureSceneFloor } from './assemblySceneFloorPlacement';
 import type { AssemblyState } from '@/types';
 
 import type {
@@ -63,14 +66,14 @@ function measureComponentLowestPoint(target: THREE.Object3D): number | null {
   );
 }
 
-function resolveParentLocalWorldZDelta(target: THREE.Object3D, deltaWorldZ: number): THREE.Vector3 {
+function resolveParentLocalDelta(target: THREE.Object3D, delta: THREE.Vector3): THREE.Vector3 {
   if (!target.parent) {
-    return new THREE.Vector3(0, 0, deltaWorldZ);
+    return delta;
   }
 
   target.parent.updateWorldMatrix(true, false);
   const localOrigin = target.parent.worldToLocal(new THREE.Vector3(0, 0, 0));
-  const localTarget = target.parent.worldToLocal(new THREE.Vector3(0, 0, deltaWorldZ));
+  const localTarget = target.parent.worldToLocal(delta.clone());
   return localTarget.sub(localOrigin);
 }
 
@@ -126,9 +129,10 @@ export function resolveAssemblyComponentAutoGrounding({
   const targetGroundZ = Number.isFinite(existingGroundReferenceZ)
     ? existingGroundReferenceZ
     : fallbackGroundZ;
-  const runtimeRobotLocalDelta = resolveParentLocalWorldZDelta(
+  const sceneFloor = measureSceneFloor(workspace, measurements, requestedComponentIds);
+  const runtimeRobotLocalDelta = resolveParentLocalDelta(
     runtimeRobot,
-    fallbackGroundZ - targetGroundZ,
+    new THREE.Vector3(0, 0, fallbackGroundZ - targetGroundZ),
   );
   const runtimeRobotLocalPositionDelta =
     runtimeRobotLocalDelta.lengthSq() > tolerance * tolerance
@@ -147,12 +151,21 @@ export function resolveAssemblyComponentAutoGrounding({
     }
 
     measuredComponentIds.push(componentId);
-    const deltaWorldZ = targetGroundZ - measurement.lowestPoint;
-    if (Math.abs(deltaWorldZ) <= tolerance) {
+    const floor = sceneFloor && !resolveMjcfWorldGround(component.robot) ? sceneFloor : null;
+    const delta = new THREE.Vector3(0, 0, (floor?.ground.max.z ?? targetGroundZ) - measurement.lowestPoint);
+    if (floor) {
+      const bounds = computeVisibleMeshBounds(measurement.target);
+      if (bounds) {
+        const offset = findSceneFloorOffset(floor, bounds, DEFAULT_ASSEMBLY_COMPONENT_PLACEMENT_GAP);
+        delta.setX(offset.x).setY(offset.y);
+        floor.obstacles.push(bounds.translate(delta));
+      }
+    }
+    if (delta.lengthSq() <= tolerance * tolerance) {
       return;
     }
 
-    const localDelta = resolveParentLocalWorldZDelta(measurement.target, deltaWorldZ);
+    const localDelta = resolveParentLocalDelta(measurement.target, delta);
     const nextTransform = cloneAssemblyTransform(component.transform);
     nextTransform.position.x += localDelta.x;
     nextTransform.position.y += localDelta.y;

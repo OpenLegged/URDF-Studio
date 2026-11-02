@@ -51,6 +51,23 @@ test('extractPackageAssetBundleRoots preserves deeper package roots before mesh 
   ]);
 });
 
+test('commented geometry contributes no missing assets or package roots', () => {
+  const content = `<robot name="b2">
+    <!-- <mesh filename="../meshes/f_oc_link.STL" />
+         <texture filename="package://unused/textures/old.png" /> -->
+    <link name="base"><visual><geometry>
+      <mesh filename="../meshes/base.dae" />
+    </geometry></visual></link>
+  </robot>`;
+  const source = { format: 'urdf', content };
+  assert.deepEqual(extractPackageAssetBundleRoots(content), []);
+  assert.deepEqual(extractStandaloneImportAssetReferences(source), ['meshes/base.dae']);
+  assert.equal(buildStandaloneImportAssetWarning(source, ['b2/meshes/base.dae']), null);
+  assert.deepEqual(buildStandaloneImportAssetWarning(source, []), {
+    missingAssetPaths: ['meshes/base.dae'],
+  });
+});
+
 test('inferCommonPackageAssetBundleRoot derives a shared root from package-dependent robot definitions', () => {
   const sources = [
     {

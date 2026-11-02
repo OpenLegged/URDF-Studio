@@ -1,11 +1,12 @@
 import * as THREE from 'three';
 import type { AssemblyTransform, RenderableBounds, RobotData, UrdfLink, UrdfVisual } from '@/types';
 import { GeometryType } from '@/types';
-import { computeLinkWorldMatrices } from './kinematics';
+import { computeLinkWorldMatrices, createOriginMatrix } from './kinematics';
+import { resolveMjcfWorldGround } from './mjcfWorldGround';
 import { cloneAssemblyTransform, IDENTITY_ASSEMBLY_TRANSFORM } from './assemblyTransforms';
 import { getVisualGeometryEntries } from './visualBodies';
 
-const DEFAULT_ASSEMBLY_COMPONENT_PLACEMENT_GAP = 0.12;
+export const DEFAULT_ASSEMBLY_COMPONENT_PLACEMENT_GAP = 0.12;
 const DEFAULT_ASSEMBLY_COMPONENT_HALF_WIDTH = 0.45;
 
 const UNIT_BOX_GEOMETRY = new THREE.BoxGeometry(1, 1, 1);
@@ -18,6 +19,7 @@ type AssemblyPlacementComparableComponent = {
   robot?: RobotData | null;
   renderableBounds?: RenderableBounds | null;
   transform?: AssemblyTransform | null;
+  visible?: boolean;
 };
 
 type GeometryBoundsDescriptor = {
@@ -333,6 +335,22 @@ export function buildDefaultAssemblyComponentPlacementTransform({
   }
 
   const nextBounds = resolveRenderableBounds(robot, renderableBounds) ?? buildFallbackBounds();
+  // A model can be placed on an existing world floor. A second environment
+  // has its own floor and follows the usual side-by-side arrangement.
+  if (!resolveMjcfWorldGround(robot)) {
+    for (const { robot: existingRobot, transform, visible } of existingComponents) {
+      if (visible === false) continue;
+      const matrix = createOriginMatrix({ xyz: transform?.position, rpy: transform?.rotation });
+      const ground = resolveMjcfWorldGround(existingRobot, matrix);
+      if (!ground) continue;
+      const center = ground.getCenter(new THREE.Vector3());
+      return cloneAssemblyTransform({
+        position: { x: center.x, y: center.y, z: ground.max.z - nextBounds.min.z },
+        rotation: IDENTITY_ASSEMBLY_TRANSFORM.rotation,
+      });
+    }
+  }
+
   let maxExistingX = Number.NEGATIVE_INFINITY;
   let minExistingZ = Number.POSITIVE_INFINITY;
 
