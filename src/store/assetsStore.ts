@@ -12,7 +12,7 @@ import type {
   UsdSceneSnapshot,
 } from '@/types';
 import { DEFAULT_MOTOR_LIBRARY, normalizeMotorLibrary } from '@/shared/data/motorLibrary';
-import { normalizeLibraryPathKey } from '@/core/utils/pathKeys';
+import { normalizeLibraryFileKey, normalizeLibraryPathKey } from '@/core/utils/pathKeys';
 import {
   createClearRobotLibraryPlan,
   createRemoveRobotFilePlan,
@@ -20,6 +20,9 @@ import {
   createRenameRobotFolderPlan,
   DEFAULT_DOCUMENT_LOAD_STATE,
   isLibraryMutationPlanCurrent,
+  isSameOrNestedLibraryPath,
+  normalizeLiteralLibraryPath,
+  replaceLibraryPathPrefix,
   pruneUsdPreparedExportCaches,
   pruneUsdSceneSnapshots,
   resolveRobotFolderRenameTarget,
@@ -35,6 +38,9 @@ import {
 
 export {
   DEFAULT_DOCUMENT_LOAD_STATE,
+  isSameOrNestedLibraryPath,
+  normalizeLiteralLibraryPath,
+  replaceLibraryPathPrefix,
   resolveRobotFolderRenameTarget,
   toDocumentLoadLifecycleState,
   type DocumentLoadLifecycleState,
@@ -46,8 +52,29 @@ export {
   type RobotFolderRenameTarget,
 };
 
-function normalizeUsdSceneSnapshotKey(path: string | null | undefined): string {
-  return normalizeLibraryPathKey(path);
+function resolveUsdCacheKey(
+  path: string,
+  entries: Readonly<Record<string, unknown>>,
+  files: readonly RobotFile[],
+  stageSourcePath?: string | null,
+): string {
+  const fileKey = normalizeLibraryFileKey(path);
+  const urlKey = normalizeLibraryPathKey(path);
+  if (fileKey === urlKey) return fileKey;
+
+  // A slash after '?' may belong to a local directory or to a URL query value.
+  // Prefer a known file, then fall back to the original URL lookup semantics.
+  const knownKeys = new Set(Object.keys(entries));
+  for (const file of files) {
+    if (file.format === 'usd') knownKeys.add(normalizeLibraryFileKey(file.name));
+  }
+  if (stageSourcePath) knownKeys.add(normalizeLibraryFileKey(stageSourcePath));
+  if (knownKeys.has(fileKey)) return fileKey;
+  for (let end = path.lastIndexOf('?'); end > 0; end = path.lastIndexOf('?', end - 1)) {
+    const candidate = normalizeLiteralLibraryPath(path.slice(0, end));
+    if (knownKeys.has(candidate)) return candidate;
+  }
+  return urlKey;
 }
 
 function collectBlobUrlUsageCounts(assets: Record<string, string>): Map<string, number> {
@@ -272,7 +299,9 @@ export const useAssetsStore = create<AssetsState>()((set, get) => ({
   usdSceneSnapshots: {},
   setUsdSceneSnapshot: (path, snapshot) =>
     set((state) => {
-      const normalizedKey = normalizeUsdSceneSnapshotKey(path);
+      const normalizedKey = resolveUsdCacheKey(
+        path, state.usdSceneSnapshots, state.availableFiles, snapshot?.stageSourcePath,
+      );
       if (!normalizedKey) {
         return state;
       }
@@ -287,11 +316,9 @@ export const useAssetsStore = create<AssetsState>()((set, get) => ({
       return { usdSceneSnapshots: nextUsdSceneSnapshots };
     }),
   getUsdSceneSnapshot: (path) => {
-    const normalizedKey = normalizeUsdSceneSnapshotKey(path);
-    if (!normalizedKey) {
-      return null;
-    }
-    return get().usdSceneSnapshots[normalizedKey] || null;
+    const { usdSceneSnapshots, availableFiles } = get();
+    const key = resolveUsdCacheKey(path, usdSceneSnapshots, availableFiles);
+    return usdSceneSnapshots[key] ?? null;
   },
   clearUsdSceneSnapshots: () => set({ usdSceneSnapshots: {} }),
   setUsdBakedScene: (path, bakedScene) => get().setUsdSceneSnapshot(path, bakedScene),
@@ -302,7 +329,9 @@ export const useAssetsStore = create<AssetsState>()((set, get) => ({
   usdPreparedExportCaches: {},
   setUsdPreparedExportCache: (path, cache) =>
     set((state) => {
-      const normalizedKey = normalizeUsdSceneSnapshotKey(path);
+      const normalizedKey = resolveUsdCacheKey(
+        path, state.usdPreparedExportCaches, state.availableFiles, cache?.stageSourcePath,
+      );
       if (!normalizedKey) {
         return state;
       }
@@ -317,11 +346,9 @@ export const useAssetsStore = create<AssetsState>()((set, get) => ({
       return { usdPreparedExportCaches: nextUsdPreparedExportCaches };
     }),
   getUsdPreparedExportCache: (path) => {
-    const normalizedKey = normalizeUsdSceneSnapshotKey(path);
-    if (!normalizedKey) {
-      return null;
-    }
-    return get().usdPreparedExportCaches[normalizedKey] || null;
+    const { usdPreparedExportCaches, availableFiles } = get();
+    const key = resolveUsdCacheKey(path, usdPreparedExportCaches, availableFiles);
+    return usdPreparedExportCaches[key] ?? null;
   },
   clearUsdPreparedExportCaches: () => set({ usdPreparedExportCaches: {} }),
 

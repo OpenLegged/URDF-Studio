@@ -134,6 +134,8 @@ test('USD cache lookups normalize virtual and library path variants', () => {
   assert.ok(state.getUsdSceneSnapshot('/robots/demo/demo.usd?other=1'));
   assert.ok(state.getUsdPreparedExportCache('robots/demo/demo.usd'));
   assert.ok(state.getUsdPreparedExportCache('/robots//demo/demo.usd?other=1'));
+  assert.ok(state.getUsdSceneSnapshot('robots/demo/demo.usd?texture=maps/base.png'));
+  assert.ok(state.getUsdPreparedExportCache('robots/demo/demo.usd?texture=maps/base.png'));
 });
 
 test('USD baked scene accessors share storage with legacy scene snapshot accessors', () => {
@@ -153,6 +155,53 @@ test('USD baked scene accessors share storage with legacy scene snapshot accesso
 
   assert.equal(useAssetsStore.getState().getUsdBakedScene('robots/demo/demo.usd'), null);
   assert.equal(useAssetsStore.getState().getUsdSceneSnapshot('robots/alt/alt.usd'), null);
+});
+
+test('sibling folders with literal question marks keep independent USD caches across rename and delete', () => {
+  resetAssetsStore();
+  const state = useAssetsStore.getState();
+  const left = 'robots/demo?left/scene.usd';
+  const right = 'robots/demo?right/scene.usd';
+  state.setAvailableFiles([left, right].map((name) => ({ name, format: 'usd', content: '' })));
+  for (const path of [left, right]) {
+    const stage = `/${path}?revision=1`;
+    state.setUsdSceneSnapshot(stage, createUsdSceneSnapshot(stage));
+    state.setUsdPreparedExportCache(stage, createPreparedUsdExportCache(stage));
+  }
+  for (const path of [left, right]) {
+    assert.equal(state.getUsdSceneSnapshot(path)?.stageSourcePath, `/${path}?revision=1`);
+    assert.equal(state.getUsdPreparedExportCache(path)?.stageSourcePath, `/${path}?revision=1`);
+  }
+
+  assert.ok(state.getUsdSceneSnapshot(`${right}?texture=maps/base.png`));
+
+  assert.deepEqual(state.renameRobotFolder('robots/demo?left', 'demo?left'), {
+    ok: true, nextPath: 'robots/demo?left',
+  });
+  const renamed = 'robots/renamed/scene.usd';
+  assert.deepEqual(state.renameRobotFolder('robots/demo?left', 'renamed'), {
+    ok: true,
+    nextPath: 'robots/renamed',
+  });
+  assert.ok(state.getUsdSceneSnapshot(renamed));
+  assert.ok(state.getUsdPreparedExportCache(renamed));
+  assert.equal(state.getUsdSceneSnapshot(right)?.stageSourcePath, `/${right}?revision=1`);
+  assert.equal(state.getUsdPreparedExportCache(right)?.stageSourcePath, `/${right}?revision=1`);
+
+  state.removeRobotFolder('robots/demo?right');
+  const next = useAssetsStore.getState();
+  assert.deepEqual(next.availableFiles.map((file) => file.name), [renamed]);
+  assert.deepEqual(Object.keys(next.usdSceneSnapshots), [renamed]);
+  assert.deepEqual(Object.keys(next.usdPreparedExportCaches), [renamed]);
+});
+
+test('renameRobotFolder rejects a new question-mark name without changing the library', () => {
+  resetAssetsStore();
+  const state = useAssetsStore.getState();
+  state.setAvailableFiles([{ name: 'robots/demo/scene.usd', format: 'usd', content: '' }]);
+  const before = useAssetsStore.getState();
+  assert.deepEqual(state.renameRobotFolder('robots/demo', 'demo?view'), { ok: false, reason: 'invalid' });
+  assert.equal(useAssetsStore.getState(), before);
 });
 
 test('clearRobotLibrary clears all prepared USD export caches', () => {

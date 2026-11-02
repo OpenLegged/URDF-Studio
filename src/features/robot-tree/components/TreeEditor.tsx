@@ -93,7 +93,7 @@ export interface TreeEditorProps {
   onRenameLibraryFolder?: (
     folderPath: string,
     nextName: string,
-  ) => { ok: true; nextPath: string } | { ok: false; reason: 'missing' | 'invalid' | 'conflict' };
+  ) => { ok: true; nextPath: string } | { ok: false; reason: 'missing' | 'invalid' | 'conflict' | 'locked' };
   onDeleteAllLibraryFiles?: () => void;
   onExportLibraryFile?: (file: RobotFile) => void | Promise<void>;
   onCreateBridge?: () => void;

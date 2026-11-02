@@ -58,6 +58,15 @@ export function normalizeLibraryPathKey(path: string | null | undefined): string
   return normalizePathKey(path, { leadingSlash: false, trailingSlash: false, stripQuery: true });
 }
 
+/** Keep literal directory names when normalizing local filenames with an optional query suffix. */
+export function normalizeLibraryFileKey(path: string | null | undefined): string {
+  const filePath = path ?? '';
+  const lastSeparator = Math.max(filePath.lastIndexOf('/'), filePath.lastIndexOf('\\'));
+  const queryStart = filePath.indexOf('?', lastSeparator + 1);
+  const pathWithoutQuery = queryStart < 0 ? filePath : filePath.slice(0, queryStart);
+  return normalizePathKey(pathWithoutQuery, { stripQuery: false });
+}
+
 export function normalizeVirtualUsdPath(path: string | null | undefined): string {
   return normalizePathKey(path, { leadingSlash: true, trailingSlash: false, stripQuery: true });
 }

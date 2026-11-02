@@ -1,14 +1,19 @@
 import { useCallback } from 'react';
+import { hasComponentEditorLocks } from '@/core/robot';
 import { clearPreparedUsdStageOpenCache } from '@/features/editor/usd_prewarm';
 import type { TranslationKeys } from '@/shared/i18n';
 import { isLibraryRobotExportableFormat } from '@/shared/utils';
 import {
+  isSameOrNestedLibraryPath,
+  normalizeLiteralLibraryPath,
+  replaceLibraryPathPrefix,
   resolveRobotFolderRenameTarget,
   type LibraryMutationPlan,
+  type RenameRobotFolderResult,
   useAssetsStore,
 } from '@/store/assetsStore';
 import { useWorkspaceStore } from '@/store/workspaceStore';
-import type { AssemblyState, RobotFile } from '@/types';
+import type { AssemblyComponent, AssemblyState, RobotFile } from '@/types';
 import { beginCoordinatedWorkspaceTransaction } from '@/app/utils/pendingHistory';
 
 interface UseLibraryFileActionsParams {
@@ -20,6 +25,30 @@ interface UseLibraryFileActionsParams {
   openLibraryExportDialog: (file: RobotFile) => void;
   showToast: (message: string, type?: 'info' | 'success') => void;
   t: TranslationKeys;
+}
+
+/**
+ * Names of components the workspace store would refuse to mutate, mirroring
+ * the editor-lock guards in `removeComponent` and `updateComponentSourceFile`
+ * so library mutations report the conflict up front instead of throwing
+ * mid-transaction.
+ */
+function findEditorLockedComponentNames(
+  components: AssemblyState['components'],
+  componentIds: readonly string[],
+): string[] {
+  return componentIds
+    .map((componentId) => components[componentId])
+    .filter(
+      (component): component is AssemblyComponent =>
+        Boolean(component && hasComponentEditorLocks(component)),
+    )
+    .map((component) => component.name);
+}
+
+function formatLockedComponentNames(names: readonly string[]): string {
+  const preview = names.slice(0, 3).join(', ');
+  return names.length > 3 ? `${preview} +${names.length - 3}` : preview;
 }
 
 export function useLibraryFileActions({
@@ -64,6 +93,27 @@ export function useLibraryFileActions({
     componentIds.forEach((componentId) => assets.removeComponentSourceDraft(componentId));
   }, []);
 
+  /**
+   * Toast the edit-lock conflict for components a library mutation would touch
+   * and return true when one blocks it. The replacer is a function so component
+   * names containing `$` patterns are inserted literally.
+   */
+  const toastEditorLockedConflict = useCallback(
+    (relatedComponentIds: readonly string[], message: string): boolean => {
+      const lockedComponentNames = findEditorLockedComponentNames(
+        assemblyState.components,
+        relatedComponentIds,
+      );
+      if (lockedComponentNames.length === 0) return false;
+      showToast(
+        message.replace('{names}', () => formatLockedComponentNames(lockedComponentNames)),
+        'info',
+      );
+      return true;
+    },
+    [assemblyState.components, showToast],
+  );
+
   const commitLibraryMutation = useCallback(
     (
       plan: LibraryMutationPlan,
@@ -99,11 +149,6 @@ export function useLibraryFileActions({
     [],
   );
 
-  const isPathInFolder = useCallback((path: string, folderPath: string) => {
-    const normalized = folderPath.replace(/\/+$/, '');
-    return path === normalized || path.startsWith(`${normalized}/`);
-  }, []);
-
   const handleDeleteLibraryFile = useCallback(
     (file: RobotFile) => {
       const plan = useAssetsStore.getState().createRemoveRobotFilePlan(file.name);
@@ -113,6 +158,9 @@ export function useLibraryFileActions({
       const relatedComponentIds = Object.values(assemblyState.components)
         .filter((component) => component.sourceFile === file.name)
         .map((component) => component.id);
+      if (toastEditorLockedConflict(relatedComponentIds, t.assetLibraryDeleteLockedConflict)) {
+        return;
+      }
 
       commitLibraryMutation(plan, {
         label: 'Remove library components',
@@ -138,27 +186,32 @@ export function useLibraryFileActions({
       removeComponentDrafts,
       removeWorkspaceComponents,
       selectedFile?.name,
+      t,
+      toastEditorLockedConflict,
     ],
   );
 
   const handleDeleteLibraryFolder = useCallback(
     (folderPath: string) => {
-      const normalizedFolder = folderPath.replace(/\/+$/, '');
+      const normalizedFolder = normalizeLiteralLibraryPath(folderPath);
       if (!normalizedFolder) return;
       const plan = useAssetsStore.getState().createRemoveRobotFolderPlan(normalizedFolder);
       if (!plan) return;
 
-      const isCurrentModel = selectedFile?.name
-        ? isPathInFolder(selectedFile.name, normalizedFolder)
-        : false;
+      const isCurrentModel =
+        plan.previousState.selectedFile !== null && plan.nextState.selectedFile === null;
       const relatedComponentIds = Object.values(assemblyState.components)
         .filter(
           (component) =>
-            component.sourceFile !== null && isPathInFolder(component.sourceFile, normalizedFolder),
+            component.sourceFile !== null &&
+            isSameOrNestedLibraryPath(component.sourceFile, normalizedFolder),
         )
         .map((component) => component.id);
-      const removedFiles = availableFiles.filter((file) =>
-        isPathInFolder(file.name, normalizedFolder),
+      if (toastEditorLockedConflict(relatedComponentIds, t.assetLibraryDeleteLockedConflict)) {
+        return;
+      }
+      const removedFiles = plan.previousState.availableFiles.filter((file) =>
+        isSameOrNestedLibraryPath(file.name, normalizedFolder),
       );
 
       commitLibraryMutation(plan, {
@@ -180,18 +233,17 @@ export function useLibraryFileActions({
     },
     [
       assemblyState,
-      availableFiles,
       clearLoadedModel,
       commitLibraryMutation,
-      isPathInFolder,
       removeComponentDrafts,
       removeWorkspaceComponents,
-      selectedFile?.name,
+      t,
+      toastEditorLockedConflict,
     ],
   );
 
   const handleRenameLibraryFolder = useCallback(
-    (folderPath: string, nextName: string) => {
+    (folderPath: string, nextName: string): RenameRobotFolderResult => {
       const {
         normalizedFolder,
         sanitizedName,
@@ -225,6 +277,19 @@ export function useLibraryFileActions({
         throw new Error(`Asset folder rename resolved to unexpected path "${result.nextPath}".`);
       }
 
+      if (normalizedFolder !== expectedNextPath) {
+        const relatedComponentIds = Object.values(assemblyState.components)
+          .filter(
+            (component) =>
+              component.sourceFile !== null &&
+              isSameOrNestedLibraryPath(component.sourceFile, normalizedFolder),
+          )
+          .map((component) => component.id);
+        if (toastEditorLockedConflict(relatedComponentIds, t.assetLibraryRenameLockedConflict)) {
+          return { ok: false, reason: 'locked' };
+        }
+      }
+
       commitLibraryMutation(plan, {
         label: 'Rename library folder',
         commitFailureMessage: 'Failed to commit library folder rename.',
@@ -235,11 +300,13 @@ export function useLibraryFileActions({
           const affectedComponents = Object.values(workspace.components).filter(
             (component) =>
               component.sourceFile !== null &&
-              isPathInFolder(component.sourceFile, normalizedFolder),
+              isSameOrNestedLibraryPath(component.sourceFile, normalizedFolder),
           );
           affectedComponents.forEach((component) => {
             const sourceFile = component.sourceFile!;
-            const nextSourceFile = `${expectedNextPath}${sourceFile.slice(normalizedFolder.length)}`;
+            const nextSourceFile = replaceLibraryPathPrefix(
+              sourceFile, normalizedFolder, expectedNextPath,
+            );
             const changed = useWorkspaceStore
               .getState()
               .updateComponentSourceFile(component.id, nextSourceFile, {
@@ -258,7 +325,7 @@ export function useLibraryFileActions({
 
       return result;
     },
-    [commitLibraryMutation, isPathInFolder, showToast, t],
+    [assemblyState, commitLibraryMutation, showToast, t, toastEditorLockedConflict],
   );
 
   const handleDeleteAllLibraryFiles = useCallback(() => {
@@ -275,6 +342,10 @@ export function useLibraryFileActions({
           component.sourceFile !== null && availableFileNames.has(component.sourceFile),
       )
       .map((component) => component.id);
+    if (toastEditorLockedConflict(relatedComponentIds, t.assetLibraryDeleteLockedConflict)) {
+      return;
+    }
+
 
     commitLibraryMutation(plan, {
       label: 'Remove library components',
@@ -302,6 +373,8 @@ export function useLibraryFileActions({
     removeComponentDrafts,
     removeWorkspaceComponents,
     selectedFile?.name,
+    t,
+    toastEditorLockedConflict,
   ]);
 
   const handleExportLibraryFile = useCallback(
