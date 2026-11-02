@@ -367,18 +367,16 @@ export function subtractLocalOffset(
   position: { x: number; y: number; z: number } | undefined,
   localOffset: { x: number; y: number; z: number } | null,
 ): { x: number; y: number; z: number } | undefined {
-  if (!position) {
-    return undefined;
-  }
-
   if (!localOffset) {
     return position;
   }
 
+  // An omitted MJCF position is the body origin, even when the link origin is elsewhere.
+  const { x, y, z } = position ?? { x: 0, y: 0, z: 0 };
   return {
-    x: position.x - localOffset.x,
-    y: position.y - localOffset.y,
-    z: position.z - localOffset.z,
+    x: x - localOffset.x,
+    y: y - localOffset.y,
+    z: z - localOffset.z,
   };
 }
 
