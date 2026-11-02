@@ -6,6 +6,7 @@ import { JSDOM } from 'jsdom';
 import React, { act, useRef } from 'react';
 import { createRoot } from 'react-dom/client';
 import * as THREE from 'three';
+import { OrbitControls } from 'three-stdlib';
 import { create } from 'zustand';
 
 import type { InteractionSelection } from '@/types/index';
@@ -163,7 +164,7 @@ type InteractionCallbacks = Pick<
 >;
 
 /** Real geometry hits exercise the native pointer lifecycle and its final commit. */
-async function mountDirectDragHarness() {
+async function mountDirectDragHarness(jointType = 'revolute') {
   const dom = installDom();
   const root = createRoot(dom.rootElement);
   const canvas = document.createElement('canvas');
@@ -171,6 +172,7 @@ async function mountDirectDragHarness() {
   Object.defineProperties(canvas, {
     clientWidth: { value: 200 },
     clientHeight: { value: 200 },
+    releasePointerCapture: { value: () => {} },
   });
   const scene = new THREE.Scene();
   const camera = new THREE.OrthographicCamera(-2, 2, 2, -2, 0.1, 100);
@@ -181,7 +183,7 @@ async function mountDirectDragHarness() {
   const joint = Object.assign(new THREE.Group(), {
     name: 'joint_a',
     isURDFJoint: true,
-    jointType: 'revolute',
+    jointType,
     angle: 0,
     axis: new THREE.Vector3(0, 0, 1),
     limit: { lower: -Math.PI, upper: Math.PI },
@@ -207,9 +209,10 @@ async function mountDirectDragHarness() {
   const commits: Array<[string, number]> = [];
   const onJointChange = (name: string, angle: number) => { previews.push([name, angle]); };
   const onJointChangeCommit = (name: string, angle: number) => { commits.push([name, angle]); };
+  const controls = new OrbitControls(camera, canvas);
   const r3fStore = create(() => ({
     camera,
-    controls: { enabled: true },
+    controls,
     gl: { domElement: canvas },
     invalidate: () => {},
     scene,
@@ -243,6 +246,7 @@ async function mountDirectDragHarness() {
   }
 
   return {
+    camera,
     joint,
     previews,
     commits,
@@ -283,12 +287,56 @@ async function mountDirectDragHarness() {
     },
     async dispose() {
       if (!unmounted) await act(async () => root.unmount());
+      controls.dispose();
       mesh.geometry.dispose();
       mesh.material.dispose();
       dom.restore();
     },
   };
 }
+
+test('clicking fixed geometry selects it while dragging across it orbits the camera', async () => {
+  const harness = await mountDirectDragHarness('fixed');
+  const selections: string[] = [];
+  try {
+    await harness.render({ onSelect: (_, id) => { selections.push(id); } });
+    await harness.dispatch('pointerdown');
+    await harness.dispatch('mousedown');
+    await harness.dispatch('pointerup');
+    await harness.dispatch('mouseup');
+    assert.deepEqual(selections, ['link_a']);
+
+    const initialPosition = harness.camera.position.clone();
+    await harness.dispatch('pointerdown');
+    await harness.dispatch('mousedown');
+    await harness.dispatch('pointermove', 150, 90);
+    await harness.dispatch('pointerup', 150, 90);
+    await harness.dispatch('mouseup', 150, 90);
+    assert.ok(initialPosition.distanceTo(harness.camera.position) > 0.1);
+    assert.deepEqual(selections, ['link_a'], 'an orbit must not select the surface again');
+    assert.equal(harness.commits.length, 0);
+  } finally {
+    await harness.dispose();
+  }
+});
+
+test('dragging movable geometry moves the joint without orbiting the camera', async () => {
+  const harness = await mountDirectDragHarness();
+  try {
+    await harness.render({});
+    const initialPosition = harness.camera.position.clone();
+    await harness.dispatch('pointerdown');
+    await harness.dispatch('mousedown');
+    await harness.dispatch('pointermove', 130, 90);
+    await harness.dispatch('pointerup', 130, 90);
+    await harness.dispatch('mouseup', 130, 90);
+    assert.ok(Math.abs(harness.joint.angle) > 0.01);
+    assert.equal(harness.commits.length, 1);
+    assert.equal(initialPosition.distanceTo(harness.camera.position), 0);
+  } finally {
+    await harness.dispose();
+  }
+});
 
 for (const callbackName of ['onSelect', 'onHover', 'onMeshSelect', 'onPaintFace'] as const) {
   test(`replacing ${callbackName} during a direct joint drag preserves its final commit`, async () => {

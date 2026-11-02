@@ -321,18 +321,8 @@ export function useMouseInteraction({
     const shouldBlockOrbitForPointer = (localX: number, localY: number) => {
       if (!robot) return false;
 
-      const isStandardSelectionMode = [
-        'select',
-        'translate',
-        'rotate',
-        'universal',
-        'measure',
-        'paint',
-      ].includes(toolMode || 'select');
-      if (!isStandardSelectionMode) return false;
-      if (!shouldBlockOrbitForGeometryHit(toolMode || 'select', measureMode)) {
-        return false;
-      }
+      const blockGeometry = shouldBlockOrbitForGeometryHit(toolMode || 'select', measureMode);
+      if (!blockGeometry && toolMode !== 'select') return false;
 
       if (!updatePointerFromLocalPoint(localX, localY)) {
         return false;
@@ -363,6 +353,10 @@ export function useMouseInteraction({
       ) {
         return true;
       }
+
+      // In select mode a static surface can be clicked or orbited across. The
+      // mouse-down handler suspends orbit when it actually starts a joint drag.
+      if (!blockGeometry) return false;
 
       const pickTargets = getPickTargets('all');
       if (pickTargets.length > 0 && !rayIntersectsBoundingBox(raycasterRef.current, true)) {
