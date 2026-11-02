@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 
 import { GeometryType, type RobotData } from '@/types';
+import { getCollisionGeometryEntries } from './collisionBodies';
 import { createOriginMatrix } from './kinematics';
 import { getVisualGeometryEntries } from './visualBodies';
 
@@ -15,7 +16,7 @@ export function resolveMjcfWorldGround(
 
   let ground: THREE.Box3 | null = null;
   let largestArea = 0;
-  for (const { geometry } of getVisualGeometryEntries(root)) {
+  for (const { geometry } of [...getCollisionGeometryEntries(root), ...getVisualGeometryEntries(root)]) {
     const { x, y, z } = geometry.dimensions;
     const plane = geometry.type === GeometryType.PLANE;
     if (!plane && (geometry.type !== GeometryType.BOX || Math.min(x, y) < z * 10)) continue;

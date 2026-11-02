@@ -158,5 +158,6 @@ export function syncRobotGeometryVisibility({
     walkNode(robot.children[index], null);
   }
 
-  return syncCoplanarGroundDepth(robot, sourceFormat === 'mjcf') || changed;
+  // The loader sets the depth policy from the projected model, including mixed assemblies.
+  return syncCoplanarGroundDepth(robot) || changed;
 }

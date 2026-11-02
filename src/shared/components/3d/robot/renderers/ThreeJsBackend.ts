@@ -332,6 +332,7 @@ export class ThreeJsBackend implements RobotRendererBackend {
       const { changed, linkMeshMap } = syncLoadedRobotScene({
         robot: loadedRobot,
         sourceFormat: resolvedSourceFormat,
+        containsMjcfGeometry: this.robotData?.inspectionContext?.sourceFormat === 'mjcf',
         showCollision,
         showVisual,
         showMjcfWorldLink: false,
