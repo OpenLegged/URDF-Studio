@@ -27,6 +27,7 @@ import { syncCoplanarGroundDepth } from '../utils/coplanarGroundDepth';
 export interface SyncLoadedRobotSceneOptions {
   robot: THREE.Object3D;
   sourceFormat: 'urdf' | 'mjcf' | 'usd';
+  containsMjcfGeometry?: boolean;
   showCollision: boolean;
   showVisual: boolean;
   showMjcfWorldLink?: boolean;
@@ -480,6 +481,7 @@ function buildMjcfRankedVisualRootCountByRuntimeLink(
 export function syncLoadedRobotScene({
   robot,
   sourceFormat,
+  containsMjcfGeometry = false,
   showCollision,
   showVisual,
   showMjcfWorldLink = false,
@@ -775,7 +777,7 @@ export function syncLoadedRobotScene({
   };
 
   walkNode(robot, null, false);
-  changed = syncCoplanarGroundDepth(robot, sourceFormat === 'mjcf') || changed;
+  changed = syncCoplanarGroundDepth(robot, sourceFormat === 'mjcf' || containsMjcfGeometry) || changed;
 
   return { changed, linkMeshMap };
 }

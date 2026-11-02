@@ -119,6 +119,12 @@ test('a horizontal MJCF world surface places a new model on its top near the roo
     }],
   };
   assert.deepEqual(buildDefaultAssemblyComponentPlacementTransform(inputs).position, { x: 3, y: -2, z: 1.7 });
+  const visual = world.visual;
+  world.collision = structuredClone(visual);
+  world.visual = {...visual, type: GeometryType.NONE};
+  assert.deepEqual(buildDefaultAssemblyComponentPlacementTransform(inputs).position, { x: 3, y: -2, z: 1.7 });
+  world.visual = visual;
+  world.collision.type = GeometryType.NONE;
   // A second environment must not be stacked on the existing floor.
   const secondScene = buildDefaultAssemblyComponentPlacementTransform({
     robot: scene, existingComponents: inputs.existingComponents,
