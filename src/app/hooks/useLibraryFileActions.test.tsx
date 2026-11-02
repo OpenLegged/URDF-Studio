@@ -462,3 +462,94 @@ test('the lock-conflict toast inserts component names containing dollar patterns
   assert.ok(!toastMessages[0].includes('{names}'));
   assert.deepEqual(useAssetsStore.getState().availableFiles, [target]);
 });
+
+function renderSiblingFolderActions(lockedId: 'plain' | 'query') {
+  const plain: RobotFile = {
+    name: 'set/a/locked.urdf',
+    format: 'urdf',
+    content: '<robot name="plain" />',
+  };
+  const query: RobotFile = {
+    name: 'set/a?view/free.urdf',
+    format: 'urdf',
+    content: '<robot name="query" />',
+  };
+  const workspace = createSingleComponentWorkspace(robot('plain'), {
+    componentId: 'plain',
+    sourceFile: plain.name,
+  });
+  workspace.components.query = createSingleComponentWorkspace(robot('query'), {
+    componentId: 'query',
+    sourceFile: query.name,
+  }).components.query;
+  workspace.components[lockedId].robot.links.base.editorLocked = true;
+  useWorkspaceStore.getState().replaceWorkspace(workspace, { resetHistory: true });
+  useAssetsStore.setState({
+    availableFiles: [plain, query],
+    selectedFile: query,
+    allFileContents: { [plain.name]: plain.content, [query.name]: query.content },
+  });
+
+  const messages: string[] = [];
+  const actions = renderLibraryActions({ showToast: (message) => messages.push(message) });
+  return { plain, query, actions, messages };
+}
+
+test('deleting a folder with a literal question mark preserves its locked sibling', () => {
+  const { plain, actions, messages } = renderSiblingFolderActions('plain');
+  actions.handleDeleteLibraryFolder('set/a?view');
+
+  const assets = useAssetsStore.getState();
+  assert.deepEqual(assets.availableFiles, [plain]);
+  assert.deepEqual(assets.allFileContents, { [plain.name]: plain.content });
+  assert.equal(assets.selectedFile, null);
+  const { components } = useWorkspaceStore.getState().workspace;
+  assert.deepEqual(Object.keys(components), ['plain']);
+  assert.equal(components.plain.sourceFile, plain.name);
+  assert.deepEqual(messages, []);
+});
+
+test('renaming a folder with a literal question mark updates only its own source paths', () => {
+  const { plain, query, actions, messages } = renderSiblingFolderActions('plain');
+  const result = actions.handleRenameLibraryFolder('set/a?view', 'new');
+
+  assert.deepEqual(result, { ok: true, nextPath: 'set/new' });
+  const nextQuery = { ...query, name: 'set/new/free.urdf' };
+  const assets = useAssetsStore.getState();
+  assert.deepEqual(assets.availableFiles, [plain, nextQuery]);
+  assert.deepEqual(assets.allFileContents, {
+    [plain.name]: plain.content,
+    [nextQuery.name]: query.content,
+  });
+  assert.deepEqual(assets.selectedFile, nextQuery);
+  const { components } = useWorkspaceStore.getState().workspace;
+  assert.equal(components.plain.sourceFile, plain.name);
+  assert.equal(components.query.sourceFile, nextQuery.name);
+  assert.deepEqual(messages, []);
+});
+
+test('a link lock in a folder with a literal question mark blocks deletion and renaming', () => {
+  const { plain, query, actions, messages } = renderSiblingFolderActions('query');
+  actions.handleDeleteLibraryFolder('set/a?view');
+  assert.deepEqual(messages, [
+    translations.en.assetLibraryDeleteLockedConflict.replace('{names}', 'query'),
+  ]);
+  const result = actions.handleRenameLibraryFolder('set/a?view', 'new');
+  assert.deepEqual(result, { ok: false, reason: 'locked' });
+  assert.deepEqual(messages, [
+    translations.en.assetLibraryDeleteLockedConflict.replace('{names}', 'query'),
+    translations.en.assetLibraryRenameLockedConflict.replace('{names}', 'query'),
+  ]);
+  const assets = useAssetsStore.getState();
+  assert.deepEqual(assets.availableFiles, [plain, query]);
+  assert.deepEqual(assets.allFileContents, {
+    [plain.name]: plain.content,
+    [query.name]: query.content,
+  });
+  assert.deepEqual(assets.selectedFile, query);
+  const workspace = useWorkspaceStore.getState();
+  assert.equal(workspace.workspace.components.plain.sourceFile, plain.name);
+  assert.equal(workspace.workspace.components.query.sourceFile, query.name);
+  assert.equal(workspace.transaction, null);
+  assert.equal(workspace.history.past.length, 0);
+});
