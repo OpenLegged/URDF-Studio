@@ -51,6 +51,7 @@ export function collectStandaloneImportSupportAssetPaths(
   ]);
 }
 
+const XML_COMMENT_PATTERN = /<!--[\s\S]*?-->/g;
 const PACKAGE_ASSET_URI_PATTERN = /\b(?:package|model):\/\/([^\s"'<>]+)/g;
 
 const PACKAGE_ROOT_BOUNDARY_SEGMENTS = new Set([
@@ -464,7 +465,8 @@ export function extractPackageAssetBundleRoots(content: string): string[] {
   const roots: string[] = [];
   let match: RegExpExecArray | null;
 
-  while ((match = PACKAGE_ASSET_URI_PATTERN.exec(content)) !== null) {
+  const xml = content.replace(XML_COMMENT_PATTERN, ' ');
+  while ((match = PACKAGE_ASSET_URI_PATTERN.exec(xml)) !== null) {
     const inferredRoot = inferBundleRootFromUriPath(match[1] ?? '');
     if (inferredRoot) {
       roots.push(inferredRoot);
@@ -650,21 +652,22 @@ export function extractStandaloneImportAssetReferences(
     return [];
   }
 
+  const xml = source.content.replace(XML_COMMENT_PATTERN, ' ');
   if (source.format === 'mjcf') {
-    return extractMeshReferencePathsFromMjcfContent(source.content);
+    return extractMeshReferencePathsFromMjcfContent(xml);
   }
 
   if (source.format === 'sdf') {
     return uniqueSorted([
-      ...extractAssetReferencePathsFromUrdfLikeContent(source.content),
-      ...extractSdfScriptTextureReferencePaths(source.content, {
+      ...extractAssetReferencePathsFromUrdfLikeContent(xml),
+      ...extractSdfScriptTextureReferencePaths(xml, {
         ...options,
         sourcePath: options.sourcePath ?? source.name,
       }),
     ]);
   }
 
-  return extractAssetReferencePathsFromUrdfLikeContent(source.content);
+  return extractAssetReferencePathsFromUrdfLikeContent(xml);
 }
 
 export function buildStandaloneImportAssetWarning(

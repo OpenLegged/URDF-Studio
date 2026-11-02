@@ -12,7 +12,7 @@ import {
 } from './projectArchive';
 import type { ProjectArchiveEntryData } from './projectArchiveWorkerTransfer';
 import { appendProjectArchiveEntriesToZip } from './projectArchiveZip';
-import { normalizeLibraryPathKey } from '@/core/utils/pathKeys';
+import { normalizeLibraryFileKey } from '@/core/utils/pathKeys';
 
 const PROJECT_USD_PREPARED_EXPORT_CACHE_PREFIX = 'workspace/usd-prepared-export-caches';
 
@@ -131,7 +131,7 @@ function assertCachePayload(
 }
 
 function normalizeUsdCacheKey(path: string | null | undefined): string {
-  return normalizeLibraryPathKey(path);
+  return normalizeLibraryFileKey(path);
 }
 
 export async function buildUsdPreparedExportCacheEntries(

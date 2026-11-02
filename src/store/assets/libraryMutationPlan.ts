@@ -1,4 +1,4 @@
-import { normalizeLibraryPathKey } from '@/core/utils/pathKeys';
+import { normalizeLibraryFileKey, normalizePathKey } from '@/core/utils/pathKeys';
 import type {
   LoadingProgressMode,
   RobotFile,
@@ -59,7 +59,7 @@ export interface LibraryMutationPlan {
 
 export type RenameRobotFolderResult =
   | { ok: true; nextPath: string }
-  | { ok: false; reason: 'missing' | 'invalid' | 'conflict' };
+  | { ok: false; reason: 'missing' | 'invalid' | 'conflict' | 'locked' };
 
 export interface RenameRobotFolderPlanResult {
   result: RenameRobotFolderResult;
@@ -82,20 +82,20 @@ export function toDocumentLoadLifecycleState(state: DocumentLoadState): Document
 }
 
 function normalizeUsdSceneSnapshotKey(path: string | null | undefined): string {
-  return normalizeLibraryPathKey(path);
+  return normalizeLibraryFileKey(path);
 }
 
-function normalizeLibraryPath(path: string | null | undefined): string {
-  return normalizeLibraryPathKey(path);
+export function normalizeLiteralLibraryPath(path: string): string {
+  return normalizePathKey(path, { stripQuery: false });
 }
 
-function isSameOrNestedLibraryPath(path: string, basePath: string): boolean {
-  const normalizedPath = normalizeLibraryPath(path);
+export function isSameOrNestedLibraryPath(path: string, basePath: string): boolean {
+  const normalizedPath = normalizeLiteralLibraryPath(path);
   return normalizedPath === basePath || normalizedPath.startsWith(`${basePath}/`);
 }
 
-function replaceLibraryPathPrefix(path: string, fromPath: string, toPath: string): string {
-  const normalizedPath = normalizeLibraryPath(path);
+export function replaceLibraryPathPrefix(path: string, fromPath: string, toPath: string): string {
+  const normalizedPath = normalizeLiteralLibraryPath(path);
   if (normalizedPath === fromPath) {
     return toPath;
   }
@@ -111,7 +111,7 @@ export function resolveRobotFolderRenameTarget(
   folderPath: string,
   nextName: string,
 ): RobotFolderRenameTarget {
-  const normalizedFolder = normalizeLibraryPath(folderPath);
+  const normalizedFolder = normalizeLiteralLibraryPath(folderPath);
   const sanitizedName = nextName.trim().replace(/[\\/]+/g, '');
   const parentPath = normalizedFolder.includes('/')
     ? normalizedFolder.split('/').slice(0, -1).join('/')
@@ -284,12 +284,10 @@ export function createRemoveRobotFolderPlan(
   state: LibraryMutationState,
   folderPath: string,
 ): LibraryMutationPlan | null {
-  const normalizedFolder = normalizeUsdSceneSnapshotKey(folderPath).replace(/\/+$/, '');
+  const normalizedFolder = normalizeLiteralLibraryPath(folderPath);
   if (!normalizedFolder) return null;
 
-  const shouldRemove = (path: string) =>
-    normalizeUsdSceneSnapshotKey(path) === normalizedFolder ||
-    normalizeUsdSceneSnapshotKey(path).startsWith(`${normalizedFolder}/`);
+  const shouldRemove = (path: string) => isSameOrNestedLibraryPath(path, normalizedFolder);
 
   const removedFiles = state.availableFiles.filter((file) => shouldRemove(file.name));
   if (removedFiles.length === 0) return null;
@@ -345,6 +343,21 @@ export function createRemoveRobotFolderPlan(
   });
 }
 
+function renameUsdCacheFolder<T extends Pick<UsdSceneSnapshot, 'stageSourcePath'>>(
+  entries: Record<string, T>,
+  fromFolder: string,
+  toFolder: string,
+): Record<string, T> {
+  return Object.fromEntries(
+    Object.entries(entries).map(([key, entry]) => {
+      const sourceKey = normalizeUsdSceneSnapshotKey(entry.stageSourcePath || key);
+      if (!isSameOrNestedLibraryPath(sourceKey, fromFolder)) return [sourceKey, entry];
+      const nextKey = replaceLibraryPathPrefix(sourceKey, fromFolder, toFolder);
+      return [nextKey, { ...entry, stageSourcePath: nextKey }];
+    }),
+  );
+}
+
 export function createRenameRobotFolderPlan(
   state: LibraryMutationState,
   folderPath: string,
@@ -359,10 +372,6 @@ export function createRenameRobotFolderPlan(
     return { result: { ok: false, reason: 'missing' }, plan: null };
   }
 
-  if (!sanitizedName || sanitizedName === '.' || sanitizedName === '..') {
-    return { result: { ok: false, reason: 'invalid' }, plan: null };
-  }
-
   if (nextFolderPath === normalizedFolder) {
     return {
       result: { ok: true, nextPath: nextFolderPath },
@@ -370,33 +379,28 @@ export function createRenameRobotFolderPlan(
     };
   }
 
+  if (['', '.', '..'].includes(sanitizedName) || sanitizedName.includes('?')) {
+    return { result: { ok: false, reason: 'invalid' }, plan: null };
+  }
+
   const shouldRename = (path: string) => isSameOrNestedLibraryPath(path, normalizedFolder);
   const renamePath = (path: string) =>
     replaceLibraryPathPrefix(path, normalizedFolder, nextFolderPath);
 
-  const hasExistingFolder =
-    state.availableFiles.some((file) => shouldRename(file.name)) ||
-    Object.keys(state.assets).some(shouldRename) ||
-    Object.keys(state.allFileContents).some(shouldRename) ||
-    Object.keys(state.usdSceneSnapshots).some(shouldRename) ||
-    Object.keys(state.usdPreparedExportCaches).some(shouldRename);
-
-  if (!hasExistingFolder) {
+  const paths = [
+    ...state.availableFiles.map((file) => file.name),
+    ...Object.keys(state.assets),
+    ...Object.keys(state.allFileContents),
+    ...Object.entries(state.usdSceneSnapshots).map(([key, snapshot]) => snapshot.stageSourcePath || key),
+    ...Object.entries(state.usdPreparedExportCaches).map(([key, cache]) => cache.stageSourcePath || key),
+  ];
+  if (!paths.some(shouldRename)) {
     return { result: { ok: false, reason: 'missing' }, plan: null };
   }
 
-  const collidesWithExistingPath = (path: string) => {
-    const normalizedPath = normalizeLibraryPath(path);
-    if (!normalizedPath || shouldRename(normalizedPath)) return false;
-    return normalizedPath === nextFolderPath || normalizedPath.startsWith(`${nextFolderPath}/`);
-  };
-
-  const hasConflict =
-    state.availableFiles.some((file) => collidesWithExistingPath(file.name)) ||
-    Object.keys(state.assets).some(collidesWithExistingPath) ||
-    Object.keys(state.allFileContents).some(collidesWithExistingPath) ||
-    Object.keys(state.usdSceneSnapshots).some(collidesWithExistingPath) ||
-    Object.keys(state.usdPreparedExportCaches).some(collidesWithExistingPath);
+  const hasConflict = paths.some((path) =>
+    !shouldRename(path) && isSameOrNestedLibraryPath(path, nextFolderPath),
+  );
 
   if (hasConflict) {
     return { result: { ok: false, reason: 'conflict' }, plan: null };
@@ -426,34 +430,6 @@ export function createRenameRobotFolderPlan(
     ]),
   );
 
-  const nextUsdSceneSnapshots = Object.fromEntries(
-    Object.entries(state.usdSceneSnapshots).map(([path, snapshot]) => {
-      const sourcePath = snapshot.stageSourcePath || path;
-      const nextPath = shouldRename(sourcePath)
-        ? renamePath(sourcePath)
-        : normalizeLibraryPath(path);
-      return [
-        nextPath,
-        shouldRename(sourcePath)
-          ? { ...snapshot, stageSourcePath: renamePath(sourcePath) }
-          : snapshot,
-      ];
-    }),
-  );
-
-  const nextUsdPreparedExportCaches = Object.fromEntries(
-    Object.entries(state.usdPreparedExportCaches).map(([path, cache]) => {
-      const sourcePath = cache.stageSourcePath || path;
-      const nextPath = shouldRename(sourcePath)
-        ? renamePath(sourcePath)
-        : normalizeLibraryPath(path);
-      return [
-        nextPath,
-        shouldRename(sourcePath) ? { ...cache, stageSourcePath: renamePath(sourcePath) } : cache,
-      ];
-    }),
-  );
-
   const nextDocumentLoadState =
     state.documentLoadState.fileName && shouldRename(state.documentLoadState.fileName)
       ? {
@@ -470,8 +446,10 @@ export function createRenameRobotFolderPlan(
       selectedFile: nextSelectedFile,
       allFileContents: nextAllFileContents,
       assets: nextAssets,
-      usdSceneSnapshots: nextUsdSceneSnapshots,
-      usdPreparedExportCaches: nextUsdPreparedExportCaches,
+      usdSceneSnapshots: renameUsdCacheFolder(state.usdSceneSnapshots, normalizedFolder, nextFolderPath),
+      usdPreparedExportCaches: renameUsdCacheFolder(
+        state.usdPreparedExportCaches, normalizedFolder, nextFolderPath,
+      ),
       documentLoadState: nextDocumentLoadState,
     }),
   };

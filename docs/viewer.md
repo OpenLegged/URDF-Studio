@@ -44,7 +44,7 @@ features/urdf-viewer/
 ## 3. 核心 hooks / 能力
 
 - `useViewerController`：viewer 控制器
-- `useMouseInteraction`：鼠标交互处理。选择、悬停、网格选择和涂色回调通过 ref 读取最新值，回调引用更新不重建原生事件监听或取消正在进行的关节拖动；松手提交角度，卸载只清理会话。
+- `useMouseInteraction`：鼠标交互处理。选择、悬停、网格选择和涂色回调通过 ref 读取最新值，回调引用更新不重建原生事件监听或取消正在进行的关节拖动；松手提交角度，卸载只清理会话。选择模式下，单击固定几何体可选中它，从同一位置拖动可旋转视角；拖动可操作的关节时由关节独占手势。
 - `useHoverDetection`：悬停检测
 - `useVisualizationEffects`：惯性、质心、原点等辅助可视化
 - `useRendererBackend`：统一模型加载与格式后端生命周期，backend 实现在 `features/urdf-viewer/renderers/`
@@ -168,6 +168,8 @@ MJCF 2D 材质的 `texuniform` 与 `texrepeat` 保留在 canonical authored mate
 box / plane 的运行时 UV 按 MuJoCo 原生渲染器的 geom 半尺寸规则生成；调整几何尺寸时从
 原始 UV 重新计算，不能把缩放后的重复次数写回模型，也不能在连续编辑时累乘 UV。
 程序化棋盘、平色和渐变纹理通过 MJCF 导出保留其定义及重复参数。
+
+工作区混合 URDF 和 MJCF 时，查看器从装配模型识别 MJCF 几何，旋转视角及切换可见性时继续使用相同的地面深度补偿。放置机器人时也识别 MJCF world 上仅用于碰撞的支撑面。
 
 MJCF 中水平 box / plane 的较大顶面完全包含较小共面顶面时，viewer 为较大面的显示材质
 施加深度偏移，让房间地板稳定显示。对数深度缓冲在 shader 写入深度后施加微小偏移，

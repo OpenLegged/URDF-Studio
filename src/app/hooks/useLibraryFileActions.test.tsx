@@ -312,3 +312,244 @@ test('library file deletion rolls assets back and does not revoke blobs when wor
   assert.deepEqual(useAssetsStore.getState().assets, { [target.name]: 'blob:owned-urdf' });
   assert.deepEqual(revokedUrls, []);
 });
+
+test('delete-all with an edit-locked component toasts the conflict and deletes nothing', () => {
+  const target: RobotFile = {
+    name: 'library/locked.urdf',
+    format: 'urdf',
+    content: '<robot name="locked" />',
+  };
+  const survivorFile: RobotFile = {
+    name: 'library/free.urdf',
+    format: 'urdf',
+    content: '<robot name="free" />',
+  };
+  const workspace = createSingleComponentWorkspace(robot('locked'), {
+    componentId: 'locked',
+    sourceFile: target.name,
+  });
+  workspace.components.free = createSingleComponentWorkspace(robot('free'), {
+    componentId: 'free',
+    sourceFile: survivorFile.name,
+  }).components.free;
+  workspace.components.locked.editorLocked = true;
+  useWorkspaceStore.getState().replaceWorkspace(workspace, { resetHistory: true });
+  useWorkspaceStore.setState({ history: { past: [], future: [], activity: [] } });
+  useAssetsStore.setState({ availableFiles: [target, survivorFile], selectedFile: null });
+
+  const toastMessages: string[] = [];
+  const renderedActions = renderLibraryActions({
+    showToast: (message) => toastMessages.push(message),
+  });
+  renderedActions.handleDeleteAllLibraryFiles();
+
+  assert.equal(toastMessages.length, 1);
+  assert.match(toastMessages[0], /unlock them before deleting/);
+  assert.match(toastMessages[0], /locked/);
+  assert.deepEqual(
+    useAssetsStore.getState().availableFiles.map((file) => file.name),
+    [target.name, survivorFile.name],
+  );
+  assert.deepEqual(Object.keys(useWorkspaceStore.getState().workspace.components).sort(), [
+    'free',
+    'locked',
+  ]);
+  assert.equal(useWorkspaceStore.getState().history.past.length, 0);
+  assert.equal(useWorkspaceStore.getState().transaction, null);
+
+  // The guard is scoped to related components: deleting the unlocked file
+  // still works while the locked component stays.
+  renderedActions.handleDeleteLibraryFile(survivorFile);
+  assert.equal(toastMessages.length, 1);
+  assert.deepEqual(
+    useAssetsStore.getState().availableFiles.map((file) => file.name),
+    [target.name],
+  );
+  assert.deepEqual(Object.keys(useWorkspaceStore.getState().workspace.components), ['locked']);
+});
+
+test('deleting a library file blocked by a link-locked component toasts instead of throwing', () => {
+  const target: RobotFile = {
+    name: 'library/link-locked.urdf',
+    format: 'urdf',
+    content: '<robot name="link-locked" />',
+  };
+  const workspace = createSingleComponentWorkspace(robot('link-locked'), {
+    componentId: 'link-locked',
+    sourceFile: target.name,
+  });
+  workspace.components['link-locked'].robot.links.base.editorLocked = true;
+  useWorkspaceStore.getState().replaceWorkspace(workspace, { resetHistory: true });
+  useWorkspaceStore.setState({ history: { past: [], future: [], activity: [] } });
+  useAssetsStore.setState({ availableFiles: [target], selectedFile: null });
+
+  const toastMessages: string[] = [];
+  renderLibraryActions({
+    showToast: (message) => toastMessages.push(message),
+  }).handleDeleteLibraryFile(target);
+
+  assert.equal(toastMessages.length, 1);
+  assert.match(toastMessages[0], /unlock them before deleting/);
+  assert.deepEqual(useAssetsStore.getState().availableFiles, [target]);
+  assert.ok(useWorkspaceStore.getState().workspace.components['link-locked']);
+  assert.equal(useWorkspaceStore.getState().transaction, null);
+  assert.equal(useWorkspaceStore.getState().history.past.length, 0);
+});
+
+test('folder rename blocked by an edit-locked component toasts the conflict and renames nothing', () => {
+  const target: RobotFile = {
+    name: 'library/old/robot.urdf',
+    format: 'urdf',
+    content: '<robot name="robot" />',
+  };
+  const workspace = createSingleComponentWorkspace(robot('robot'), {
+    componentId: 'robot',
+    sourceFile: target.name,
+  });
+  workspace.components.robot.editorLocked = true;
+  useWorkspaceStore.getState().replaceWorkspace(workspace, { resetHistory: true });
+  useWorkspaceStore.setState({ history: { past: [], future: [], activity: [] } });
+  useAssetsStore.setState({
+    availableFiles: [target],
+    selectedFile: target,
+    allFileContents: { [target.name]: target.content },
+  });
+
+  const toastMessages: string[] = [];
+  const result = renderLibraryActions({
+    showToast: (message) => toastMessages.push(message),
+  }).handleRenameLibraryFolder('library/old', 'new');
+
+  assert.deepEqual(result, { ok: false, reason: 'locked' });
+  assert.equal(toastMessages.length, 1);
+  assert.match(toastMessages[0], /unlock them before renaming/);
+  assert.equal(
+    useWorkspaceStore.getState().workspace.components.robot?.sourceFile,
+    target.name,
+  );
+  assert.deepEqual(
+    useAssetsStore.getState().availableFiles.map((file) => file.name),
+    [target.name],
+  );
+  assert.deepEqual(Object.keys(useAssetsStore.getState().allFileContents), [target.name]);
+  assert.equal(useWorkspaceStore.getState().transaction, null);
+  assert.equal(useWorkspaceStore.getState().history.past.length, 0);
+});
+
+test('the lock-conflict toast inserts component names containing dollar patterns literally', () => {
+  const target: RobotFile = {
+    name: 'library/dollar.urdf',
+    format: 'urdf',
+    content: '<robot name="dollar" />',
+  };
+  const workspace = createSingleComponentWorkspace(robot('dollar'), {
+    componentId: 'dollar',
+    sourceFile: target.name,
+  });
+  workspace.components.dollar.editorLocked = true;
+  workspace.components.dollar.name = 'Arm$&Joint';
+  useWorkspaceStore.getState().replaceWorkspace(workspace, { resetHistory: true });
+  useWorkspaceStore.setState({ history: { past: [], future: [], activity: [] } });
+  useAssetsStore.setState({ availableFiles: [target], selectedFile: null });
+
+  const toastMessages: string[] = [];
+  renderLibraryActions({
+    showToast: (message) => toastMessages.push(message),
+  }).handleDeleteAllLibraryFiles();
+
+  assert.equal(toastMessages.length, 1);
+  assert.ok(toastMessages[0].includes('Arm$&Joint'));
+  assert.ok(!toastMessages[0].includes('{names}'));
+  assert.deepEqual(useAssetsStore.getState().availableFiles, [target]);
+});
+
+function renderSiblingFolderActions(lockedId: 'plain' | 'query') {
+  const plain: RobotFile = {
+    name: 'set/a/locked.urdf',
+    format: 'urdf',
+    content: '<robot name="plain" />',
+  };
+  const query: RobotFile = {
+    name: 'set/a?view/free.urdf',
+    format: 'urdf',
+    content: '<robot name="query" />',
+  };
+  const workspace = createSingleComponentWorkspace(robot('plain'), {
+    componentId: 'plain',
+    sourceFile: plain.name,
+  });
+  workspace.components.query = createSingleComponentWorkspace(robot('query'), {
+    componentId: 'query',
+    sourceFile: query.name,
+  }).components.query;
+  workspace.components[lockedId].robot.links.base.editorLocked = true;
+  useWorkspaceStore.getState().replaceWorkspace(workspace, { resetHistory: true });
+  useAssetsStore.setState({
+    availableFiles: [plain, query],
+    selectedFile: query,
+    allFileContents: { [plain.name]: plain.content, [query.name]: query.content },
+  });
+
+  const messages: string[] = [];
+  const actions = renderLibraryActions({ showToast: (message) => messages.push(message) });
+  return { plain, query, actions, messages };
+}
+
+test('deleting a folder with a literal question mark preserves its locked sibling', () => {
+  const { plain, actions, messages } = renderSiblingFolderActions('plain');
+  actions.handleDeleteLibraryFolder('set/a?view');
+
+  const assets = useAssetsStore.getState();
+  assert.deepEqual(assets.availableFiles, [plain]);
+  assert.deepEqual(assets.allFileContents, { [plain.name]: plain.content });
+  assert.equal(assets.selectedFile, null);
+  const { components } = useWorkspaceStore.getState().workspace;
+  assert.deepEqual(Object.keys(components), ['plain']);
+  assert.equal(components.plain.sourceFile, plain.name);
+  assert.deepEqual(messages, []);
+});
+
+test('renaming a folder with a literal question mark updates only its own source paths', () => {
+  const { plain, query, actions, messages } = renderSiblingFolderActions('plain');
+  const result = actions.handleRenameLibraryFolder('set/a?view', 'new');
+
+  assert.deepEqual(result, { ok: true, nextPath: 'set/new' });
+  const nextQuery = { ...query, name: 'set/new/free.urdf' };
+  const assets = useAssetsStore.getState();
+  assert.deepEqual(assets.availableFiles, [plain, nextQuery]);
+  assert.deepEqual(assets.allFileContents, {
+    [plain.name]: plain.content,
+    [nextQuery.name]: query.content,
+  });
+  assert.deepEqual(assets.selectedFile, nextQuery);
+  const { components } = useWorkspaceStore.getState().workspace;
+  assert.equal(components.plain.sourceFile, plain.name);
+  assert.equal(components.query.sourceFile, nextQuery.name);
+  assert.deepEqual(messages, []);
+});
+
+test('a link lock in a folder with a literal question mark blocks deletion and renaming', () => {
+  const { plain, query, actions, messages } = renderSiblingFolderActions('query');
+  actions.handleDeleteLibraryFolder('set/a?view');
+  assert.deepEqual(messages, [
+    translations.en.assetLibraryDeleteLockedConflict.replace('{names}', 'query'),
+  ]);
+  const result = actions.handleRenameLibraryFolder('set/a?view', 'new');
+  assert.deepEqual(result, { ok: false, reason: 'locked' });
+  assert.deepEqual(messages, [
+    translations.en.assetLibraryDeleteLockedConflict.replace('{names}', 'query'),
+    translations.en.assetLibraryRenameLockedConflict.replace('{names}', 'query'),
+  ]);
+  const assets = useAssetsStore.getState();
+  assert.deepEqual(assets.availableFiles, [plain, query]);
+  assert.deepEqual(assets.allFileContents, {
+    [plain.name]: plain.content,
+    [query.name]: query.content,
+  });
+  assert.deepEqual(assets.selectedFile, query);
+  const workspace = useWorkspaceStore.getState();
+  assert.equal(workspace.workspace.components.plain.sourceFile, plain.name);
+  assert.equal(workspace.workspace.components.query.sourceFile, query.name);
+  assert.equal(workspace.transaction, null);
+  assert.equal(workspace.history.past.length, 0);
+});

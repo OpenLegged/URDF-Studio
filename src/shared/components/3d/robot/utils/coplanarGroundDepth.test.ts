@@ -6,6 +6,7 @@ import { parseMJCF } from '@/core/parsers/mjcf/mjcfParser';
 import { buildRuntimeRobotFromState } from '@/core/parsers/urdf/loader/buildRuntimeRobotFromState';
 
 import { syncCoplanarGroundDepth } from './coplanarGroundDepth';
+import { syncRobotGeometryVisibility } from './robotGeometryVisibilitySync';
 import { syncLoadedRobotScene } from '../renderers/loadedRobotSceneSync';
 
 function createFloor(width: number, height: number): THREE.Mesh {
@@ -295,5 +296,12 @@ test('actual MJCF runtime keeps authored ground, room floor, and colliders intac
   });
   assert.equal(offsetMeshes.length, 1);
   assert.equal(offsetMeshes[0]!.parent?.userData.geometryName, 'background');
+  // Mixed assemblies use the URDF renderer for the merged model.
+  const mixed = {robot, robotLinks: data.links, sourceFormat: 'urdf' as const, showVisual: true, showCollision: false};
+  syncLoadedRobotScene(mixed);
+  assert.equal(offsetMeshes[0]!.userData.coplanarGroundDepthOffset, undefined);
+  syncLoadedRobotScene({...mixed, containsMjcfGeometry: true});
+  syncRobotGeometryVisibility(mixed);
+  assert.equal(offsetMeshes[0]!.userData.coplanarGroundDepthOffset, true);
   assert.equal(JSON.stringify(data), original, 'display policy cannot rewrite source data');
 });

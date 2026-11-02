@@ -28,7 +28,6 @@ export function shouldBlockOrbitForGeometryHit(
   }
 
   return (
-    toolMode === 'select' ||
     toolMode === 'translate' ||
     toolMode === 'rotate' ||
     toolMode === 'universal' ||

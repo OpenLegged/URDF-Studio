@@ -86,6 +86,20 @@ test('write/read USD prepared export caches roundtrip through project zip', asyn
   );
 });
 
+test('project zip keeps two USD prepared caches in a folder with a literal question mark', async () => {
+  const paths = ['robots/demo?view/left.usda', 'robots/demo?view/right.usdc'];
+  const caches = Object.fromEntries(paths.map((path) => [path, createPreparedCache(`/${path}`)]));
+  const zip = new JSZip();
+  await writeUsdPreparedExportCaches(zip, caches);
+
+  const reopened = await JSZip.loadAsync(await zip.generateAsync({ type: 'uint8array' }));
+  const restored = await readUsdPreparedExportCaches(reopened);
+  assert.deepEqual(Object.keys(restored).sort(), paths);
+  for (const path of paths) {
+    assert.equal(restored[path].stageSourcePath, `/${path}`);
+  }
+});
+
 test('USD prepared cache JSON normalizes typed material arrays for roundtrip', async () => {
   const zip = new JSZip();
   const cache = createPreparedCache('/robots/demo/demo.usd');

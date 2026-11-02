@@ -3,6 +3,7 @@ import test from 'node:test';
 import { JSDOM } from 'jsdom';
 import * as THREE from 'three';
 
+import { computeLinkWorldMatrices } from '@/core/robot/kinematics';
 import { createGeometryMesh } from './mjcfGeometry';
 import { buildMJCFHierarchy, type MJCFHierarchyGeom } from './mjcfHierarchyBuilder';
 import { disposeTransientObject3D } from './mjcfLoadLifecycle';
@@ -31,6 +32,55 @@ test('MJCF import keeps tiny joint anchors and rebases geometry and inertia arou
   assert.equal(robot.joints.pivot.origin.xyz.x, 1e-12);
   assert.equal(robot.links.base.visual.origin.xyz.x, 0);
   assert.equal(robot.links.base.inertial?.origin?.xyz.x, 0);
+});
+
+test('omitted and explicit zero positions put geoms and sites at the same body origin', () => {
+  for (const position of ['', 'pos="0 0 0"']) {
+    const robot = parseRobot(`<body name="follower">
+      <joint name="pivot" pos="0 -0.018 0.0065"/>
+      <geom type="box" size="0.01 0.01 0.01" ${position}/>
+      <site name="mount" ${position}/>
+    </body>`);
+    const link = robot.links.follower;
+    const expected = { x: 0, y: 0.018, z: -0.0065 };
+    assert.deepEqual(link.visual.origin.xyz, expected);
+    assert.deepEqual(link.collision.origin.xyz, expected);
+    assert.deepEqual(link.mjcfSites?.[0].pos, [0, 0.018, -0.0065]);
+  }
+});
+
+test('Robotiq pad and silicone pad follow the follower pivot at rest and in motion', () => {
+  const robot = parseRobot(`<body name="base" pos="0 0 0.0108" quat="1 0 0 -1">
+    <body name="follower" pos="0 0.0682 0.0984">
+      <joint name="pivot" axis="1 0 0" pos="0 -0.018 0.0065"/>
+      <geom type="sphere" size="0.01"/>
+      <body name="pad" pos="0 -0.0189 0.01352"><body name="silicone_pad"/></body>
+    </body>
+  </body>`);
+  for (const [angle, x, z] of [[0, 0.0493, 0.12272], [Math.PI / 2, 0.04318, 0.1148]]) {
+    const matrices = computeLinkWorldMatrices(robot, { angles: { pivot: angle } });
+    const expected = new THREE.Vector3(x, 0, z);
+    for (const name of ['pad', 'silicone_pad']) {
+      const position = new THREE.Vector3().setFromMatrixPosition(matrices[name]);
+      assert.ok(position.distanceTo(expected) < 1e-12, `${name} at ${angle}: ${position.toArray()}`);
+    }
+  }
+});
+
+test('multi-joint body stages and a rotated child keep their authored pivot locations', () => {
+  const robot = parseRobot(`<body name="wrist" pos="1 2 3" quat="1 0 0 1">
+    <joint name="pitch" axis="1 0 0" pos="1 0 0"/>
+    <joint name="yaw" axis="0 1 0" pos="0 2 0"/>
+    <geom type="sphere" size="0.1"/>
+    <body name="tool" pos="1 1 1" quat="1 0 0 1">
+      <joint name="twist" pos="1 0 0"/><geom type="sphere" size="0.1"/>
+    </body>
+  </body>`);
+  const matrices = computeLinkWorldMatrices(robot);
+  const wrist = new THREE.Vector3().setFromMatrixPosition(matrices.wrist);
+  const tool = new THREE.Vector3().setFromMatrixPosition(matrices.tool);
+  assert.ok(wrist.distanceTo(new THREE.Vector3(-1, 2, 3)) < 1e-12, `wrist: ${wrist.toArray()}`);
+  assert.ok(tool.distanceTo(new THREE.Vector3(-1, 3, 4)) < 1e-12, `tool: ${tool.toArray()}`);
 });
 
 for (const transform of ['pos="1e-12 0 0"', 'euler="1e-12 0 0"']) {

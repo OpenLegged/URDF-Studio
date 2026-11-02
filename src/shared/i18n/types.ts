@@ -830,6 +830,8 @@ export interface TranslationKeys extends TranslationWorkflowKeys {
   renamedFolder: string;
   assetLibraryRenameInvalid: string;
   assetLibraryRenameConflict: string;
+  assetLibraryDeleteLockedConflict: string;
+  assetLibraryRenameLockedConflict: string;
   removedFromAssetLibrary: string;
   removedFolder: string;
   deletedAllLibraryFiles: string;

@@ -480,6 +480,7 @@ export function useRobotLoader({
           const { changed, linkMeshMap } = syncLoadedRobotScene({
             robot: loadedRobot,
             sourceFormat: resolvedSourceFormat,
+            containsMjcfGeometry: robotInspectionContext?.sourceFormat === 'mjcf',
             showCollision: showCollisionRef.current,
             showVisual: showVisualRef.current,
             showMjcfWorldLink: showMjcfWorldLinkRef.current,

@@ -13,6 +13,7 @@ import {
   JointType,
   UrdfMjcfSite,
   UrdfVisual,
+  type Vector3,
 } from '@/types';
 import {
   looksLikeMJCFDocument,
@@ -359,17 +360,17 @@ function mjcfToRobotState(
     return result;
   }
 
-  function processBody(body: MJCFBody, parentLinkId: string | null): string {
+  function processBody(
+    body: MJCFBody,
+    parentLinkId: string | null,
+    parentPivot: Vector3 | null = null,
+  ): string {
     const mainLinkId = body.name || `link_${linkCounter++}`;
     const bodyRotation = toRPYObjectFromQuat(body.quat) || body.euler || { r: 0, p: 0, y: 0 };
     const mjcfJoint = body.joints[0];
-    const linkFrameOffsetLocal = isNonZeroPosition(mjcfJoint?.pos)
-      ? {
-          x: mjcfJoint!.pos!.x,
-          y: mjcfJoint!.pos!.y,
-          z: mjcfJoint!.pos!.z,
-        }
-      : null;
+    const jointPosition = mjcfJoint?.pos;
+    const linkFrameOffsetLocal =
+      jointPosition && isNonZeroPosition(jointPosition) ? jointPosition : null;
     const jointFrameOffsetInParent = rotateLocalOffsetToParentFrame(
       linkFrameOffsetLocal,
       bodyRotation,
@@ -590,11 +591,12 @@ function mjcfToRobotState(
       const jointEffort = resolveJointEffortLimit(mjcfJoint, actuatorMap.get(jointId));
       const jointLimit = buildImportedJointLimit(jointType, jointMechanicalRange, jointEffort);
       const jointInitialAngle = resolveJointInitialAngle(mjcfJoint, jointType);
+      // body.pos and parentPivot are both expressed in the original parent body frame.
       const jointOrigin = {
         xyz: {
-          x: body.pos.x + (jointFrameOffsetInParent?.x ?? 0),
-          y: body.pos.y + (jointFrameOffsetInParent?.y ?? 0),
-          z: body.pos.z + (jointFrameOffsetInParent?.z ?? 0),
+          x: body.pos.x - (parentPivot?.x ?? 0) + (jointFrameOffsetInParent?.x ?? 0),
+          y: body.pos.y - (parentPivot?.y ?? 0) + (jointFrameOffsetInParent?.y ?? 0),
+          z: body.pos.z - (parentPivot?.z ?? 0) + (jointFrameOffsetInParent?.z ?? 0),
         },
         rpy: bodyRotation,
       };
@@ -681,7 +683,7 @@ function mjcfToRobotState(
       }
     }
 
-    body.children.forEach((child) => processBody(child, mainLinkId));
+    body.children.forEach((child) => processBody(child, mainLinkId, linkFrameOffsetLocal));
     return mainLinkId;
   }
 
