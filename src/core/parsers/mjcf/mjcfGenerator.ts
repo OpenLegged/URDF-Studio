@@ -1165,7 +1165,7 @@ export const generateMujocoXML = (robot: RobotState, options: MujocoExportOption
         && !link.mjcfSites?.length && !generatedSitesByLink.has(linkId)
         && !robot.closedLoopConstraints?.some((constraint) =>
           constraint.linkAId === linkId || constraint.linkBId === linkId);
-      if (emptyWorldLeaf) return '';
+      if (emptyWorldLeaf && parentJoint.type === JointType.FLOATING) return '';
       throw new Error(`[MJCF export] Coordinate frame "${link.name}" has a moving joint and cannot be flattened.`);
     }
 

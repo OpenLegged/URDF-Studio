@@ -182,6 +182,30 @@ test('a real moving body without collision or inertia is still rejected inside a
   assert.deepEqual(workspace, before);
 });
 
+for (const jointType of ['hinge', 'slide'] as const) {
+  test(`rerooted source-world ${jointType} is rejected instead of silently dropping its joint`, () => {
+    const workspace = makeWorkspace(true);
+    workspace.components.right!.robot = parseRobot(source('box_b').replace(
+      '<inertial',
+      `<joint name="base_joint" type="${jointType}" axis="0 0 1"/><inertial`,
+    ));
+    const before = structuredClone(workspace);
+    const context = buildCanonicalExportContext({ workspace, componentSourceDrafts: {} });
+    for (const addFloatBase of [false, true]) {
+      for (const includeActuators of [false, true]) {
+        assert.throws(
+          () => generateMujocoXML(context.robot, {
+            frameLinkIds: context.mjcfFrameLinkIds, addFloatBase, includeActuators,
+          }),
+          /Coordinate frame "right_world" has a moving joint and cannot be flattened/,
+          'non-free joints must not disappear or leave dangling actuator targets',
+        );
+      }
+    }
+    assert.deepEqual(workspace, before);
+  });
+}
+
 test('source world planes and sites survive frame export with their composed world placement', () => {
   const workspace = makeWorkspace(false);
   workspace.components.left!.robot = parseRobot(source('box_a').replace(
