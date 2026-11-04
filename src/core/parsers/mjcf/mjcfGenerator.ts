@@ -821,6 +821,12 @@ export const generateMujocoXML = (robot: RobotState, options: MujocoExportOption
     return !hasInertialData && !hasParent;
   };
 
+  const getExportedBodyName = (linkId: string): string => {
+    if (linkId === rootLinkId && isSyntheticWorldRoot(linkId)) return 'world';
+    const link = links[linkId];
+    return (link.name || link.id).trim().toLowerCase() === 'world' ? 'world_link' : link.name;
+  };
+
   const needsBalanceInertia = Object.values(links).some((link) => hasInvalidMujocoInertia(link));
 
   const exportedSiteNames = new Set<string>();
@@ -956,7 +962,7 @@ export const generateMujocoXML = (robot: RobotState, options: MujocoExportOption
       // followed by the relative body2 orientation (MuJoCo quaternion wxyz).
       const relativePose = `${vecStr(constraint.anchorLocalA)} ${[quaternion.w, quaternion.x, quaternion.y, quaternion.z].map(formatScalar).join(' ')}`;
       equalityLines.push(
-        `    <weld name="${escapeXmlAttribute(constraint.id)}" body1="${escapeXmlAttribute(linkA.name)}" body2="${escapeXmlAttribute(linkB.name)}" anchor="${vecStr(constraint.anchorLocalB)}" relpose="${relativePose}" />`,
+        `    <weld name="${escapeXmlAttribute(constraint.id)}" body1="${escapeXmlAttribute(getExportedBodyName(linkAId))}" body2="${escapeXmlAttribute(getExportedBodyName(linkBId))}" anchor="${vecStr(constraint.anchorLocalB)}" relpose="${relativePose}" />`,
       );
       return;
     }
@@ -967,7 +973,7 @@ export const generateMujocoXML = (robot: RobotState, options: MujocoExportOption
     }
     if (constraint.type === 'connect' || constraint.type === 'joint') {
       equalityLines.push(
-        `    <connect name="${escapeXmlAttribute(constraint.id)}" body1="${escapeXmlAttribute(linkA.name)}" body2="${escapeXmlAttribute(linkB.name)}" anchor="${vecStr(constraint.anchorLocalA)}" />`,
+        `    <connect name="${escapeXmlAttribute(constraint.id)}" body1="${escapeXmlAttribute(getExportedBodyName(linkAId))}" body2="${escapeXmlAttribute(getExportedBodyName(linkBId))}" anchor="${vecStr(constraint.anchorLocalA)}" />`,
       );
       return;
     }
@@ -1180,8 +1186,7 @@ export const generateMujocoXML = (robot: RobotState, options: MujocoExportOption
       bodyRotation = parentJoint.origin.rpy;
     }
 
-    const bodyName =
-      (link.name || link.id).trim().toLowerCase() === 'world' ? 'world_link' : link.name;
+    const bodyName = getExportedBodyName(linkId);
     const element = isFrame ? 'frame' : 'body';
     // MJCF frames compose their transforms into children without creating a
     // physical body. Free joints below top-level frames remain world children.

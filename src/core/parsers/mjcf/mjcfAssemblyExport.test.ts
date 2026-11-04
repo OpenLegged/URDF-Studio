@@ -271,6 +271,40 @@ test('fixed equality referencing a source-world frame retains a static named bod
   assert.deepEqual(workspace, before);
 });
 
+for (const placement of ['identity', 'component', 'assembly'] as const) {
+  for (const jointType of [JointType.FIXED, JointType.BALL]) {
+    test(`single-component ${placement} world anchor uses its emitted body name for ${jointType}`, () => {
+      const robot = parseRobot(source('box_a', true));
+      const worldIsA = jointType === JointType.FIXED;
+      robot.closedLoopConstraints = [{
+        id: 'world_anchor', type: 'joint', jointType,
+        linkAId: worldIsA ? 'world' : 'box_a', linkBId: worldIsA ? 'box_a' : 'world',
+        anchorWorld: { x: 0, y: 0, z: 0 },
+        anchorLocalA: { x: 0, y: 0, z: 0 }, anchorLocalB: { x: 0, y: 0, z: 0 },
+      }];
+      const workspace = createSingleComponentWorkspace(robot, { componentId: 'left' });
+      if (placement === 'component') workspace.components.left!.transform.position.x = 3;
+      if (placement === 'assembly') workspace.transform.position.x = 3;
+      const before = structuredClone(workspace);
+      const context = buildCanonicalExportContext({ workspace, componentSourceDrafts: {} });
+      const xml = generateMujocoXML(context.robot, {
+        frameLinkIds: context.mjcfFrameLinkIds, addFloatBase: true, preserveNumericPrecision: true,
+      });
+      const document = new DOMParser().parseFromString(xml, 'text/xml');
+      const equality = document.querySelector(jointType === JointType.FIXED ? 'equality > weld' : 'equality > connect');
+      assert.ok(equality);
+      const expectedWorldName = placement === 'identity' ? 'world' : 'world_link';
+      assert.equal(equality.getAttribute(worldIsA ? 'body1' : 'body2'), expectedWorldName);
+      if (placement !== 'identity') {
+        const anchor = document.querySelector(`frame[name="${expectedWorldName}"] > body[name="${expectedWorldName}"]`);
+        assert.ok(anchor, 'the equality must target the transformed component anchor instead of global world');
+      }
+      assertPhysicalWorldMatrices(context.robot, xml);
+      assert.deepEqual(workspace, before);
+    });
+  }
+}
+
 test('connected MJCF source remains a read-only merged document', () => {
   const workspace = makeWorkspace(true);
   const before = structuredClone(workspace);

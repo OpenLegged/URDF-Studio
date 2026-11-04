@@ -104,6 +104,7 @@
 - MJCF 场景的无惯性 `world` 根直接写入 worldbody，保留其地面和 site；自由关节家具继续作为顶层 body。显式网格导出为同名不同路径的资源分配无冲突目录，XML 和打包 worker 复用同一映射，不能靠 basename 选取资产。
 - 拼接 MJCF 的显式导出通过 `buildAssemblyExportProjection` 携带只属于导出副本的 `frameLinkIds`：系统场景根、组件/整体变换包装层，以及投影前识别的零惯性 source `world`，以 `<frame>` 保留坐标变换，不参与质量估算。身份来自 projection 映射，不能凭 `__assembly_*` 等名称删除用户连杆。浮动基座逐个作用于穿过这些 frame 后的顶层物理 body，保留已有 freejoint；固定拼接共享一个浮动根，未连接组件各自浮动。被 fixed 闭环引用的 frame 另保留静态 body 锚点；重新定根留下的空 source-world 叶节点仅在连接关节为冗余 freejoint 时省略，其他运动关节或有实际内容时明确报错。
 - `frameLinkIds` 不写回 canonical workspace，也不改变合并源码的只读策略；真实运动 body 缺失碰撞几何/惯性仍走原校验。邻近回归为 `src/core/parsers/mjcf/mjcfAssemblyExport.test.ts`。
+- `weld` / `connect` 的 body 引用与 body/frame 锚点共用导出名称。单组件变换后的 source `world` 引用其 `world_link` 锚点；只有直接写入 worldbody 的根才引用全局 `world`，避免闭环将已摆放的组件拉回全局原点。
 - MJCF 内部生成草稿保留完整 mesh/texture 路径，不使用导出包的目录重排规则。无法原位修改的挂接子实体会展开到组件私有草稿；`.usp` 重开保留 canonical freshness 与源码语义校验；回归同时检查草稿资源引用及包内资产字节，不能仅凭资产存在判定草稿有效。
 - URDF / Xacro / MJCF / SDF 编辑源码通过 `generateEditableRobotSource` 启用 `preserveNumericPrecision`，数值按可恢复 JavaScript `number` 的十进制写入；限位、惯量、几何、颜色、tendon 等局部 patch 同样避免小数位截断。应用的文件、项目、组件和骨架导出也保留数值精度；独立 generator 默认格式化保持兼容。连续编辑仍校验源码与模型的一致性：MJCF 四元数/RPY 与 degree 限位仅接受精确值或确定的序列化往返结果，SDF 保留源版本并处理旧版世界坐标表示；真实的过期值和不可表示变更继续拒绝。可恢复的源码回退只记录 `console.info`。
 - USD 文本保留数值有效位，颜色不再吸附到邻近灰色或 0/1；几何哈希只定位候选，去重还必须精确比较顶点、索引、法线与 UV。微小差异不能作为重复材质或网格合并；transform、动力学和 root 惯量也不能因 epsilon 判断被省略。目标格式的 float 类型和网格已有 Float32 精度限制仍然适用。
