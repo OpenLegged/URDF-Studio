@@ -13,6 +13,8 @@ export interface MjcfVisualMeshVariant {
 }
 
 export interface MujocoExportOptions {
+  /** Known coordinate frames from workspace projection, not physical bodies. */
+  frameLinkIds?: ReadonlySet<string>;
   massMode?: 'auto' | 'recompute';
   densityKgM3?: number;
   collisionVolumes?: ReadonlyMap<string, readonly number[]>;

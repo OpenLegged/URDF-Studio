@@ -821,6 +821,12 @@ export const generateMujocoXML = (robot: RobotState, options: MujocoExportOption
     return !hasInertialData && !hasParent;
   };
 
+  const getExportedBodyName = (linkId: string): string => {
+    if (linkId === rootLinkId && isSyntheticWorldRoot(linkId)) return 'world';
+    const link = links[linkId];
+    return (link.name || link.id).trim().toLowerCase() === 'world' ? 'world_link' : link.name;
+  };
+
   const needsBalanceInertia = Object.values(links).some((link) => hasInvalidMujocoInertia(link));
 
   const exportedSiteNames = new Set<string>();
@@ -956,7 +962,7 @@ export const generateMujocoXML = (robot: RobotState, options: MujocoExportOption
       // followed by the relative body2 orientation (MuJoCo quaternion wxyz).
       const relativePose = `${vecStr(constraint.anchorLocalA)} ${[quaternion.w, quaternion.x, quaternion.y, quaternion.z].map(formatScalar).join(' ')}`;
       equalityLines.push(
-        `    <weld name="${escapeXmlAttribute(constraint.id)}" body1="${escapeXmlAttribute(linkA.name)}" body2="${escapeXmlAttribute(linkB.name)}" anchor="${vecStr(constraint.anchorLocalB)}" relpose="${relativePose}" />`,
+        `    <weld name="${escapeXmlAttribute(constraint.id)}" body1="${escapeXmlAttribute(getExportedBodyName(linkAId))}" body2="${escapeXmlAttribute(getExportedBodyName(linkBId))}" anchor="${vecStr(constraint.anchorLocalB)}" relpose="${relativePose}" />`,
       );
       return;
     }
@@ -967,7 +973,7 @@ export const generateMujocoXML = (robot: RobotState, options: MujocoExportOption
     }
     if (constraint.type === 'connect' || constraint.type === 'joint') {
       equalityLines.push(
-        `    <connect name="${escapeXmlAttribute(constraint.id)}" body1="${escapeXmlAttribute(linkA.name)}" body2="${escapeXmlAttribute(linkB.name)}" anchor="${vecStr(constraint.anchorLocalA)}" />`,
+        `    <connect name="${escapeXmlAttribute(constraint.id)}" body1="${escapeXmlAttribute(getExportedBodyName(linkAId))}" body2="${escapeXmlAttribute(getExportedBodyName(linkBId))}" anchor="${vecStr(constraint.anchorLocalA)}" />`,
       );
       return;
     }
@@ -1137,9 +1143,9 @@ export const generateMujocoXML = (robot: RobotState, options: MujocoExportOption
   const buildBody = (
     linkId: string,
     indent: string,
-    path = new Set<string>(),
-    inWorldBody = false,
+    context: { path?: ReadonlySet<string>; inWorldBody?: boolean; parentIsWorld?: boolean } = {},
   ) => {
+    const { path = new Set<string>(), inWorldBody = false, parentIsWorld = true } = context;
     const link = links[linkId];
     if (!link) return '';
 
@@ -1153,6 +1159,21 @@ export const generateMujocoXML = (robot: RobotState, options: MujocoExportOption
 
     // Find the joint that connects to this link (if not root)
     const parentJoint = Object.values(joints).find((j) => j.childLinkId === linkId);
+    const isFrame = options.frameLinkIds?.has(linkId) === true;
+    const isCoordinateFrame = inWorldBody || isFrame;
+    const hasMovingJoint = parentJoint && parentJoint.type !== JointType.FIXED;
+    const addRootFreeJoint = addFloatBase && parentIsWorld && !isCoordinateFrame && !hasMovingJoint;
+    if (isFrame && hasMovingJoint) {
+      // Rerooting a floating component can leave its empty source-world leaf
+      // behind a reversed free joint. That leaf carries no physical content.
+      const emptyWorldLeaf = !Object.values(joints).some((joint) => joint.parentLinkId === linkId)
+        && getVisualGeometryEntries(link).length === 0 && mjcfCollisionGeometries(link).length === 0
+        && !link.mjcfSites?.length && !generatedSitesByLink.has(linkId)
+        && !robot.closedLoopConstraints?.some((constraint) =>
+          constraint.linkAId === linkId || constraint.linkBId === linkId);
+      if (emptyWorldLeaf && parentJoint.type === JointType.FLOATING) return '';
+      throw new Error(`[MJCF export] Coordinate frame "${link.name}" has a moving joint and cannot be flattened.`);
+    }
 
     // Body transforms should preserve the imported chain exactly. Root bodies
     // stay at the world origin unless the source state encodes an explicit
@@ -1165,13 +1186,22 @@ export const generateMujocoXML = (robot: RobotState, options: MujocoExportOption
       bodyRotation = parentJoint.origin.rpy;
     }
 
-    const bodyName =
-      (link.name || link.id).trim().toLowerCase() === 'world' ? 'world_link' : link.name;
+    const bodyName = getExportedBodyName(linkId);
+    const element = isFrame ? 'frame' : 'body';
+    // MJCF frames compose their transforms into children without creating a
+    // physical body. Free joints below top-level frames remain world children.
     let bodyXml = inWorldBody ? ''
-      : `${indent}<body name="${escapeXmlAttribute(bodyName)}" pos="${pos}"${quatAttr(bodyRotation)}>\n`;
+      : `${indent}<${element} name="${escapeXmlAttribute(bodyName)}" pos="${pos}"${quatAttr(bodyRotation)}>\n`;
+    if (isFrame && robot.closedLoopConstraints?.some((constraint) =>
+      constraint.linkAId === linkId || constraint.linkBId === linkId)) {
+      // Retain a static named anchor for equality constraints referencing the
+      // source world, without making its children descend from a dummy body.
+      bodyXml += `${indent}  <body name="${escapeXmlAttribute(bodyName)}"/>\n`;
+    }
+    if (addRootFreeJoint) bodyXml += `${indent}  <freejoint/>\n`;
 
     // 1. Joint Definition (inside the body it belongs to)
-    if (parentJoint && parentJoint.type !== JointType.FIXED) {
+    if (!isCoordinateFrame && parentJoint && parentJoint.type !== JointType.FIXED) {
       if (parentJoint.type === JointType.FLOATING) {
         bodyXml += `${indent}  <freejoint name="${parentJoint.name}"/>\n`;
       } else if (parentJoint.type === JointType.PLANAR) {
@@ -1224,10 +1254,9 @@ export const generateMujocoXML = (robot: RobotState, options: MujocoExportOption
     }
 
     const collisionGeoms = mjcfCollisionGeometries(link);
-    const inferInertia = !options.preserveInertialData && (needsMjcfInertiaInference(link)
+    const inferInertia = !isCoordinateFrame && !options.preserveInertialData && (needsMjcfInertiaInference(link)
       || (options.massMode === 'recompute' && collisionGeoms.length > 0));
-    const moving = (parentJoint && parentJoint.type !== JointType.FIXED)
-      || (!inWorldBody && linkId === rootLinkId && addFloatBase);
+    const moving = !isCoordinateFrame && (hasMovingJoint || addRootFreeJoint);
     if (!options.preserveInertialData && (inferInertia || options.massMode === 'recompute') && moving && collisionGeoms.length === 0) {
       throw new Error(`[MJCF export] ${link.name}: missing collision geometry for mass/inertia estimation. Add collision shapes in the model editor.`);
     }
@@ -1236,7 +1265,7 @@ export const generateMujocoXML = (robot: RobotState, options: MujocoExportOption
     // 2. Inertial
     // An explicit all-zero placeholder disables MuJoCo's automatic inference.
     // Omit only missing data; preserve authored nonzero parameters, including errors.
-    if (!inWorldBody && link.inertial && !inferInertia) {
+    if (!isCoordinateFrame && link.inertial && !inferInertia) {
       const inertialOrigin = link.inertial.origin || {
         xyz: { x: 0, y: 0, z: 0 },
         rpy: { r: 0, p: 0, y: 0 },
@@ -1460,10 +1489,12 @@ export const generateMujocoXML = (robot: RobotState, options: MujocoExportOption
     // 5. Recursively add children
     const childJoints = Object.values(joints).filter((j) => j.parentLinkId === linkId);
     childJoints.forEach((childJoint) => {
-      bodyXml += buildBody(childJoint.childLinkId, indent + '  ', nextPath);
+      bodyXml += buildBody(childJoint.childLinkId, indent + '  ', {
+        path: nextPath, parentIsWorld: parentIsWorld && isCoordinateFrame,
+      });
     });
 
-    if (!inWorldBody) bodyXml += `${indent}</body>\n`;
+    if (!inWorldBody) bodyXml += `${indent}</${element}>\n`;
     return bodyXml;
   };
 
@@ -1472,29 +1503,10 @@ export const generateMujocoXML = (robot: RobotState, options: MujocoExportOption
       return buildBody(rootLinkId, '    ');
     }
 
-    return buildBody(rootLinkId, '  ', new Set<string>(), true);
+    return buildBody(rootLinkId, '  ', { inWorldBody: true });
   };
 
-  const injectFreeJoint = (bodyXml: string): string => {
-    const firstBody = bodyXml.indexOf('<body ');
-    if (firstBody === -1) return bodyXml;
-    const firstNewline = bodyXml.indexOf('\n', firstBody);
-    if (firstNewline === -1) {
-      return bodyXml;
-    }
-
-    return (
-      bodyXml.slice(0, firstNewline + 1) + '      <freejoint/>\n' + bodyXml.slice(firstNewline + 1)
-    );
-  };
-
-  const rootBodyXml = emitRootBodies();
-  const rootBodyAlreadyHasFreeJoint = /<freejoint\b/.test(rootBodyXml);
-  if (addFloatBase && !rootBodyAlreadyHasFreeJoint) {
-    xml += injectFreeJoint(rootBodyXml);
-  } else {
-    xml += rootBodyXml;
-  }
+  xml += emitRootBodies();
 
   xml += `  </worldbody>\n`;
 

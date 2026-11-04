@@ -724,6 +724,11 @@ test('mass changes can remember and auto-apply uniform-density inertia re-estima
       new RegExp(translations.en.massChangeInertiaDialogTitle),
       'mass changes should open a confirmation dialog before applying the new inertia behavior',
     );
+    assert.equal(
+      dom.window.document.body.textContent?.includes(translations.en.massChangeInertiaReestimateUnavailable),
+      false,
+      'valid mass and inertia should not show an unavailable explanation',
+    );
 
     const rememberCheckbox = dom.window.document.body.querySelector(
       'input[type="checkbox"]',
@@ -780,6 +785,84 @@ test('mass changes can remember and auto-apply uniform-density inertia re-estima
     useUIStore.getState().setMassInertiaChangeBehavior('ask');
   }
 });
+
+for (const initialInertial of ['zero-mass', 'missing'] as const) {
+  test(`mass change explains unavailable scaling for ${initialInertial} inertia and still confirms`, async () => {
+    const { dom, container, root } = createComponentRoot();
+    const lang = initialInertial === 'zero-mass' ? 'zh' : 'en';
+    const t = translations[lang];
+    const link = createLink();
+    if (initialInertial === 'zero-mass') {
+      link.inertial!.mass = 0;
+      link.inertial!.inertia = { ixx: 0, ixy: 0, ixz: 0, iyy: 0, iyz: 0, izz: 0 };
+    } else {
+      link.inertial = undefined;
+    }
+    const originalInertia = link.inertial?.inertia;
+    const updates: UrdfLink[] = [];
+
+    function ControlledHarness() {
+      const [currentLink, setLink] = React.useState(link);
+      const robot = createRobot(currentLink);
+      return React.createElement(LinkProperties, {
+        componentId: 'component_1', data: currentLink, robot, mode: 'editor',
+        selection: robot.selection,
+        onUpdate: (_type, _id, nextData) => {
+          setLink((previous) => {
+            const next = mergeTestLinkUpdate(previous, nextData);
+            updates.push(next);
+            return next;
+          });
+        },
+        motorLibrary: {}, assets: {}, onUploadAsset: () => {}, t, lang,
+      });
+    }
+
+    try {
+      useUIStore.getState().setDetailLinkTab('physics');
+      useUIStore.getState().setMassInertiaChangeBehavior('ask');
+      await act(async () => { root.render(React.createElement(ControlledHarness)); });
+
+      const massInput = findInlineNumberInputByLabel(container, t.mass);
+      await act(async () => {
+        massInput.focus();
+        dispatchReactChange(massInput, '1');
+        massInput.blur();
+        dispatchReactBlur(massInput);
+      });
+
+      const dialog = dom.window.document.querySelector('[role="dialog"]');
+      assert.ok(dialog);
+      const choices = Array.from(dialog.querySelectorAll<HTMLButtonElement>('button[role="radio"]'));
+      const preserveChoice = choices.find((choice) => choice.textContent?.trim() === t.massChangeInertiaKeep);
+      const scaleChoice = choices.find((choice) => choice.textContent?.trim() === t.massChangeInertiaReestimate);
+      assert.ok(preserveChoice);
+      assert.ok(scaleChoice);
+      assert.equal(preserveChoice.getAttribute('aria-checked'), 'true');
+      assert.equal(scaleChoice.disabled, true);
+      assert.ok(
+        dialog.textContent?.includes(t.massChangeInertiaReestimateUnavailable),
+        'the reason must be visible while preserve is selected and scaling cannot be selected',
+      );
+      assert.equal(updates.length, 0, 'opening the dialog should not apply the pending mass');
+      const confirm = Array.from(dialog.querySelectorAll('button')).find(
+        (button) => button.textContent?.trim() === t.confirm,
+      );
+      assert.ok(confirm);
+      assert.equal(confirm.disabled, false);
+      await act(async () => { dispatchReactClick(confirm); });
+
+      assert.equal(dom.window.document.querySelector('[role="dialog"]'), null);
+      assert.equal(updates.at(-1)?.inertial?.mass, 1);
+      if (originalInertia) {
+        assert.deepEqual(updates.at(-1)?.inertial?.inertia, originalInertia);
+      }
+    } finally {
+      await destroyComponentRoot(dom, root);
+      useUIStore.getState().setMassInertiaChangeBehavior('ask');
+    }
+  });
+}
 
 test('collision tab lists every collision geometry for the selected link', async () => {
   const { dom, container, root } = createComponentRoot();

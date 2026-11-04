@@ -1,5 +1,5 @@
 import {
-  buildExportableAssemblyRobotData,
+  buildAssemblyExportProjection,
   isIdentityAssemblyTransform,
 } from '@/core/robot/assemblyTransforms';
 import {
@@ -135,7 +135,7 @@ export function buildCanonicalExportContext({
           content: sourceResolution.draft.content,
         }
       : null;
-  const robotData = buildExportableAssemblyRobotData(workspace);
+  const { robotData, frameLinkIds } = buildAssemblyExportProjection(workspace);
   const robot: RobotState = {
     ...robotData,
     selection: { type: null, id: null },
@@ -152,6 +152,7 @@ export function buildCanonicalExportContext({
 
   return {
     robot,
+    mjcfFrameLinkIds: frameLinkIds,
     exportName,
     identityComponent,
     sourceFile,

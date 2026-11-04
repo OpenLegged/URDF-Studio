@@ -8,7 +8,10 @@ import { translations } from '@/shared/i18n';
 import { DEFAULT_JOINT, DEFAULT_LINK, JointType, type RobotState } from '@/types';
 import { reportExportDiagnostics } from '@/app/utils/exportDiagnostics';
 import { generateMujocoXML, parseMJCF } from '@/core/parsers';
+import { parseMJCFModel } from '@/core/parsers/mjcf/mjcfModel';
+import { createSingleComponentWorkspace } from '@/core/robot/canonicalWorkspace';
 import { resolveSourcePreservingExportContent } from '../sourcePreservingExportUtils';
+import { buildCanonicalExportContext } from './canonicalExportContext';
 import { executeConfiguredRobotExport } from './configuredRobotExport.ts';
 
 function createRobot(type: JointType): RobotState {
@@ -77,6 +80,97 @@ test('configured MJCF download uses generated physics while preserving scene met
   assert.equal(document.querySelector('custom text')?.getAttribute('data'), 'room');
   assert.deepEqual(robot, before);
 });
+
+for (const connected of [false, true]) {
+  test(`configured assembly MJCF ZIP retains frame provenance with fixed bridge=${connected}`, async (testContext) => {
+    const dom = new JSDOM();
+    const originalParser = globalThis.DOMParser;
+    const originalSerializer = globalThis.XMLSerializer;
+    globalThis.DOMParser = dom.window.DOMParser;
+    globalThis.XMLSerializer = dom.window.XMLSerializer;
+    testContext.after(() => {
+      globalThis.DOMParser = originalParser;
+      globalThis.XMLSerializer = originalSerializer;
+      dom.window.close();
+    });
+    const parsed = parseMJCF(`<mujoco model="box"><worldbody><body name="box" pos="0 0 0.2">
+      <inertial pos="0 0 0" mass="1" diaginertia="0.0067 0.0067 0.0067"/>
+      <geom type="box" size="0.1 0.1 0.1"/>
+    </body></worldbody></mujoco>`);
+    assert.ok(parsed);
+    const { selection: _selection, ...robotData } = parsed;
+    const workspace = createSingleComponentWorkspace(robotData, {
+      componentId: 'left', sourceFile: 'box.xml', workspaceName: 'joined_boxes',
+    });
+    workspace.components.right = createSingleComponentWorkspace(robotData, {
+      componentId: 'right', sourceFile: 'box.xml',
+    }).components.right!;
+    workspace.components.right.transform.position.x = 0.5;
+    if (connected) {
+      workspace.bridges.mount = {
+        id: 'mount', name: 'mount', parentComponentId: 'left', parentLinkId: 'box',
+        childComponentId: 'right', childLinkId: 'box',
+        joint: {
+          ...structuredClone(DEFAULT_JOINT), id: 'mount_joint', name: 'mount_joint',
+          type: JointType.FIXED, parentLinkId: 'box', childLinkId: 'box',
+          origin: { xyz: { x: 0.5, y: 0, z: 0 }, rpy: { r: 0, p: 0, y: 0 } },
+        },
+      };
+    }
+    const before = structuredClone(workspace);
+    const exportContext = buildCanonicalExportContext({ workspace, componentSourceDrafts: {} });
+    assert.ok(exportContext.mjcfFrameLinkIds?.size);
+    const downloads: Array<{ blob: Blob; name: string }> = [];
+    const config = structuredClone(DEFAULT_CONFIG);
+    config.format = 'mjcf';
+    config.includeSkeleton = false;
+    config.mjcf.addFloatBase = true;
+    config.mjcf.includeMeshes = false;
+    const result = await executeConfiguredRobotExport({
+      config, assets: {}, boxFaceFallbackWarningLabels: { urdf: '', sdf: '', xacro: '' },
+      buildBomCsv: () => '',
+      buildSourcePreservingExportContent: (options) => resolveSourcePreservingExportContent({
+        ...options, sourceFile: exportContext.sourceFile,
+      }).content,
+      createProgressReporter: () => () => {},
+      createZip: async () => new JSZip(),
+      downloadBlob: (blob, name) => { downloads.push({ blob, name }); },
+      generateZipBlobWithProgress: async (zip) => new Blob([await zip.generateAsync({ type: 'uint8array' })]),
+      markCurrentTargetSaved: () => {}, normalizedAssemblyState: workspace, options: {},
+      prepareMjcfMeshExportAssets: async () => ({
+        archiveFiles: new Map(), meshPathOverrides: new Map(), visualMeshVariants: new Map(), convertedSourceMeshPaths: new Set(),
+      }),
+      addMeshesToZip: async () => { throw new Error('No mesh assets exist in the fixture'); },
+      resolveExportContext: async () => exportContext,
+      resolveLibraryExportContext: async () => { throw new Error('Current workspace export must not resolve a library item'); },
+      t: translations.en, target: { type: 'current' },
+      throwForAssetPackagingFailures: failures => assert.deepEqual(failures, []),
+    });
+
+    assert.equal(result.partial, false);
+    assert.deepEqual(result.warnings, []);
+    assert.equal(downloads.length, 1);
+    assert.equal(downloads[0]!.name, 'joined_boxes_mjcf.zip');
+    const archive = await JSZip.loadAsync(await downloads[0]!.blob.arrayBuffer());
+    const entry = archive.file('joined_boxes/joined_boxes.xml');
+    assert.ok(entry, 'the actual downloaded ZIP must contain the assembled MJCF');
+    const xml = await entry.async('string');
+    const model = parseMJCFModel(xml);
+    assert.ok(model);
+    assert.deepEqual(model.recoveryDiagnostics, []);
+    assert.equal(model.worldBody.children.length, connected ? 1 : 2);
+    const document = new DOMParser().parseFromString(xml, 'text/xml');
+    assert.equal(document.querySelectorAll('freejoint').length, connected ? 1 : 2);
+    for (const id of exportContext.mjcfFrameLinkIds ?? []) {
+      assert.equal(
+        Array.from(document.querySelectorAll('body')).some((body) => body.getAttribute('name') === exportContext.robot.links[id]!.name),
+        false,
+        'configuration orchestration must preserve frame metadata through ZIP serialization',
+      );
+    }
+    assert.deepEqual(workspace, before);
+  });
+}
 
 for (const [format, type, expectedWarning, entry, outputPattern] of [
   ['mjcf', JointType.PLANAR, /\[MJCF export\].*planar/, 'warnings.xml', /<freejoint\b/],
