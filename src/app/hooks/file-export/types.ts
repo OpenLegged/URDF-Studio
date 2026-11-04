@@ -7,6 +7,7 @@ export const DEFAULT_EXPORT_TARGET: ExportTarget = { type: 'current' };
 
 export interface ExportContext {
   robot: RobotState;
+  mjcfFrameLinkIds?: ReadonlySet<string>;
   exportName: string;
   extraMeshFiles?: Map<string, Blob>;
   sourceFileDir?: string;

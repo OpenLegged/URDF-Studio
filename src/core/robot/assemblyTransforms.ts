@@ -1,4 +1,4 @@
-import { DEFAULT_JOINT, DEFAULT_LINK, GeometryType, JointType } from '@/types';
+import { DEFAULT_JOINT, DEFAULT_LINK, GeometryType, JointType, entityRefKey } from '@/types';
 import type { AssemblyState, AssemblyTransform, RobotData, UrdfJoint, UrdfLink } from '@/types';
 import { createAssemblySceneProjection } from './assemblySceneProjection';
 import { createAssemblyScenePlacement } from './assemblyScenePlacement';
@@ -130,16 +130,41 @@ function buildSingleComponentExportRobotData(visibleAssembly: AssemblyState): Ro
   return structuredClone(component.robot);
 }
 
+export interface AssemblyExportProjection {
+  robotData: RobotData;
+  /** Export-only frame provenance; never persisted into the canonical workspace. */
+  frameLinkIds: ReadonlySet<string>;
+}
+
 export function buildExportableAssemblyRobotData(assemblyState: AssemblyState): RobotData {
+  return buildAssemblyExportProjection(assemblyState).robotData;
+}
+
+export function buildAssemblyExportProjection(assemblyState: AssemblyState): AssemblyExportProjection {
   const visibleAssembly = cloneVisibleAssemblyState(assemblyState);
   const singleComponentRobot = buildSingleComponentExportRobotData(visibleAssembly);
   if (singleComponentRobot) {
-    return singleComponentRobot;
+    return { robotData: singleComponentRobot, frameLinkIds: new Set() };
   }
 
   const projection = createAssemblySceneProjection(visibleAssembly);
   const placement = createAssemblyScenePlacement(visibleAssembly, projection);
   let placedRobot = placement.robotData;
+  const frameLinkIds = new Set(
+    Object.keys(placedRobot.links).filter((id) => !projection.globalToEntityRef.has(id)),
+  );
+  // Resolve source world frames before projection renames them. The same
+  // zero-inertia world-root convention is used by the standalone MJCF exporter.
+  Object.values(visibleAssembly.components).forEach((component) => {
+    const root = component.robot.links[component.robot.rootLinkId];
+    if (!root || root.name.trim().toLowerCase() !== 'world'
+      || (root.inertial?.mass ?? 0) !== 0
+      || Object.values(root.inertial?.inertia ?? {}).some((value) => value !== 0)) return;
+    const projectedId = projection.entityRefKeyToGlobal.get(entityRefKey({
+      type: 'link', componentId: component.id, entityId: component.robot.rootLinkId,
+    }));
+    if (projectedId) frameLinkIds.add(projectedId);
+  });
 
   if (
     placement.renderStrategy === 'direct-component' &&
@@ -163,6 +188,7 @@ export function buildExportableAssemblyRobotData(assemblyState: AssemblyState): 
       `${ASSEMBLY_COMPONENT_ROOT_JOINT_PREFIX}${placement.directComponentId}`,
       'joint',
     );
+    frameLinkIds.add(wrapperRootLinkId);
     placedRobot = {
       ...placedRobot,
       links: {
@@ -184,12 +210,12 @@ export function buildExportableAssemblyRobotData(assemblyState: AssemblyState): 
   }
 
   if (isIdentityAssemblyTransform(visibleAssembly.transform)) {
-    return placedRobot;
+    return { robotData: placedRobot, frameLinkIds };
   }
 
   const assemblyTransform = cloneAssemblyTransform(visibleAssembly.transform);
   if (!placedRobot.rootLinkId || !placedRobot.links[placedRobot.rootLinkId]) {
-    return placedRobot;
+    return { robotData: placedRobot, frameLinkIds };
   }
 
   const usedMergedEntityIds = new Set([
@@ -223,10 +249,9 @@ export function buildExportableAssemblyRobotData(assemblyState: AssemblyState): 
     assemblyTransform,
   );
 
+  frameLinkIds.add(assemblyRootLinkId);
   return {
-    ...placedRobot,
-    links,
-    joints,
-    rootLinkId: assemblyRootLinkId,
+    robotData: { ...placedRobot, links, joints, rootLinkId: assemblyRootLinkId },
+    frameLinkIds,
   };
 }

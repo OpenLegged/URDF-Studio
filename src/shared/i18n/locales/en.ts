@@ -273,22 +273,22 @@ export const en: TranslationKeys = {
   principalAxes: 'Principal Axes',
   massChangeInertiaDialogTitle: 'Update inertia after changing mass?',
   massChangeInertiaDialogMessage:
-    'The mass of {name} has been changed to {mass} kg. Choose whether to keep the authored inertia tensor or re-estimate it by assuming the existing tensor came from the same geometry with uniform density.',
+    'The mass of {name} will change to {mass} kg. Choose whether to keep the current inertia or scale it by the mass ratio.',
   massChangeInertiaKeep: 'Keep current inertia',
   massChangeInertiaKeepDescription:
     'Keep the current inertia tensor unchanged and only update the mass value.',
-  massChangeInertiaReestimate: 'Re-estimate inertia',
+  massChangeInertiaReestimate: 'Scale by mass ratio',
   massChangeInertiaReestimateDescription:
-    'Scale the current inertia tensor by the mass ratio while preserving the existing center of mass and principal-axis layout.',
+    'Assuming unchanged geometry and mass distribution, multiply the current inertia tensor by the new-to-previous mass ratio while preserving the center of mass and principal axes.',
   massChangeInertiaReestimateUnavailable:
-    'Auto re-estimation is unavailable because the current link mass or inertia tensor is not valid.',
+    'Scaling needs a positive previous mass and a complete, finite inertia tensor. These conditions are not met. You can keep the current inertia and confirm the mass change.',
   massChangeInertiaRememberChoice: "Don't ask again for similar mass changes",
   massChangeInertiaPreservedNotice:
     '{name}: kept the authored inertia tensor after updating mass to {mass} kg.',
   massChangeInertiaReestimatedNotice:
-    '{name}: re-estimated inertia under a uniform-density assumption. {tensor}',
+    '{name}: scaled inertia by the mass ratio. {tensor}',
   massChangeInertiaFallbackNotice:
-    '{name}: could not re-estimate inertia automatically, so the authored tensor was kept.',
+    '{name}: could not scale inertia by the mass ratio, so the authored tensor was kept.',
   kinematics: 'Kinematics',
   axisRotation: 'Axis of Rotation/Motion',
   hardwareConfig: 'Hardware',

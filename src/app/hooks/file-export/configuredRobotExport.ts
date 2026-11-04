@@ -289,6 +289,7 @@ export async function executeConfiguredRobotExport({
       preferSharedMeshReuse,
       meshFormat: config.mjcf.meshFormat,
       mujoco: {
+        frameLinkIds: exportContext.mjcfFrameLinkIds,
         meshdir,
         addFloatBase,
         includeActuators,

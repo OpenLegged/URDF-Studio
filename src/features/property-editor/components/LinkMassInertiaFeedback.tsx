@@ -175,8 +175,7 @@ export const LinkMassInertiaFeedback: React.FC<LinkMassInertiaFeedbackProps> = (
                     ? t.massChangeInertiaKeepDescription
                     : t.massChangeInertiaReestimateDescription}
                 </div>
-                {selectedMassInertiaBehavior === 'reestimate' &&
-                !pendingMassInertiaDecision.scaledEstimate ? (
+                {!pendingMassInertiaDecision.scaledEstimate ? (
                   <div className="mt-1.5 text-[11px] leading-5 text-danger">
                     {t.massChangeInertiaReestimateUnavailable}
                   </div>
