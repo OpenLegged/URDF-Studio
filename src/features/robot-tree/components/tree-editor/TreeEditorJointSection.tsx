@@ -53,25 +53,25 @@ export function resolveComponentViewerJointPreview(
   return preview.workspaceByComponent?.[componentId] ?? null;
 }
 
-export function resolveWorkspaceViewerJointPreview(
+export function resolveWorkspaceJointPreview(
   preview: JointInteractionPreviewSnapshot,
   projection: AssemblySceneProjection,
 ): Record<string, number> {
-  return resolveWorkspaceViewerJointPreviewState(preview, projection).jointAngles;
+  return resolveWorkspaceJointPreviewState(preview, projection).jointAngles;
 }
 
-export interface WorkspaceViewerJointPreviewState {
+export interface WorkspaceJointPreviewState {
   activeJointId: string | null;
   jointAngles: Record<string, number>;
   jointQuaternions: JointInteractionPreviewSnapshot['jointQuaternions'];
   jointOrigins: JointInteractionPreviewSnapshot['jointOrigins'];
 }
 
-export function resolveWorkspaceViewerJointPreviewState(
+export function resolveWorkspaceJointPreviewState(
   preview: JointInteractionPreviewSnapshot,
   projection: AssemblySceneProjection,
-): WorkspaceViewerJointPreviewState {
-  if (preview.source !== 'viewer') {
+): WorkspaceJointPreviewState {
+  if (preview.source === null) {
     return {
       activeJointId: null,
       jointAngles: {},
@@ -80,7 +80,7 @@ export function resolveWorkspaceViewerJointPreviewState(
     };
   }
 
-  const projected: WorkspaceViewerJointPreviewState = {
+  const projected: WorkspaceJointPreviewState = {
     activeJointId: null,
     jointAngles: {},
     jointQuaternions: {},
@@ -213,14 +213,6 @@ function resolveJointSnapshotAngle(joint: any) {
   return Number.isFinite(angle) ? angle : 0;
 }
 
-function areJointAnglesEquivalent(left: number | undefined, right: number | undefined) {
-  if (typeof left !== 'number' || typeof right !== 'number') {
-    return left === right;
-  }
-
-  return Math.abs(left - right) <= 1e-6;
-}
-
 function buildJointAngleSnapshot(
   joints: Record<string, any>,
   projectedJointAngles?: Record<string, number>,
@@ -260,7 +252,6 @@ export function resolveJointPanelResetReconciliation({
   requestedAngles: Record<string, number>;
 }): {
   jointAngles: Record<string, number>;
-  pendingAngles: Record<string, number>;
 } {
   const acceptedAngles = Object.fromEntries(
     acceptedTargets.flatMap(({ ref, angle }) => {
@@ -271,15 +262,11 @@ export function resolveJointPanelResetReconciliation({
     }),
   );
   const jointAngles: Record<string, number> = {};
-  const pendingAngles: Record<string, number> = {};
 
   Object.keys(requestedAngles).forEach((jointId) => {
     const acceptedAngle = acceptedAngles[jointId];
     if (acceptedAngle !== undefined) {
       jointAngles[jointId] = acceptedAngle;
-      if (!areJointAnglesEquivalent(currentAngles[jointId], acceptedAngle)) {
-        pendingAngles[jointId] = acceptedAngle;
-      }
       return;
     }
 
@@ -289,7 +276,7 @@ export function resolveJointPanelResetReconciliation({
     }
   });
 
-  return { jointAngles, pendingAngles };
+  return { jointAngles };
 }
 
 export function TreeEditorJointSection({
@@ -337,88 +324,28 @@ export function TreeEditorJointSection({
   const [angleUnit, setAngleUnit] = React.useState<'rad' | 'deg'>('rad');
   const [isAdvanced, setIsAdvanced] = React.useState(false);
   const jointPanelStoreRef = React.useRef(createJointPanelStore());
-  const pendingCommittedJointAnglesRef = React.useRef<Record<string, number>>({});
-  const pendingCommittedJointAnglesScopeRef = React.useRef<string | null>(null);
-  const resetScopeRef = React.useRef<string | null>(null);
   const previousActiveJointRef = React.useRef<string | null>(null);
   const shouldShow = show;
   const jointAngleSnapshot = React.useMemo(
     () => buildJointAngleSnapshot(robot.joints, jointAngleState),
     [jointAngleState, robot.joints],
   );
-  const resetScopeKey = createTreeJointPanelScopeKey({
-    componentId: 'workspace',
-    sourceFilePath,
-    robot,
-    projection,
-  });
-  // Row-local editing and drag state belongs to the document target, not to a
-  // semantic projection revision. Limit edits rebuild the projection; using
-  // resetScopeKey as the React key would unmount a slider while pointerdown is
-  // committing an adjacent numeric editor.
+  // Keep row-local editing stable when a limit edit rebuilds the projection.
   const interactionScopeKey = createTreeJointPanelScopeKey({
     componentId: 'workspace',
     sourceFilePath,
     robot,
   });
-  const effectiveJointAngleSnapshot = React.useMemo(() => {
-    const pendingCommittedAngles = pendingCommittedJointAnglesRef.current;
-    if (
-      pendingCommittedJointAnglesScopeRef.current !== resetScopeKey ||
-      Object.keys(pendingCommittedAngles).length === 0
-    ) {
-      return jointAngleSnapshot;
-    }
-
-    let nextSnapshot = jointAngleSnapshot;
-    Object.entries(pendingCommittedAngles).forEach(([jointId, pendingAngle]) => {
-      if (areJointAnglesEquivalent(jointAngleSnapshot[jointId], pendingAngle)) {
-        return;
-      }
-
-      if (nextSnapshot === jointAngleSnapshot) {
-        nextSnapshot = { ...jointAngleSnapshot };
-      }
-      nextSnapshot[jointId] = pendingAngle;
-    });
-
-    return nextSnapshot;
-  }, [jointAngleSnapshot, resetScopeKey]);
-
   React.useEffect(() => {
-    jointPanelStoreRef.current.replaceJointAngles(effectiveJointAngleSnapshot);
-  }, [effectiveJointAngleSnapshot]);
-
-  React.useEffect(() => {
-    const pendingCommittedAngles = pendingCommittedJointAnglesRef.current;
-    if (
-      pendingCommittedJointAnglesScopeRef.current !== resetScopeKey ||
-      Object.keys(pendingCommittedAngles).length === 0
-    ) {
-      return;
-    }
-
-    const remainingPendingAngles = Object.fromEntries(
-      Object.entries(pendingCommittedAngles).filter(
-        ([jointId, pendingAngle]) =>
-          !areJointAnglesEquivalent(jointAngleSnapshot[jointId], pendingAngle),
-      ),
+    const preview = resolveWorkspaceJointPreviewState(
+      useJointInteractionPreviewStore.getState().preview,
+      projection,
     );
-
-    if (Object.keys(remainingPendingAngles).length !== Object.keys(pendingCommittedAngles).length) {
-      pendingCommittedJointAnglesRef.current = remainingPendingAngles;
-    }
-  }, [jointAngleSnapshot, resetScopeKey]);
-
-  React.useEffect(() => {
-    if (resetScopeRef.current === resetScopeKey) {
-      return;
-    }
-
-    resetScopeRef.current = resetScopeKey;
-    pendingCommittedJointAnglesRef.current = {};
-    pendingCommittedJointAnglesScopeRef.current = resetScopeKey;
-  }, [resetScopeKey]);
+    jointPanelStoreRef.current.replaceJointAngles({
+      ...jointAngleSnapshot,
+      ...preview.jointAngles,
+    });
+  }, [jointAngleSnapshot, projection]);
 
   const patchLocalJointAngles = React.useCallback(
     (jointAngles: Record<string, number>) => {
@@ -429,20 +356,11 @@ export function TreeEditorJointSection({
     [robot.joints],
   );
 
-  const patchLocalJointAngle = React.useCallback(
-    (jointName: string, angle: number) => {
-      const jointId = resolveJointKey(robot.joints, jointName) ?? jointName;
-      patchLocalJointAngles({ [jointId]: angle });
-      return jointId;
-    },
-    [patchLocalJointAngles, robot.joints],
-  );
-
   React.useEffect(() => {
-    const applyViewerJointPreview = (
+    const applyJointPreview = (
       preview = useJointInteractionPreviewStore.getState().preview,
     ) => {
-      const projectedPreview = resolveWorkspaceViewerJointPreviewState(preview, projection);
+      const projectedPreview = resolveWorkspaceJointPreviewState(preview, projection);
       if (projectedPreview.activeJointId) {
         jointPanelStoreRef.current.setActiveJoint(projectedPreview.activeJointId, {
           autoScroll: projectedPreview.activeJointId !== previousActiveJointRef.current,
@@ -450,50 +368,38 @@ export function TreeEditorJointSection({
         previousActiveJointRef.current = projectedPreview.activeJointId;
       }
 
-      const previewAngles = patchLocalJointAngles(projectedPreview.jointAngles);
-      if (Object.keys(previewAngles).length === 0) {
-        return;
-      }
-
-      pendingCommittedJointAnglesRef.current = {
-        ...pendingCommittedJointAnglesRef.current,
-        ...previewAngles,
-      };
-      pendingCommittedJointAnglesScopeRef.current = resetScopeKey;
+      // The app publishes accepted/clamped values for tree controls, just as the
+      // viewer does for link dragging. Never cache the original input as truth.
+      patchLocalJointAngles(projectedPreview.jointAngles);
     };
 
-    applyViewerJointPreview();
+    applyJointPreview();
 
     return useJointInteractionPreviewStore.subscribe((state) => {
-      applyViewerJointPreview(state.preview);
+      applyJointPreview(state.preview);
     });
-  }, [patchLocalJointAngles, projection, resetScopeKey]);
+  }, [patchLocalJointAngles, projection]);
 
   const handleJointAnglePreview = React.useCallback(
     (jointName: string, angle: number) => {
-      const jointId = patchLocalJointAngle(jointName, angle);
+      const jointId = resolveJointKey(robot.joints, jointName) ?? jointName;
       const ref = resolveJointPanelWorkspaceRef(projection, jointId);
       if (ref) {
         onJointAnglePreview?.(ref, angle);
       }
     },
-    [onJointAnglePreview, patchLocalJointAngle, projection],
+    [onJointAnglePreview, projection, robot.joints],
   );
 
   const handleJointAngleCommit = React.useCallback(
     (jointName: string, angle: number) => {
-      const jointId = patchLocalJointAngle(jointName, angle);
-      pendingCommittedJointAnglesRef.current = {
-        ...pendingCommittedJointAnglesRef.current,
-        [jointId]: angle,
-      };
-      pendingCommittedJointAnglesScopeRef.current = resetScopeKey;
+      const jointId = resolveJointKey(robot.joints, jointName) ?? jointName;
       const ref = resolveJointPanelWorkspaceRef(projection, jointId);
       if (ref) {
         onJointAngleChange?.(ref, angle);
       }
     },
-    [onJointAngleChange, patchLocalJointAngle, projection, resetScopeKey],
+    [onJointAngleChange, projection, robot.joints],
   );
 
   React.useEffect(() => {
@@ -535,15 +441,12 @@ export function TreeEditorJointSection({
       requestedAngles: normalizedResetAngles,
     });
     patchLocalJointAngles(reconciliation.jointAngles);
-    pendingCommittedJointAnglesRef.current = reconciliation.pendingAngles;
-    pendingCommittedJointAnglesScopeRef.current = resetScopeKey;
   }, [
     jointAngleSnapshot,
     onJointAngleChange,
     onResetJointAngles,
     patchLocalJointAngles,
     projection,
-    resetScopeKey,
     robot.joints,
   ]);
 

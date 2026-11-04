@@ -2,7 +2,6 @@
 
 import assert from 'node:assert/strict';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
-import { createRequire } from 'node:module';
 import path from 'node:path';
 import { chromium } from 'playwright';
 import JSZip from 'jszip';
@@ -106,6 +105,10 @@ async function checkFourBar(page, type, axis, expected) {
   near(left, expected);
   near(right, expected);
   near(elbow, -expected);
+  for (const joint of ['left_drive', 'right_drive', 'left_elbow']) {
+    const panel = page.getByRole('slider', { name: `component_1_${joint} slider`, exact: true });
+    near(Number(await panel.getAttribute('aria-valuenow')), angle(robot, joint));
+  }
   // Independently evaluate the two endpoints and their relative orientation.
   const anchorError = Math.hypot(
     Math.sin(left) + Math.cos(left + elbow) - 1 - Math.sin(right),
@@ -138,11 +141,8 @@ await mkdir(outputDir, { recursive: true });
 const site = await ensureSite(siteUrl);
 let browser;
 let context;
-const ownedPids = new Set();
 try {
   browser = await chromium.launch({ headless: true, args: ['--no-sandbox', '--enable-unsafe-swiftshader'] });
-  const cdp = await browser.newBrowserCDPSession();
-  for (const processInfo of (await cdp.send('SystemInfo.getProcessInfo')).processInfo) ownedPids.add(processInfo.id);
   context = await browser.newContext({ viewport: { width: 1600, height: 1000 } });
   const page = await context.newPage();
   page.setDefaultTimeout(20_000);
@@ -299,6 +299,7 @@ try {
     await writeFile(path.join(outputDir, 'failure-state.json'), JSON.stringify(await snapshot(page), null, 2));
   }
 } finally {
+  // These handles own this run's processes; no global browser scan is needed.
   await context?.close();
   await browser?.close();
   await site.stop();
@@ -306,12 +307,4 @@ try {
     ? `results-${process.env.CLOSED_LOOP_CASE.replace(/[^a-z0-9]+/gi, '-')}.json`
     : 'results.json';
   await writeFile(path.join(outputDir, reportName), JSON.stringify(result, null, 2));
-  // The legacy cleanup script scans all browsers; limit it to this run's PIDs.
-  const originalKill = process.kill;
-  process.kill = (pid, signal) => {
-    if (!ownedPids.has(Number(pid))) throw new Error('Process belongs to another session');
-    return originalKill(pid, signal);
-  };
-  try { createRequire(import.meta.url)('../../../test/usd-viewer/scripts/cleanup-headless.cjs'); }
-  finally { process.kill = originalKill; }
 }

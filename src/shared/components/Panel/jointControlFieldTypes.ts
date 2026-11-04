@@ -7,4 +7,5 @@ export interface EditableJointNumberField {
   isEditing: boolean;
   beginEditing: () => void;
   commit: (value: string) => void;
+  cancel?: () => void;
 }

@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { flushSync } from 'react-dom';
 
 import { JointType } from '@/types';
 import { createJointDragStoreSync } from '@/shared/utils/jointDragStoreSync';
@@ -105,6 +106,13 @@ const JointControlItemComponent: React.FC<JointControlItemProps> = ({
   const [isPanelHovered, setIsPanelHovered] = useState(false);
   const sliderShellRef = useRef<HTMLDivElement>(null);
   const sliderDragBoundsRef = useRef<SliderDragBounds | null>(null);
+  const sliderThumbDragRef = useRef<{
+    clientX: number;
+    value: number;
+    min: number;
+    max: number;
+    step: number;
+  } | null>(null);
   const sliderThumbDiameter = compact ? 16 : 18;
   const sliderThumbHalf = sliderThumbDiameter / 2;
 
@@ -179,9 +187,10 @@ const JointControlItemComponent: React.FC<JointControlItemProps> = ({
   const sliderPercentage = sliderRange > 0 ? ((sliderValue - sliderMin) / sliderRange) * 100 : 0;
   const clampedSliderPercentage = Math.min(Math.max(sliderPercentage, 0), 100);
 
-  const [inputValue, setInputValue] = useState(displayValue.toFixed(2));
+  const [inputValue, setInputValue] = useState('');
   const [isEditingValue, setIsEditingValue] = useState(false);
   const valueInputRef = useRef<HTMLInputElement>(null);
+  const valueEditSessionRef = useRef<{ initialDisplayValue: number } | null>(null);
   useFocusInputWhenEditing(valueInputRef, isEditingValue);
 
   useEffect(() => {
@@ -189,17 +198,20 @@ const JointControlItemComponent: React.FC<JointControlItemProps> = ({
       return;
     }
 
+    // Reconcile again on release even if constraints accepted this value during
+    // the drag and the owner therefore has no new value to publish afterward.
     setSliderPreviewValue(value);
     continuousPreviewValueRef.current = value;
 
     if (isContinuousJoint) {
       syncContinuousSliderAnchor(value);
     }
-  }, [isContinuousJoint, syncContinuousSliderAnchor, value]);
+  }, [isContinuousJoint, isSliderDragging, syncContinuousSliderAnchor, value]);
 
   useEffect(
     () => () => {
       sliderDragBoundsRef.current = null;
+      sliderThumbDragRef.current = null;
       if (isSliderDraggingRef.current) {
         setIsDragging?.(false);
       }
@@ -220,11 +232,11 @@ const JointControlItemComponent: React.FC<JointControlItemProps> = ({
       setIsDragging?.(true);
       setActiveJoint(name, { autoScroll: false });
       onSelect?.('joint', name);
-      setSliderPreviewValue(value);
-      continuousPreviewValueRef.current = value;
+      const startValue = continuousPreviewValueRef.current;
+      setSliderPreviewValue(startValue);
 
       if (isContinuousJoint) {
-        syncContinuousSliderAnchor(value);
+        syncContinuousSliderAnchor(startValue);
       }
     },
     [
@@ -235,7 +247,6 @@ const JointControlItemComponent: React.FC<JointControlItemProps> = ({
       setActiveJoint,
       setIsDragging,
       syncContinuousSliderAnchor,
-      value,
     ],
   );
 
@@ -248,6 +259,7 @@ const JointControlItemComponent: React.FC<JointControlItemProps> = ({
     isSliderDraggingRef.current = false;
     sliderDragSourceRef.current = null;
     sliderDragBoundsRef.current = null;
+    sliderThumbDragRef.current = null;
     setIsSliderDragging(false);
     setIsDragging?.(false);
 
@@ -303,6 +315,17 @@ const JointControlItemComponent: React.FC<JointControlItemProps> = ({
         return;
       }
 
+      const thumbDrag = sliderThumbDragRef.current;
+      if (thumbDrag) {
+        const delta =
+          (clientX - thumbDrag.clientX) / bounds.width * (thumbDrag.max - thumbDrag.min);
+        const steppedDelta = Math.round(delta / thumbDrag.step) * thumbDrag.step;
+        handleSliderInput(
+          Math.min(Math.max(thumbDrag.value + steppedDelta, thumbDrag.min), thumbDrag.max),
+        );
+        return;
+      }
+
       const {
         sliderMin: currentMin,
         sliderMax: currentMax,
@@ -316,10 +339,30 @@ const JointControlItemComponent: React.FC<JointControlItemProps> = ({
   );
 
   const handleSliderShellDragStart = useCallback(
-    (clientX: number, pointerId?: number) => {
+    (clientX: number, pointerId?: number, fromThumb = false) => {
       handleSliderChangeStart('slider-shell');
       sliderDragBoundsRef.current = readSliderDragBounds();
-      updateSliderValueFromClientX(clientX);
+      const current = latestValuesRef.current;
+      sliderThumbDragRef.current = fromThumb
+        ? {
+            clientX,
+            value: current.isContinuousJoint
+              ? 0
+              : toJointDisplayValue(
+                  continuousPreviewValueRef.current,
+                  current.jointType,
+                  current.angleUnit,
+                ),
+            min: current.sliderMin,
+            max: current.sliderMax,
+            step: current.step,
+          }
+        : null;
+      // A thumb press holds the exact accepted pose. Track clicks seek an
+      // absolute value; thumb drags apply stepped movement from the press point.
+      if (!fromThumb) {
+        updateSliderValueFromClientX(clientX);
+      }
 
       if (pointerId !== undefined && sliderShellRef.current?.setPointerCapture) {
         try {
@@ -375,22 +418,32 @@ const JointControlItemComponent: React.FC<JointControlItemProps> = ({
     };
   }, [handleSliderChangeEnd, isSliderDragging, updateSliderValueFromClientX]);
 
-  useEffect(() => {
-    const currentParsed = parseFloat(inputValue);
-    const isDifferent =
-      Number.isNaN(currentParsed) || Math.abs(currentParsed - displayValue) > 0.0001;
-    if (!isEditingValue && isDifferent) {
-      setInputValue(displayValue.toFixed(2));
-    }
-  }, [displayValue, inputValue, isEditingValue]);
+  const beginValueEditing = useCallback(() => {
+    valueEditSessionRef.current = { initialDisplayValue: displayValue };
+    // The compact label is rounded; the editable draft must retain the full value.
+    setInputValue(String(displayValue));
+    setIsEditingValue(true);
+  }, [displayValue]);
+
+  const cancelValueEditing = useCallback(() => {
+    valueEditSessionRef.current = null;
+    setIsEditingValue(false);
+  }, []);
 
   const commitValue = useCallback(
     (input: string) => {
-      const parsedValue = parseFloat(input);
-      if (!Number.isNaN(parsedValue)) {
+      const session = valueEditSessionRef.current;
+      if (!session) {
+        return;
+      }
+      // Enter and outside pointerdown can both be followed by blur. Close the
+      // session before invoking the owner so one edit produces one commit.
+      valueEditSessionRef.current = null;
+      setIsEditingValue(false);
+      const parsedValue = input.trim() ? Number(input) : Number.NaN;
+      if (Number.isFinite(parsedValue) && parsedValue !== session.initialDisplayValue) {
         handleJointChangeCommit(name, fromJointDisplayValue(parsedValue, jointType, angleUnit));
       }
-      setIsEditingValue(false);
     },
     [angleUnit, handleJointChangeCommit, jointType, name],
   );
@@ -405,7 +458,9 @@ const JointControlItemComponent: React.FC<JointControlItemProps> = ({
       if (!(target instanceof Node) || valueInputRef.current?.contains(target)) {
         return;
       }
-      commitValue(valueInputRef.current?.value ?? inputValue);
+      // Publish the accepted value before the same pointerdown starts a slider
+      // drag; otherwise that drag can seed its anchor from the previous render.
+      flushSync(() => commitValue(valueInputRef.current?.value ?? inputValue));
     };
 
     document.addEventListener('pointerdown', handlePointerDownCapture, true);
@@ -441,8 +496,9 @@ const JointControlItemComponent: React.FC<JointControlItemProps> = ({
     inputValue,
     setInputValue,
     isEditing: isEditingValue,
-    beginEditing: () => setIsEditingValue(true),
+    beginEditing: beginValueEditing,
     commit: commitValue,
+    cancel: cancelValueEditing,
   };
 
   return (
@@ -577,7 +633,7 @@ const JointControlItemComponent: React.FC<JointControlItemProps> = ({
             onPointerDown={(event) => {
               event.preventDefault();
               event.stopPropagation();
-              handleSliderShellDragStart(event.clientX, event.pointerId);
+              handleSliderShellDragStart(event.clientX, event.pointerId, true);
             }}
           />
           <input

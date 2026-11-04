@@ -19,8 +19,8 @@ import {
   resolveJointPanelResetReconciliation,
   resolveJointPanelWorkspaceRef,
   resolveJointPanelResetAngles,
-  resolveWorkspaceViewerJointPreview,
-  resolveWorkspaceViewerJointPreviewState,
+  resolveWorkspaceJointPreview,
+  resolveWorkspaceJointPreviewState,
 } from './TreeEditorJointSection.tsx';
 
 function createJoint(id: string, overrides: Partial<UrdfJoint> = {}): UrdfJoint {
@@ -178,8 +178,7 @@ test('workspace joint panel scope follows semantic projection identity', () => {
       projection: sceneProjection,
     });
 
-  // Joint-motion-only renders reuse the semantic projection, so pending slider
-  // values remain in the same scope.
+  // Joint-motion-only renders reuse the semantic projection.
   assert.equal(createScope(), createScope());
 
   // Replacing even an identically named workspace produces a new semantic
@@ -235,7 +234,7 @@ test('workspace joint preview keeps duplicate local IDs separated by projection'
     },
   };
 
-  const angles = resolveWorkspaceViewerJointPreview(preview, projection);
+  const angles = resolveWorkspaceJointPreview(preview, projection);
   const armId = projection.entityRefKeyToGlobal.get(
     JSON.stringify(['joint', 'arm', 'shared_joint']),
   );
@@ -284,7 +283,7 @@ test('workspace joint preview merges canonical component and bridge targets', ()
   const bridgeId = projection.entityRefKeyToGlobal.get(JSON.stringify(['bridge', 'arm_to_hand']));
   assert.ok(armId && bridgeId);
 
-  assert.deepEqual(resolveWorkspaceViewerJointPreviewState(preview, projection), {
+  assert.deepEqual(resolveWorkspaceJointPreviewState(preview, projection), {
     activeJointId: bridgeId,
     jointAngles: { [armId]: 0.25, [bridgeId]: -0.5 },
     jointQuaternions: { [bridgeId]: quaternion },
@@ -292,7 +291,7 @@ test('workspace joint preview merges canonical component and bridge targets', ()
   });
 });
 
-test('reset reconciliation keeps rejected joints canonical and pending only accepted writes', () => {
+test('reset reconciliation keeps rejected joints canonical and applies only accepted writes', () => {
   const projection = createAssemblySceneProjection(createAssembly());
   const armJointId = projection.entityRefKeyToGlobal.get(
     JSON.stringify(['joint', 'arm', 'shared_joint']),
@@ -329,10 +328,6 @@ test('reset reconciliation keeps rejected joints canonical and pending only acce
     // The locked/rejected hand joint must snap back to canonical state.
     [handJointId]: 0.75,
     [bridgeId]: 0,
-  });
-  assert.deepEqual(reconciliation.pendingAngles, {
-    // The already-canonical bridge does not need a pending optimistic value.
-    [armJointId]: 0,
   });
 });
 

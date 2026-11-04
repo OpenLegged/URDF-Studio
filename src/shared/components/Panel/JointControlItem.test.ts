@@ -89,6 +89,247 @@ function renderJointControlItem(root: Root, overrides: RenderOverrides = {}) {
   });
 }
 
+async function openJointValueEditor(container: HTMLElement, displayValue: number) {
+  const button = Array.from(container.querySelectorAll('button')).find(
+    (node) => node.textContent === displayValue.toFixed(2),
+  );
+  assert.ok(button, 'current joint value should be visible');
+  await act(async () => {
+    button.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+  });
+  const input = container.querySelector<HTMLInputElement>('input[type="text"]');
+  assert.ok(input, 'joint value editor should open');
+  return input;
+}
+
+for (const angleUnit of ['rad', 'deg'] as const) {
+  test(`opening and leaving the ${angleUnit} value editor retains the exact joint pose`, async () => {
+    const { dom, container, root } = createComponentRoot();
+    const value = 0.12345678912345678;
+    const displayValue = angleUnit === 'deg' ? value * 180 / Math.PI : value;
+    const committedAngles: number[] = [];
+    await renderJointControlItem(root, {
+      value,
+      angleUnit,
+      handleJointChangeCommit: (_name, angle) => committedAngles.push(angle),
+    });
+
+    for (const exitMode of ['blur', 'Enter', 'pointerdown'] as const) {
+      const input = await openJointValueEditor(container, displayValue);
+      assert.equal(Number(input.value), displayValue, 'the editable draft retains full precision');
+      await act(async () => {
+        if (exitMode === 'blur') {
+          input.blur();
+        } else if (exitMode === 'Enter') {
+          input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+        } else {
+          container.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
+        }
+      });
+      assert.equal(container.querySelector('input[type="text"]'), null);
+    }
+    assert.deepEqual(committedAngles, [], 'viewing the value must not create a pose change');
+    await act(async () => root.unmount());
+    dom.window.close();
+  });
+}
+
+test('an unchanged value draft does not overwrite an external joint pose update', async () => {
+  const { dom, container, root } = createComponentRoot();
+  const committedAngles: number[] = [];
+  const handleJointChangeCommit = (_name: string, angle: number) => committedAngles.push(angle);
+  await renderJointControlItem(root, { value: 0.123456789, handleJointChangeCommit });
+  const input = await openJointValueEditor(container, 0.123456789);
+  await renderJointControlItem(root, { value: 0.7654321, handleJointChangeCommit });
+  await act(async () => input.blur());
+
+  assert.deepEqual(committedAngles, []);
+  assert.ok(container.textContent?.includes('0.77'), 'the new external value remains visible');
+  const reopened = await openJointValueEditor(container, 0.7654321);
+  assert.equal(reopened.value, '0.7654321');
+  await act(async () => root.unmount());
+  dom.window.close();
+});
+
+test('numeric value edits commit once on Enter or blur and Escape cancels', async () => {
+  const { dom, container, root } = createComponentRoot();
+  const committedAngles: number[] = [];
+  await renderJointControlItem(root, {
+    value: 0.123456789,
+    handleJointChangeCommit: (_name, angle) => committedAngles.push(angle),
+  });
+
+  const enterInput = await openJointValueEditor(container, 0.123456789);
+  await act(async () => {
+    enterInput.value = '0.9876543219876543';
+    enterInput.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+  });
+  assert.deepEqual(committedAngles, [0.9876543219876543]);
+
+  const blurInput = await openJointValueEditor(container, 0.123456789);
+  await act(async () => {
+    blurInput.value = '-0.456789123456789';
+    blurInput.blur();
+  });
+  assert.deepEqual(committedAngles, [0.9876543219876543, -0.456789123456789]);
+
+  const cancelInput = await openJointValueEditor(container, 0.123456789);
+  await act(async () => {
+    cancelInput.value = '2.5';
+    cancelInput.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
+  });
+  assert.equal(container.querySelector('input[type="text"]'), null);
+  assert.deepEqual(committedAngles, [0.9876543219876543, -0.456789123456789]);
+  await act(async () => root.unmount());
+  dom.window.close();
+});
+
+test('empty, non-finite and numerically unchanged value drafts do not commit', async () => {
+  const { dom, container, root } = createComponentRoot();
+  const committedAngles: number[] = [];
+  await renderJointControlItem(root, {
+    value: 0.25,
+    handleJointChangeCommit: (_name, angle) => committedAngles.push(angle),
+  });
+  for (const draft of ['', 'Infinity', '0.5garbage', '0.2500']) {
+    const input = await openJointValueEditor(container, 0.25);
+    await act(async () => {
+      input.value = draft;
+      input.blur();
+    });
+  }
+  assert.deepEqual(committedAngles, []);
+  await act(async () => root.unmount());
+  dom.window.close();
+});
+
+test('switching directly from a numeric edit to a continuous slider uses the accepted pose', async () => {
+  const { dom, container, root } = createComponentRoot();
+  const committedAngles: number[] = [];
+  function ControlledJoint() {
+    const [value, setValue] = React.useState(0.123456789);
+    const handleJointChangeCommit = React.useCallback((_name: string, angle: number) => {
+      committedAngles.push(angle);
+      setValue(angle);
+    }, []);
+    return React.createElement(JointControlItem, {
+      name: 'continuous_joint',
+      joint: { id: 'continuous_joint', jointType: 'continuous' },
+      value,
+      angleUnit: 'rad',
+      isActive: true,
+      setActiveJoint: () => {},
+      handleJointAngleChange: () => {},
+      handleJointChangeCommit,
+    });
+  }
+  await act(async () => root.render(React.createElement(ControlledJoint)));
+  const input = await openJointValueEditor(container, 0.123456789);
+  const range = container.querySelector<HTMLInputElement>('input[type="range"]');
+  assert.ok(range);
+
+  await act(async () => {
+    input.value = '2.3456789';
+    range.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
+  });
+  assert.deepEqual(committedAngles, [2.3456789]);
+  await act(async () => {
+    range.value = '0.25';
+    range.dispatchEvent(new Event('input', { bubbles: true }));
+    range.dispatchEvent(new PointerEvent('pointerup', { bubbles: true }));
+  });
+  assert.equal(committedAngles.length, 2);
+  assert.ok(Math.abs(committedAngles[1] - 2.5956789) < 1e-12);
+  await act(async () => root.unmount());
+  dom.window.close();
+});
+
+test('slider release reconciles a constrained pose already accepted during the drag', async () => {
+  const { dom, container, root } = createComponentRoot();
+  const committedAngles: number[] = [];
+  function ConstrainedJoint() {
+    const [value, setValue] = React.useState(0);
+    const acceptAngle = React.useCallback((_name: string, angle: number) => {
+      setValue(Math.min(angle, 0.25));
+    }, []);
+    const commitAngle = React.useCallback((_name: string, angle: number) => {
+      committedAngles.push(angle);
+      setValue(Math.min(angle, 0.25));
+    }, []);
+    return React.createElement(JointControlItem, {
+      name: 'constrained_joint',
+      joint: {
+        id: 'constrained_joint',
+        jointType: 'revolute',
+        limit: { lower: -1, upper: 1, effort: 1, velocity: 1 },
+      },
+      value,
+      angleUnit: 'rad',
+      isActive: true,
+      setActiveJoint: () => {},
+      handleJointAngleChange: acceptAngle,
+      handleJointChangeCommit: commitAngle,
+      throttleDragSync: false,
+    });
+  }
+  await act(async () => root.render(React.createElement(ConstrainedJoint)));
+  const range = container.querySelector<HTMLInputElement>('input[type="range"]');
+  assert.ok(range);
+  await act(async () => {
+    range.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
+    range.value = '0.75';
+    range.dispatchEvent(new Event('input', { bubbles: true }));
+  });
+  assert.equal(Number(range.value), 0.75, 'dragging keeps immediate pointer feedback');
+  await act(async () => {
+    range.dispatchEvent(new PointerEvent('pointerup', { bubbles: true }));
+  });
+  assert.deepEqual(committedAngles, [0.75], 'the requested pose reaches the constraint owner');
+  assert.equal(Number(range.value), 0.25, 'release shows the already accepted constrained pose');
+  const input = await openJointValueEditor(container, 0.25);
+  assert.equal(input.value, '0.25');
+  await act(async () => root.unmount());
+  dom.window.close();
+});
+
+for (const jointType of ['revolute', 'continuous']) {
+  test(`pressing the ${jointType} slider thumb without moving preserves the exact pose`, async () => {
+    const { dom, container, root } = createComponentRoot();
+    const value = 0.2345678912345;
+    const previewAngles: number[] = [];
+    const committedAngles: number[] = [];
+    await renderJointControlItem(root, {
+      value,
+      joint: {
+        id: 'R_thigh_joint',
+        jointType,
+        limit: { lower: -Math.PI, upper: Math.PI, effort: 1, velocity: 1 },
+      },
+      handleJointAngleChange: (_name, angle) => previewAngles.push(angle),
+      handleJointChangeCommit: (_name, angle) => committedAngles.push(angle),
+    });
+    const shell = container.querySelector<HTMLElement>('[data-testid="joint-slider-shell"]');
+    const thumb = container.querySelector<HTMLElement>('[data-testid="joint-slider-thumb"]');
+    assert.ok(shell && thumb);
+    Object.defineProperty(shell, 'getBoundingClientRect', {
+      value: () => new dom.window.DOMRect(0, 0, 120, 16),
+      configurable: true,
+    });
+    const clientX = jointType === 'continuous' ? 60 : (value + Math.PI) / (2 * Math.PI) * 120;
+    await act(async () => {
+      thumb.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, clientX }));
+    });
+    await act(async () => {
+      window.dispatchEvent(new PointerEvent('pointermove', { bubbles: true, clientX }));
+      window.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, clientX }));
+    });
+    assert.deepEqual(previewAngles, [], 'pressing the thumb must not quantize its current value');
+    assert.deepEqual(committedAngles, [value]);
+    await act(async () => root.unmount());
+    dom.window.close();
+  });
+}
+
 test('clicking elsewhere in the joint card exits the upper limit edit mode', async () => {
   const { dom, container, root } = createComponentRoot();
 
@@ -1044,13 +1285,14 @@ test('dragging from a maxed-out thumb overhang still pulls the joint back from t
     1,
     'thumb drag should emit a preview update after leaving the end stop',
   );
-  assert.equal(previewAngles.at(-1), 0.96);
+  assert.ok(Math.abs(previewAngles[0] - 0.96) < 1e-12);
 
   await act(async () => {
     window.dispatchEvent(new PointerEvent('pointerup', { bubbles: true }));
   });
 
-  assert.deepEqual(committedAngles, [0.96]);
+  assert.equal(committedAngles.length, 1);
+  assert.ok(Math.abs(committedAngles[0] - 0.96) < 1e-12);
 
   await act(async () => {
     root.unmount();
@@ -1114,13 +1356,14 @@ test('dragging from a minimum thumb overhang still pulls the joint away from the
     1,
     'left thumb drag should emit a preview update after leaving the end stop',
   );
-  assert.equal(previewAngles.at(-1), 0.96);
+  assert.ok(Math.abs(previewAngles[0] - 0.96) < 1e-12);
 
   await act(async () => {
     window.dispatchEvent(new PointerEvent('pointerup', { bubbles: true }));
   });
 
-  assert.deepEqual(committedAngles, [0.96]);
+  assert.equal(committedAngles.length, 1);
+  assert.ok(Math.abs(committedAngles[0] - 0.96) < 1e-12);
 
   await act(async () => {
     root.unmount();
