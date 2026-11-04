@@ -140,6 +140,7 @@ export class IndexedDbAgentSessionBackend implements AgentSessionStorageBackend 
     const record = {
       sessionId,
       sequence,
+      source: input.source ?? null,
       timestamp: input.timestamp ?? new Date().toISOString(),
       event: input.event,
     }

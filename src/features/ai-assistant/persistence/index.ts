@@ -15,6 +15,7 @@ export type {
   AgentSessionRecord,
   AgentSessionReplayEvent,
   AgentSessionSnapshot,
+  AgentSessionSource,
   AgentSessionStorageBackend,
   AgentSessionStorageStats,
   AppendAgentSessionEventInput,

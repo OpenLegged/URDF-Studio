@@ -1,6 +1,13 @@
 /// <reference types="vite/client" />
 
 declare const __APP_VERSION__: string;
+declare const __APP_BUILD__: {
+  readonly app: string;
+  readonly revision: string | null;
+  readonly coreRevision: string | null;
+  readonly builtAt: string;
+  readonly dirty: boolean | null;
+};
 
 // Monaco ships its ESM internals without per-entry type declarations. The source
 // editor intentionally imports the trimmed `edcore.main` entry (see

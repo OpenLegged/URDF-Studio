@@ -5,6 +5,7 @@ import { defineConfig, loadEnv, type Plugin, type ServerOptions } from 'vite';
 import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
 import { assertEnvMode } from './scripts/build/env-mode.mjs';
+import { createAppBuildInfo } from './scripts/build/app-build-info.mjs';
 
 const appPackageVersion =
   JSON.parse(fs.readFileSync(path.resolve(__dirname, 'package.json'), 'utf8')).version ?? '0.0.0';
@@ -545,6 +546,7 @@ export default defineConfig(async ({ mode }) => {
     ],
     define: {
       __APP_VERSION__: JSON.stringify(appPackageVersion),
+      __APP_BUILD__: JSON.stringify(createAppBuildInfo({ app: 'urdf-studio', root: __dirname })),
       'process.env.API_KEY': JSON.stringify(aiRuntimeEnv.API_KEY),
       'process.env.GEMINI_API_KEY': JSON.stringify(aiRuntimeEnv.GEMINI_API_KEY),
       'process.env.OPENAI_API_KEY': JSON.stringify(aiRuntimeEnv.OPENAI_API_KEY),

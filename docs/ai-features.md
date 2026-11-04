@@ -160,6 +160,17 @@ Bearer token 和 secret；模型服务凭据本身不会进入 Session 数据。
 “清理缓存”。清理操作会通知仍挂载的对话窗口同步清空内存，避免旧数据被自动写回。IndexedDB 不可用
 时会安全降级为仅当前页面有效的内存仓库，设置页会明确显示“临时内存”。
 
+会话 JSON 归档保持 `version: 1`，增加可选的来源字段：顶层 `exportedFrom` 表示导出浏览器，
+`session.source` 表示会话创建时的浏览器，每条 `events[].source` 表示事件记录时的浏览器。
+来源包含应用标识、网址（仅 origin + pathname）、明确的 Vite mode、Core 应用版本、前端仓库
+commit、Pro 所用 Core commit、构建时间和工作树修改标记。来源来自客户端记录，不是后端部署
+版本证明。无 Git 元数据的构建会打印警告并记录未知 revision；不从域名或分支推断运行环境。
+导出文件名同时包含导出环境与主机名，便于直接区分文件。
+
+会话更新、导入、fork/replay 均保留原事件来源；同一会话在升级后或另一站点继续，会给新增事件
+记录新的来源。旧归档/旧本地记录没有来源时保持 `null`/缺失，不能用导出时的环境补写历史。
+来源网址不保存查询参数、fragment 或 URL 用户名密码；导入也验证并清洗来源网址。
+
 ### 浏览器内 Studio 操作能力
 
 App 层通过窄 `StudioAgentPorts` 向 harness 注入语义命令，不使用 DOM selector、屏幕坐标或调试接口。

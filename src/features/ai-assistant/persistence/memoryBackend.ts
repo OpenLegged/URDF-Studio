@@ -62,6 +62,7 @@ export class MemoryAgentSessionBackend implements AgentSessionStorageBackend {
     const record = {
       sessionId,
       sequence,
+      source: cloneValue(input.source ?? null),
       timestamp: input.timestamp ?? new Date().toISOString(),
       event: cloneValue(input.event),
     }
