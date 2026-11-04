@@ -6,7 +6,7 @@ import {
   AgentSessionRepository,
   createAgentSessionRepository,
 } from './repository.ts'
-import { AgentSessionPersistenceError } from './types.ts'
+import { AgentSessionPersistenceError, type AgentSessionSource } from './types.ts'
 
 async function makeRepository(): Promise<AgentSessionRepository> {
   const backend = new MemoryAgentSessionBackend()
@@ -145,4 +145,93 @@ test('factory falls back to memory or reports unavailable persistence explicitly
       && error.code === 'storage-unavailable'
     ),
   )
+})
+
+const productionSource: AgentSessionSource = {
+  app: 'urdf-studio-pro',
+  url: 'https://studio.example.com/zh/',
+  environment: 'production',
+  appVersion: '2.0.0',
+  revision: 'production-revision',
+  coreRevision: 'core-revision',
+  builtAt: '2026-11-04T01:00:00.000Z',
+  dirty: false,
+}
+
+test('captures session/event origins at write time and export origin separately', async () => {
+  let source = structuredClone(productionSource)
+  const repository = await createAgentSessionRepository({
+    backend: new MemoryAgentSessionBackend(),
+    sourceProvider: () => source,
+  })
+  await repository.createSession({ id: 'production' })
+  await repository.appendEvent('production', {
+    event: { kind: 'custom', name: 'scene.turn.started', data: {} },
+  })
+  source.revision = 'next-production-revision'
+  await repository.appendEvent('production', {
+    event: { kind: 'workspace.revision', revision: 'workspace-2' },
+  })
+  await repository.upsertSession({ id: 'production', metadata: { surface: 'scene' } })
+  source = { ...source, environment: 'fat', url: 'https://studio-fat.example.com/' }
+  const archive = await repository.exportArchive()
+  assert.deepEqual(archive.exportedFrom, source)
+  assert.deepEqual(archive.sessions[0].session.source, productionSource)
+  assert.equal(archive.sessions[0].events[0].source?.revision, 'production-revision')
+  assert.equal(archive.sessions[0].events[1].source?.revision, 'next-production-revision')
+  assert.deepEqual(archive.sessions[0].events.map(event => event.sequence), [1, 2])
+  assert.equal(archive.sessions[0].session.eventCount, 2)
+
+  const imported = await repository.importArchive(archive)
+  const id = imported.importedSessionIds[0]
+  await repository.appendEvent(id, {
+    event: { kind: 'workspace.revision', revision: 'workspace-3' },
+  })
+  const reexported = await repository.exportArchive([id])
+  assert.deepEqual(reexported.sessions[0].session.source, productionSource)
+  assert.deepEqual(reexported.sessions[0].events[0].source, productionSource)
+  assert.deepEqual(reexported.sessions[0].events[2].source, source)
+  assert.deepEqual((await repository.loadReplay(id))[0].source, productionSource)
+  const fork = await repository.forkSession(id)
+  assert.deepEqual(fork.source, source)
+  assert.deepEqual((await repository.loadReplay(fork.id))[0].source, productionSource)
+})
+
+test('legacy imports stay unknown even when resumed and exported in another environment', async () => {
+  const repository = await createAgentSessionRepository({
+    indexedDB: null,
+    sourceProvider: () => productionSource,
+  })
+  const legacy = {
+    format: 'urdf-studio-agent-sessions', version: 1,
+    sessions: [{
+      session: { id: 'legacy', title: 'Historical scene' },
+      events: [{ event: { kind: 'workspace.revision', revision: 'old' } }],
+    }],
+  }
+  await repository.importArchive(legacy)
+  await repository.appendEvent('legacy', {
+    event: { kind: 'workspace.revision', revision: 'resumed' },
+  })
+  const archive = await repository.exportArchive()
+  assert.deepEqual(archive.exportedFrom, productionSource)
+  assert.equal(archive.sessions[0].session.source, null)
+  assert.equal(archive.sessions[0].events[0].source, null)
+  assert.deepEqual(archive.sessions[0].events[1].source, productionSource)
+})
+
+test('import validates provenance before writing and strips source URL credentials', async () => {
+  const repository = await makeRepository()
+  await repository.createSession({ id: 'source' })
+  const archive = await repository.exportArchive()
+  archive.sessions[0].session.source = {
+    ...productionSource,
+    url: 'https://name:password@studio.example.com/zh/?token=private#secret',
+  }
+  await repository.importArchive(archive)
+  assert.equal((await repository.loadSession('source-imported'))?.session.source?.url,
+    'https://studio.example.com/zh/')
+  archive.sessions[0].session.source.url = 'javascript:alert(1)'
+  await assert.rejects(repository.importArchive(archive), /Invalid agent session source URL/)
+  assert.equal((await repository.listSessions()).length, 2)
 })

@@ -9,6 +9,18 @@ export type SerializableValue =
   | SerializableValue[]
   | { [key: string]: SerializableValue }
 
+/** Frontend evidence captured when a record is written, not backend deployment identity. */
+export interface AgentSessionSource {
+  app: string
+  url: string | null
+  environment: string
+  appVersion: string | null
+  revision: string | null
+  coreRevision: string | null
+  builtAt: string | null
+  dirty: boolean | null
+}
+
 export interface AgentSessionRecord {
   id: string
   title: string
@@ -20,6 +32,7 @@ export interface AgentSessionRecord {
   eventCount: number
   lastSequence: number
   metadata: Record<string, SerializableValue>
+  source?: AgentSessionSource | null
 }
 
 export type AgentSessionEventInput =
@@ -56,6 +69,7 @@ export type AgentSessionEventInput =
     }
 
 export interface AgentSessionEventRecord {
+  source?: AgentSessionSource | null
   sessionId: string
   sequence: number
   timestamp: string
@@ -68,6 +82,7 @@ export interface AgentSessionSnapshot {
 }
 
 export interface AgentSessionReplayEvent {
+  source?: AgentSessionSource | null
   replaySequence: number
   sourceSessionId: string
   sourceSequence: number
@@ -92,6 +107,7 @@ export interface UpdateAgentSessionInput {
 }
 
 export interface AppendAgentSessionEventInput {
+  source?: AgentSessionSource | null
   timestamp?: string
   event: AgentSessionEventInput
 }
@@ -107,6 +123,7 @@ export interface AgentSessionArchive {
   format: 'urdf-studio-agent-sessions'
   version: 1
   exportedAt: string
+  exportedFrom?: AgentSessionSource | null
   sessions: AgentSessionSnapshot[]
 }
 

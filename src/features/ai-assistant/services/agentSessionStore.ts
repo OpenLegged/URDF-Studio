@@ -1,3 +1,4 @@
+import { captureAgentSessionSource } from './agentSessionSource'
 import {
   createAgentSessionRepository,
   type AgentSessionArchive,
@@ -46,7 +47,7 @@ export function getAgentSessionRepository(): Promise<AgentSessionRepository> {
     broadcastChannel?.close()
     broadcastChannel = null
   }
-  repositoryPromise ??= createAgentSessionRepository()
+  repositoryPromise ??= createAgentSessionRepository({ sourceProvider: captureAgentSessionSource })
   return repositoryPromise
 }
 

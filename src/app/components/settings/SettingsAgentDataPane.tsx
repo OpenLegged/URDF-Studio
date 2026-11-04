@@ -80,9 +80,12 @@ export function SettingsAgentDataPane({
     try {
       const archive = await exportAgentSessionArchive()
       const date = new Date().toISOString().slice(0, 10)
+      const source = archive.exportedFrom
+      const host = source?.url ? new URL(source.url).host : 'unknown'
+      const origin = `${source?.environment ?? 'unknown'}-${host}`.replace(/[^a-zA-Z0-9._-]/g, '-')
       downloadBlob(
         new Blob([JSON.stringify(archive, null, 2)], { type: 'application/json' }),
-        `urdf-studio-agent-sessions-${date}.json`,
+        `urdf-studio-agent-sessions-${origin}-${date}.json`,
       )
       setStatus('exported')
     } catch (error) {

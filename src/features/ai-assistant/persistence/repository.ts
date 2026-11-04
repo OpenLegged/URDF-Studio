@@ -1,5 +1,6 @@
 import { IndexedDbAgentSessionBackend } from './indexedDbBackend'
 import { MemoryAgentSessionBackend } from './memoryBackend'
+import { readAgentSessionSource } from './source'
 import {
   sanitizeAgentSessionEvent,
   sanitizeAgentSessionMetadata,
@@ -11,6 +12,7 @@ import type {
   AgentSessionRecord,
   AgentSessionReplayEvent,
   AgentSessionSnapshot,
+  AgentSessionSource,
   AgentSessionStorageBackend,
   AgentSessionStorageStats,
   AppendAgentSessionEventInput,
@@ -26,6 +28,7 @@ export interface CreateAgentSessionRepositoryOptions {
   backend?: AgentSessionStorageBackend
   indexedDB?: IDBFactory | null
   fallbackToMemory?: boolean
+  sourceProvider?: () => AgentSessionSource | null
 }
 
 const ARCHIVE_FORMAT = 'urdf-studio-agent-sessions'
@@ -80,6 +83,7 @@ function readSession(value: unknown): AgentSessionRecord {
     eventCount: 0,
     lastSequence: 0,
     metadata,
+    source: readAgentSessionSource(value.source),
   }
 }
 
@@ -99,6 +103,7 @@ function readEvents(value: unknown, sessionId: string): AgentSessionEventRecord[
         ? candidate.timestamp
         : new Date().toISOString(),
       event: sanitizeAgentSessionEvent(candidate.event),
+      source: readAgentSessionSource(candidate.source),
     }
   })
   return events
@@ -129,6 +134,7 @@ function readArchive(value: unknown): AgentSessionArchive {
     exportedAt: typeof value.exportedAt === 'string'
       ? value.exportedAt
       : new Date().toISOString(),
+    exportedFrom: readAgentSessionSource(value.exportedFrom),
     sessions,
   }
 }
@@ -145,13 +151,17 @@ function uniqueImportedId(id: string, reserved: Set<string>): string {
 
 /** Browser-local append-only Agent session repository. */
 export class AgentSessionRepository {
-  constructor(private readonly backend: AgentSessionStorageBackend) {}
+  constructor(
+    private readonly backend: AgentSessionStorageBackend,
+    private readonly sourceProvider: () => AgentSessionSource | null = () => null,
+  ) {}
 
   get persistenceMode(): AgentSessionStorageBackend['mode'] {
     return this.backend.mode
   }
 
   async createSession(input: CreateAgentSessionInput = {}): Promise<AgentSessionRecord> {
+    const source = readAgentSessionSource(this.sourceProvider())
     const id = input.id ?? createId()
     const existing = await this.backend.getSession(id)
     if (existing) {
@@ -169,6 +179,7 @@ export class AgentSessionRepository {
       eventCount: 0,
       lastSequence: 0,
       metadata: sanitizeAgentSessionMetadata(input.metadata ?? {}),
+      source,
     }
     await this.backend.putSession(session)
     return session
@@ -242,6 +253,7 @@ export class AgentSessionRepository {
     return this.backend.appendEvent(sessionId, {
       ...input,
       event: sanitizeAgentSessionEvent(input.event),
+      source: readAgentSessionSource(this.sourceProvider()),
     })
   }
 
@@ -268,12 +280,14 @@ export class AgentSessionRepository {
   }
 
   async exportArchive(sessionIds?: string[]): Promise<AgentSessionArchive> {
+    const exportedFrom = readAgentSessionSource(this.sourceProvider())
     const ids = sessionIds ?? (await this.listSessions()).map(session => session.id)
     const snapshots = await Promise.all(ids.map(id => this.backend.loadSession(id)))
     return {
       format: ARCHIVE_FORMAT,
       version: 1,
       exportedAt: new Date().toISOString(),
+      exportedFrom,
       sessions: snapshots.filter(snapshot => snapshot !== null),
     }
   }
@@ -368,6 +382,7 @@ export class AgentSessionRepository {
       sourceSequence: event.sequence,
       timestamp: event.timestamp,
       event: event.event,
+      source: event.source ?? null,
     })))
   }
 }
@@ -378,7 +393,7 @@ export async function createAgentSessionRepository(
 ): Promise<AgentSessionRepository> {
   if (options.backend) {
     await options.backend.initialize()
-    return new AgentSessionRepository(options.backend)
+    return new AgentSessionRepository(options.backend, options.sourceProvider)
   }
   const indexedDBFactory = options.indexedDB === undefined
     ? globalThis.indexedDB
@@ -387,7 +402,7 @@ export async function createAgentSessionRepository(
     const backend = new IndexedDbAgentSessionBackend(indexedDBFactory)
     try {
       await backend.initialize()
-      return new AgentSessionRepository(backend)
+      return new AgentSessionRepository(backend, options.sourceProvider)
     } catch (error) {
       if (options.fallbackToMemory === false) {
         throw new AgentSessionPersistenceError(
@@ -405,5 +420,5 @@ export async function createAgentSessionRepository(
   }
   const backend = new MemoryAgentSessionBackend()
   await backend.initialize()
-  return new AgentSessionRepository(backend)
+  return new AgentSessionRepository(backend, options.sourceProvider)
 }
