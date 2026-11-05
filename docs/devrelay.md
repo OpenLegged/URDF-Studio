@@ -2,13 +2,20 @@
 
 本仓的共享规则维护在 [`.devrelay/config.toml`](../.devrelay/config.toml)。
 [DevRelay](https://github.com/kleinlau17/DevRelay) 在用户环境安装一次，多个项目共用；
-无需项目专用启动脚本或仓内 runtime。已包含配置的 checkout 不必再次 `init`。
+无需项目专用启动脚本或仓内 runtime。本机已登记的 controller 无需重复 `init`。
 
 ## 本地入口
 
 每个 Git 仓库选定一个 controller checkout；它可以是现有仓库目录，也可以是专用 Git 工作树。
-任务工作树和状态由 DevRelay 管理，同仓不同 checkout 共享状态，不重复建立 controller。
 以下命令中的 `/path/to/urdf-studio` 替换为选定的 controller 路径。
+首次克隆已有配置的仓库时，登记选定的 controller 并补齐 GitHub 标签，保留已有配置：
+
+```bash
+devrelay --project /path/to/urdf-studio init --sync-github
+```
+
+任务工作树和状态由 DevRelay 管理。controller 登记后，同仓其他 checkout 共享状态并路由到它，
+不重复建立 controller。
 
 ```bash
 devrelay --project /path/to/urdf-studio doctor --with-codex
