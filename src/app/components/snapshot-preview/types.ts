@@ -3,6 +3,7 @@ import type {
   ViewerRobotSourceFormat,
 } from '@/features/editor';
 import type { WorkspaceCameraSnapshot } from '@/shared/components/3d';
+import type { AssemblyScenePlacement } from '@/core/robot';
 import type { RobotData, RobotFile } from '@/types';
 import type { Theme } from '@/types';
 
@@ -20,6 +21,7 @@ export interface SnapshotPreviewSession {
   viewportAspectRatio: number;
   robotName: string;
   robot: RobotData;
+  scenePlacement: AssemblyScenePlacement;
   assets: Record<string, string>;
   availableFiles: RobotFile[];
   urdfContent: string;

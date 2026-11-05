@@ -23,7 +23,7 @@ interface UseAppLayoutSnapshotWorkflowParams {
   viewerAssets: Record<string, string>;
   viewerDocumentReady: boolean;
   viewerReloadKey: number;
-  viewerRobot: SnapshotPreviewSession['robot'];
+  viewerScenePlacement: SnapshotPreviewSession['scenePlacement'];
   viewerShowVisual: boolean;
   viewerSourceFile: RobotFile | null;
   viewerSourceFilePath?: string;
@@ -61,7 +61,7 @@ export function useAppLayoutSnapshotWorkflow({
   viewerAssets,
   viewerDocumentReady,
   viewerReloadKey,
-  viewerRobot,
+  viewerScenePlacement,
   viewerShowVisual,
   viewerSourceFile,
   viewerSourceFilePath,
@@ -93,7 +93,7 @@ export function useAppLayoutSnapshotWorkflow({
       viewerCanvasStateRef,
       viewerDocumentReady,
       viewerReloadKey,
-      viewerRobot,
+      viewerScenePlacement,
       viewerShowVisual,
       viewerSourceFile,
       viewerSourceFilePath,

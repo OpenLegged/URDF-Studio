@@ -158,7 +158,7 @@ export function buildUnifiedViewerSceneProps({
     runtimeInstanceKey: viewerReloadKey,
     workspace: blocksReadOnlyModelInteraction ? null : (workspace ?? null),
     sceneProjection: blocksReadOnlyModelInteraction ? null : (sceneProjection ?? null),
-    scenePlacement: blocksReadOnlyModelInteraction ? null : (scenePlacement ?? null),
+    scenePlacement: hasActivePreview ? null : (scenePlacement ?? null),
     workspaceSelection: blocksReadOnlyModelInteraction ? null : workspaceSelection,
     onAssemblyTransform: blocksReadOnlyModelInteraction ? undefined : onAssemblyTransform,
     onComponentTransform: blocksReadOnlyModelInteraction ? undefined : onComponentTransform,

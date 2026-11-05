@@ -99,7 +99,7 @@ interface UseSnapshotDialogControllerParams {
   viewerCanvasStateRef: MutableRefObject<RootState | null>;
   viewerDocumentReady: boolean;
   viewerReloadKey: number;
-  viewerRobot: SnapshotPreviewSession['robot'];
+  viewerScenePlacement: SnapshotPreviewSession['scenePlacement'];
   viewerShowVisual: boolean;
   viewerSourceFile: RobotFile | null;
   viewerSourceFilePath?: string;
@@ -121,7 +121,7 @@ export function useSnapshotDialogController({
   viewerCanvasStateRef,
   viewerDocumentReady,
   viewerReloadKey,
-  viewerRobot,
+  viewerScenePlacement,
   viewerShowVisual,
   viewerSourceFile,
   viewerSourceFilePath,
@@ -169,11 +169,11 @@ export function useSnapshotDialogController({
       viewerSourceFormat,
       availableFiles,
       urdfContentForViewer,
-      robotName: viewerRobot.name,
+      robotName: viewerScenePlacement.robotData.name,
     });
     const previewUrdfContent =
       urdfContentForViewer.trim() || previewSourceFile?.content.trim() || '';
-    const previewRobot = resolveSnapshotPreviewRobot(viewerRobot);
+    const previewRobot = resolveSnapshotPreviewRobot(viewerScenePlacement.robotData);
     const previewCameraSnapshot = viewerShowVisual && viewerDocumentReady ? cameraSnapshot : null;
 
     snapshotPreviewCaptureActionRef.current = null;
@@ -183,6 +183,10 @@ export function useSnapshotDialogController({
       viewportAspectRatio,
       robotName: previewRobot.name || 'robot',
       robot: previewRobot,
+      scenePlacement: {
+        ...viewerScenePlacement,
+        robotData: previewRobot,
+      },
       assets: viewerAssets,
       availableFiles,
       urdfContent: previewUrdfContent,
@@ -212,7 +216,7 @@ export function useSnapshotDialogController({
     viewerCanvasStateRef,
     viewerDocumentReady,
     viewerReloadKey,
-    viewerRobot,
+    viewerScenePlacement,
     viewerShowVisual,
     viewerSourceFile,
     viewerSourceFilePath,
