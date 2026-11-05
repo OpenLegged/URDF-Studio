@@ -83,6 +83,7 @@
 - `WorkspaceCanvas.tsx`：应用层 re-export；底层 runtime 在 `shared/components/3d/workspace/*`
 - `AppLayoutOverlays.tsx` + `utils/overlayLoaders.ts`：懒加载业务浮层
 - `SnapshotDialog.tsx`：统一快照导出与预览弹层
+- 快照 session 同时冻结相机与 canonical scene placement，保留整体位姿、单组件位姿及多组件根关节；预览的可见性副本与 placement 共用同一 `RobotData`。只读预览禁用交互与 workspace mutation，但不得因此移除渲染位姿；文件库源码预览仍使用自身坐标系。
 - `unified-viewer/*`：统一 viewer 的 scene root、overlay、derived state、mode module loader
 
 ### 关键 hooks

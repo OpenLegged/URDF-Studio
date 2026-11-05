@@ -362,3 +362,41 @@ test('buildUnifiedViewerSceneProps disables model interaction for standalone rea
   assert.equal(sceneProps.focusTarget, 'base_link');
   assert.equal(sceneProps.isMeshPreview, true);
 });
+
+test('read-only snapshot scenes preserve placement while blocking workspace interaction', () => {
+  const workspace = createAssemblyStateStub();
+  workspace.transform.position.x = 20;
+  workspace.transform.rotation.y = 0.4;
+  workspace.components.comp_alpha!.transform.position.z = 0.8;
+  workspace.components.comp_alpha!.transform.rotation.r = -0.2;
+  const projection = createAssemblySceneProjection(workspace);
+  const placement = createAssemblyScenePlacement(workspace, projection);
+  const onAssemblyTransform = () => {};
+  const onComponentTransform = () => {};
+  const onAssemblyComponentAutoGroundResolved = () => {};
+  const sceneProps = buildUnifiedViewerSceneProps(createSceneArgs({
+    interaction: { modelInteractionEnabled: false },
+    workspace: {
+      workspace,
+      sceneProjection: projection,
+      scenePlacement: placement,
+      workspaceSelection: { entity: { type: 'assembly' } },
+      onAssemblyTransform,
+      onComponentTransform,
+      pendingAutoGroundComponentIds: ['comp_alpha'],
+      onAssemblyComponentAutoGroundResolved,
+    },
+  }));
+
+  assert.equal(sceneProps.scenePlacement, placement);
+  assert.equal(sceneProps.workspace, null);
+  assert.equal(sceneProps.sceneProjection, null);
+  assert.equal(sceneProps.workspaceSelection, null);
+  assert.deepEqual(sceneProps.selection, EMPTY_VIEWER_SELECTION);
+  assert.equal(sceneProps.interactionEnabled, false);
+  assert.equal(sceneProps.hoverSelectionEnabled, false);
+  assert.equal(sceneProps.onAssemblyTransform, undefined);
+  assert.equal(sceneProps.onComponentTransform, undefined);
+  assert.deepEqual(sceneProps.pendingAutoGroundComponentIds, []);
+  assert.equal(sceneProps.onAssemblyComponentAutoGroundResolved, undefined);
+});

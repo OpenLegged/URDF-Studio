@@ -72,12 +72,24 @@ function createPreviewRobot(): RobotData {
 }
 
 function createPreviewSession(): SnapshotPreviewSession {
+  const robot = createPreviewRobot();
   return {
     theme: 'light',
     cameraSnapshot: null,
     viewportAspectRatio: 16 / 9,
     robotName: 'preview_bot',
-    robot: createPreviewRobot(),
+    robot,
+    scenePlacement: {
+      robotData: robot,
+      renderStrategy: 'direct-component',
+      assemblyTransform: {
+        position: { x: 0, y: 0, z: 0 },
+        rotation: { r: 0, p: 0, y: 0 },
+      },
+      directComponentId: null,
+      directComponentTransform: null,
+      componentTransformTargets: new Map(),
+    },
     assets: {},
     availableFiles: [],
     urdfContent: '',

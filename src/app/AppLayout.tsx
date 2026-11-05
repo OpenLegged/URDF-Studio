@@ -149,7 +149,6 @@ export function AppLayout({
     sceneWorkspace,
     sceneProjection,
     scenePlacement,
-    viewerRobot,
     viewerDocument,
     canonicalSource,
     jointAngleState,
@@ -404,7 +403,7 @@ export function AppLayout({
       documentLoadLifecycleState.status === 'ready' &&
       documentLoadLifecycleState.fileName === selectedFile?.name,
     viewerReloadKey,
-    viewerRobot,
+    viewerScenePlacement: scenePlacement,
     viewerShowVisual: showVisual,
     viewerSourceFile: viewerDocument.sourceFile,
     viewerSourceFilePath: viewerDocument.sourceFilePath,

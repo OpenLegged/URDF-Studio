@@ -756,6 +756,7 @@ export function SnapshotPreviewRenderer({
               }}
               mode="editor"
               robot={session.robot}
+              scenePlacement={session.scenePlacement}
               showCollision={false}
               showCollisionAlwaysOnTop={false}
               focusTarget={null}
