@@ -1,0 +1,48 @@
+# Review commands and acceptance before executing tasks.
+[project]
+provider = "github"
+base_branch = "dev"
+remote = "origin"
+branch_prefix = "chore/devrelay-"
+repository = "OpenLegged/URDF-Studio"
+
+[queue]
+allowed_authors = ["kleinlau17"] # Personal and autodev Issues use the same GitHub account.
+mode = "manual"
+auto_kinds = ["bug"]
+scope = "Confirmed bugs with clear expected behavior and acceptance in URDF-Studio; do not extend authorization to other repositories or releases."
+max_dispatches = 20
+approval_label = "auto:approved"
+priorities = ["priority:P0", "priority:P1", "priority:P2"]
+blockers = ["blocked", "needs-input"]
+
+[codex]
+executable = "codex"
+sandbox = "workspace-write"
+timeout_seconds = 1800
+max_attempts = 3
+
+[delivery]
+auto_review = true
+auto_merge = false
+required_checks = []
+allow_no_ci = false
+cleanup_branches = false
+cleanup_worktrees = false
+post_merge_checks = true
+
+[discovery]
+enabled = true
+auto_triage = false
+auto_review = true
+max_per_task = 3
+
+[[setup]]
+id = "install"
+argv = ["npm", "ci"]
+timeout_seconds = 900
+
+[[checks]]
+id = "project-check"
+argv = ["npm", "run", "verify:fast"]
+timeout_seconds = 1800
