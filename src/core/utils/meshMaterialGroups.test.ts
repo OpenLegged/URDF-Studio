@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import * as THREE from 'three';
+import type { UrdfVisual } from '@/types';
 import { applyMeshMaterialPaintEdit } from '@/core/robot/visualMeshMaterialGroups';
 import { applyVisualMaterialOverrideToObject } from './visualMaterialOverrides';
 
@@ -21,7 +22,10 @@ test('late base texture loading does not retexture solid paint after project rei
     return texture;
   };
   const root = new THREE.Group();
-  const mesh = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.MeshStandardMaterial());
+  const mesh = new THREE.Mesh<
+    THREE.PlaneGeometry,
+    THREE.MeshStandardMaterial | THREE.MeshStandardMaterial[]
+  >(new THREE.PlaneGeometry(1, 1), new THREE.MeshStandardMaterial());
   root.add(mesh);
   try {
     applyVisualMaterialOverrideToObject(root, { texture: 'checker.png', opacity: 0.75 });
@@ -37,38 +41,51 @@ test('late base texture loading does not retexture solid paint after project rei
     });
     completions.forEach(complete => complete());
     assert.ok(Array.isArray(mesh.material));
-    const materials = mesh.material as THREE.MeshStandardMaterial[];
+    const materials = mesh.material;
     assert.ok(materials[0]?.map);
     assert.equal(materials[1]?.map, null);
     assert.equal(materials[1]?.color.getHexString(), 'ff6c0a');
   } finally {
     THREE.TextureLoader.prototype.load = originalLoad;
     mesh.geometry.dispose();
-    for (const material of mesh.material as THREE.Material[]) material.dispose();
+    const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+    for (const material of materials) material.dispose();
   }
 });
 
 test('painting a translucent textured mesh applies the chosen alpha and preserves untouched texture', () => {
   const texture = new THREE.Texture();
-  const mesh = new THREE.Mesh(
+  const mesh = new THREE.Mesh<
+    THREE.PlaneGeometry,
+    THREE.MeshStandardMaterial | THREE.MeshStandardMaterial[]
+  >(
     new THREE.PlaneGeometry(1, 1),
     new THREE.MeshStandardMaterial({ map: texture, opacity: 0.75, transparent: true }),
   );
   const root = new THREE.Group();
   root.add(mesh);
   const meshKey = resolveRuntimeMeshMaterialGroupKey(mesh, root);
-  let geometry = applyMeshMaterialPaintEdit({
-    geometry: {}, meshKey, triangleCount: 2, selectedFaceIndices: [0],
-    paintColor: '#00cc4466', baseMaterial: { color: '#ffffff', opacity: 0.75 },
-  });
+  let geometry: Pick<UrdfVisual, 'color' | 'authoredMaterials' | 'meshMaterialGroups'> = {
+    color: '#ffffff',
+  };
+  geometry = {
+    ...geometry,
+    ...applyMeshMaterialPaintEdit({
+      geometry, meshKey, triangleCount: 2, selectedFaceIndices: [0],
+      paintColor: '#00cc4466', baseMaterial: { color: '#ffffff', opacity: 0.75 },
+    }),
+  };
 
   for (const [paintColor, opacity] of [['#00cc4466', 0.4], ['#00cc44', 1]] as const) {
-    geometry = applyMeshMaterialPaintEdit({
-      geometry, meshKey, triangleCount: 2, selectedFaceIndices: [0], paintColor,
-    });
+    geometry = {
+      ...geometry,
+      ...applyMeshMaterialPaintEdit({
+        geometry, meshKey, triangleCount: 2, selectedFaceIndices: [0], paintColor,
+      }),
+    };
     applyVisualMeshMaterialGroupsToObject(root, geometry);
     assert.ok(Array.isArray(mesh.material));
-    const materials = mesh.material as THREE.MeshStandardMaterial[];
+    const materials = mesh.material;
     assert.equal(materials[0]?.map, texture);
     assert.equal(materials[0]?.opacity, 0.75);
     assert.equal(materials[1]?.map, null);
@@ -77,7 +94,8 @@ test('painting a translucent textured mesh applies the chosen alpha and preserve
   }
 
   mesh.geometry.dispose();
-  for (const material of mesh.material as THREE.Material[]) material.dispose();
+  const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+  for (const material of materials) material.dispose();
   texture.dispose();
 });
 

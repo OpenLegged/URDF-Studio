@@ -281,6 +281,7 @@ test('places robots on the room floor clear of a bed and of each other', () => {
   room.robot.inspectionContext = { sourceFormat: 'mjcf' };
   const root = room.robot.links[room.robot.rootLinkId]!;
   root.name = 'world';
+  assert.ok(root.inertial);
   root.inertial.mass = 0;
   root.visual.type = GeometryType.BOX;
   root.visual.dimensions = { x: 1000, y: 1000, z: 0.1 };

@@ -8,7 +8,7 @@ import JSZip from 'jszip';
 import { findAssetByPath } from '@/core/loaders/assetPathIndex';
 import type { RobotFile } from '@/types';
 import { validateMJCFImportExternalAssets } from './mjcfImportValidation.ts';
-import { parseMJCFModel } from './mjcfModel.ts';
+import { parseMJCFModel, type MJCFModelBody } from './mjcfModel.ts';
 import { createCanonicalSnapshotFromParsedModel } from './mjcfSnapshot.ts';
 import { resolveMJCFSource } from './mjcfSourceResolver.ts';
 
@@ -138,7 +138,7 @@ test('original scene-editor ZIP matches the native MuJoCo structure and resource
     wardrobe: [-1.88, -1.2, .002],
   };
   for (const [name, position] of Object.entries(expectedPositions)) {
-    const body = model.worldBody.children.find((entry) => entry.sourceName === `${name}__root`);
+    const body: MJCFModelBody | undefined = model.worldBody.children.find((entry) => entry.sourceName === `${name}__root`);
     assert.ok(body);
     assertClose(body.pos, position);
     assert.equal(body.geoms.length, 2);
