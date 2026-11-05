@@ -120,6 +120,8 @@ for (const connected of [false, true]) {
     const before = structuredClone(workspace);
     const exportContext = buildCanonicalExportContext({ workspace, componentSourceDrafts: {} });
     assert.ok(exportContext.mjcfFrameLinkIds?.size);
+    const sourceFile = exportContext.sourceFile;
+    assert.equal(sourceFile, null, 'multi-component export must generate an assembled source');
     const downloads: Array<{ blob: Blob; name: string }> = [];
     const config = structuredClone(DEFAULT_CONFIG);
     config.format = 'mjcf';
@@ -130,7 +132,7 @@ for (const connected of [false, true]) {
       config, assets: {}, boxFaceFallbackWarningLabels: { urdf: '', sdf: '', xacro: '' },
       buildBomCsv: () => '',
       buildSourcePreservingExportContent: (options) => resolveSourcePreservingExportContent({
-        ...options, sourceFile: exportContext.sourceFile,
+        ...options, sourceFile,
       }).content,
       createProgressReporter: () => () => {},
       createZip: async () => new JSZip(),

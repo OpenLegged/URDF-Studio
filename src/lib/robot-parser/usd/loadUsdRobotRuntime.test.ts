@@ -171,7 +171,7 @@ test('USD runtime keeps opaque textured materials white-based instead of name-ti
 
   const originalImage = globalThis.Image;
   const originalLoadAsync = THREE.TextureLoader.prototype.loadAsync;
-  const cachedTexture = new THREE.Texture();
+  const cachedTexture = new THREE.Texture<HTMLImageElement>();
   let cachedTextureDisposals = 0;
   cachedTexture.addEventListener('dispose', () => { cachedTextureDisposals += 1; });
   Object.defineProperty(globalThis, 'Image', {

@@ -14,12 +14,14 @@ globalThis.DOMParser = dom.window.DOMParser as typeof DOMParser;
 after(() => dom.window.close());
 
 function parsePrimitive(type: 'capsule' | 'cylinder', size?: string) {
-  return parseMJCF(`<mujoco model="capsule_dimensions">
+  const robot = parseMJCF(`<mujoco model="capsule_dimensions">
     <worldbody><body name="base">
       <inertial pos="0 0 0" mass="1" diaginertia="1 1 1" />
       <geom type="${type}" ${size === undefined ? '' : `size="${size}"`} />
     </body></worldbody>
   </mujoco>`);
+  assert.ok(robot);
+  return robot;
 }
 
 for (const [size, bodyLength] of [['0.08 0', 0], ['0.08 0.02', 0.04], ['0.08', 0.2]] as const) {
@@ -48,6 +50,7 @@ test('MJCF capsule zero straight length survives generation and reimport', () =>
   assert.equal(geoms.length, 2);
   geoms.forEach((geom) => assert.equal(geom.getAttribute('size'), '0.08 0'));
   const reimported = parseMJCF(source);
+  assert.ok(reimported);
   for (const category of ['visual', 'collision'] as const) {
     assert.deepEqual(reimported.links.base[category].dimensions, { x: 0.08, y: 0, z: 0 });
   }

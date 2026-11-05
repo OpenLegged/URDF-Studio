@@ -179,10 +179,16 @@ async function editAndRoundtrip(context: TestContext, scene?: SceneFiles): Promi
   const { files, assetUrls, warnings } = await setUp(context, scene);
   const originalFiles = structuredClone(files);
   const before = structuredClone(currentRobot());
-  const mass = before.links.bed__root!.inertial.mass + 1;
-  mutate((robot) => { robot.links.bed__root!.inertial.mass = mass; });
-  assert.equal(currentRobot().links.bed__root!.inertial.mass, mass);
-  assert.equal(parseCurrentDraft(files).links.bed__root!.inertial.mass, mass);
+  const originalInertial = before.links.bed__root!.inertial;
+  assert.ok(originalInertial);
+  const mass = originalInertial.mass + 1;
+  mutate((robot) => {
+    const inertial = robot.links.bed__root!.inertial;
+    assert.ok(inertial);
+    inertial.mass = mass;
+  });
+  assert.equal(currentRobot().links.bed__root!.inertial?.mass, mass);
+  assert.equal(parseCurrentDraft(files).links.bed__root!.inertial?.mass, mass);
   assert.deepEqual(useAssetsStore.getState().availableFiles, originalFiles);
   assert.equal(warnings.mock.callCount(), 0);
 

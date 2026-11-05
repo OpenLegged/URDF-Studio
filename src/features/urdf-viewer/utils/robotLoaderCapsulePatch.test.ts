@@ -33,6 +33,7 @@ async function createCapsuleRuntime(category: GeometryCategory, shape: string) {
       </body></worldbody>
     </mujoco>
   `);
+  assert.ok(state);
   const link = state.links.base;
   assert.ok(link);
   assert.equal(link[category].type, GeometryType.CAPSULE);

@@ -50,7 +50,7 @@ for (const rename of [false, true]) {
     assert.equal(document.querySelector('custom text')?.getAttribute('data'), 'room');
     assert.match(exported.content, /scene metadata remains source-owned/);
     assert.equal(document.documentElement.getAttribute('model'), currentRobot.name);
-    assert.equal(robot.links.bed!.inertial.mass, 0);
+    assert.equal(robot.links.bed!.inertial?.mass, 0);
   });
 }
 

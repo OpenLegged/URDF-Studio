@@ -19,7 +19,7 @@ function createResizeHarness(context: TestContext) {
   let nextId = 0;
   let invalidations = 0;
   let disconnected = false;
-  let resize = () => { throw new Error('ResizeObserver is not mounted'); };
+  let resize: () => void = () => { throw new Error('ResizeObserver is not mounted'); };
   class Observer implements ResizeObserver {
     constructor(callback: ResizeObserverCallback) {
       resize = () => callback([], this);

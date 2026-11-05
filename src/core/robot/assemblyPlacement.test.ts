@@ -107,6 +107,7 @@ test('a horizontal MJCF world surface places a new model on its top near the roo
   scene.inspectionContext = { sourceFormat: 'mjcf' };
   const world = scene.links.base!;
   world.name = 'world';
+  assert.ok(world.inertial);
   world.inertial.mass = 0;
   world.visual.type = GeometryType.BOX;
   world.visual.dimensions = { x: 1000, y: 1000, z: 0.1 };

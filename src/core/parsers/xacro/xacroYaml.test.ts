@@ -49,8 +49,7 @@ test('explicit YAML argument overrides included default without mutating caller 
 });
 
 test('missing, malformed or unsupported YAML does not silently become black', () => {
-  const map = files('light_blue');
-  delete map['pkg/config/colors.yaml'];
+  const map = { 'pkg/urdf/parts/appearance.xacro': appearance };
   assert.throws(() => processXacroWithDiagnostics(root, {}, map, 'pkg/urdf'), /YAML.*was not imported/);
   for (const badYaml of ['rgb: [1, 2', 'rgb: !unsupported [1, 2, 3]', 'rgb: 1\nrgb: 2']) {
     assert.throws(() => loadXacroYaml('colors.yaml', 'config', { 'config/colors.yaml': badYaml }), /Invalid YAML/);
@@ -76,7 +75,7 @@ test('expression interpreter keeps quoted strings and lazy branches intact', () 
 
 test('expression interpreter cannot call host functions or access prototypes', () => {
   for (const expr of ["data.__proto__", "data['constructor']", "data.get('__proto__')", "globalThis.process.exit()", "'x'.constructor('return globalThis')()", "__import__('os')", "[1]; alert(1)"]) {
-    assert.throws(() => evaluateDataExpression(expr, context), undefined, expr);
+    assert.throws(() => evaluateDataExpression(expr, context), expr);
   }
 });
 

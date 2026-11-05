@@ -70,7 +70,8 @@ test('snapshot capture reads live repeat and rotation without updating the sourc
 
 test('pending texture metadata survives snapshot capture and is cleared on replacement', () => {
   const material = new THREE.MeshPhysicalMaterial();
-  const inputs = { mapPath: { uvTransform: [...NONUNIFORM_SRT_UV_TRANSFORM], sourceOutput: 'r' } };
+  const uvTransform: number[] = [...NONUNIFORM_SRT_UV_TRANSFORM];
+  const inputs = { mapPath: { uvTransform, sourceOutput: 'r' } };
   rememberUsdMaterialTextureInputs(material, inputs);
   assert.deepEqual(captureUsdMaterialTextureInputs(material), inputs);
   inputs.mapPath.uvTransform[0] = 100;

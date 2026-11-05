@@ -8,7 +8,7 @@ test('USD texture slots share image loads while retaining independent sampling s
   let loads = 0;
   THREE.TextureLoader.prototype.loadAsync = async () => {
     loads += 1;
-    const texture = new THREE.Texture();
+    const texture = new THREE.Texture<HTMLImageElement>();
     texture.flipY = false;
     return texture;
   };

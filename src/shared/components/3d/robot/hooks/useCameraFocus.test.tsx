@@ -1,26 +1,24 @@
 import assert from 'node:assert/strict';
 import test, { type TestContext } from 'node:test';
 import React, { act } from 'react';
-import { createRoot } from 'react-dom/client';
 import { JSDOM } from 'jsdom';
-import { context as r3fContext, type RenderCallback, type RootState } from '@react-three/fiber';
-import { createWithEqualityFn } from 'zustand/traditional';
+import { advance, createRoot } from '@react-three/fiber';
 import * as THREE from 'three';
 import { OrbitControls } from 'three-stdlib';
 import { computeCameraFrame } from '../utils/cameraFrame';
 import { useCameraFocus } from './useCameraFocus';
 
-function createFocusHarness(context: TestContext, size: number, maxDistance = Infinity) {
-  const dom = new JSDOM('<div id="root"></div>');
+async function createFocusHarness(context: TestContext, size: number, maxDistance = Infinity) {
+  const dom = new JSDOM('<canvas></canvas>');
   const globals = { window: dom.window, document: dom.window.document, IS_REACT_ACT_ENVIRONMENT: true };
   const descriptors = new Map<string, PropertyDescriptor | undefined>();
   for (const [key, value] of Object.entries(globals)) {
     descriptors.set(key, Object.getOwnPropertyDescriptor(globalThis, key));
     Object.defineProperty(globalThis, key, { value, configurable: true, writable: true });
   }
-  const container = dom.window.document.getElementById('root');
-  assert.ok(container);
-  const root = createRoot(container);
+  const canvas = dom.window.document.querySelector('canvas');
+  assert.ok(canvas);
+  const root = createRoot(canvas);
   const camera = new THREE.PerspectiveCamera(50, 1, 0.01, 100000);
   camera.position.set(2.6, -2.6, 4.6);
   const controls = new OrbitControls(camera);
@@ -32,31 +30,30 @@ function createFocusHarness(context: TestContext, size: number, maxDistance = In
   robot.add(mesh);
   const desired = computeCameraFrame(mesh, camera, controls.target);
   assert.ok(desired);
-  const callbacks = new Set<React.RefObject<RenderCallback>>();
   let invalidations = 0;
   let active = true;
-  // The hook only consumes these R3F fields; no WebGL renderer is needed to
-  // exercise its real frame subscription and the real OrbitControls limits.
-  const store = createWithEqualityFn<RootState>(() => ({
+  let elapsed = 0;
+  // Keep the real R3F store and subscriptions, replacing only WebGL drawing.
+  const renderer = {
+    render: () => undefined,
+    setSize: () => undefined,
+    setPixelRatio: () => undefined,
+  };
+  await root.configure({
     camera,
-    controls,
-    invalidate: () => { invalidations += 1; },
-    internal: {
-      subscribe: (callback: React.RefObject<RenderCallback>) => {
-        callbacks.add(callback);
-        return () => callbacks.delete(callback);
-      },
-    },
-  } as RootState));
+    frameloop: 'never',
+    size: { width: 640, height: 480, top: 0, left: 0 },
+    gl: renderer,
+  });
+  const store = await act(async () => root.render(null));
+  store.setState({ controls, invalidate: () => { invalidations += 1; } });
   function Probe() {
     useCameraFocus({ robot, focusTarget: 'target', active });
     return null;
   }
-  const render = () => act(() => root.render(
-    <r3fContext.Provider value={store}><Probe /></r3fContext.Provider>,
-  ));
-  context.after(() => {
-    act(() => root.unmount());
+  const render = () => act(async () => { root.render(<Probe />); });
+  context.after(async () => {
+    await act(async () => root.unmount());
     controls.dispose();
     mesh.geometry.dispose();
     mesh.material.dispose();
@@ -66,21 +63,22 @@ function createFocusHarness(context: TestContext, size: number, maxDistance = In
       else Reflect.deleteProperty(globalThis, key);
     }
   });
-  render();
+  await render();
   return {
     camera, controls, desired,
     get invalidations() { return invalidations; },
     advance(frames = 1, delta = 1 / 60) {
       for (let frame = 0; frame < frames; frame += 1) {
-        callbacks.forEach((callback) => callback.current(store.getState(), delta));
+        elapsed += delta;
+        advance(elapsed, false, store.getState());
       }
     },
-    deactivate() { active = false; render(); },
+    async deactivate() { active = false; await render(); },
   };
 }
 
-test('reachable camera focus keeps the existing target and settles', (context) => {
-  const harness = createFocusHarness(context, 2);
+test('reachable camera focus keeps the existing target and settles', async (context) => {
+  const harness = await createFocusHarness(context, 2);
   harness.advance(600);
   assert.ok(harness.camera.position.distanceTo(harness.desired.cameraPosition) < 0.01);
   const before = harness.invalidations;
@@ -88,8 +86,8 @@ test('reachable camera focus keeps the existing target and settles', (context) =
   assert.equal(harness.invalidations, before);
 });
 
-test('focus stops at the orbit distance limit instead of redrawing an unchanged pose', (context) => {
-  const harness = createFocusHarness(context, 2000, 2000);
+test('focus stops at the orbit distance limit instead of redrawing an unchanged pose', async (context) => {
+  const harness = await createFocusHarness(context, 2000, 2000);
   harness.advance(600);
   assert.ok(Math.abs(harness.camera.position.distanceTo(harness.controls.target) - 2000) < 1e-8);
   assert.ok(harness.camera.position.distanceTo(harness.desired.cameraPosition) > 1000);
@@ -100,22 +98,22 @@ test('focus stops at the orbit distance limit instead of redrawing an unchanged 
   assert.deepEqual(harness.camera.position, position);
 });
 
-test('a zero-delta frame does not cancel camera focus', (context) => {
-  const harness = createFocusHarness(context, 2000, 2000);
+test('a zero-delta frame does not cancel camera focus', async (context) => {
+  const harness = await createFocusHarness(context, 2000, 2000);
   harness.advance(1, 0);
   const position = harness.camera.position.clone();
   harness.advance(10);
   assert.ok(harness.camera.position.distanceTo(position) > 1);
 });
 
-test('user interaction and deactivation still cancel camera focus', (context) => {
-  const harness = createFocusHarness(context, 2000, 2000);
+test('user interaction and deactivation still cancel camera focus', async (context) => {
+  const harness = await createFocusHarness(context, 2000, 2000);
   harness.advance(3);
-  harness.controls.dispatchEvent({ type: 'start' });
+  harness.controls.dispatchEvent({ type: 'start', target: harness.controls });
   const before = harness.invalidations;
   harness.advance(60);
   assert.equal(harness.invalidations, before);
-  harness.deactivate();
+  await harness.deactivate();
   harness.advance(60);
   assert.equal(harness.invalidations, before);
 });

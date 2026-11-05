@@ -373,6 +373,7 @@ test('pose export stays in the toolbar and captures live values independently of
   const originalCreateUrl = URL.createObjectURL;
   const originalRevokeUrl = URL.revokeObjectURL;
   URL.createObjectURL = (blob) => {
+    assert.ok(blob instanceof Blob);
     blobs.push(blob);
     return 'blob:pose-test';
   };
