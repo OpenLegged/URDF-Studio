@@ -64,6 +64,15 @@ Assembly/workspace 改动至少覆盖以下不变量：
 
 `npm run test:browser:closed-loops` 使用 Playwright 操作真实拼接弹窗与关节滑块，验证固定朝向、旋转限位与错轴、连续旋转、滑动自由度及限位、相连多环、撤销重做、USP 保存回导和导出提示时机；还会实际下载并回导 SDF、USD、MJCF 固定闭环，检查回导后运动约束及 MJCF 活动闭环的导出保护。使用内置小模型，默认独立端口 4175；`URDF_TEST_SITE_URL` 可指定已有服务器，`CLOSED_LOOP_CASE` 可按名称筛选。数值证据、截图和下载物保存至 `tmp/regression/closed-loop-bridges/`，结束时只清理本次进程。
 
+### 关节控制同步
+
+`npm run test:browser:joint-control-sync` 用 Playwright 真实操作滑动条、数字输入和 link，
+覆盖 revolute/continuous/prismatic 关节、超限输入、rad/deg 切换、完整精度、未修改失焦、
+Escape 取消以及输入直接切换连续关节滑条。每次交替操作核对 workspace、viewer、运行时和
+面板值，并验证 link 按下/松开不会回到旧姿态。内置小型 URDF，无需外部模型；默认端口
+4188，`URDF_STUDIO_TEST_SITE_URL` 可复用已有服务器。报告和截图位于
+`tmp/regression/joint-control-sync/`，结束时只清理本次浏览器与服务器。
+
 ### 连续几何属性编辑
 
 `npm run test:browser:geometry-edit-stability` 使用 Playwright 点击真实属性面板，连续执行 240 次旋转、位置和半径修改，覆盖默认圆柱及三个连杆的可视几何/碰撞体，并验证源码大小与缩进有界、运行时复用、撤销/重做和浏览器异常。无需外部模型，默认使用独立端口 4186；`URDF_STUDIO_TEST_SITE_URL` 可复用已有服务器，报告和截图位于 `tmp/regression/geometry-edit/`。快速单测另覆盖 URDF/Xacro/MJCF/SDF 连续源码替换，以及 tab、CRLF 和 inline XML。

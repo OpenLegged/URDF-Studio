@@ -73,6 +73,9 @@ features/urdf-viewer/
 - Props 与共享类型统一收口到 `types.ts`
 - 可视化扩展通过 `visualizationFactories.ts`
 - 共享关节面板位于 `src/shared/components/Panel/JointsPanel.tsx`
+- 关节面板和 link 拖动共享接受后的交互预览，提交后以 workspace 关节值为准；
+  不缓存原始请求值去覆盖限位或闭环约束计算的结果。数字标签可保留短格式，
+  编辑框保留完整精度，未修改退出或 Escape 取消不提交；滑条松手后对齐实际接受值。
 
 ## 5. Canonical Assembly scene projection
 
