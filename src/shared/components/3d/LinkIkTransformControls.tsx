@@ -588,11 +588,14 @@ export const LinkIkTransformControls = memo(function LinkIkTransformControls({
     };
   }, []);
 
+  // Synchronize the proxy before rendering without taking ownership of the
+  // render loop. A positive priority suppresses R3F's default canvas draw,
+  // including when this disabled control returns null below.
   useFrame(() => {
     if (!isDraggingRef.current) {
       syncTranslateProxy(translateProxyRef.current);
     }
-  }, 1000);
+  });
 
   if (!enabled || !selectedLinkId || !hasSelectedAnchorTarget || !coordinateRoot || !ikRobotState) {
     return null;

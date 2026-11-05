@@ -69,6 +69,7 @@ features/urdf-viewer/
 - viewer backend / load scene sync 归 `features/urdf-viewer/renderers/`；`shared/components/3d/renderers/` 只保留 STL/OBJ/DAE/GLTF 等纯 mesh renderer 组件
 - 使用 `RobotData`、`WorkspaceSelection` 等共享类型，避免 `any`
 - TransformControls 引用注册必须完整、可追踪
+- 仅同步 IK 代理等状态的 `useFrame` 回调不得使用正优先级：R3F 会因此关闭默认绘制，即使控件已禁用并返回 `null`。正优先级只留给实际调用 `gl.render` 的渲染负责人；验证只读快照时须覆盖没有 viewport gizmo 的画布，避免主视图的额外绘制掩盖问题。
 - Props 与共享类型统一收口到 `types.ts`
 - 可视化扩展通过 `visualizationFactories.ts`
 - 共享关节面板位于 `src/shared/components/Panel/JointsPanel.tsx`
