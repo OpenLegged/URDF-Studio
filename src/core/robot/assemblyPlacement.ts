@@ -280,6 +280,13 @@ export function estimateRobotGroundOffset(
   robot: RobotData,
   options: { renderableBounds?: RenderableBounds | null } = {},
 ): number {
+  const worldGround = resolveMjcfWorldGround(robot);
+  if (worldGround) {
+    // An authored MJCF world floor is the component's ground reference: align
+    // the floor, not the robot, so the authored hover/drop height above the
+    // floor survives import (matching how MuJoCo itself displays the scene).
+    return -worldGround.max.z;
+  }
   const minZ = resolveRenderableBounds(robot, options.renderableBounds)?.min.z;
   return Number.isFinite(minZ) ? -Number(minZ) : 0;
 }
@@ -335,6 +342,10 @@ export function buildDefaultAssemblyComponentPlacementTransform({
   }
 
   const nextBounds = resolveRenderableBounds(robot, renderableBounds) ?? buildFallbackBounds();
+  // A world-floor environment keeps its own ground as the height reference, so
+  // appended environments level their floors instead of standing on the robot
+  // mesh bounds (which sit above the authored floor).
+  const nextWorldGround = resolveMjcfWorldGround(robot);
   // A model can be placed on an existing world floor. A second environment
   // has its own floor and follows the usual side-by-side arrangement.
   if (!resolveMjcfWorldGround(robot)) {
@@ -380,7 +391,7 @@ export function buildDefaultAssemblyComponentPlacementTransform({
       // appended component to that existing raw scene floor instead of ground
       // zero, otherwise both this transform and the runtime root add a ground
       // offset. A mesh-aware runtime pass finalizes any estimate error later.
-      z: minExistingZ - nextBounds.min.z,
+      z: nextWorldGround ? minExistingZ - nextWorldGround.max.z : minExistingZ - nextBounds.min.z,
     },
     rotation: { ...IDENTITY_ASSEMBLY_TRANSFORM.rotation },
   });

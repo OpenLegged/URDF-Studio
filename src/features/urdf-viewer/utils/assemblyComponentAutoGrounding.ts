@@ -66,6 +66,19 @@ function measureComponentLowestPoint(target: THREE.Object3D): number | null {
   );
 }
 
+/**
+ * Measure the world-space top of an authored MJCF world ground plane.
+ *
+ * The plane is usually a collision-only geom (hidden by default), so mesh-based
+ * lowest-point measurement would report the robot floating above its own floor
+ * and re-ground the robot mid-air. The authored plane box is the component's
+ * real floor reference.
+ */
+function measureComponentWorldGroundTop(target: THREE.Object3D, ground: THREE.Box3): number | null {
+  const worldTop = ground.clone().applyMatrix4(target.matrixWorld).max.z;
+  return Number.isFinite(worldTop) ? Number(worldTop) : null;
+}
+
 function resolveParentLocalDelta(target: THREE.Object3D, delta: THREE.Vector3): THREE.Vector3 {
   if (!target.parent) {
     return delta;
@@ -96,7 +109,11 @@ export function resolveAssemblyComponentAutoGrounding({
   const adjustments: AssemblyComponentGroundAdjustment[] = [];
   const measuredComponentIds: string[] = [];
   const fallbackGroundZ = Number.isFinite(groundPlaneOffset) ? groundPlaneOffset : 0;
-  const measurements = new Map<string, { lowestPoint: number; target: THREE.Object3D }>();
+  const measurements = new Map<string, {
+    lowestPoint: number;
+    target: THREE.Object3D;
+    worldGround: THREE.Box3 | null;
+  }>();
 
   runtimeRobot.updateWorldMatrix(true, true);
 
@@ -110,7 +127,10 @@ export function resolveAssemblyComponentAutoGrounding({
       return;
     }
 
-    const lowestPoint = measureComponentLowestPoint(target);
+    const worldGround = resolveMjcfWorldGround(component.robot);
+    const lowestPoint = worldGround
+      ? measureComponentWorldGroundTop(target, worldGround)
+      : measureComponentLowestPoint(target);
     if (!Number.isFinite(lowestPoint)) {
       return;
     }
@@ -118,6 +138,7 @@ export function resolveAssemblyComponentAutoGrounding({
     measurements.set(component.id, {
       lowestPoint: Number(lowestPoint),
       target,
+      worldGround,
     });
   });
 
@@ -151,7 +172,13 @@ export function resolveAssemblyComponentAutoGrounding({
     }
 
     measuredComponentIds.push(componentId);
-    const floor = sceneFloor && !resolveMjcfWorldGround(component.robot) ? sceneFloor : null;
+    if (measurement.worldGround) {
+      // The authored world floor owns this component's height: aligning the
+      // robot's lowest mesh to the viewer ground instead would sink the floor
+      // and lose the authored hover/drop height above it.
+      return;
+    }
+    const floor = sceneFloor ?? null;
     const delta = new THREE.Vector3(0, 0, (floor?.ground.max.z ?? targetGroundZ) - measurement.lowestPoint);
     if (floor) {
       const bounds = computeVisibleMeshBounds(measurement.target);

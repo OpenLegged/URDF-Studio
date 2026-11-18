@@ -3,6 +3,7 @@ import { useThree } from '@react-three/fiber';
 import * as THREE from 'three';
 import { buildRuntimeRobotFromState, URDFLoader } from '@/core/parsers/urdf/loader';
 import { getJointMotionAngleFromActualAngle, hasFiniteJointLimitBounds } from '@/core/robot';
+import { hasAuthoredMjcfWorldGround } from '@/core/robot/mjcfWorldGround';
 import { normalizeLoadingProgress } from '@/shared/components/3d/loadingHudState';
 import { disposeObject3D } from '../utils/dispose';
 import {
@@ -471,7 +472,11 @@ export function useRobotLoader({
         let hasMountedRobot = false;
         let preservedRootTransformFromPreviousRobot = false;
         const isMJCFAsset = resolvedSourceFormat === 'mjcf';
-        const preserveAuthoredRootTransform = false;
+        // An MJCF scene with its own world floor keeps the authored placement
+        // (floor at the world origin, robot at its authored height above it),
+        // matching how MuJoCo itself displays the model.
+        const preserveAuthoredRootTransform =
+          isMJCFAsset && hasAuthoredMjcfWorldGround(robotLinks);
         const urdfMaterials = isMJCFAsset
           ? null
           : resolveURDFMaterialsForScene(urdfContent, robotLinks);

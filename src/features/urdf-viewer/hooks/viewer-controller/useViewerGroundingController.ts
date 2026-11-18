@@ -11,7 +11,10 @@ import {
   normalizeOriginAxesSize,
   resolveOriginAxesSizeMax,
 } from '@/shared/components/3d/helpers/coordinateAxesSizing';
-import { beginInitialGroundAlignment } from '@/shared/components/3d/robotPositioning';
+import {
+  beginInitialGroundAlignment,
+  shouldPreserveAuthoredRootTransform,
+} from '@/shared/components/3d/robotPositioning';
 import { alignObjectLowestPointToZ, computeVisibleMeshBounds } from '@/shared/utils';
 import type { RuntimeRobotObject } from '@/shared/components/3d/runtimeRobotTypes';
 
@@ -81,6 +84,13 @@ export function useViewerGroundingController({
 
     const currentRobot = robot ?? fallbackRobot;
     if (!currentRobot) {
+      return;
+    }
+
+    if (shouldPreserveAuthoredRootTransform(currentRobot)) {
+      // Authored world placement owns the height (e.g. an MJCF scene with its
+      // own floor at the world origin); grounding the lowest robot mesh would
+      // drop the floor below the grid and stand the robot on it.
       return;
     }
 

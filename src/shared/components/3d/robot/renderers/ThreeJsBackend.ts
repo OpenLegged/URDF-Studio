@@ -18,7 +18,9 @@ import { disposeObject3D } from '@/shared/utils/three/dispose';
 import {
   alignRobotToGroundBeforeFirstMount,
   hasInitialGroundAlignment,
+  setPreserveAuthoredRootTransform,
 } from '@/shared/components/3d/robotPositioning';
+import { hasAuthoredMjcfWorldGround } from '@/core/robot/mjcfWorldGround';
 import { SHARED_MATERIALS } from '@/shared/components/3d/sharedMaterials';
 import { createLoadingManager, createMeshLoader } from '@/core/loaders/index';
 import { createMainThreadYieldController } from '@/core/utils/yieldToMainThread';
@@ -507,6 +509,7 @@ export class ThreeJsBackend implements RobotRendererBackend {
 
       // Finalize after external meshes have attached so picking metadata is complete.
       syncLoadedRobot(robotModel);
+      this.preserveAuthoredMjcfPlacement(robotModel);
       const alignedToGround = alignRobotToGroundBeforeFirstMount(
         robotModel,
         this.groundPlaneOffset,
@@ -527,6 +530,18 @@ export class ThreeJsBackend implements RobotRendererBackend {
     }
 
     return robotModel;
+  }
+
+  private preserveAuthoredMjcfPlacement(robotModel: THREE.Object3D): void {
+    if (
+      this.robotData?.inspectionContext?.sourceFormat === 'mjcf' &&
+      hasAuthoredMjcfWorldGround(this.robotLinks)
+    ) {
+      // An MJCF scene with its own world floor keeps its authored placement:
+      // the floor sits at the MuJoCo world origin and the robot at its
+      // authored height above it, exactly as MuJoCo itself displays it.
+      setPreserveAuthoredRootTransform(robotModel, true);
+    }
   }
 
   private computeRootLinkId(): string | null {
