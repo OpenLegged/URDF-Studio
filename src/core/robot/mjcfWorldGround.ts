@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 
-import { GeometryType, type RobotData } from '@/types';
+import { GeometryType, type RobotData, type UrdfLink } from '@/types';
 import { getCollisionGeometryEntries } from './collisionBodies';
 import { createOriginMatrix } from './kinematics';
 import { getVisualGeometryEntries } from './visualBodies';
@@ -14,9 +14,34 @@ export function resolveMjcfWorldGround(
   const root = robot.links[robot.rootLinkId];
   if (!root || root.name !== 'world' || (root.inertial?.mass ?? 0) > 0) return null;
 
+  return resolveWorldGroundFromLink(root, componentMatrix);
+}
+
+/**
+ * Whether an MJCF model authored its own world floor.
+ *
+ * Runtime load paths only hold the links record (no RobotData root id), so the
+ * parser-generated world link is matched by id/name here. Used to keep the
+ * authored scene placement — floor at the MuJoCo world origin, robot at its
+ * authored height above it — instead of grounding the robot on the viewer grid.
+ */
+export function hasAuthoredMjcfWorldGround(
+  links: Record<string, UrdfLink> | null | undefined,
+): boolean {
+  if (!links) return false;
+  const worldLink = links.world ?? Object.values(links).find((link) => link?.name === 'world');
+  if (!worldLink || (worldLink.inertial?.mass ?? 0) > 0) return false;
+
+  return resolveWorldGroundFromLink(worldLink, new THREE.Matrix4()) !== null;
+}
+
+function resolveWorldGroundFromLink(
+  link: UrdfLink,
+  componentMatrix: THREE.Matrix4,
+): THREE.Box3 | null {
   let ground: THREE.Box3 | null = null;
   let largestArea = 0;
-  for (const { geometry } of [...getCollisionGeometryEntries(root), ...getVisualGeometryEntries(root)]) {
+  for (const { geometry } of [...getCollisionGeometryEntries(link), ...getVisualGeometryEntries(link)]) {
     const { x, y, z } = geometry.dimensions;
     const plane = geometry.type === GeometryType.PLANE;
     if (!plane && (geometry.type !== GeometryType.BOX || Math.min(x, y) < z * 10)) continue;

@@ -77,6 +77,13 @@ export function beginInitialGroundAlignment(robot: THREE.Object3D | null | undef
 }
 
 export function alignRobotToGroundBeforeFirstMount(robot: THREE.Object3D, targetZ = 0): boolean {
+  if (shouldPreserveAuthoredRootTransform(robot)) {
+    // Authored world placement owns the height (e.g. an MJCF scene with its own
+    // floor). Mark alignment done so scheduled passes do not ground it either.
+    setInitialGroundAlignment(robot, true);
+    return true;
+  }
+
   const minZ = getRobotGroundOffset(robot);
   if (minZ === null) {
     return false;
@@ -93,6 +100,10 @@ export function alignRobotToGroundBeforeFirstMount(robot: THREE.Object3D, target
  * This keeps the grid/canvas stable while switching assets with different authoring origins.
  */
 export function offsetRobotToGround(robot: THREE.Object3D, targetZ = 0): void {
+  if (shouldPreserveAuthoredRootTransform(robot)) {
+    return;
+  }
+
   const minZ = getRobotGroundOffset(robot);
   if (minZ === null) {
     return;

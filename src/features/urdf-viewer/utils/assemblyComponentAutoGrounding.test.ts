@@ -319,3 +319,45 @@ test('places robots on the room floor clear of a bed and of each other', () => {
   }
   assert.ok(Math.abs(first.y - second.y) >= 0.5 || Math.abs(first.x - second.x) >= 1);
 });
+
+test('keeps an authored MJCF world hover height instead of grounding the robot', (t) => {
+  // MuJoCo scenes often author a world plane at z=0 and drop the robot from a
+  // height above it. The plane is a collision-only geom (hidden by default),
+  // so mesh-based grounding would sink the floor and stand the robot on it.
+  const env = component('env', transform());
+  env.robot.inspectionContext = { sourceFormat: 'mjcf' };
+  const root = env.robot.links[env.robot.rootLinkId]!;
+  root.name = 'world';
+  assert.ok(root.inertial);
+  root.inertial.mass = 0;
+  root.visual.type = GeometryType.PLANE;
+  root.visual.dimensions = { x: 10, y: 10, z: 0 };
+  root.visual.origin = { xyz: { x: 0, y: 0, z: 0 }, rpy: { r: 0, p: 0, y: 0 } };
+
+  const envTarget = new THREE.Group();
+  envTarget.add(visualBox(new THREE.Vector3(0, 0, 1.02), new THREE.Vector3(0.06, 0.07, 0.045)));
+  const runtimeRobot = new THREE.Group() as THREE.Group & {
+    joints?: Record<string, THREE.Object3D>;
+  };
+  runtimeRobot.add(envTarget);
+  t.after(() => {
+    envTarget.traverse((object) => {
+      if ((object as THREE.Mesh).isMesh) {
+        (object as THREE.Mesh).geometry.dispose();
+        ((object as THREE.Mesh).material as THREE.Material).dispose();
+      }
+    });
+  });
+
+  const result = resolveAssemblyComponentAutoGrounding({
+    componentIds: ['env'],
+    groundPlaneOffset: 0,
+    runtimeRobot,
+    scenePlacement: assembledPlacement(runtimeRobot, { env: envTarget }),
+    workspace: workspace([env]),
+  });
+
+  assert.deepEqual(result.measuredComponentIds, ['env']);
+  assert.deepEqual(result.adjustments, []);
+  assert.equal(result.runtimeRobotLocalPositionDelta, null);
+});
