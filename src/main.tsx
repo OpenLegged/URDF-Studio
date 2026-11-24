@@ -1,6 +1,7 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import { App } from '@/app';
+import { ViewerCanvasApp } from '@/app/ViewerCanvasApp';
 import { AppErrorBoundary } from '@/app/components/AppErrorBoundary';
 import { useUIStore } from '@/store';
 import {
@@ -61,7 +62,8 @@ const root = ReactDOM.createRoot(rootElement);
 root.render(
   <React.StrictMode>
     <AppErrorBoundary>
-      <App />
+      {/* Canvas-only embed for external hosts (see ViewerCanvasApp). */}
+      {new URLSearchParams(window.location.search).has('viewerCanvas') ? <ViewerCanvasApp /> : <App />}
     </AppErrorBoundary>
   </React.StrictMode>,
 );
