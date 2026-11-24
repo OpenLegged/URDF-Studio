@@ -52,10 +52,17 @@ export function ViewerCanvasApp() {
 
   useEffect(() => {
     if (window.parent === window) return;
+    let requestId = 0;
+    const objectUrls: string[] = [];
+    const releaseAssets = () => {
+      for (const url of objectUrls) URL.revokeObjectURL(url);
+      objectUrls.length = 0;
+    };
     const receive = async (event: MessageEvent) => {
       if (event.source !== window.parent) return;
       const message = event.data;
       if (!message || typeof message !== 'object' || (message as {type?: unknown}).type !== 'robot-viewer-load') return;
+      const currentRequest = ++requestId;
       const reply = (payload: Record<string, unknown>) =>
         window.parent.postMessage({type: 'robot-viewer-loaded', ...payload}, event.origin);
       try {
@@ -67,16 +74,24 @@ export function ViewerCanvasApp() {
         const urdf = files.find(file => /\.urdf$/i.test(file.path));
         if (!urdf) throw new Error('no .urdf file in the viewer payload');
         const content = await urdf.blob.text();
+        if (currentRequest !== requestId) return;
         if (!content.trim()) throw new Error('the .urdf file is empty');
-        const assets: Record<string, string> = {};
+        releaseAssets();
+        const assets: Record<string, string> = Object.create(null);
         for (const file of files) {
           if (file === urdf) continue;
-          assets[file.path] = URL.createObjectURL(file.blob);
+          const url = URL.createObjectURL(file.blob);
+          objectUrls.push(url);
+          assets[file.path] = url;
         }
         const theme = (message as {theme?: unknown}).theme === 'dark' ? 'dark' : 'light';
+        setError('');
         setJob({source: {format: 'urdf', content, sourceFilePath: urdf.path}, assets, theme, name: basename(urdf.path)});
         reply({ok: true, name: basename(urdf.path)});
       } catch (failure) {
+        if (currentRequest !== requestId) return;
+        releaseAssets();
+        setJob(null);
         const text = failure instanceof Error ? failure.message : String(failure);
         setError(text);
         reply({ok: false, error: text});
@@ -84,7 +99,11 @@ export function ViewerCanvasApp() {
     };
     window.addEventListener('message', receive);
     window.parent.postMessage({type: 'robot-viewer-ready'}, '*');
-    return () => window.removeEventListener('message', receive);
+    return () => {
+      requestId++;
+      window.removeEventListener('message', receive);
+      releaseAssets();
+    };
   }, []);
 
   if (error) {
