@@ -104,7 +104,6 @@ async function runJourney(journey, opts) {
   const mode = opts.quick ? 'quick' : 'full';
   const startedAt = Date.now();
   let failure = null;
-  let closeError = null;
   let browserErrors = { console: [], page: [] };
 
   try {
@@ -135,11 +134,14 @@ async function runJourney(journey, opts) {
     try {
       await browser?.close();
     } catch (error) {
-      if (!isTransientPageContextError(error)) closeError = error;
+      if (!isTransientPageContextError(error)) {
+        const closeFailure = error?.stack || error?.message || String(error);
+        console.error(`[workflow] browser close failed: ${closeFailure}`);
+        failure = failure ? `${failure}\nBrowser close: ${closeFailure}` : closeFailure;
+      }
     }
     await site.stop();
   }
-  if (closeError) throw closeError;
 
   const ok = failure == null && suite.failed === 0 && browserErrors.page.length === 0;
   return {
