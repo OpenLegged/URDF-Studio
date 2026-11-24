@@ -46,7 +46,14 @@ export const JointValueField: React.FC<JointValueFieldProps> = ({
           onBlur={(event) => editor.commit(event.currentTarget.value)}
           onKeyDown={(event) => {
             if (event.key === 'Enter') {
+              event.preventDefault();
+              event.stopPropagation();
               editor.commit(event.currentTarget.value);
+              event.currentTarget.blur();
+            } else if (event.key === 'Escape' && editor.cancel) {
+              event.preventDefault();
+              event.stopPropagation();
+              editor.cancel();
               event.currentTarget.blur();
             }
           }}
