@@ -73,3 +73,12 @@ canvas-jpg-chunks.json
 /.trellis
 /.worktrees/
 /.agents
+/.devrelay/worktrees/
+/.devrelay/runtime/
+
+# Publish DevRelay templates; keep other local GitHub files ignored.
+!/.github/
+/.github/*
+!/.github/ISSUE_TEMPLATE/
+/.github/ISSUE_TEMPLATE/*
+!/.github/ISSUE_TEMPLATE/devrelay-*.md

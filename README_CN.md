@@ -333,6 +333,7 @@ Node 测试入口统一收敛在 `scripts/test/runner/run-node-tests.mjs`。单�
 - [Robot Canvas 库说明](./docs/robot-canvas-lib.md)
 - [完整文档索引](./docs/CATALOG.md)
 - [Agent 规范](./AGENTS.md)
+- [DevRelay 工程流程](./docs/devrelay.md)
 
 ## 包工作区
 

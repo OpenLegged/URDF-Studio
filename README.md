@@ -347,6 +347,7 @@ Validation is typically done through:
 - [Robot Canvas Library](./docs/robot-canvas-lib.md)
 - [Documentation Catalog](./docs/CATALOG.md)
 - [Agent Instructions](./AGENTS.md)
+- [DevRelay Engineering Workflow](./docs/devrelay.md)
 
 ## Package Workspace
 

@@ -93,11 +93,18 @@ Editor 包含拓扑、几何/碰撞/测量和硬件配置；公开入口 `featur
 | 常规综合验证 | `npm run verify:fast` |
 | 修改 src/lib 或发布包后额外构建 | `npm run build:package:react-robot-canvas` |
 
+## DevRelay 工程流程
+
+本仓接入配置为 `.devrelay/config.toml`，命令与授权规则见 [docs/devrelay.md](docs/devrelay.md)。
+默认由当前 Agent 使用 `status/next → start/prepare → check/submit`，在返回的任务工作树实现。
+Issue 逐项授权，交付到 `dev` 的草稿 PR 并独立只读审查；三次实现预算，不自动合并或启动后台 worker。
+US 的交付与 USP 的 core 指针集成分别授权、分别验收。禁止任何 superpowers skill/plugin。
+
 ## 分支工作流
 
-- 本地修改先在 `dev` 提交与验证，禁止直接在 `main` 开发提交。
-- `dev` 验证通过后合并到 `main`：`git checkout main && git merge dev`，先 `git push origin dev` 再 `git push origin main`。
-- 若 `main` 先有提交，在 `dev` 上 `git merge --ff-only main` 对齐后继续开发。
+- 常规改动从最新 `origin/dev` 创建工作分支，验证后推送该分支并通过 GitHub PR 合入 `dev`；禁止直接提交或推送 `dev`、`main`。
+- 所有分支间合并均通过 GitHub PR，不在本地合并后推送；`dev → main` 或反向同步使用 merge commit。工作分支 PR 可 squash。
+- PR 写明实际运行的本地 CI 命令、结果及未运行项，由仓库负责人志楷审核后再按授权合并。开 PR 不等于获得合并、发布或 USP 集成授权。
 - 团队共用的公开配置写入已跟踪的 `.env` 和对应 mode profile；`.env.<mode>.local` 仅作可选个人临时覆盖，不是启动或构建前置条件，详见 [README 可选环境变量](README_CN.md#可选环境变量)。开源 core 不接收平台私有配置或商业密钥。
 - 个人 BYOK provider key 只通过被忽略的 `.env.dev.local` 或进程变量注入，不写入跟踪文件，不强制 add；`opencode.json` 使用 `{env:VAR}` 引用。Vite 注入的 provider 值会进入浏览器 bundle，仅限可信本机 dev。
 - 提交/推送前检查暂存区与未跟踪非忽略文件中的明文 secret，命中立即停止提交并移除；不能把单一 key 正则无匹配当作安全证明。
