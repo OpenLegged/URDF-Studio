@@ -102,6 +102,27 @@ test('repeated instances with the same bounds keep the same raw floor height', (
   assert.equal(transform.position.z, 0);
 });
 
+test('an MJCF world floor keeps the authored hover height on first placement', () => {
+  const scene = robot('scene');
+  scene.inspectionContext = { sourceFormat: 'mjcf' };
+  const world = scene.links.base!;
+  world.name = 'world';
+  assert.ok(world.inertial);
+  world.inertial.mass = 0;
+  world.visual.type = GeometryType.PLANE;
+  world.visual.dimensions = { x: 10, y: 10, z: 0 };
+
+  // Robot meshes float above the authored plane; grounding them would sink the
+  // floor below the viewer ground and lose the authored drop height.
+  const transform = buildDefaultAssemblyComponentPlacementTransform({
+    robot: scene,
+    renderableBounds: bounds(0.9772),
+    existingComponents: [],
+  });
+
+  assert.ok(Math.abs(transform.position.z) < 1e-12);
+});
+
 test('a horizontal MJCF world surface places a new model on its top near the room', () => {
   const scene = robot('room');
   scene.inspectionContext = { sourceFormat: 'mjcf' };

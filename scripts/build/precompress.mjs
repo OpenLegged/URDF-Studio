@@ -37,6 +37,7 @@ import {
   gzipSync,
 } from 'node:zlib';
 import { existsSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { join, relative } from 'node:path';
 import process from 'node:process';
 
@@ -49,7 +50,10 @@ function resolveDistDir() {
     }
     return value;
   }
-  return new URL('../../dist/', import.meta.url).pathname;
+  // fileURLToPath, not URL.pathname: the pathname keeps non-ASCII checkout
+  // paths percent-encoded (e.g. 产品 -> %E4%BA%A7%E5%93%81), which existsSync
+  // then fails to find on disk.
+  return fileURLToPath(new URL('../../dist/', import.meta.url));
 }
 
 const DIST_DIR = resolveDistDir();
